@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bodyguard-of-bits"
+version = "0.1.0"
+description = "BOB — Bodyguard Of Bits: Linux hardening auditor with CIS benchmark mapping"
+readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+keywords = ["security", "audit", "linux", "firewall", "hardening", "cis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Networking :: Firewalls",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.scripts]
+bob = "bob.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Masbateno/bodyguard-of-bits"
+Issues = "https://github.com/Masbateno/bodyguard-of-bits/issues"
+Changelog = "https://github.com/Masbateno/bodyguard-of-bits/blob/main/DOCUMENTS/CHANGELOG.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bob*"]
+
+[tool.setuptools.package-data]
+bob = [
+    "data/*",
+    "data/profiles/*.conf",
+    "locales/*.json",
+]

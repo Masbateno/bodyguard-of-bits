@@ -1,0 +1,110 @@
+# bash completion for bob
+# Installed to /etc/bash_completion.d/bob by --install-completion
+
+_ufw_audit() {
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Handle -l N (--log-days short form) — suggest common values
+    if [[ "${prev}" == "-l" ]]; then
+        COMPREPLY=( "7" "14" "30" )
+        return 0
+    fi
+
+    # Handle --log-days=N — suggest common values
+    if [[ "${cur}" == --log-days* ]]; then
+        COMPREPLY=( "--log-days=7" "--log-days=14" "--log-days=30" )
+        return 0
+    fi
+
+    # Handle -p NAME / --profile=NAME — suggest known profiles
+    if [[ "${prev}" == "-p" ]]; then
+        COMPREPLY=( $(compgen -W "server desktop container" -- "${cur}") )
+        return 0
+    fi
+    if [[ "${cur}" == --profile* ]]; then
+        COMPREPLY=( "--profile=server" "--profile=desktop" "--profile=container" )
+        return 0
+    fi
+
+    # Handle --lang=CODE — suggest known languages
+    if [[ "${cur}" == --lang* ]]; then
+        COMPREPLY=( "--lang=en" "--lang=fr" )
+        return 0
+    fi
+
+    # Handle --check= — suggest 'list' plus known section names
+    if [[ "${cur}" == --check* ]]; then
+        local check_vals="list ssh firewall ipv6 hardening kernel_hardening kernel_modules suid_audit docker_audit log_rotation mac_policy cron_audit services_state updates umask memory disk backup auditd secure_boot fail2ban clamav file_integrity rootkit ntp systemd_timers ssl_certs firmware smtp auth_log user_accounts password_policy file_perms"
+        COMPREPLY=( $(compgen -W "${check_vals}" -- "${cur#--check=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--check=}" )
+        return 0
+    fi
+    if [[ "${prev}" == "--check" ]]; then
+        COMPREPLY=( $(compgen -W "list ssh firewall ipv6 hardening kernel_hardening kernel_modules suid_audit docker_audit log_rotation mac_policy cron_audit services_state updates umask memory disk backup auditd secure_boot fail2ban clamav file_integrity rootkit ntp systemd_timers ssl_certs firmware smtp auth_log user_accounts password_policy file_perms" -- "${cur}") )
+        return 0
+    fi
+
+    # Handle --webhook-format=F — suggest known formats
+    if [[ "${cur}" == --webhook-format* ]]; then
+        COMPREPLY=( "--webhook-format=auto" "--webhook-format=generic" "--webhook-format=slack" )
+        return 0
+    fi
+
+    # Handle --format=FORMAT — suggest output formats
+    if [[ "${cur}" == --format* ]]; then
+        COMPREPLY=( "--format=json" "--format=json-full" "--format=csv" "--format=markdown" "--format=html" )
+        return 0
+    fi
+    if [[ "${prev}" == "--format" ]]; then
+        COMPREPLY=( $(compgen -W "json json-full csv markdown html" -- "${cur}") )
+        return 0
+    fi
+
+    # Handle --target=N — suggest common score targets
+    if [[ "${cur}" == --target* ]]; then
+        COMPREPLY=( "--target=6" "--target=7" "--target=8" "--target=9" "--target=10" )
+        return 0
+    fi
+
+    # All short options
+    local short_opts="-v -d -q -f -y -r -n -j -J -l -m -c -C -o -p -e -D -w -V -h"
+
+    # All long options (single line — avoids multiline parsing issues on some bash versions)
+    local long_opts="--verbose --detailed --quiet --fix --apply --yes --reconfigure --no-color --format= --json --json-full --output= --min-level= --log-days= --manage-logs --install-cron --manage-cron --install-completion --french --lang= --offline --profile= --reset-baseline --ignore= --show-ignored --history --explain --diff --watch= --webhook= --webhook-format= --target= --html --version --help"
+    # Value completions for --output and --min-level
+    if [[ "${prev}" == "--output" ]]; then
+        COMPREPLY=( $(compgen -W "csv json markdown" -- "${cur}") )
+        return 0
+    fi
+    if [[ "${prev}" == "--min-level" ]]; then
+        COMPREPLY=( $(compgen -W "warn alert" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${cur}" == --* ]]; then
+        COMPREPLY=( $(compgen -W "${long_opts}" -- "${cur}") )
+    elif [[ "${cur}" == -* ]]; then
+        COMPREPLY=( $(compgen -W "${short_opts} ${long_opts}" -- "${cur}") )
+    fi
+
+    # Suppress trailing space only for options that take a value (end with =)
+    if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *= ]]; then
+        compopt -o nospace 2>/dev/null || true
+    fi
+
+    return 0
+}
+
+complete -F _ufw_audit bob
+
+# bash completion for install.sh (bob installer)
+_ufw_audit_install() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local opts="--dry-run --uninstall --help"
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+}
+
+complete -F _ufw_audit_install install.sh

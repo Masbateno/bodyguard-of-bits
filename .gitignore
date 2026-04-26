@@ -1,0 +1,30 @@
+# UFW-audit log reports
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor temporary files
+*~
+*.swp
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# MyPy
+.mypy_cache/

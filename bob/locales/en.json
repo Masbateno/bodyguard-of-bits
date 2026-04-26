@@ -1,0 +1,2028 @@
+{
+  "_meta": {
+    "lang": "en",
+    "version": "0.16"
+  },
+  "banner": {
+    "title": "BOB",
+    "subtitle": "Linux hardening auditor",
+    "system": "System",
+    "host": "Host",
+    "kernel": "Kernel",
+    "ufw": "UFW",
+    "iptables": "iptables",
+    "nftables": "nftables",
+    "user": "User",
+    "date": "Date",
+    "not_installed": "not installed"
+  },
+  "groups": {
+    "firewall_network": "FIREWALL & NETWORK",
+    "exposure_services": "EXPOSURE & SERVICES",
+    "access_control": "ACCESS CONTROL",
+    "system_hardening": "SYSTEM HARDENING",
+    "detection_health": "DETECTION & HEALTH"
+  },
+  "sections": {
+    "prerequisites": "PREREQUISITES CHECK",
+    "firewall": "FIREWALL STATUS",
+    "rules": "UFW RULES ANALYSIS",
+    "services": "NETWORK SERVICES ANALYSIS",
+    "services_panorama": "SERVICES PANORAMA",
+    "ports_analysis": "LISTENING PORTS ANALYSIS",
+    "ports_overview": "LISTENING PORTS (OVERVIEW)",
+    "logs": "UFW LOG ANALYSIS",
+    "ddns": "EXTERNAL EXPOSURE (DDNS)",
+    "docker": "DOCKER ANALYSIS",
+    "summary": "AUDIT SUMMARY",
+    "fixes": "AVAILABLE FIXES",
+    "risk_context": "RISK CONTEXT — DETECTED SERVICES",
+    "virtualization": "VIRTUALISATION ANALYSIS",
+    "firewall_stack": "FIREWALL STACK ANALYSIS",
+    "iptables_nft": "IPTABLES / NFTABLES AUDIT",
+    "network_context": "NETWORK CONTEXT",
+    "hardening": "SYSTEM HARDENING ANALYSIS",
+    "ipv6": "IPv6 CONSISTENCY CHECK",
+    "compare": "CHANGES SINCE LAST AUDIT",
+    "ssh": "SSH SECURITY AUDIT",
+    "file_perms": "SENSITIVE FILES & SUDOERS",
+    "updates": "SYSTEM UPDATES",
+    "kernel_modules": "KERNEL MODULE AUDIT",
+    "kernel_hardening": "KERNEL HARDENING",
+    "cron_audit": "CRON JOB AUDIT",
+    "services_state": "SERVICE STATE AUDIT",
+    "user_accounts": "USER ACCOUNT AUDIT",
+    "password_policy": "PASSWORD POLICY AUDIT",
+    "memory": "MEMORY & SWAP",
+    "disk": "DISK HEALTH",
+    "samba": "SAMBA SECURITY AUDIT",
+    "clamav": "CLAMAV ANTIVIRUS AUDIT",
+    "smtp": "SMTP LOCAL EXPOSURE",
+    "desktop_apps": "DESKTOP APPLICATION AUDIT",
+    "ntp": "NTP TIME SYNCHRONISATION",
+    "fail2ban": "FAIL2BAN INTRUSION PREVENTION",
+    "auditd": "LINUX AUDIT FRAMEWORK (AUDITD)",
+    "secure_boot": "SECURE BOOT",
+    "file_integrity": "FILE INTEGRITY MONITORING (AIDE / TRIPWIRE)",
+    "rootkit": "ROOTKIT & INTEGRITY SCAN",
+    "mac_policy": "MAC POLICY (APPARMOR / SELINUX)",
+    "backup": "BACKUP SOLUTION",
+    "suid_audit": "SUID/SGID BINARY AUDIT",
+    "docker_audit": "DOCKER CONTAINER SECURITY AUDIT",
+    "log_rotation": "LOG ROTATION & SYSTEM JOURNALING",
+    "ufw_logging": "UFW LOGGING",
+    "umask": "SYSTEM UMASK",
+    "auth_log": "SSH LOGIN ANALYSIS",
+    "ssl_certs": "TLS/SSL CERTIFICATE EXPIRY",
+    "systemd_timers": "SYSTEMD TIMERS AUDIT",
+    "firmware": "FIRMWARE & MICROCODE AUDIT"
+  },
+  "status": {
+    "ok": "OK",
+    "warn": "WARNING",
+    "alert": "ALERT",
+    "info": "INFO"
+  },
+  "prerequisites": {
+    "ufw_installed": "UFW is installed",
+    "ufw_missing": "UFW is not installed — install it with: sudo apt install ufw",
+    "ss_available": "Network analysis tool available (ss)",
+    "ss_missing": "ss not available — install iproute2: sudo apt install iproute2"
+  },
+  "firewall": {
+    "active": "UFW firewall is active",
+    "inactive": "UFW firewall is disabled. Your machine is currently unprotected.",
+    "policy_ok": "Default policy: incoming connections blocked (recommended)",
+    "policy_open": "Default incoming policy is set to ALLOW — all ports are open by default",
+    "policy_unknown": "Could not determine default incoming policy",
+    "logging_off": "UFW logging is disabled — blocked connections are not recorded",
+    "logging_ok": "UFW logging active (level: {level})",
+    "logging_unknown": "UFW logging level could not be determined",
+    "logging_verbose": "UFW logging level {level} — may generate high log volume"
+  },
+  "iptables_nft": {
+    "no_backend": "No firewall detected (iptables/nftables absent or inactive)",
+    "ufw_inactive_context": "UFW is installed but inactive — auditing the underlying {backend} layer",
+    "backend_detected": "Active backend: {backend}",
+    "input_accept": "Default INPUT policy: ACCEPT — all incoming traffic is allowed",
+    "input_ok": "Default INPUT policy: {policy} (recommended)",
+    "input_unknown": "Default INPUT policy: undetermined — manual verification recommended",
+    "no_loopback": "No loopback (lo) rule — local services may be unreachable",
+    "no_conntrack": "No ESTABLISHED/RELATED rule — return traffic for outgoing connections may be dropped",
+    "forward_accept": "Default FORWARD policy: ACCEPT — transit traffic is not filtered",
+    "forward_ok": "Default FORWARD policy: {policy} (recommended)",
+    "forward_unknown": "Default FORWARD policy: undetermined — manual verification recommended"
+  },
+  "rules": {
+    "no_duplicates": "No duplicate UFW rules detected",
+    "duplicate_found": "Duplicate UFW rule detected: {rule}",
+    "no_open_any": "No 'allow from any' rule without port restriction detected",
+    "open_any_found": "Rule allowing all incoming connections without port restriction: {rule}",
+    "ipv6_ok": "IPv6 configuration consistent with UFW rules",
+    "ipv6_missing": "UFW rules exist for IPv4 but no equivalent IPv6 rules found",
+    "ufw_status_detail": "UFW status (verbose):",
+    "orphan_rule": "UFW rule open with no listening service: {port}"
+  },
+  "firewall_stack": {
+    "no_issues": "No additional firewall rules interfering with UFW detected",
+    "iptables_bypass": "Raw iptables ACCEPT rule bypasses UFW in INPUT chain: {rule}",
+    "iptables_forward_bypass": "Raw iptables ACCEPT rule bypasses UFW in FORWARD chain: {rule}",
+    "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker/VPN routing",
+    "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",
+    "ip_forward_ok": "IP forwarding enabled — routing daemon detected (Docker, VPN or KVM)",
+    "ip_forward_enabled": "IP forwarding enabled without detected VPN/Docker — verify this is intentional"
+  },
+  "network_context": {
+    "no_interfaces": "No network interfaces found",
+    "interfaces_found": "{count} network interface(s) active",
+    "tunnel_active": "Tunnel interface active: {name}",
+    "no_connections": "No established TCP connections",
+    "connections_found": "{count} established TCP connection(s)",
+    "sensitive_remote": "Established connection to external host on sensitive port {port} ({addr})",
+    "col_interface": "INTERFACE",
+    "col_type": "TYPE",
+    "col_status": "STATUS",
+    "col_address": "ADDRESS",
+    "up": "UP",
+    "down": "DOWN",
+    "connections_total": "{count} established TCP connection(s)",
+    "top_remotes": "Top remote IPs"
+  },
+  "services": {
+    "panorama": {
+      "header_service": "SERVICE",
+      "header_status": "STATUS",
+      "header_ports": "PORT(S)",
+      "header_ufw": "UFW",
+      "not_installed": "NOT INSTALLED",
+      "active": "ACTIVE",
+      "inactive": "INACTIVE",
+      "unknown": "UNKNOWN"
+    },
+    "state": {
+      "active_enabled": "Service active and set to start automatically at boot",
+      "active_disabled": "Service is currently active but will not restart automatically",
+      "inactive_enabled": "Service is stopped but enabled at boot — may start at next reboot",
+      "inactive_disabled": "{label} is installed but stopped and disabled. No immediate risk.",
+      "installed_inactive_critical": "{label} is installed on this system — service is currently stopped, but the presence of this package is a potential attack vector",
+      "unknown": "Service installed, state undetermined"
+    },
+    "exposure": {
+      "open_world": "open to internet — UFW rule allows from any address (Anywhere)",
+      "open_local": "restricted to local network by UFW rule",
+      "deny": "explicitly blocked by a UFW rule",
+      "no_rule": "covered by default deny policy (no explicit UFW rule needed)",
+      "no_rule_ufw_inactive": "no active firewall protection (UFW inactive)",
+      "loopback": "bound to localhost only — UFW rule has no effect on external access",
+      "loopback_no_rule": "bound to localhost only — no UFW rule needed (covered by default deny)",
+      "loopback_no_rule_ufw_inactive": "bound to localhost only — no external exposure",
+      "not_listening": "not actively listening — port in registry but not detected on this system"
+    },
+    "port_from_config": "Port read from configuration: {port}",
+    "port_auto": "Port auto-detected: {port}",
+    "port_exposure": "Port {port} — {exposure}"
+  },
+  "ports": {
+    "all_covered": "All ports listening on 0.0.0.0 are covered by a UFW rule",
+    "uncovered": "Port {port} listening on all interfaces without explicit UFW rule",
+    "uncovered_local": "Port {port} — bound to localhost only — no external exposure",
+    "ephemeral_ignored": "Ephemeral port ignored (>{threshold}) — kernel-assigned temporary port: {port}",
+    "system_port": "Internal system port — no risk (legitimate OS service, no UFW rule needed): {port} ({service})",
+    "listening_count": "{count} listening port(s) detected on this system",
+    "listening_detail": "Listening ports detail:",
+    "listening_verbose_hint": "Use -v to display the full port table",
+    "process_disclaimer": "This port belongs to {process} — blocking it may interrupt the application. Only run the command above if you know exactly what you are doing.",
+    "uncovered_default_deny": "Port {port} listening on all interfaces — no explicit UFW rule, but covered by default deny policy",
+    "uncovered_ufw_inactive": "Port {port} listening on all interfaces — enable UFW to filter it"
+  },
+  "logs": {
+    "no_logfile": "UFW log file not found (/var/log/ufw.log) and no UFW entries in journald — logging disabled?",
+    "source_journald": "UFW log source: systemd-journald (no /var/log/ufw.log — normal on systems without rsyslog)",
+    "empty": "No UFW BLOCK events found in logs for the analysed period",
+    "period": "Period analysed",
+    "days_unit": "day(s)",
+    "days_available": "day(s) of logs available",
+    "total_blocks": "blocked attempt(s) detected",
+    "verdict_ok": "Normal activity — {total} blocked attempt(s) over {days} day(s), no threat detected",
+    "verdict_warn": "Suspicious activity — {total} blocked attempt(s) over {days} day(s)",
+    "top_ips": "Top source IPs",
+    "top_ports": "Top targeted ports",
+    "brute_title": "Bruteforce detected",
+    "brute_none": "No bruteforce detected in the analysed period",
+    "brute_found": "attempt(s) from",
+    "brute_on": "on",
+    "svc_hits": "Attempts on installed service ports",
+    "svc_hits_none": "No attempts on installed service ports",
+    "attempts": "attempt(s)",
+    "geo_unavailable": "whois not available — install it for IP geolocation (sudo apt install whois)",
+    "local_network": "local network",
+    "geoip2_unavailable": "GeoIP2 library not found in the bob environment — IP geolocation disabled",
+    "geoip2_unavailable_cmd": "pipx inject bob geoip2",
+    "geoip2_no_db": "GeoIP2 installed but no GeoLite2-Country database found — IP geolocation disabled",
+    "geoip2_no_db_cmd": "sudo mkdir -p /usr/share/GeoIP && sudo wget -O /usr/share/GeoIP/GeoLite2-Country.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb",
+    "local_dominance": "Local source {ip} accounts for {count}/{total} blocks ({pct}%) — likely IoT discovery traffic (mDNS/SSDP/UPnP), not an attack"
+  },
+  "ddns": {
+    "none": "No DDNS client detected — no DDNS-based external exposure identified",
+    "found": "Active DDNS client detected",
+    "domain": "Configured domain",
+    "no_domain": "Domain not extracted (check configuration manually)",
+    "no_open_ports": "No UFW port open without source restriction detected",
+    "ports_title": "Ports potentially exposed to the internet",
+    "warn": "DDNS active with open port(s) without source restriction — verify exposure is intentional",
+    "high_warn": "High-risk service potentially internet-exposed via DDNS",
+    "advice": "If this exposure is intentional: keep services up to date, enable authentication, and consider Fail2ban.",
+    "inactive": "DDNS client installed but service is inactive"
+  },
+  "docker": {
+    "not_installed": "Docker not installed — section skipped",
+    "iptables_disabled": "Docker configured with iptables disabled (daemon.json). UFW rules apply normally.",
+    "iptables_bypass": "Docker may bypass UFW rules — iptables is not disabled in daemon.json",
+    "no_containers": "No running Docker containers detected",
+    "no_public_ports": "Running Docker containers detected — no publicly exposed ports",
+    "exposed_ports": "Ports exposed by Docker",
+    "iptables_bypass_detail1": "This is an architectural choice, not a simple fix — three options:",
+    "iptables_bypass_detail2": "  1. Disable Docker iptables (advanced): set {\"iptables\": false} in daemon.json — you manage networking yourself",
+    "iptables_bypass_detail3": "  2. Add explicit UFW rules for your container ports (safer, recommended)",
+    "iptables_bypass_docs": "  → Read before acting: https://docs.docker.com/network/iptables/",
+    "exposed_bypass_ufw": "bypasses UFW via iptables"
+  },
+  "scoring": {
+    "score_label": "Security score",
+    "risk_label": "Risk level",
+    "network_context": "Network context",
+    "profile_label": "Audit profile",
+    "level": {
+      "low": "LOW",
+      "medium": "MEDIUM",
+      "high": "HIGH",
+      "critical": "CRITICAL"
+    },
+    "context": {
+      "local": "Local network only",
+      "public": "Direct public IP",
+      "ddns": "Public exposure via DDNS"
+    },
+    "breakdown_title": "Score breakdown",
+    "cap_note": "Score capped at {max} (firewall inactive)",
+    "target_label": "Target",
+    "target_reached": "{target}/10 — target reached",
+    "target_gap": "{target}/10 — +{gap} pt(s) needed"
+  },
+  "summary": {
+    "clean": "Your configuration is sound. No action required.",
+    "warnings": "Overall configuration is sound for this type of system. Some improvements are recommended to strengthen robustness.",
+    "alerts": "Corrections are needed. Address items marked 'Action required' first.",
+    "block_action": "Action required",
+    "block_improve": "Possible improvements",
+    "block_improve_disclaimer": "Commands shown are suggestions — verify and adapt to your network before running",
+    "block_normal": "Normal configuration",
+    "implicit_policy": "Service(s) relying on default UFW policy rather than explicit rules. Correct if policy is deny, but an explicit rule is more robust.",
+    "implicit_svcs": "Affected service(s)",
+    "scope_line1": "This score covers firewall, services, SSH, access control, updates, system hardening, and detection tools.",
+    "scope_line2": "Application security, physical access, and other attack vectors are outside the scope of this audit."
+  },
+  "log_dir": {
+    "prompt": "Where to store detailed reports?",
+    "default_hint": "Press Enter for the default directory",
+    "saved": "Location saved: {path}",
+    "use": "Reports stored in: {path}"
+  },
+  "manage_logs": {
+    "title": "REPORT MANAGEMENT",
+    "no_dir": "No log location configured. Run first: sudo bob -d",
+    "no_logs": "No reports found in {path}",
+    "stored_in": "Reports in: {path}",
+    "size_label": "KB",
+    "prompt_intro": "To delete reports, enter their number(s):",
+    "prompt_ex_single": "delete reports #1 and #3",
+    "prompt_ex_range": "delete reports #2 through #4",
+    "prompt_ex_all": "delete all reports",
+    "prompt_ex_change": "change the report directory",
+    "prompt_quit": "Press Enter or 'q' to quit.",
+    "change_prompt": "New report storage path (Esc to cancel, Tab to complete)",
+    "location_updated": "Location updated: {path}",
+    "current_label": "current",
+    "previous_label": "Previous location",
+    "move_logs_prompt": "Move {count} report(s) to the new location?",
+    "move_logs_done": "{count} report(s) moved",
+    "cancelled": "Cancelled.",
+    "deleted_one": "{name} deleted",
+    "confirm_prompt": "Delete {count} report(s)?  Press y to confirm, any other key to cancel.",
+    "confirm_all": "Delete all {count} report(s)?",
+    "deleted_all": "{count} report(s) deleted",
+    "deleted_multi": "{count} report(s) deleted",
+    "invalid": "Unrecognised choice",
+    "history_title": "Score history (last {count} audit(s))"
+  },
+  "install_cron": {
+    "title": "UFW-AUDIT CRON SETUP",
+    "landing_prompt": "Create a new scheduled audit",
+    "quit_hint": "Enter 'q' at any prompt to cancel.",
+    "cancelled": "Wizard cancelled.",
+    "prompt_name": "Name for this cron job (Enter for '{suggestion}')",
+    "invalid_name": "Invalid name — use letters, digits, or hyphens",
+    "prompt_schedule": "Schedule:",
+    "schedule_daily": "Every day",
+    "schedule_weekdays": "Certain days of the week",
+    "schedule_monthdays": "Certain days of the month",
+    "schedule_custom": "Custom cron expression",
+    "prompt_weekdays": "Days of the week (1=Mon … 7=Sun, space or comma-separated, e.g. 1 3 5)",
+    "prompt_monthdays": "Days of the month (1-31, space or comma-separated, e.g. 1 15)",
+    "prompt_custom": "Cron expression (minute hour dom month dow, e.g. 0 3 * * 1)",
+    "invalid_schedule": "Invalid schedule",
+    "invalid_days": "No valid day specified",
+    "preview": "→ Schedule: {schedule}",
+    "prompt_time": "Execution time (HH:MM, default 03:00)",
+    "prompt_email": "Notification email (optional, Enter to skip)",
+    "mail_missing": "'mail' not available — install it: sudo apt install mailutils",
+    "no_log_dir": "No log location configured — set it first with: sudo bob -d",
+    "overwrite": "A cron already exists ({path}). Overwrite? [y/N]",
+    "script_written": "Script created: {path}",
+    "cron_written": "Cron installed: {path}",
+    "done_schedule": "Automated audit '{name}' configured — {schedule}",
+    "done": "Automated audit configured — next daily run at {time}",
+    "invalid_time": "Invalid time format (expected HH:MM)"
+  },
+  "manage_cron": {
+    "title": "UFW-AUDIT CRON MANAGEMENT",
+    "no_crons": "No UFW-AUDIT cron jobs installed. Run: sudo bob --install-cron",
+    "prompt_intro": "Manage your cron jobs:",
+    "prompt_ex_edit": "edit cron job #1",
+    "prompt_ex_email": "edit notification email for cron #1",
+    "prompt_ex_delete_one": "delete cron #1",
+    "prompt_ex_delete_list": "delete crons #1 and #3",
+    "prompt_ex_delete_range": "delete crons #1 through #3",
+    "prompt_ex_delete_all": "delete all cron jobs",
+    "prompt_ex_email_book": "manage the email address book",
+    "prompt_quit": "Press Enter or 'q' to quit.",
+    "email_label": "email",
+    "legacy_tag": "legacy",
+    "confirm_delete": "Delete cron '{name}'? [y/N]",
+    "confirm_delete_multi": "Delete {count} cron jobs ({names})? [y/N]",
+    "confirm_delete_all": "Delete ALL {count} cron jobs? [y/N]",
+    "deleted": "Cron '{name}' deleted",
+    "deleted_count": "{count} cron jobs deleted",
+    "edit_what": "Edit '{name}' — what to change?",
+    "edit_schedule_option": "Schedule",
+    "edit_email_option": "Notification email",
+    "edit_schedule": "Edit schedule for '{name}':",
+    "edit_email": "Edit notification email for '{name}':",
+    "email_updated": "Cron '{name}' — email updated: {email}",
+    "no_email": "(none)",
+    "confirm_update": "Apply this new schedule? [y/N]",
+    "updated": "Cron '{name}' updated — {schedule}",
+    "invalid": "Unrecognised choice",
+    "email_store_title": "EMAIL ADDRESS BOOK",
+    "email_store_empty": "No email address saved yet.",
+    "email_store_intro": "Manage your saved email addresses:",
+    "email_store_ex_delete": "delete address #1",
+    "email_store_ex_delete_list": "delete addresses #1 and #3",
+    "email_store_ex_delete_range": "delete addresses #1 through #3",
+    "email_store_ex_delete_all": "delete all addresses",
+    "email_store_ex_add": "add a new address",
+    "email_store_quit": "Press Enter or 'q' to quit.",
+    "email_store_enter": "New email address",
+    "email_store_invalid_email": "Invalid email address",
+    "email_store_added": "Address added: {email}",
+    "email_store_removed": "Address deleted: {email}",
+    "email_store_cleared": "All addresses deleted ({count})",
+    "email_store_invalid_sel": "Invalid selection",
+    "cancelled": "Cancelled."
+  },
+  "email_prompt": {
+    "title": "Notification email(s):",
+    "none": "(none / done)",
+    "new": "Enter a new address...",
+    "enter_new": "New email address",
+    "invalid": "Invalid email address — skipped",
+    "save": "Save '{email}' for future use? [y/N]",
+    "selected": "Selected so far: {emails}",
+    "add_another": "Add another email address? [y/N]",
+    "cancel": "Cancel — back to menu"
+  },
+  "fixes": {
+    "title": "AVAILABLE FIXES",
+    "none": "No automatic fix available.",
+    "count": "{count} automatic fix(es) available",
+    "apply_prompt": "Apply this fix? [y/N]",
+    "applied": "Applied",
+    "manual": "manual — apply the command manually",
+    "done": "Fixes complete. Re-run the audit to verify.",
+    "auto_mode_banner": "AUTO-FIX MODE — {count} fix(es) will be applied automatically",
+    "auto_summary_title": "AUTO-FIX SUMMARY",
+    "manual_items_title": "Manual actions required (no automatic fix available):",
+    "done_summary": "{applied} of {total} fix(es) applied.",
+    "dry_run_hint": "Dry run — use --fix --apply to execute fixes"
+  },
+  "risk_context": {
+    "title": "Risk context",
+    "exposure": "Exposure",
+    "threat": "Potential threat",
+    "level": "Risk level"
+  },
+  "config": {
+    "found": "Configuration found: {path}",
+    "reconfigure_hint": "To reset it: bob --reconfigure",
+    "port_prompt": "Enter port for {label}",
+    "port_saved": "Port {port} saved for future runs"
+  },
+  "report": {
+    "title": "UFW-AUDIT REPORT",
+    "system_info": "SYSTEM INFORMATION",
+    "next_steps": "NEXT STEPS",
+    "next_1": "Address all alerts first.",
+    "next_2": "Review warnings and assess their impact.",
+    "next_3": "Re-run the audit after each change to verify."
+  },
+  "cli": {
+    "help_usage": "Usage: bob [OPTIONS]",
+    "help_verbose": "  -v, --verbose           Show detailed port exposure for each service",
+    "help_detailed": "  -d, --detailed          Save full audit report to a log file",
+    "help_fix": "  --fix                   Offer to apply automatic corrections after the audit",
+    "help_yes": "  -y, --yes               Auto-confirm all fixes (use with caution)",
+    "help_reconf": "  --reconfigure           Reset saved port configuration and re-ask",
+    "help_nocolor": "  --no-color              Disable colour output",
+    "help_json": "  --json                  Export summary as JSON",
+    "help_jsonfull": "  --json-full             Export full audit details as JSON",
+    "help_logdays": "  --log-days=N            Analyse the last N days of UFW logs (default: 7)",
+    "help_french": "  --french                Switch interface to French",
+    "help_version": "  --version               Show version and exit",
+    "help_help": "  -h, --help              Show this help message",
+    "help_default": "  Run without options for a standard audit with coloured output."
+  },
+  "errors": {
+    "must_be_root": "This script must be run as root: sudo bob",
+    "ufw_not_found": "UFW is not installed on this system",
+    "unknown_option": "Unknown option: {option}"
+  },
+  "geo": {
+    "local_network": "local network"
+  },
+  "service_risk": {
+    "local_exposure_note": "Intrinsic risk (see above) — actual exposure: LOW (SSH not reachable from the internet on this network)",
+    "nonstandard_port_note": "Non-standard port — reduced exposure to automated scanners",
+    "ssh_server": {
+      "level": "CRITICAL",
+      "exposure": "Heavily targeted by automated scanners and brute-force attacks — internet-exposed by default",
+      "threat": "Full shell access to the machine, privilege escalation, lateral movement to other network systems"
+    },
+    "vnc_server": {
+      "level": "CRITICAL",
+      "exposure": "Often lacks native encryption; weak or absent authentication on older versions",
+      "threat": "Full visual and interactive desktop control — equivalent to physical access to the machine"
+    },
+    "ftp_server": {
+      "level": "CRITICAL",
+      "exposure": "Unencrypted protocol — credentials and data transmitted in plain text over the network",
+      "threat": "Credential theft, file access and exfiltration, potential pivot if credentials are reused"
+    },
+    "postgresql": {
+      "level": "CRITICAL",
+      "exposure": "Password or configurable authentication — direct exposure is rarely intentional",
+      "threat": "Full database exfiltration, system command execution via extensions (pg_execute_server_program)"
+    },
+    "redis": {
+      "level": "CRITICAL",
+      "exposure": "No authentication by default historically, very frequently misconfigured and exposed",
+      "threat": "Read/write access to all data, remote code execution (RCE) via configuration — documented and actively exploited attack vector"
+    },
+    "wireguard_vpn": {
+      "level": "HIGH",
+      "exposure": "Intentionally internet-facing for VPN function — limited attack surface by design",
+      "threat": "Full internal network access if tunnel is compromised or private keys are stolen"
+    },
+    "home_assistant": {
+      "level": "HIGH",
+      "exposure": "Web interface controlling physical devices — built-in authentication but often exposed for remote access",
+      "threat": "Control of physical devices (locks, alarms, switches), local network access via automations, home automation data exfiltration"
+    },
+    "nextcloud": {
+      "level": "HIGH",
+      "exposure": "Personal file server exposed to the internet — authentication required but significant attack surface depending on installed apps",
+      "threat": "Access to all personal files, contacts and calendars stored, potential pivot if credentials are compromised"
+    },
+    "samba_windows_file_sharing": {
+      "level": "CRITICAL",
+      "exposure": "Designed exclusively for local networks — inherently dangerous if exposed to the internet",
+      "threat": "File access and encryption (ransomware), lateral movement (EternalBlue/WannaCry), data exfiltration"
+    },
+    "mysql___mariadb": {
+      "level": "CRITICAL",
+      "exposure": "Password-based authentication, history of unauthenticated access CVEs",
+      "threat": "Full database exfiltration, data destruction, application-level access if credentials are shared"
+    },
+    "cockpit_web_admin": {
+      "level": "HIGH",
+      "exposure": "Web-based system administration interface — authentication required but significant attack surface",
+      "threat": "Full system administration if compromised: service management, users, network, root terminal"
+    },
+    "mosquitto_mqtt": {
+      "level": "HIGH",
+      "exposure": "MQTT broker often without authentication by default, listens on all interfaces",
+      "threat": "Unauthorised publish/subscribe to home automation topics, device control, sensor data interception"
+    },
+    "apache_web_server": {
+      "level": "MEDIUM",
+      "exposure": "Web server potentially exposed to the internet — commonly targeted by automated vulnerability scanners",
+      "threat": "Web application exploits, path traversal, remote code execution if CGI or modules are misconfigured"
+    },
+    "nginx_web_server": {
+      "level": "MEDIUM",
+      "exposure": "Web server potentially exposed to the internet — commonly targeted by automated vulnerability scanners",
+      "threat": "Web application exploits, reverse proxy misconfigurations leading to internal service exposure"
+    },
+    "transmission_web_ui": {
+      "level": "MEDIUM",
+      "exposure": "Web interface for BitTorrent client — unauthenticated access by default on older versions",
+      "threat": "Remote control of downloads, potential RCE via malicious torrents if exposed publicly"
+    },
+    "qbittorrent_web_ui": {
+      "level": "MEDIUM",
+      "exposure": "Web interface for BitTorrent client — default credentials (admin/adminadmin) frequently unchanged",
+      "threat": "Remote control of downloads, file system write access via download directory configuration"
+    },
+    "avahi_local_network_discovery": {
+      "level": "LOW",
+      "exposure": "mDNS/DNS-SD service — designed for local network use only, not internet-facing",
+      "threat": "Local network device and service enumeration — low risk on isolated or properly firewalled networks"
+    },
+    "cups_network_printing": {
+      "level": "LOW",
+      "exposure": "Print server — typically restricted to local network, not intended for internet exposure",
+      "threat": "Printer access and configuration disclosure on local network — minimal risk if not publicly exposed"
+    },
+    "jellyfin": {
+      "level": "MEDIUM",
+      "exposure": "Media server web interface — may be exposed for remote streaming access",
+      "threat": "Unauthorised media access, potential RCE if outdated versions with known CVEs are running"
+    },
+    "plex_media_server": {
+      "level": "MEDIUM",
+      "exposure": "Media server with cloud relay — phone-home by default, may be directly accessible if port-forwarded",
+      "threat": "Unauthorised media access, metadata exposure, potential RCE on outdated versions"
+    },
+    "gitea": {
+      "level": "MEDIUM",
+      "exposure": "Self-hosted Git service — may contain private repositories, credentials and CI/CD secrets",
+      "threat": "Source code and secret exfiltration, arbitrary code execution via Git hooks if admin account is compromised"
+    },
+    "syncthing": {
+      "level": "MEDIUM",
+      "exposure": "Peer-to-peer file sync — web UI bound to localhost by default, sync protocol may be externally reachable",
+      "threat": "File access and modification, directory traversal if misconfigured, data synchronisation interception"
+    },
+    "ollama_llm_server": {
+      "level": "MEDIUM",
+      "exposure": "Local LLM API server — no authentication by default, designed for local or trusted network use",
+      "threat": "Unauthorised model inference, resource exhaustion, potential data exfiltration via model prompts"
+    },
+    "telnet_server": {
+      "level": "CRITICAL",
+      "exposure": "Unencrypted plaintext protocol — credentials, commands and all data transmitted in clear text over the network",
+      "threat": "Credential theft in transit, session hijacking, trivial interception on any network segment — replace with SSH immediately"
+    },
+    "rdp___xrdp": {
+      "level": "CRITICAL",
+      "exposure": "Remote desktop protocol — primary target of ransomware operators and automated scanners (BlueKeep, DejaBlue CVEs)",
+      "threat": "Full graphical desktop access, credential theft, ransomware deployment, lateral movement to other systems"
+    },
+    "mongodb": {
+      "level": "CRITICAL",
+      "exposure": "No authentication by default in older versions — hundreds of thousands of unprotected instances found publicly exposed",
+      "threat": "Full database read/write access, data exfiltration and destruction, potential code execution via server-side JavaScript"
+    },
+    "elasticsearch": {
+      "level": "CRITICAL",
+      "exposure": "No authentication in open-source version by default — frequently misconfigured and indexed publicly by Shodan",
+      "threat": "Full exfiltration of all indexed documents, index deletion, cluster takeover — requires X-Pack Security or equivalent"
+    },
+    "memcached": {
+      "level": "CRITICAL",
+      "exposure": "No authentication, UDP enabled by default — actively abused for DDoS amplification attacks (factor up to 50,000x)",
+      "threat": "Cache poisoning and data exfiltration, amplification DDoS vector against third parties, service disruption"
+    }
+  },
+  "virt": {
+    "none_detected": "No virtualisation technology detected",
+    "bypass_risk": "{name} detected — {iface} bridge interface may insert iptables rules, bypassing UFW FORWARD policy",
+    "snap_network": "Snap package '{pkg}' has active network connections — verify it does not bypass UFW"
+  },
+  "hardening": {
+    "no_issues": "System hardening parameters look good",
+    "apparmor_not_installed": "AppArmor not detected — consider enabling it for mandatory access control",
+    "apparmor_enforce": "AppArmor active — {enforced} profile(s) in enforce mode, {complain} in complain mode",
+    "apparmor_not_enforce": "AppArmor loaded but in {mode} mode — consider switching to enforce",
+    "rp_filter_ok": "Reverse path filtering enabled in strict mode (rp_filter=1)",
+    "rp_filter_loose": "Reverse path filtering in loose mode (rp_filter=2) — consider switching to strict mode (=1)",
+    "rp_filter_disabled": "Reverse path filtering disabled — risk of IP spoofing attacks",
+    "redirects_ok": "ICMP redirect acceptance is disabled",
+    "redirects_enabled": "ICMP redirects accepted — risk of routing table manipulation",
+    "log_martians_ok": "Martian packet logging is enabled",
+    "log_martians_disabled": "Martian packet logging disabled — spoofed packets will not be logged",
+    "log_martians_disabled_detail": "Martian packets have spoofed or otherwise invalid source addresses. Logging them helps detect reconnaissance and IP spoofing attacks.",
+    "icmp_broadcast_ok": "ICMP broadcast echo is ignored",
+    "icmp_broadcast_enabled": "ICMP broadcast echo not ignored — smurf amplification risk",
+    "tcp_syncookies_ok": "SYN flood protection active (tcp_syncookies={value})",
+    "tcp_syncookies_disabled": "SYN flood protection disabled (tcp_syncookies=0) — system vulnerable to SYN flood attacks",
+    "accept_source_route_ok": "IP source routing disabled (accept_source_route=0)",
+    "accept_source_route_enabled": "IP source routing enabled (accept_source_route=1) — allows attackers to specify packet path",
+    "accept_redirects_v6_ok": "IPv6 ICMP redirects disabled (net.ipv6.conf.all.accept_redirects=0)",
+    "accept_redirects_v6_enabled": "IPv6 ICMP redirects accepted — router impersonation attack possible on the local network",
+    "send_redirects_ok": "ICMP redirect sending disabled (send_redirects=0)",
+    "send_redirects_enabled": "System is sending ICMP redirects (send_redirects=1) — unnecessary on a non-router, can be abused for MITM",
+    "send_redirects_detail": "ICMP redirects tell a host to use a different gateway. A non-router should never send them; an attacker can exploit this to reroute traffic (man-in-the-middle).",
+    "protected_hardlinks_ok": "Hard link protection enabled (fs.protected_hardlinks=1)",
+    "protected_hardlinks_disabled": "Hard link protection disabled (fs.protected_hardlinks=0) — allows hard link attacks for privilege escalation",
+    "protected_symlinks_ok": "Symbolic link protection enabled (fs.protected_symlinks=1)",
+    "protected_symlinks_disabled": "Symbolic link protection disabled (fs.protected_symlinks=0) — allows symlink attacks via /tmp race conditions"
+  },
+  "disk": {
+    "ok": "All disks passed SMART health check — no critical attributes detected",
+    "smartctl_missing": "smartctl not installed — SMART health check skipped",
+    "smartctl_missing_detail": "smartmontools provides disk health monitoring via SMART. Without it, failing drives cannot be detected early.",
+    "smart_ok": "{device} ({model}) — SMART: PASSED",
+    "smart_failed": "{device} ({model}) — SMART: FAILED — disk failure imminent",
+    "smart_failed_detail": "This disk has reported a SMART failure. Back up data immediately and plan for disk replacement.",
+    "smart_failed_reason": "SMART FAILED on {device} — disk failure imminent",
+    "smart_virtual": "{device} — SMART not applicable (virtualised or unsupported device)",
+    "smart_unknown": "{device} — SMART health status unknown (device may not support SMART)",
+    "reallocated_sectors": "{device} — {count} reallocated sector(s) detected",
+    "reallocated_sectors_detail": "Reallocated sectors indicate bad blocks remapped by the drive firmware. A non-zero count means sectors have already failed.",
+    "reallocated_sectors_reason": "Reallocated sectors on {device}",
+    "pending_sectors": "{device} — {count} pending sector(s) (candidate for reallocation)",
+    "pending_sectors_detail": "Pending sectors are unstable — the drive is attempting to remap them. May indicate impending failure.",
+    "pending_sectors_reason": "Pending sectors on {device}",
+    "uncorrectable_errors": "{device} — {count} uncorrectable error(s) detected",
+    "uncorrectable_errors_detail": "Uncorrectable errors could not be remapped. Data in affected sectors is unreadable.",
+    "uncorrectable_errors_reason": "Uncorrectable errors on {device}",
+    "partition_critical": "{mountpoint} partition is {pct}% full",
+    "partition_critical_detail": "Partition at {mountpoint} is critically full. Running out of disk space causes service failures and data corruption.",
+    "partition_critical_reason": "Partition {mountpoint} is {pct}% full",
+    "partition_warn": "{mountpoint} partition is {pct}% full — approaching capacity",
+    "col_mountpoint": "MOUNTPOINT",
+    "col_device": "DEVICE",
+    "col_size": "SIZE",
+    "col_used": "USED",
+    "col_free": "FREE",
+    "smart_tips": "Deeper SMART analysis available via smartmontools",
+    "smart_tips_detail": "Each -a command prints the full SMART report (attributes + health) for one disk. Run tests one disk at a time — each command below targets the first disk as an example."
+  },
+  "memory": {
+    "no_swap": "No swap space configured",
+    "swap_stats": "Swap: {used_mb} MB used / {total_mb} MB total ({pct}% in use)",
+    "swappiness_ok": "swappiness={value} — well tuned for this system",
+    "swappiness_ssd_wear": "Swap on SSD with swappiness={value} — unnecessary SSD wear",
+    "swappiness_ssd_detail": "High swappiness on an SSD causes premature wear. Recommended: vm.swappiness={recommended}",
+    "swappiness_unjustified": "Swap in use ({swap_pct}%) while {ram_pct}% of RAM is still free — swappiness={value} is too aggressive",
+    "swappiness_unjustified_detail": "The kernel is swapping out pages despite available RAM. Lowering swappiness reduces unnecessary I/O. Recommended: vm.swappiness={recommended}",
+    "swappiness_suboptimal": "swappiness={value} (system default) — consider lowering to {recommended} to reduce unnecessary swapping"
+  },
+  "compare": {
+    "section_title": "CHANGES SINCE LAST AUDIT",
+    "previous_run": "Previous audit: {timestamp}",
+    "score_improved": "Score improved by {delta} point(s)",
+    "score_degraded": "Score degraded by {delta} point(s)",
+    "score_unchanged": "Score unchanged",
+    "alerts_increased": "{delta} new alert(s) since last audit",
+    "alerts_decreased": "{delta} alert(s) resolved since last audit",
+    "warns_increased": "{delta} new warning(s) since last audit",
+    "warns_decreased": "{delta} warning(s) resolved since last audit",
+    "port_appeared": "New open port detected: {port}",
+    "port_closed": "Port no longer open: {port}",
+    "service_appeared": "Service became active: {service}",
+    "service_stopped": "Service became inactive: {service}",
+    "no_changes": "No changes detected since last audit",
+    "info_decreased": "{delta} info notice(s) resolved since last audit",
+    "info_increased": "{delta} new info notice(s) since last audit",
+    "key_appeared": "New finding: {finding}",
+    "key_resolved": "Resolved: {finding}"
+  },
+  "watch": {
+    "header": "bob --watch  │  Interval: {interval}s  │  Ctrl+C to quit",
+    "score": "Score {score}/10",
+    "baseline_established": "Baseline established",
+    "next_check": "Next check in {interval}s (at {time})",
+    "stopped": "Watch mode stopped."
+  },
+  "ipv6": {
+    "config_ok": "UFW IPv6 configuration matches kernel IPv6 state",
+    "both_disabled": "IPv6 disabled both in kernel and UFW — consistent",
+    "ufw_enabled_kernel_disabled": "UFW has IPv6 enabled but kernel IPv6 is disabled — UFW (v6) rules have no effect",
+    "ufw_disabled_no_listeners": "UFW IPv6 disabled and no IPv6 listeners detected — no immediate risk",
+    "ufw_disabled_listeners_present": "{count} service(s) listening on IPv6 (::) but UFW is not configured for IPv6 (IPV6=no)",
+    "listeners_list": "Listening port(s): {ports}",
+    "port_no_v6_rule": "Port {port} listening on IPv6 (::) without a UFW (v6) rule",
+    "all_ports_covered": "All {count} IPv6 listener(s) are covered by UFW (v6) rules",
+    "ufw_disabled_listeners_link_local": "{count} service(s) listening on IPv6 (::) but UFW IPv6 is disabled — link-local addresses only, no internet exposure"
+  },
+  "audit": {
+    "starting": "Starting audit",
+    "audit_profile": "Audit profile: {profile}",
+    "report_saved": "Detailed report: {path}",
+    "running_checks": "Active checks: {checks}"
+  },
+  "deduction": {
+    "docker_bypass": "Docker bypass: {container} {port}",
+    "netbios_no_rule": "NetBIOS port {port} without UFW rule",
+    "port_no_rule": "Port {port} on 0.0.0.0 without UFW rule",
+    "brute_force": "Bruteforce {ip} on {port}",
+    "service_open_world": "{label} {port} open world"
+  },
+  "ignored": {
+    "header": "Suppressed findings (ignore list)",
+    "tag": "IGNORED",
+    "summary": "{count} finding(s) silenced by ignore.yml — run with --show-ignored to display them",
+    "hint": "Run `bob --ignore {check_key}` to silence this finding permanently"
+  },
+  "profile": {
+    "active": "Audit profile: {name}",
+    "not_found": "Profile {name!r} not found — using default (server)",
+    "section_skipped": "Section skipped by profile ({name})"
+  },
+  "ssh": {
+    "not_installed": "SSH server (sshd) is not installed",
+    "not_installed_detail": "If SSH access is needed: {cmd}",
+    "not_active": "SSH server is installed but not running",
+    "not_active_detail": "Enable with: sudo systemctl enable --now ssh",
+    "active": "SSH server is active",
+    "permit_root_login": "Root login via SSH is permitted (PermitRootLogin = {value})",
+    "permit_root_login_detail": "Set PermitRootLogin no in /etc/ssh/sshd_config, then: sudo systemctl restart ssh",
+    "permit_root_login_disabled": "Root login disabled (PermitRootLogin = no)",
+    "permit_root_login_restricted": "Root login restricted to key-based auth (PermitRootLogin = {value})",
+    "password_auth": "Password authentication is enabled (PasswordAuthentication = yes)",
+    "password_auth_detail": "Brute-force risk. Prefer key-based auth: set PasswordAuthentication no in sshd_config",
+    "password_auth_local": "PasswordAuthentication enabled — low risk (SSH not publicly accessible on this network)",
+    "password_auth_local_detail": "SSH is not reachable from outside (UFW default deny + local network). Password authentication is acceptable in this context, though key-based auth is still best practice.",
+    "local_context_note": "Context: SSH is not publicly accessible (UFW default deny + local network) — above findings carry reduced real-world risk in this configuration.",
+    "permit_empty_passwords": "Empty passwords are permitted (PermitEmptyPasswords = yes)",
+    "max_auth_tries": "MaxAuthTries = {value} — recommended value is 3 or less",
+    "login_grace_time": "LoginGraceTime = {value}s — recommended value is 60s or less",
+    "x11_forwarding": "X11 forwarding is enabled — increases attack surface if not needed",
+    "ignore_rhosts_disabled": "IgnoreRhosts is disabled — .rhosts files are trusted (legacy risk)",
+    "host_based_auth": "Host-based authentication is enabled — allows login from trusted hosts without password",
+    "permit_user_env": "PermitUserEnvironment is enabled — users can inject environment variables",
+    "strict_modes_disabled": "StrictModes is disabled — sshd skips file permission checks",
+    "weak_ciphers": "Deprecated ciphers configured: {ciphers}",
+    "weak_macs": "Deprecated MAC algorithms configured: {macs}",
+    "weak_kex": "Deprecated key exchange algorithms: {kex}",
+    "no_allow_users": "No AllowUsers or AllowGroups restriction — any valid user can attempt SSH login",
+    "allow_tcp_forwarding": "AllowTcpForwarding is enabled — TCP tunnelling may expose internal services",
+    "allow_tcp_forwarding_detail": "Set AllowTcpForwarding no in /etc/ssh/sshd_config to prevent port tunnelling through this server.",
+    "pubkey_auth_disabled": "PubkeyAuthentication is disabled — only password login is possible",
+    "pubkey_auth_disabled_detail": "Enable key-based authentication: set PubkeyAuthentication yes in /etc/ssh/sshd_config.",
+    "config_ok": "sshd configuration: no critical issues detected",
+    "dir_not_found": "No ~/.ssh directory found for user {user}",
+    "dir_perms": "~/.ssh permissions are {perms} — expected 700",
+    "dir_perms_ok": "~/.ssh directory permissions are correct (700)",
+    "no_private_keys": "No private keys found in ~/.ssh/",
+    "private_key_perms": "Private key {name} has permissions {perms} — expected 600",
+    "dsa_key": "DSA key found: {name} — DSA is deprecated and cryptographically broken",
+    "dsa_key_detail": "Generate a new key: ssh-keygen -t ed25519",
+    "rsa_weak": "RSA key {name}: {bits} bits — minimum recommended size is 2048 bits",
+    "rsa_ok": "RSA key {name}: {bits} bits",
+    "no_passphrase": "Private key {name} has no passphrase — unprotected if the file is stolen",
+    "key_ok": "Private key {name}: type and permissions OK",
+    "authorized_keys_not_found": "No authorized_keys file — public-key authentication not configured",
+    "authorized_keys_perms": "authorized_keys permissions are {perms} — expected 600",
+    "authorized_keys_weak_key": "Weak key in authorized_keys line {line}: {type} ({bits} bits)",
+    "authorized_keys_dsa": "DSA key in authorized_keys line {line} — DSA is deprecated",
+    "authorized_keys_duplicate": "Duplicate key in authorized_keys (lines {a} and {b})",
+    "authorized_keys_no_restrictions": "{count} key(s) in authorized_keys have no restrictions (no command=, from=, or no-pty)",
+    "authorized_keys_ok": "authorized_keys: {count} key(s), no issues found",
+    "client_config_not_found": "No ~/.ssh/config — SSH client not customized",
+    "client_strict_host_no": "StrictHostKeyChecking = no in ~/.ssh/config — disables host verification (MITM risk)",
+    "client_strict_host_no_detail": "Remove or set StrictHostKeyChecking ask (default) in ~/.ssh/config",
+    "client_known_hosts_devnull": "UserKnownHostsFile /dev/null in ~/.ssh/config — host fingerprints never stored (MITM risk)",
+    "client_known_hosts_devnull_detail": "Remove this line from ~/.ssh/config to restore host verification",
+    "client_forward_agent": "ForwardAgent = yes in ~/.ssh/config — SSH agent forwarding enabled",
+    "client_forward_agent_detail": "Agent forwarding lets a compromised remote host use your local keys. Disable if not needed.",
+    "client_config_ok": "~/.ssh/config: no dangerous settings detected",
+    "known_hosts_not_found": "No known_hosts file — no hosts have been connected to yet",
+    "known_hosts_duplicate": "Duplicate entries for host {host} in known_hosts",
+    "known_hosts_deprecated": "Deprecated key type in known_hosts line {line}: {type}",
+    "known_hosts_ok": "known_hosts: {count} entries, no issues detected",
+    "host_key_dsa": "DSA server host key found: {name} — DSA is cryptographically broken",
+    "host_key_dsa_detail": "DSA host keys use a broken algorithm and can be forged by an attacker with sufficient resources. Remove the DSA host key and regenerate as ed25519. All clients that have cached this host key will need to accept the new one.",
+    "host_key_dsa_reason": "DSA server host key in use: {name}",
+    "host_key_rsa_short": "RSA server host key {name}: {bits} bits — consider regenerating at 4096 bits or switching to ed25519",
+    "host_key_rsa_short_detail": "RSA host keys below 4096 bits are technically acceptable but no longer considered optimal. Modern clients and CAs recommend 4096-bit RSA or ed25519 for server identity keys.",
+    "host_key_ok": "Server host key {name} ({type}): strong algorithm"
+  },
+  "file_perms": {
+    "world_writable": "{path} is world-writable ({mode}) — any user can modify this critical file",
+    "world_writable_detail": "Fix immediately: sudo chmod o-w {path}",
+    "world_writable_reason": "{path} is world-writable",
+    "too_permissive": "{path}: permissions {mode} are too open (expected {expected})",
+    "too_permissive_detail": "Reduce permissions: sudo chmod {expected} {path}",
+    "too_permissive_reason": "{path} permissions too permissive",
+    "ssh_host_key_perms": "SSH host key {path}: permissions {mode} (expected 0o600)",
+    "ssh_host_key_perms_detail": "Host private keys must be readable only by root. Fix: sudo chmod 600 {path}",
+    "ssh_host_key_perms_reason": "SSH host key permissions too open: {path}",
+    "sudoers_nopasswd_all": "NOPASSWD:ALL in sudoers — unrestricted passwordless sudo: {line}",
+    "sudoers_nopasswd_all_detail": "NOPASSWD:ALL grants full root access without password. Restrict to specific commands if possible.",
+    "sudoers_nopasswd_all_reason": "NOPASSWD:ALL found in sudoers",
+    "sudoers_nopasswd_specific": "{count} sudoers rule(s) grant passwordless access to specific command(s)",
+    "sudoers_nopasswd_specific_detail": "Passwordless sudo for specific commands is often intentional. Verify each entry is still needed.",
+    "ok": "Sensitive file permissions and sudoers: no issues detected"
+  },
+  "updates": {
+    "no_apt": "apt not available — package update check skipped",
+    "security_pending": "{count} security package(s) pending update: {packages}",
+    "security_pending_detail": "Security updates fix known vulnerabilities. Apply immediately: sudo apt-get upgrade",
+    "security_pending_reason": "{count} security package(s) pending update",
+    "regular_pending": "{count} package(s) pending update (non-security)",
+    "unattended_not_configured": "unattended-upgrades not configured — security patches require manual intervention",
+    "unattended_not_configured_detail": "Install and enable: sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
+    "unattended_not_configured_reason": "unattended-upgrades not configured",
+    "ok": "System packages are up to date"
+  },
+  "kernel_hardening": {
+    "aslr_full": "ASLR fully enabled (randomize_va_space=2)",
+    "aslr_conservative": "ASLR in conservative mode (randomize_va_space=1) — consider enabling full randomisation",
+    "aslr_disabled": "ASLR is disabled (randomize_va_space=0) — memory layout predictable, exploits easier",
+    "ptrace_ok": "ptrace restricted (yama.ptrace_scope={scope})",
+    "ptrace_unrestricted": "ptrace unrestricted (yama.ptrace_scope=0) — any process can inspect or attach to any other",
+    "suid_dump_ok": "Core dumps from SUID binaries disabled (suid_dumpable=0)",
+    "suid_dump_root": "Core dumps from SUID binaries restricted to root (suid_dumpable=2)",
+    "suid_dump_root_detail": "Core dumps of SUID processes can contain credentials or secrets from elevated contexts. Restricting them to root limits exposure; disabling entirely (value=0) is safer.",
+    "suid_dump_all": "Core dumps enabled for all processes including SUID (suid_dumpable=1) — may expose credentials from privileged programs",
+    "suid_dump_all_detail": "Core dumps of SUID processes can expose credentials, keys, or memory of privileged programs to any local user. Disabling them (value=0) eliminates this risk.",
+    "kptr_ok": "Kernel pointer restriction enabled (kptr_restrict={val})",
+    "kptr_exposed": "Kernel pointers exposed in /proc (kptr_restrict=0) — may leak kernel addresses to unprivileged users",
+    "kptr_exposed_detail": "When kptr_restrict=0, kernel symbol addresses appear in /proc files and can be read by unprivileged users, making KASLR bypass much easier.",
+    "dmesg_ok": "dmesg access restricted to privileged users (dmesg_restrict=1)",
+    "dmesg_exposed": "dmesg accessible to all users (dmesg_restrict=0) — kernel messages may reveal exploitable information",
+    "dmesg_exposed_detail": "When dmesg_restrict=0, any local user can read kernel log messages, which may reveal memory layout, loaded modules, or hardware details useful for exploitation."
+  },
+  "suid_audit": {
+    "scan_skipped": "SUID/SGID scan timed out or failed — check skipped",
+    "ok": "All SUID binaries are known-safe ({suid_count} SUID, {sgid_count} SGID)",
+    "unexpected_suid": "{count} unexpected root-owned SUID binary/binaries: {paths}",
+    "unexpected_suid_detail": "These binaries run as root regardless of who launches them. Verify each one is intentional, then either remove the SUID bit (chmod u-s) or add it to your local whitelist.",
+    "unexpected_suid_reason": "{count} unexpected SUID binary/binaries found",
+    "unexpected_sgid": "{count} unexpected SGID binary/binaries: {paths}",
+    "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing."
+  },
+  "docker_audit": {
+    "scan_error": "Docker daemon not reachable — container security check skipped",
+    "no_containers": "No running containers — nothing to audit",
+    "ok": "{count} running container(s) — no critical security issues found",
+    "privileged": "{count} container(s) running in privileged mode: {containers}",
+    "privileged_detail": "Privileged containers have full access to the host kernel and devices. This effectively disables container isolation. Replace with fine-grained capabilities (--cap-add) if elevated privileges are required.",
+    "privileged_reason": "{count} privileged container(s) running",
+    "socket_mounted": "{count} container(s) with Docker socket mounted: {containers}",
+    "socket_mounted_detail": "Mounting /var/run/docker.sock inside a container grants root-equivalent control over the host. Any process in the container can create new privileged containers or escape the sandbox.",
+    "socket_mounted_reason": "{count} container(s) with Docker socket mounted",
+    "userns_not_configured": "User namespace remapping not configured (userns-remap)",
+    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root.",
+    "userns_configured": "User namespace remapping enabled (userns-remap)",
+    "root_containers": "{count} container(s) running as root (UID 0): {containers}",
+    "root_containers_detail": "Running containers as root increases the blast radius of a container escape. Set a non-root USER in the Dockerfile or pass --user at runtime.",
+    "host_network": "{count} container(s) using host network namespace: {containers}",
+    "host_network_detail": "Containers in host network mode share the host's network stack and can bind to any port. Use bridge networking and publish only required ports."
+  },
+  "kernel_modules": {
+    "no_lsmod": "lsmod not available — kernel module check skipped",
+    "risky_fs": "Risky filesystem module(s) loaded: {modules}",
+    "risky_fs_detail": "These modules are rarely needed on a server and widen the attack surface. Unload and blacklist them.",
+    "risky_fs_reason": "Risky filesystem module(s) loaded: {modules}",
+    "risky_net": "Risky network protocol module(s) loaded: {modules}",
+    "risky_net_detail": "These protocols (DCCP, SCTP, RDS, TIPC) are rarely used and have a history of kernel exploits. Unload and blacklist them.",
+    "risky_net_reason": "Risky network protocol module(s) loaded: {modules}",
+    "ok": "No risky kernel modules loaded",
+    "kernels_reboot_pending": "Reboot pending — running kernel ({running}) is not the latest installed ({recent})",
+    "kernels_reboot_pending_detail": "Installed: {installed}\nDo not remove old kernels yet. Reboot into {recent} first and verify the system works correctly.",
+    "kernels_obsolete": "{count} obsolete kernel(s) detected (running: {running}, latest: {recent})",
+    "kernels_obsolete_same": "{count} obsolete kernel(s) detected (running: {running})",
+    "kernels_obsolete_detail": "Installed : {installed}\nObsolete  : {to_remove}\nThis command removes the kernel image only. Run sudo apt autoremove --purge afterwards to clean up associated headers and modules. Execute only after verifying the system boots correctly on {recent}.",
+    "kernels_listed": "{count} kernel(s) installed: {installed} — no cleanup needed",
+    "kernels_update_available": "Kernel update available ({candidate} in apt repository)",
+    "kernels_up_to_date": "Kernel {version} — up to date in the apt repository"
+  },
+  "cron_audit": {
+    "pipe_to_shell": "{count} cron job(s) pipe remote content into a shell (curl/wget | sh)",
+    "pipe_to_shell_detail": "Piping remote downloads directly into a shell is a common supply-chain attack vector. Review and replace with explicit script downloads and integrity checks.",
+    "pipe_to_shell_reason": "{count} cron job(s) pipe remote content into a shell",
+    "world_writable": "{count} script(s) referenced in cron are world-writable: {scripts}",
+    "world_writable_detail": "World-writable scripts can be replaced by any local user, enabling privilege escalation. Restrict permissions immediately.",
+    "world_writable_reason": "{count} world-writable script(s) in cron",
+    "unexpected_users": "Unexpected user crontab(s) found: {users}",
+    "ok": "No risky patterns found in cron jobs"
+  },
+  "services_state": {
+    "no_systemctl": "systemctl not available — service state check skipped",
+    "service_inactive": "Security service enabled but not running: {service}",
+    "service_inactive_detail": "This service is set to start at boot but is currently stopped or failed. Check its logs and restart it.",
+    "service_inactive_reason": "Security service inactive: {service}",
+    "ok": "All monitored security services are active"
+  },
+  "output": {
+    "recommendation_label": "What to do?",
+    "check_label": "Check:"
+  },
+  "domain_scores": {
+    "title": "Domain Scores",
+    "ssh": "SSH",
+    "samba": "Samba Security",
+    "file_perms": "Files & Access",
+    "updates": "Updates",
+    "hardening": "Hardening",
+    "disk": "Disk Health",
+    "firewall": "Firewall & Services"
+  },
+  "explain": {
+    "ssh": {
+      "password_auth": {
+        "title": "Password authentication enabled (PasswordAuthentication yes)",
+        "why": "Allows anyone to attempt to guess passwords via brute force. Millions of bots scan the internet 24/7 trying common passwords against SSH port 22. A weak or reused password is all it takes for a full compromise.",
+        "how": "1. Generate a key pair if you don't have one:\n   ssh-keygen -t ed25519\n2. Copy your public key to the server:\n   ssh-copy-id user@server\n3. Disable password auth:\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "permit_root_login": {
+        "title": "Root SSH login permitted (PermitRootLogin)",
+        "why": "Direct root login bypasses audit trails and gives full system access from the first connection. If an attacker guesses or steals the root credential, no further privilege escalation is needed — the server is fully compromised immediately.",
+        "how": "1. Ensure a regular user with sudo rights exists\n2. Disable root login:\n   sudo nano /etc/ssh/sshd_config  →  PermitRootLogin no\n3. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "permit_empty_passwords": {
+        "title": "Empty passwords allowed (PermitEmptyPasswords yes)",
+        "why": "Any account without a password is directly accessible over SSH with a blank password. This is an immediate full-access vulnerability requiring zero effort from an attacker.",
+        "how": "1. Disable empty passwords:\n   sudo nano /etc/ssh/sshd_config  →  PermitEmptyPasswords no\n2. Lock accounts with empty passwords:\n   sudo passwd -l <username>\n3. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "allow_tcp_forwarding": {
+        "title": "TCP forwarding enabled (AllowTcpForwarding yes)",
+        "why": "TCP forwarding lets any authenticated user tunnel arbitrary TCP traffic through SSH. An attacker with a valid account can pivot to internal services that are not directly reachable from the internet.",
+        "how": "1. Disable TCP forwarding:\n   sudo nano /etc/ssh/sshd_config  →  AllowTcpForwarding no\n2. If specific users need port forwarding, use:\n   AllowTcpForwarding local\n3. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "pubkey_auth_disabled": {
+        "title": "Public key authentication disabled (PubkeyAuthentication no)",
+        "why": "Disabling public key authentication forces all users onto password login. This removes the strongest authentication mechanism available and makes the server entirely dependent on password strength.",
+        "how": "1. Enable key-based authentication:\n   sudo nano /etc/ssh/sshd_config  →  PubkeyAuthentication yes\n2. Generate a key pair:\n   ssh-keygen -t ed25519\n3. Copy the key to the server:\n   ssh-copy-id user@server\n4. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "x11_forwarding": {
+        "title": "X11 forwarding enabled (X11Forwarding yes)",
+        "why": "X11 forwarding exposes your local X11 display to a remote server. A malicious or compromised remote host could capture keystrokes and screen contents from your X session.",
+        "how": "1. Disable X11 forwarding:\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. If genuinely needed, ensure X11UseLocalhost yes is also set\n3. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "dsa_key": {
+        "title": "DSA host key in use",
+        "why": "DSA keys are cryptographically broken and deprecated in OpenSSH 7.0+. The algorithm offers only 1024-bit security and is vulnerable to attacks when the random number generator produces weak values.",
+        "how": "1. Remove the DSA host key:\n   sudo rm /etc/ssh/ssh_host_dsa_key*\n2. Regenerate all host keys:\n   sudo ssh-keygen -A\n3. Restart SSH:\n   sudo systemctl restart ssh\n4. Remove old fingerprints from clients:\n   ssh-keygen -R <hostname>"
+      },
+      "no_passphrase": {
+        "title": "Private key without passphrase",
+        "why": "If the key file is copied or stolen — via a compromised server, backup leak, or misconfigured storage — the attacker gains immediate access to every system that trusts it. No cracking required.",
+        "how": "1. Add a passphrase to an existing key:\n   ssh-keygen -p -f ~/.ssh/id_ed25519\n2. Use ssh-agent to avoid re-entering the passphrase every session\n3. For service accounts, use dedicated keys with restrictive authorized_keys options (command=, from=)"
+      },
+      "client_strict_host_no": {
+        "title": "StrictHostKeyChecking disabled in SSH client config",
+        "why": "Disabling host verification allows man-in-the-middle (MITM) attacks: an attacker can silently intercept your SSH session and impersonate the server with no warning displayed.",
+        "how": "1. Remove StrictHostKeyChecking no from ~/.ssh/config\n2. Use the default: StrictHostKeyChecking ask (first connection prompts, subsequent connections verify)\n3. To skip verification for one specific host only, use a Host block:\n   Host jump-host.example.com\n       StrictHostKeyChecking no"
+      },
+      "ignore_rhosts_disabled": {
+        "title": "IgnoreRhosts disabled — .rhosts files trusted",
+        "why": ".rhosts files allow passwordless login based on hostname alone. Hostnames can be spoofed, making this a trivial authentication bypass that has been obsolete for decades.",
+        "how": "1. Enable IgnoreRhosts (the default):\n   sudo nano /etc/ssh/sshd_config  →  IgnoreRhosts yes\n2. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "host_based_auth": {
+        "title": "Host-based authentication enabled",
+        "why": "Host-based authentication trusts the identity of a remote host rather than a user credential. If the trusted host is compromised, attackers automatically gain access to this server without any further authentication.",
+        "how": "1. Disable host-based authentication (the default):\n   sudo nano /etc/ssh/sshd_config  →  HostbasedAuthentication no\n2. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "strict_modes_disabled": {
+        "title": "SSH StrictModes disabled",
+        "why": "Without StrictModes, sshd skips permission checks on ~/.ssh and key files. World-readable private keys or group-writable home directories are silently accepted, effectively nullifying file permission security.",
+        "how": "1. Enable StrictModes (the default):\n   sudo nano /etc/ssh/sshd_config  →  StrictModes yes\n2. Fix file permissions:\n   chmod 700 ~/.ssh\n   chmod 600 ~/.ssh/authorized_keys\n3. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "max_auth_tries": {
+        "title": "Too many authentication attempts allowed (MaxAuthTries > 3)",
+        "why": "Each failed SSH attempt can probe valid usernames and test credentials. With the default of 6 attempts, an automated attack can test many passwords per connection before being disconnected. Reducing to 3 limits the credential surface per connection and makes brute-force campaigns significantly slower.",
+        "how": "1. Reduce MaxAuthTries:\n   sudo nano /etc/ssh/sshd_config  →  MaxAuthTries 3\n2. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "permit_user_env": {
+        "title": "User environment variables allowed (PermitUserEnvironment yes)",
+        "why": "Allowing users to set environment variables via ~/.ssh/environment or authorized_keys options enables privilege escalation through environment manipulation: LD_PRELOAD, PATH, or PYTHONPATH overrides can redirect execution to attacker-controlled code even when the binary is trusted.",
+        "how": "1. Disable user environment:\n   sudo nano /etc/ssh/sshd_config  →  PermitUserEnvironment no\n2. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "weak_ciphers": {
+        "title": "Weak SSH cipher suites in use",
+        "why": "Legacy ciphers (3DES-CBC, arcfour/RC4, blowfish-CBC, CBC-mode AES) are cryptographically weak or broken. CBC-mode ciphers are vulnerable to BEAST and Lucky13 attacks. RC4 has statistical biases exploitable with enough traffic. An attacker recording sessions could later decrypt them.",
+        "how": "1. Restrict to strong ciphers:\n   sudo nano /etc/ssh/sshd_config\n   Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr\n2. Restart SSH:\n   sudo systemctl restart ssh\n3. Test your client still connects:\n   ssh -Q cipher  # lists supported ciphers"
+      },
+      "weak_macs": {
+        "title": "Weak SSH MAC algorithms in use",
+        "why": "Weak MACs (hmac-md5, hmac-sha1, umac-64) are vulnerable to collision attacks. A compromised MAC means message integrity cannot be guaranteed — an attacker in a man-in-the-middle position could tamper with session data in transit without detection. MD5 and SHA-1 are no longer collision-resistant.",
+        "how": "1. Restrict to strong MACs:\n   sudo nano /etc/ssh/sshd_config\n   MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com\n2. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "weak_kex": {
+        "title": "Weak SSH key exchange algorithms in use",
+        "why": "Weak KEX algorithms (diffie-hellman-group1-sha1 uses a 1024-bit group; diffie-hellman-group14-sha1 uses deprecated SHA-1) offer insufficient forward secrecy. Nation-state actors have demonstrated precomputation attacks against standard 1024-bit DH groups (Logjam). Compromised KEX means the session key can be recovered after the fact.",
+        "how": "1. Restrict to strong KEX:\n   sudo nano /etc/ssh/sshd_config\n   KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512\n2. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "rsa_weak": {
+        "title": "RSA host key too short (< 4096 bits)",
+        "why": "RSA keys shorter than 4096 bits are considered weak by modern cryptographic standards. As computing power increases and factorisation attacks improve, short keys become feasible to break. Keys under 2048 bits are practically broken today.",
+        "how": "1. Generate a new 4096-bit RSA host key:\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Or prefer Ed25519 (shorter but stronger):\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n3. Restart SSH:\n   sudo systemctl restart ssh\n4. Remove old host fingerprints on clients:\n   ssh-keygen -R <hostname>"
+      },
+      "login_grace_time": {
+        "title": "LoginGraceTime too long (> 60s)",
+        "why": "A long grace period keeps unauthenticated TCP connections open for longer than necessary. An attacker can hold open many parallel SSH connections without completing authentication, potentially exhausting connection limits and degrading service for legitimate users.",
+        "how": "1. Reduce LoginGraceTime:\n   sudo nano /etc/ssh/sshd_config  →  LoginGraceTime 30\n2. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "no_allow_users": {
+        "title": "No AllowUsers / AllowGroups restriction in SSH config",
+        "why": "Without AllowUsers or AllowGroups, every system account with a valid credential can attempt SSH login — including service accounts, daemon users, and legacy accounts not intended for remote access. Restricting SSH to specific users dramatically reduces the attack surface.",
+        "how": "1. Decide which users or groups need SSH access\n2. Add an AllowUsers directive:\n   sudo nano /etc/ssh/sshd_config  →  AllowUsers alice bob deploy\n3. Or restrict by group:\n   AllowGroups sshusers\n   sudo addgroup sshusers && sudo adduser alice sshusers\n4. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "private_key_perms": {
+        "title": "SSH private key file permissions too open",
+        "why": "Private keys must be readable only by their owner (mode 0600). If group- or world-readable, any user sharing the same group — or any user on the system — can read the key and impersonate whoever owns it on every server that trusts it.",
+        "how": "1. Restrict permissions:\n   chmod 600 <key_path>\n2. Verify ownership:\n   ls -la <key_path>  →  -rw------- owner owner\n3. For root-owned host keys:\n   sudo chmod 600 /etc/ssh/ssh_host_*_key"
+      },
+      "authorized_keys_perms": {
+        "title": "authorized_keys file permissions too open",
+        "why": "An authorized_keys file writable by others allows any user who can write to it to inject their own public key and gain SSH access as this account. Read access by others leaks information about who is authorised and from which hosts.",
+        "how": "1. Restrict permissions:\n   chmod 600 ~/.ssh/authorized_keys\n2. Verify ownership matches the account:\n   ls -la ~/.ssh/authorized_keys\n3. Enable StrictModes in sshd_config to enforce permission checks automatically:\n   sudo nano /etc/ssh/sshd_config  →  StrictModes yes"
+      },
+      "authorized_keys_dsa": {
+        "title": "DSA key in authorized_keys",
+        "why": "DSA keys use a cryptographically broken algorithm, deprecated in OpenSSH 7.0+. They offer only 1024-bit security and authentication via a DSA key provides weaker guarantees than any modern alternative.",
+        "how": "1. Identify the DSA key line (starts with 'ssh-dss')\n2. Remove it from ~/.ssh/authorized_keys\n3. Ask the key owner to generate a new key:\n   ssh-keygen -t ed25519\n4. Add the new public key to authorized_keys\n5. Confirm removal:\n   grep 'ssh-dss' ~/.ssh/authorized_keys  # should return nothing"
+      },
+      "authorized_keys_weak_key": {
+        "title": "Weak RSA key in authorized_keys (< 4096 bits)",
+        "why": "Short RSA keys in authorized_keys are as dangerous as weak host keys: an attacker who factors the private key gains permanent backdoor access to this account on every server that trusts it — including this one.",
+        "how": "1. Identify weak RSA keys (ssh-rsa entries with a short modulus)\n2. Ask the key owner to generate a stronger key:\n   ssh-keygen -t ed25519  # or: ssh-keygen -t rsa -b 4096\n3. Replace the weak entry in authorized_keys with the new public key\n4. Revoke the old key from all servers it was used on"
+      },
+      "authorized_keys_no_restrictions": {
+        "title": "authorized_keys entries without command or host restrictions",
+        "why": "authorized_keys supports options (command=, from=, restrict) that limit what a key can do and from where. Without restrictions, a compromised key grants unrestricted shell access from any IP. For service or deployment keys this violates the principle of least privilege.",
+        "how": "1. For service keys, add a command= restriction:\n   command=\"/usr/bin/rsync --server ...\",no-pty,no-agent-forwarding ssh-ed25519 AAAA...\n2. For keys from known sources, add a from= restriction:\n   from=\"192.168.1.0/24\" ssh-ed25519 AAAA...\n3. Use the restrict option to disable all optional features:\n   restrict,command=\"...\" ssh-ed25519 AAAA..."
+      },
+      "authorized_keys_duplicate": {
+        "title": "Duplicate entries in authorized_keys",
+        "why": "Duplicate keys suggest the file was modified without proper housekeeping — potentially by automation or by a user who lost track of what was added. Stale duplicates may belong to revoked users or compromised credentials that were never cleaned up.",
+        "how": "1. De-duplicate authorized_keys:\n   sort -u ~/.ssh/authorized_keys > /tmp/ak_clean && mv /tmp/ak_clean ~/.ssh/authorized_keys\n2. Review each key comment to verify it belongs to an active, authorised user\n3. Remove any key whose owner is no longer authorised"
+      },
+      "dir_perms": {
+        "title": "~/.ssh directory permissions too open",
+        "why": "The ~/.ssh directory must be mode 0700 (owner only). If group- or world-readable, any user on the system can enumerate authorized_keys, known_hosts, and discover which systems this account can access. If writable, they can inject their own public key.",
+        "how": "1. Fix directory permissions:\n   chmod 700 ~/.ssh\n2. Fix all files inside:\n   chmod 600 ~/.ssh/*\n   chmod 644 ~/.ssh/*.pub 2>/dev/null; true\n3. Verify:\n   ls -la ~ | grep .ssh  →  drwx------"
+      },
+      "client_forward_agent": {
+        "title": "SSH agent forwarding enabled in client config (ForwardAgent yes)",
+        "why": "Agent forwarding passes your SSH authentication credentials through to the remote server. If that server is compromised, root on that server can use your agent to authenticate as you on any other server your key grants access to — without ever seeing your private key.",
+        "how": "1. Disable agent forwarding globally:\n   nano ~/.ssh/config  →  ForwardAgent no\n2. Enable it only for specific trusted jump hosts where strictly necessary:\n   Host jump.trusted.example.com\n       ForwardAgent yes\n3. Prefer ProxyJump for chaining SSH connections instead of agent forwarding"
+      },
+      "client_known_hosts_devnull": {
+        "title": "SSH client known_hosts pointed to /dev/null",
+        "why": "Pointing known_hosts to /dev/null disables host key verification entirely. Every SSH connection silently accepts any host key — including a man-in-the-middle attacker presenting a forged key. This is equivalent to never verifying server identity.",
+        "how": "1. Remove the UserKnownHostsFile /dev/null line from ~/.ssh/config\n2. Let SSH use its default: ~/.ssh/known_hosts\n3. On first connection to each host, verify the fingerprint out-of-band before accepting it"
+      },
+      "known_hosts_deprecated": {
+        "title": "Deprecated key type in known_hosts",
+        "why": "Entries in known_hosts using deprecated algorithms (DSA, short RSA) provide weak integrity guarantees for host verification. If an attacker can forge a key of that type, they can impersonate the target host without triggering a warning.",
+        "how": "1. Remove the deprecated entry:\n   ssh-keygen -R <hostname>\n2. Reconnect to the server — SSH will re-add it with its current key type\n3. Ask the server admin to ensure only Ed25519 or RSA-4096 host keys are active"
+      },
+      "known_hosts_duplicate": {
+        "title": "Duplicate entries in known_hosts",
+        "why": "Multiple entries for the same host with different keys can cause confusion and may allow SSH to silently accept a stale or compromised key. It also indicates the file has not been maintained.",
+        "how": "1. Remove all entries for the affected host:\n   ssh-keygen -R <hostname>\n2. Reconnect to add a single clean entry\n3. Periodically clean known_hosts of stale entries for decommissioned hosts"
+      }
+    },
+    "file_perms": {
+      "world_writable": {
+        "title": "World-writable sensitive file",
+        "why": "Any local user on the system can modify this file. For configuration files (sshd_config, sudoers) this allows privilege escalation. For credential files it allows tampering that persists across sessions.",
+        "how": "1. Identify the file and owner:\n   ls -la <path>\n2. Remove world-write permission:\n   sudo chmod o-w <path>\n3. Verify the fix:\n   ls -la <path>  →  last three bits should be ---"
+      },
+      "too_permissive": {
+        "title": "File permissions too open",
+        "why": "Overly permissive files can be read or written by unintended users. SSH keys readable by others allow impersonation. Configuration files readable by all may leak credentials or internal paths.",
+        "how": "1. Note the expected permissions shown in the audit output\n2. Apply the correct permissions:\n   sudo chmod <expected> <path>\n3. Verify:\n   ls -la <path>"
+      },
+      "sudoers_nopasswd_all": {
+        "title": "NOPASSWD:ALL in sudoers (unrestricted passwordless sudo)",
+        "why": "Grants full, unrestricted root access without any password. If this account is compromised — malware, stolen session token, weak password — the attacker has immediate full system control with zero additional effort.",
+        "how": "1. Edit sudoers safely:\n   sudo visudo\n2. Replace NOPASSWD:ALL with a specific command list, e.g.:\n   user ALL=(ALL) NOPASSWD: /usr/bin/apt-get\n3. If passwordless sudo is needed for automation, isolate it to a dedicated service account with a minimal allowed command list"
+      },
+      "ssh_host_key_perms": {
+        "title": "SSH host key permissions too open",
+        "why": "SSH host private keys must be readable only by root. If a non-root user can read the host key, they can impersonate this server to any client — enabling a man-in-the-middle attack on future SSH connections.",
+        "how": "1. Restrict permissions:\n   sudo chmod 600 <path>\n2. Verify root ownership:\n   sudo chown root:root <path>\n3. Restart SSH:\n   sudo systemctl restart ssh"
+      }
+    },
+    "updates": {
+      "security_pending": {
+        "title": "Security updates pending",
+        "why": "Pending security updates mean the system contains known vulnerabilities with public CVEs and often public exploits. Attackers actively scan for unpatched systems. Every day of delay increases the window of exposure.",
+        "how": "1. Apply security updates now:\n   sudo apt-get upgrade\n2. Preview what would be applied:\n   sudo unattended-upgrade --dry-run\n3. Apply only security patches automatically:\n   sudo unattended-upgrade\n4. If kernel updates are included, reboot:\n   sudo reboot",
+        "server": {
+          "why": "Pending security updates on a server create known, exploitable vulnerabilities. Attackers prioritise recently-published CVEs where patches exist but have not been applied — this is the most common attack vector on public-facing servers. Apply updates immediately."
+        },
+        "desktop": {
+          "why": "Pending security updates affect all profiles, but on a desktop the most critical are kernel, browser, and library updates that handle untrusted input. Apply them promptly to protect against local privilege escalation and drive-by attack vectors."
+        },
+        "container": {
+          "why": "In a container, pending updates should be addressed by rebuilding the image from an updated base rather than running apt inside the container. Running apt upgrade in a running container is a temporary workaround — the correct solution is updating your Dockerfile base image and redeploying.",
+          "how": "Rebuild from an updated base image:\n   # Update your Dockerfile's FROM tag or use --pull to get the latest:\n   docker build --pull -t <your-image> .\n   docker compose up -d\nFor an immediate stop-gap only:\n   docker exec -it <container> apt-get update && apt-get upgrade -y"
+        }
+      },
+      "unattended_not_configured": {
+        "title": "Automatic security updates not configured",
+        "why": "Without automatic updates, security patches accumulate until someone manually applies them. Maintenance windows of exposure grow over time, and critical patches are often missed on servers without active monitoring.",
+        "how": "1. Install the package:\n   sudo apt install unattended-upgrades\n2. Configure it interactively:\n   sudo dpkg-reconfigure -plow unattended-upgrades\n3. Verify the service is active:\n   sudo systemctl status unattended-upgrades\n4. Test with a dry run:\n   sudo unattended-upgrade --dry-run -d",
+        "server": {
+          "why": "On an exposed server, every unpatched day is an open window. Attackers actively scan for systems missing recent CVEs. Manual update management on a server almost always means patches lag — automatic security updates are non-negotiable on public-facing infrastructure."
+        },
+        "desktop": {
+          "why": "On a desktop, manual update management is common and acceptable. The risk is lower since no inbound services are publicly exposed. However, delaying security patches for more than a week increases local privilege escalation and browser/library exploit risk."
+        },
+        "container": {
+          "why": "In a container environment, updates are managed at the image level — not via unattended-upgrades. If your pipeline regularly rebuilds from an updated base image, this finding does not apply. Verify your CI/CD includes base image refresh.",
+          "how": "Rebuild the image from an updated base rather than running apt inside the container:\n   # Update your Dockerfile base image tag, then:\n   docker build --pull -t <your-image> .\n   docker compose up -d\nFor the host system (if unattended-upgrades is needed there):\n   sudo apt install unattended-upgrades\n   sudo dpkg-reconfigure -plow unattended-upgrades"
+        }
+      }
+    },
+    "hardening": {
+      "rp_filter_disabled": {
+        "title": "Reverse path filtering disabled (rp_filter = 0)",
+        "why": "Without reverse path filtering, the kernel accepts packets from source IP addresses that could not have arrived via the receiving interface — a sign of IP spoofing. This enables spoofed-source attacks and can be used to bypass firewall rules that rely on source IP.",
+        "how": "1. Enable immediately (takes effect now):\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n2. Make it permanent:\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n3. Apply all sysctl settings:\n   sudo sysctl --system",
+        "server": {
+          "why": "On a public-facing server, reverse path filtering is a fundamental network hardening measure. Without it, an attacker can send packets with a forged source IP, potentially bypassing IP-based access controls or enabling amplification attacks. The fix is zero-cost and has no functional side effects on standard infrastructure."
+        },
+        "desktop": {
+          "why": "On a desktop, reverse path filtering provides defence-in-depth. The practical risk is lower since no public inbound services are exposed, but enabling it costs nothing and eliminates a class of IP spoofing attacks on local network traffic."
+        },
+        "container": {
+          "why": "In a container, sysctl network settings are controlled by the host kernel. This setting cannot be changed from within a standard container. Apply the fix on the host system.",
+          "how": "Apply on the host system (not inside the container):\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n   sudo sysctl --system"
+        }
+      },
+      "redirects_enabled": {
+        "title": "ICMP redirects accepted (accept_redirects = 1)",
+        "why": "ICMP redirect messages can instruct the kernel to change its routing tables. An attacker on the local network can send forged ICMP redirects to reroute traffic through a machine they control, enabling a routing hijack or man-in-the-middle attack.",
+        "how": "1. Disable immediately (takes effect now):\n   sudo sysctl -w net.ipv4.conf.all.accept_redirects=0\n2. Make it permanent:\n   echo 'net.ipv4.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-redirects.conf\n3. Apply all sysctl settings:\n   sudo sysctl --system",
+        "server": {
+          "why": "ICMP redirects can be used by an attacker on the local network to poison a server's routing table, redirecting its traffic through a malicious gateway (MITM). On a server, accepting ICMP redirects should never be enabled — there is no legitimate use case on standard infrastructure."
+        },
+        "desktop": {
+          "why": "ICMP redirect acceptance is a minor risk on a desktop, primarily relevant on untrusted networks (public Wi-Fi, corporate LANs). Disabling it is a good practice with no functional impact for typical desktop users."
+        },
+        "container": {
+          "why": "ICMP redirect settings are kernel-level and controlled by the host. This finding is not actionable from within a container. Verify and fix on the host system.",
+          "how": "Apply on the host system:\n   sudo sysctl -w net.ipv4.conf.all.accept_redirects=0\n   echo 'net.ipv4.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-redirects.conf\n   sudo sysctl --system"
+        }
+      },
+      "log_martians_disabled": {
+        "title": "Martian packet logging disabled (log_martians = 0)",
+        "why": "Martian packets have source addresses that are impossible given the routing table — a strong indicator of IP spoofing, forged packets, or scanning. Without logging them, early-stage reconnaissance and spoofing attacks leave no trace. Enabling this logging is low-cost and provides valuable forensic data.",
+        "how": "1. Enable immediately:\n   sudo sysctl -w net.ipv4.conf.all.log_martians=1\n   sudo sysctl -w net.ipv4.conf.default.log_martians=1\n2. Make it permanent:\n   echo 'net.ipv4.conf.all.log_martians=1' | sudo tee -a /etc/sysctl.d/99-network-security.conf\n   echo 'net.ipv4.conf.default.log_martians=1' | sudo tee >> /etc/sysctl.d/99-network-security.conf\n3. Apply:\n   sudo sysctl --system",
+        "server": {
+          "why": "Logging martian packets on a server is essential for detecting IP spoofing and network reconnaissance. Without it, early-stage scanning and spoofing attacks leave no trace in logs, making incident investigation much harder."
+        },
+        "desktop": {
+          "why": "Martian packet logging is a useful forensic tool but generates noise on busy home networks. It is a low-priority hardening item on a desktop — enable it if you want visibility into anomalous local network traffic."
+        },
+        "container": {
+          "why": "Sysctl logging settings are host-level and not configurable from within a standard container. This finding is not actionable in a container context. Address it on the host.",
+          "how": "Apply on the host system:\n   sudo sysctl -w net.ipv4.conf.all.log_martians=1\n   sudo sysctl -w net.ipv4.conf.default.log_martians=1\n   echo 'net.ipv4.conf.all.log_martians=1' | sudo tee -a /etc/sysctl.d/99-network-security.conf\n   echo 'net.ipv4.conf.default.log_martians=1' | sudo tee -a /etc/sysctl.d/99-network-security.conf\n   sudo sysctl --system"
+        }
+      },
+      "rp_filter_loose": {
+        "title": "Reverse path filtering in loose mode (rp_filter = 2)",
+        "why": "Loose mode (rp_filter=2) accepts packets as long as any route to the source exists, not necessarily via the receiving interface. This provides weaker protection than strict mode (=1) against IP spoofing and source-routing attacks. Strict mode drops packets whose reverse path does not match the interface they arrived on.",
+        "how": "1. Switch to strict mode:\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n2. Make it permanent:\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n3. Apply:\n   sudo sysctl --system\nNote: strict mode may break asymmetric routing (e.g. multi-homed servers). Verify network connectivity after applying.",
+        "server": {
+          "why": "Loose mode (rp_filter=2) provides weaker protection than strict mode (=1) on a server. On a single-interface server, strict mode should be preferred as it rejects more spoofed packets. Loose mode is only justified on multi-homed servers with asymmetric routing."
+        },
+        "desktop": {
+          "why": "On a single-interface desktop, loose mode offers little protection compared to strict mode. Strict mode (=1) is safe and recommended unless you have specific asymmetric routing requirements, which are uncommon on desktops."
+        },
+        "container": {
+          "why": "Same as rp_filter_disabled — this is a host kernel setting that cannot be modified from within a standard container. Apply on the host.",
+          "how": "Apply on the host system:\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n   sudo sysctl --system"
+        }
+      }
+    },
+    "kernel_modules": {
+      "risky_fs": {
+        "title": "Risky filesystem kernel modules loaded",
+        "why": "Filesystem drivers (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf, usb_storage) expand kernel attack surface unnecessarily on servers. Vulnerabilities in these drivers can be triggered by mounting a maliciously crafted filesystem image or inserting a USB device, potentially enabling privilege escalation or arbitrary code execution in kernel space.",
+        "how": "1. Unload the module now:\n   sudo modprobe -r <module_name>\n2. Blacklist to prevent reloading:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n3. Rebuild initramfs:\n   sudo update-initramfs -u\nNote: only blacklist modules your system does not use (e.g. usb_storage is needed for USB drives).",
+        "server": {
+          "why": "Exotic filesystem modules (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf) expand kernel attack surface on a server. Vulnerabilities in these drivers can be triggered by a crafted filesystem image, potentially enabling kernel-space privilege escalation. Blacklist what you do not use."
+        },
+        "desktop": {
+          "why": "Most of these filesystems are not needed on a typical desktop. However, if you mount removable media with unusual filesystems (e.g. HFS+ from a Mac drive, UDF from a DVD), blacklisting those specific modules would prevent mounting them. Evaluate which ones you actually need before blacklisting."
+        },
+        "container": {
+          "why": "Kernel module loading is restricted by default in containers (CAP_SYS_MODULE not granted). This finding is not actionable from within a container — address it on the host system.",
+          "how": "Apply on the host system:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   sudo update-initramfs -u"
+        }
+      },
+      "risky_net": {
+        "title": "Risky network protocol kernel modules loaded",
+        "why": "Protocols like DCCP, SCTP, RDS, and TIPC have had critical kernel vulnerabilities (CVEs with remote code execution and privilege escalation). These protocols are rarely needed on standard servers and represent unnecessary kernel attack surface. Loading them makes the system exploitable by sending crafted network packets to any open socket.",
+        "how": "1. Unload the module now:\n   sudo modprobe -r <module_name>\n2. Blacklist to prevent reloading:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n3. Rebuild initramfs:\n   sudo update-initramfs -u\nNote: SCTP is used by some telephony and clustering software. Verify before blacklisting.",
+        "server": {
+          "why": "Protocols DCCP, SCTP, RDS, and TIPC have had critical kernel CVEs with remote code execution and privilege escalation. These protocols are essentially never used on standard servers. Their presence in the running kernel means a crafted network packet could trigger a known kernel vulnerability."
+        },
+        "desktop": {
+          "why": "These network protocols are almost never used on a desktop. Blacklisting them has no practical impact on desktop networking and closes a class of historical kernel vulnerabilities."
+        },
+        "container": {
+          "why": "Kernel module loading is restricted in containers. This finding is not actionable from within a container — address it on the host.",
+          "how": "Apply on the host system:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n   sudo update-initramfs -u"
+        }
+      }
+    },
+    "cron_audit": {
+      "pipe_to_shell": {
+        "title": "Pipe-to-shell pattern in system cron (curl/wget | sh)",
+        "why": "Fetching a script and piping it directly to a shell bypasses all integrity checks. If the remote server is compromised, the DNS is hijacked, or the connection is intercepted (plain HTTP), arbitrary code runs with the cron job's privileges — often root. There is no way to audit or version-control what will be executed at runtime.",
+        "how": "1. Identify the cron entry in /etc/cron.* or /etc/crontab\n2. Replace with a two-step approach:\n   a. Download to a file: curl -fsSL -o /tmp/script.sh https://...\n   b. Verify checksum: sha256sum -c /tmp/script.sha256\n   c. Execute: bash /tmp/script.sh\n3. Better: host the script locally, pin it in version control,\n   and reference the local copy from cron"
+      },
+      "world_writable": {
+        "title": "World-writable script referenced in system cron",
+        "why": "Any local user can modify a world-writable script. Because cron runs it on a schedule — often as root — overwriting the script is a trivial local privilege escalation: no exploit needed, just write access to the file. This is a classic persistence and escalation technique.",
+        "how": "1. Remove world-write permission:\n   sudo chmod o-w <path>\n2. Verify ownership is correct (should be root):\n   ls -la <path>\n3. Review the script content for unexpected modifications:\n   sudo cat <path>"
+      }
+    },
+    "services_state": {
+      "enabled_inactive": {
+        "title": "Security service enabled at boot but currently inactive",
+        "why": "A service configured to start at boot but currently stopped may have crashed, been misconfigured, or been deliberately disabled. If the service is a security control (firewall, intrusion detection, log daemon), its absence creates a window during which threats go undetected or unblocked. The system appears protected at startup but is not at runtime.",
+        "how": "1. Check why the service stopped:\n   sudo journalctl -u <service> -n 50\n2. Restart and verify:\n   sudo systemctl start <service>\n   sudo systemctl status <service>\n3. If the service crashes on start, investigate the config:\n   sudo systemctl status <service> --no-pager -l\n4. Ensure it remains enabled:\n   sudo systemctl enable <service>",
+        "server": {
+          "why": "A service enabled at boot but currently inactive on a server may indicate a crashed or misconfigured security control. It will restart at next boot, potentially exposing a port that appears closed right now. On a server, investigate and resolve immediately."
+        },
+        "desktop": {
+          "why": "On a desktop, an enabled-but-inactive service is typically a leftover from an old installation. While the risk is lower (no inbound exposure expected), it wastes startup time and may cause subtle issues. Disable unused services as a hygiene measure."
+        },
+        "container": {
+          "why": "In a container, systemd is often not the init system. If your container uses a lightweight init (s6, runit, supervisord), this finding may not apply. If systemd is present in the container, follow the server guidance."
+        }
+      }
+    },
+    "rules": {
+      "duplicate_found": {
+        "title": "Duplicate or redundant UFW rules",
+        "why": "Duplicate firewall rules do not improve security but add confusion and maintenance overhead. Redundant rules make the policy harder to audit and can cause unexpected behaviour when rules are later modified or deleted, since UFW processes rules in order.",
+        "how": "1. List rules with numbers:\n   sudo ufw status numbered\n2. Identify and delete the redundant rule:\n   sudo ufw delete <number>\n3. Verify the remaining ruleset:\n   sudo ufw status verbose"
+      },
+      "open_any_found": {
+        "title": "Open wildcard rule (ALLOW from Anywhere to Anywhere)",
+        "why": "A rule allowing all traffic from anywhere to anywhere negates the entire firewall for the affected port or protocol. This is equivalent to having no firewall at all — any external host can reach any open service.",
+        "how": "1. Identify the wildcard rule:\n   sudo ufw status numbered\n2. Delete it:\n   sudo ufw delete <number>\n3. Replace with specific rules covering only the required sources and ports:\n   sudo ufw allow from 192.168.1.0/24 to any port 22\n4. Confirm the default policy is deny:\n   sudo ufw default deny incoming"
+      },
+      "ipv6_missing": {
+        "title": "IPv4 rules present but no equivalent IPv6 rules",
+        "why": "If a service is reachable over both IPv4 and IPv6 but only IPv4 is covered, the IPv6 path is completely unfiltered. An attacker using IPv6 bypasses all the firewall rules that appear to protect the service. This asymmetry is a common blind spot.",
+        "how": "1. Ensure /etc/default/ufw has IPV6=yes\n2. UFW rules added without specifying a protocol apply to both IPv4 and IPv6 automatically:\n   sudo ufw allow 22/tcp  # creates both v4 and v6 rules\n3. Check which services listen on IPv6:\n   sudo ss -tlnp | grep ':::'\n4. Reload UFW:\n   sudo ufw reload"
+      }
+    },
+    "ipv6": {
+      "ufw_disabled_listeners_present": {
+        "title": "Services listening on IPv6 but UFW IPv6 support is disabled",
+        "why": "With UFW IPv6 disabled (IPV6=no in /etc/default/ufw), no ip6tables rules are loaded. Any service listening on a dual-stack address (::) is reachable from the network over IPv6 without any firewall filtering, regardless of what UFW shows for IPv4.",
+        "how": "1. Enable UFW IPv6 support:\n   sudo nano /etc/default/ufw  →  IPV6=yes\n2. Reload UFW to apply ip6tables rules:\n   sudo ufw reload\n3. Verify ip6tables rules are now active:\n   sudo ip6tables -L INPUT -n | head -20",
+        "server": {
+          "why": "If UFW IPv6 support is disabled (IPV6=no) but services listen on IPv6 addresses, those ports are completely unmanaged by UFW. All IPv6 inbound traffic reaches the service without any filtering. On a server, this is a significant firewall gap that must be corrected."
+        },
+        "desktop": {
+          "why": "On a desktop, this finding is informational. Most services listening on IPv6 are bound to loopback (::1) or link-local addresses (fe80::) with no external reachability. Enable UFW IPv6 support as best practice, but the immediate risk is low."
+        },
+        "container": {
+          "why": "IPv6 management in containers is handled by the host network stack. This finding is typically not actionable from within a container. Check the host UFW configuration."
+        }
+      },
+      "port_no_v6_rule": {
+        "title": "Service listening on IPv6 without a UFW IPv6 rule",
+        "why": "A service bound to an IPv6 address with no corresponding UFW rule relies only on the default policy. If the default policy is permissive or unset, the service is reachable from any IPv6 source with no filtering. Firewall policies should be explicit for all listening addresses.",
+        "how": "1. Identify which service is listening:\n   sudo ss -tlnp | grep ':::'\n2. Add an explicit UFW rule (applies to both IPv4 and IPv6 by default):\n   sudo ufw allow <port>/tcp\n3. Or deny it explicitly if the service should not be reachable:\n   sudo ufw deny <port>/tcp\n4. Reload:\n   sudo ufw reload",
+        "server": {
+          "why": "A service listening on IPv6 without an explicit UFW rule is accessible via IPv6 but unfiltered. On a server with a public IPv6 address, this creates an uncontrolled exposure path that bypasses all your IPv4 firewall rules. Add explicit rules for every listening port."
+        },
+        "desktop": {
+          "why": "On a desktop, most IPv6 exposure is local. The risk depends on whether you have a public routable IPv6 address (a /64 from your ISP). On typical home networks using NAT or link-local only, this is informational — but adding explicit UFW rules is still good practice."
+        },
+        "container": {
+          "why": "IPv6 connectivity in containers depends on the host network configuration and container runtime. If containers are not externally reachable via IPv6, this finding is informational. Check your container network setup before adding rules."
+        }
+      },
+      "ufw_enabled_kernel_disabled": {
+        "title": "UFW IPv6 enabled but kernel IPv6 support is disabled",
+        "why": "If UFW is configured to manage IPv6 (IPV6=yes) but the kernel has IPv6 disabled (net.ipv6.conf.all.disable_ipv6=1), the intended ip6tables rules are silently never loaded. The system has an inconsistent configuration that may give a false sense of IPv6 protection.",
+        "how": "1. Option A — enable IPv6 in the kernel:\n   sudo sysctl -w net.ipv6.conf.all.disable_ipv6=0\n   echo 'net.ipv6.conf.all.disable_ipv6=0' | sudo tee /etc/sysctl.d/99-ipv6.conf\n   sudo sysctl --system\n2. Option B — disable UFW IPv6 to match the kernel setting:\n   sudo nano /etc/default/ufw  →  IPV6=no\n   sudo ufw reload"
+      }
+    },
+    "password_policy": {
+      "no_quality_module": {
+        "title": "No password quality module configured (pam_pwquality / pam_cracklib)",
+        "why": "Without a PAM quality module, the system imposes no complexity requirements on local passwords. Users can set trivially guessable passwords (dictionary words, 'password123', single characters) that are trivial to crack offline if /etc/shadow is ever leaked.",
+        "how": "1. Install pam_pwquality:\n   sudo apt install libpam-pwquality\n2. Configure minimum requirements in /etc/security/pwquality.conf:\n   minlen = 12\n   dcredit = -1\n   ucredit = -1\n   lcredit = -1\n   ocredit = -1\n3. Verify PAM includes pwquality:\n   grep pam_pwquality /etc/pam.d/common-password"
+      },
+      "weak_minlen": {
+        "title": "Minimum password length too short (< 8 characters)",
+        "why": "Short passwords dramatically reduce the search space for offline brute-force and dictionary attacks. A 6-character password with common character sets can be fully cracked in minutes with modern hardware. NIST SP 800-63B recommends at least 8 characters; CIS recommends 14.",
+        "how": "1. Increase minlen in /etc/security/pwquality.conf:\n   sudo nano /etc/security/pwquality.conf  →  minlen = 12\n2. Test the policy interactively:\n   pwscore\n3. Existing passwords are not affected — enforce a reset cycle for active accounts if compliance requires it"
+      },
+      "no_expiry": {
+        "title": "No password expiry policy configured",
+        "why": "Without password expiry, compromised credentials remain valid indefinitely. If an attacker silently obtains a password (phishing, database leak, keylogger), they retain access until the user voluntarily changes it. Expiry forces periodic rotation and limits the exposure window.",
+        "how": "1. Set a global expiry policy in /etc/login.defs:\n   PASS_MAX_DAYS 90\n   PASS_MIN_DAYS 1\n   PASS_WARN_AGE 14\n2. Apply to existing accounts:\n   sudo chage -M 90 <username>\n3. Check current settings:\n   sudo chage -l <username>\nNote: NIST SP 800-63B now recommends long complex passwords without forced expiry. Adjust policy to your compliance requirements."
+      }
+    },
+    "user_accounts": {
+      "uid_zero": {
+        "title": "Non-root account with UID 0 detected",
+        "why": "UID 0 is the superuser identifier. Any account with UID 0 has unrestricted root-equivalent access to the entire system — bypassing file permissions, sudo rules, and audit trails. A second UID-0 account is a common backdoor left by attackers or misconfigured systems. Only 'root' itself should ever hold UID 0.",
+        "how": "1. List all UID 0 accounts:\n   awk -F: '($3 == 0) {print $1}' /etc/passwd\n2. Lock or delete any non-root UID 0 account:\n   sudo passwd -l <username>   # lock (preferred)\n   sudo userdel <username>     # delete if no longer needed\n3. Verify only root remains:\n   awk -F: '($3 == 0) {print $1}' /etc/passwd  →  root"
+      },
+      "empty_password": {
+        "title": "Account with empty (blank) password detected",
+        "why": "An account without a password can be logged into by anyone without credentials — locally, over SSH (if PermitEmptyPasswords is on), or via su. Even with SSH key-only authentication, a single misconfiguration can open unauthenticated access. Empty passwords are never intentional in production.",
+        "how": "1. List accounts with empty passwords:\n   sudo awk -F: '($2 == \"\") {print $1}' /etc/shadow\n2. Set a strong password immediately:\n   sudo passwd <username>\n3. If the account is a service account that should not be logged in:\n   sudo passwd -l <username>   # lock it\n4. Check SSH config: ensure PermitEmptyPasswords no in /etc/ssh/sshd_config"
+      },
+      "expired_account": {
+        "title": "User account with expired password detected",
+        "why": "Expired accounts may still be usable depending on PAM configuration and the value of INACTIVE in /etc/shadow. More importantly, they indicate accounts that are not actively maintained — forgotten accounts accumulate over time and represent a persistent attack surface if credentials are ever leaked.",
+        "how": "1. List expired accounts:\n   sudo chage -l <username>  →  check 'Password expired'\n2. Renew the password if the account is active:\n   sudo passwd <username>\n3. Lock the account if it is no longer in use:\n   sudo passwd -l <username>  # or: sudo usermod -e 1 <username>\n4. Audit all accounts regularly:\n   sudo chage --list <username> for each login user"
+      },
+      "no_shadow": {
+        "title": "/etc/shadow not readable — account security checks incomplete",
+        "why": "/etc/shadow stores hashed passwords and account aging data. Without read access, bob cannot verify empty passwords, expiry policies, or UID 0 anomalies. This finding is informational only and means the audit is running without full privilege for account checks.",
+        "how": "1. This is not a configuration problem — run the full audit as root:\n   sudo bob\n2. Ensure /etc/shadow has correct permissions (640, root:shadow):\n   sudo chmod 640 /etc/shadow\n   sudo chown root:shadow /etc/shadow"
+      }
+    },
+    "disk": {
+      "smart_failed": {
+        "title": "SMART overall health check FAILED",
+        "why": "A SMART health failure means the drive's own firmware predicts imminent failure. Data loss is likely imminent. This is the most critical disk warning — the drive should be considered unreliable immediately and replaced.",
+        "how": "1. Back up all data immediately — do not wait\n2. Get the full SMART report:\n   sudo smartctl -a <device>\n3. Run a short self-test to confirm:\n   sudo smartctl -t short <device>\n   sudo smartctl -l selftest <device>  # after ~2 min\n4. Replace the drive\n5. Restore from backup to the replacement drive"
+      },
+      "reallocated_sectors": {
+        "title": "Reallocated sectors detected (SMART attribute 5)",
+        "why": "Reallocated sectors mean the drive has found areas that could not be written reliably and remapped them to spare sectors. A growing count indicates progressive failure — the drive is actively hiding bad areas and more may fail without warning.",
+        "how": "1. Get the full SMART report to see the count and trend:\n   sudo smartctl -a <device>\n2. Run a long self-test:\n   sudo smartctl -t long <device>\n3. Monitor: if the count is growing over weeks, replace the drive\n4. Ensure backups are current"
+      },
+      "pending_sectors": {
+        "title": "Current pending sectors detected (SMART attribute 197)",
+        "why": "Pending sectors are areas the drive has flagged for reallocation but has not yet remapped. They may already be unreadable. This is an active data-loss risk — files stored on these sectors may be unrecoverable.",
+        "how": "1. Back up immediately — files on pending sectors may already be corrupt\n2. Check full SMART data:\n   sudo smartctl -a <device>\n3. Run a filesystem check after unmounting to attempt repair:\n   sudo fsck -f <device>\n4. If the count persists or grows, replace the drive"
+      },
+      "uncorrectable_errors": {
+        "title": "Offline uncorrectable errors detected (SMART attribute 198)",
+        "why": "Uncorrectable errors are sectors that could not be read even with multiple retries. Data in these sectors is permanently lost. Unlike pending sectors, these have already failed — there is no recovery without a prior backup.",
+        "how": "1. Back up immediately — data in affected sectors is permanently gone\n2. Check the full SMART report:\n   sudo smartctl -a <device>\n3. Run a filesystem check:\n   sudo fsck -f <device>  # when unmounted\n4. Replace the drive — uncorrectable errors indicate physical media damage"
+      },
+      "partition_critical": {
+        "title": "Partition is critically full (≥ 90%)",
+        "why": "A full partition causes service failures: databases crash, web servers return 500 errors, logs stop being written (masking security incidents), and processes needing temporary files fail unpredictably. At 100%, the system may become unresponsive.",
+        "how": "1. Find what is consuming space:\n   du -sh <mountpoint>/* 2>/dev/null | sort -rh | head -20\n2. Common culprits:\n   - Logs: sudo journalctl --vacuum-size=500M\n   - Old kernels: sudo apt autoremove\n   - Docker: docker system prune\n3. Move or delete large unnecessary files\n4. If long-term, expand the partition or add storage"
+      }
+    },
+    "memory": {
+      "swappiness_ssd_wear": {
+        "title": "High swappiness on SSD — unnecessary write amplification",
+        "why": "A high swappiness value causes the kernel to swap pages to disk aggressively even when RAM is available. On SSDs, each swap write counts against the drive's total write endurance (TBW). Sustained aggressive swapping shortens SSD lifespan, especially on entry-level drives.",
+        "how": "1. Check current value:\n   cat /proc/sys/vm/swappiness\n2. Set a lower value immediately:\n   sudo sysctl vm.swappiness=10  # workstation\n   sudo sysctl vm.swappiness=1   # server\n3. Make permanent:\n   echo 'vm.swappiness=1' | sudo tee /etc/sysctl.d/99-swappiness.conf\n   sudo sysctl --system",
+        "server": {
+          "why": "On a server with SSDs, high swappiness causes aggressive page swapping even when RAM is available, accelerating drive wear and increasing I/O latency. For database or I/O-intensive workloads, excessive swap activity can cause measurable performance degradation."
+        },
+        "desktop": {
+          "why": "On a desktop with an SSD, high swappiness directly affects responsiveness and SSD longevity. The typical symptom is noticeable lag during memory-intensive tasks. Reducing swappiness to 10 is the standard recommendation for SSD desktops and has no downside."
+        },
+        "container": {
+          "why": "Swappiness is a kernel-level setting controlled by the host. Container processes cannot modify vm.swappiness. This finding is not actionable inside a container — adjust vm.swappiness on the host system.",
+          "how": "Apply on the host system (not inside the container):\n   sudo sysctl vm.swappiness=10\n   echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf\n   sudo sysctl --system"
+        }
+      },
+      "swappiness_unjustified": {
+        "title": "Swap in use despite abundant free RAM",
+        "why": "The kernel is moving process memory to swap while RAM is largely available. This wastes swap write cycles (particularly damaging on SSDs), increases I/O latency for affected processes, and may indicate either a swappiness value that is too high for the workload or a memory leak in a running process.",
+        "how": "1. Identify processes with swapped-out memory:\n   sudo smem -rs swap 2>/dev/null | head -15\n2. Lower swappiness to reduce the tendency to swap:\n   sudo sysctl vm.swappiness=10\n3. If a specific process is leaking memory, investigate:\n   sudo top  # watch the RES/VIRT columns\n4. Make swappiness permanent:\n   echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf",
+        "server": {
+          "why": "A server actively swapping while RAM is available indicates either a swappiness value too high for the workload or a memory-leaking process. Swap activity adds I/O latency and, on SSD-based servers, consumes write endurance. Investigate and tune."
+        },
+        "desktop": {
+          "why": "On a desktop with sufficient RAM actively using swap, the first symptom is system sluggishness. Reducing swappiness from the default (60) to 10–20 improves responsiveness for typical desktop workloads without risking OOM events."
+        },
+        "container": {
+          "why": "vm.swappiness cannot be tuned from within a container. If a container process is leaking memory, address the memory leak directly. For host-level swap tuning, apply the fix on the host.",
+          "how": "Investigate the memory-leaking process:\n   docker stats <container>\nFor host-level swap tuning (apply on the host):\n   sudo sysctl vm.swappiness=10\n   echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf\n   sudo sysctl --system"
+        }
+      }
+    },
+    "samba": {
+      "smb1_enabled": {
+        "title": "SMBv1 is enabled (EternalBlue / WannaCry vector)",
+        "why": "SMBv1 is a 1990s protocol with multiple critical vulnerabilities. The NSA-developed EternalBlue exploit (leaked in 2017) targets SMBv1 and was used by WannaCry ransomware to infect over 200,000 systems in 150 countries in a single day. Microsoft deprecated SMBv1 in 2013. There is no legitimate reason to run SMBv1 today.",
+        "how": "1. Edit /etc/samba/smb.conf\n2. In the [global] section add:\n   min protocol = SMB2\n3. Restart Samba:\n   sudo systemctl restart smbd"
+      },
+      "null_passwords": {
+        "title": "Null passwords allowed (null passwords = yes)",
+        "why": "Allows any account with no password set to authenticate to Samba with a blank password. An attacker only needs to know the username. Combined with guest or misconfigured accounts this grants immediate file system access with no credentials.",
+        "how": "1. Edit /etc/samba/smb.conf\n2. In the [global] section set:\n   null passwords = no\n3. Ensure all accounts have passwords:\n   sudo smbpasswd -a <user>\n4. Restart Samba:\n   sudo systemctl restart smbd"
+      },
+      "guest_writable": {
+        "title": "Guest-writable share (anonymous write access)",
+        "why": "Any unauthenticated user on the network can upload, modify, or delete files in this share. This can be used to plant malware, exfiltrate data, or corrupt backups. Even on a trusted network, accidental or malicious modification without authentication creates serious integrity risks.",
+        "how": "1. Remove guest access entirely:\n   [global] → map to guest = never\n   [sharename] → remove 'guest ok = yes'\n2. Or restrict to read-only:\n   [sharename] → read only = yes\n3. Restart Samba:\n   sudo systemctl restart smbd"
+      },
+      "guest_readonly": {
+        "title": "Guest read-only share (anonymous read access)",
+        "why": "Any unauthenticated user on the network can read files from this share without providing credentials. While read-only access does not allow modification, it can be used for data exfiltration. Verify that all files in this share are intentionally public.",
+        "how": "1. If anonymous access is not needed, remove guest access:\n   [sharename] → remove 'guest ok = yes'\n2. If read-only anonymous access is intentional, document it and ensure no sensitive data is in the share.\n3. Restart Samba:\n   sudo systemctl restart smbd"
+      },
+      "server_signing_disabled": {
+        "title": "Server signing disabled (NTLM relay attack vector)",
+        "why": "Without SMB signing, an attacker performing a man-in-the-middle attack can intercept and modify SMB traffic undetected, or relay NTLM authentication to other services. NTLM relay attacks are a standard technique in Active Directory penetration testing and real-world attacks (e.g. Responder, ntlmrelayx).",
+        "how": "1. Edit /etc/samba/smb.conf\n2. In the [global] section set:\n   server signing = mandatory\n3. Note: clients must also support signing (all modern clients do)\n4. Restart Samba:\n   sudo systemctl restart smbd"
+      },
+      "map_to_guest": {
+        "title": "map to guest = bad user (failed logins fall back to guest)",
+        "why": "When a user provides an invalid username, Samba silently logs them in as the guest account instead of returning an authentication error. This means an attacker who does not know a valid username still gets network access to all guest-accessible shares.",
+        "how": "1. Edit /etc/samba/smb.conf\n2. In the [global] section set:\n   map to guest = never\n3. Restart Samba:\n   sudo systemctl restart smbd"
+      }
+    },
+    "clamav": {
+      "db_very_outdated": {
+        "title": "Virus database critically outdated (> 30 days)",
+        "why": "ClamAV's detection ability depends entirely on its signature database. An outdated database cannot detect malware discovered after the last update. Ransomware, trojans, and rootkits released in the past month would be completely invisible to the scanner.",
+        "how": "1. Update the database immediately:\n   sudo freshclam\n2. Enable automatic updates via the freshclam service:\n   sudo systemctl enable --now clamav-freshclam\n3. Verify cron or systemd timer is scheduling daily updates",
+        "server": {
+          "why": "An antivirus database older than 30 days on a server handling files (mail relay, upload service, shared storage) means recent malware strains are completely undetectable. Each day of delay adds hundreds of new undetectable signatures."
+        },
+        "desktop": {
+          "why": "On a desktop, an outdated ClamAV database leaves you unprotected against recent malware. Since desktops handle user downloads, email attachments, and web content, keeping signatures current is essential for the tool to provide any meaningful protection."
+        },
+        "container": {
+          "why": "ClamAV is rarely deployed in containers — scanning typically occurs at the host or gateway level, or via dedicated image scanners (Trivy, Snyk). If present, an outdated database in a container suggests the image rebuild cycle is not refreshing the database."
+        }
+      },
+      "db_outdated": {
+        "title": "Virus database is outdated (> 7 days)",
+        "why": "ClamAV releases new signature updates multiple times per day. After 7 days, hundreds of new malware signatures are missing from your database. This significantly reduces detection rates for recent threats.",
+        "how": "1. Update the database:\n   sudo freshclam\n2. Enable automatic daily updates:\n   sudo systemctl enable --now clamav-freshclam\n3. Check the freshclam timer:\n   systemctl status clamav-freshclam",
+        "server": {
+          "why": "A ClamAV database 7–30 days old on a server is approaching the risk threshold. Automated freshclam updates should maintain the database without manual intervention — an outdated database suggests the automatic update process is failing."
+        },
+        "desktop": {
+          "why": "On a desktop, a 7–30 day old database is a yellow flag. The freshclam daemon should handle updates automatically. If it is not running, re-enable it. Recent threats may be going undetected."
+        },
+        "container": {
+          "why": "In a container, ClamAV database updates should be part of the image build pipeline. An outdated database in a running container indicates the image or update process needs review."
+        }
+      },
+      "scan_very_old": {
+        "title": "Last scan is very old (> 90 days)",
+        "why": "Without regular scanning, infections can persist undetected for months. Linux systems are increasingly targeted by malware — web shells, crypto miners, backdoors, and rootkits do not announce themselves. Quarterly scans at minimum are needed to detect dormant infections.",
+        "how": "1. Run an immediate scan of home directories:\n   sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log\n2. Schedule weekly scans via cron:\n   echo '0 2 * * 0 root clamscan -r /home --infected --log=/var/log/clamav/clamscan.log' | sudo tee /etc/cron.d/clamav-scan",
+        "server": {
+          "why": "If the last scan was over 90 days ago on a server handling files, malware may have been present for months. Web shells, crypto miners, and backdoors do not self-report. Run an immediate scan and establish regular weekly scans via cron."
+        },
+        "desktop": {
+          "why": "A scan gap of 90+ days on a desktop means any malware received or downloaded during that period was not caught. Run an immediate scan and schedule weekly automated scans."
+        },
+        "container": {
+          "why": "Periodic ClamAV scans inside containers are non-standard. Scanning typically occurs at the image build stage via tools like Trivy or Snyk. Manual ClamAV scans inside running containers are not a standard security practice in container pipelines."
+        }
+      },
+      "scan_old": {
+        "title": "Last scan is over 30 days old",
+        "why": "Monthly scans leave a large window during which infections can establish persistence, exfiltrate data, or spread to other systems. On a server exposed to the internet, monthly scanning is insufficient.",
+        "how": "1. Run a new scan:\n   sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log\n2. Schedule weekly scans:\n   echo '0 2 * * 0 root clamscan -r /home --infected --log=/var/log/clamav/clamscan.log' | sudo tee /etc/cron.d/clamav-scan",
+        "server": {
+          "why": "A 30–90 day scan gap on a server leaves a long window during which undetected malware could establish persistence. Increase scan frequency — weekly is the minimum recommended for production servers."
+        },
+        "desktop": {
+          "why": "For a desktop, weekly scanning is a reasonable baseline. If it has been 30–90 days, re-enable the scheduled scan. Recent downloads or email attachments may have brought in undetected malware."
+        },
+        "container": {
+          "why": "Same as scan_very_old — periodic ClamAV scans inside containers are non-standard. Focus on image security scanning (Trivy, Snyk) integrated into your CI/CD pipeline."
+        }
+      }
+    },
+    "auditd": {
+      "not_installed": {
+        "title": "Linux Audit Framework not installed",
+        "why": "auditd provides kernel-level logging of system calls, file access, authentication, and privileged commands. Without it, attackers can operate undetected — privilege escalations, unauthorized access, and sensitive file reads leave no forensic trace.",
+        "how": "Install auditd and the dispatcher plugins:\n  sudo apt install auditd audispd-plugins\n  sudo systemctl enable --now auditd\n\nCreate a minimal rule set in /etc/audit/rules.d/99-local.rules:\n  -w /etc/passwd -p wa -k identity\n  -w /etc/shadow -p wa -k identity\n  -w /etc/sudoers -p wa -k sudoers\n\nLoad the rules:\n  sudo augenrules --load"
+      },
+      "service_inactive": {
+        "title": "auditd installed but service not running",
+        "why": "auditd is installed but stopped. Kernel events are not being logged in real time. Authentication events, sudo usage, and sensitive file access go unrecorded, eliminating forensic evidence if an incident occurs.",
+        "how": "Enable and start the service:\n  sudo systemctl enable --now auditd\n\nVerify it is running and rules are loaded:\n  sudo systemctl status auditd\n  sudo auditctl -l"
+      },
+      "no_rules": {
+        "title": "auditd running but no audit rules configured",
+        "why": "auditd is active but no rules are loaded. Only a minimal set of default events is captured. Critical events — access to /etc/passwd, /etc/shadow, sudo invocations, privileged commands — go unlogged, making forensic analysis very difficult.",
+        "how": "Create persistent rules in /etc/audit/rules.d/99-local.rules:\n  -w /etc/passwd -p wa -k identity\n  -w /etc/shadow -p wa -k identity\n  -w /etc/sudoers -p wa -k sudoers\n  -a always,exit -F arch=b64 -S execve -k commands\n\nReload rules:\n  sudo augenrules --load\n  sudo systemctl restart auditd\n\nVerify:\n  sudo auditctl -l"
+      },
+      "missing_sensitive_rules": {
+        "title": "Sensitive files not covered by audit rules",
+        "why": "Critical files such as /etc/passwd, /etc/shadow, and /etc/sudoers are not monitored by auditd. Any unauthorized modification to these files could indicate privilege escalation or account takeover, and would leave no audit trail.",
+        "how": "Add watch rules for the missing files in /etc/audit/rules.d/99-local.rules:\n  -w /etc/passwd -p wa -k identity\n  -w /etc/shadow -p wa -k identity\n  -w /etc/sudoers -p wa -k sudoers\n\nReload:\n  sudo augenrules --load\n  sudo systemctl restart auditd",
+        "server": {
+          "why": "On a server, unauthorized modifications to /etc/passwd, /etc/shadow, or /etc/sudoers are high-severity indicators of privilege escalation or account takeover. Without watch rules for these files, such changes leave no audit trail — a critical gap for incident response and compliance."
+        },
+        "desktop": {
+          "why": "Some sensitive files are not covered by auditd rules. On a desktop this is informational — these files are less frequently targeted — but adding watch rules provides an additional layer of forensic visibility."
+        }
+      }
+    },
+    "secure_boot": {
+      "setup_mode": {
+        "title": "Secure Boot is in Setup Mode (no Platform Key enrolled)",
+        "why": "Secure Boot Setup Mode means no Platform Key is enrolled. Any bootloader, including a malicious one, can be loaded without verification. This effectively disables Secure Boot protections and allows persistent bootkits on systems with physical or early-boot access.",
+        "how": "Enroll your Platform Key via the UEFI firmware settings:\n  1. Reboot and enter UEFI/BIOS (F2, F12, or Del).\n  2. Navigate to Secure Boot → Key Management.\n  3. Enroll a Platform Key (PK), Key Exchange Key (KEK), and database (db).\n\nAlternatively, use mokutil to check state:\n  mokutil --sb-state\n  mokutil --enable-validation"
+      },
+      "disabled": {
+        "title": "Secure Boot is disabled",
+        "why": "Secure Boot verifies that only trusted bootloaders and kernels load at startup. Without it, rootkits, bootkits, and malicious drivers can persist below the OS, bypassing all software-level defenses.",
+        "how": "Enable Secure Boot in your UEFI firmware settings:\n  1. Reboot and enter UEFI/BIOS (F2, F12, or Del).\n  2. Navigate to the Secure Boot settings.\n  3. Set Secure Boot to Enabled.\n  4. If you use custom kernels or third-party drivers, enroll a Machine Owner Key:\n     sudo mokutil --import mok.der",
+        "server": {
+          "why": "Secure Boot is disabled. On servers this is common — cloud images, out-of-tree drivers (NVIDIA, ZFS), and custom kernels often require it to be disabled. This is noted for completeness; no score deduction is applied for server profiles.",
+          "how": "No action is required on server profiles. If you want to enable Secure Boot, ensure all loaded kernels and modules are signed, then enable it in UEFI settings. Use mokutil to enroll custom signing keys if needed:\n  mokutil --sb-state\n  mokutil --import mok.der"
+        },
+        "desktop": {
+          "why": "On a desktop, disabling Secure Boot allows rootkits, bootkits, and malicious drivers to load before the OS, bypassing all software-level defenses. This is a real threat vector for persistent, kernel-level attacks, especially on laptops or shared workstations."
+        }
+      }
+    },
+    "file_integrity": {
+      "not_installed": {
+        "title": "No file integrity monitoring tool installed",
+        "why": "Without a file integrity monitor (AIDE or Tripwire), there is no way to detect unauthorized modifications to system files, configuration files, or binaries. An attacker who gains access can replace binaries, add backdoors, or alter configuration without detection.",
+        "how": "Install and initialize AIDE:\n  sudo apt install aide\n  sudo aideinit                    # creates the initial baseline database\n  sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db\n\nSchedule regular checks in cron:\n  echo '0 3 * * * root /usr/bin/aide --check 2>&1 | mail -s \"AIDE check\" root' | sudo tee /etc/cron.d/aide-check"
+      },
+      "no_db": {
+        "title": "File integrity tool installed but no baseline database",
+        "why": "The integrity monitoring tool is installed but no baseline database has been created. Without a baseline, the tool cannot detect changes to system files. Any modifications made before database initialization will never be flagged.",
+        "how": "Initialize the baseline database:\n  For AIDE:     sudo aideinit && sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db\n  For Tripwire: sudo tripwire --init\n\nThen schedule regular checks:\n  sudo crontab -e\n  0 3 * * * /usr/bin/aide --check 2>&1 | mail -s 'AIDE report' root"
+      },
+      "no_check": {
+        "title": "Integrity baseline exists but no check has ever been run",
+        "why": "A baseline database exists but no integrity check has been performed since initialization. Without regular checks, any file modification since baseline creation — including malicious ones — goes undetected.",
+        "how": "Run an integrity check immediately:\n  For AIDE:     sudo aide --check\n  For Tripwire: sudo tripwire --check\n\nIf the output shows unexpected changes, investigate each one. Schedule regular checks:\n  sudo crontab -e\n  0 3 * * * /usr/bin/aide --check 2>&1 | mail -s 'AIDE report' root"
+      },
+      "check_old": {
+        "title": "File integrity check has not been run recently",
+        "why": "The last file integrity check is outdated. Recent changes to system files — legitimate or malicious — have not been verified against the baseline. Integrity monitoring loses its value if checks are not performed regularly.",
+        "how": "Run a new integrity check:\n  For AIDE:     sudo aide --check\n  For Tripwire: sudo tripwire --check\n\nAutomate regular checks:\n  sudo crontab -e\n  0 3 * * * /usr/bin/aide --check 2>&1 | mail -s 'AIDE report' root\n\nAfter verifying all known-good changes, update the baseline:\n  sudo aide --update && sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db"
+      }
+    },
+    "virt": {
+      "bypass_risk": {
+        "title": "Virtualisation bridge may bypass UFW FORWARD policy",
+        "why": "Hypervisors such as libvirt/KVM, VirtualBox, and VMware create Linux bridge interfaces (virbr0, vboxnet*, etc.) and inject their own iptables rules directly into the FORWARD chain. These rules can allow traffic between VMs and the host — or between VMs and the internet — independently of UFW's FORWARD policy. UFW manages only its own ruleset and cannot prevent bridge-injected rules from permitting forwarded traffic.",
+        "how": "Audit the FORWARD rules inserted by the bridge:\n  sudo iptables -L FORWARD -v --line-numbers | grep virbr0\n\nThis is expected behaviour for a VM host — review the output to confirm only legitimate VM traffic is forwarded.\n\nTo isolate VMs from the internet while keeping local host access, configure libvirt's network in isolated mode:\n  virsh net-edit default  # set <forward mode='none'/> for isolated networks\n\nIf you no longer use virtual machines:\n  sudo systemctl disable --now libvirtd"
+      }
+    },
+    "auth_log": {
+      "brute_force": {
+        "title": "Brute-force attacks detected in authentication logs",
+        "why": "Repeated failed login attempts indicate active automated attacks against this machine. If password authentication or weak credentials are in use, persistent brute-force campaigns will eventually succeed. Even with strong passwords, flood attacks consume CPU and lock out legitimate users.",
+        "how": "1. Install and configure fail2ban:\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Verify the SSH jail is active:\n   sudo fail2ban-client status sshd\n3. Disable password authentication (use keys only):\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Reduce MaxAuthTries:\n   MaxAuthTries 3\n5. Restart SSH:\n   sudo systemctl restart ssh"
+      },
+      "public_login": {
+        "title": "Successful logins from public IP addresses detected",
+        "why": "Remote logins from public IPs visible in auth logs confirm the machine is internet-reachable and actively accessed. Any credential compromise — brute force, stolen key, leaked password — would give an attacker an immediate shell on a live system.",
+        "how": "1. Restrict SSH access to known IPs via UFW:\n   sudo ufw allow from <your-ip> to any port 22\n   sudo ufw delete allow 22\n2. Use key-only authentication:\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n3. Review who is logging in:\n   sudo last | head -20\n4. Consider a VPN or port-knocking if remote access must be maintained"
+      }
+    },
+    "umask": {
+      "world_writable": {
+        "title": "Default umask allows world-writable file creation (umask 0000 or 0002)",
+        "why": "A world-writable umask means every new file created by any user is writable by all users on the system. Attackers with any local account can modify scripts, configs, and data files created by privileged processes — enabling privilege escalation and persistent backdoors.",
+        "how": "1. Set a secure default umask in /etc/profile and /etc/bash.bashrc:\n   umask 0022\n2. For stricter environments:\n   umask 0027\n3. Verify the change takes effect:\n   umask  # should return 0022 or stricter\n4. Check /etc/login.defs:\n   UMASK 022"
+      },
+      "group_writable": {
+        "title": "Default umask allows group-writable file creation (umask 002)",
+        "why": "A group-writable umask means every new file is writable by any member of the creating user's group. On multi-user systems or systems with shared service accounts, this can allow horizontal privilege escalation between users sharing a group.",
+        "how": "1. Set umask to 0022 in /etc/profile:\n   umask 0022\n2. Verify:\n   umask  # should return 0022"
+      }
+    },
+    "firewall": {
+      "logging_off": {
+        "title": "UFW firewall logging is disabled",
+        "why": "Without firewall logs, blocked connection attempts, port scans, and intrusion attempts leave no trace. Forensic investigation after an incident becomes impossible — you cannot determine when an attack started, which ports were probed, or where traffic came from.",
+        "how": "1. Enable UFW logging:\n   sudo ufw logging on\n2. For more detail:\n   sudo ufw logging medium\n   # or: sudo ufw logging high\n3. Verify:\n   sudo ufw status verbose | grep Logging\n4. Logs appear in:\n   /var/log/ufw.log  (or journald)"
+      }
+    },
+    "ssl_certs": {
+      "expired": {
+        "title": "TLS/SSL certificate has expired",
+        "why": "An expired certificate causes browsers and clients to display hard trust errors and refuse connections. Services may become completely inaccessible. Expired certificates are also a signal of poor certificate lifecycle management — attackers specifically look for expired certificates to exploit.",
+        "how": "1. Identify which certificate is expired:\n   sudo bob --check ssl_certs --verbose\n2. For Let's Encrypt:\n   sudo certbot renew --force-renewal\n3. For manually managed certificates:\n   openssl x509 -in /path/to/cert.pem -noout -dates\n   Replace with a new certificate from your CA\n4. Verify:\n   openssl x509 -in /path/to/cert.pem -noout -enddate"
+      },
+      "expiring_critical": {
+        "title": "TLS/SSL certificate expires within 7 days",
+        "why": "A certificate expiring in under a week requires immediate action. Once expired, services stop working for all clients. Automated renewal may have failed silently — manual intervention is needed now to avoid an outage.",
+        "how": "1. For Let's Encrypt:\n   sudo certbot renew --force-renewal\n   sudo systemctl reload nginx  # or apache2\n2. Check renewal timer:\n   sudo systemctl status certbot.timer\n3. For manual certs, contact your CA immediately for a replacement\n4. Verify the new expiry:\n   openssl x509 -in /path/to/cert.pem -noout -enddate"
+      },
+      "expiring_soon": {
+        "title": "TLS/SSL certificate expires within 30 days",
+        "why": "Certificates expiring in under a month need attention before they expire. Automated renewal tools (certbot, acme.sh) should have already renewed them. A failure to renew automatically often indicates a misconfigured renewal job or DNS/port issue.",
+        "how": "1. Force-renew Let's Encrypt certificates:\n   sudo certbot renew\n2. Check renewal logs:\n   sudo journalctl -u certbot\n3. Verify timer is active:\n   sudo systemctl status certbot.timer\n4. For manual certificates, request a renewal from your CA"
+      }
+    },
+    "systemd_timers": {
+      "pipe_to_shell": {
+        "title": "Systemd timer unit pipes downloaded content to a shell",
+        "why": "Piping curl or wget output directly to bash/sh executes arbitrary code from a remote server without any integrity verification. If the remote server is compromised, misconfigured, or the connection is intercepted, an attacker can execute any command as the user running the timer.",
+        "how": "1. Identify the timer unit:\n   sudo bob --check systemd_timers --verbose\n2. Edit the unit to download first, verify, then execute:\n   systemctl edit <unit>.service\n3. Use checksums or package managers instead of curl-to-shell patterns\n4. Consider using signed packages or configuration management tools"
+      },
+      "world_writable": {
+        "title": "Systemd timer ExecStart script is world-writable",
+        "why": "Any local user can modify a world-writable script that is executed by a privileged systemd timer. This is a direct privilege escalation path — write your code into the script and wait for the timer to fire as root.",
+        "how": "1. Fix permissions on the script:\n   sudo chmod 755 /path/to/script.sh\n   sudo chown root:root /path/to/script.sh\n2. Verify:\n   ls -la /path/to/script.sh  # should show -rwxr-xr-x root root\n3. Audit all timer scripts regularly:\n   find /etc/systemd/system -name '*.service' | xargs grep -l ExecStart"
+      },
+      "user_created_root": {
+        "title": "User-created systemd timer runs as root",
+        "why": "A non-package timer running as root that was created by a regular user is a strong indicator of a persistence mechanism or privilege escalation backdoor. Legitimate system services are installed by packages; user-created root timers are unusual and warrant immediate investigation.",
+        "how": "1. Identify and inspect the timer:\n   systemctl list-timers --all\n   systemctl cat <suspicious-timer>.service\n2. Check who created the file:\n   ls -la /etc/systemd/system/<unit>.service\n3. If not a known legitimate service, disable and remove:\n   sudo systemctl disable --now <unit>.timer\n   sudo rm /etc/systemd/system/<unit>.*"
+      }
+    },
+    "firmware": {
+      "fwupd_updates": {
+        "title": "Firmware updates available via fwupd",
+        "why": "Firmware vulnerabilities (UEFI, NVMe, Thunderbolt, etc.) run below the operating system and cannot be patched by the OS. Unpatched firmware enables persistent rootkits that survive OS reinstallation, and can bypass Secure Boot, TPM attestation, and kernel mitigations.",
+        "how": "1. List available firmware updates:\n   fwupdmgr get-updates\n2. Apply updates:\n   sudo fwupdmgr update\n3. Reboot if required:\n   sudo reboot\n4. Automate future checks:\n   sudo systemctl enable --now fwupd-refresh.timer"
+      },
+      "microcode_missing": {
+        "title": "CPU microcode update package not installed",
+        "why": "CPU microcode patches critical hardware vulnerabilities including Spectre, Meltdown, MDS, TAA, and many others. Without microcode updates, these side-channel attacks can allow unprivileged processes to read kernel memory, cross VM boundaries, and extract cryptographic keys.",
+        "how": "1. Install the appropriate microcode package:\n   # Intel CPU:\n   sudo apt install intel-microcode\n   # AMD CPU:\n   sudo apt install amd64-microcode\n2. Reboot to apply:\n   sudo reboot\n3. Verify microcode is loaded:\n   grep microcode /proc/cpuinfo | head -1"
+      }
+    },
+    "docker_audit": {
+      "privileged": {
+        "title": "Docker container running in privileged mode",
+        "why": "A privileged container has full access to the host's devices and capabilities — it is effectively running as root on the host with all restrictions removed. Any process inside a privileged container can escape to the host, modify kernel parameters, mount host filesystems, and compromise the entire system.",
+        "how": "1. Identify the privileged container:\n   docker ps --quiet | xargs docker inspect --format '{{.Name}} privileged={{.HostConfig.Privileged}}'\n2. Remove the --privileged flag and grant only the specific capabilities needed:\n   docker run --cap-add NET_ADMIN (instead of --privileged)\n3. If the container genuinely needs privileged access, isolate it on a dedicated host\n4. Use seccomp profiles and AppArmor policies"
+      },
+      "root_containers": {
+        "title": "Docker containers running as root (no user namespace remapping)",
+        "why": "Containers running as UID 0 inside the container map directly to root on the host when user namespace remapping is not configured. A container escape vulnerability — of which Docker has had several — gives an attacker immediate root on the host.",
+        "how": "1. Add a non-root USER in your Dockerfile:\n   USER 1000:1000\n2. Or enable user namespace remapping globally:\n   sudo nano /etc/docker/daemon.json\n   { \"userns-remap\": \"default\" }\n   sudo systemctl restart docker\n3. Verify:\n   docker run alpine id  # should not return uid=0"
+      },
+      "socket_mounted": {
+        "title": "Docker socket mounted inside a container",
+        "why": "Mounting /var/run/docker.sock into a container gives it full control of the Docker daemon — and therefore the host. From inside the container, an attacker can start a new privileged container, mount the host filesystem, and escape with a single docker command. This is a complete container isolation bypass.",
+        "how": "1. Remove the socket mount from the container:\n   Remove -v /var/run/docker.sock:/var/run/docker.sock from docker run\n2. If the container needs to manage Docker (CI agents, Portainer), use:\n   - Docker-in-Docker (dind) with explicit isolation\n   - A Docker TCP socket with TLS authentication instead of the Unix socket\n3. Audit running containers:\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.Mounts}}' | grep docker.sock"
+      },
+      "host_network": {
+        "title": "Docker container using host network mode",
+        "why": "A container with --network=host shares the host's network namespace entirely. It can bind to any port on the host, listen on all interfaces, and access any network service running on localhost. Network-based container isolation does not exist for such containers.",
+        "how": "1. Remove --network=host and use explicit port publishing:\n   docker run -p 8080:80 myimage  (instead of --network=host)\n2. If host networking is required for performance (e.g. latency-sensitive apps), restrict capabilities and use AppArmor/seccomp profiles\n3. Audit host-networked containers:\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.HostConfig.NetworkMode}}' | grep host"
+      }
+    },
+    "kernel_hardening": {
+      "aslr_disabled": {
+        "title": "ASLR (Address Space Layout Randomisation) is disabled",
+        "why": "ASLR randomises the memory address layout of processes, making it significantly harder to exploit memory corruption vulnerabilities (buffer overflows, use-after-free). Without ASLR, an attacker can predict the exact address of shellcode, ROP gadgets, and heap allocations, making exploits far more reliable.",
+        "how": "1. Enable ASLR permanently:\n   sudo sysctl -w kernel.randomize_va_space=2\n   echo 'kernel.randomize_va_space = 2' | sudo tee /etc/sysctl.d/99-aslr.conf\n2. Verify:\n   cat /proc/sys/kernel/randomize_va_space  # should return 2"
+      },
+      "aslr_conservative": {
+        "title": "ASLR set to conservative mode (randomize_va_space=1)",
+        "why": "Conservative ASLR (value 1) randomises stack and mmap() allocations but not the heap. Heap spray and heap-based exploitation techniques remain more reliable against a target with conservative ASLR than with full ASLR (value 2).",
+        "how": "1. Enable full ASLR:\n   sudo sysctl -w kernel.randomize_va_space=2\n   echo 'kernel.randomize_va_space = 2' | sudo tee /etc/sysctl.d/99-aslr.conf\n2. Verify:\n   cat /proc/sys/kernel/randomize_va_space  # should return 2"
+      },
+      "ptrace_unrestricted": {
+        "title": "ptrace is unrestricted (kernel.yama.ptrace_scope=0)",
+        "why": "With unrestricted ptrace, any process can attach to and read/write the memory of any other process owned by the same user. An attacker with a low-privilege shell can extract credentials from browser sessions, SSH agents, gpg-agent, and sudo credential caches running in the same user session.",
+        "how": "1. Restrict ptrace to parent processes only:\n   sudo sysctl -w kernel.yama.ptrace_scope=1\n   echo 'kernel.yama.ptrace_scope = 1' | sudo tee /etc/sysctl.d/99-ptrace.conf\n2. For stricter environments (admins only):\n   kernel.yama.ptrace_scope = 2\n3. Verify:\n   cat /proc/sys/kernel/yama/ptrace_scope"
+      },
+      "dmesg_exposed": {
+        "title": "Kernel log (dmesg) accessible by unprivileged users",
+        "why": "The kernel ring buffer contains memory addresses, driver information, device names, and sometimes credentials passed as kernel parameters. Unprivileged access to dmesg significantly helps attackers defeat ASLR, identify kernel version and modules, and find attack surface.",
+        "how": "1. Restrict dmesg to root:\n   sudo sysctl -w kernel.dmesg_restrict=1\n   echo 'kernel.dmesg_restrict = 1' | sudo tee /etc/sysctl.d/99-dmesg.conf\n2. Verify:\n   cat /proc/sys/kernel/dmesg_restrict  # should return 1"
+      },
+      "kptr_exposed": {
+        "title": "Kernel pointer addresses exposed to unprivileged users (kptr_restrict=0)",
+        "why": "Kernel pointer addresses in /proc/kallsyms, /proc/modules, and similar interfaces help attackers locate kernel code and data structures when attempting kernel exploitation. Exposing them makes bypassing kernel ASLR much easier.",
+        "how": "1. Restrict kernel pointer exposure:\n   sudo sysctl -w kernel.kptr_restrict=2\n   echo 'kernel.kptr_restrict = 2' | sudo tee /etc/sysctl.d/99-kptr.conf\n2. Verify:\n   cat /proc/sys/kernel/kptr_restrict  # should return 1 or 2"
+      },
+      "suid_dump_all": {
+        "title": "Core dumps enabled for SUID processes (fs.suid_dumpable=2)",
+        "why": "When suid_dumpable is set to 2, SUID processes can produce core dumps readable by all users. Core dumps of SUID programs contain the full process memory — including any secrets, keys, or elevated-privilege data held in memory at crash time.",
+        "how": "1. Disable SUID core dumps:\n   sudo sysctl -w fs.suid_dumpable=0\n   echo 'fs.suid_dumpable = 0' | sudo tee /etc/sysctl.d/99-suid-dump.conf\n2. Verify:\n   cat /proc/sys/fs/suid_dumpable  # should return 0"
+      }
+    },
+    "suid_audit": {
+      "unexpected_suid": {
+        "title": "Unexpected SUID binary detected",
+        "why": "SUID (Set User ID) binaries execute with the file owner's privileges (typically root) regardless of who runs them. An unexpected SUID binary is either a privilege escalation backdoor planted by an attacker, or a legitimate tool left SUID unnecessarily. Either way, it represents an uncontrolled root execution path.",
+        "how": "1. Identify all SUID binaries:\n   find / -perm -4000 -type f 2>/dev/null\n2. For each unexpected binary, investigate its origin:\n   dpkg -S /path/to/binary\n3. Remove the SUID bit if not required:\n   sudo chmod u-s /path/to/binary\n4. If the binary is unknown or suspicious:\n   sha256sum /path/to/binary\n   # Compare with known-good hash from the vendor"
+      },
+      "unexpected_sgid": {
+        "title": "Unexpected SGID binary detected",
+        "why": "SGID (Set Group ID) binaries execute with the file's group privileges. An unexpected SGID binary can provide access to privileged group resources (shadow, disk, docker, sudo) for any user who runs it — enabling group-level privilege escalation.",
+        "how": "1. Identify all SGID binaries:\n   find / -perm -2000 -type f 2>/dev/null\n2. Investigate each unexpected binary:\n   dpkg -S /path/to/binary\n3. Remove the SGID bit if not required:\n   sudo chmod g-s /path/to/binary"
+      }
+    }
+  },
+  "user_accounts": {
+    "no_shadow": "/etc/shadow not readable — empty-password and expiry checks skipped (run with sudo)",
+    "uid_zero": "UID 0 account(s) other than root detected: {users}",
+    "uid_zero_detail": "These accounts have full root-equivalent privileges. Only root should have UID 0. Lock or rename them.",
+    "uid_zero_reason": "UID 0 account(s) other than root: {users}",
+    "empty_password": "Account(s) with empty password detected: {users}",
+    "empty_password_detail": "These accounts can be accessed without any password. Set a password or lock them immediately.",
+    "empty_password_reason": "Account(s) with empty password: {users}",
+    "expired_account": "Account(s) with a past expiry date: {users}",
+    "expired_account_detail": "These accounts have passed their configured expiry date. Consider removing or locking them as housekeeping.",
+    "ok": "All user accounts are healthy"
+  },
+  "password_policy": {
+    "no_quality_module": "No PAM password quality module configured (pam_pwquality/pam_cracklib absent)",
+    "no_quality_module_detail": "Without pam_pwquality or pam_cracklib, users can set trivially weak passwords. Any string is accepted regardless of length or complexity.",
+    "no_quality_module_reason": "No PAM password quality module configured",
+    "weak_minlen": "Password minimum length too low (minlen = {minlen})",
+    "weak_minlen_detail": "Passwords shorter than 8 characters are easily brute-forced. Increase minlen to at least 8 in /etc/security/pwquality.conf.",
+    "weak_minlen_reason": "Password minimum length too low (minlen = {minlen})",
+    "no_expiry": "Password expiry not enforced (PASS_MAX_DAYS = {days})",
+    "no_expiry_detail": "Passwords never expire. Consider setting PASS_MAX_DAYS to a reasonable value (e.g. 365) if your policy requires periodic rotation. Note: NIST SP 800-63B no longer mandates expiration unless compromise is suspected.",
+    "ok": "Password policy is adequately configured"
+  },
+  "samba": {
+    "conf_only": "Samba daemon not installed — auditing configuration only (smb.conf found)",
+    "conf_unreadable": "Samba is installed but /etc/samba/smb.conf is not readable",
+    "conf_unreadable_detail": "Run: sudo chmod 644 /etc/samba/smb.conf",
+    "smb1_enabled": "SMBv1 is enabled — EternalBlue / WannaCry attack vector",
+    "smb1_enabled_detail": "SMBv1 is a deprecated and critically insecure protocol. Add 'min protocol = SMB2' to [global] in /etc/samba/smb.conf and restart Samba.",
+    "smb1_disabled": "SMBv1 is disabled (min protocol ≥ SMB2)",
+    "null_passwords": "Null passwords are allowed (null passwords = yes)",
+    "null_passwords_detail": "Any account without a password can authenticate to Samba. Set 'null passwords = no' in [global].",
+    "null_passwords_ok": "Null passwords are not allowed",
+    "server_signing_disabled": "Server signing is disabled — MITM / relay attack vector",
+    "server_signing_disabled_detail": "Samba will accept unsigned connections, enabling NTLM relay attacks. Set 'server signing = mandatory' in [global].",
+    "server_signing_mandatory": "Server signing is mandatory",
+    "server_signing_auto": "Server signing is set to auto — signing negotiated but not enforced",
+    "server_signing_auto_detail": "Consider setting 'server signing = mandatory' to prevent NTLM relay attacks.",
+    "map_to_guest": "map to guest = bad user — failed logins silently fall back to guest",
+    "map_to_guest_detail": "Users who authenticate with an invalid username are silently mapped to the guest account. Set 'map to guest = never' in [global].",
+    "guest_writable": "Guest-writable share: [{share}]",
+    "guest_writable_detail": "Share [{share}] ({path}) allows anonymous write access. Remove 'guest ok = yes' or set 'read only = yes'.",
+    "guest_readonly": "Guest read-only share: [{share}]",
+    "guest_readonly_detail": "Share [{share}] ({path}) allows anonymous read access. Verify this is intentional.",
+    "bind_interfaces_not_set": "bind interfaces only is not set — Samba may listen on all interfaces",
+    "bind_interfaces_not_set_detail": "Add 'bind interfaces only = yes' and 'interfaces = lo eth0' in [global] to restrict which network interfaces Samba listens on."
+  },
+  "clamav": {
+    "not_installed": "ClamAV is not installed — no antivirus protection",
+    "not_installed_detail": "ClamAV provides malware detection for files, shares, and email attachments. On Linux it is especially useful for scanning files shared with Windows users and for mail server integration (Postfix/Amavis).",
+    "installed": "ClamAV is installed",
+    "freshclam_missing": "freshclam is missing — virus database cannot be updated automatically",
+    "freshclam_missing_detail": "freshclam downloads and keeps ClamAV’s virus signature database current. Without it, the database cannot be updated and the scanner gradually becomes blind to new threats.",
+    "db_not_found": "ClamAV is installed but no virus database found",
+    "db_not_found_detail": "ClamAV is installed but no signature database was found in /var/lib/clamav/. Without signatures the scanner cannot detect any threat — it would report ‘no infections’ even on a fully compromised system.",
+    "db_very_outdated": "Virus database is {days} day(s) old — critically outdated",
+    "db_very_outdated_detail": "ClamAV publishes signature updates multiple times per day. After 30 days, thousands of new malware variants are completely invisible to the scanner. Ransomware, trojans, and rootkits discovered last month cannot be detected.",
+    "db_outdated": "Virus database is {days} day(s) old — consider updating",
+    "db_outdated_detail": "Virus signatures are released several times per day. After 7 days, hundreds of new variants are missing from the database, significantly reducing detection rates for recent threats.",
+    "db_ok": "Virus database is up to date ({days} day(s) old)",
+    "clamd_inactive": "ClamAV daemon (clamav-daemon) is not running",
+    "clamd_inactive_detail": "The clamav-daemon service enables on-access scanning and is required for integration with mail servers (Postfix, Amavis, etc.). Without the daemon, only manual on-demand scans are possible.",
+    "no_scan_log": "No ClamAV scan log found — last scan date unknown",
+    "no_scan_log_detail": "No scan log found in standard paths (/var/log/clamav/). -r = recursive scan, --infected = show only infected files (reduces output noise), --log = save results for audit trail and future diff comparisons.",
+    "scan_very_old": "Last scan was {days} day(s) ago ({date}) — very overdue",
+    "scan_very_old_detail": "Crypto miners, backdoors, and web shells do not announce themselves. Without regular scanning, infections can establish persistence and persist for months undetected. -r = recursive, --infected = infected files only, --log = save results.",
+    "scan_old": "Last scan was {days} day(s) ago ({date}) — consider running a new scan",
+    "scan_old_detail": "Monthly scans leave a large detection window. Weekly scanning is recommended for systems that handle files from external sources or are exposed to the internet. -r = recursive, --infected = infected files only, --log = save results.",
+    "scan_recent": "Last scan: {date}"
+  },
+  "desktop_apps": {
+    "detected": "{app} detected (process: {proc})"
+  },
+  "history": {
+    "title": "Score History",
+    "no_entries": "No score history found — run an audit first"
+  },
+  "auth_log": {
+    "not_available": "auth.log not accessible — SSH login analysis unavailable",
+    "no_logins": "No successful SSH logins recorded ({days} day(s) of logs available)",
+    "no_logins_no_range": "No successful SSH logins recorded in the available auth.log",
+    "summary": "{count} successful SSH login(s) in the last {days} day(s) — top sources: {top}",
+    "public_login": "{count} successful SSH login(s) from public IP(s): {ips}",
+    "brute_force": "{count} failed SSH login attempt(s) over {days} day(s) — consider installing fail2ban"
+  },
+  "umask": {
+    "ok": "System umask is {umask} (secure) — source: {source}",
+    "group_writable": "System umask is {umask} — new files are group-writable by default (source: {source})",
+    "world_writable": "System umask is {umask} — new files are world-writable by default (source: {source})",
+    "unusual": "System umask is {umask} — verify this is intentional (source: {source})",
+    "not_found": "Could not determine system-wide umask — no umask setting found in standard config files",
+    "multiple_definitions": "Multiple umask definitions detected across config files: {definitions}"
+  },
+  "ntp": {
+    "synchronized": "NTP time synchronisation active ({service})",
+    "not_enabled": "NTP time synchronisation is not enabled",
+    "not_enabled_detail": "Without NTP, the system clock drifts over time. This breaks TLS certificate validation, corrupts log timestamps (making incident analysis unreliable), and causes authentication failures in protocols that depend on time (Kerberos, TOTP/2FA). Enable systemd-timesyncd (lightweight, built-in) or chrony (more accurate, recommended for servers).",
+    "not_enabled_reason": "NTP disabled — clock drift risk",
+    "not_synchronized": "NTP is enabled but the clock is not yet synchronised",
+    "not_synchronized_detail": "The NTP service is running but has not completed its first synchronisation. This is normal immediately after boot or on a freshly installed system. If it persists, check connectivity to the NTP pool and review: journalctl -u systemd-timesyncd or chronyc tracking.",
+    "not_synchronized_reason": "NTP enabled but not yet synchronised"
+  },
+  "smtp": {
+    "not_installed": "No MTA detected (Postfix/Exim/Sendmail) — no local mail server",
+    "installed_not_listening": "{mta} is installed but not listening on port 25",
+    "local_only": "{mta} is listening on port 25 — local delivery only ({bind})",
+    "exposed": "{mta} is listening on port 25 on all interfaces ({bind}) — network-accessible",
+    "exposed_detail": "Port 25 open on all interfaces means any host on the network (or internet, if not firewalled) can attempt SMTP connections. On a workstation or internal server this is almost always unintentional and allows relay testing, VRFY enumeration, and spam delivery attempts.",
+    "exposed_reason": "SMTP port 25 bound to {bind} — reachable from the network",
+    "exposed_restart_postfix": "Then restart Postfix: sudo systemctl restart postfix"
+  },
+  "auditd": {
+    "not_installed": "Linux Audit Framework (auditd) is not installed",
+    "not_installed_detail": "auditd records system calls and file access events to a tamper-evident log. Without it, privilege escalation attempts, credential file access, and sudo abuse go completely unlogged. Install auditd and configure watch rules on sensitive files.",
+    "service_inactive": "auditd is installed but the service is not running",
+    "service_inactive_detail": "auditd is installed but inactive — no system events are being logged. Enable it to restore audit trail coverage.",
+    "service_inactive_reason": "auditd inactive — system event logging disabled",
+    "no_rules": "auditd is running but no audit rules are loaded",
+    "no_rules_detail": "auditd is active but has no rules configured. Without watch rules, access to sensitive files (/etc/passwd, /etc/shadow, /etc/sudoers) is not logged. Run 'sudo auditctl -l' to verify. Apply the starter rules below to cover the most critical paths.",
+    "no_rules_reason": "auditd running with no audit rules",
+    "missing_sensitive_rules": "auditd has no watch rules for sensitive system files",
+    "missing_sensitive_rules_detail": "The following sensitive files are not covered by auditd watch rules: {files}. Any access or modification to these files will not be logged.",
+    "missing_sensitive_rules_reason": "auditd: sensitive files not watched — {files}",
+    "active": "auditd active — {count} rule(s) loaded",
+    "sensitive_files_watched": "auditd watching sensitive files (/etc/passwd, /etc/shadow, /etc/sudoers)"
+  },
+  "secure_boot": {
+    "enabled": "Secure Boot is enabled",
+    "disabled": "Secure Boot is disabled",
+    "disabled_detail": "Secure Boot prevents unsigned bootloaders from running. On a desktop, exploiting this requires physical access or a prior root compromise — if neither applies, the risk is low. Enable it in UEFI/BIOS settings if your hardware and kernel support it (standard Ubuntu/Mint kernels are signed).",
+    "disabled_server_detail": "Secure Boot is disabled. On servers and VMs this is common (cloud images, custom kernels, hypervisors). Consider enabling it if the platform supports it.",
+    "disabled_reason": "Secure Boot disabled — boot-level malware protection inactive",
+    "no_uefi": "Legacy BIOS detected — Secure Boot not applicable",
+    "no_uefi_detail": "This system uses a legacy BIOS (non-UEFI). Secure Boot is a UEFI feature and cannot be enabled.",
+    "setup_mode": "Secure Boot is in Setup Mode — no Platform Key enrolled",
+    "setup_mode_detail": "Secure Boot is technically enabled but in Setup Mode: no Platform Key (PK) is enrolled. This means any unsigned bootloader or kernel can run — Secure Boot provides no protection. Enroll keys or disable Setup Mode in UEFI/BIOS settings.",
+    "setup_mode_reason": "Secure Boot in Setup Mode — no Platform Key enrolled, protection inactive",
+    "unknown": "Secure Boot state could not be determined",
+    "unknown_detail": "Could not read Secure Boot state (mokutil not installed, EFI variables inaccessible). Install mokutil to check: sudo apt install mokutil"
+  },
+  "file_integrity": {
+    "not_installed": "No file integrity monitor installed (AIDE / Tripwire)",
+    "not_installed_detail": "File integrity monitors detect unauthorised changes to system files, binaries, and configuration. Without one, an attacker who modifies a binary or config file (e.g. /etc/passwd, /usr/bin/sudo) will go undetected. Install AIDE and initialise its database.",
+    "no_db": "{tool} is installed but the integrity database has not been initialised",
+    "no_db_detail": "Without an initialised database, {tool} has no baseline to compare against and cannot detect any changes. Initialise the database now.",
+    "no_db_reason": "{tool} installed but database not initialised — integrity monitoring inactive",
+    "no_check": "{tool} database exists but no integrity check has been run",
+    "no_check_detail": "The {tool} database exists but no check has been performed. Schedule regular checks via cron to detect file modifications promptly.",
+    "no_check_reason": "{tool} database present but no check on record",
+    "check_old": "Last {tool} check was {days} day(s) ago ({date})",
+    "check_old_detail": "The file integrity check is more than 30 days old. Undetected changes in the interim could indicate a compromise. Schedule daily or weekly cron checks.",
+    "check_old_reason": "Last {tool} check {days} days ago — stale coverage",
+    "ok": "{tool} integrity check up to date (last run: {date})"
+  },
+  "fail2ban": {
+    "not_installed": "Fail2ban is not installed",
+    "not_installed_detail": "Fail2ban monitors log files for repeated authentication failures and temporarily bans offending IPs via firewall rules. Without it, brute-force attacks against SSH, web applications, and other services are unconstrained. Install and configure at minimum the sshd jail.",
+    "service_inactive": "Fail2ban is installed but the service is not running",
+    "service_inactive_detail": "Fail2ban is installed but inactive — IP banning is not in effect. Enable it to protect exposed services against brute-force attacks.",
+    "service_inactive_reason": "Fail2ban inactive — no brute-force protection",
+    "no_jails": "Fail2ban is running but no jails are active",
+    "no_jails_detail": "Fail2ban is running but has no active jails configured. At minimum, enable the sshd jail in /etc/fail2ban/jail.local to protect SSH from brute-force attacks.",
+    "no_jails_reason": "Fail2ban running with no active jails",
+    "active": "Fail2ban active — {count} jail(s) enabled",
+    "ssh_jail_active": "SSH brute-force protection active (jail: {jail})"
+  },
+  "rootkit": {
+    "not_installed": "No rootkit scanner installed (rkhunter / chkrootkit)",
+    "not_installed_detail": "Rootkit scanners detect known rootkits, backdoors, and suspicious system modifications. Without one, compromised binaries or hidden processes may go undetected. Install rkhunter (recommended) or chkrootkit and schedule regular scans via cron.",
+    "db_outdated": "{tool} signature database is {days} day(s) old",
+    "db_outdated_detail": "An outdated signature database reduces detection coverage. New rootkits and malware variants will not be recognised. Run: sudo rkhunter --update to refresh.",
+    "db_outdated_reason": "{tool} database outdated ({days} days) — reduced detection coverage",
+    "no_scan": "No completed {tool} scan found in the logs",
+    "no_scan_detail": "No scan record was found in the log file. Schedule a regular scan via cron (e.g. daily) so any rootkit infection is detected promptly.",
+    "no_scan_reason": "No {tool} scan on record",
+    "scan_old": "Last {tool} scan was {days} day(s) ago ({date})",
+    "scan_old_detail": "The rootkit scan is more than 30 days old. An undetected compromise in the interim would remain unnoticed. Schedule weekly or daily cron scans.",
+    "scan_old_reason": "Last {tool} scan {days} days ago — stale coverage",
+    "ok": "{tool} scan is up to date (last run: {date})"
+  },
+  "mac_policy": {
+    "apparmor_ok": "AppArmor enforcing — {enforcing} profile(s) enforce, {complain} complain",
+    "apparmor_complain_profiles": "{complain} AppArmor profile(s) in complain mode — violations are logged but not blocked",
+    "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. Switch profiles to enforce mode to actively prevent unauthorized access.",
+    "apparmor_no_enforce": "AppArmor active but no profiles in enforce mode ({complain} in complain)",
+    "apparmor_no_enforce_detail": "All profiles are in complain mode — violations are logged but not blocked. Switch to enforce mode to actively prevent attacks.",
+    "apparmor_no_enforce_reason": "AppArmor active but no profiles enforcing",
+    "apparmor_inactive": "AppArmor installed but service is not active",
+    "apparmor_inactive_detail": "The AppArmor module is present but the service is not running. Without an active MAC framework, exploited processes run with full privileges.",
+    "apparmor_inactive_reason": "AppArmor installed but inactive",
+    "selinux_enforcing": "SELinux enforcing — MAC policy is active",
+    "selinux_permissive": "SELinux is in permissive mode — violations are logged but not blocked",
+    "selinux_permissive_detail": "Permissive mode logs policy violations without enforcing them. Switch to enforcing mode for active protection.",
+    "no_enforce": "No MAC policy is actively enforcing",
+    "no_enforce_detail": "Set SELinux to enforcing mode to block policy violations rather than just logging them.",
+    "no_enforce_reason": "No MAC policy actively enforcing",
+    "no_mac": "No Mandatory Access Control (MAC) framework found",
+    "no_mac_detail": "Neither AppArmor nor SELinux is installed. MAC frameworks confine processes and limit the damage from exploited services.",
+    "no_mac_reason": "No MAC framework (AppArmor/SELinux) installed or active",
+    "selinux_disabled": "SELinux installed but disabled",
+    "selinux_disabled_detail": "SELinux is installed on this system but has been explicitly disabled. Run 'sudo setenforce 1' to re-enable enforcement without rebooting, then verify with 'sestatus'.",
+    "selinux_disabled_reason": "SELinux installed but disabled"
+  },
+  "backup": {
+    "active": "Backup solution active: {tools}",
+    "also_installed": "Also installed (not confirmed active): {tools}",
+    "installed_only": "Backup tool(s) found but not confirmed active: {tools}",
+    "installed_only_detail": "The tool is installed but no configuration artefact was detected. Verify that backups are actually scheduled and running.",
+    "no_backup": "No backup solution found",
+    "no_backup_detail": "No backup tool (borgmatic, borg, restic, timeshift, duplicati, bacula, rclone…) was detected. Regular backups are essential to recover from data loss, ransomware, or hardware failure.",
+    "no_backup_reason": "No backup solution installed or configured"
+  },
+  "firmware": {
+    "fwupd_missing": "fwupd not installed — firmware update status cannot be determined",
+    "fwupd_error": "fwupdmgr get-updates returned an error: {error}",
+    "fwupd_updates": "{count} pending firmware update(s): {devices}",
+    "fwupd_updates_detail": "Run 'sudo fwupdmgr update' to apply pending BIOS/UEFI/SSD/NIC firmware updates. Outdated firmware may expose known hardware vulnerabilities.",
+    "fwupd_updates_reason": "{count} pending firmware update(s) detected by fwupd",
+    "fwupd_ok": "No pending firmware updates (fwupd)",
+    "microcode_missing": "{vendor} CPU detected but no microcode package installed",
+    "microcode_missing_detail": "CPU microcode updates patch hardware-level vulnerabilities (Spectre, Meltdown, etc.). Install the appropriate package to keep microcode up to date.",
+    "microcode_missing_reason": "{vendor} CPU microcode package not installed",
+    "microcode_ok": "CPU microcode package installed: {package}",
+    "microcode_na": "CPU vendor is not Intel or AMD — no microcode package required"
+  },
+  "systemd_timers": {
+    "no_systemctl": "systemctl not found — cannot audit systemd timers",
+    "no_timers": "No active systemd timers found",
+    "pipe_to_shell": "{count} systemd timer(s) contain a curl/wget pipe-to-shell in ExecStart",
+    "pipe_to_shell_detail": "Timers that download and execute code at runtime are a supply-chain attack vector. Review and rewrite these ExecStart commands: {entries}",
+    "pipe_to_shell_reason": "{count} systemd timer(s) pipe remote content to a shell",
+    "world_writable": "{count} world-writable script(s) referenced in systemd timer ExecStart: {scripts}",
+    "world_writable_detail": "World-writable scripts executed by root-level timers can be replaced by any local user. Restrict permissions with chmod o-w.",
+    "world_writable_reason": "{count} world-writable script(s) in systemd timer ExecStart",
+    "user_created_root": "{count} user-created timer(s) in /etc/systemd/system/ running as root: {units}",
+    "ok": "All {count} systemd timer(s) look clean"
+  },
+  "ssl_certs": {
+    "openssl_unavailable": "openssl not found — cannot check TLS/SSL certificate expiry",
+    "no_certs": "No server TLS/SSL certificates found (Let's Encrypt, /etc/ssl/private, nginx, apache2, postfix)",
+    "read_error": "Could not read certificate {path}: {error}",
+    "expired": "Certificate {path} EXPIRED {days} day(s) ago",
+    "expiring_critical": "Certificate {path} expires in {days} day(s) — renew immediately",
+    "expiring_soon": "Certificate {path} expires in {days} day(s) — renew soon",
+    "ok": "Certificate {path} valid — expires in {days} day(s)"
+  },
+  "log_rotation": {
+    "logrotate_missing": "logrotate not installed — log files will grow unbounded",
+    "logrotate_missing_detail": "Without logrotate, log files in /var/log/ are never rotated or compressed. Disk exhaustion from runaway logs is a common cause of service outages.",
+    "logrotate_missing_reason": "logrotate not installed — no log rotation",
+    "logrotate_no_rules": "logrotate installed but no rules found in /etc/logrotate.d/",
+    "logrotate_no_rules_detail": "logrotate is installed but /etc/logrotate.d/ is empty. Add rotation rules for your application logs.",
+    "logrotate_ok": "logrotate configured — {count} active rule(s) in /etc/logrotate.d/",
+    "journald_volatile": "systemd-journald storage is {storage} — logs are lost on reboot",
+    "journald_volatile_detail": "With Storage=volatile (or none), journal entries are written only to /run/log/journal/ which is cleared at shutdown. Set Storage=persistent or create /var/log/journal/ to retain logs across reboots.",
+    "journald_volatile_reason": "systemd-journald storage is volatile — logs lost on reboot",
+    "journald_persistent": "systemd-journald logs are persistent (/var/log/journal/)",
+    "journald_no_limit": "systemd-journald disk usage is unlimited (SystemMaxUse not set)",
+    "journald_no_limit_detail": "Without SystemMaxUse= or SystemKeepFree=, the journal can consume all available disk space. Set a limit in /etc/systemd/journald.conf appropriate to your disk size.",
+    "journald_limit_ok": "systemd-journald disk limits configured: {settings}",
+    "remote_syslog_ok": "{daemon} configured with remote log target",
+    "remote_syslog_none": "{daemon} is installed but no remote log target is configured",
+    "remote_syslog_none_detail": "Forwarding logs to a remote syslog server (e.g. via rsyslog @@host:514) ensures logs are preserved even if the local system is compromised or wiped. Optional but recommended for servers."
+  },
+  "exposure": {
+    "section_title": "ATTACK SURFACE",
+    "internet_facing": "Internet-facing",
+    "internet_facing_detail": "machine has a direct public IP",
+    "internet_facing_local": "behind NAT / no direct public IP",
+    "internet_facing_ddns": "DDNS active — ports reachable from internet",
+    "firewall": "Firewall",
+    "firewall_inactive": "UFW is inactive — all ports unfiltered",
+    "firewall_allow_all": "default policy is ALLOW — no filtering",
+    "firewall_policy": "active — default {policy} incoming",
+    "open_ports": "Listening ports",
+    "no_open_ports": "none on all-interfaces",
+    "ssh": "SSH",
+    "ssh_not_running": "not installed / not running",
+    "ssh_ok": "key-only, root login disabled",
+    "ssh_root": "root login allowed",
+    "ssh_password": "password auth enabled",
+    "ssh_weak_crypto": "weak ciphers/KEX",
+    "brute_force": "Brute-force guard",
+    "brute_force_missing": "fail2ban not installed",
+    "brute_force_inactive": "fail2ban installed but inactive",
+    "brute_force_ok": "fail2ban active",
+    "updates": "Security updates",
+    "updates_pending": "security updates pending",
+    "updates_ok": "up to date"
+  },
+  "corr": {
+    "section_title": "COMPOUND RISKS",
+    "triggered_by": "Triggered by: {keys}",
+    "root_no_protection": "Root login is enabled with no active brute-force protection",
+    "password_auth_under_attack": "Password authentication is enabled while brute-force attacks are actively detected",
+    "ssh_root_password": "SSH accepts root login via password — direct root compromise possible",
+    "privilege_escalation": "Passwordless sudo combined with unexpected SUID binaries — multiple privilege escalation paths",
+    "stale_unmonitored": "Security updates pending with no active intrusion detection",
+    "fully_blind": "No firewall logging, no brute-force detection, and no audit daemon — system activity is invisible"
+  }
+}

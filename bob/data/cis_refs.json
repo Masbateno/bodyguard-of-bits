@@ -1,0 +1,534 @@
+{
+  "auditd.missing_sensitive_rules": {
+    "ref": "CIS Ubuntu 22.04 L2 — 4.1.6 — Ensure events that modify user/group information are collected",
+    "code": "CIS:4.1.6"
+  },
+  "auditd.no_rules": {
+    "ref": "CIS Ubuntu 22.04 L2 — 4.1.4–4.1.17 — Configure system audit rules",
+    "code": "CIS:4.1.4"
+  },
+  "auditd.not_installed": {
+    "ref": "CIS Ubuntu 22.04 L2 — 4.1.1 — Ensure auditd is installed",
+    "code": "CIS:4.1.1"
+  },
+  "auditd.service_inactive": {
+    "ref": "CIS Ubuntu 22.04 L2 — 4.1.2 — Ensure auditd service is enabled and active",
+    "code": "CIS:4.1.2"
+  },
+  "auth_log.brute_force": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.7 — Ensure SSH MaxAuthTries / fail2ban configured (active brute-force detected)",
+    "code": "CIS:5.2.7"
+  },
+  "auth_log.public_login": {
+    "ref": "CIS Ubuntu 22.04 L2 — 5.2.23 — Ensure SSH access is limited (AllowUsers/AllowGroups; review public login sources)",
+    "code": "CIS:5.2.23"
+  },
+  "clamav.db_outdated": {
+    "ref": "Best practice — Ensure virus database is updated at least weekly",
+    "code": null
+  },
+  "clamav.db_very_outdated": {
+    "ref": "Best practice — Ensure virus database is updated daily (freshclam enabled)",
+    "code": null
+  },
+  "clamav.scan_old": {
+    "ref": "Best practice — Ensure regular full system scans are scheduled (weekly)",
+    "code": null
+  },
+  "clamav.scan_very_old": {
+    "ref": "Best practice — Ensure regular full system scans are scheduled (weekly)",
+    "code": null
+  },
+  "cron_audit.pipe_to_shell": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron (script integrity: verify sources before execution)",
+    "code": "CIS:5.1"
+  },
+  "cron_audit.world_writable": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.1.8 — Ensure cron is restricted to authorized users",
+    "code": "CIS:5.1.8"
+  },
+  "disk.partition_critical": {
+    "ref": "Best practice — Monitor disk space to ensure system stability",
+    "code": null
+  },
+  "disk.pending_sectors": {
+    "ref": "Best practice — Monitor SMART attribute 197 (pending sectors)",
+    "code": null
+  },
+  "disk.reallocated_sectors": {
+    "ref": "Best practice — Monitor SMART attribute 5 (reallocated sectors)",
+    "code": null
+  },
+  "disk.smart_failed": {
+    "ref": "Best practice — Monitor disk health with SMART (predictive failure prevention)",
+    "code": null
+  },
+  "disk.uncorrectable_errors": {
+    "ref": "Best practice — Monitor SMART attribute 198 (uncorrectable errors)",
+    "code": null
+  },
+  "docker_audit.host_network": {
+    "ref": "CIS Docker 1.6 — 5.13 — Ensure that the container's network is not set to host",
+    "code": "CIS Docker:5.13"
+  },
+  "docker_audit.privileged": {
+    "ref": "CIS Docker 1.6 — 5.4 — Ensure that privileged containers are not used",
+    "code": "CIS Docker:5.4"
+  },
+  "docker_audit.root_containers": {
+    "ref": "CIS Docker 1.6 — 4.1 — Ensure that a user for the container has been created (non-root)",
+    "code": "CIS Docker:4.1"
+  },
+  "docker_audit.socket_mounted": {
+    "ref": "CIS Docker 1.6 — 5.31 — Ensure that the Docker socket is not mounted inside any container",
+    "code": "CIS Docker:5.31"
+  },
+  "file_integrity.check_old": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.3.2 — Ensure filesystem integrity is regularly checked",
+    "code": "CIS:1.3.2"
+  },
+  "file_integrity.no_check": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.3.2 — Ensure filesystem integrity is regularly checked",
+    "code": "CIS:1.3.2"
+  },
+  "file_integrity.no_db": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.3.1 — Ensure AIDE is installed",
+    "code": "CIS:1.3.1"
+  },
+  "file_integrity.not_installed": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.3.1 — Ensure AIDE is installed",
+    "code": "CIS:1.3.1"
+  },
+  "file_perms.ssh_host_key_perms": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure permissions on SSH private host key files are configured",
+    "code": "CIS:5.2.2"
+  },
+  "file_perms.sudoers_nopasswd_all": {
+    "ref": "CIS Ubuntu 22.04 L2 — 5.3.4 — Ensure users must provide password for privilege escalation",
+    "code": "CIS:5.3.4"
+  },
+  "file_perms.too_permissive": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.1 — Ensure appropriate permissions on sensitive files",
+    "code": "CIS:6.1"
+  },
+  "file_perms.world_writable": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.1.10 — Ensure no world writable files exist",
+    "code": "CIS:6.1.10"
+  },
+  "firewall.logging_off": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw firewall rules exist and logging is enabled",
+    "code": "CIS:3.5.1.7"
+  },
+  "firmware.fwupd_updates": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (firmware)",
+    "code": "CIS:1.9"
+  },
+  "firmware.microcode_missing": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (CPU microcode)",
+    "code": "CIS:1.9"
+  },
+  "hardening.accept_redirects_v6_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.2 — Ensure ICMP redirects are not accepted (net.ipv6.conf.*.accept_redirects)",
+    "code": "CIS:3.3.2"
+  },
+  "hardening.accept_source_route_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure source routed packets are not accepted (net.ipv4.conf.*.accept_source_route)",
+    "code": "CIS:3.3.1"
+  },
+  "hardening.icmp_broadcast_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.7 — Ensure broadcast ICMP requests are ignored (net.ipv4.icmp_echo_ignore_broadcasts)",
+    "code": "CIS:3.3.7"
+  },
+  "hardening.log_martians_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.12 — Ensure suspicious packets are logged",
+    "code": "CIS:3.3.12"
+  },
+  "hardening.protected_hardlinks_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.2 — Ensure filesystem integrity is configured (fs.protected_hardlinks)",
+    "code": "CIS:1.6.2"
+  },
+  "hardening.protected_symlinks_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.3 — Ensure filesystem integrity is configured (fs.protected_symlinks)",
+    "code": "CIS:1.6.3"
+  },
+  "hardening.redirects_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.2 — Ensure ICMP redirects are not accepted",
+    "code": "CIS:3.3.2"
+  },
+  "hardening.rp_filter_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure source routed packets are not accepted",
+    "code": "CIS:3.3.1"
+  },
+  "hardening.rp_filter_loose": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure source routed packets are not accepted (strict mode recommended)",
+    "code": "CIS:3.3.1"
+  },
+  "hardening.send_redirects_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.2 — Ensure ICMP redirects are not sent (net.ipv4.conf.*.send_redirects)",
+    "code": "CIS:3.3.2"
+  },
+  "hardening.tcp_syncookies_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.8 — Ensure TCP SYN cookies is enabled (net.ipv4.tcp_syncookies)",
+    "code": "CIS:3.3.8"
+  },
+  "iptables_nft.forward_accept": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (FORWARD chain ACCEPT)",
+    "code": "CIS:3.5.1.1"
+  },
+  "iptables_nft.input_accept": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (INPUT chain ACCEPT)",
+    "code": "CIS:3.5.1.1"
+  },
+  "iptables_nft.no_backend": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (no active firewall layer detected)",
+    "code": "CIS:3.5"
+  },
+  "iptables_nft.no_conntrack": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Configure firewall (no ESTABLISHED/RELATED conntrack rule detected)",
+    "code": "CIS:3.5.1"
+  },
+  "iptables_nft.no_loopback": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.5 — Ensure ufw loopback traffic is configured",
+    "code": "CIS:3.5.1.5"
+  },
+  "ipv6.port_no_v6_rule": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
+    "code": "CIS:3.5.1.4"
+  },
+  "ipv6.ufw_disabled_listeners_present": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
+    "code": "CIS:3.5.1.4"
+  },
+  "ipv6.ufw_enabled_kernel_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — IPv6 firewall configuration consistency",
+    "code": "CIS:3.5.1.4"
+  },
+  "kernel_hardening.aslr_conservative": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3 — Ensure kernel ASLR is fully enabled (randomize_va_space = 2 recommended)",
+    "code": "CIS:3.3"
+  },
+  "kernel_hardening.aslr_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3 — Ensure kernel ASLR is enabled (randomize_va_space = 2)",
+    "code": "CIS:3.3"
+  },
+  "kernel_hardening.dmesg_exposed": {
+    "ref": "Best practice — Restrict access to kernel log (kernel.dmesg_restrict = 1)",
+    "code": null
+  },
+  "kernel_hardening.kptr_exposed": {
+    "ref": "Best practice — Restrict kernel pointer exposure (kernel.kptr_restrict ≥ 1)",
+    "code": null
+  },
+  "kernel_hardening.ptrace_unrestricted": {
+    "ref": "CIS Ubuntu 22.04 L2 — 1.6.1 — Ensure core dumps are restricted / ptrace scope (kernel.yama.ptrace_scope ≥ 1)",
+    "code": "CIS:1.6.1"
+  },
+  "kernel_hardening.suid_dump_all": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure core dumps are restricted (fs.suid_dumpable = 0)",
+    "code": "CIS:1.6.1"
+  },
+  "kernel_modules.kernels_obsolete": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (obsolete kernel running)",
+    "code": "CIS:1.9"
+  },
+  "kernel_modules.kernels_reboot_pending": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (reboot required to activate new kernel)",
+    "code": "CIS:1.9"
+  },
+  "kernel_modules.kernels_update_available": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (kernel update available)",
+    "code": "CIS:1.9"
+  },
+  "kernel_modules.risky_fs": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.1.1.x — Ensure mounting of legacy/rare filesystems is disabled",
+    "code": "CIS:1.1.1"
+  },
+  "kernel_modules.risky_net": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.4.x — Ensure DCCP/SCTP/RDS/TIPC is disabled",
+    "code": "CIS:3.4"
+  },
+  "mac_policy.apparmor_complain_profiles": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.3 — Ensure all AppArmor profiles are in enforce or complain mode",
+    "code": "CIS:1.6.3"
+  },
+  "mac_policy.apparmor_inactive": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure AppArmor is installed and active",
+    "code": "CIS:1.6.1"
+  },
+  "mac_policy.apparmor_no_enforce": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.2 — Ensure AppArmor is enabled in bootloader configuration",
+    "code": "CIS:1.6.2"
+  },
+  "mac_policy.no_enforce": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure a MAC solution (AppArmor/SELinux) is installed and enforcing",
+    "code": "CIS:1.6.1"
+  },
+  "mac_policy.no_mac": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure a MAC solution (AppArmor/SELinux) is installed",
+    "code": "CIS:1.6.1"
+  },
+  "memory.swappiness_ssd_wear": {
+    "ref": "Best practice — Tune vm.swappiness to reduce SSD wear (≤ 10 for SSDs)",
+    "code": null
+  },
+  "memory.swappiness_unjustified": {
+    "ref": "Best practice — Optimise vm.swappiness for system workload",
+    "code": null
+  },
+  "password_policy.no_expiry": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.4.2 — Ensure password expiration is 365 days or less",
+    "code": "CIS:5.4.2"
+  },
+  "password_policy.no_quality_module": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.4.1 — Ensure password creation requirements are configured",
+    "code": "CIS:5.4.1"
+  },
+  "password_policy.weak_minlen": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.4.1 — Ensure password creation requirements are configured (minlen ≥ 14)",
+    "code": "CIS:5.4.1"
+  },
+  "rules.duplicate_found": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (rule hygiene and auditability)",
+    "code": "CIS:3.5"
+  },
+  "rules.ipv6_missing": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure ufw rules exist for all open ports (IPv4 and IPv6 parity)",
+    "code": "CIS:3.5.1.4"
+  },
+  "rules.open_any_found": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Ensure ufw is installed and configured with restrictive default policy",
+    "code": "CIS:3.5.1"
+  },
+  "samba.guest_readonly": {
+    "ref": "Best practice (Samba) — Verify anonymous read-only shares are intentional",
+    "code": null
+  },
+  "samba.guest_writable": {
+    "ref": "Best practice (Samba) — Ensure no shares allow anonymous write access",
+    "code": null
+  },
+  "samba.map_to_guest": {
+    "ref": "Best practice (Samba) — Ensure map to guest is set to never",
+    "code": null
+  },
+  "samba.null_passwords": {
+    "ref": "Best practice (Samba) — Ensure null passwords are disabled",
+    "code": null
+  },
+  "samba.server_signing_disabled": {
+    "ref": "Best practice (Samba) — Ensure SMB signing is enabled (prevents NTLM relay)",
+    "code": null
+  },
+  "samba.smb1_enabled": {
+    "ref": "Best practice (Samba) — Disable SMBv1 to prevent EternalBlue/WannaCry exploits",
+    "code": null
+  },
+  "secure_boot.disabled": {
+    "ref": "CIS Ubuntu 22.04 L2 — 1.4.1 — Ensure Secure Boot is enabled",
+    "code": "CIS:1.4.1"
+  },
+  "secure_boot.setup_mode": {
+    "ref": "CIS Ubuntu 22.04 L2 — 1.4.1 — Ensure Secure Boot is enabled",
+    "code": "CIS:1.4.1"
+  },
+  "services_state.enabled_inactive": {
+    "ref": "Best practice — Ensure security services remain enabled and active after reboot",
+    "code": null
+  },
+  "services_state.service_inactive": {
+    "ref": "Best practice — Ensure security services remain enabled and active after reboot",
+    "code": null
+  },
+  "ssh.allow_tcp_forwarding": {
+    "ref": "CIS Ubuntu 22.04 L2 — 5.2.21 — Ensure SSH AllowTcpForwarding is disabled",
+    "code": "CIS:5.2.21"
+  },
+  "ssh.authorized_keys_dsa": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Deprecated algorithm (DSA) in authorized_keys",
+    "code": "CIS:5.2.2"
+  },
+  "ssh.authorized_keys_duplicate": {
+    "ref": "Best practice — Remove stale or duplicate authorized_keys entries",
+    "code": null
+  },
+  "ssh.authorized_keys_no_restrictions": {
+    "ref": "CIS Ubuntu 22.04 L2 — 5.2 — Least privilege for authorized_keys entries (service accounts)",
+    "code": "CIS:5.2"
+  },
+  "ssh.authorized_keys_perms": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.3.3 — Ensure permissions on SSH authorized_keys files are configured",
+    "code": "CIS:6.3.3"
+  },
+  "ssh.authorized_keys_weak_key": {
+    "ref": "Best practice — Use strong key types in authorized_keys (NIST SP 800-57)",
+    "code": null
+  },
+  "ssh.client_forward_agent": {
+    "ref": "Best practice — Disable ForwardAgent to prevent credential forwarding",
+    "code": null
+  },
+  "ssh.client_known_hosts_devnull": {
+    "ref": "Best practice — Do not redirect known_hosts to /dev/null (disables host key verification)",
+    "code": null
+  },
+  "ssh.client_strict_host_no": {
+    "ref": "Best practice — Enable StrictHostKeyChecking to prevent MITM attacks",
+    "code": null
+  },
+  "ssh.dir_perms": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.3.2 — Ensure permissions on SSH .ssh directory are configured",
+    "code": "CIS:6.3.2"
+  },
+  "ssh.dsa_key": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure SSH private host key file permissions / deprecated algorithm",
+    "code": "CIS:5.2.2"
+  },
+  "ssh.host_based_auth": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.13 — Ensure SSH HostbasedAuthentication is disabled",
+    "code": "CIS:5.2.13"
+  },
+  "ssh.ignore_rhosts_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.12 — Ensure SSH IgnoreRhosts is enabled",
+    "code": "CIS:5.2.12"
+  },
+  "ssh.known_hosts_deprecated": {
+    "ref": "Best practice — Remove deprecated key types from known_hosts",
+    "code": null
+  },
+  "ssh.known_hosts_duplicate": {
+    "ref": "Best practice — Remove duplicate entries from known_hosts",
+    "code": null
+  },
+  "ssh.login_grace_time": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.18 — Ensure SSH LoginGraceTime is set to one minute or less",
+    "code": "CIS:5.2.18"
+  },
+  "ssh.max_auth_tries": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.7 — Ensure SSH MaxAuthTries is set to 4 or less",
+    "code": "CIS:5.2.7"
+  },
+  "ssh.no_allow_users": {
+    "ref": "CIS Ubuntu 22.04 L2 — 5.2.23 — Ensure SSH access is limited (AllowUsers/AllowGroups)",
+    "code": "CIS:5.2.23"
+  },
+  "ssh.no_passphrase": {
+    "ref": "Best practice — Protect SSH private keys with a passphrase",
+    "code": null
+  },
+  "ssh.password_auth": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.8 — Ensure SSH PasswordAuthentication is disabled",
+    "code": "CIS:5.2.8"
+  },
+  "ssh.permit_empty_passwords": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.9 — Ensure SSH PermitEmptyPasswords is disabled",
+    "code": "CIS:5.2.9"
+  },
+  "ssh.permit_root_login": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.10 — Ensure SSH root login is disabled",
+    "code": "CIS:5.2.10"
+  },
+  "ssh.permit_user_env": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.11 — Ensure SSH PermitUserEnvironment is disabled",
+    "code": "CIS:5.2.11"
+  },
+  "ssh.private_key_perms": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure permissions on SSH private host key files are configured",
+    "code": "CIS:5.2.2"
+  },
+  "ssh.pubkey_auth_disabled": {
+    "ref": "Best practice — Ensure SSH public key authentication is enabled",
+    "code": null
+  },
+  "ssh.rsa_weak": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure SSH host key algorithm strength (RSA < 4096 bits)",
+    "code": "CIS:5.2.2"
+  },
+  "ssh.strict_modes_disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure SSH private host key file permissions are configured",
+    "code": "CIS:5.2.2"
+  },
+  "ssh.weak_ciphers": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.15 — Ensure only strong cipher suites are used",
+    "code": "CIS:5.2.15"
+  },
+  "ssh.weak_kex": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.17 — Ensure only strong key exchange algorithms are used",
+    "code": "CIS:5.2.17"
+  },
+  "ssh.weak_macs": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.16 — Ensure only strong MAC algorithms are used",
+    "code": "CIS:5.2.16"
+  },
+  "ssh.x11_forwarding": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.6 — Ensure SSH X11 forwarding is disabled",
+    "code": "CIS:5.2.6"
+  },
+  "ssl_certs.expired": {
+    "ref": "Best practice — Ensure TLS certificates are valid and renewed before expiry",
+    "code": null
+  },
+  "ssl_certs.expiring_critical": {
+    "ref": "Best practice — Renew TLS certificates expiring within 7 days",
+    "code": null
+  },
+  "ssl_certs.expiring_soon": {
+    "ref": "Best practice — Renew TLS certificates expiring within 30 days",
+    "code": null
+  },
+  "suid_audit.unexpected_sgid": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
+    "code": "CIS:6.1.13"
+  },
+  "suid_audit.unexpected_suid": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
+    "code": "CIS:6.1.13"
+  },
+  "systemd_timers.pipe_to_shell": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron/timers (script integrity: verify sources before execution)",
+    "code": "CIS:5.1"
+  },
+  "systemd_timers.user_created_root": {
+    "ref": "CIS Ubuntu 22.04 L2 — 5.1.8 — Ensure cron/timer access is restricted to authorised users",
+    "code": "CIS:5.1.8"
+  },
+  "systemd_timers.world_writable": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.1.10 — Ensure no world writable scripts are executed by privileged timers",
+    "code": "CIS:6.1.10"
+  },
+  "umask.group_writable": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.5.5 — Ensure default user umask is 027 or more restrictive",
+    "code": "CIS:5.5.5"
+  },
+  "umask.world_writable": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.5.5 — Ensure default user umask is 027 or more restrictive",
+    "code": "CIS:5.5.5"
+  },
+  "updates.security_pending": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed",
+    "code": "CIS:1.9"
+  },
+  "updates.unattended_not_configured": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed",
+    "code": "CIS:1.9"
+  },
+  "user_accounts.empty_password": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.2.1 — Ensure accounts in /etc/passwd use shadowed passwords / no empty passwords",
+    "code": "CIS:6.2.1"
+  },
+  "user_accounts.expired_account": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.4.2 — Ensure password expiration is 365 days or less (review expired accounts)",
+    "code": "CIS:5.4.2"
+  },
+  "user_accounts.no_shadow": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.2 — User and Group Settings (requires privileged access to /etc/shadow)",
+    "code": "CIS:6.2"
+  },
+  "user_accounts.uid_zero": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.2.2 — Ensure no legacy '+' entries exist in /etc/passwd / Ensure no UID 0 accounts exist other than root",
+    "code": "CIS:6.2.2"
+  },
+  "virt.bypass_risk": {
+    "ref": "Best practice — Ensure bridge interfaces do not bypass UFW FORWARD rules",
+    "code": null
+  }
+}

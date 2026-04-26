@@ -1,0 +1,432 @@
+"""
+Tests for bob/watch.py — --watch mode.
+
+Covers:
+  - _score_bar: output format and edge cases
+  - _NullReport: silently accepts any method call
+  - CLI parsing: --watch, --watch=N, --watch N
+  - CLI validation: interval < 10s, non-integer
+  - Mutual exclusion: --watch + --diff, --watch + --fix
+  - run_watch: KeyboardInterrupt during sleep exits cleanly
+"""
+
+from __future__ import annotations
+
+import time
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from bob.watch import _NullReport, _score_bar
+from bob.cli import AuditConfig, CLIError, parse_args
+
+
+# ---------------------------------------------------------------------------
+# _score_bar
+# ---------------------------------------------------------------------------
+
+class TestScoreBar:
+    def test_zero_is_all_empty(self):
+        assert _score_bar(0) == "░░░░░░░░░░"
+
+    def test_ten_is_all_filled(self):
+        assert _score_bar(10) == "██████████"
+
+    def test_seven_has_seven_filled(self):
+        bar = _score_bar(7)
+        assert bar.count("█") == 7
+        assert bar.count("░") == 3
+
+    def test_length_always_10(self):
+        for score in range(11):
+            assert len(_score_bar(score)) == 10
+
+    def test_negative_clamped_to_zero(self):
+        assert _score_bar(-5) == "░░░░░░░░░░"
+
+    def test_above_10_clamped(self):
+        assert _score_bar(15) == "██████████"
+
+    def test_filled_before_empty(self):
+        """Filled blocks precede empty blocks."""
+        bar = _score_bar(5)
+        assert bar == "█████░░░░░"
+
+    def test_one_filled(self):
+        assert _score_bar(1) == "█░░░░░░░░░"
+
+    def test_nine_filled(self):
+        assert _score_bar(9) == "█████████░"
+
+
+# ---------------------------------------------------------------------------
+# _NullReport
+# ---------------------------------------------------------------------------
+
+class TestNullReport:
+    def test_write_section_does_not_raise(self):
+        r = _NullReport()
+        r.write_section("anything")  # must not raise
+
+    def test_write_finding_does_not_raise(self):
+        r = _NullReport()
+        r.write_finding("INFO", "msg")
+
+    def test_any_method_returns_none(self):
+        r = _NullReport()
+        assert r.totally_unknown_method("a", b=1) is None
+
+    def test_multiple_calls_no_error(self):
+        r = _NullReport()
+        for i in range(100):
+            r.write_section(f"section {i}")
+
+    def test_attribute_access_returns_callable(self):
+        r = _NullReport()
+        fn = r.arbitrary_attribute
+        assert callable(fn)
+
+
+# ---------------------------------------------------------------------------
+# CLI: --watch parsing
+# ---------------------------------------------------------------------------
+
+class TestWatchCLIParsing:
+    def test_watch_alone_defaults_60(self):
+        cfg = parse_args(["--watch"])
+        assert cfg.watch_mode
+        assert cfg.watch_interval == 60
+
+    def test_watch_equals_30(self):
+        cfg = parse_args(["--watch=30"])
+        assert cfg.watch_mode
+        assert cfg.watch_interval == 30
+
+    def test_watch_equals_10_minimum(self):
+        cfg = parse_args(["--watch=10"])
+        assert cfg.watch_mode
+        assert cfg.watch_interval == 10
+
+    def test_watch_space_separated(self):
+        cfg = parse_args(["--watch", "120"])
+        assert cfg.watch_mode
+        assert cfg.watch_interval == 120
+
+    def test_watch_large_interval(self):
+        cfg = parse_args(["--watch=3600"])
+        assert cfg.watch_mode
+        assert cfg.watch_interval == 3600
+
+    def test_watch_default_interval_is_60(self):
+        """Interval field defaults to 60 even without --watch."""
+        cfg = AuditConfig()
+        assert cfg.watch_interval == 60
+
+    def test_watch_mode_default_false(self):
+        cfg = AuditConfig()
+        assert not cfg.watch_mode
+
+
+# ---------------------------------------------------------------------------
+# CLI: --watch validation errors
+# ---------------------------------------------------------------------------
+
+class TestWatchCLIValidation:
+    def test_interval_below_10_raises(self):
+        with pytest.raises(CLIError, match="10 seconds"):
+            parse_args(["--watch=9"])
+
+    def test_interval_zero_raises(self):
+        with pytest.raises(CLIError, match="10 seconds"):
+            parse_args(["--watch=0"])
+
+    def test_non_integer_raises(self):
+        with pytest.raises(CLIError, match="positive integer"):
+            parse_args(["--watch=abc"])
+
+    def test_float_raises(self):
+        with pytest.raises(CLIError, match="positive integer"):
+            parse_args(["--watch=1.5"])
+
+    def test_empty_value_raises(self):
+        with pytest.raises(CLIError):
+            parse_args(["--watch="])
+
+    def test_space_separated_below_10_raises(self):
+        with pytest.raises(CLIError, match="10 seconds"):
+            parse_args(["--watch", "5"])
+
+    def test_space_separated_non_integer_raises(self):
+        with pytest.raises(CLIError, match="positive integer"):
+            parse_args(["--watch", "xyz"])
+
+
+# ---------------------------------------------------------------------------
+# CLI: mutual exclusion
+# ---------------------------------------------------------------------------
+
+class TestWatchMutualExclusion:
+    def test_watch_and_diff_raises(self):
+        with pytest.raises(CLIError, match="Incompatible"):
+            parse_args(["--watch", "--diff"])
+
+    def test_watch_and_fix_raises(self):
+        with pytest.raises(CLIError, match="Incompatible"):
+            parse_args(["--watch", "--fix"])
+
+    def test_watch_and_manage_logs_raises(self):
+        with pytest.raises(CLIError, match="Incompatible"):
+            parse_args(["--watch", "--manage-logs"])
+
+    def test_watch_and_install_cron_raises(self):
+        with pytest.raises(CLIError, match="Incompatible"):
+            parse_args(["--watch", "--install-cron"])
+
+    def test_watch_compatible_with_verbose(self):
+        cfg = parse_args(["--watch", "--verbose"])
+        assert cfg.watch_mode
+        assert cfg.verbose
+
+    def test_watch_compatible_with_french(self):
+        cfg = parse_args(["--watch", "--french"])
+        assert cfg.watch_mode
+        assert cfg.lang == "fr"
+
+    def test_watch_compatible_with_offline(self):
+        cfg = parse_args(["--watch", "--offline"])
+        assert cfg.watch_mode
+        assert cfg.offline
+
+    def test_watch_compatible_with_profile(self):
+        cfg = parse_args(["--watch", "--profile=desktop"])
+        assert cfg.watch_mode
+        assert cfg.profile == "desktop"
+
+    def test_watch_and_json_raises(self):
+        with pytest.raises(CLIError, match="Incompatible|incompatible"):
+            parse_args(["--watch", "--json"])
+
+    def test_watch_and_csv_raises(self):
+        with pytest.raises(CLIError, match="incompatible"):
+            parse_args(["--watch", "--output=csv"])
+
+    def test_json_then_watch_raises(self):
+        with pytest.raises(CLIError, match="incompatible"):
+            parse_args(["--json", "--watch"])
+
+    def test_csv_then_watch_raises(self):
+        with pytest.raises(CLIError, match="incompatible"):
+            parse_args(["--output=csv", "--watch"])
+
+
+# ---------------------------------------------------------------------------
+# CLI: --watch duplicate detection
+# ---------------------------------------------------------------------------
+
+class TestWatchDuplicate:
+    def test_watch_equals_twice_raises(self):
+        with pytest.raises(CLIError, match="more than once"):
+            parse_args(["--watch=30", "--watch=60"])
+
+    def test_watch_standalone_then_equals_raises(self):
+        with pytest.raises(CLIError, match="more than once"):
+            parse_args(["--watch", "--watch=60"])
+
+    def test_watch_space_then_equals_raises(self):
+        with pytest.raises(CLIError, match="more than once"):
+            parse_args(["--watch", "30", "--watch=60"])
+
+    def test_watch_standalone_twice_raises(self):
+        with pytest.raises(CLIError, match="more than once"):
+            parse_args(["--watch", "--watch"])
+
+
+# ---------------------------------------------------------------------------
+# CLI: --watch exotic but valid inputs
+# ---------------------------------------------------------------------------
+
+class TestWatchExoticInputs:
+    def test_watch_space_separated_with_surrounding_spaces(self):
+        """Value is stripped before parsing — '  30  ' → 30."""
+        cfg = parse_args(["--watch", "  30  "])
+        assert cfg.watch_interval == 30
+
+    def test_watch_plus_sign_prefix(self):
+        """Python int('+30') == 30 — explicit positive sign is accepted."""
+        cfg = parse_args(["--watch=+30"])
+        assert cfg.watch_interval == 30
+
+    def test_watch_leading_zero(self):
+        """'010' → int 10 in Python 3 (no octal interpretation)."""
+        cfg = parse_args(["--watch=010"])
+        assert cfg.watch_interval == 10
+
+    def test_watch_very_large_interval(self):
+        """No overflow — arbitrarily large intervals are accepted."""
+        cfg = parse_args(["--watch=999999999"])
+        assert cfg.watch_interval == 999999999
+
+    def test_watch_interval_is_int_type(self):
+        """watch_interval must always be an int, never a string or float."""
+        cfg = parse_args(["--watch=30"])
+        assert isinstance(cfg.watch_interval, int)
+
+    def test_watch_interval_not_none_after_standalone_watch(self):
+        cfg = parse_args(["--watch"])
+        assert cfg.watch_interval is not None
+        assert isinstance(cfg.watch_interval, int)
+
+    def test_watch_followed_by_flag_not_consumed_as_interval(self):
+        """'--watch --verbose': --verbose starts with '-' → not consumed as N."""
+        cfg = parse_args(["--watch", "--verbose"])
+        assert cfg.watch_mode
+        assert cfg.watch_interval == 60
+        assert cfg.verbose
+
+
+# ---------------------------------------------------------------------------
+# _score_bar: type enforcement
+# ---------------------------------------------------------------------------
+
+class TestScoreBarTypes:
+    def test_float_raises_type_error(self):
+        """_score_bar enforces int — float input must raise TypeError."""
+        with pytest.raises(TypeError):
+            _score_bar(7.8)
+
+    def test_string_raises_type_error(self):
+        with pytest.raises(TypeError):
+            _score_bar("5")
+
+    def test_none_raises_type_error(self):
+        with pytest.raises(TypeError):
+            _score_bar(None)
+
+    def test_bool_is_accepted(self):
+        """bool is a subclass of int in Python — True==1, False==0."""
+        assert _score_bar(True)  == "█░░░░░░░░░"
+        assert _score_bar(False) == "░░░░░░░░░░"
+
+    def test_only_expected_unicode_chars(self):
+        """Output must contain only the two block characters, nothing else."""
+        for score in range(11):
+            bar = _score_bar(score)
+            assert set(bar) <= {"█", "░"}, f"Unexpected char in bar for score={score}"
+
+
+# ---------------------------------------------------------------------------
+# _NullReport: attribute isolation
+# ---------------------------------------------------------------------------
+
+class TestNullReportIsolation:
+    def test_two_attributes_are_distinct_callables(self):
+        """__getattr__ must return a fresh callable each time — no shared state."""
+        r = _NullReport()
+        assert r.foo is not r.bar
+
+    def test_callable_returns_none(self):
+        r = _NullReport()
+        assert r.anything() is None
+
+    def test_callable_with_args_returns_none(self):
+        r = _NullReport()
+        assert r.method(1, 2, key="val") is None
+
+    def test_real_dunder_not_intercepted(self):
+        """`__class__` is resolved via normal lookup, not __getattr__."""
+        r = _NullReport()
+        assert r.__class__ is _NullReport
+
+    def test_chaining_raises(self):
+        """r.foo() returns None; None.bar() raises AttributeError — chaining unsupported."""
+        r = _NullReport()
+        with pytest.raises(AttributeError):
+            r.foo().bar()
+
+
+# ---------------------------------------------------------------------------
+# run_watch: KeyboardInterrupt exits cleanly
+# ---------------------------------------------------------------------------
+
+class TestWatchKeyboardInterrupt:
+    """run_watch must catch KeyboardInterrupt and return 0."""
+
+    def _make_minimal_result(self):
+        """Minimal object that satisfies build_baseline(engine, ports, snapshots)."""
+        ns = SimpleNamespace()
+        ns.ports_snapshot = None
+        ns.snapshots      = {}
+        return ns
+
+    def test_keyboard_interrupt_during_sleep_returns_0(self):
+        """time.sleep raises KeyboardInterrupt → run_watch returns 0, no exception."""
+        from bob.watch import run_watch
+        from bob.cli import AuditConfig
+
+        config   = AuditConfig()
+        t        = lambda key, **kw: key
+        output   = MagicMock()
+
+        fake_engine = MagicMock()
+        fake_engine.score    = 8
+        fake_engine.finalize = MagicMock()
+
+        fake_baseline = MagicMock()
+
+        minimal_result = self._make_minimal_result()
+
+        with (
+            patch("bob.watch.detect_network_context", return_value=(MagicMock(), None)),
+            patch("bob.watch.run_checks",             return_value=minimal_result),
+            patch("bob.watch.ScoreEngine",            return_value=fake_engine),
+            patch("bob.watch.build_baseline",         return_value=fake_baseline),
+            patch("bob.watch.save_baseline"),
+            patch("bob.watch.time.sleep",             side_effect=KeyboardInterrupt),
+        ):
+            rc = run_watch(
+                config,
+                interval=10,
+                t=t,
+                output_mod=output,
+                registry=MagicMock(),
+                active_profile=MagicMock(),
+                VERSION="test",
+            )
+
+        assert rc == 0
+
+    def test_keyboard_interrupt_calls_stopped_message(self):
+        """run_watch prints the 'watch.stopped' translation key on Ctrl+C."""
+        from bob.watch import run_watch
+        from bob.cli import AuditConfig
+
+        config   = AuditConfig()
+        t        = lambda key, **kw: key
+        output   = MagicMock()
+
+        fake_engine = MagicMock()
+        fake_engine.score    = 5
+        fake_engine.finalize = MagicMock()
+
+        minimal_result = self._make_minimal_result()
+
+        with (
+            patch("bob.watch.detect_network_context", return_value=(MagicMock(), None)),
+            patch("bob.watch.run_checks",             return_value=minimal_result),
+            patch("bob.watch.ScoreEngine",            return_value=fake_engine),
+            patch("bob.watch.build_baseline",         return_value=MagicMock()),
+            patch("bob.watch.save_baseline"),
+            patch("bob.watch.time.sleep",             side_effect=KeyboardInterrupt),
+        ):
+            run_watch(
+                config,
+                interval=10,
+                t=t,
+                output_mod=output,
+                registry=MagicMock(),
+                active_profile=MagicMock(),
+                VERSION="test",
+            )
+
+        output.print_info.assert_called_once_with("watch.stopped")

@@ -1,0 +1,425 @@
+"""
+Tests for bob/domain_scores.py  (Phase B1)
+and CIS reference lookup              (Phase B2)
+and --diff CLI flag                   (Phase B3)
+"""
+
+from __future__ import annotations
+
+import io
+import sys
+
+import pytest
+
+from bob.domain_scores import (
+    DOMAINS,
+    _key_to_domain,
+    compute_domain_scores,
+    render_domain_scores,
+)
+from bob.scoring import CheckResult, ScoreEngine
+from bob.scoring import MAX_SCORE
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_engine(*deduction_specs) -> ScoreEngine:
+    """
+    Build a finalized ScoreEngine from a list of (points, key) tuples.
+
+    Each tuple adds both a finding and a deduction so that domain_scores
+    (which reads engine.breakdown) correctly attributes the points.
+
+    Example:
+        _make_engine((3, "ssh.permit_root_login"), (2, "updates.security_pending"))
+    """
+    engine = ScoreEngine()
+    result = CheckResult()
+    for points, key in deduction_specs:
+        result.alert(message=f"Finding for {key}", key=key)
+        result.add_deduction(reason=f"Deduction for {key}", points=points, key=key)
+    engine.apply(result)
+    engine.finalize()
+    return engine
+
+
+def _clean_engine() -> ScoreEngine:
+    engine = ScoreEngine()
+    engine.finalize()
+    return engine
+
+
+# ---------------------------------------------------------------------------
+# _key_to_domain
+# ---------------------------------------------------------------------------
+
+class TestKeyToDomain:
+    def test_ssh_key(self):
+        assert _key_to_domain("ssh.password_auth") == "ssh"
+
+    def test_file_perms_key(self):
+        assert _key_to_domain("file_perms.world_writable") == "file_perms"
+
+    def test_updates_key(self):
+        assert _key_to_domain("updates.security_pending") == "updates"
+
+    def test_hardening_key(self):
+        assert _key_to_domain("hardening.rp_filter_disabled") == "hardening"
+
+    def test_firewall_key_falls_back(self):
+        assert _key_to_domain("firewall.inactive") == "firewall"
+
+    def test_unknown_prefix_falls_back_to_firewall(self):
+        assert _key_to_domain("ports.public_port") == "firewall"
+
+    def test_empty_key_returns_none(self):
+        assert _key_to_domain("") is None
+
+    def test_none_key_returns_none(self):
+        assert _key_to_domain(None) is None
+
+    def test_dot_only_key_falls_back_to_firewall(self):
+        assert _key_to_domain(".") == "firewall"
+
+    def test_double_dot_key_uses_first_segment(self):
+        assert _key_to_domain("ssh..weird") == "ssh"
+
+    def test_no_dot_key_falls_back_to_firewall(self):
+        assert _key_to_domain("something") == "firewall"
+
+
+# ---------------------------------------------------------------------------
+# compute_domain_scores — structure
+# ---------------------------------------------------------------------------
+
+class TestComputeDomainScoresStructure:
+    def test_returns_all_domains(self):
+        scores = compute_domain_scores(_clean_engine())
+        for d in DOMAINS:
+            assert d in scores
+
+    def test_each_entry_has_score(self):
+        scores = compute_domain_scores(_clean_engine())
+        for d in DOMAINS:
+            assert "score" in scores[d]
+
+    def test_each_entry_has_deductions(self):
+        scores = compute_domain_scores(_clean_engine())
+        for d in DOMAINS:
+            assert "deductions" in scores[d]
+
+    def test_each_entry_has_label(self):
+        scores = compute_domain_scores(_clean_engine())
+        for d in DOMAINS:
+            assert "label" in scores[d]
+            assert scores[d]["label"]  # non-empty
+
+    def test_clean_engine_all_max(self):
+        scores = compute_domain_scores(_clean_engine())
+        for d in DOMAINS:
+            assert scores[d]["score"] == MAX_SCORE
+
+    def test_clean_engine_zero_deductions(self):
+        scores = compute_domain_scores(_clean_engine())
+        for d in DOMAINS:
+            assert scores[d]["deductions"] == 0
+
+
+# ---------------------------------------------------------------------------
+# compute_domain_scores — attribution
+# ---------------------------------------------------------------------------
+
+class TestComputeDomainScoresAttribution:
+    def test_ssh_deduction_reduces_ssh_score(self):
+        engine = _make_engine((3, "ssh.permit_root_login"))
+        scores = compute_domain_scores(engine)
+        assert scores["ssh"]["score"] < MAX_SCORE
+
+    def test_ssh_deduction_does_not_affect_other_domains(self):
+        engine = _make_engine((3, "ssh.permit_root_login"))
+        scores = compute_domain_scores(engine)
+        for d in DOMAINS:
+            if d != "ssh":
+                assert scores[d]["score"] == MAX_SCORE
+
+    def test_updates_deduction_reduces_updates_score(self):
+        engine = _make_engine((2, "updates.security_pending"))
+        scores = compute_domain_scores(engine)
+        assert scores["updates"]["score"] < MAX_SCORE
+
+    def test_hardening_deduction_reduces_hardening_score(self):
+        engine = _make_engine((1, "hardening.rp_filter_disabled"))
+        scores = compute_domain_scores(engine)
+        assert scores["hardening"]["score"] < MAX_SCORE
+
+    def test_file_perms_deduction_reduces_file_perms_score(self):
+        engine = _make_engine((2, "file_perms.world_writable"))
+        scores = compute_domain_scores(engine)
+        assert scores["file_perms"]["score"] < MAX_SCORE
+
+    def test_score_floor_is_zero(self):
+        """Score never goes negative even with many deductions."""
+        engine = ScoreEngine()
+        result = CheckResult()
+        for i in range(20):
+            result.add_deduction(reason=f"ded {i}", points=5, key="ssh.permit_root_login")
+        engine.apply(result)
+        engine.finalize()
+        scores = compute_domain_scores(engine)
+        assert scores["ssh"]["score"] >= 0
+
+    def test_deductions_without_key_are_excluded(self):
+        """Synthetic deductions (no key) must not affect any domain score."""
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.add_deduction(reason="synthetic", points=2, key="")
+        engine.apply(result)
+        engine.finalize()
+        scores = compute_domain_scores(engine)
+        for d in DOMAINS:
+            assert scores[d]["deductions"] == 0
+
+    # --- additional coverage gaps -------------------------------------------
+
+    def test_multiple_deductions_same_domain_accumulate(self):
+        """Two SSH deductions must stack in the same domain bucket."""
+        engine = _make_engine(
+            (2, "ssh.password_auth"),
+            (3, "ssh.permit_root_login"),
+        )
+        scores = compute_domain_scores(engine)
+        assert scores["ssh"]["deductions"] == 5
+        assert scores["ssh"]["score"] == MAX_SCORE - 5
+
+    def test_multiple_deductions_cross_domain(self):
+        """Deductions in different domains must each reduce only their own score."""
+        engine = _make_engine(
+            (2, "ssh.password_auth"),
+            (3, "updates.security_pending"),
+        )
+        scores = compute_domain_scores(engine)
+        assert scores["ssh"]["score"] < MAX_SCORE
+        assert scores["updates"]["score"] < MAX_SCORE
+        assert scores["hardening"]["score"] == MAX_SCORE
+        assert scores["file_perms"]["score"] == MAX_SCORE
+
+    def test_unknown_keys_go_to_firewall_domain(self):
+        """Keys with unknown prefixes must be attributed to the firewall bucket."""
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.add_deduction(reason="open port", points=2, key="ports.public_port")
+        engine.apply(result)
+        engine.finalize()
+        scores = compute_domain_scores(engine)
+        assert scores["firewall"]["deductions"] == 2
+        assert scores["firewall"]["score"] == MAX_SCORE - 2
+
+    def test_score_never_exceeds_max(self):
+        """Domain score must never exceed MAX_SCORE even with a clean engine."""
+        scores = compute_domain_scores(_clean_engine())
+        for d in DOMAINS:
+            assert scores[d]["score"] <= MAX_SCORE
+
+    def test_findings_without_deductions_do_not_affect_domain(self):
+        """Findings alone (no add_deduction call) must leave domain scores at max."""
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.alert(message="test finding", key="ssh.password_auth")
+        engine.apply(result)
+        engine.finalize()
+        scores = compute_domain_scores(engine)
+        assert scores["ssh"]["deductions"] == 0
+        assert scores["ssh"]["score"] == MAX_SCORE
+
+
+# ---------------------------------------------------------------------------
+# render_domain_scores
+# ---------------------------------------------------------------------------
+
+class TestRenderDomainScores:
+    def test_returns_list_of_strings(self):
+        scores = compute_domain_scores(_clean_engine())
+        lines = render_domain_scores(scores)
+        assert isinstance(lines, list)
+        assert all(isinstance(l, str) for l in lines)
+
+    def test_contains_all_domain_labels(self):
+        from bob.domain_scores import _LABELS
+        scores = compute_domain_scores(_clean_engine())
+        combined = "\n".join(render_domain_scores(scores))
+        for label in _LABELS.values():
+            assert label in combined
+
+    def test_shows_score_fractions(self):
+        scores = compute_domain_scores(_clean_engine())
+        combined = "\n".join(render_domain_scores(scores))
+        assert "/10" in combined
+
+    def test_custom_title_via_t(self):
+        scores = compute_domain_scores(_clean_engine())
+        lines = render_domain_scores(scores, t=lambda k, **_: "MY TITLE" if k == "domain_scores.title" else k)
+        assert any("MY TITLE" in l for l in lines)
+
+    def test_bar_chars_present(self):
+        scores = compute_domain_scores(_clean_engine())
+        combined = "\n".join(render_domain_scores(scores))
+        assert "█" in combined
+
+    def test_render_order_matches_domains(self):
+        """Domain labels must appear in the canonical DOMAINS order."""
+        from bob.domain_scores import _LABELS
+        scores = compute_domain_scores(_clean_engine())
+        lines = render_domain_scores(scores)
+        # Find which line each domain's label first appears on
+        positions = []
+        for domain in DOMAINS:
+            label = _LABELS[domain]
+            for i, line in enumerate(lines):
+                if label in line:
+                    positions.append(i)
+                    break
+        assert positions == sorted(positions), "Domain labels are not in canonical order"
+
+    def test_render_partial_score_bar(self):
+        """A non-max score must produce a bar with both filled and empty chars."""
+        engine = _make_engine((5, "ssh.permit_root_login"))
+        scores = compute_domain_scores(engine)
+        lines = render_domain_scores(scores)
+        ssh_line = next(l for l in lines if "SSH" in l)
+        assert "█" in ssh_line
+        assert "░" in ssh_line
+
+
+# ---------------------------------------------------------------------------
+# CIS references in explain (Phase B2)
+# ---------------------------------------------------------------------------
+
+class TestCISReferences:
+    def _make_t(self):
+        from bob import i18n
+        i18n.init(lang="en")
+        return i18n.t
+
+    def test_explain_cis_key_exists_for_ssh_password_auth(self):
+        from bob.cis_refs import get_cis_ref
+        val = get_cis_ref("ssh.password_auth")
+        assert val is not None
+        assert "CIS" in val and "." in val
+
+    def test_explain_cis_key_exists_for_updates(self):
+        from bob.cis_refs import get_cis_ref
+        val = get_cis_ref("updates.security_pending")
+        assert val is not None
+        assert "CIS" in val and "." in val
+
+    def test_explain_cis_key_exists_for_hardening(self):
+        from bob.cis_refs import get_cis_ref
+        val = get_cis_ref("hardening.rp_filter_disabled")
+        assert val is not None
+        assert "CIS" in val and "." in val
+
+    def test_explain_cis_all_keys_resolve(self):
+        """Every key in EXPLAIN_KEYS must have a CIS or best-practice reference."""
+        from bob.explain import EXPLAIN_KEYS, normalize_key
+        from bob.cis_refs import get_cis_ref
+        for key in EXPLAIN_KEYS:
+            norm = normalize_key(key)
+            val = get_cis_ref(norm)
+            assert val is not None, f"Missing CIS ref for key: {key!r}"
+            assert val.startswith("CIS") or val.startswith("Best practice"), \
+                f"Unexpected ref prefix for {key!r}: {val!r}"
+
+    def test_explain_output_shows_cis_line_with_correct_key(self):
+        from bob.explain import run_explain
+        t = self._make_t()
+        buf = io.StringIO()
+        old = sys.stdout
+        sys.stdout = buf
+        try:
+            run_explain("ssh.password_auth", t)
+        finally:
+            sys.stdout = old
+        output = buf.getvalue()
+        assert "CIS" in output
+        assert "ssh.password_auth" in output   # key shown in header
+
+    def test_explain_cis_locale_independent(self):
+        """CIS refs come from cis_refs.json, not locale — same result in fr and en."""
+        from bob.cis_refs import get_cis_ref
+        val = get_cis_ref("hardening.redirects_enabled")
+        assert val is not None
+        assert "CIS" in val
+        assert len(val) > 10
+
+
+# ---------------------------------------------------------------------------
+# --diff CLI flag (Phase B3)
+# ---------------------------------------------------------------------------
+
+class TestDiffCLI:
+    def test_diff_flag_parsed(self):
+        from bob.cli import parse_args
+        cfg = parse_args(["--diff"])
+        assert cfg.diff_mode
+
+    def test_diff_flag_default_false(self):
+        from bob.cli import parse_args
+        cfg = parse_args([])
+        assert not cfg.diff_mode
+
+
+
+    def test_diff_with_verbose_flag(self):
+        from bob.cli import parse_args
+        cfg = parse_args(["--diff", "--verbose"])
+        assert cfg.diff_mode
+        assert cfg.verbose
+
+    def test_diff_domain_scores_in_json(self):
+        """domain_scores must appear in JSON output with correct structure."""
+        from unittest.mock import MagicMock
+        from bob.json_output import build_json_data
+
+        engine = _clean_engine()
+
+        sys_info = MagicMock()
+        sys_info.hostname = "host"
+        ports_snapshot = MagicMock()
+        ports_snapshot.ports = []
+        snapshots = []
+        stack_snapshot = MagicMock()
+        net_snapshot = MagicMock()
+        net_snapshot.remote_ips = {}
+
+        data = build_json_data(
+            engine, sys_info, "private", "",
+            snapshots, ports_snapshot,
+            stack_snapshot, net_snapshot,
+            full=False, version="1.9.0",
+        )
+        assert "domain_scores" in data
+        # Structural validation: each entry must have score and label
+        for d in DOMAINS:
+            assert d in data["domain_scores"], f"Missing domain: {d}"
+            entry = data["domain_scores"][d]
+            assert "score" in entry, f"domain_scores.{d} missing 'score'"
+            assert "label" in entry, f"domain_scores.{d} missing 'label'"
+            assert 0 <= entry["score"] <= MAX_SCORE
+
+    def test_diff_domain_scores_in_webhook_payload(self):
+        """domain_scores must appear in generic webhook payload."""
+        from bob.webhook import build_generic_payload
+        from dataclasses import dataclass
+
+        @dataclass
+        class _SI:
+            hostname: str = "host"
+
+        engine = _clean_engine()
+        payload = build_generic_payload(engine, _SI(), "1.9.0")
+        assert "domain_scores" in payload
+        for d in DOMAINS:
+            assert d in payload["domain_scores"]
+            assert 0 <= payload["domain_scores"][d] <= MAX_SCORE

@@ -1,0 +1,762 @@
+[
+  {
+    "id": "ssh",
+    "label": "SSH Server",
+    "packages": [
+      "openssh-server"
+    ],
+    "services": [
+      "ssh"
+    ],
+    "ports": [
+      "22/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/ssh/sshd_config"
+      ]
+    }
+  },
+  {
+    "id": "vnc",
+    "label": "VNC Server",
+    "packages": [
+      "x11vnc",
+      "tigervnc-standalone-server"
+    ],
+    "services": [
+      "x11vnc",
+      "vncserver"
+    ],
+    "ports": [
+      "5900/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "ask",
+    "detection": {
+      "binary": [
+        "/usr/bin/x11vnc",
+        "/usr/bin/vncserver"
+      ],
+      "snap": [],
+      "config_files": []
+    }
+  },
+  {
+    "id": "samba",
+    "label": "Samba (Windows file sharing)",
+    "packages": [
+      "samba"
+    ],
+    "services": [
+      "smbd"
+    ],
+    "ports": [
+      "445/tcp",
+      "139/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/samba/smb.conf"
+      ]
+    }
+  },
+  {
+    "id": "ftp",
+    "label": "FTP Server",
+    "packages": [
+      "vsftpd",
+      "proftpd"
+    ],
+    "services": [
+      "vsftpd",
+      "proftpd"
+    ],
+    "ports": [
+      "21/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/vsftpd.conf",
+        "/etc/proftpd/proftpd.conf"
+      ]
+    }
+  },
+  {
+    "id": "apache",
+    "label": "Apache Web Server",
+    "packages": [
+      "apache2"
+    ],
+    "services": [
+      "apache2"
+    ],
+    "ports": [
+      "80/tcp",
+      "443/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "ask",
+    "detection": {
+      "binary": [
+        "/usr/sbin/apache2"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/apache2/ports.conf"
+      ]
+    }
+  },
+  {
+    "id": "nginx",
+    "label": "Nginx Web Server",
+    "packages": [
+      "nginx"
+    ],
+    "services": [
+      "nginx"
+    ],
+    "ports": [
+      "80/tcp",
+      "443/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "ask",
+    "detection": {
+      "binary": [
+        "/usr/sbin/nginx"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/nginx/nginx.conf"
+      ]
+    }
+  },
+  {
+    "id": "mysql",
+    "label": "MySQL / MariaDB",
+    "packages": [
+      "mysql-server",
+      "mariadb-server"
+    ],
+    "services": [
+      "mysql",
+      "mariadb"
+    ],
+    "ports": [
+      "3306/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/mysql/mysql.conf.d/mysqld.cnf",
+        "/etc/mysql/mariadb.conf.d/50-server.cnf"
+      ]
+    }
+  },
+  {
+    "id": "postgresql",
+    "label": "PostgreSQL",
+    "packages": [
+      "postgresql"
+    ],
+    "services": [
+      "postgresql"
+    ],
+    "ports": [
+      "5432/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": []
+    }
+  },
+  {
+    "id": "transmission",
+    "label": "Transmission (web UI)",
+    "packages": [
+      "transmission-daemon"
+    ],
+    "services": [
+      "transmission-daemon"
+    ],
+    "ports": [
+      "9091/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/transmission-daemon/settings.json"
+      ]
+    }
+  },
+  {
+    "id": "qbittorrent",
+    "label": "qBittorrent (web UI)",
+    "packages": [
+      "qbittorrent-nox"
+    ],
+    "services": [
+      "qbittorrent-nox"
+    ],
+    "ports": [
+      "8080/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "ask",
+    "detection": {
+      "binary": [
+        "/usr/bin/qbittorrent-nox"
+      ],
+      "snap": [],
+      "config_files": []
+    }
+  },
+  {
+    "id": "avahi",
+    "label": "Avahi (local network discovery)",
+    "packages": [
+      "avahi-daemon"
+    ],
+    "services": [
+      "avahi-daemon"
+    ],
+    "ports": [
+      "5353/udp"
+    ],
+    "risk": "low",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": []
+    }
+  },
+  {
+    "id": "cups",
+    "label": "CUPS (network printing)",
+    "packages": [
+      "cups"
+    ],
+    "services": [
+      "cups"
+    ],
+    "ports": [
+      "631/tcp"
+    ],
+    "risk": "low",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/cups/cupsd.conf"
+      ]
+    }
+  },
+  {
+    "id": "cockpit",
+    "label": "Cockpit (web admin)",
+    "packages": [
+      "cockpit"
+    ],
+    "services": [
+      "cockpit"
+    ],
+    "ports": [
+      "9090/tcp"
+    ],
+    "risk": "high",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/cockpit/cockpit.conf"
+      ]
+    }
+  },
+  {
+    "id": "wireguard",
+    "label": "WireGuard VPN",
+    "packages": [
+      "wireguard"
+    ],
+    "services": [
+      "wg-quick@"
+    ],
+    "ports": [
+      "51820/udp"
+    ],
+    "risk": "high",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [
+        "/usr/bin/wg"
+      ],
+      "snap": [],
+      "config_files": []
+    }
+  },
+  {
+    "id": "redis",
+    "label": "Redis",
+    "packages": [
+      "redis-server"
+    ],
+    "services": [
+      "redis"
+    ],
+    "ports": [
+      "6379/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/redis/redis.conf"
+      ]
+    }
+  },
+  {
+    "id": "jellyfin",
+    "label": "Jellyfin",
+    "packages": [
+      "jellyfin"
+    ],
+    "services": [
+      "jellyfin"
+    ],
+    "ports": [
+      "8096/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/jellyfin/network.xml"
+      ]
+    }
+  },
+  {
+    "id": "plex",
+    "label": "Plex Media Server",
+    "packages": [
+      "plexmediaserver"
+    ],
+    "services": [
+      "plexmediaserver"
+    ],
+    "ports": [
+      "32400/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": []
+    }
+  },
+  {
+    "id": "homeassistant",
+    "label": "Home Assistant",
+    "packages": [
+      "homeassistant",
+      "python3-homeassistant"
+    ],
+    "services": [
+      "home-assistant",
+      "homeassistant"
+    ],
+    "ports": [
+      "8123/tcp"
+    ],
+    "risk": "high",
+    "config_key": "ask",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/homeassistant/configuration.yaml"
+      ]
+    }
+  },
+  {
+    "id": "nextcloud",
+    "label": "Nextcloud",
+    "packages": [
+      "nextcloud"
+    ],
+    "services": [
+      "nextcloud",
+      "apache2",
+      "nginx"
+    ],
+    "ports": [
+      "80/tcp",
+      "443/tcp"
+    ],
+    "risk": "high",
+    "config_key": "ask",
+    "detection": {
+      "binary": [],
+      "snap": [
+        "nextcloud"
+      ],
+      "config_files": []
+    }
+  },
+  {
+    "id": "gitea",
+    "label": "Gitea",
+    "packages": [
+      "gitea",
+      "forgejo"
+    ],
+    "services": [
+      "gitea",
+      "forgejo"
+    ],
+    "ports": [
+      "3000/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "auto",
+    "detection": {
+      "binary": [
+        "/usr/local/bin/gitea",
+        "/usr/bin/gitea",
+        "/usr/local/bin/forgejo"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/gitea/app.ini",
+        "/etc/forgejo/app.ini"
+      ]
+    }
+  },
+  {
+    "id": "mosquitto",
+    "label": "Mosquitto (MQTT)",
+    "packages": [
+      "mosquitto"
+    ],
+    "services": [
+      "mosquitto"
+    ],
+    "ports": [
+      "1883/tcp",
+      "8883/tcp"
+    ],
+    "risk": "high",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/mosquitto/mosquitto.conf"
+      ]
+    }
+  },
+  {
+    "id": "syncthing",
+    "label": "Syncthing",
+    "packages": [
+      "syncthing"
+    ],
+    "services": [
+      "syncthing"
+    ],
+    "ports": [
+      "8384/tcp",
+      "22000/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": []
+    }
+  },
+  {
+    "id": "telnet",
+    "label": "Telnet Server",
+    "packages": [
+      "telnetd",
+      "inetutils-telnetd"
+    ],
+    "services": [
+      "inetutils-inetd",
+      "xinetd"
+    ],
+    "ports": [
+      "23/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [
+        "in.telnetd",
+        "telnetd"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/inetd.conf"
+      ]
+    }
+  },
+  {
+    "id": "rdp",
+    "label": "RDP / xRDP",
+    "packages": [
+      "xrdp"
+    ],
+    "services": [
+      "xrdp"
+    ],
+    "ports": [
+      "3389/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [
+        "/usr/sbin/xrdp"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/xrdp/xrdp.ini"
+      ]
+    }
+  },
+  {
+    "id": "mongodb",
+    "label": "MongoDB",
+    "packages": [
+      "mongodb",
+      "mongodb-org",
+      "mongodb-server",
+      "mongodb-server-core"
+    ],
+    "services": [
+      "mongod",
+      "mongodb"
+    ],
+    "ports": [
+      "27017/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [
+        "mongod"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/mongod.conf",
+        "/etc/mongodb.conf"
+      ]
+    }
+  },
+  {
+    "id": "elasticsearch",
+    "label": "Elasticsearch",
+    "packages": [
+      "elasticsearch"
+    ],
+    "services": [
+      "elasticsearch"
+    ],
+    "ports": [
+      "9200/tcp"
+    ],
+    "risk": "critical",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/elasticsearch/elasticsearch.yml"
+      ]
+    }
+  },
+  {
+    "id": "memcached",
+    "label": "Memcached",
+    "packages": [
+      "memcached"
+    ],
+    "services": [
+      "memcached"
+    ],
+    "ports": [
+      "11211/tcp",
+      "11211/udp"
+    ],
+    "risk": "critical",
+    "config_key": "fixed",
+    "detection": {
+      "binary": [
+        "memcached"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/memcached.conf"
+      ]
+    }
+  },
+  {
+    "id": "smtp",
+    "label": "SMTP Server (Postfix/Exim)",
+    "packages": [
+      "postfix",
+      "exim4",
+      "exim4-daemon-light"
+    ],
+    "services": [
+      "postfix",
+      "exim4"
+    ],
+    "ports": [
+      "25/tcp"
+    ],
+    "risk": "high",
+    "config_key": "auto",
+    "detection": {
+      "binary": [
+        "postfix",
+        "exim4"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/postfix/main.cf",
+        "/etc/exim4/exim4.conf.template"
+      ]
+    }
+  },
+  {
+    "id": "nfs",
+    "label": "NFS Server",
+    "packages": [
+      "nfs-kernel-server"
+    ],
+    "services": [
+      "nfs-kernel-server"
+    ],
+    "ports": [
+      "2049/tcp",
+      "2049/udp"
+    ],
+    "risk": "high",
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/exports"
+      ]
+    }
+  },
+  {
+    "id": "jenkins",
+    "label": "Jenkins",
+    "packages": [
+      "jenkins"
+    ],
+    "services": [
+      "jenkins"
+    ],
+    "ports": [
+      "8080/tcp"
+    ],
+    "risk": "high",
+    "config_key": "auto",
+    "detection": {
+      "binary": [
+        "jenkins"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/default/jenkins",
+        "/usr/share/jenkins"
+      ]
+    }
+  },
+  {
+    "id": "openvpn",
+    "label": "OpenVPN",
+    "packages": [
+      "openvpn"
+    ],
+    "services": [
+      "openvpn"
+    ],
+    "ports": [
+      "1194/udp"
+    ],
+    "risk": "medium",
+    "config_key": "auto",
+    "detection": {
+      "binary": [
+        "openvpn"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/openvpn"
+      ]
+    }
+  },
+  {
+    "id": "squid",
+    "label": "Squid Proxy",
+    "packages": [
+      "squid",
+      "squid3"
+    ],
+    "services": [
+      "squid",
+      "squid3"
+    ],
+    "ports": [
+      "3128/tcp"
+    ],
+    "risk": "medium",
+    "config_key": "auto",
+    "detection": {
+      "binary": [
+        "squid"
+      ],
+      "snap": [],
+      "config_files": [
+        "/etc/squid/squid.conf"
+      ]
+    }
+  }
+]

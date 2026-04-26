@@ -1,0 +1,353 @@
+"""
+Service registry module for BOB.
+
+Loads service definitions from data/services.json and exposes them
+as typed Python dataclasses. This is the single source of truth for
+all known network services — no other module defines services inline.
+
+Adding a new service requires only editing data/services.json.
+
+Usage:
+    from bob.registry import ServiceRegistry
+
+    registry = ServiceRegistry.load()
+
+    for service in registry.all():
+        print(service.label, service.risk)
+
+    ssh = registry.get("ssh")
+    critical = registry.by_risk("critical")
+"""
+
+from __future__ import annotations
+
+import json
+import keyword
+import logging
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterator, Optional
+
+from bob._paths import resolve_share_dir
+
+logger = logging.getLogger(__name__)
+
+# Service data location:
+# - If UFW_AUDIT_SHARE env var is set (installed), use that share directory
+# - Otherwise fall back to data/ next to this module (development)
+_share_path = resolve_share_dir()
+_DATA_DIR = (_share_path / "data") if _share_path else (Path(__file__).parent / "data")
+_SERVICES_FILE = _DATA_DIR / "services.json"
+
+# User plugin directory — drop *.json files here to add custom services
+# Resolved at import time so it always reflects the current home directory
+_PLUGIN_DIR = Path.home() / ".config" / "bob" / "services.d"
+
+# Valid values for the risk field
+VALID_RISKS = frozenset({"low", "medium", "high", "critical"})
+
+# Valid values for the config_key field
+VALID_CONFIG_KEYS = frozenset({"fixed", "auto", "ask"})
+
+# Port format: "number/proto" e.g. "22/tcp", "5353/udp"
+_PORT_RE = re.compile(r"^\d{1,5}/(tcp|udp)$")
+
+
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Detection:
+    """
+    Extended detection hints for services not installable via dpkg alone.
+
+    Args:
+        binary:       Absolute paths to check for binary installations.
+        snap:         Snap package names to check via 'snap list'.
+        config_files: Config file paths used to auto-detect the service port.
+    """
+    binary:       tuple[str, ...]
+    snap:         tuple[str, ...]
+    config_files: tuple[str, ...]
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Detection":
+        return cls(
+            binary=tuple(data.get("binary", [])),
+            snap=tuple(data.get("snap", [])),
+            config_files=tuple(data.get("config_files", [])),
+        )
+
+
+@dataclass(frozen=True)
+class Service:
+    """
+    Immutable representation of a network service known to BOB.
+
+    Args:
+        id:         Unique identifier (e.g. "ssh", "nginx").
+        label:      Human-readable display name (e.g. "SSH Server").
+        packages:   dpkg package names to check for installation.
+        services:   systemd service names to check for state.
+        ports:      Default ports in "number/proto" format (e.g. "22/tcp").
+        risk:       Risk classification: "low" | "medium" | "high" | "critical".
+        config_key: Port resolution strategy:
+                    - Named key (e.g. "ssh_port"): read from user config file.
+                    - "ask":   prompt user and save to config.
+                    - "auto":  auto-detect from service config file.
+                    - "fixed": use ports as-is, no detection needed.
+        detection:  Extended detection hints (snap, binary, config_files).
+    """
+    id:         str
+    label:      str
+    packages:   tuple[str, ...]
+    services:   tuple[str, ...]
+    ports:      tuple[str, ...]
+    risk:       str
+    config_key: str
+    detection:  Detection
+
+    @property
+    def is_critical(self) -> bool:
+        return self.risk == "critical"
+
+    @property
+    def is_high_or_critical(self) -> bool:
+        return self.risk in ("high", "critical")
+
+    @property
+    def main_port(self) -> str:
+        """Return the first port (used for display and remediation commands)."""
+        return self.ports[0] if self.ports else ""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Service":
+        """
+        Build a Service from a JSON-parsed dictionary.
+
+        Args:
+            data: Dict parsed from a services.json entry.
+
+        Returns:
+            Populated Service instance.
+
+        Raises:
+            ValueError: If required fields are missing or have invalid values.
+        """
+        required = ("id", "label", "packages", "services", "ports", "risk", "config_key")
+        for required_field in required:
+            if required_field not in data:
+                raise ValueError(f"Service entry missing required field: {required_field!r}")
+
+        risk = data["risk"]
+        if risk not in VALID_RISKS:
+            raise ValueError(
+                f"Service {data['id']!r}: invalid risk {risk!r}. "
+                f"Must be one of: {sorted(VALID_RISKS)}"
+            )
+
+        config_key = data["config_key"]
+        # config_key is either a reserved keyword or a valid identifier (e.g. "ssh_port")
+        # Python keywords (class, eval, …) are rejected to prevent misuse if key is ever eval'd
+        if config_key not in VALID_CONFIG_KEYS and (
+            not config_key.isidentifier() or keyword.iskeyword(config_key)
+        ):
+            raise ValueError(
+                f"Service {data['id']!r}: invalid config_key {config_key!r}. "
+                f"Must be one of {sorted(VALID_CONFIG_KEYS)} or a valid identifier."
+            )
+
+        ports = tuple(data["ports"])
+        for p in ports:
+            if not _PORT_RE.match(p):
+                raise ValueError(
+                    f"Service {data['id']!r}: invalid port format {p!r}. "
+                    f"Expected 'number/tcp' or 'number/udp'."
+                )
+            port_num = int(p.split("/")[0])
+            if not (1 <= port_num <= 65535):
+                raise ValueError(
+                    f"Service {data['id']!r}: port number {port_num} out of range (1–65535)."
+                )
+
+        if config_key == "fixed" and not ports:
+            raise ValueError(
+                f"Service {data['id']!r}: config_key 'fixed' requires at least one port."
+            )
+
+        return cls(
+            id=data["id"],
+            label=data["label"],
+            packages=tuple(data["packages"]),
+            services=tuple(data["services"]),
+            ports=ports,
+            risk=risk,
+            config_key=config_key,
+            detection=Detection.from_dict(data.get("detection", {})),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+def _load_plugins(services: list[Service], ids_seen: set[str]) -> None:
+    """
+    Scan _PLUGIN_DIR for *.json plugin files and merge valid entries into
+    the services list. Errors in individual files are logged and skipped —
+    they never abort the audit.
+
+    Args:
+        services:  Mutable list to append valid plugin services into.
+        ids_seen:  Set of already-registered IDs used for duplicate detection.
+    """
+    if not _PLUGIN_DIR.is_dir():
+        return
+
+    _MAX_PLUGIN_SIZE = 256 * 1024  # 256 KB per plugin
+    for plugin_file in sorted(_PLUGIN_DIR.glob("*.json")):
+        try:
+            with plugin_file.open(encoding="utf-8") as fh:
+                content = fh.read(_MAX_PLUGIN_SIZE + 1)
+            if len(content) > _MAX_PLUGIN_SIZE:
+                logger.warning("Plugin %s exceeds 256 KB — skipped", plugin_file.name)
+                continue
+            raw = json.loads(content)
+        except (OSError, ValueError) as exc:
+            logger.warning("Plugin %s could not be loaded: %s — skipped", plugin_file.name, exc)
+            continue
+
+        if not isinstance(raw, list):
+            logger.warning("Plugin %s must contain a JSON array — skipped", plugin_file.name)
+            continue
+
+        for i, entry in enumerate(raw):
+            try:
+                service = Service.from_dict(entry)
+            except (ValueError, KeyError) as exc:
+                logger.warning("Plugin %s entry #%d invalid: %s — skipped", plugin_file.name, i, exc)
+                continue
+
+            if service.id in ids_seen:
+                logger.warning(
+                    "Plugin %s entry #%d: duplicate id %r — skipped",
+                    plugin_file.name, i, service.id,
+                )
+                continue
+
+            ids_seen.add(service.id)
+            services.append(service)
+            logger.debug("Loaded plugin service %r from %s", service.id, plugin_file.name)
+
+
+class ServiceRegistry:
+    """
+    Loaded collection of Service objects.
+
+    Provides lookup by id and filtering by risk level.
+
+    Args:
+        services: Ordered list of Service objects.
+    """
+
+    def __init__(self, services: list[Service]) -> None:
+        self._services: list[Service] = services
+        self._by_id: dict[str, Service] = {s.id: s for s in services}
+
+    # ------------------------------------------------------------------
+    # Factory
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def load(cls, path: Path | None = None) -> "ServiceRegistry":
+        """
+        Load and validate the services registry from a JSON file.
+
+        Args:
+            path: Override the default services.json path. Useful in tests.
+
+        Returns:
+            Populated ServiceRegistry.
+
+        Raises:
+            FileNotFoundError: If the services file does not exist.
+            ValueError:        If any service entry is invalid.
+            json.JSONDecodeError: If the file is not valid JSON.
+        """
+        json_path = path or _SERVICES_FILE
+
+        if not json_path.exists():
+            raise FileNotFoundError(
+                f"Services file not found: {json_path}"
+            )
+
+        _MAX_JSON_SIZE = 1 * 1024 * 1024  # 1 MB
+        with json_path.open(encoding="utf-8") as fh:
+            content = fh.read(_MAX_JSON_SIZE + 1)
+        if len(content) > _MAX_JSON_SIZE:
+            raise ValueError(f"services.json exceeds maximum allowed size (1 MB)")
+        raw = json.loads(content)
+
+        if not isinstance(raw, list):
+            raise ValueError(f"services.json must contain a JSON array, got {type(raw).__name__}")
+
+        services: list[Service] = []
+        ids_seen: set[str] = set()
+
+        for i, entry in enumerate(raw):
+            try:
+                service = Service.from_dict(entry)
+            except (ValueError, KeyError) as exc:
+                raise ValueError(f"services.json entry #{i}: {exc}") from exc
+
+            if service.id in ids_seen:
+                raise ValueError(f"Duplicate service id: {service.id!r}")
+
+            ids_seen.add(service.id)
+            services.append(service)
+
+        logger.debug("Loaded %d services from %s", len(services), json_path)
+
+        # Merge user plugins from services.d/
+        # IMPORTANT: plugins must be loaded before cls() so _by_id includes plugin services.
+        _load_plugins(services, ids_seen)
+
+        return cls(services)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def all(self) -> list[Service]:
+        """Return all services in definition order."""
+        return list(self._services)
+
+    def get(self, service_id: str) -> Optional[Service]:
+        """
+        Return the service with the given id, or None if not found.
+
+        Args:
+            service_id: The service id string (e.g. "ssh", "nginx").
+        """
+        return self._by_id.get(service_id)
+
+    def by_risk(self, risk: str) -> list[Service]:
+        """
+        Return all services matching the given risk level.
+
+        Args:
+            risk: One of "low", "medium", "high", "critical".
+        """
+        return [s for s in self._services if s.risk == risk]
+
+    def high_and_critical(self) -> list[Service]:
+        """Return all services with risk level 'high' or 'critical'."""
+        return [s for s in self._services if s.is_high_or_critical]
+
+    def __len__(self) -> int:
+        return len(self._services)
+
+    def __iter__(self) -> Iterator[Service]:
+        return iter(self._services)

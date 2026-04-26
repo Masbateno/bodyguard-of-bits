@@ -1,0 +1,207 @@
+*[Lire en français](README_FR.md)*
+
+# BOB — Bodyguard Of Bits
+
+**Linux hardening auditor for sysadmins who read the output.**
+
+BOB is a CLI security auditor for Linux systems. It runs 46 checks across 9 domains, maps every finding to a CIS benchmark section, and tells you not just *what* is wrong — but *why it matters* and *exactly how to fix it*.
+
+Think Lynis, but built around human readability and actionability first.
+
+---
+
+## Who it's for
+
+- Sysadmins running periodic hardening reviews
+- Power users who want more than a score and a list of flags
+- Anyone who finds generic audit output noisy and hard to act on
+
+BOB is not a scanner. It does not exploit, probe, or guess. It reads your configuration, compares it against CIS benchmarks and established best practices, and reports with full context.
+
+---
+
+## What makes it different
+
+**Every finding is explained.** Run `bob --explain ssh.password_auth` and you get the CIS section, the risk, and the exact command to remediate — no manpage diving required.
+
+**Every finding with a CIS code is labelled.** The summary box shows `[CIS:5.2.9]` next to the finding. In `--verbose` mode, the full benchmark reference is shown.
+
+**Output is designed to be read.** The terminal output is structured, colored, and progressive — summary first, then domain breakdown, then per-finding detail. Machine formats (JSON, CSV, HTML, Markdown) are available when you need them.
+
+**Actionable by default.** `--fix` shows you the remediation command. `--apply` runs it.
+
+**Profile-aware.** A `server` profile treats desktop apps as noise. A `workstation` profile relaxes SSH restrictions. A `docker` profile skips checks that don't apply to containers.
+
+---
+
+## Install
+
+```
+pipx install bodyguard-of-bits
+sudo bob
+```
+
+Bash completion:
+```
+sudo bob --install-completion
+```
+
+---
+
+## Quick start
+
+```
+sudo bob                          # full audit, server profile
+sudo bob --verbose                # add CIS refs and remediation commands per finding
+sudo bob -d                       # French output
+sudo bob --profile workstation    # workstation profile
+sudo bob --check ssh,hardening    # run only selected domains
+sudo bob --format json > out.json # machine output
+bob --explain ssh.password_auth   # explain a finding (no sudo)
+```
+
+---
+
+## Security checks — 46 checks, 9 domains
+
+| Domain | What it covers |
+|--------|----------------|
+| **Firewall** | UFW rules, iptables/nftables (when UFW inactive), IPv6 consistency, port exposure |
+| **SSH** | 12+ sshd_config parameters — PermitRootLogin, key strength, timeouts, forwarding |
+| **Kernel hardening** | 20+ sysctl parameters, kernel modules, Secure Boot, firmware/microcode |
+| **Services** | 32 known services with risk classification; Docker firewall bypass detection |
+| **File permissions** | SUID/SGID audit, sensitive files, sudoers |
+| **User accounts** | Expired accounts, password policy, login.defs, PAM |
+| **System** | apt updates, log rotation, auth.log analysis, NTP, Fail2ban, auditd, ClamAV, AppArmor/SELinux, SMART, TLS cert expiry, systemd timers, Samba, cron jobs |
+| **Network** | Public IP context, network type detection (server/LAN/VPN), GeoIP optional |
+| **Docker** | Daemon hardening, privileged containers, sensitive mounts |
+
+---
+
+## CIS benchmark mapping
+
+133 entries: **99 CIS Ubuntu 22.04 · 4 CIS Docker · 34 best-practice**.
+
+Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
+Full reference text is shown in `--verbose` mode.  
+`--explain KEY` returns the WHY, the HOW, and the CIS section — in plain English.
+
+---
+
+## --explain
+
+```
+bob --explain                     # interactive TUI — navigate findings with ↑↓, Enter to view
+bob --explain ssh.password_auth   # direct lookup
+bob --explain list                # list all explainable keys
+```
+
+No sudo required. Works offline.
+
+---
+
+## Audit profiles
+
+| Profile | Use case |
+|---------|----------|
+| `server` | Default — strict on SSH, firewall, services |
+| `workstation` | Relaxed SSH, desktop apps not flagged |
+| `desktop` | Workstation + GUI-specific checks |
+| `docker` | Container-optimised, skips irrelevant checks |
+
+```
+sudo bob --profile workstation
+```
+
+User-defined profiles: `~/.config/bob/profiles/`
+
+---
+
+## Output formats
+
+```
+sudo bob                          # terminal (default)
+sudo bob --format json            # JSON
+sudo bob --format csv             # CSV
+sudo bob --format markdown        # Markdown
+sudo bob --html                   # standalone HTML report
+sudo bob --output-dir /var/reports --format json
+```
+
+---
+
+## Automation
+
+**Cron scheduling:**
+```
+sudo bob --install-cron           # interactive wizard
+sudo bob --manage-cron            # manage installed jobs
+```
+Jobs live in `/etc/cron.d/bob-{name}`. Email notification on exit code > 0.
+
+**Webhooks** (generic JSON or Slack):
+```
+sudo bob --webhook https://hooks.slack.com/...
+```
+
+**Score history and trends:**
+```
+sudo bob --history                # sparkline of past scores
+```
+
+**Diff mode:**
+```
+sudo bob --diff                   # show only changes since last baseline
+```
+
+**Watch mode:**
+```
+sudo bob --watch=60               # rerun every 60 seconds
+```
+
+---
+
+## Custom services
+
+Drop a `.json` file into `~/.config/bob/services.d/` to extend the service registry:
+
+```json
+{
+  "id": "my_app",
+  "name": "My App",
+  "port": "9000/tcp",
+  "risk": "medium"
+}
+```
+
+---
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Score ≥ 7 — no significant issues |
+| `1` | Score 4–6 — warnings present |
+| `2` | Score 1–3 — alerts present |
+| `3` | Score 0 — critical issues |
+| `4` | Score below `--target N` threshold |
+
+---
+
+## Requirements
+
+- Linux (Ubuntu/Debian — other distributions not tested)
+- Python 3.9+
+- Root (`sudo`)
+- UFW, ss, systemctl — standard on most Ubuntu/Debian systems
+
+Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
+
+---
+
+## See also
+
+- [Full technical reference](DOCUMENTS/README_TECH.md)
+- [Changelog](CHANGELOG.md)
+- [Developer guide](DOCUMENTS/README_DEV.md)
+- [Automation guide](DOCUMENTS/AUTOMATION.md)

@@ -1,0 +1,70 @@
+"""CSV serialization of audit results.
+
+Produces a flat CSV with one row per finding, suitable for spreadsheet
+or dashboard integration.  Metadata columns (host, timestamp, score,
+risk, alerts, warnings) are repeated on every row so that a single
+import gives a self-contained dataset.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+from datetime import datetime, timezone
+
+from bob.report import SystemInfo
+from bob.scoring import ScoreEngine
+
+_HEADERS = [
+    "host",
+    "timestamp",
+    "score",
+    "risk",
+    "alerts",
+    "warnings",
+    "level",
+    "section",
+    "message",
+    "fix_cmd",
+    "note",
+]
+
+
+def build_csv_output(
+    engine: ScoreEngine,
+    sys_info: SystemInfo,
+) -> str:
+    """Return a CSV string with one row per finding.
+
+    If the audit produced no findings (perfect score), a single summary row
+    with empty level / section / message is returned so that the file is
+    always non-empty and importable.
+    """
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    meta = {
+        "host":      sys_info.hostname,
+        "timestamp": ts,
+        "score":     engine.score,
+        "risk":      engine.level.value,
+        "alerts":    engine.alert_count,
+        "warnings":  engine.warn_count,
+    }
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_HEADERS, lineterminator="\n")
+    writer.writeheader()
+
+    if not engine.findings:
+        writer.writerow({**meta, "level": "", "section": "", "message": "", "fix_cmd": "", "note": ""})
+    else:
+        for f in engine.findings:
+            writer.writerow({
+                **meta,
+                "level":   f.level.value,
+                "section": f.nature   or "",
+                "message": f.message  or "",
+                "fix_cmd": f.cmd      or "",
+                "note":    f.note     or "",
+            })
+
+    return buf.getvalue()

@@ -1,0 +1,253 @@
+"""
+Linux Audit Framework check for BOB (CHECK 31).
+
+Checks whether auditd is installed, its service is running, and audit rules
+are configured for sensitive system files (/etc/passwd, /etc/shadow,
+/etc/sudoers).  Without these rules, privilege escalation and credential
+dumping go unlogged.
+
+Score impact:
+  - Not installed:                    INFO  (no deduction — optional but recommended)
+  - Installed, service down:          WARN  −1 pt
+  - Running but no rules at all:      WARN  −1 pt
+  - Running, rules missing key files: WARN  −1 pt  (server) / INFO (desktop)
+  - Running with all key files watched: OK
+
+Split into:
+  1. AuditdSnapshot.from_system() — collects state via auditctl / systemctl.
+  2. check_auditd(snapshot, t)    — pure analysis, returns CheckResult.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import List, Set
+
+from bob.checks._run import _command_exists, _identity_t, _run
+from bob.scoring import CheckResult
+
+# Files we consider essential to watch
+_SENSITIVE_FILES = frozenset({
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/sudoers",
+})
+
+
+@dataclass
+class AuditdSnapshot:
+    """
+    State collected from the system about auditd.
+
+    Args:
+        installed:        True if auditctl is present on the system.
+        service_active:   True if the auditd service is running.
+        watched_files:    Set of file paths covered by -w watch rules.
+        rule_count:       Total number of audit rules loaded.
+    """
+    installed:      bool        = False
+    service_active: bool        = False
+    watched_files:  Set[str]    = field(default_factory=set)
+    rule_count:     int         = 0
+
+    @classmethod
+    def from_system(cls) -> "AuditdSnapshot":
+        """Collect auditd state from the live system. Never raises."""
+        snap = cls()
+
+        if not _command_exists("auditctl"):
+            return snap
+
+        snap.installed = True
+
+        # Service status via systemctl
+        if _command_exists("systemctl"):
+            out = (_run("systemctl", "is-active", "auditd") or "").strip()
+            snap.service_active = out == "active"
+        else:
+            # Fallback: auditctl -s shows "enabled 1" when auditd is running
+            status = _run("auditctl", "-s") or ""
+            snap.service_active = "enabled 1" in status
+
+        if not snap.service_active:
+            return snap
+
+        # Load rules
+        rules_out = _run("auditctl", "-l") or ""
+        snap.watched_files = _parse_watched_files(rules_out)
+        snap.rule_count = _count_rules(rules_out)
+
+        return snap
+
+
+def _parse_watched_files(auditctl_output: str) -> Set[str]:
+    """
+    Extract file paths from ``auditctl -l`` watch rules (-w lines).
+
+    Example input::
+
+        -w /etc/passwd -p rwxa -k identity
+        -w /etc/shadow -p rwxa -k identity
+        -a always,exit -F arch=b64 -S execve -k exec
+
+    Returns a set of absolute paths (strings).
+    """
+    watched: Set[str] = set()
+    for line in auditctl_output.splitlines():
+        line = line.strip()
+        m = re.match(r"-w\s+(\/\S+)", line)
+        if m:
+            path = m.group(1).rstrip("/")  # normalise trailing slash
+            watched.add(path)
+    return watched
+
+
+def _count_rules(auditctl_output: str) -> int:
+    """Count actual rule lines in ``auditctl -l`` output.
+
+    Only lines starting with ``-w`` (watch rules) or ``-a``/``-A``
+    (syscall rules) are counted — other lines (headers, blank, errors)
+    are ignored.
+    """
+    count = 0
+    for line in auditctl_output.splitlines():
+        line = line.strip()
+        if line.startswith(("-w ", "-a ", "-A ")):
+            count += 1
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Pure check logic
+# ---------------------------------------------------------------------------
+
+def check_auditd(snapshot: AuditdSnapshot, t=None,
+                 profile_name: str = "server") -> CheckResult:
+    """
+    Analyse AuditdSnapshot and return findings.
+
+    Findings:
+      - Not installed:                   INFO  (no deduction)
+      - Service not running:             WARN  −1 pt
+      - Running, no rules loaded:        WARN  −1 pt (server) / INFO (desktop)
+      - Running, sensitive files missing from rules:
+            WARN −1 pt on server ; INFO on desktop (profile_name in desktop/workstation)
+      - Running with all sensitive files watched: OK
+    """
+    _t = t if t is not None else _identity_t
+    result = CheckResult()
+    is_desktop = profile_name.lower() in ("desktop", "workstation")
+
+    if not snapshot.installed:
+        result.info(
+            message=_t("auditd.not_installed"),
+            detail=_t("auditd.not_installed_detail"),
+            cmd="sudo apt install auditd audispd-plugins",
+            key="auditd.not_installed",
+        )
+        return result
+
+    if not snapshot.service_active:
+        result.warn(
+            message=_t("auditd.service_inactive"),
+            detail=_t("auditd.service_inactive_detail"),
+            cmd="sudo systemctl enable --now auditd",
+            nature="improvement",
+            key="auditd.service_inactive",
+        )
+        result.add_deduction(
+            reason=_t("auditd.service_inactive_reason"),
+            points=1,
+            context="local",
+            key="auditd.service_inactive",
+        )
+        return result
+
+    if snapshot.rule_count == 0:
+        _no_rules_cmd = (
+            "sudo tee /etc/audit/rules.d/hardening.rules << 'EOF'\n"
+            "-w /etc/passwd -p wa -k identity\n"
+            "-w /etc/shadow -p wa -k identity\n"
+            "-w /etc/sudoers -p wa -k privilege\n"
+            "-w /etc/sudoers.d/ -p wa -k privilege\n"
+            "-w /var/log/auth.log -p wa -k auth\n"
+            "EOF\n"
+            "sudo augenrules --load"
+        )
+        if is_desktop:
+            result.info(
+                message=_t("auditd.no_rules"),
+                detail=_t("auditd.no_rules_detail"),
+                cmd=_no_rules_cmd,
+                cmd_type="fix",
+                key="auditd.no_rules",
+            )
+        else:
+            result.warn(
+                message=_t("auditd.no_rules"),
+                detail=_t("auditd.no_rules_detail"),
+                cmd=_no_rules_cmd,
+                cmd_type="fix",
+                nature="improvement",
+                key="auditd.no_rules",
+            )
+            result.add_deduction(
+                reason=_t("auditd.no_rules_reason"),
+                points=1,
+                context="local",
+                key="auditd.no_rules",
+            )
+        return result
+
+    # Check for sensitive file coverage
+    missing = sorted(_SENSITIVE_FILES - snapshot.watched_files)
+    if missing:
+        missing_str = ", ".join(missing)
+        if is_desktop:
+            result.info(
+                message=_t("auditd.missing_sensitive_rules"),
+                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str),
+                cmd=_suggest_rules_cmd(missing),
+                key="auditd.missing_sensitive_rules",
+            )
+        else:
+            result.warn(
+                message=_t("auditd.missing_sensitive_rules"),
+                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str),
+                cmd=_suggest_rules_cmd(missing),
+                nature="improvement",
+                key="auditd.missing_sensitive_rules",
+            )
+            result.add_deduction(
+                reason=_t("auditd.missing_sensitive_rules_reason", files=missing_str),
+                points=1,
+                context="local",
+                key="auditd.missing_sensitive_rules",
+            )
+        return result
+
+    # All sensitive files covered
+    result.ok(
+        message=_t("auditd.active", count=snapshot.rule_count),
+        key="auditd.active",
+    )
+    result.ok(
+        message=_t("auditd.sensitive_files_watched"),
+        key="auditd.sensitive_files_watched",
+    )
+    return result
+
+
+def _suggest_rules_cmd(missing_files: list[str]) -> str:
+    """Build a persistent audit rules command for the missing files.
+
+    Appends rules to /etc/audit/rules.d/99-sensitive.rules (survives reboot)
+    and reloads via augenrules.
+    """
+    parts = [
+        f"echo '-w {f} -p rwxa -k sensitive_files'"
+        f" | sudo tee -a /etc/audit/rules.d/99-sensitive.rules"
+        for f in missing_files
+    ]
+    return " && ".join(parts) + " && sudo augenrules --load"
