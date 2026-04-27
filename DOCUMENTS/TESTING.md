@@ -12,6 +12,27 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | Version | Tests | Notes |
 |---------|-------|-------|
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+| post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
+
+---
+
+### post-v0.1.0 — 4202/4202 (2026-04-27)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4202 passed in 4.38s
+```
+
+**Bugs found during Ubuntu 26.04 LTS first run (`so6ubuntutest`):**
+
+**Root cause fixed — exposure surface: `ssh.not_installed` and `fail2ban.not_installed` not detected:**
+Both keys are emitted at `INFO` level by their respective checks. `compute_exposure()` in `exposure.py` only looked in `bad_keys` (ALERT+WARN), so neither key was ever matched — SSH was shown as "key only, root disabled" and fail2ban as "active" even when neither was installed.
+Fix: added `all_keys = bad_keys | info_keys`; `ssh.not_installed` and `fail2ban.not_installed` now checked against `all_keys`. (commit `3fa43b5`)
+
+**Root cause fixed — SUID false positive: `sudo.ws` flagged on Ubuntu 26.04:**
+`/usr/bin/sudo.ws` is a legitimate binary shipped by the `sudo` package on Ubuntu 26.04 (`dpkg -S` confirmed). Added to `_KNOWN_SUID` whitelist in `suid_audit.py`. (commit `3fa43b5`)
 
 ---
 

@@ -12,6 +12,27 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | Version | Tests | Notes |
 |---------|-------|-------|
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+| post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
+
+---
+
+### post-v0.1.0 — 4202/4202 (2026-04-27)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4202 passed in 4.38s
+```
+
+**Bugs trouvés lors du premier run sur Ubuntu 26.04 LTS (`so6ubuntutest`) :**
+
+**Correction — surface d'attaque : `ssh.not_installed` et `fail2ban.not_installed` non détectés :**
+Ces deux clés sont émises au niveau `INFO` par leurs vérifications respectives. `compute_exposure()` dans `exposure.py` ne consultait que `bad_keys` (ALERT+WARN), donc aucune des deux n'était jamais détectée — SSH s'affichait comme "clé uniquement, root désactivé" et fail2ban comme "actif", même quand aucun des deux n'était installé.
+Correction : ajout de `all_keys = bad_keys | info_keys` ; `ssh.not_installed` et `fail2ban.not_installed` sont désormais vérifiés dans `all_keys`. (commit `3fa43b5`)
+
+**Correction — faux positif SUID : `sudo.ws` signalé sur Ubuntu 26.04 :**
+`/usr/bin/sudo.ws` est un binaire légitime livré par le paquet `sudo` sur Ubuntu 26.04 (confirmé par `dpkg -S`). Ajouté à la whitelist `_KNOWN_SUID` dans `suid_audit.py`. (commit `3fa43b5`)
 
 ---
 
