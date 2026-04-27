@@ -310,6 +310,14 @@ class TestSshItem:
         item = _item(items, "ssh")
         assert item.color == "ok"
 
+    def test_not_installed_info_is_ok(self):
+        # ssh.not_installed is emitted at INFO level — must still show "not running"
+        engine = _make_engine(("ssh.not_installed", FindingLevel.INFO))
+        items = _call(engine=engine)
+        item = _item(items, "ssh")
+        assert item.color == "ok"
+        assert item.detail == _t("exposure.ssh_not_running")
+
     def test_not_installed_overrides_password_auth(self):
         engine = _make_engine(
             ("ssh.not_installed", FindingLevel.WARN),
@@ -348,6 +356,14 @@ class TestBruteForceItem:
 
     def test_not_installed_is_warn(self):
         engine = _make_engine(("fail2ban.not_installed", FindingLevel.WARN))
+        items = _call(engine=engine)
+        item = _item(items, "brute_force")
+        assert item.color == "warn"
+        assert item.icon == "✖"
+
+    def test_not_installed_info_is_warn(self):
+        # fail2ban.not_installed is emitted at INFO level — must not show as active
+        engine = _make_engine(("fail2ban.not_installed", FindingLevel.INFO))
         items = _call(engine=engine)
         item = _item(items, "brute_force")
         assert item.color == "warn"

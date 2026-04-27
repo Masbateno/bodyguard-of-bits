@@ -45,7 +45,9 @@ def compute_exposure(
 
     alert_keys = {f.key for f in engine.findings if f.key and f.level == FindingLevel.ALERT}
     warn_keys  = {f.key for f in engine.findings if f.key and f.level == FindingLevel.WARN}
+    info_keys  = {f.key for f in engine.findings if f.key and f.level == FindingLevel.INFO}
     bad_keys   = alert_keys | warn_keys
+    all_keys   = bad_keys | info_keys
 
     items: list[ExposureItem] = []
 
@@ -126,7 +128,7 @@ def compute_exposure(
     if "ssh.weak_ciphers" in bad_keys or "ssh.weak_kex" in bad_keys:
         ssh_issues.append(t("exposure.ssh_weak_crypto"))
 
-    if "ssh.not_installed" in bad_keys or "ssh.not_active" in bad_keys:
+    if "ssh.not_installed" in all_keys or "ssh.not_active" in bad_keys:
         items.append(ExposureItem(
             label=t("exposure.ssh"),
             icon="✔", color="ok",
@@ -149,7 +151,7 @@ def compute_exposure(
         ))
 
     # --- Brute-force protection ---
-    if "fail2ban.not_installed" in bad_keys:
+    if "fail2ban.not_installed" in all_keys:
         items.append(ExposureItem(
             label=t("exposure.brute_force"),
             icon="✖", color="warn",

@@ -28,7 +28,7 @@ from bob.scoring import CheckResult
 
 _KNOWN_SUID: frozenset[str] = frozenset({
     # Core auth / privilege escalation
-    "su", "sudo", "newgrp", "passwd", "chsh", "chfn", "gpasswd", "expiry",
+    "su", "sudo", "sudo.ws", "newgrp", "passwd", "chsh", "chfn", "gpasswd", "expiry",
     "chage",
     # Network tools (ping was SUID on older kernels)
     "ping", "ping6", "pppd",
