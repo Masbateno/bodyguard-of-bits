@@ -24,7 +24,7 @@ Lynis et OpenSCAP sont des outils solides et éprouvés — si vous avez besoin 
 
 BOB répond à un besoin différent : **du durcissement pratique pour les admins qui ont besoin d'agir sur les résultats, pas de les archiver**. Chaque résultat est accompagné d'une explication en langage clair et d'une commande de remédiation prête à l'emploi. Le score de sécurité est contextuel — une machine directement exposée sur internet est jugée plus sévèrement qu'une machine derrière NAT. La sortie est conçue pour être lue dans un terminal, pas classée.
 
-Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre angle de lecture.
+Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre angle de lecture, axé sur ce qu'il faut faire ensuite.
 
 ---
 

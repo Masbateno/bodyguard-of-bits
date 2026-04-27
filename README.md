@@ -24,7 +24,7 @@ Lynis and OpenSCAP are solid, well-established tools — if you need broad compl
 
 BOB serves a different purpose: **practical hardening for sysadmins who need to act on findings, not file them**. Every result comes with a plain-language explanation and a ready-to-run remediation command. The security score is context-aware — a machine directly exposed to the internet is held to a stricter standard than one behind NAT. Output is structured to be read in a terminal, not archived.
 
-If you already run Lynis, BOB is not a replacement — it's a different lens.
+If you already run Lynis, BOB is not a replacement — it's a different lens, one that tells you what to do next.
 
 ---
 
