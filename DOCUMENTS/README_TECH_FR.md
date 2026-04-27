@@ -140,8 +140,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ## Prérequis
 
-- Système Linux — Debian, Ubuntu, Linux Mint, ou dérivé
-- UFW installé : `sudo apt install ufw`
+- Linux — testé sur Linux Mint 22.3, Debian 13.4.0
 - Python 3.9+
 - `ss` recommandé (paquet `iproute2`) — disponible par défaut sur les systèmes modernes
 - `python3-geoip2` + base GeoLite2 recommandés pour la géolocalisation IP (optionnel) : `sudo apt install python3-geoip2 geoip-database`
@@ -153,9 +152,12 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Prérequis
 
-- Système Linux — Debian, Ubuntu, Linux Mint, ou dérivé
-- UFW installé : `sudo apt install ufw`
-- pipx : `sudo apt install pipx && pipx ensurepath`
+- Linux — testé sur Linux Mint 22.3, Debian 13.4.0
+- pipx *(installateur d'applications Python isolées)* :
+
+```bash
+sudo apt install pipx && pipx ensurepath
+```
 
 > Ouvrir un nouveau terminal après `pipx ensurepath` pour activer le PATH.
 

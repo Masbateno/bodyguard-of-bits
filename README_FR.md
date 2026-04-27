@@ -4,7 +4,7 @@
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un auditeur de sécurité CLI pour systèmes Linux. Il exécute 46 vérifications sur 9 domaines, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
+BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 46 vérifications sur 9 domaines, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -18,17 +18,13 @@ BOB n'est pas un scanner. Il n'exploite pas, ne sonde pas, ne devine pas. Il év
 
 ---
 
-## Ce qui le différencie
+## Pourquoi BOB ?
 
-**Chaque résultat est expliqué.** Lancez `bob --explain ssh.password_auth` et vous obtenez la section CIS, le risque, et une commande de remédiation — sans fouiller les manpages.
+Lynis et OpenSCAP sont des outils solides et éprouvés — si vous avez besoin d'une couverture de conformité large ou de workflows de certification formels, ce sont les bons choix.
 
-**Chaque résultat avec un code CIS est étiqueté.** La boîte de synthèse affiche `[CIS:5.2.9]` à côté du résultat. En mode `--verbose`, la référence complète du benchmark est montrée.
+BOB répond à un besoin différent : **du durcissement pratique pour les admins qui ont besoin d'agir sur les résultats, pas de les archiver**. Chaque résultat est accompagné d'une explication en langage clair et d'une commande de remédiation prête à l'emploi. Le score de sécurité est contextuel — une machine directement exposée sur internet est jugée plus sévèrement qu'une machine derrière NAT. La sortie est conçue pour être lue dans un terminal, pas classée.
 
-**La sortie est conçue pour être lue.** Structurée pour la lisibilité : synthèse → domaines → résultats détaillés. Les formats machine (JSON, CSV, HTML, Markdown) sont disponibles quand vous en avez besoin.
-
-**Actionnable par défaut.** `--fix` vous montre la commande de remédiation. `--apply` peut exécuter la commande (à vérifier avant usage).
-
-**Conscient des profils.** Les profils server, workstation, desktop et docker adaptent les vérifications à votre environnement.
+Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre angle de lecture.
 
 ---
 
@@ -188,10 +184,10 @@ Déposez un fichier `.json` dans `~/.config/bob/services.d/` pour étendre le re
 
 ## Prérequis
 
-- Linux (Ubuntu/Debian — autres distributions non testées)
+- Linux — testé sur Linux Mint 22.3, Debian 13.4.0
 - Python 3.9+
 - Root (`sudo`)
-- UFW, ss, systemctl — standards sur la plupart des systèmes Ubuntu/Debian
+- `ss`, `systemctl` — standards sur la plupart des systèmes Debian-based
 
 Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits geoip2`)
 

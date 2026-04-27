@@ -4,7 +4,7 @@
 
 **Linux hardening auditor for sysadmins who read the output.**
 
-BOB is a CLI security auditor for Linux systems. It runs 46 checks across 9 domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
+BOB is a CLI security audit and hardening tool for Linux systems. It runs 46 checks across 9 domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
 
 ---
 
@@ -18,17 +18,13 @@ BOB is not a scanner. It does not exploit, probe, or guess. It deterministically
 
 ---
 
-## What makes it different
+## Why BOB?
 
-**Every finding is explained.** Run `bob --explain ssh.password_auth` and you get the CIS section, the risk, and a remediation command — no manpage diving required.
+Lynis and OpenSCAP are solid, well-established tools — if you need broad compliance coverage or formal certification workflows, they're the right choice.
 
-**Every finding with a CIS code is labelled.** The summary box shows `[CIS:5.2.9]` next to the finding. In `--verbose` mode, the full benchmark reference is shown.
+BOB serves a different purpose: **practical hardening for sysadmins who need to act on findings, not file them**. Every result comes with a plain-language explanation and a ready-to-run remediation command. The security score is context-aware — a machine directly exposed to the internet is held to a stricter standard than one behind NAT. Output is structured to be read in a terminal, not archived.
 
-**Output is designed to be read.** Structured for readability: summary → domains → detailed findings. Machine formats (JSON, CSV, HTML, Markdown) are available when you need them.
-
-**Actionable by default.** `--fix` shows you the remediation command. `--apply` can run the command (review before use).
-
-**Profile-aware.** Server, workstation, desktop, and docker profiles adapt checks to your environment.
+If you already run Lynis, BOB is not a replacement — it's a different lens.
 
 ---
 
@@ -188,10 +184,10 @@ Drop a `.json` file into `~/.config/bob/services.d/` to extend the service regis
 
 ## Requirements
 
-- Linux (Ubuntu/Debian — other distributions not tested)
+- Linux — tested on Linux Mint 22.3, Debian 13.4.0
 - Python 3.9+
 - Root (`sudo`)
-- UFW, ss, systemctl — standard on most Ubuntu/Debian systems
+- `ss`, `systemctl` — standard on most Debian-based systems
 
 Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
 

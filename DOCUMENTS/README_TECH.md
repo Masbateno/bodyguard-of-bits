@@ -140,8 +140,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 check
 
 ## Requirements
 
-- Linux system — Debian, Ubuntu, Linux Mint, or derivative
-- UFW installed: `sudo apt install ufw`
+- Linux — tested on Linux Mint 22.3, Debian 13.4.0
 - Python 3.9+
 - `ss` recommended (`iproute2` package) — available by default on modern systems
 - `python3-geoip2` + GeoLite2 database recommended for IP geolocation (optional): `sudo apt install python3-geoip2 geoip-database`
@@ -153,9 +152,12 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 check
 
 ### Prerequisites
 
-- Linux: Debian, Ubuntu, Mint or derivative
-- UFW: `sudo apt install ufw`
-- pipx: `sudo apt install pipx && pipx ensurepath`
+- Linux — tested on Linux Mint 22.3, Debian 13.4.0
+- pipx *(isolated Python app installer)*:
+
+```bash
+sudo apt install pipx && pipx ensurepath
+```
 
 > Open a new terminal after `pipx ensurepath` to activate the PATH.
 
