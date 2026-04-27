@@ -4,9 +4,7 @@
 
 **Linux hardening auditor for sysadmins who read the output.**
 
-BOB is a CLI security auditor for Linux systems. It runs 46 checks across 9 domains, maps every finding to a CIS benchmark section, and tells you not just *what* is wrong — but *why it matters* and *exactly how to fix it*.
-
-Think Lynis, but built around human readability and actionability first.
+BOB is a CLI security auditor for Linux systems. It runs 46 checks across 9 domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
 
 ---
 
@@ -14,23 +12,23 @@ Think Lynis, but built around human readability and actionability first.
 
 - Sysadmins running periodic hardening reviews
 - Power users who want more than a score and a list of flags
-- Anyone who finds generic audit output noisy and hard to act on
+- Anyone tired of noisy, unactionable audit tools
 
-BOB is not a scanner. It does not exploit, probe, or guess. It reads your configuration, compares it against CIS benchmarks and established best practices, and reports with full context.
+BOB is not a scanner. It does not exploit, probe, or guess. It deterministically evaluates your configuration against CIS benchmarks and established best practices.
 
 ---
 
 ## What makes it different
 
-**Every finding is explained.** Run `bob --explain ssh.password_auth` and you get the CIS section, the risk, and the exact command to remediate — no manpage diving required.
+**Every finding is explained.** Run `bob --explain ssh.password_auth` and you get the CIS section, the risk, and a remediation command — no manpage diving required.
 
 **Every finding with a CIS code is labelled.** The summary box shows `[CIS:5.2.9]` next to the finding. In `--verbose` mode, the full benchmark reference is shown.
 
-**Output is designed to be read.** The terminal output is structured, colored, and progressive — summary first, then domain breakdown, then per-finding detail. Machine formats (JSON, CSV, HTML, Markdown) are available when you need them.
+**Output is designed to be read.** Structured for readability: summary → domains → detailed findings. Machine formats (JSON, CSV, HTML, Markdown) are available when you need them.
 
-**Actionable by default.** `--fix` shows you the remediation command. `--apply` runs it.
+**Actionable by default.** `--fix` shows you the remediation command. `--apply` can run the command (review before use).
 
-**Profile-aware.** A `server` profile treats desktop apps as noise. A `workstation` profile relaxes SSH restrictions. A `docker` profile skips checks that don't apply to containers.
+**Profile-aware.** Server, workstation, desktop, and docker profiles adapt checks to your environment.
 
 ---
 
@@ -67,8 +65,8 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 | Domain | What it covers |
 |--------|----------------|
 | **Firewall** | UFW rules, iptables/nftables (when UFW inactive), IPv6 consistency, port exposure |
-| **SSH** | 12+ sshd_config parameters — PermitRootLogin, key strength, timeouts, forwarding |
-| **Kernel hardening** | 20+ sysctl parameters, kernel modules, Secure Boot, firmware/microcode |
+| **SSH** | sshd_config hardening — PermitRootLogin, key strength, timeouts, forwarding |
+| **Kernel hardening** | sysctl parameters, kernel modules, Secure Boot, firmware/microcode |
 | **Services** | 32 known services with risk classification; Docker firewall bypass detection |
 | **File permissions** | SUID/SGID audit, sensitive files, sudoers |
 | **User accounts** | Expired accounts, password policy, login.defs, PAM |
@@ -96,7 +94,7 @@ bob --explain ssh.password_auth   # direct lookup
 bob --explain list                # list all explainable keys
 ```
 
-No sudo required. Works offline.
+No sudo required. Fully offline — no external calls or data collection.
 
 ---
 

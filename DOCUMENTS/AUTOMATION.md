@@ -153,7 +153,7 @@ Email is sent **only if the audit detects alerts or warnings** (exit code > 0). 
 
 ---
 
-## Cron file format (v0.13+)
+## Cron file format
 
 Each cron file includes metadata comments for identification. Multiple emails are stored comma-separated:
 
@@ -250,9 +250,9 @@ All entries share a continuous index — you can delete, select, or use `all` re
 
 ---
 
-## Postfix configuration for HTML emails (v0.12+)
+## Postfix configuration for HTML emails
 
-From **v0.12**, cron reports are sent as HTML (MIME multipart/alternative) rather than plain text. Postfix must be installed and configured to relay these emails through an external SMTP server.
+Cron reports are sent as HTML (MIME multipart/alternative) rather than plain text. Postfix must be installed and configured to relay these emails through an external SMTP server.
 
 ### Step 1 — Install Postfix and mailutils
 

@@ -4,9 +4,7 @@
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un auditeur de sécurité CLI pour systèmes Linux. Il exécute 46 vérifications sur 9 domaines, mappe chaque résultat à une section du benchmark CIS, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *exactement comment y remédier*.
-
-Pensez Lynis, mais conçu autour de la lisibilité humaine et de l'action immédiate.
+BOB est un auditeur de sécurité CLI pour systèmes Linux. Il exécute 46 vérifications sur 9 domaines, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -14,23 +12,23 @@ Pensez Lynis, mais conçu autour de la lisibilité humaine et de l'action imméd
 
 - Admins système qui font des revues de durcissement périodiques
 - Power users qui veulent plus qu'un score et une liste de flags
-- Quiconque trouve les sorties d'audit génériques bruyantes et difficiles à exploiter
+- Quiconque en a assez des outils d'audit bruyants et sans suite
 
-BOB n'est pas un scanner. Il n'exploite pas, ne sonde pas, ne devine pas. Il lit votre configuration, la compare aux benchmarks CIS et aux bonnes pratiques établies, et rapporte avec contexte complet.
+BOB n'est pas un scanner. Il n'exploite pas, ne sonde pas, ne devine pas. Il évalue de façon déterministe votre configuration contre les benchmarks CIS et les bonnes pratiques établies.
 
 ---
 
 ## Ce qui le différencie
 
-**Chaque résultat est expliqué.** Lancez `bob --explain ssh.password_auth` et vous obtenez la section CIS, le risque, et la commande exacte de remédiation — sans fouiller les manpages.
+**Chaque résultat est expliqué.** Lancez `bob --explain ssh.password_auth` et vous obtenez la section CIS, le risque, et une commande de remédiation — sans fouiller les manpages.
 
 **Chaque résultat avec un code CIS est étiqueté.** La boîte de synthèse affiche `[CIS:5.2.9]` à côté du résultat. En mode `--verbose`, la référence complète du benchmark est montrée.
 
-**La sortie est conçue pour être lue.** La sortie terminal est structurée, colorée et progressive — synthèse d'abord, puis décomposition par domaine, puis détail par résultat. Les formats machine (JSON, CSV, HTML, Markdown) sont disponibles quand vous en avez besoin.
+**La sortie est conçue pour être lue.** Structurée pour la lisibilité : synthèse → domaines → résultats détaillés. Les formats machine (JSON, CSV, HTML, Markdown) sont disponibles quand vous en avez besoin.
 
-**Actionnable par défaut.** `--fix` vous montre la commande de remédiation. `--apply` l'exécute.
+**Actionnable par défaut.** `--fix` vous montre la commande de remédiation. `--apply` peut exécuter la commande (à vérifier avant usage).
 
-**Conscient des profils.** Un profil `server` traite les applications desktop comme du bruit. Un profil `workstation` assouplit les restrictions SSH. Un profil `docker` ignore les vérifications non pertinentes pour les conteneurs.
+**Conscient des profils.** Les profils server, workstation, desktop et docker adaptent les vérifications à votre environnement.
 
 ---
 
@@ -67,8 +65,8 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 | Domaine | Ce qu'il couvre |
 |---------|----------------|
 | **Pare-feu** | Règles UFW, iptables/nftables (quand UFW inactif), cohérence IPv6, exposition des ports |
-| **SSH** | 12+ paramètres sshd_config — PermitRootLogin, qualité des clés, timeouts, forwarding |
-| **Durcissement noyau** | 20+ paramètres sysctl, modules noyau, Secure Boot, firmware/microcode |
+| **SSH** | Durcissement sshd_config — PermitRootLogin, qualité des clés, timeouts, forwarding |
+| **Durcissement noyau** | Paramètres sysctl, modules noyau, Secure Boot, firmware/microcode |
 | **Services** | 32 services connus avec classification du risque ; détection du contournement pare-feu Docker |
 | **Permissions fichiers** | Audit SUID/SGID, fichiers sensibles, sudoers |
 | **Comptes utilisateurs** | Comptes expirés, politique de mots de passe, login.defs, PAM |
@@ -96,7 +94,7 @@ bob --explain ssh.password_auth   # consultation directe
 bob --explain list                # lister toutes les clés explicables
 ```
 
-Sans sudo. Fonctionne hors ligne.
+Sans sudo. Entièrement hors ligne — aucun appel externe ni collecte de données.
 
 ---
 

@@ -8,93 +8,92 @@
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.9%2B-yellow)
 
-Auditeur de durcissement Linux pour les admins système et power users. Mapping des benchmarks CIS, 46 vérifications sur 9 domaines, explications en langage clair et commandes de correction prêtes à l'emploi.
-
-BOB analyse votre configuration UFW, détecte les services réseau exposés, classe les risques par service, et fournit des explications en langage clair avec des commandes de correction prêtes à l'emploi.
+BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 46 vérifications sur 9 domaines, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
 ---
 
 ## Fonctionnalités
 
-- **Bannière ASCII** avec informations système (distro, hôte, version UFW, utilisateur, date)
+### Audit principal
+
+- **Bannière ASCII** avec informations système — distro, hôte, version UFW, utilisateur, date
 - **Vérification du statut UFW** — actif/inactif, politique par défaut entrante
 - **Analyse des règles UFW** — règles en doublon, `allow from any` sans restriction de port, cohérence IPv6
 - **Score contextuel** — détection du contexte réseau (IP publique directe vs NAT) ; pénalités doublées sur les machines exposées sur internet ; pare-feu inactif plafonne le score à 3/10
-- **Détection de 32 services réseau courants** avec analyse de leur exposition UFW et contexte de risque à deux axes (exposition + menace) pour les services critiques et élevés ; services CRITICAL/HIGH installés mais inactifs émettent ⚠ + bloc de contexte de risque
-- **Audit iptables/nftables** — quand UFW est inactif, audite la couche pare-feu sous-jacente : détecte le backend actif (iptables vs nftables) ; vérifie les politiques par défaut INPUT et FORWARD ; contrôle la présence du suivi de connexion conntrack ; ⚠ −1 pt par politique permissive ; conditionné sur `not fw_status.active`
+- **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; findings répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
+- **Profils d'audit** — `server` (défaut), `desktop`, `container` ; alias `workstation` conservé ; profil actif affiché dans la boîte de synthèse
+- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 133 entrées (99 CIS formels, 34 best-practice, 4 Docker)
+- **5 en-têtes de groupes thématiques** — sortie organisée en : FIREWALL & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / DÉTECTION & SANTÉ
+- **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible (intégration CI)
+
+### Réseau & pare-feu
+
+- **32 services réseau connus** détectés avec analyse d'exposition UFW et contexte de risque à deux axes (exposition + menace) pour les services critiques et élevés ; services CRITICAL/HIGH installés mais inactifs émettent ⚠ + bloc de contexte de risque
+- **Panorama des services** — tableau compact des 32 services après l'audit : SERVICE / STATUT / PORT(S) / UFW ; services non installés affichés en grisé
+- **Audit iptables/nftables** — quand UFW est inactif : détecte le backend actif (iptables vs nftables) ; vérifie les politiques par défaut INPUT et FORWARD ; contrôle la présence du conntrack stateful ; WARN −1 pt par politique permissive
 - **Docker** — détection du contournement iptables et liste des ports exposés par les containers en cours d'exécution
-- **Virtualisation** — détecte les hyperviseurs actifs (libvirt/KVM, VirtualBox, VMware, LXD/LXC) et les paquets Snap réseau qui peuvent créer des interfaces bridge et manipuler iptables directement, contournant UFW — même risque que Docker
+- **Virtualisation** — détecte les hyperviseurs actifs (libvirt/KVM, VirtualBox, VMware, LXD/LXC) et les paquets Snap réseau susceptibles de créer des interfaces bridge et de contourner UFW
 - **Ports en écoute** — passe unique unifiée ; ports éphémères et système ignorés proprement ; NetBIOS géré avec avertissement contextuel
-- **Logs UFW** — parse `/var/log/ufw.log` sur une période configurable (`--log-days=N`, défaut 7 jours) ; total des tentatives bloquées, top IPs sources avec géolocalisation, top ports ciblés, détection bruteforce (>10 tentatives/60s), tentatives sur les ports de services installés
-- **Géolocalisation IP** — IPs sources enrichies avec pays et opérateur via GeoIP2 (optionnel, `python3-geoip2` + base GeoLite2) ; plages privées identifiées comme réseau local ; résultats mis en cache par session
 - **Détection DDNS / exposition externe** — détecte les clients DDNS actifs (ddclient, inadyn, No-IP, DuckDNS) ; extrait le domaine configuré ; croise avec les règles UFW ALLOW sans restriction pour identifier les ports exposés sur internet
 - **Classification d'exposition** par service : `ouvert sur internet` / `réseau local uniquement` / `bloqué par UFW` / `pas de règle`
-- **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; éléments manuels affichés sans exécution ; `-y / --yes` applique tout sans confirmation avec une bannière d'avertissement et un résumé des commandes exécutées
-- **Résumé catégorisé** — findings répartis en trois blocs : *Action requise* / *Améliorations possibles* / *Configuration normale* ; phrase d'interprétation automatique
-- **Note de politique implicite** — signale quand des services à risque élevé s'appuient sur la politique `deny` par défaut plutôt que sur des règles explicites
-- **Score de sécurité** (0–10) avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE
-- **Panorama des services** — tableau compact de l'ensemble des 32 services connus après l'audit services (SERVICE / STATUT / PORT(S) / UFW), services non installés affichés en grisé
+- **Cohérence IPv6** — détecte les ports IPv6 actifs sans règle UFW v6 correspondante ; IPv6 désactivé globalement mais ports en écoute présents ; adresses link-local/ULA uniquement → INFO
+- **Contrôle niveau de journalisation UFW** — `off` → ALERT −2 pts (aucune visibilité sur le trafic bloqué) ; `low`/`medium` → OK ; `high`/`full` → INFO
+- **Regroupement exposition des ports** — regroupe les services en écoute exposés par portée d'interface et niveau de risque ; démons OS connus sur ports système classifiés séparément des apps utilisateur
+
+### Durcissement système
+
+- **Vérification durcissement** — unattended-upgrades, mode AppArmor, rp_filter, redirections ICMP, log_martians, broadcast ICMP ; déductions scorées pour les paramètres les plus impactants
+- **Audit de sécurité SSH** — analyse complète de `sshd_config` (15 directives + Ciphers/MACs/KEX faibles) ; audit des clés privées (type, taille, passphrase) ; inspection `authorized_keys` ; vérification côté client `~/.ssh/config` ; comptage `known_hosts` ; suggestions d'installation adaptées à la distro
+- **Fichiers sensibles & sudoers** — audit des permissions de `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`, `/etc/sudoers` ; permissions des clés hôtes SSH ; détection de `NOPASSWD:ALL` dans sudoers et sudoers.d
+- **Audit des mises à jour système** — paquets de sécurité en attente via `apt-get -s upgrade` (−2 pts fixe) ; absence de `unattended-upgrades` combinée à des mises à jour de sécurité en attente (−1 pt composé) ; mises à jour régulières → INFO uniquement
+- **Audit umask système** — lit le umask depuis `/etc/login.defs`, PAM, `/etc/profile`, RC shells et processus courant ; umask permissif (0002/0000) → WARN −1 pt ; sources conflictuelles → WARN −1 pt
+- **Secure Boot** — état UEFI via `mokutil --sb-state` / `efivars` / `bootctl` ; WARN −1 pt si désactivé sur desktop ; INFO sur server/VM ou BIOS/inconnu
+- **Audit firmware & microcode** — `fwupdmgr` firmware device en attente ; paquet microcode CPU (Intel/AMD) ; WARN −1 pt si absent ou obsolète
+- **Expiration certificats TLS/SSL** — analyse Let's Encrypt, `/etc/ssl/private`, directives nginx/apache2/postfix ; expiré → ALERT −2 pts ; <7 j → ALERT −2 pts ; <30 j → WARN −1 pt ; total plafonné à −4 pts ; liens symboliques cassés gérés
+- **Sécurité timers systemd** — curl/wget pipé vers un shell dans ExecStart → WARN −2 pts ; scripts world-writable dans ExecStart → WARN −1 pt ; timers root créés par l'utilisateur sans `User=` → INFO
+
+### Détection & surveillance
+
+- **Logs UFW** — parse `/var/log/ufw.log` sur une période configurable (`--log-days=N`, défaut 7 jours) ; total des tentatives bloquées, top IPs sources avec géolocalisation, top ports ciblés, détection bruteforce (>10 tentatives/60 s), tentatives sur ports de services installés
+- **Analyse auth.log SSH** — parse `/var/log/auth.log` ; détection brute-force (>10 tentatives échouées depuis la même IP en 60 s → ALERT −2 pts) ; dernières connexions réussies ; top sources d'échec
+- **Géolocalisation IP** — IPs sources enrichies avec pays et opérateur via GeoIP2 (optionnel, `python3-geoip2` + base GeoLite2) ; plages privées identifiées comme réseau local ; résultats mis en cache par session
+- **Dominance source locale IoT** — détecte quand une seule IP privée représente ≥ 70 % du trafic UFW bloqué sur ≥ 50 entrées de log (WARN, −1 pt) ; typique des appareils IoT qui scannent le LAN
+- **Synchronisation NTP** — systemd-timesyncd, chronyd ou ntpd ; WARN −1 pt si désactivé ou non synchronisé
+- **Prévention d'intrusion Fail2ban** — installation, état du service, jails actifs, présence d'un jail SSH ; WARN −1 pt si inactif ou aucun jail
+- **Scan rootkit & intégrité** — détection rkhunter/chkrootkit ; WARN −1 pt pour base obsolète (≥7 jours), scan absent ou trop ancien (>30 jours)
+- **Linux Audit Framework (auditd)** — installation, état du service, règles chargées, couverture de `/etc/passwd`, `/etc/shadow`, `/etc/sudoers` ; WARN −1 pt chacun pour service inactif, aucune règle, fichiers non couverts (profil server uniquement)
+- **Intégrité des fichiers (AIDE/Tripwire)** — installation, existence de la base, récence du dernier check ; WARN −1 pt si base absente ou check absent/trop ancien (>30 jours)
+- **Audit sécurité Samba** — SMB1 (ALERT −2 pts) ; mots de passe nuls (ALERT −3 pts) ; signature serveur désactivée (WARN −1 pt) ; partages accessibles en écriture/lecture par l'invité ; domaine `samba` dédié
+- **Audit antivirus ClamAV** — installation, fraîcheur de la base virus via mtime (WARN/ALERT selon ancienneté), statut démon, date du dernier scan
+- **Exposition SMTP locale** — détecte les MTA (Postfix, Exim, Sendmail) en écoute sur toutes les interfaces vs localhost uniquement ; WARN −1 pt si exposition publique
+- **Moteur de corrélation de signaux** — 5 règles de risque composé (root+sans-fail2ban, auth-password+brute-force, root+password, NOPASSWD+SUID, logging-off+sans-fail2ban+sans-auditd) ; évalué post-audit sur les findings ALERT+WARN actifs
+- **Suivi des findings récurrents** — compteur d'apparitions consécutives par clé ALERT/WARN ; stocké dans `~/.config/bob/recurrence.json`
+- **Détection d'applications de bureau** — applis GUI connues (Steam, Discord, Zoom, Signal, VLC, Spotify, Slack, Telegram, Chrome, Firefox…) en cours d'exécution ; findings INFO, sans déduction
+
+### Sortie & UX
+
 - **Interface bilingue** — anglais par défaut, français avec `--french`
 - **Mode sans couleur** — `--no-color` pour une sortie propre dans les pipes et fichiers log
-- **Rapport détaillé optionnel** — fichier log horodaté avec en-tête ASCII art, informations système, findings et recommandations
-- **`--manage-logs`** — interface interactive pour lister les rapports sauvegardés (nom, taille, date) et les supprimer par index ou en totalité ; Entrée ouvre un visualiseur de log scrollable (`s` bascule mode complet/résumé ; `g`/`G` haut/bas)
-- **`--install-cron`** — wizard de planification : nommer le cron, choisir le type de schedule (tous les jours / certains jours de la semaine / certains jours du mois / expression cron personnalisée), définir l'heure et un email de notification optionnel ; aperçu en langage naturel avant confirmation ; crons nommés (`/etc/cron.d/bob-{nom}`)
-- **`--manage-cron`** — TUI en boucle : lister les crons installés, modifier le planning ou l'email de notification, supprimer ; la commande `m` ouvre le carnet d'adresses email (ajout / suppression d'adresses enregistrées), accessible même sans cron installé
-- **Vérification durcissement** — audit du durcissement système : unattended-upgrades, mode AppArmor, rp_filter, redirections ICMP, log_martians, broadcast ICMP ; déductions scorées pour les paramètres les plus impactants
-- **Cohérence IPv6** — détecte les ports IPv6 actifs sans règle UFW v6 correspondante ; détection de conflit quand IPv6 est désactivé globalement mais des ports en écoute sont présents
-- **Rapport comparatif** — baseline enregistrée après chaque audit (`~/.config/bob/last_baseline.json`) ; au prochain lancement, affiche le delta de score, les variations d'alertes/avertissements, les ports apparus/fermés, les services démarrés/arrêtés
-- **API Plugin** — déposer un fichier Python dans `~/.config/bob/checks.d/` pour ajouter une vérification personnalisée ; les plugins sont fail-safe (les exceptions n'interrompent jamais l'audit) et les séquences ANSI sont nettoyées
-- **Audit de sécurité SSH** — analyse complète de `sshd_config` (15 directives + Ciphers/MACs/KEX faibles) ; audit des clés privées (type, taille, passphrase) ; inspection `authorized_keys` ; vérification côté client `~/.ssh/config` ; comptage des entrées `known_hosts` ; cible le home de `SUDO_USER` ; suggestions d'installation adaptées à la distro
-- **Fichiers sensibles & sudoers** — audit des permissions de `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`, `/etc/sudoers` (modifiable par tous → ALERT, trop permissif → WARN) ; permissions des clés hôtes privées SSH sous `/etc/ssh/` ; détection de `NOPASSWD:ALL` dans sudoers et sudoers.d
-- **Audit des mises à jour système** — détecte les paquets de sécurité en attente via `apt-get -s upgrade` (−2 pts fixe) ; absence de `unattended-upgrades` combinée à des mises à jour de sécurité en attente (−1 pt composé) ; mises à jour régulières → INFO uniquement
-- **Détection d'applications de bureau** — détecte les applications GUI connues (Steam, Discord, Zoom, Signal, VLC, Spotify, Slack, Telegram, Chrome, Firefox…) en cours d'exécution ; findings INFO, sans déduction ; section affichée uniquement si au moins une appli est détectée
-- **Synchronisation NTP** — vérifie si systemd-timesyncd, chronyd ou ntpd est actif et synchronisé ; WARN −1 pt si NTP est désactivé ou l'horloge pas encore synchronisée
-- **Prévention d'intrusion Fail2ban** — check autonome dédié ; détecte l'installation, l'état du service, les jails actifs et la présence d'un jail SSH ; WARN −1 pt si service inactif ou aucun jail configuré
-- **Scan rootkit & intégrité** — détection rkhunter/chkrootkit ; WARN −1 pt pour base de données rkhunter obsolète (≥7 jours), scan absent ou dernier scan trop ancien (>30 jours)
-- **Linux Audit Framework (auditd)** — détecte l'installation, l'état du service, les règles chargées et la couverture des fichiers sensibles (/etc/passwd, /etc/shadow, /etc/sudoers) ; WARN −1 pt chacun pour service inactif, aucune règle, fichiers non couverts (profil server uniquement)
-- **Secure Boot** — état UEFI via `mokutil --sb-state` → `/sys/firmware/efi/efivars/` → `bootctl status` ; WARN −1 pt si désactivé sur desktop ; INFO si désactivé sur server/VM ou BIOS/inconnu
-- **Intégrité des fichiers (AIDE/Tripwire)** — détecte l'installation, l'initialisation de la base et la date du dernier check ; AIDE préféré à Tripwire ; WARN −1 pt si base absente ou check absent/trop ancien (>30 jours)
-- **`--explain KEY`** — explication structurée par constat (POURQUOI C'EST UN RISQUE / COMMENT CORRIGER / référence CIS Ubuntu 22.04) ; 112 clés explicables dans 26 groupes ; 17 clés affichent des sections par profil (`[ server ]` / `[ desktop ]` / `[ container ]`) ; note uniforme jaune pour les clés sans différence entre profils ; TUI interactif avec délai ESC réduit à 25 ms ; sans droit root
-- **Scores par domaine** — sous-scores de sécurité par domaine (SSH / Sécurité Samba / Fichiers & Accès / Mises à jour / Durcissement / Santé Disque / Pare-feu & Services) ; 7 domaines ; affichés en barre █/░ après l'audit ; inclus dans la sortie JSON et le payload webhook
-- **Webhooks** — `--webhook URL` envoie le résultat d'audit en JSON après chaque audit ; formats générique (Grafana/automation) et Slack (auto-détecté) ; non-fatal ; `--webhook-format=auto|generic|slack`
-- **Mode `--diff`** — lance l'audit silencieusement et affiche uniquement le delta comparatif (changements depuis le dernier audit) ; suit le score, le nombre d'alertes/avertissements et le nombre d'INFO (les changements de niveau INFO sont donc détectés)
-- **Audit sécurité Samba** — analyse complète de `smb.conf` : détection protocole SMB1 (ALERT, −2 pts) ; mots de passe nuls activés (ALERT, −3 pts) ; signature serveur désactivée (WARN, −1 pt) ; partages accessibles en écriture par l'invité (ALERT, −2 pts/partage) ; partages lisibles par l'invité (WARN, −1 pt/partage) ; `map to guest = bad user` (WARN, −1 pt) ; vérification bind interfaces (INFO) ; domaine **samba** dédié
-- **Audit antivirus ClamAV** — détection installation (`clamscan`/`clamdscan`/`freshclam`) ; fraîcheur de la base de données virus via mtime (WARN −1 pt > 7 jours, ALERT −2 pts > 30 jours) ; statut démon clamd avec repli sur le fichier socket pour les containers ; date du dernier scan parsée depuis les chemins de logs standards (WARN −1 pt > 30 jours, −1 pt > 90 jours) ; déductions routées vers le domaine **hardening**
-- **Dominance source locale IoT** — détecte quand une seule IP privée représente ≥ 70 % du trafic UFW bloqué sur ≥ 50 entrées de log (WARN, −1 pt, `logs.local_dominance`) ; typique des appareils IoT qui scannent le LAN ou des serveurs mal configurés
-- **Exposition SMTP locale** — détecte les MTA (Postfix, Exim, Sendmail) en écoute sur toutes les interfaces (`0.0.0.0:25` ou `:::25`) vs localhost uniquement ; `SmtpSnapshot.from_system()` utilise `ps -eo comm` + `ss -tlnp`/repli `netstat` ; WARN −1 pt si exposition publique
-- **`--fix` aperçu par défaut** — `--fix` seul affiche un aperçu de toutes les corrections disponibles avec `→ cmd` sans exécuter ; `--fix --apply` active le flux d'application interactif ; `--fix --apply --yes` confirme tout automatiquement avec journal d'audit
-- **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse comme `✔ atteint` (vert) ou `▲ +N pt(s) manquant(s)` (jaune) ; retourne le code de sortie 4 si le score < cible (intégration CI, prioritaire sur les codes 1/2)
-- **5 en-têtes de groupes thématiques** — sortie de l'audit réorganisée en cinq groupes nommés : FIREWALL & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / DÉTECTION & SANTÉ ; chaque groupe introduit par un séparateur `━` cyan pleine largeur avec le titre centré
-- **`cmd_type` sur les findings** — `Finding` gagne `cmd_type: str = "fix"` / `"check"` ; la boîte de synthèse utilise `→` pour les commandes de correction et `ℹ` pour les commandes de vérification
-- **Profils d'audit** — `server` (défaut), `desktop` (remplace `workstation`), `container` ; alias `workstation` conservé ; profil actif affiché dans la boîte de synthèse
-- **Contrôle niveau de journalisation UFW** — détecte le niveau UFW (`ufw status verbose`) ; `off` → ALERT −2 pts (aucune visibilité sur le trafic bloqué) ; `low`/`medium` → OK ; `high`/`full` → INFO (mode verbeux, sans déduction)
-- **Audit umask système** — `UmaskSnapshot` lit le umask depuis `/etc/login.defs`, PAM, `/etc/profile`, RC shells et processus courant ; umask permissif (0002/0000) → WARN −1 pt ; sources conflictuelles → WARN −1 pt ; `_fix_cmd()` propose `/etc/profile.d/umask.conf`
-- **Analyse auth.log SSH** — `AuthLogSnapshot` parse `/var/log/auth.log` ; détection brute-force (>10 tentatives échouées depuis la même IP en 60 s → ALERT −2 pts) ; dernières connexions réussies affichées ; top sources d'échec listées ; `days=0` (log vide/rotaté) géré avec clé dédiée sans interpolation de zéro
-- **Historique des scores** — JSONL dans `~/.config/bob/history.jsonl` ; `--history` affiche les N derniers scores sous forme de sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 90 entrées
-- **Liste d'exceptions (ignore)** — `--ignore KEY` ajoute une clé de finding dans `ignore.yml` ; `--show-ignored` liste toutes les exceptions ; `ScoreEngine.ignore_keys` frozenset masque les findings correspondants sans les scorer ; indice affiché dans la sortie ; `{check_key}` utilisé dans la locale pour éviter le conflit de signature de `t()`
-- **Classification process-aware des ports système** — frozenset `_SYSTEM_DAEMONS` dans `checks/ports.py` ; les ports de `_SYSTEM_PORTS` (DNS, DHCP, mDNS, UPnP…) ne sont classés `SYSTEM_INTERNAL` que si l'application propriétaire est un démon OS connu ; les apps utilisateur (ex. Spotify sur `1900/udp`) passent aux vérifications d'exposition normales
-- **Audit expiration certificats TLS/SSL** — analyse Let's Encrypt (`/etc/letsencrypt/live/*/fullchain.pem`), `/etc/ssl/private/*.{pem,crt,cert}`, directives nginx `ssl_certificate`, `SSLCertificateFile` apache2, `smtpd_tls_cert_file` postfix ; expiré → ALERT −2 pts ; <7 j → ALERT −2 pts ; <30 j → WARN −1 pt ; total plafonné à −4 pts ; `_MAX_CERTS=30` ; chemins entre guillemets et liens symboliques cassés gérés
-- **Audit sécurité timers systemd** — `systemctl list-timers --all --no-pager` ; curl/wget pipé vers un shell dans ExecStart → WARN −2 pts (flat) ; scripts `.sh` world-writable dans ExecStart → WARN −1 pt (flat) ; timers créés par l'utilisateur dans `/etc/systemd/system/` sans `User=` → INFO ; deux regex indépendantes prévient les faux négatifs sur `/bin/bash`/`bash -c` ; `lstrip("-@")` gère les préfixes systemd ; `_MAX_TIMERS=100`
-- **Audit firmware & microcode** — `fwupdmgr get-updates` (cache, sans réseau forcé) ; firmware device en attente → WARN −1 pt ; paquet microcode CPU via `dpkg -l` ; Intel → `intel-microcode` ; AMD → `amd64-microcode` ; non Intel/AMD → INFO ; absent → WARN −1 pt ; correspondance exacte par colonne pour les paquets qualifiés par architecture ; résultats erreur et mises à jour découplés
-- **Export HTML `--html`** — `build_html_output()` produit un fichier HTML autosuffisant (sans JS, sans ressources externes) ; CSS embarqué ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; `_h()` applique `html.escape(quote=True)` à toutes les données utilisateur — protection XSS
-- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés (`--check=ssh,firewall`) ou les exclure (`--skip=clamav,rootkit`) ; mutuellement exclusifs ; helper `_section_enabled()` dans `runner.py` ; `validate_check_filters()` avertit sur les noms inconnus ; `skip_sections` du profil respecté ; `--check=list` affiche les 31 noms de sections filtrables (sans sudo)
-- **`--output-dir PATH`** — surcharger le répertoire de sauvegarde du rapport pour l'exécution courante ; `get_or_prompt_log_dir()` priorise ce paramètre sur la config sauvegardée ; sans persistance
-- **Moteur de corrélation de signaux** — `correlation.py` : 5 règles de risque composé (root+sans-fail2ban → ALERT ; auth-mot-de-passe+brute-force → ALERT ; root+password → ALERT ; NOPASSWD+SUID → WARN ; stale+sans-fail2ban → WARN ; logging-off+sans-fail2ban+sans-auditd → WARN) ; `CorrelationRule` avec frozensets `all_of`/`any_of` ; évalué post-finalize sur les clés ALERT+WARN ; liste `triggered_by` identifie les findings déclencheurs
-- **Suivi des findings récurrents** — `recurrence.py` : compteur d'apparitions consécutives par clé ALERT/WARN ; `~/.config/bob/recurrence.json` ; écriture atomique ; valeurs corrompues/négatives normalisées ; clés vides filtrées au chargement
-- **Analyse d'exposition des ports** — `exposure.py` : regroupe les services en écoute exposés par portée d'interface et niveau de risque ; allowlist `fw_policy not in ("deny", "reject")` ; attribut direct `lp.port` pour le filtre ports éphémères
-- **Rapport comparatif — diff de clés de findings** — `AuditBaseline.finding_keys` persiste les clés ALERT+WARN actives ; `AuditDelta` ajoute `new_finding_keys` / `resolved_finding_keys` ; garde de migration contre le flood de faux positifs à la première exécution après mise à jour ; `display_delta()` affiche chaque clé apparue/résolue
-- **Correctif faux positif IPv6 link-local** — parseur `_read_global_ipv6()` ; champ `has_global_ipv6` ; WARN −2 pts rétrogradé en INFO quand seules des adresses link-local (fe80::/10) ou ULA (fc/fd::/7) sont assignées — machine non joignable via IPv6 depuis internet
-- **Correctif message noyaux obsolètes** — clé locale `kernels_obsolete_same` ; supprime la parenthèse redondante "(actif : X, récent : X)" quand le noyau actif est identique au plus récent installé
-- **Filtre certificat snakeoil** — `ssl-cert-snakeoil.pem` exclu du scan `/etc/ssl/private` ; empêche le certificat de test Debian/Ubuntu de déclencher l'audit TLS
-- **`--explain`** — 87→112 clés (+25 sur 7 nouveaux groupes : Journaux d'authentification, Umask, Journalisation du pare-feu, Certificats TLS/SSL, Timers Systemd, Firmware, Docker)
-- **`--format=FORMAT`** — flag de sortie unifié : `json | json-full | csv | markdown | html` ; anciens flags (`-j`, `-J`, `--output csv`, `--html`) conservés comme aliases silencieux ; mutuellement exclusifs entre eux
-- **`--check=list`** — affiche les 31 noms de sections filtrables avec une note sur la correspondance par préfixe ; sans sudo
-- **TUI curses `--install-cron`** — `run_install_cron()` enveloppe `curses.wrapper()` avec readline intégré, Esc-pour-annuler sur chaque prompt, aperçu live du planning ; repli sur le wizard texte si curses indisponible ; `run_manage_cron()` amélioré de la même façon
-- **`bob/_tty.py`** — lecteur ligne mode raw (`read_line()`) : Échap standalone retourne `None` (annuler) ; séquences de touches directionnelles drainées via `select` 50 ms ; repli `input()` en non-TTY (tests, pipes)
-- **Qualificateur de portée du contexte de risque** — `[CRITIQUE • LAN]` (ou `[CRITICAL • LAN]` en anglais) ajouté aux labels de service quand le contexte réseau est local ; évite la confusion entre risque local et exposition internet
-- **Harmonisation barres d'aide TUI** — hints cohérents dans `--explain`, `--manage-logs` et prévisualisation de log : `↑↓: move` pour la navigation, `↑↓ / PgUp/PgDn: scroll` pour le contenu, `Esc: back` pour les sous-écrans
-- **Cartographie CIS inline** — chaque finding dans la boîte de synthèse affiche son code CIS `[CIS:X.Y.Z]` (estompé) ; ref CIS complète affichée estompée en `--verbose` après chaque finding WARN/ALERT ; refs servies depuis `cis_refs.json` (133 entrées : 99 CIS formels, 34 best-practice, 4 Docker), indépendantes de la langue ; API publique `get_cis_ref()` / `get_cis_code()`
-- **5 nouveaux services (v0.1.0)** — SMTP/Postfix (25/tcp, élevé), NFS Server (2049/tcp+udp, élevé), Jenkins (8080/tcp, élevé), OpenVPN (1194/udp, moyen), Squid Proxy (3128/tcp, moyen) ; le registre couvre désormais 32 services
+- **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit
+- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 112 clés dans 26 groupes ; 17 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
+- **Scores par domaine** — sous-scores (SSH / Samba / Fichiers & Accès / Mises à jour / Durcissement / Santé Disque / Pare-feu & Services) ; barre █/░ après l'audit ; inclus dans JSON et webhook
+- **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
+- **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
+- **`--format=FORMAT`** — flag unifié : `json | json-full | csv | markdown | html` ; anciens flags conservés comme aliases
+- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 31 noms de sections
+- **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante ; sans persistance
+- **Rapport comparatif** — baseline enregistrée après chaque audit ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément
+- **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 90 entrées
+- **Liste d'exceptions** — `--ignore KEY` ajoute une clé dans `ignore.yml` ; `--show-ignored` liste les exceptions actives ; les findings correspondants sont masqués sans être scorés
+- **Mode `--diff`** — lance l'audit silencieusement et affiche uniquement le delta (score, alertes, avertissements, INFO)
+- **API Plugin** — déposer un fichier Python dans `~/.config/bob/checks.d/` pour ajouter une vérification personnalisée ; fail-safe (les exceptions n'interrompent jamais l'audit) ; séquences ANSI nettoyées
+
+### Automatisation
+
+- **Rapport détaillé** — fichier log horodaté avec en-tête ASCII art, informations système, findings et recommandations ; créé avec `-d` ; nom : `bob_YYYYMMDD_HHMMSS.log`
+- **`--manage-logs`** — interface interactive pour lister, prévisualiser et supprimer les rapports ; prévisualisation scrollable avec bascule résumé/complet
+- **`--install-cron`** — wizard de planification : nom du cron, type de planning (quotidien / jours spécifiques / expression cron personnalisée), heure et email optionnel ; aperçu en langage naturel ; TUI curses avec repli texte ; crons nommés dans `/etc/cron.d/bob-{nom}`
+- **`--manage-cron`** — TUI en boucle : lister, modifier planning/email, supprimer des crons ; carnet d'adresses email accessible depuis le menu, même sans cron installé
 
 ---
 
@@ -265,6 +264,8 @@ sudo bob -r
 ---
 
 ## Exemple de sortie
+
+Exemple (tronqué pour la lisibilité) :
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗

@@ -153,7 +153,7 @@ La notification est envoyée **uniquement si l'audit détecte des alertes ou des
 
 ---
 
-## Format des fichiers cron (v0.13+)
+## Format des fichiers cron
 
 Chaque fichier cron inclut des métadonnées en commentaires pour l'identification. Les emails multiples sont stockés séparés par des virgules :
 
@@ -250,9 +250,9 @@ Tous les éléments partagent un index continu — suppression, sélection ou `a
 
 ---
 
-## Configuration Postfix pour les emails HTML (v0.12+)
+## Configuration Postfix pour les emails HTML
 
-À partir de **v0.12**, les rapports cron sont envoyés au format HTML (MIME multipart/alternative) plutôt que texte brut. Postfix doit être installé et configuré pour relayer ces emails via un serveur SMTP externe.
+Les rapports cron sont envoyés au format HTML (MIME multipart/alternative) plutôt que texte brut. Postfix doit être installé et configuré pour relayer ces emails via un serveur SMTP externe.
 
 ### Étape 1 — Installer Postfix et mailutils
 
