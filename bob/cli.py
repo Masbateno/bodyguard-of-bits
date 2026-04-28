@@ -555,7 +555,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     def opt(flags: str, desc: str, col: int = 28) -> None:
         print(f"  {flags:<{col}}  {desc}")
 
-    print(f"BOB v{version} — UFW firewall audit tool")
+    print(f"BOB v{version} — Linux hardening auditor")
     print()
     print("Usage: sudo bob [OPTIONS]")
     print("       bob --explain KEY   (standalone, no sudo required)")
