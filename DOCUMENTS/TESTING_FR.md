@@ -13,6 +13,29 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 |---------|-------|-------|
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
+| v0.1.1 | 4206 | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
+
+---
+
+### v0.1.1 — 4206/4206 (29-04-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4206 passed in 4.19s
+```
+
+**Nouveaux tests — `tests/test_firmware.py` (+4) :**
+
+Tests de régression pour le bug du format arbre fwupd 1.9+, trouvé sur Ubuntu 26.04 LTS. fwupdmgr a changé son format de sortie — d'une liste plate vers une structure en arbre avec les caractères `├─`, `└─`, `│`. L'ancien parser capturait ces caractères comme noms d'appareils, produisant une sortie corrompue (`│, ├─UEFI CA: (+7)`).
+
+| Test | Couverture |
+|------|------------|
+| `test_tree_format_extracts_device_names` | Les lignes `├─` et `└─` produisent les bons noms d'appareils |
+| `test_tree_format_excludes_container_line` | Le nom du conteneur parent n'est pas capturé |
+| `test_tree_format_excludes_tree_connectors` | Les caractères bruts `│`, `├`, `└` n'apparaissent pas comme noms d'appareils |
+| `test_tree_format_strips_trailing_colon` | Les noms extraits de `├─Nom:` ne conservent pas les deux-points finaux |
 
 ---
 

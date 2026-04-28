@@ -6,6 +6,55 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.1.1] — 29-04-2026
+
+Hotfix. Trois corrections ciblées trouvées lors des premiers lancements sur Ubuntu 26.04 LTS et Debian 13.
+
+### Corrections
+
+#### `bob/checks/firmware.py` — parser fwupd 1.9+ format arbre
+
+`fwupdmgr get-updates` a changé son format de sortie dans fwupd 1.9+ (livré avec Ubuntu 26.04 LTS). L'ancien parser supposait des noms d'appareils en colonne 0 avec les métadonnées indentées ; le nouveau format utilise une structure en arbre :
+
+```
+QEMU Ubuntu 24.04 PC (Q35 + ICH9, 2009)
+│
+├─UEFI CA:
+│   Nouvelle version : 2024.01
+│
+└─QEMU DVD-ROM:
+    Nouvelle version : 2.5
+```
+
+L'ancien `_parse_fwupd_updates()` capturait `│` et `├─UEFI CA:` comme noms d'appareils, produisant une sortie corrompue : `10 mise(s) à jour firmware en attente : QEMU Ubuntu 24.04 PC (Q35 + ICH9, 2009), │, ├─UEFI CA: (+7)`.
+
+Correction : détection automatique du format arbre (présence de lignes `├─`/`└─`) ; en mode arbre, les noms d'appareils sont extraits uniquement depuis les lignes `├─`/`└─` en supprimant le préfixe et les deux-points finaux ; les lignes `│` et les lignes de conteneur parent sont ignorées. Le format plat reste inchangé.
+
+Nouvelle constante de module : `_TREE_ITEM_RE = re.compile(r"^[├└]─\s*")`.
+
+#### `bob/__main__.py` — message d'erreur `--install-completion`
+
+Lorsque `bob --install-completion` est lancé sans root, le message d'erreur affichait la bonne commande avec le chemin complet (`sudo /chemin/vers/bob --install-completion`), mais les utilisateurs tapaient naturellement `sudo bob --install-completion` à la place, ce qui échoue car le PATH restreint de sudo n'inclut pas le `~/.local/bin` de pipx.
+
+Le nouveau message explique explicitement que `sudo bob` ne fonctionnera pas (restriction PATH pipx) et invite à copier-coller la commande exacte affichée.
+
+#### `bob/locales/en.json`, `bob/locales/fr.json` — en-tête de colonne du panorama des services
+
+`services.panorama.header_ufw` : `"UFW"` → `"SCOPE"` (EN) / `"PORTÉE"` (FR).
+
+La colonne utilise `Exposure.OPEN_WORLD` pour déterminer l'indicateur — elle reflète si un service a une exposition de portée internet, pas si une règle UFW active le couvre. Avec UFW inactif, les services à portée LAN (Avahi, CUPS) affichaient correctement `✔` mais le label `UFW` suggérait une protection pare-feu active. Le nouveau label élimine cette ambiguïté.
+
+### Tests
+
+- `tests/test_firmware.py` — 4 nouveaux tests de régression couvrant le parser format arbre :
+  - `test_tree_format_extracts_device_names` — les lignes `├─`/`└─` produisent les bons noms d'appareils
+  - `test_tree_format_excludes_container_line` — le conteneur parent n'est pas capturé
+  - `test_tree_format_excludes_tree_connectors` — les caractères `│`, `├`, `└` sont absents des résultats
+  - `test_tree_format_strips_trailing_colon` — les noms extraits de `├─Nom:` ne conservent pas les deux-points
+- **Total : 4206 tests** (4202 → 4206, +4)
+
+---
+
 ## [v0.1.0] — 2026-04-26
 
 Version initiale de BOB — Bodyguard Of Bits.

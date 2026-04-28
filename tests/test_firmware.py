@@ -347,6 +347,44 @@ Intel Management Engine
         assert "Lenovo ThinkPad X1 Carbon Gen 8" in devices
         assert "Intel Management Engine" in devices
 
+    TREE_OUTPUT = """\
+QEMU Ubuntu 24.04 PC (Q35 + ICH9, 2009)
+│
+├─UEFI CA:
+│     New version:        2024.01
+│     Summary:            UEFI certificate update
+│
+├─QEMU DVD-ROM:
+│     New version:        2.5
+│
+└─QEMU HARDDISK:
+      New version:        3.1
+"""
+
+    def test_tree_format_extracts_device_names(self):
+        """Tree-format output (fwupd 1.9+) must yield sub-device names only."""
+        devices = _parse_fwupd_updates(self.TREE_OUTPUT)
+        assert "UEFI CA" in devices
+        assert "QEMU DVD-ROM" in devices
+        assert "QEMU HARDDISK" in devices
+
+    def test_tree_format_excludes_container_line(self):
+        """Top-level container name must not appear as a device."""
+        devices = _parse_fwupd_updates(self.TREE_OUTPUT)
+        assert not any("Q35" in d for d in devices)
+
+    def test_tree_format_excludes_tree_connectors(self):
+        """Raw tree-drawing characters must not appear as device names."""
+        devices = _parse_fwupd_updates(self.TREE_OUTPUT)
+        assert "│" not in devices
+        assert not any("├" in d or "└" in d for d in devices)
+
+    def test_tree_format_strips_trailing_colon(self):
+        """Device names from ├─ lines must not end with a colon."""
+        devices = _parse_fwupd_updates(self.TREE_OUTPUT)
+        for d in devices:
+            assert not d.endswith(":")
+
 
 # ---------------------------------------------------------------------------
 # TestFromSystem

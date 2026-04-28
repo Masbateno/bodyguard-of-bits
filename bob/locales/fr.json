@@ -153,7 +153,7 @@
       "header_service": "SERVICE",
       "header_status": "STATUT",
       "header_ports": "PORT(S)",
-      "header_ufw": "UFW",
+      "header_ufw": "PORTÉE",
       "not_installed": "NON INSTALLÉ",
       "active": "ACTIF",
       "inactive": "INACTIF",

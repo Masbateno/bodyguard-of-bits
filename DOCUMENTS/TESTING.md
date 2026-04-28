@@ -13,6 +13,29 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 |---------|-------|-------|
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
+| v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
+
+---
+
+### v0.1.1 — 4206/4206 (2026-04-29)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4206 passed in 4.19s
+```
+
+**New tests — `tests/test_firmware.py` (+4):**
+
+Regression tests for the fwupd 1.9+ tree-format output bug found on Ubuntu 26.04 LTS. fwupdmgr changed its output format from a flat list to a tree structure using `├─`, `└─`, `│` drawing characters. The previous parser captured these as device names, producing garbled output (`│, ├─UEFI CA: (+7)`).
+
+| Test | Coverage |
+|------|----------|
+| `test_tree_format_extracts_device_names` | `├─` and `└─` lines yield correct device names |
+| `test_tree_format_excludes_container_line` | Top-level container name is not captured |
+| `test_tree_format_excludes_tree_connectors` | Raw `│`, `├`, `└` characters do not appear as device names |
+| `test_tree_format_strips_trailing_colon` | Device names from `├─Name:` lines have no trailing colon |
 
 ---
 

@@ -235,29 +235,40 @@ def _dpkg_installed(package: str) -> bool:
     return False
 
 
+_TREE_ITEM_RE = re.compile(r"^[├└]─\s*")
+
 def _parse_fwupd_updates(output: str) -> list[str]:
     """
     Extract device names from fwupdmgr get-updates output.
 
-    fwupdmgr indents all metadata lines; device names appear at column 0.
-    We skip known header keywords and any line that starts with whitespace
-    (metadata) or looks like a section marker.
+    Handles two output formats:
+    - Flat (older fwupd): device names appear at column 0, metadata is indented.
+    - Tree (fwupd 1.9+): device names appear on lines starting with ├─ or └─;
+      the top-level line is the system container, │ lines are tree connectors.
     """
-    _SKIP_RE = re.compile(
+    _FLAT_SKIP_RE = re.compile(
         r"^(Update|Version|Summary|Description|Requires|Urgency|Remote|Size|"
         r"Flags|Status|GUID|Device|AppStream|Release|\[|WARNING|Error|\s)",
         re.IGNORECASE,
     )
+    lines = output.splitlines()
+    is_tree = any(_TREE_ITEM_RE.match(l) for l in lines)
+
     devices: list[str] = []
     seen: set[str] = set()
-    for line in output.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped in seen:
-            continue
-        if _SKIP_RE.match(line):
-            continue
-        devices.append(stripped)
-        seen.add(stripped)
+    for line in lines:
+        if is_tree:
+            if not _TREE_ITEM_RE.match(line):
+                continue
+            name = _TREE_ITEM_RE.sub("", line).rstrip(":").strip()
+        else:
+            if _FLAT_SKIP_RE.match(line):
+                continue
+            name = line.strip()
+
+        if name and name not in seen:
+            devices.append(name)
+            seen.add(name)
         if len(devices) >= 10:
             break
     return devices

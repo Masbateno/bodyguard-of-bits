@@ -117,8 +117,13 @@ def _run(argv=None) -> int:
         if os.geteuid() != 0:
             self_path = Path(sys.argv[0]).resolve()
             print(
-                f"✖ --install-completion requires root. Run:\n"
-                f"  sudo {self_path} --install-completion",
+                f"✖ --install-completion requires root.\n"
+                f"\n"
+                f"  ⚠ 'sudo bob' will not work — sudo uses a restricted PATH\n"
+                f"    that does not include pipx binaries.\n"
+                f"\n"
+                f"  Copy and run this exact command:\n"
+                f"    sudo {self_path} --install-completion",
                 file=sys.stderr,
             )
             return EXIT_ERROR

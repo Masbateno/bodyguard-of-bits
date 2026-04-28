@@ -6,7 +6,56 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.1.0] — 2026-04-26
+## [v0.1.1] — 2026-04-29
+
+Hotfix release. Three targeted fixes found during first runs on Ubuntu 26.04 LTS and Debian 13.
+
+### Fixes
+
+#### `bob/checks/firmware.py` — fwupd 1.9+ tree-format parser
+
+`fwupdmgr get-updates` changed its output format in fwupd 1.9+ (shipped with Ubuntu 26.04 LTS). The previous flat-format assumed device names at column 0 with metadata indented; the new format uses a tree structure:
+
+```
+QEMU Ubuntu 24.04 PC (Q35 + ICH9, 2009)
+│
+├─UEFI CA:
+│   New version: 2024.01
+│
+└─QEMU DVD-ROM:
+    New version: 2.5
+```
+
+The previous `_parse_fwupd_updates()` parser captured `│` and `├─UEFI CA:` as device names, producing garbled output: `10 pending firmware updates: QEMU Ubuntu 24.04 PC (Q35 + ICH9, 2009), │, ├─UEFI CA: (+7)`.
+
+Fix: tree format auto-detected (any `├─`/`└─` line present); in tree mode, device names extracted from `├─`/`└─` lines by stripping the prefix and trailing colon; `│` lines and top-level container lines skipped. Flat format unchanged.
+
+New module-level constant: `_TREE_ITEM_RE = re.compile(r"^[├└]─\s*")`.
+
+#### `bob/__main__.py` — `--install-completion` error message
+
+When `bob --install-completion` is run without root, the error message showed the correct full-path command (`sudo /path/to/bob --install-completion`) but users naturally typed `sudo bob --install-completion` instead, which fails because sudo's restricted PATH does not include pipx's `~/.local/bin`.
+
+New message explicitly explains that `sudo bob` will not work (pipx PATH restriction) and instructs to copy-paste the exact command shown.
+
+#### `bob/locales/en.json`, `bob/locales/fr.json` — services panorama column header
+
+`services.panorama.header_ufw`: `"UFW"` → `"SCOPE"` (EN) / `"PORTÉE"` (FR).
+
+The column uses `Exposure.OPEN_WORLD` to determine the indicator — it reflects whether a service has internet-scope exposure, not whether an active UFW rule covers it. With UFW inactive, LAN-scoped services (Avahi, CUPS) correctly showed `✔` but the `UFW` label implied firewall protection was active. The renamed label eliminates this ambiguity.
+
+### Tests
+
+- `tests/test_firmware.py` — 4 new regression tests covering the tree-format parser:
+  - `test_tree_format_extracts_device_names` — `├─`/`└─` lines yield correct device names
+  - `test_tree_format_excludes_container_line` — top-level container not captured
+  - `test_tree_format_excludes_tree_connectors` — `│`, `├`, `└` chars absent from results
+  - `test_tree_format_strips_trailing_colon` — names from `├─Name:` have no trailing colon
+- **Total: 4206 tests** (4202 → 4206, +4)
+
+---
+
+## [v0.1.0] — 26-04-2026
 
 Initial release of BOB — Bodyguard Of Bits.
 
