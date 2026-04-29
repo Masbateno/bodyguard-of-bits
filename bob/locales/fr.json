@@ -355,7 +355,8 @@
     "preview": "→ Planification : {schedule}",
     "prompt_time": "Heure d'exécution (HH:MM, défaut 03:00)",
     "prompt_email": "Email de notification (optionnel, Entrée pour ignorer)",
-    "mail_missing": "'mail' non disponible — installez-le : sudo apt install mailutils",
+    "mta_missing": "sendmail introuvable — les emails de notification ne seront pas envoyés. Installez : sudo apt install postfix  ou  sudo apt install msmtp-mta",
+    "mta_found": "Transport mail : {mta} (sendmail disponible — les notifications seront envoyées)",
     "no_log_dir": "Aucun emplacement de logs configuré — configurez-le d'abord avec : sudo bob -d",
     "overwrite": "Un cron existe déjà ({path}). Écraser ? [y/N]",
     "script_written": "Script créé : {path}",
@@ -727,6 +728,7 @@
     "netbios_no_rule": "Port NetBIOS {port} sans règle UFW",
     "port_no_rule": "Port {port} sur 0.0.0.0 sans règle UFW",
     "brute_force": "Bruteforce {ip} sur {port}",
+    "local_dominance": "La source locale {ip} domine le log de blocage ({pct}% du trafic)",
     "service_open_world": "{label} {port} exposé sur internet"
   },
   "ignored": {

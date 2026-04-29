@@ -6,6 +6,7 @@ Run with: python -m pytest tests/test_cron.py -v
 
 import pytest
 from pathlib import Path
+from unittest.mock import patch
 from bob.cron import (
     CronEntry,
     build_schedule_expr,
@@ -13,6 +14,7 @@ from bob.cron import (
     make_slug,
     parse_cron_file,
     suggest_name,
+    _detect_mta,
     _ordinal,
     _parse_day_names,
     _parse_dom,
@@ -315,3 +317,66 @@ class TestParseDom:
     def test_empty_string_returns_empty(self):
         """An empty DOM field must not crash and must return an empty list."""
         assert _parse_dom("") == []
+
+
+# ---------------------------------------------------------------------------
+# _detect_mta
+# ---------------------------------------------------------------------------
+
+class TestDetectMta:
+    def _which(self, available: list[str]):
+        """Return a shutil.which mock that finds only the listed binaries."""
+        def _mock(cmd, **_kw):
+            return f"/usr/bin/{cmd}" if cmd in available else None
+        return _mock
+
+    def test_no_sendmail_returns_false(self):
+        with patch("shutil.which", side_effect=self._which([])):
+            ok, name = _detect_mta()
+        assert ok is False
+        assert name == ""
+
+    def test_postfix_detected_via_config_file(self):
+        with (
+            patch("shutil.which", side_effect=self._which(["sendmail"])),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            ok, name = _detect_mta()
+        assert ok is True
+        assert name == "Postfix"
+
+    def test_exim_detected(self):
+        with (
+            patch("shutil.which", side_effect=self._which(["sendmail", "exim4"])),
+            patch("pathlib.Path.exists", return_value=False),
+        ):
+            ok, name = _detect_mta()
+        assert ok is True
+        assert name == "Exim"
+
+    def test_msmtp_detected(self):
+        with (
+            patch("shutil.which", side_effect=self._which(["sendmail", "msmtp"])),
+            patch("pathlib.Path.exists", return_value=False),
+        ):
+            ok, name = _detect_mta()
+        assert ok is True
+        assert name == "msmtp"
+
+    def test_ssmtp_detected(self):
+        with (
+            patch("shutil.which", side_effect=self._which(["sendmail", "ssmtp"])),
+            patch("pathlib.Path.exists", return_value=False),
+        ):
+            ok, name = _detect_mta()
+        assert ok is True
+        assert name == "ssmtp"
+
+    def test_unknown_mta_returns_empty_name(self):
+        with (
+            patch("shutil.which", side_effect=self._which(["sendmail"])),
+            patch("pathlib.Path.exists", return_value=False),
+        ):
+            ok, name = _detect_mta()
+        assert ok is True
+        assert name == ""

@@ -13,8 +13,12 @@ import pytest
 
 from bob.domain_scores import (
     DOMAINS,
+    _TOOL_CAPS,
     _key_to_domain,
+    active_domains_from_engine,
+    apply_domain_score_override,
     compute_domain_scores,
+    compute_global_from_domains,
     render_domain_scores,
 )
 from bob.scoring import CheckResult, ScoreEngine
@@ -232,6 +236,148 @@ class TestComputeDomainScoresAttribution:
         scores = compute_domain_scores(engine)
         assert scores["ssh"]["deductions"] == 0
         assert scores["ssh"]["score"] == MAX_SCORE
+
+
+# ---------------------------------------------------------------------------
+# Tool caps in compute_domain_scores
+# ---------------------------------------------------------------------------
+
+class TestToolCaps:
+    def test_rootkit_two_findings_capped_at_one(self):
+        engine = _make_engine(
+            (1, "rootkit.db_outdated"),
+            (1, "rootkit.no_scan"),
+        )
+        scores = compute_domain_scores(engine)
+        assert scores["hardening"]["deductions"] == 1
+        assert scores["hardening"]["score"] == MAX_SCORE - 1
+
+    def test_clamav_two_findings_capped_at_one(self):
+        engine = _make_engine(
+            (1, "clamav.db_outdated"),
+            (1, "clamav.scan_old"),
+        )
+        scores = compute_domain_scores(engine)
+        assert scores["hardening"]["deductions"] == 1
+        assert scores["hardening"]["score"] == MAX_SCORE - 1
+
+    def test_file_integrity_two_findings_capped_at_one(self):
+        engine = _make_engine(
+            (1, "file_integrity.not_installed"),
+            (1, "file_integrity.no_run"),
+        )
+        scores = compute_domain_scores(engine)
+        assert scores["hardening"]["deductions"] == 1
+
+    def test_uncapped_prefix_accumulates_fully(self):
+        engine = _make_engine(
+            (1, "hardening.rp_filter_disabled"),
+            (1, "hardening.send_redirects_enabled"),
+        )
+        scores = compute_domain_scores(engine)
+        assert scores["hardening"]["deductions"] == 2
+        assert scores["hardening"]["score"] == MAX_SCORE - 2
+
+    def test_caps_do_not_bleed_across_tools(self):
+        # rootkit capped at 1 must not reduce clamav's allowed contribution
+        engine = _make_engine(
+            (1, "rootkit.db_outdated"),
+            (1, "rootkit.no_scan"),
+            (1, "clamav.db_outdated"),
+        )
+        scores = compute_domain_scores(engine)
+        assert scores["hardening"]["deductions"] == 2   # rootkit=1 + clamav=1
+
+    def test_cap_respects_first_deduction_points(self):
+        # A single 2-point deduction against a cap of 1 is clamped to 1
+        engine = _make_engine((2, "clamav.db_very_outdated"))
+        scores = compute_domain_scores(engine)
+        assert scores["hardening"]["deductions"] == 1
+
+    def test_tool_caps_dict_contains_expected_keys(self):
+        assert "rootkit"        in _TOOL_CAPS
+        assert "clamav"         in _TOOL_CAPS
+        assert "file_integrity" in _TOOL_CAPS
+
+
+# ---------------------------------------------------------------------------
+# compute_global_from_domains
+# ---------------------------------------------------------------------------
+
+class TestComputeGlobalFromDomains:
+    def test_average_of_two_active_domains(self):
+        # ssh=9 (one −1 deduction), hardening=8 (one −2 deduction)
+        engine = _make_engine(
+            (1, "ssh.password_auth"),
+            (2, "hardening.ptrace_unrestricted"),
+        )
+        scores = compute_domain_scores(engine)
+        active = active_domains_from_engine(engine)
+        result = compute_global_from_domains(scores, active)
+        assert result == round((9 + 8) / 2)
+
+    def test_no_active_domains_returns_max(self):
+        result = compute_global_from_domains(
+            compute_domain_scores(_clean_engine()),
+            frozenset(),
+        )
+        assert result == MAX_SCORE
+
+    def test_result_clamped_to_max(self):
+        result = compute_global_from_domains(
+            compute_domain_scores(_clean_engine()),
+            frozenset(DOMAINS),
+        )
+        assert result <= MAX_SCORE
+
+    def test_result_non_negative(self):
+        engine = _make_engine(*[(10, f"hardening.issue_{i}") for i in range(8)])
+        scores = compute_domain_scores(engine)
+        active = active_domains_from_engine(engine)
+        assert compute_global_from_domains(scores, active) >= 0
+
+
+# ---------------------------------------------------------------------------
+# apply_domain_score_override — integration
+# ---------------------------------------------------------------------------
+
+class TestApplyDomainScoreOverride:
+    def test_engine_score_changes_after_override(self):
+        engine = _make_engine(
+            (1, "rootkit.db_outdated"),
+            (1, "rootkit.no_scan"),
+            (1, "hardening.rp_filter_disabled"),
+        )
+        raw = engine._raw_score     # 10 - 3 = 7
+        apply_domain_score_override(engine)
+        # domain average (hardening=8 due to cap) differs from raw sum
+        assert engine.score != raw or engine.score == MAX_SCORE
+
+    def test_score_in_valid_range(self):
+        engine = _make_engine(
+            (1, "rootkit.db_outdated"),
+            (1, "rootkit.no_scan"),
+        )
+        apply_domain_score_override(engine)
+        assert 0 <= engine.score <= MAX_SCORE
+
+    def test_debian13_scenario(self):
+        """8 raw deductions → 2/10 raw. With caps + domain average the score improves significantly."""
+        engine = _make_engine(
+            (1, "password_policy.no_quality_module"),
+            (1, "hardening.rp_filter_disabled"),
+            (1, "hardening.send_redirects_enabled"),
+            (1, "kernel_hardening.ptrace_unrestricted"),
+            (1, "backup.no_backup"),
+            (1, "clamav.db_outdated"),
+            (1, "rootkit.db_outdated"),
+            (1, "rootkit.no_scan"),           # capped — rootkit already at 1
+        )
+        assert engine._raw_score == 2, "sanity check: raw score before override"
+        apply_domain_score_override(engine)
+        # domain average (hardening=4, disk=9) >> raw sum of 2
+        assert engine.score > engine._raw_score
+        assert engine.score >= 5
 
 
 # ---------------------------------------------------------------------------

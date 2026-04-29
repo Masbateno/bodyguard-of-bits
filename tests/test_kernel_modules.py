@@ -27,6 +27,7 @@ from bob.checks.kernel_modules import (
     _kernel_sort_key,
     _parse_installed_kernels,
     _purge_cmd,
+    _strip_unsigned,
     RISKY_MODULES,
     _RISKY_FS,
     _RISKY_NET,
@@ -675,6 +676,43 @@ class TestKernelRebootPending:
         )
         result = check_kernel_modules(snap, profile_name="desktop")
         assert "kernel_modules.kernels_reboot_pending" not in _finding_keys(result)
+
+    def test_no_reboot_pending_debian_signed_plus_unsigned_same_version(self):
+        # Debian installs both linux-image-X-amd64 (signed) and -unsigned for the
+        # same version. Running the signed kernel while -unsigned is also installed
+        # must NOT trigger a reboot-pending warning.
+        snap = _ksnap(
+            running="6.12.74+deb13+1-amd64",
+            installed=["6.12.74+deb13+1-amd64", "6.12.74+deb13+1-amd64-unsigned"],
+        )
+        result = check_kernel_modules(snap, profile_name="server")
+        assert "kernel_modules.kernels_reboot_pending" not in _finding_keys(result)
+
+    def test_reboot_still_pending_when_genuinely_newer_debian_kernel(self):
+        snap = _ksnap(
+            running="6.12.63+deb13-amd64",
+            installed=["6.12.63+deb13-amd64", "6.12.74+deb13+1-amd64"],
+        )
+        result = check_kernel_modules(snap, profile_name="server")
+        assert _has_finding(result, "kernel_modules.kernels_reboot_pending", FindingLevel.INFO)
+
+
+# ---------------------------------------------------------------------------
+# _strip_unsigned helper
+# ---------------------------------------------------------------------------
+
+class TestStripUnsigned:
+    def test_strips_unsigned_suffix(self):
+        assert _strip_unsigned("6.12.74+deb13+1-amd64-unsigned") == "6.12.74+deb13+1-amd64"
+
+    def test_no_change_without_suffix(self):
+        assert _strip_unsigned("6.12.74+deb13+1-amd64") == "6.12.74+deb13+1-amd64"
+
+    def test_no_change_ubuntu_style(self):
+        assert _strip_unsigned("6.8.0-58-generic") == "6.8.0-58-generic"
+
+    def test_no_change_empty(self):
+        assert _strip_unsigned("") == ""
 
 
 # ---------------------------------------------------------------------------

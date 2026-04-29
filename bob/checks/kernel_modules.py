@@ -336,6 +336,11 @@ def _purge_cmd(versions: list[str]) -> str:
     return "sudo apt purge " + " ".join(pkgs)
 
 
+def _strip_unsigned(version: str) -> str:
+    """Strip Debian -unsigned suffix so signed/unsigned variants compare equal."""
+    return version[:-len("-unsigned")] if version.endswith("-unsigned") else version
+
+
 def _check_installed_kernels(
     snapshot: KernelModulesSnapshot,
     profile_name: str,
@@ -366,7 +371,7 @@ def _check_installed_kernels(
     most_recent = kernels[-1]
 
     # Format installed list with annotations
-    reboot_pending = running in kernels and running != most_recent
+    reboot_pending = running in kernels and _strip_unsigned(running) != _strip_unsigned(most_recent)
     annotated = []
     for k in kernels:
         if k == running:

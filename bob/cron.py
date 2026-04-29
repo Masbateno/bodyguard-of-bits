@@ -280,6 +280,30 @@ def _validate_custom_cron(expr: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# MTA detection
+# ---------------------------------------------------------------------------
+
+def _detect_mta() -> tuple[bool, str]:
+    """Detect whether a sendmail-compatible MTA is available.
+
+    Returns (available, name) where name is the MTA product if identifiable,
+    or "" when sendmail is found but the provider cannot be determined.
+    """
+    import shutil
+    if not shutil.which("sendmail"):
+        return False, ""
+    for name, check in [
+        ("Postfix", lambda: Path("/etc/postfix/main.cf").exists()),
+        ("Exim",    lambda: bool(shutil.which("exim4") or shutil.which("exim"))),
+        ("msmtp",   lambda: bool(shutil.which("msmtp"))),
+        ("ssmtp",   lambda: bool(shutil.which("ssmtp"))),
+    ]:
+        if check():
+            return True, name
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
 # Interactive runners (--install-cron, --manage-cron, --remove-cron)
 # ---------------------------------------------------------------------------
 
@@ -502,8 +526,12 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     notify_emails_raw = prompt_emails(t)
     notify_emails = notify_emails_raw or []   # None (cancelled) → no email
     notify_email  = ",".join(notify_emails)   # comma-separated for storage
-    if notify_emails and not shutil.which("mail"):
-        print(f"  ⚠ {t('install_cron.mail_missing')}")
+    if notify_emails:
+        _mta_ok, _mta_name = _detect_mta()
+        if _mta_ok:
+            print(f"  ✔ {t('install_cron.mta_found', mta=_mta_name or 'sendmail')}")
+        else:
+            print(f"  ⚠ {t('install_cron.mta_missing')}")
 
     cron_path   = CRON_DIR / f"bob-{slug}"
     script_path = SCRIPT_DIR / f"bob-{slug}"
@@ -700,8 +728,12 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                     step = STEP_SCHEDULE
                     continue
                 notify_email = result
-                if notify_email and not shutil.which("mail"):
-                    _curses_status_flash(stdscr, f"⚠ {t('install_cron.mail_missing')}")
+                if notify_email:
+                    _mta_ok, _mta_name = _detect_mta()
+                    if _mta_ok:
+                        _curses_status_flash(stdscr, f"✔ {t('install_cron.mta_found', mta=_mta_name or 'sendmail')}")
+                    else:
+                        _curses_status_flash(stdscr, f"⚠ {t('install_cron.mta_missing')}")
                 step = STEP_OVERWRITE
 
             elif step == STEP_OVERWRITE:

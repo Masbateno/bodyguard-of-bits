@@ -4,8 +4,25 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.2.0] — 2026-05-01
+
+### Changes
+
+- **Scoring refactoring** (`bob/scoring.py`, `bob/domain_scores.py`) — global score now equals the mean of active domain scores; tool caps prevent double-penalty patterns (rootkit, ClamAV, file integrity each capped at −1 pt per domain)
+- **Cron MTA detection** (`bob/cron.py`) — `--install-cron` now checks `sendmail` (not `mail`) and identifies the installed MTA provider (Postfix, Exim, msmtp, ssmtp)
+- **Kernel `-unsigned` false positive** (`bob/checks/kernel_modules.py`) — on Debian with Secure Boot, running the signed kernel alongside its unsigned variant no longer triggers a spurious reboot warning
+- **IoT log dominance** (`bob/checks/logs.py`) — single local IP dominating the block log (≥ 70 %, ≥ 50 entries) now correctly emits WARN −1 pt instead of INFO with no deduction
+- **Orange ASCII banner** (`bob/output.py`) — `BOB` ASCII art rendered in orange bold in the terminal banner
+
+### Tests
+
+4238/4238 (+32 new, 3 corrected)
 
 ---
 

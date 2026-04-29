@@ -49,6 +49,16 @@ _LABELS: dict[str, str] = {
     "firewall":   "Firewall & Services",
 }
 
+# Maximum total deduction (in points) that a single tool can contribute to its
+# domain score.  Prevents one poorly-maintained tool from dominating the domain
+# score when it emits several independent findings (e.g. rkhunter: db outdated
+# + no scan run = 2 findings for the same configuration problem → capped at 1).
+_TOOL_CAPS: dict[str, int] = {
+    "rootkit":        1,   # rkhunter/chkrootkit — db age + scan age
+    "clamav":         1,   # ClamAV — db age + scan frequency
+    "file_integrity": 1,   # AIDE/Tripwire — presence + freshness
+}
+
 # Known key prefixes that map to specific domains.
 # Any prefix not listed here → "firewall" (catch-all).
 _PREFIX_TO_DOMAIN: dict[str, str] = {
@@ -144,12 +154,24 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
         }
     """
     domain_deductions: dict[str, int] = {d: 0 for d in DOMAINS}
+    tool_contributed:  dict[str, int] = {}   # key_prefix → points already counted
 
     for deduction in getattr(engine, "breakdown", []):
-        domain = _key_to_domain(getattr(deduction, "key", None))
+        key    = getattr(deduction, "key", None)
+        domain = _key_to_domain(key)
         if domain is None:
             continue
-        domain_deductions[domain] += getattr(deduction, "points", 0)
+        points = getattr(deduction, "points", 0)
+        prefix = key.split(".", 1)[0] if key else ""
+        cap    = _TOOL_CAPS.get(prefix)
+        if cap is not None:
+            already = tool_contributed.get(prefix, 0)
+            allowed = min(points, cap - already)
+            if allowed <= 0:
+                continue
+            tool_contributed[prefix] = already + allowed
+            points = allowed
+        domain_deductions[domain] += points
 
     return {
         domain: {
@@ -159,6 +181,50 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
         }
         for domain in DOMAINS
     }
+
+
+# ---------------------------------------------------------------------------
+# Global score from domain average
+# ---------------------------------------------------------------------------
+
+def compute_global_from_domains(
+    domain_scores: dict,
+    active_domains: "frozenset[str]",
+) -> int:
+    """
+    Compute the global security score as the mean of active domain scores.
+
+    Only domains with at least one finding or deduction are included (i.e.
+    domains whose service is not installed are excluded).  The result is
+    rounded and clamped to [0, MAX_SCORE].
+
+    Args:
+        domain_scores:  Output of compute_domain_scores().
+        active_domains: Output of active_domains_from_engine().
+
+    Returns:
+        Integer global score 0–10.
+    """
+    active = [d for d in DOMAINS if d in active_domains and d in domain_scores]
+    if not active:
+        return MAX_SCORE
+    total = sum(domain_scores[d]["score"] for d in active)
+    return max(0, min(MAX_SCORE, round(total / len(active))))
+
+
+def apply_domain_score_override(engine: "ScoreEngine") -> None:
+    """
+    Compute the domain-averaged global score and set it on the engine.
+
+    Must be called after engine.finalize().  All subsequent reads of
+    engine.score will return the domain-averaged value.
+
+    Args:
+        engine: A finalized ScoreEngine instance.
+    """
+    scores = compute_domain_scores(engine)
+    active = active_domains_from_engine(engine)
+    engine.set_global_score(compute_global_from_domains(scores, active))
 
 
 # ---------------------------------------------------------------------------

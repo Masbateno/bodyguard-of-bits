@@ -83,6 +83,8 @@ def run_watch(
                 profile=active_profile,
             )
             engine.finalize()
+            from bob.domain_scores import apply_domain_score_override as _apply_dso
+            _apply_dso(engine)
             curr_baseline = build_baseline(
                 engine, result.ports_snapshot, result.snapshots
             )

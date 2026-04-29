@@ -227,6 +227,7 @@ class ScoreEngine:
     def __init__(self) -> None:
         self._raw_score: int = MAX_SCORE
         self._cap: ScoreCap | None = None
+        self._global_override: int | None = None
         self.breakdown: list[Deduction] = []
         self.findings:  list[Finding]   = []
         self.ignored_findings: list[Finding] = []
@@ -289,6 +290,16 @@ class ScoreEngine:
         if self._cap is None or maximum < self._cap.maximum:
             self._cap = ScoreCap(maximum=maximum, reason=reason)
 
+    def set_global_score(self, score: int) -> None:
+        """
+        Override the global score with a domain-averaged value.
+
+        Called by domain_scores.apply_domain_score_override() after all checks
+        have run, so that engine.score reflects the mean of active domain scores
+        rather than the raw sum of all deductions.
+        """
+        self._global_override = max(0, min(MAX_SCORE, score))
+
     def finalize(self) -> None:
         """
         Apply the registered cap (if any) and clamp the score to [0, MAX_SCORE].
@@ -319,10 +330,14 @@ class ScoreEngine:
         """
         Current score after all deductions and cap.
 
+        Returns the domain-averaged global score if set_global_score() has been
+        called; otherwise falls back to the raw deduction-based score.
         Calls finalize() implicitly if not yet called.
         """
         if not self._finalized:
             self.finalize()
+        if self._global_override is not None:
+            return self._global_override
         return self._raw_score
 
     @property

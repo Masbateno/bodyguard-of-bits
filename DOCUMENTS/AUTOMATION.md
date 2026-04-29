@@ -143,11 +143,17 @@ All selected addresses are stored comma-separated and each receives an individua
 
 ## Email requirements
 
-Notifications use the `mail` command (from `mailutils` package):
+Notifications require `sendmail` — provided by any standard MTA:
 
 ```bash
-sudo apt install mailutils
+# Local MTA (recommended for servers):
+sudo apt install postfix
+
+# Relay-only MTA (for desktops relaying via Gmail, Outlook, etc.):
+sudo apt install msmtp-mta
 ```
+
+`--install-cron` automatically detects your MTA (Postfix, Exim, msmtp, ssmtp) and warns if none is found.
 
 Email is sent **only if the audit detects alerts or warnings** (exit code > 0). If your configuration is healthy, you receive nothing.
 

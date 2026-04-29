@@ -143,11 +143,17 @@ Toutes les adresses sélectionnées sont stockées séparées par des virgules e
 
 ## Prérequis pour l'email
 
-La notification utilise la commande `mail` (paquet `mailutils`) :
+Les notifications nécessitent `sendmail` — fourni par tout MTA standard :
 
 ```bash
-sudo apt install mailutils
+# MTA local (recommandé pour les serveurs) :
+sudo apt install postfix
+
+# MTA relais uniquement (pour desktops relayant via Gmail, Outlook, etc.) :
+sudo apt install msmtp-mta
 ```
+
+`--install-cron` détecte automatiquement votre MTA (Postfix, Exim, msmtp, ssmtp) et avertit si aucun n'est trouvé.
 
 La notification est envoyée **uniquement si l'audit détecte des alertes ou des avertissements** (code de sortie > 0). Si votre configuration est saine, vous ne recevez rien.
 

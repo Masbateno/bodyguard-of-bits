@@ -255,6 +255,62 @@ class TestRiskLevel:
         assert engine.level == expected_level
 
 
+# ---------------------------------------------------------------------------
+# set_global_score / domain-average override
+# ---------------------------------------------------------------------------
+
+class TestSetGlobalScore:
+    def test_override_replaces_raw_score(self):
+        engine = ScoreEngine()
+        r = CheckResult()
+        r.add_deduction("many issues", 8)
+        engine.apply(r)
+        engine.finalize()
+        assert engine.score == 2     # raw
+        engine.set_global_score(7)
+        assert engine.score == 7     # overridden
+
+    def test_no_override_by_default(self):
+        engine = ScoreEngine()
+        r = CheckResult()
+        r.add_deduction("reason", 3)
+        engine.apply(r)
+        engine.finalize()
+        assert engine.score == MAX_SCORE - 3
+
+    def test_override_clamps_above_max(self):
+        engine = ScoreEngine()
+        engine.finalize()
+        engine.set_global_score(15)
+        assert engine.score == MAX_SCORE
+
+    def test_override_clamps_below_zero(self):
+        engine = ScoreEngine()
+        engine.finalize()
+        engine.set_global_score(-5)
+        assert engine.score == 0
+
+    def test_level_reflects_overridden_score(self):
+        engine = ScoreEngine()
+        r = CheckResult()
+        r.add_deduction("many issues", 8)
+        engine.apply(r)
+        engine.finalize()
+        assert engine.level == RiskLevel.CRITICAL   # raw score 2
+        engine.set_global_score(9)
+        assert engine.level == RiskLevel.LOW        # overridden score 9
+
+    def test_raw_score_unchanged_after_override(self):
+        engine = ScoreEngine()
+        r = CheckResult()
+        r.add_deduction("reason", 5)
+        engine.apply(r)
+        engine.finalize()
+        engine.set_global_score(8)
+        assert engine._raw_score == 5               # internal raw untouched
+        assert engine.score == 8                    # public property overridden
+
+
 class TestCounts:
     def test_alert_count(self):
         engine = ScoreEngine()

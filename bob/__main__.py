@@ -245,6 +245,8 @@ def _run(argv=None) -> int:
             fw_policy          = result.fw_policy
 
             engine.finalize()
+            from bob.domain_scores import apply_domain_score_override as _apply_dso
+            _apply_dso(engine)
 
             from bob.scoring import FindingLevel as _FL
             _active_keys = {

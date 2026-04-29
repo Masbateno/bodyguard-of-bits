@@ -6,6 +6,168 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.2.0] — 2026-05-01
+
+Five improvements found during first-run analysis on Ubuntu 26.04 LTS and Debian 13.
+
+### `bob/scoring.py` + `bob/domain_scores.py` — scoring refactoring
+
+#### Problem
+
+The global score was computed as `10 − sum(all_deductions)`. On Debian 13 with 8 deductions of −1 each, this produced a 2/10 CRITICAL rating even though SSH, firewall, updates, and file permissions were all perfect. The score did not represent the actual security posture of the machine.
+
+Two additional issues:
+- **Double penalty on single tools** — rkhunter emitting both `rootkit.db_outdated` and `rootkit.no_scan` deducted 2 points from the global score, punishing a single misconfiguration twice.
+- **Disconnection between global and domain scores** — domain scores were computed independently but the global score was not derived from them, creating a contradiction in the output.
+
+#### Fix 1 — Tool caps in `compute_domain_scores()`
+
+New `_TOOL_CAPS` dict in `domain_scores.py`:
+
+```python
+_TOOL_CAPS: dict[str, int] = {
+    "rootkit":        1,   # rkhunter/chkrootkit — db age + scan age
+    "clamav":         1,   # ClamAV — db age + scan frequency
+    "file_integrity": 1,   # AIDE/Tripwire — presence + freshness
+}
+```
+
+When `compute_domain_scores()` accumulates deductions per domain, each tool prefix is capped at its maximum contribution. A second deduction from `rootkit.*` when the cap is already reached contributes 0 points to the domain score. Uncapped prefixes (e.g. `hardening.*`, `ssh.*`) accumulate normally.
+
+#### Fix 2 — Global score = mean of active domain scores
+
+New `compute_global_from_domains(domain_scores, active_domains) -> int` in `domain_scores.py`:
+
+```python
+active = [d for d in DOMAINS if d in active_domains and d in domain_scores]
+return max(0, min(MAX_SCORE, round(total / len(active))))
+```
+
+New `apply_domain_score_override(engine)` calls `compute_domain_scores`, `active_domains_from_engine`, and `compute_global_from_domains`, then calls `engine.set_global_score()` with the result.
+
+New `ScoreEngine.set_global_score(score: int)` stores the domain-averaged value in `_global_override`. The `score` property returns `_global_override` when set, falling back to `_raw_score` otherwise. The internal raw score is never modified — it remains available at `engine._raw_score` for debugging.
+
+`apply_domain_score_override(engine)` is called immediately after `engine.finalize()` in both `bob/__main__.py` and `bob/watch.py`.
+
+#### Effect
+
+Debian 13 reference case (8 deductions, all domains otherwise healthy):
+- Before: 2/10 CRITICAL (raw sum)
+- After: 6/10 (hardening=4, disk=9, average of 2 active domains in the test scenario; 9/10 in real use with SSH/firewall/updates active at 10/10)
+
+### `bob/cron.py` — MTA detection (`_detect_mta()`)
+
+#### Problem
+
+The cron wizard checked `shutil.which("mail")` and warned `'mail' not available — install mailutils`. Email delivery in `report_markdown.py` uses `sendmail -t -f`, not `mail`. The check was testing the wrong binary and recommending an unnecessary package.
+
+#### Fix
+
+New `_detect_mta() -> tuple[bool, str]` helper:
+
+```python
+def _detect_mta() -> tuple[bool, str]:
+    import shutil
+    if not shutil.which("sendmail"):
+        return False, ""
+    for name, check in [
+        ("Postfix", lambda: Path("/etc/postfix/main.cf").exists()),
+        ("Exim",    lambda: bool(shutil.which("exim4") or shutil.which("exim"))),
+        ("msmtp",   lambda: bool(shutil.which("msmtp"))),
+        ("ssmtp",   lambda: bool(shutil.which("ssmtp"))),
+    ]:
+        if check():
+            return True, name
+    return True, ""
+```
+
+Both call sites in `_run_install_cron_plain` and `_run_install_cron_curses` now use `_detect_mta()`. When an email is configured:
+- MTA found: `✔ Mail transport: Postfix (sendmail available — notifications will be delivered)`
+- MTA missing: `⚠ No sendmail found — notification emails won't be delivered. Install: sudo apt install postfix  or  sudo apt install msmtp-mta`
+
+Locale keys `mail_missing` replaced by `mta_missing` and `mta_found` in `bob/locales/en.json` and `bob/locales/fr.json`.
+
+### `bob/checks/kernel_modules.py` — Debian `-unsigned` false positive
+
+#### Problem
+
+On Debian with Secure Boot enabled, apt installs both:
+- `linux-image-6.12.74+deb13+1-amd64` — signed kernel (booted when Secure Boot is active)
+- `linux-image-6.12.74+deb13+1-amd64-unsigned` — unsigned variant (same version, different package)
+
+`_check_installed_kernels()` sorted all installed kernels by `_kernel_sort_key()`. Both variants produce the same numeric sort key `(6, 12, 74, 0)`. Python's stable sort then falls back to lexicographic order, placing `-amd64-unsigned` after `-amd64`. `most_recent` was set to the unsigned variant, making `running != most_recent` evaluate to `True` — triggering a spurious reboot warning.
+
+#### Fix
+
+New `_strip_unsigned(version: str) -> str` helper:
+
+```python
+def _strip_unsigned(version: str) -> str:
+    return version[:-len("-unsigned")] if version.endswith("-unsigned") else version
+```
+
+`reboot_pending` now compares stripped versions:
+
+```python
+reboot_pending = running in kernels and _strip_unsigned(running) != _strip_unsigned(most_recent)
+```
+
+A genuine version difference (e.g. `6.12.63+deb13-amd64` running while `6.12.74+deb13+1-amd64` is installed) still triggers the reboot warning correctly.
+
+### Tests
+
+- `tests/test_kernel_modules.py` — +6 tests:
+  - `TestKernelRebootPending.test_no_reboot_pending_debian_signed_plus_unsigned_same_version`
+  - `TestKernelRebootPending.test_reboot_still_pending_when_genuinely_newer_debian_kernel`
+  - `TestStripUnsigned` — 4 unit tests for `_strip_unsigned()`
+- `tests/test_cron.py` — +6 tests in `TestDetectMta`: no sendmail, Postfix (via config file), Exim, msmtp, ssmtp, unknown MTA
+- `tests/test_scoring.py` — +6 tests in `TestSetGlobalScore`: override replaces raw, no override by default, clamp above max, clamp below zero, level reflects override, raw score unchanged
+- `tests/test_domain_scores.py` — +14 tests:
+  - `TestToolCaps` (7 tests) — rootkit/clamav/file_integrity capped at 1; uncapped prefixes accumulate; caps don't bleed across tools; partial deduction respects cap
+  - `TestComputeGlobalFromDomains` (4 tests) — average, empty domains, clamp max, clamp zero
+  - `TestApplyDomainScoreOverride` (3 tests) — override applied, valid range, Debian 13 scenario
+- **Total: 4238 tests** (4206 → 4238, +32)
+
+### `bob/checks/logs.py` — IoT local dominance: WARN −1 pt
+
+#### Problem
+
+When a single private IP accounted for ≥ 70 % of all blocked UFW traffic over ≥ 50 log entries, BOB emitted an `INFO` finding with no score deduction. The feature was documented as WARN −1 pt in README_TECH.md but the implementation called `result.info()` with no `add_deduction()` call — the deduction was never applied.
+
+Discovered during first local test run on `so6desktop`: `192.168.1.50` accounted for 2267/2415 blocks (93 %) with no WARN or deduction emitted.
+
+#### Fix
+
+`bob/checks/logs.py`:
+```python
+result.warn(
+    message=_t("logs.local_dominance", ip=local_ip, count=local_count,
+               total=snapshot.total, pct=local_pct),
+    key="logs.local_dominance",
+    nature="improvement",
+)
+result.add_deduction(
+    reason=_t("deduction.local_dominance", ip=local_ip, pct=local_pct),
+    points=1,
+    key="logs.local_dominance",
+)
+```
+
+New locale key `deduction.local_dominance` added in `bob/locales/en.json` and `bob/locales/fr.json`.
+
+Three existing tests in `tests/test_logs.py` corrected to assert the now-correct behaviour:
+- `test_check_logs_emits_warn_finding` (was `test_check_logs_emits_info_finding`)
+- `test_finding_is_warn_level` (was `test_finding_is_info_level`)
+- `test_score_deduction_one_point` (was `test_no_score_deduction`)
+
+Test count unchanged at 4238.
+
+### `bob/output.py` — Orange ASCII banner
+
+The `BOB` ASCII art rendered inside the terminal banner box is now coloured orange bold (`_c.orange_bold` = `\033[1;38;5;208m`). Border characters (`║`, `╔`, `╠`, `╚`) retain their existing blue bold colour. No output format or log file impact — terminal rendering only.
+
+---
+
 ## [v0.1.1] — 2026-04-29
 
 Hotfix release. Three targeted fixes found during first runs on Ubuntu 26.04 LTS and Debian 13.

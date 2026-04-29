@@ -11,9 +11,97 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
-| v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
-| post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
+| v0.2.0 | 4238 | +32 new tests · 3 corrected: scoring refactoring · cron MTA detection · kernel `-unsigned` false positive · IoT log dominance WARN |
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
+| post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
+| v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.2.0 — 4238/4238 (2026-05-01)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4238 passed in 4.88s
+```
+
+**New tests (+32):**
+
+#### `tests/test_kernel_modules.py` (+6)
+
+| Test | Coverage |
+|------|----------|
+| `TestKernelRebootPending.test_no_reboot_pending_debian_signed_plus_unsigned_same_version` | Running `amd64` with `amd64-unsigned` installed → no reboot warning |
+| `TestKernelRebootPending.test_reboot_still_pending_when_genuinely_newer_debian_kernel` | Genuine newer version still triggers reboot pending |
+| `TestStripUnsigned.test_strips_unsigned_suffix` | `-unsigned` suffix removed |
+| `TestStripUnsigned.test_no_change_without_suffix` | String without suffix unchanged |
+| `TestStripUnsigned.test_no_change_ubuntu_style` | Ubuntu-style kernel unchanged |
+| `TestStripUnsigned.test_no_change_empty` | Empty string safe |
+
+#### `tests/test_cron.py` (+6)
+
+| Test | Coverage |
+|------|----------|
+| `TestDetectMta.test_no_sendmail_returns_false` | No sendmail → `(False, "")` |
+| `TestDetectMta.test_postfix_detected_via_config_file` | `/etc/postfix/main.cf` present → `(True, "Postfix")` |
+| `TestDetectMta.test_exim_detected` | `exim4` in PATH → `(True, "Exim")` |
+| `TestDetectMta.test_msmtp_detected` | `msmtp` in PATH → `(True, "msmtp")` |
+| `TestDetectMta.test_ssmtp_detected` | `ssmtp` in PATH → `(True, "ssmtp")` |
+| `TestDetectMta.test_unknown_mta_returns_empty_name` | sendmail found, unknown provider → `(True, "")` |
+
+#### `tests/test_scoring.py` (+6)
+
+| Test | Coverage |
+|------|----------|
+| `TestSetGlobalScore.test_override_replaces_raw_score` | Override value returned by `engine.score` |
+| `TestSetGlobalScore.test_no_override_by_default` | Raw score used when no override set |
+| `TestSetGlobalScore.test_override_clamps_above_max` | Values > 10 clamped to 10 |
+| `TestSetGlobalScore.test_override_clamps_below_zero` | Values < 0 clamped to 0 |
+| `TestSetGlobalScore.test_level_reflects_overridden_score` | `engine.level` derived from override |
+| `TestSetGlobalScore.test_raw_score_unchanged_after_override` | `engine._raw_score` untouched |
+
+#### `tests/test_domain_scores.py` (+14)
+
+**TestToolCaps (7 tests)**
+
+| Test | Coverage |
+|------|----------|
+| `test_rootkit_two_findings_capped_at_one` | 2×`rootkit.*` deductions → domain gets 1 |
+| `test_clamav_two_findings_capped_at_one` | 2×`clamav.*` deductions → domain gets 1 |
+| `test_file_integrity_two_findings_capped_at_one` | 2×`file_integrity.*` → domain gets 1 |
+| `test_uncapped_prefix_accumulates_fully` | `hardening.*` accumulates without cap |
+| `test_caps_do_not_bleed_across_tools` | rootkit cap does not reduce clamav allowance |
+| `test_cap_respects_first_deduction_points` | Single 2-pt deduction against cap of 1 → contributes 1 |
+| `test_tool_caps_dict_contains_expected_keys` | `_TOOL_CAPS` has rootkit, clamav, file_integrity |
+
+**TestComputeGlobalFromDomains (4 tests)**
+
+| Test | Coverage |
+|------|----------|
+| `test_average_of_two_active_domains` | Mean of two domain scores, rounded |
+| `test_no_active_domains_returns_max` | Empty active set → MAX_SCORE |
+| `test_result_clamped_to_max` | Result ≤ 10 |
+| `test_result_non_negative` | Result ≥ 0 |
+
+**TestApplyDomainScoreOverride (3 tests)**
+
+| Test | Coverage |
+|------|----------|
+| `test_engine_score_changes_after_override` | `engine.score` differs from raw after override |
+| `test_score_in_valid_range` | Override within [0, 10] |
+| `test_debian13_scenario` | 8 deductions raw=2, domain average ≥ 5 |
+
+#### `tests/test_logs.py` (0 new, 3 corrected)
+
+Three tests were corrected to assert the actual intended behaviour (WARN −1 pt for IoT dominance). The previous assertions were verifying the wrong behaviour (INFO, no deduction).
+
+| Test | Before | After |
+|------|--------|-------|
+| `test_check_logs_emits_warn_finding` | asserted INFO key present | asserts WARN key present |
+| `test_finding_is_warn_level` | asserted `FindingLevel.INFO` | asserts `FindingLevel.WARN` |
+| `test_score_deduction_one_point` | asserted no deductions | asserts 1 deduction of 1 pt |
 
 ---
 

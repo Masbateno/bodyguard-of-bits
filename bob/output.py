@@ -514,7 +514,7 @@ def print_banner(
     for line in logo.splitlines():
         padding = inner - _visual_width(line)
         padding = max(0, padding)
-        print(f"{_c.blue_bold}║{_c.reset}{line}{' ' * padding}{_c.blue_bold}║{_c.reset}")
+        print(f"{_c.blue_bold}║{_c.reset}{_c.orange_bold}{line}{_c.reset}{' ' * padding}{_c.blue_bold}║{_c.reset}")
 
     # Étage: version + subtitle between art and system info
     print(f"{_c.blue_bold}╠{bar_double}╣{_c.reset}")
