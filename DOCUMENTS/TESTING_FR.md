@@ -91,6 +91,7 @@ Correction : ajout de `all_keys = bad_keys | info_keys` ; `ssh.not_installed` et
 
 ### v0.1.0 — 4200/4200 (2026-04-26)
 
+
 **Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
 
 ```
@@ -98,11 +99,87 @@ pytest tests/ -q
 4200 passed in 4.93s
 ```
 
-Voir la version anglaise pour le tableau complet des 65 fichiers de test.
+#### Fichiers de test (65 au total)
 
----
+| Fichier | Tests | Domaine |
+|------|-------|--------|
+| `test_cis_refs.py` | 39 | Mapping CIS benchmark |
+| `test_iptables_nftables.py` | 51 | Pile firewall (CHECK 46) |
+| `test_firewall.py` | — | Audit des règles UFW |
+| `test_ssh.py` | — | Configuration SSH |
+| `test_hardening.py` | — | Sysctl de renforcement kernel |
+| `test_kernel_hardening.py` | — | Renforcement kernel étendu |
+| `test_kernel_modules.py` | — | Audit des modules kernel |
+| `test_services.py` | — | Registre de services + risque |
+| `test_services_state.py` | — | Audit de l'état des services |
+| `test_docker.py` | — | Contournement UFW Docker |
+| `test_docker_audit.py` | — | Renforcement du démon Docker |
+| `test_ports.py` | — | Classification des ports |
+| `test_exposure.py` | — | Analyse de l'exposition des ports |
+| `test_scoring.py` | — | Moteur de scoring |
+| `test_domain_scores.py` | — | Scores par domaine |
+| `test_explain.py` | — | --explain TUI |
+| `test_display_explain_hint.py` | — | Affichage des hints CIS |
+| `test_cli.py` | — | Parsing des arguments CLI |
+| `test_exit_codes.py` | — | Logique des codes de sortie |
+| `test_correlation.py` | — | Corrélation des signaux |
+| `test_recurrence.py` | — | Détections récurrentes |
+| `test_compare.py` | — | Diff/baseline |
+| `test_history.py` | — | Historique des scores |
+| `test_ignore.py` | — | Liste d'ignorés |
+| `test_fixes.py` | — | --fix / --apply |
+| `test_auth_log.py` | — | Analyse des logs d'authentification |
+| `test_ufw_logging.py` | — | Niveau de log UFW |
+| `test_log_rotation.py` | — | Rotation des logs |
+| `test_cron.py` | — | Planification cron |
+| `test_cron_audit.py` | — | Sécurité des jobs cron |
+| `test_manage_logs.py` | — | TUI de gestion des logs |
+| `test_webhook.py` | — | Notifications webhook |
+| `test_profiles.py` | — | Profils d'audit |
+| `test_registry.py` | — | Registre de services |
+| `test_config.py` | — | Stockage de configuration |
+| `test_sysinfo.py` | — | Informations système |
+| `test_network_context.py` | — | Contexte réseau |
+| `test_degraded.py` | — | Mode dégradé (ss/règles/log absents) |
+| `test_output.py` | — | Sortie terminal |
+| `test_markdown_output.py` | — | Sortie Markdown |
+| `test_html_output.py` | — | Sortie HTML |
+| `test_csv_output.py` | — | Sortie CSV |
+| `test_report.py` | — | Génération de rapports |
+| `test_min_level.py` | — | Filtre --min-level |
+| `test_watch.py` | — | Mode --watch |
+| `test_check_rules.py` | — | Validation des règles |
+| `test_file_perms.py` | — | Permissions de fichiers |
+| `test_suid_audit.py` | — | Audit SUID/SGID |
+| `test_user_accounts.py` | — | Comptes utilisateurs |
+| `test_password_policy.py` | — | Politique de mot de passe |
+| `test_umask.py` | — | Umask système |
+| `test_updates.py` | — | Mises à jour système |
+| `test_ntp.py` | — | Synchronisation NTP |
+| `test_fail2ban.py` | — | Fail2ban |
+| `test_rootkit.py` | — | Scan rootkit |
+| `test_auditd.py` | — | Démon audit |
+| `test_secure_boot.py` | — | Secure Boot |
+| `test_file_integrity.py` | — | Intégrité des fichiers |
+| `test_clamav.py` | — | ClamAV |
+| `test_mac_policy.py` | — | AppArmor/SELinux |
+| `test_backup.py` | — | Détection de sauvegarde |
+| `test_disk.py` | — | Santé disque |
+| `test_memory.py` | — | Mémoire/swap |
+| `test_ssl_certs.py` | — | Expiration des certificats TLS |
+| `test_systemd_timers.py` | — | Timers systemd |
+| `test_desktop_apps.py` | — | Applications desktop |
+| `test_samba.py` | — | Renforcement Samba |
+| `test_ddns.py` | — | Détection DDNS |
+| `test_firmware.py` | — | Firmware/microcode |
+| `test_smtp.py` | — | Exposition SMTP |
+| `test_ipv6.py` | — | Cohérence IPv6 |
+| `test_virtualization.py` | — | Détection virtualisation |
+| `test_email_store_mgmt.py` | — | Gestion stockage email |
+| `test_recurrence.py` | — | Suivi de récurrence |
+| `tests/helpers.py` | — | Utilitaires de test partagés |
 
----
+----
 
 **VM de test :** Linux Mint 22.3 — `so6minttest`
 **État de référence** (baseline propre après chaque test) :
@@ -116,7 +193,7 @@ sudo ufw allow 80
 sudo ufw enable
 ```
 
----
+----
 
 ## Catégorie A — Wildcards open-any
 
@@ -157,7 +234,7 @@ sudo ufw allow proto tcp from any to any
 
 **Cause racine corrigée  :** Motif étendu à `Anywhere(?:/\w+)?` des deux côtés pour couvrir variantes `/tcp`, `/udp`. (commit `1dd9ede`)
 
-**v0.15 :** Même correction IPv6 que A1 s'applique ici.
+**v0.1.0 :** Même correction IPv6 que A1 s'applique ici.
 
 ---
 

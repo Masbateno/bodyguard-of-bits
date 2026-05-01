@@ -12,17 +12,58 @@
 
 ## [v0.2.0] — 2026-05-01
 
-### Changes
+Five improvements: scoring refactoring, cron MTA detection, kernel false positive fix, IoT log dominance fix, and orange ASCII banner.
 
-- **Scoring refactoring** (`bob/scoring.py`, `bob/domain_scores.py`) — global score now equals the mean of active domain scores; tool caps prevent double-penalty patterns (rootkit, ClamAV, file integrity each capped at −1 pt per domain)
-- **Cron MTA detection** (`bob/cron.py`) — `--install-cron` now checks `sendmail` (not `mail`) and identifies the installed MTA provider (Postfix, Exim, msmtp, ssmtp)
-- **Kernel `-unsigned` false positive** (`bob/checks/kernel_modules.py`) — on Debian with Secure Boot, running the signed kernel alongside its unsigned variant no longer triggers a spurious reboot warning
-- **IoT log dominance** (`bob/checks/logs.py`) — single local IP dominating the block log (≥ 70 %, ≥ 50 entries) now correctly emits WARN −1 pt instead of INFO with no deduction
-- **Orange ASCII banner** (`bob/output.py`) — `BOB` ASCII art rendered in orange bold in the terminal banner
+### Scoring refactoring (`bob/scoring.py`, `bob/domain_scores.py`)
+
+**Problem:** the global score was the raw sum of all deductions from 10. Eight minor hardening issues on an otherwise well-configured machine (SSH 10/10, firewall 10/10, updates 10/10) could produce 2/10 CRITICAL — a score that did not reflect the real security posture.
+
+Two targeted fixes:
+
+- **Tool caps** — `rootkit`, `clamav`, and `file_integrity` each contribute at most 1 deduction point to their domain, regardless of how many individual findings exist. Eliminates the double-penalty pattern "stale rkhunter database + no recorded scan = −2".
+- **Global score = mean of active domain scores** — the global score is now the rounded average of all domain scores that have at least one finding (domains with no installed service excluded). A degraded Hardening domain no longer collapses the global score when SSH, firewall, and updates are all 10/10.
+
+**Effect on the Debian 13 reference case:** 8 deductions → was 2/10 CRITICAL, now reflects the real range of 6–9/10 depending on active domains.
+
+New API: `ScoreEngine.set_global_score()`, `compute_global_from_domains()`, `apply_domain_score_override()`.
+
+### Cron MTA detection (`bob/cron.py`)
+
+**Problem:** the cron setup wizard warned `'mail' not available — install mailutils` when `mail` was missing, but actual delivery uses `sendmail`, not `mail`. The advice was incorrect and incomplete.
+
+New helper `_detect_mta()`:
+- Checks for `sendmail` (the binary actually used for delivery)
+- Identifies the provider: Postfix, Exim, msmtp, ssmtp
+- Displays `✔ Mail transport: Postfix` when available
+- Displays clear install instructions when absent: `sudo apt install postfix` (local MTA) or `sudo apt install msmtp-mta` (relay via Gmail/SMTP)
+
+### Kernel `-unsigned` false positive fix (`bob/checks/kernel_modules.py`)
+
+**Problem:** on Debian with Secure Boot enabled, `linux-image-X-amd64` (signed) and `linux-image-X-amd64-unsigned` are both installed. The system boots the signed kernel correctly, but BOB flagged `-unsigned` as "newer installed" and warned "reboot required".
+
+New helper `_strip_unsigned()`: the `-unsigned` suffix is stripped before version comparison. Running the signed kernel while only the unsigned variant of the same version is also installed no longer triggers the warning.
+
+### IoT log dominance: WARN −1 pt (`bob/checks/logs.py`)
+
+**Problem:** when a single private IP accounted for ≥ 70 % of blocked UFW traffic (≥ 50 entries), BOB emitted an INFO finding with no score deduction. The feature was documented as WARN −1 pt but the implementation used `result.info()` without calling `add_deduction()`.
+
+**Fix:** `result.info()` replaced by `result.warn()` + `result.add_deduction(points=1, key="logs.local_dominance")`. New locale key `deduction.local_dominance` added in `en.json` and `fr.json`. Three existing tests in `tests/test_logs.py` corrected to assert WARN level and a 1-point deduction (total unchanged).
+
+### Orange ASCII banner (`bob/output.py`)
+
+The `BOB` ASCII art in the terminal banner is now rendered in orange bold (`\033[1;38;5;208m`). Border characters remain blue.
 
 ### Tests
 
-4238/4238 (+32 new, 3 corrected)
+4238/4238 (3 tests corrected in `tests/test_logs.py` — IoT dominance: INFO→WARN + deduction assertion; total unchanged)
+
+| File | New tests | Coverage |
+|------|-----------|----------|
+| `tests/test_kernel_modules.py` | +6 | `_strip_unsigned` helper · Debian signed/unsigned variants · genuine reboot still detected |
+| `tests/test_cron.py` | +6 | `_detect_mta` — no sendmail, Postfix, Exim, msmtp, ssmtp, unknown |
+| `tests/test_scoring.py` | +6 | `set_global_score` — override, clamp, level, raw score unchanged |
+| `tests/test_domain_scores.py` | +14 | Tool caps (rootkit/clamav/file_integrity) · `compute_global_from_domains` · `apply_domain_score_override` · Debian 13 scenario |
+| `tests/test_logs.py` | 0 (+3 corrected) | IoT dominance: WARN level · 1 pt deduction · below threshold unchanged |
 
 ---
 
