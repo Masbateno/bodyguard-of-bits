@@ -40,6 +40,7 @@ _PIPE_TO_SHELL_RE = re.compile(
     r"\b(curl|wget)\b.*\|\s*\S*sh\b",
     re.IGNORECASE,
 )
+_PATH_RE = re.compile(r"(/[^\s;|&<>]+\.sh)\b")
 
 # /etc/cron.d — files in crontab format; parsed for pipe-to-shell patterns
 # and referenced .sh script paths.
@@ -168,7 +169,6 @@ def _find_world_writable_scripts(
     Limiting path extraction to .sh files avoids false positives on incidental
     paths like /tmp/file in ``echo /tmp/file | mail``.
     """
-    _PATH_RE = re.compile(r"(/[^\s;|&<>]+\.sh)\b")
     world_writable: list[str] = []
     seen: set[str] = set()
 

@@ -119,16 +119,16 @@ def active_domains_from_engine(engine: "ScoreEngine") -> frozenset[str]:
     no samba.* findings → domain excluded from the score display).
     """
     active: set[str] = set()
-    for finding in getattr(engine, "findings", []):
-        domain = _key_to_domain(getattr(finding, "key", None))
+    for finding in engine.findings:
+        domain = _key_to_domain(finding.key)
         if domain:
             active.add(domain)
-    for finding in getattr(engine, "ignored_findings", []):
-        domain = _key_to_domain(getattr(finding, "key", None))
+    for finding in engine.ignored_findings:
+        domain = _key_to_domain(finding.key)
         if domain:
             active.add(domain)
-    for deduction in getattr(engine, "breakdown", []):
-        domain = _key_to_domain(getattr(deduction, "key", None))
+    for deduction in engine.breakdown:
+        domain = _key_to_domain(deduction.key)
         if domain:
             active.add(domain)
     return frozenset(active)
@@ -156,12 +156,12 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
     domain_deductions: dict[str, int] = {d: 0 for d in DOMAINS}
     tool_contributed:  dict[str, int] = {}   # key_prefix → points already counted
 
-    for deduction in getattr(engine, "breakdown", []):
-        key    = getattr(deduction, "key", None)
+    for deduction in engine.breakdown:
+        key    = deduction.key
         domain = _key_to_domain(key)
         if domain is None:
             continue
-        points = getattr(deduction, "points", 0)
+        points = deduction.points
         prefix = key.split(".", 1)[0] if key else ""
         cap    = _TOOL_CAPS.get(prefix)
         if cap is not None:

@@ -6,6 +6,218 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.2.1] — 02-05-2026
+
+Hotfix défensif — 17 améliorations ciblées identifiées par un audit dual-agent (passes indépendantes par Claude et Copilot). Aucune nouvelle fonctionnalité, aucun changement de comportement, aucun nouveau test. 4238/4238 inchangés.
+
+### `bob/manage_logs.py` — correction de crash : `.stat()` non protégé en mode texte
+
+#### Problème
+
+Les boucles d'affichage mode texte dans `_run_manage_logs_plain()` appelaient `f.stat()` directement :
+
+```python
+size_kb = max(1, f.stat().st_size // 1024)
+mtime = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+```
+
+Si un fichier log était supprimé entre le scan du répertoire et la boucle d'affichage (ex. : `logrotate` en parallèle), cela levait `OSError` et plantait `--manage-logs`. Le mode curses (lignes 792–796) avait déjà la protection correcte :
+
+```python
+try:
+    size_kb = max(1, f.stat().st_size // 1024)
+    mtime   = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+except OSError:
+    size_kb, mtime = 0, "?"
+```
+
+#### Correction
+
+Les deux boucles du chemin mode texte (`cur_logs` et `extra_sections`) enveloppent maintenant `.stat()` de façon identique au mode curses, avec `(0, "?")` comme valeurs de repli.
+
+---
+
+### Resserrement des gestionnaires d'exceptions — 8 emplacements
+
+Tous les `except Exception` (qui capturent aussi les erreurs de programmation et compliquent le débogage) remplacés par les types d'exceptions spécifiques pouvant réellement être levées.
+
+#### `bob/cis_refs.py` — `_load()`
+
+Lit et parse un fichier JSON. Seuls échecs possibles : I/O (`OSError`) et JSON malformé (`json.JSONDecodeError`).
+
+```python
+# avant
+except Exception:
+    return {}
+
+# après
+except (OSError, json.JSONDecodeError):
+    return {}
+```
+
+#### `bob/manage_logs.py` — `_get_extra_dirs()`
+
+Parse une liste de chaînes encodée en JSON depuis la config utilisateur. Échecs : JSON malformé, types de valeurs inattendus.
+
+```python
+# avant
+except Exception:
+    return []
+
+# après
+except (json.JSONDecodeError, ValueError, TypeError):
+    return []
+```
+
+#### `bob/manage_logs.py` + `bob/explain.py` + `bob/cron.py` — replis curses
+
+Trois appels `curses.wrapper()` qui reviennent au mode texte en cas d'échec terminal. `curses.error` couvre tous les échecs d'initialisation et de rendu terminal ; `OSError` couvre les erreurs I/O niveau terminal.
+
+```python
+# avant (les trois sites)
+except Exception:
+    return _run_*_plain(...)
+
+# après
+except (curses.error, OSError):          # manage_logs.py, explain.py
+    return _run_*_plain(...)
+
+except (_curses.error, OSError):         # cron.py (curses importé comme _curses)
+    return _run_*_plain(...)
+```
+
+#### `bob/checks/ssh.py` — parsing binaire des clés
+
+`_rsa_bits_from_blob()` : décode du base64 et dépaquète un format binaire SSH. Échecs : base64 invalide (`binascii.Error`, sous-classe de `ValueError`) et struct malformé (`struct.error`).
+
+```python
+# avant
+except Exception:
+    return None
+
+# après
+except (struct.error, ValueError):
+    return None
+```
+
+`_has_passphrase()` : décode des données base64 de clé OpenSSH. Seul `binascii.Error` (base64 invalide, sous-classe de `ValueError`) peut être levé dans le bloc try.
+
+```python
+# avant
+except Exception:
+    return None
+
+# après
+except (binascii.Error, ValueError):
+    return None
+```
+
+`import binascii` ajouté en tête de `ssh.py`.
+
+---
+
+### Regex déplacées en module-level — 3 fichiers
+
+Les patterns `re.compile()` définis dans les corps de fonctions — recompilés à chaque appel — déplacés en constantes module. Python ne met pas en cache les résultats de `re.compile()` appelés dans des fonctions.
+
+#### `bob/checks/firewall.py`
+
+```python
+_OPEN_ANY_RE = re.compile(
+    r"Anywhere(?:/\w+)?(?:\s+\(v6\))?\s+ALLOW\s+IN\s+Anywhere(?:/\w+)?(?:\s+\(v6\))?\s*$",
+    re.IGNORECASE,
+)
+_ALLOW_IN_RE   = re.compile(r"\bALLOW\s+IN\b", re.IGNORECASE)
+_PORT_PROTO_RE = re.compile(r"\b(\d{1,5}/(?:tcp|udp))\b", re.IGNORECASE)
+```
+
+`_check_open_any()` et `_check_orphan_rules()` mis à jour pour référencer les constantes module.
+
+#### `bob/checks/cron_audit.py`
+
+```python
+_PATH_RE = re.compile(r"(/[^\s;|&<>]+\.sh)\b")
+```
+
+Déplacé depuis l'intérieur de `_find_world_writable_scripts()` vers le module, aux côtés du `_PIPE_TO_SHELL_RE` existant.
+
+#### `bob/checks/firmware.py`
+
+```python
+_FLAT_SKIP_RE = re.compile(
+    r"^(Update|Version|Summary|Description|Requires|Urgency|Remote|Size|"
+    r"Flags|Status|GUID|Device|AppStream|Release|\[|WARNING|Error|\s)",
+    re.IGNORECASE,
+)
+```
+
+Déplacé depuis l'intérieur de `_parse_fwupd_updates()` vers le module, aux côtés du `_TREE_ITEM_RE` existant.
+
+---
+
+### `bob/cron.py` — regex email dédupliqué
+
+`_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")` était défini identiquement dans trois fonctions séparées : `_select_emails_plain()` (ligne 325), `_curses_email_list_sub()` (ligne 1273), `_curses_email_store_sub()` (ligne 1398). Déplacé en constante module unique (ligne 20). Le même pattern existe indépendamment dans `bob/config.py` pour la validation de config ; les deux sont intentionnellement conservés, chaque module possédant sa propre contrainte.
+
+---
+
+### `bob/manage_logs.py` — helper `_resolve_path()` extrait
+
+```python
+def _resolve_path(raw: str, default: Path) -> Path:
+    """Expand, resolve and return *raw* as a Path, or *default* if empty."""
+    return Path(raw).expanduser().resolve() if raw else default
+```
+
+Le one-liner `Path(raw).expanduser().resolve() if raw else default` apparaissait à deux endroits : dans le `return` de `_prompt_path()` et dans le flux de changement de répertoire. Les deux appellent maintenant `_resolve_path()`. Le commentaire de sécurité (`resolve() normalise les composants ".."…`) est conservé au premier site d'appel.
+
+---
+
+### `bob/domain_scores.py` — accès direct aux attributs
+
+`active_domains_from_engine()` et `compute_domain_scores()` utilisaient `getattr(engine, "findings", [])`, `getattr(finding, "key", None)` et `getattr(deduction, "points", 0)` comme gardes défensifs. `ScoreEngine.__init__` initialise toujours `findings`, `ignored_findings` et `breakdown` comme listes vides ; `Finding` et `Deduction` sont des dataclasses avec `key` et `points` comme champs obligatoires. Les `getattr` masquaient une dérive potentielle de l'API au lieu de la faire remonter. Remplacés par accès direct dans tout le fichier.
+
+---
+
+### `bob/recurrence.py` — log debug sur échec de chargement
+
+```python
+# avant
+except (OSError, json.JSONDecodeError, ValueError):
+    pass
+
+# après
+except (OSError, json.JSONDecodeError, ValueError) as exc:
+    _log.debug("Failed to load recurrence data from %s: %s", src, exc)
+```
+
+`import logging` et `_log = logging.getLogger(__name__)` ajoutés. Les échecs restent non-fatals (le suivi de récurrence est best-effort) mais remontent désormais avec le niveau de log `--debug`.
+
+---
+
+### `bob/__main__.py` — logging des échecs webhook
+
+```python
+# avant
+except Exception as _exc:  # noqa: BLE001
+    print(f"Warning: webhook failed: {_exc}", file=sys.stderr)
+
+# après
+except Exception as _exc:  # noqa: BLE001
+    _log.warning("Webhook failed: %s", _exc)
+    print(f"Warning: webhook failed: {_exc}", file=sys.stderr)
+```
+
+`import logging` et `_log = logging.getLogger(__name__)` ajoutés. Les échecs webhook sont maintenant capturés par le système de logging en plus de l'affichage stderr visible par l'utilisateur.
+
+---
+
+### Tests
+
+4238/4238 — aucun nouveau test, aucun changement de comportement. Tous les tests existants passent sans modification.
+
+---
+
 ## [v0.2.0] — 01-05-2026
 
 Cinq améliorations trouvées lors de l'analyse des premiers lancements sur Ubuntu 26.04 LTS et Debian 13.

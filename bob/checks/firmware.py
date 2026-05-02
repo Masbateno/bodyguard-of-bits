@@ -236,6 +236,11 @@ def _dpkg_installed(package: str) -> bool:
 
 
 _TREE_ITEM_RE = re.compile(r"^[├└]─\s*")
+_FLAT_SKIP_RE = re.compile(
+    r"^(Update|Version|Summary|Description|Requires|Urgency|Remote|Size|"
+    r"Flags|Status|GUID|Device|AppStream|Release|\[|WARNING|Error|\s)",
+    re.IGNORECASE,
+)
 
 def _parse_fwupd_updates(output: str) -> list[str]:
     """
@@ -246,11 +251,6 @@ def _parse_fwupd_updates(output: str) -> list[str]:
     - Tree (fwupd 1.9+): device names appear on lines starting with ├─ or └─;
       the top-level line is the system container, │ lines are tree connectors.
     """
-    _FLAT_SKIP_RE = re.compile(
-        r"^(Update|Version|Summary|Description|Requires|Urgency|Remote|Size|"
-        r"Flags|Status|GUID|Device|AppStream|Release|\[|WARNING|Error|\s)",
-        re.IGNORECASE,
-    )
     lines = output.splitlines()
     is_tree = any(_TREE_ITEM_RE.match(l) for l in lines)
 

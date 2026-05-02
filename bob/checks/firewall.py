@@ -27,6 +27,13 @@ from pathlib import Path
 from bob.checks._run import _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
+_OPEN_ANY_RE = re.compile(
+    r"Anywhere(?:/\w+)?(?:\s+\(v6\))?\s+ALLOW\s+IN\s+Anywhere(?:/\w+)?(?:\s+\(v6\))?\s*$",
+    re.IGNORECASE,
+)
+_ALLOW_IN_RE   = re.compile(r"\bALLOW\s+IN\b", re.IGNORECASE)
+_PORT_PROTO_RE = re.compile(r"\b(\d{1,5}/(?:tcp|udp))\b", re.IGNORECASE)
+
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -291,13 +298,9 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
 
 def _check_open_any(lines: list[str], t, result: CheckResult) -> None:
     """Detect 'Anywhere ALLOW IN Anywhere' wildcard rules."""
-    open_any_pattern = re.compile(
-        r"Anywhere(?:/\w+)?(?:\s+\(v6\))?\s+ALLOW\s+IN\s+Anywhere(?:/\w+)?(?:\s+\(v6\))?\s*$",
-        re.IGNORECASE,
-    )
     found_open_any = False
     for line in lines:
-        if open_any_pattern.search(line):
+        if _OPEN_ANY_RE.search(line):
             idx_match  = re.match(r"\[\s*(\d+)\]", line)
             real_index = int(idx_match.group(1)) if idx_match else None
             result.alert(
@@ -323,9 +326,6 @@ def _check_orphan_rules(
     result: "CheckResult",
 ) -> None:
     """Flag ALLOW IN rules for which no service is currently listening."""
-    _ALLOW_IN_RE  = re.compile(r"\bALLOW\s+IN\b", re.IGNORECASE)
-    _PORT_PROTO_RE = re.compile(r"\b(\d{1,5}/(?:tcp|udp))\b", re.IGNORECASE)
-
     orphans: set[str] = set()
     for line in lines:
         if not _ALLOW_IN_RE.search(line):

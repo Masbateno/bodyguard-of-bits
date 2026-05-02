@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import base64
+import binascii
 import glob as _glob
 import os
 import pwd
@@ -1154,7 +1155,7 @@ def _rsa_bits_from_blob(b64_blob: str) -> Optional[int]:
         if n_bytes and n_bytes[0] == 0:
             n_bytes = n_bytes[1:]
         return len(n_bytes) * 8
-    except Exception:
+    except (struct.error, ValueError):
         return None
 
 
@@ -1191,7 +1192,7 @@ def _has_passphrase(path: Path) -> Optional[bool]:
                     "ascii", errors="ignore"
                 )
                 return cipher != "none"
-        except Exception:
+        except (binascii.Error, ValueError):
             return None
 
     # Old PEM format

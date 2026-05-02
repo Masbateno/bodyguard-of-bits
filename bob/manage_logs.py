@@ -114,6 +114,11 @@ def prompt_path(prompt_label: str, default: Path, allow_cancel: bool = False) ->
 
     # resolve() normalises ".." components and follows symlinks,
     # preventing path traversal sequences in user-supplied paths.
+    return _resolve_path(raw, default)
+
+
+def _resolve_path(raw: str, default: Path) -> Path:
+    """Expand, resolve and return *raw* as a Path, or *default* if empty."""
     return Path(raw).expanduser().resolve() if raw else default
 
 
@@ -182,7 +187,7 @@ def _get_extra_dirs(user_config) -> list[Path]:
         return []
     try:
         return [Path(p) for p in json.loads(raw) if p]
-    except Exception:
+    except (json.JSONDecodeError, ValueError, TypeError):
         return []
 
 
@@ -298,8 +303,11 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
             print(f"  ℹ {t('manage_logs.no_logs', path=str(log_dir))}")
         else:
             for f in cur_logs:
-                size_kb = max(1, f.stat().st_size // 1024)
-                mtime = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                try:
+                    size_kb = max(1, f.stat().st_size // 1024)
+                    mtime = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                except OSError:
+                    size_kb, mtime = 0, "?"
                 print(f"  [{idx:2}]  {f.name}  ({size_kb} {size_label})  {mtime}")
                 idx += 1
 
@@ -308,8 +316,11 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
             print(f"  ─── {t('manage_logs.previous_label')}: {extra_path} ───")
             print()
             for f in ex_logs:
-                size_kb = max(1, f.stat().st_size // 1024)
-                mtime = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                try:
+                    size_kb = max(1, f.stat().st_size // 1024)
+                    mtime = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                except OSError:
+                    size_kb, mtime = 0, "?"
                 print(f"  [{idx:2}]  {f.name}  ({size_kb} {size_label})  {mtime}")
                 idx += 1
 
@@ -923,7 +934,7 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
                 status = t("manage_logs.cancelled")
             else:
                 raw = new_path_str.strip()
-                chosen = Path(raw).expanduser().resolve() if raw else log_dir
+                chosen = _resolve_path(raw, log_dir)
                 try:
                     chosen.mkdir(parents=True, exist_ok=True)
                 except OSError as exc:
@@ -984,5 +995,5 @@ def run_manage_logs(user_config, config, t) -> int:
         return curses.wrapper(
             lambda scr: _run_manage_logs_curses(scr, user_config, config, t)
         )
-    except Exception:
+    except (curses.error, OSError):
         return _run_manage_logs_plain(user_config, config, t)

@@ -10,7 +10,10 @@ Format: {"finding.key": N, ...}  — N = consecutive occurrences including previ
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 _CONFIG_DIR       = Path.home() / ".config" / "bob"
 _RECURRENCE_PATH  = _CONFIG_DIR / "recurrence.json"
@@ -32,8 +35,8 @@ def load_recurrence(path: Path | None = None) -> dict[str, int]:
                 for k, v in data.items()
                 if isinstance(k, str) and k and isinstance(v, (int, float)) and v >= 0
             }
-    except (OSError, json.JSONDecodeError, ValueError):
-        pass
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        _log.debug("Failed to load recurrence data from %s: %s", src, exc)
     return {}
 
 

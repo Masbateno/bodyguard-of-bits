@@ -656,6 +656,6 @@ def run_explain_interactive(t) -> None:
 
     try:
         curses.wrapper(lambda scr: _picker(scr, items, selected, t))
-    except Exception:
+    except (curses.error, OSError):
         # curses unavailable or terminal too small — fallback
         run_explain("list", t)

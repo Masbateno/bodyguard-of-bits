@@ -16,6 +16,8 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 from typing import Optional
 
 from bob._tty import read_line as _rl
@@ -322,7 +324,7 @@ def prompt_emails(t) -> list[str] | None:
     """
     from bob.config import EmailStore
 
-    _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+
 
     store  = EmailStore.load()
     selected: list[str] = []
@@ -871,7 +873,7 @@ def run_install_cron(user_config, config, t) -> int:
         return _curses.wrapper(lambda scr: _run_install_cron_curses(scr, user_config, config, t))
     except _CronQuit:
         return 0
-    except Exception:
+    except (_curses.error, OSError):
         return _run_install_cron_plain(user_config, config, t)
 
 
@@ -1270,7 +1272,7 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
     """Select notification emails for a cron entry. Returns comma-sep str or None."""
     import curses as _c
     from bob.config import EmailStore
-    _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+
     has_color = _c.has_colors()
 
     store = EmailStore.load()
@@ -1395,7 +1397,7 @@ def _curses_email_store_sub(stdscr, t) -> None:
     """Address book management sub-screen (add / delete emails)."""
     import curses as _c
     from bob.config import EmailStore
-    _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+
     has_color = _c.has_colors()
     cursor = 0
     scroll = 0
@@ -1997,7 +1999,7 @@ def run_manage_cron(config, t) -> int:
         return _curses.wrapper(lambda scr: _run_manage_cron_curses(scr, config, t))
     except _CronQuit:
         return 0
-    except Exception:
+    except (_curses.error, OSError):
         return _run_manage_cron_plain(config, t)
 
 

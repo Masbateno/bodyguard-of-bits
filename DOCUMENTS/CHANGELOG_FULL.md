@@ -6,6 +6,219 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.2.1] — 2026-05-02
+
+Defensive programming hotfix — 17 targeted improvements identified by a dual-agent code audit (independent runs by Claude and Copilot). No new features, no behavior changes, no new tests. 4238/4238 unchanged.
+
+### `bob/manage_logs.py` — crash fix: unguarded `.stat()` in plain-text mode
+
+#### Problem
+
+The plain-text rendering loops in `_run_manage_logs_plain()` called `f.stat()` directly:
+
+```python
+size_kb = max(1, f.stat().st_size // 1024)
+mtime = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+```
+
+If a log file was deleted between the directory scan and the display loop (e.g. by a parallel `logrotate` run), this raised `OSError` and crashed `--manage-logs`. The curses mode (lines 792–796) already had the correct guard:
+
+```python
+try:
+    size_kb = max(1, f.stat().st_size // 1024)
+    mtime   = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+except OSError:
+    size_kb, mtime = 0, "?"
+```
+
+#### Fix
+
+Both loops in the plain-text path (`cur_logs` and `extra_sections`) now wrap `.stat()` identically to the curses path, using `(0, "?")` as fallback values.
+
+---
+
+### Exception handling narrowed — 8 locations
+
+All `except Exception` handlers (which also catch programming errors and make debugging harder) replaced with the specific exception types that can actually be raised at each site.
+
+#### `bob/cis_refs.py` — `_load()`
+
+`_load()` reads and parses a JSON file. The only failures are I/O (`OSError`) and malformed JSON (`json.JSONDecodeError`).
+
+```python
+# before
+except Exception:
+    return {}
+
+# after
+except (OSError, json.JSONDecodeError):
+    return {}
+```
+
+#### `bob/manage_logs.py` — `_get_extra_dirs()`
+
+Parses a JSON-encoded list of strings from user config. Failures: malformed JSON, unexpected value types.
+
+```python
+# before
+except Exception:
+    return []
+
+# after
+except (json.JSONDecodeError, ValueError, TypeError):
+    return []
+```
+
+#### `bob/manage_logs.py` + `bob/explain.py` + `bob/cron.py` — curses fallbacks
+
+Three `curses.wrapper()` calls that fall back to plain-text mode on terminal failure. The `curses.error` exception covers all terminal initialization and rendering failures; `OSError` covers I/O-level terminal errors.
+
+```python
+# before (all three sites)
+except Exception:
+    return _run_*_plain(...)
+
+# after
+except (curses.error, OSError):          # manage_logs.py, explain.py
+    return _run_*_plain(...)
+
+except (_curses.error, OSError):         # cron.py (curses imported as _curses)
+    return _run_*_plain(...)
+```
+
+#### `bob/checks/ssh.py` — binary key parsing
+
+`_rsa_bits_from_blob()`: decodes base64 and unpacks a binary SSH wire format. Failures: invalid base64 (`binascii.Error`, subclass of `ValueError`) and malformed struct data (`struct.error`).
+
+```python
+# before
+except Exception:
+    return None
+
+# after
+except (struct.error, ValueError):
+    return None
+```
+
+`_has_passphrase()`: decodes base64 OpenSSH key data. Only `binascii.Error` (invalid base64, subclass of `ValueError`) can be raised inside the try block.
+
+```python
+# before
+except Exception:
+    return None
+
+# after
+except (binascii.Error, ValueError):
+    return None
+```
+
+`import binascii` added at top of `ssh.py`.
+
+---
+
+### Regex patterns moved to module level — 3 files
+
+Patterns that were `re.compile()`d inside function bodies — recompiled on every call — moved to module-level constants. Python does not cache `re.compile()` results automatically when called inside functions.
+
+#### `bob/checks/firewall.py`
+
+```python
+# moved to module level
+_OPEN_ANY_RE = re.compile(
+    r"Anywhere(?:/\w+)?(?:\s+\(v6\))?\s+ALLOW\s+IN\s+Anywhere(?:/\w+)?(?:\s+\(v6\))?\s*$",
+    re.IGNORECASE,
+)
+_ALLOW_IN_RE   = re.compile(r"\bALLOW\s+IN\b", re.IGNORECASE)
+_PORT_PROTO_RE = re.compile(r"\b(\d{1,5}/(?:tcp|udp))\b", re.IGNORECASE)
+```
+
+`_check_open_any()` and `_check_orphan_rules()` updated to reference the module-level constants.
+
+#### `bob/checks/cron_audit.py`
+
+```python
+_PATH_RE = re.compile(r"(/[^\s;|&<>]+\.sh)\b")
+```
+
+Moved from inside `_find_world_writable_scripts()` to module level alongside the existing `_PIPE_TO_SHELL_RE`.
+
+#### `bob/checks/firmware.py`
+
+```python
+_FLAT_SKIP_RE = re.compile(
+    r"^(Update|Version|Summary|Description|Requires|Urgency|Remote|Size|"
+    r"Flags|Status|GUID|Device|AppStream|Release|\[|WARNING|Error|\s)",
+    re.IGNORECASE,
+)
+```
+
+Moved from inside `_parse_fwupd_updates()` to module level alongside `_TREE_ITEM_RE`.
+
+---
+
+### `bob/cron.py` — email regex deduplicated
+
+`_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")` was defined identically inside three separate functions: `_select_emails_plain()` (line 325), `_curses_email_list_sub()` (line 1273), `_curses_email_store_sub()` (line 1398). Moved to a single module-level constant (line 20). The same pattern exists independently in `bob/config.py` for config validation; both are intentionally kept as each module owns its own constraint.
+
+---
+
+### `bob/manage_logs.py` — `_resolve_path()` helper extracted
+
+```python
+def _resolve_path(raw: str, default: Path) -> Path:
+    """Expand, resolve and return *raw* as a Path, or *default* if empty."""
+    return Path(raw).expanduser().resolve() if raw else default
+```
+
+The one-liner `Path(raw).expanduser().resolve() if raw else default` appeared at two call sites: inside `_prompt_path()` (return statement) and inside the change-directory flow. Both now call `_resolve_path()`. The security comment (`resolve() normalises ".." components…`) is kept at the first call site.
+
+---
+
+### `bob/domain_scores.py` — direct attribute access
+
+`active_domains_from_engine()` and `compute_domain_scores()` used `getattr(engine, "findings", [])`, `getattr(finding, "key", None)`, and `getattr(deduction, "points", 0)` as defensive guards. `ScoreEngine.__init__` always initializes `findings`, `ignored_findings`, and `breakdown` as empty lists; `Finding` and `Deduction` are dataclasses with `key` and `points` as required fields. The `getattr` calls hid potential API drift instead of surfacing it. Replaced with direct access throughout.
+
+---
+
+### `bob/recurrence.py` — debug log on load failure
+
+```python
+# before
+except (OSError, json.JSONDecodeError, ValueError):
+    pass
+
+# after
+except (OSError, json.JSONDecodeError, ValueError) as exc:
+    _log.debug("Failed to load recurrence data from %s: %s", src, exc)
+```
+
+`import logging` and `_log = logging.getLogger(__name__)` added. Failures are still non-fatal (recurrence tracking is best-effort) but now surface under `--debug` log level.
+
+---
+
+### `bob/__main__.py` — webhook failure logging
+
+```python
+# before
+except Exception as _exc:  # noqa: BLE001
+    print(f"Warning: webhook failed: {_exc}", file=sys.stderr)
+
+# after
+except Exception as _exc:  # noqa: BLE001
+    _log.warning("Webhook failed: %s", _exc)
+    print(f"Warning: webhook failed: {_exc}", file=sys.stderr)
+```
+
+`import logging` and `_log = logging.getLogger(__name__)` added. Webhook failures are now captured by the logging system in addition to the user-visible stderr print.
+
+---
+
+### Tests
+
+4238/4238 — no new tests, no behavior changes. All existing tests pass unmodified.
+
+---
+
 ## [v0.2.0] — 2026-05-01
 
 Five improvements found during first-run analysis on Ubuntu 26.04 LTS and Debian 13.

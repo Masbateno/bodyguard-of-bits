@@ -4,9 +4,62 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.2.1](#v021) | 02-05-2026 | Hotfix — passe défensive : crash fix `--manage-logs` · 8 `except Exception` resserrés · 5 regex en module-level · regex email dédupliqué · `getattr` supprimé du scoring |
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.2.1] — 02-05-2026
+
+Hotfix défensif — 17 améliorations ciblées trouvées par audit dual-agent. Aucune nouvelle fonctionnalité, aucun changement de comportement. 4238/4238 tests inchangés.
+
+### Correction de crash — mode texte `--manage-logs` (`bob/manage_logs.py`)
+
+**Problème :** les appels `.stat()` sur les chemins de fichiers logs n'étaient pas protégés dans les boucles d'affichage mode texte. Si un fichier disparaissait entre le scan du répertoire et l'affichage, `--manage-logs` plantait avec `OSError`. Le mode curses avait déjà la protection `try/except OSError` correcte ; le mode texte non.
+
+**Correction :** les deux boucles (`cur_logs` et `extra_sections`) enveloppent maintenant `.stat()` dans `try/except OSError` avec valeurs de repli `(size_kb=0, mtime="?")`, alignées sur l'implémentation curses.
+
+### Resserrement des gestionnaires d'exceptions (8 emplacements)
+
+Tous les `except Exception` remplacés par les exceptions spécifiques pouvant réellement être levées :
+
+| Fichier | Fonction | Avant | Après |
+|---------|----------|-------|-------|
+| `bob/cis_refs.py` | `_load()` | `Exception` | `(OSError, json.JSONDecodeError)` |
+| `bob/manage_logs.py` | `_get_extra_dirs()` | `Exception` | `(json.JSONDecodeError, ValueError, TypeError)` |
+| `bob/manage_logs.py` | repli curses | `Exception` | `(curses.error, OSError)` |
+| `bob/explain.py` | repli curses | `Exception` | `(curses.error, OSError)` |
+| `bob/cron.py` | `run_install_cron()` | `Exception` | `(_curses.error, OSError)` |
+| `bob/cron.py` | `run_manage_cron()` | `Exception` | `(_curses.error, OSError)` |
+| `bob/checks/ssh.py` | `_rsa_bits_from_blob()` | `Exception` | `(struct.error, ValueError)` |
+| `bob/checks/ssh.py` | `_has_passphrase()` | `Exception` | `(binascii.Error, ValueError)` |
+
+### Regex déplacées en module-level (3 fichiers)
+
+Patterns recompilés à chaque appel de fonction, maintenant constantes module :
+
+| Fichier | Constantes |
+|---------|-----------|
+| `bob/checks/firewall.py` | `_OPEN_ANY_RE`, `_ALLOW_IN_RE`, `_PORT_PROTO_RE` |
+| `bob/checks/cron_audit.py` | `_PATH_RE` |
+| `bob/checks/firmware.py` | `_FLAT_SKIP_RE` |
+
+### Qualité du code (3 corrections)
+
+- **Regex email dédupliqué** (`bob/cron.py`) — `_EMAIL_RE` était défini identiquement dans 3 fonctions locales ; maintenant une seule constante module.
+- **Helper `_resolve_path()` extrait** (`bob/manage_logs.py`) — `Path(raw).expanduser().resolve() if raw else default` était dupliqué à deux endroits.
+- **Accès direct aux attributs dans `domain_scores.py`** — `getattr(engine, "findings", [])` / `getattr(deduction, "key", None)` etc. remplacés par accès direct. `ScoreEngine` initialise toujours ces attributs.
+
+### Observabilité (2 corrections)
+
+- **`recurrence.py`** — `except … pass` remplacé par `_log.debug()` pour que les échecs de chargement soient visibles en mode `--debug`.
+- **`__main__.py`** — les échecs webhook émettent maintenant `_log.warning()` en plus de l'affichage stderr.
+
+### Tests
+
+4238/4238 (inchangés — aucun nouveau test ; aucun changement de comportement introduit)
 
 ---
 

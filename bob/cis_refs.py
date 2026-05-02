@@ -13,7 +13,7 @@ _DATA_FILE = Path(__file__).parent / "data" / "cis_refs.json"
 def _load() -> dict[str, dict]:
     try:
         return json.loads(_DATA_FILE.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return {}
 
 

@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import contextlib
 import json as _json
+import logging
 import os
 import sys
 from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 from bob import __version__ as VERSION
 from bob import i18n, output
@@ -277,6 +280,7 @@ def _run(argv=None) -> int:
                     if not config.quiet:
                         output.print_info(f"Webhook: POST → {_webhook_url} [{_status}]")
                 except Exception as _exc:  # noqa: BLE001
+                    _log.warning("Webhook failed: %s", _exc)
                     print(f"Warning: webhook failed: {_exc}", file=sys.stderr)
             # ------------------------------------------------------------------------
 
