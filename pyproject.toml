@@ -9,7 +9,7 @@ description = "BOB — Bodyguard Of Bits: Linux hardening auditor with CIS bench
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["security", "audit", "linux", "firewall", "hardening", "cis"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -18,7 +18,6 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

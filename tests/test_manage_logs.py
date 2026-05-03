@@ -20,15 +20,10 @@ from unittest.mock import MagicMock, patch
 _real_path_stat = Path.stat
 
 
-import sys as _sys
-
 def _stat_raises_for_logs(self, **kwargs):
     """Raise OSError for .log files; delegate to real stat for everything else."""
     if self.suffix == ".log":
         raise OSError("race: file disappeared between scan and display")
-    # follow_symlinks was added to Path.stat() in Python 3.10
-    if _sys.version_info < (3, 10):
-        kwargs.pop("follow_symlinks", None)
     return _real_path_stat(self, **kwargs)
 
 
