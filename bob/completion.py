@@ -36,7 +36,9 @@ def install_completion() -> int:
         import pwd
         home      = Path(pwd.getpwnam(sudo_user).pw_dir)
         candidate = home / ".local" / "bin" / "bob"
-        if candidate.exists():
+        # exists() returns False for broken/circular symlinks, so this also
+        # guards against those cases.
+        if candidate.exists() and candidate.resolve() != dst_bin.resolve():
             bin_src = candidate
     if bin_src:
         try:
