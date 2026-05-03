@@ -574,16 +574,16 @@ class TestDominantLocalSource:
         keys = [f.key for f in result.findings if f.key]
         assert "logs.local_dominance" not in keys
 
-    def test_finding_is_warn_level(self):
+    def test_finding_is_info_level(self):
         entries = self._entries("192.168.1.50", 80, 20)
         snap = make_snapshot(entries=entries)
         result = check_logs(snap)
         local_findings = [f for f in result.findings if f.key == "logs.local_dominance"]
         assert local_findings
-        assert local_findings[0].level == FindingLevel.WARN
+        assert local_findings[0].level == FindingLevel.INFO
 
-    def test_score_deduction_one_point(self):
-        # Spread public entries across many different IPs to avoid triggering bruteforce
+    def test_no_score_deduction(self):
+        # IoT noise is benign — no point deduction
         base = datetime(2026, 3, 19, 10, 0, 0)
         entries = [make_entry("192.168.1.50", 5353, "UDP", base) for _ in range(80)]
         entries += [
@@ -592,8 +592,7 @@ class TestDominantLocalSource:
         snap = make_snapshot(entries=entries)
         result = check_logs(snap)
         local_deductions = [d for d in result.deductions if "local" in d.reason.lower() or "dominan" in d.reason.lower()]
-        assert len(local_deductions) == 1
-        assert local_deductions[0].points == 1
+        assert len(local_deductions) == 0
 
 
 # ---------------------------------------------------------------------------

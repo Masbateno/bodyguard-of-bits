@@ -263,10 +263,10 @@ def check_logs(
             message=f"{count} {_t('logs.attempts')} {_t('logs.brute_on')} {port_proto}",
         )
 
-    # Dominant local source — likely IoT mDNS/SSDP/UPnP noise
+    # Dominant local source — likely IoT mDNS/SSDP/UPnP noise (benign, no deduction)
     local_ip, local_count, local_pct = _dominant_local_source(snapshot.entries)
     if local_ip is not None:
-        result.warn(
+        result.info(
             message=_t(
                 "logs.local_dominance",
                 ip=local_ip,
@@ -274,12 +274,6 @@ def check_logs(
                 total=snapshot.total,
                 pct=local_pct,
             ),
-            key="logs.local_dominance",
-            nature="improvement",
-        )
-        result.add_deduction(
-            reason=_t("deduction.local_dominance", ip=local_ip, pct=local_pct),
-            points=1,
             key="logs.local_dominance",
         )
 
