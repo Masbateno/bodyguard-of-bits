@@ -639,17 +639,28 @@ main()
 
 ### Score calculation
 
-The score starts at 10/10. Each `Deduction` subtracts points.
+The score starts at 10/10. Each `Deduction` subtracts points. After all checks run, the global score is replaced by the domain-averaged value.
 
 ```python
 engine = ScoreEngine()
-engine.apply(check_result)   # apply findings and deductions
-engine.cap(maximum=3)        # cap score if firewall is inactive
-engine.finalize()            # compute score and risk level
+engine.apply(check_result)              # apply findings and deductions
+engine.cap(maximum=3, key="firewall.inactive")  # cap score if firewall inactive
+engine.finalize()                       # apply cap, clamp to [0, 10]
+apply_domain_score_override(engine)     # set global = mean of active domain scores
+                                        # MUST be called after finalize()
 
-score = engine.score         # int 0–10
-level = engine.level         # RiskLevel.LOW / MEDIUM / HIGH
+score = engine.score         # int 0–10 — domain-averaged if override set
+level = engine.level         # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
+raw   = engine._raw_score    # pre-override raw deduction total (debug only)
 ```
+
+**Orchestrator contract:** `apply_domain_score_override(engine)` from `bob.domain_scores` must be called after `engine.finalize()`. Before that call, `engine.score` returns the raw deduction-based score. Do not call `engine.set_global_score()` directly.
+
+**Active domain set:** only domains with at least one WARN or ALERT finding count as "active" for the global average. Domains with INFO-only findings (service installed, nothing actionable) are excluded. Note: a deduction with a key always activates the domain regardless of its associated finding level.
+
+**Equal domain weighting:** all active domains contribute equally to the global average — there is no per-domain weight. A machine where only SSH is degraded and all others score 10/10 benefits from dilution; a machine with all seven domains active gives the same weight to firewall as to disk health. This is the main architectural question for v0.3.0.
+
+**`ScoreCap.key`:** caps carry a `key` field propagated to their synthetic breakdown deduction, enabling domain attribution for cap-triggered deductions.
 
 ### Network context
 
@@ -665,7 +676,8 @@ result.add_deduction(reason="...", points=2, context="public")
 |---|---|
 | 8–10 | LOW |
 | 5–7 | MEDIUM |
-| 0–4 | HIGH |
+| 3–4 | HIGH |
+| 0–2 | CRITICAL |
 
 ---
 

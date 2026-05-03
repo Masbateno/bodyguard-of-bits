@@ -278,6 +278,97 @@ class TestToolCaps:
         assert scores["hardening"]["deductions"] == 2
         assert scores["hardening"]["score"] == MAX_SCORE - 2
 
+
+
+# ---------------------------------------------------------------------------
+# Engine-level domain cap (firewall.inactive → max 3/10 for firewall domain)
+# ---------------------------------------------------------------------------
+
+class TestEngineLevelDomainCap:
+    """Cap set via engine.cap_info must always constrain the target domain score."""
+
+    @staticmethod
+    def _make_engine_with_cap(deduction_specs, cap_maximum=3,
+                              cap_key="firewall.inactive") -> ScoreEngine:
+        engine = ScoreEngine()
+        result = CheckResult()
+        for points, key in deduction_specs:
+            result.alert(message=f"Finding for {key}", key=key)
+            result.add_deduction(reason=f"Deduction for {key}", points=points, key=key)
+        result.set_cap(maximum=cap_maximum, reason="pare-feu inactif", key=cap_key)
+        engine.apply(result)
+        engine.finalize()
+        return engine
+
+    def test_firewall_domain_capped_when_few_deductions(self):
+        # INPUT -3, FORWARD -1 → raw domain = 6 > 3 → must be capped to 3
+        engine = self._make_engine_with_cap([
+            (3, "firewall.input_accept"),
+            (1, "firewall.forward_accept"),
+        ])
+        scores = compute_domain_scores(engine)
+        assert scores["firewall"]["score"] == 3
+
+    def test_firewall_domain_capped_when_many_global_deductions(self):
+        # Many deductions push global raw_score below cap threshold so the
+        # breakdown delta is never appended — cap must still apply to domain.
+        engine = self._make_engine_with_cap([
+            (3, "firewall.input_accept"),
+            (1, "firewall.forward_accept"),
+            (1, "hardening.icmp_redirects"),
+            (1, "hardening.icmp6_redirects"),
+            (1, "hardening.send_redirects"),
+            (1, "backup.no_backup"),
+            (1, "firmware.fwupd_updates"),
+        ])
+        # Global raw_score = 10 - 9 = 1, already below cap (3) → delta not in breakdown
+        assert engine._raw_score <= 3  # cap did not fire via breakdown
+        scores = compute_domain_scores(engine)
+        # But firewall domain (raw=6) must still be capped at 3
+        assert scores["firewall"]["score"] == 3
+
+    def test_firewall_domain_not_overcapped_when_already_at_cap(self):
+        # If domain score is already at or below cap, no further reduction
+        engine = self._make_engine_with_cap([
+            (3, "firewall.input_accept"),
+            (1, "firewall.forward_accept"),
+            (3, "firewall.open_ports"),  # raw domain = 10-7 = 3 = cap
+        ])
+        scores = compute_domain_scores(engine)
+        assert scores["firewall"]["score"] == 3  # already there, not pushed below
+
+    def test_firewall_domain_score_never_exceeds_cap(self):
+        for extra in range(5):
+            engine = self._make_engine_with_cap(
+                [(1, f"firewall.issue_{i}") for i in range(extra)],
+                cap_maximum=3,
+            )
+            scores = compute_domain_scores(engine)
+            assert scores["firewall"]["score"] <= 3, (
+                f"firewall score {scores['firewall']['score']} exceeds cap=3 "
+                f"with {extra} extra deductions"
+            )
+
+    def test_cap_does_not_affect_other_domains(self):
+        engine = self._make_engine_with_cap([
+            (3, "firewall.input_accept"),
+            (1, "firewall.forward_accept"),
+        ])
+        scores = compute_domain_scores(engine)
+        # Only firewall is capped; hardening untouched
+        assert scores["hardening"]["score"] == MAX_SCORE
+
+    def test_all_domain_scores_in_valid_range_with_cap(self):
+        engine = self._make_engine_with_cap([
+            (3, "firewall.input_accept"),
+            (1, "firewall.forward_accept"),
+            (1, "hardening.send_redirects"),
+        ])
+        scores = compute_domain_scores(engine)
+        for d in DOMAINS:
+            assert 0 <= scores[d]["score"] <= MAX_SCORE
+
+
     def test_caps_do_not_bleed_across_tools(self):
         # rootkit capped at 1 must not reduce clamav's allowed contribution
         engine = _make_engine(
@@ -569,3 +660,78 @@ class TestDiffCLI:
         for d in DOMAINS:
             assert d in payload["domain_scores"]
             assert 0 <= payload["domain_scores"][d] <= MAX_SCORE
+
+
+# ---------------------------------------------------------------------------
+# Scoring invariants
+# ---------------------------------------------------------------------------
+
+class TestScoringInvariants:
+    """Structural invariants for the domain scoring pipeline."""
+
+    def test_info_only_findings_do_not_activate_domain(self):
+        """INFO findings with no deductions must not mark a domain as active."""
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.info(message="service installed", key="ssh.installed")
+        engine.apply(result)
+        engine.finalize()
+        active = active_domains_from_engine(engine)
+        assert "ssh" not in active
+
+    def test_warn_finding_activates_domain(self):
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.warn(message="weak config", key="ssh.password_auth")
+        engine.apply(result)
+        engine.finalize()
+        active = active_domains_from_engine(engine)
+        assert "ssh" in active
+
+    def test_alert_finding_activates_domain(self):
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.alert(message="root login allowed", key="ssh.permit_root_login")
+        engine.apply(result)
+        engine.finalize()
+        active = active_domains_from_engine(engine)
+        assert "ssh" in active
+
+    def test_deduction_alone_activates_domain(self):
+        """A deduction (no finding) still marks the corresponding domain active."""
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.add_deduction(reason="manual", points=2, key="updates.security_pending")
+        engine.apply(result)
+        engine.finalize()
+        active = active_domains_from_engine(engine)
+        assert "updates" in active
+
+    def test_global_average_bounded_by_active_domain_scores(self):
+        """Global average must lie within [min, max] of active domain scores."""
+        engine = _make_engine(
+            (2, "ssh.password_auth"),             # ssh: 8
+            (4, "hardening.rp_filter_disabled"),  # hardening: 6
+        )
+        scores = compute_domain_scores(engine)
+        active = active_domains_from_engine(engine)
+        global_score = compute_global_from_domains(scores, active)
+        active_scores = [scores[d]["score"] for d in active if d in scores]
+        assert min(active_scores) <= global_score <= max(active_scores)
+
+    def test_all_domain_scores_in_valid_range(self):
+        """Every domain score must always be in [0, MAX_SCORE]."""
+        engine = _make_engine(*[(5, f"hardening.issue_{i}") for i in range(5)])
+        scores = compute_domain_scores(engine)
+        for d in DOMAINS:
+            assert 0 <= scores[d]["score"] <= MAX_SCORE, f"{d} score out of range"
+
+    def test_compute_global_always_in_valid_range(self):
+        """compute_global_from_domains must return a value in [0, MAX_SCORE]."""
+        engine = _make_engine(*[
+            (10, f"{pref}.issue") for pref in ["ssh", "updates", "hardening", "file_perms"]
+        ])
+        scores = compute_domain_scores(engine)
+        active = active_domains_from_engine(engine)
+        result = compute_global_from_domains(scores, active)
+        assert 0 <= result <= MAX_SCORE

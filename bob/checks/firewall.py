@@ -33,6 +33,9 @@ _OPEN_ANY_RE = re.compile(
 )
 _ALLOW_IN_RE   = re.compile(r"\bALLOW\s+IN\b", re.IGNORECASE)
 _PORT_PROTO_RE = re.compile(r"\b(\d{1,5}/(?:tcp|udp))\b", re.IGNORECASE)
+# Matches a protocol-unspecified port in the UFW numbered-status "To" field,
+# e.g. "[ 2] 57621   ALLOW IN ...". UFW applies such rules to both TCP and UDP.
+_PORT_BARE_RE  = re.compile(r"^\[\s*\d+\]\s+(\d{1,5})\s", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +168,7 @@ def check_firewall(status: FirewallStatus, t=None) -> CheckResult:
             cmd="sudo ufw enable",
         )
         # Request a score cap — processed automatically by ScoreEngine.apply()
-        result.set_cap(maximum=3, reason=_t("firewall.inactive"))
+        result.set_cap(maximum=3, reason=_t("firewall.inactive"), key="firewall.inactive")
         return result
 
     result.ok(message=_t("firewall.active"))
@@ -334,7 +337,16 @@ def _check_orphan_rules(
             continue  # skip IPv6 mirrors — covered by their v4 counterpart
         m = _PORT_PROTO_RE.search(line)
         if not m:
-            continue  # no specific port (open-any rules, caught by _check_open_any)
+            # Protocol-unspecified rule (e.g. "57621 ALLOW IN ...") — UFW
+            # applies it to both TCP and UDP.  Flag as orphan only if neither
+            # protocol has a listening service.
+            m2 = _PORT_BARE_RE.match(line)
+            if not m2:
+                continue  # genuine open-any rule, caught by _check_open_any
+            port = m2.group(1)
+            if f"{port}/tcp" not in listening_ports and f"{port}/udp" not in listening_ports:
+                orphans.add(port)
+            continue
         port_proto = m.group(1).lower()
         if port_proto not in listening_ports:
             orphans.add(port_proto)

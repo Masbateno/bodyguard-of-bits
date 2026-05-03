@@ -14,9 +14,12 @@ When running via sudo, the real user's home directory is used
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 _IGNORE_FILENAME = "ignore.yml"
 
@@ -62,8 +65,8 @@ def load_ignore_keys(path: Path | None = None) -> frozenset[str]:
             m = _KEY_LINE_RE.match(line)
             if m:
                 keys.add(m.group(1))
-    except OSError:
-        pass
+    except OSError as exc:
+        _log.debug("Cannot read ignore file %s: %s", path, exc)
     return frozenset(keys)
 
 

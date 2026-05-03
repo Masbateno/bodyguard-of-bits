@@ -15,6 +15,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+# Captured before any test runs so the real implementation is always available
+# inside the targeted stat mock (Python 3.12: Path.exists() calls self.stat()).
+_real_path_stat = Path.stat
+
+
+def _stat_raises_for_logs(self, *, follow_symlinks=True):
+    """Raise OSError for .log files; delegate to real stat for everything else."""
+    if self.suffix == ".log":
+        raise OSError("race: file disappeared between scan and display")
+    return _real_path_stat(self, follow_symlinks=follow_symlinks)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -817,3 +828,55 @@ class TestExtractSummaryView:
         result = _extract_summary_view(lines)
         combined = "\n".join(result)
         assert "Critical issue" in combined
+
+
+# ---------------------------------------------------------------------------
+# .stat() OSError fallback — regression for v0.2.1 fix
+# ---------------------------------------------------------------------------
+
+class TestStatFallback:
+    """
+    Verify the OSError fallback for .stat() in the plain-text display loops.
+
+    A log file can disappear between the glob scan and the display loop
+    (e.g. logrotate running concurrently).  Both loops must fall back to
+    (size_kb=0, mtime="?") instead of propagating the OSError.
+    """
+
+    def test_cur_logs_stat_oserror_uses_fallback(self, tmp_path, capsys):
+        """cur_logs loop: OSError on .stat() → output shows 0 KB and '?'."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        _make_log(log_dir, "bob_20260101_120000.log")
+
+        uc, _ = _make_user_config(str(log_dir))
+        inputs = iter(["q"])
+
+        with patch.object(Path, "stat", _stat_raises_for_logs), \
+             patch("builtins.input", side_effect=inputs):
+            from bob.manage_logs import run_manage_logs
+            run_manage_logs(uc, _make_config(), _t)
+
+        out = capsys.readouterr().out
+        assert "(0 " in out
+        assert "?" in out
+
+    def test_extra_logs_stat_oserror_uses_fallback(self, tmp_path, capsys):
+        """extra_sections loop: OSError on .stat() → output shows 0 KB and '?'."""
+        cur_dir = tmp_path / "current"
+        extra_dir = tmp_path / "previous"
+        cur_dir.mkdir()
+        extra_dir.mkdir()
+        _make_log(extra_dir, "bob_20260101_120000.log")
+
+        uc, _ = _make_user_config(str(cur_dir), extra_dirs=[str(extra_dir)])
+        inputs = iter(["q"])
+
+        with patch.object(Path, "stat", _stat_raises_for_logs), \
+             patch("builtins.input", side_effect=inputs):
+            from bob.manage_logs import run_manage_logs
+            run_manage_logs(uc, _make_config(), _t)
+
+        out = capsys.readouterr().out
+        assert "(0 " in out
+        assert "?" in out

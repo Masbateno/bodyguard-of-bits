@@ -639,17 +639,28 @@ main()
 
 ### Calcul du score
 
-Le score démarre à 10/10. Chaque `Deduction` soustrait des points.
+Le score démarre à 10/10. Chaque `Deduction` soustrait des points. Après l'exécution de toutes les vérifications, le score global est remplacé par la valeur moyennée par domaine.
 
 ```python
 engine = ScoreEngine()
-engine.apply(check_result)   # applique findings et déductions
-engine.cap(maximum=3)        # plafonne si pare-feu inactif
-engine.finalize()            # calcule score et niveau de risque
+engine.apply(check_result)              # applique findings et déductions
+engine.cap(maximum=3, key="firewall.inactive")  # plafonne si pare-feu inactif
+engine.finalize()                       # applique le plafond, clamp à [0, 10]
+apply_domain_score_override(engine)     # score global = moyenne des domaines actifs
+                                        # DOIT être appelé après finalize()
 
-score = engine.score         # int 0–10
-level = engine.level         # RiskLevel.LOW / MEDIUM / HIGH
+score = engine.score         # int 0–10 — domain-averaged si override défini
+level = engine.level         # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
+raw   = engine._raw_score    # score brut pré-override (débogage uniquement)
 ```
+
+**Contrat orchestrateur :** `apply_domain_score_override(engine)` depuis `bob.domain_scores` doit être appelé après `engine.finalize()`. Avant cet appel, `engine.score` retourne le score brut basé sur les déductions. Ne pas appeler `engine.set_global_score()` directement.
+
+**Ensemble des domaines actifs :** seuls les domaines avec au moins un finding WARN ou ALERT comptent comme « actifs » pour la moyenne globale. Les domaines avec uniquement des findings INFO (service installé, rien d'actionnable) sont exclus. Note : une déduction avec une clé active toujours le domaine, quelle que soit le niveau du finding associé.
+
+**Pondération égale des domaines :** tous les domaines actifs contribuent également à la moyenne globale — il n'y a pas de pondération par domaine. Une machine où seul SSH est dégradé et tous les autres domaines sont à 10/10 bénéficie de la dilution ; une machine avec les sept domaines actifs accorde le même poids au pare-feu qu'à la santé du disque. C'est la principale question architecturale pour la v0.3.0.
+
+**`ScoreCap.key` :** les plafonds portent un champ `key` propagé à leur déduction synthétique de breakdown, permettant l'attribution au domaine pour les déductions déclenchées par un plafond.
 
 ### Contexte réseau
 
@@ -665,7 +676,8 @@ result.add_deduction(reason="...", points=2, context="public")
 |---|---|
 | 8–10 | FAIBLE |
 | 5–7 | MOYEN |
-| 0–4 | ÉLEVÉ |
+| 3–4 | ÉLEVÉ |
+| 0–2 | CRITIQUE |
 
 ---
 

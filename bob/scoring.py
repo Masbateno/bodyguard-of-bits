@@ -139,6 +139,7 @@ class ScoreCap:
     """
     maximum: int
     reason:  str
+    key:     str = ""
 
 
 @dataclass
@@ -163,14 +164,14 @@ class CheckResult:
         """Convenience method to append a deduction."""
         self.deductions.append(Deduction(reason=reason, points=points, context=context, key=key))
 
-    def set_cap(self, maximum: int, reason: str) -> None:
+    def set_cap(self, maximum: int, reason: str, key: str = "") -> None:
         """
         Request a score ceiling to be enforced by the engine.
 
         Prefer this over calling engine.cap() directly in orchestrators —
         it keeps the cap logic co-located with the check that motivates it.
         """
-        self.caps.append(ScoreCap(maximum=maximum, reason=reason))
+        self.caps.append(ScoreCap(maximum=maximum, reason=reason, key=key))
 
     def add_finding(
         self,
@@ -261,7 +262,7 @@ class ScoreEngine:
             else:
                 self.findings.append(finding)
         for cap in result.caps:
-            self.cap(maximum=cap.maximum, reason=cap.reason)
+            self.cap(maximum=cap.maximum, reason=cap.reason, key=cap.key)
 
     def deduct(self, reason: str, points: int, context: str = "local") -> None:
         """
@@ -277,7 +278,7 @@ class ScoreEngine:
         """
         self._apply_deduction(Deduction(reason=reason, points=points, context=context))
 
-    def cap(self, maximum: int, reason: str) -> None:
+    def cap(self, maximum: int, reason: str, key: str = "") -> None:
         """
         Register a score ceiling to be enforced during finalize().
 
@@ -286,17 +287,22 @@ class ScoreEngine:
         Args:
             maximum: Score will not exceed this value after finalize().
             reason:  Explanation string displayed in the breakdown.
+            key:     Stable i18n key linking this cap to its finding.
         """
         if self._cap is None or maximum < self._cap.maximum:
-            self._cap = ScoreCap(maximum=maximum, reason=reason)
+            self._cap = ScoreCap(maximum=maximum, reason=reason, key=key)
 
     def set_global_score(self, score: int) -> None:
         """
         Override the global score with a domain-averaged value.
 
-        Called by domain_scores.apply_domain_score_override() after all checks
-        have run, so that engine.score reflects the mean of active domain scores
-        rather than the raw sum of all deductions.
+        Called by domain_scores.apply_domain_score_override() after finalize(),
+        so that engine.score reflects the mean of active domain scores rather
+        than the raw sum of all deductions.
+
+        Do not call this directly — use apply_domain_score_override(engine)
+        from bob.domain_scores, which computes the correct domain average.
+        The raw pre-override score remains accessible as engine._raw_score.
         """
         self._global_override = max(0, min(MAX_SCORE, score))
 
@@ -309,13 +315,21 @@ class ScoreEngine:
 
         Should be called once, after all checks have run.
         Safe to call multiple times — subsequent calls are no-ops.
+
+        Required call sequence (orchestrator contract):
+            engine.finalize()
+            apply_domain_score_override(engine)   # from bob.domain_scores
+
+        After finalize() but before apply_domain_score_override(), engine.score
+        returns the raw deduction-based score.  The domain-averaged global score
+        is only available after apply_domain_score_override() sets the override.
         """
         if self._finalized:
             return
         if self._cap is not None and self._raw_score > self._cap.maximum:
             delta = self._raw_score - self._cap.maximum
             self.breakdown.append(
-                Deduction(reason=self._cap.reason, points=delta, context="structural")
+                Deduction(reason=self._cap.reason, points=delta, context="structural", key=self._cap.key)
             )
             self._raw_score = self._cap.maximum
         self._raw_score = max(0, min(MAX_SCORE, self._raw_score))

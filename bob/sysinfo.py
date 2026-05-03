@@ -7,10 +7,13 @@ and resolves the real user home directory when running under sudo.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +28,7 @@ def get_user_home() -> Path:
         try:
             return Path(pwd.getpwnam(sudo_user).pw_dir)
         except KeyError:
-            pass
+            _log.debug("SUDO_USER %r not found in password database, falling back to Path.home()", sudo_user)
     return Path.home()
 
 
@@ -56,8 +59,8 @@ def collect_system_info(version: str, lang: str):
                         line.split("=", 1)[1].strip().strip('"'), max_len=64
                     )
                     break
-    except OSError:
-        pass
+    except OSError as exc:
+        _log.debug("Cannot read /etc/os-release: %s", exc)
 
     # UFW version
     ufw_ver_raw = run("ufw", "version")
@@ -164,8 +167,8 @@ def detect_network_context(offline: bool = False) -> tuple[str, str]:
         if re.search(r"via\s+" + _PRIVATE_IPV4_RE.pattern.removeprefix("^"), result.stdout):
             public_ip = get_public_ip(offline=offline)
             return "local", public_ip
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        _log.debug("ip route failed during network type detection: %s", exc)
 
     try:
         result = subprocess.run(
@@ -182,8 +185,8 @@ def detect_network_context(offline: bool = False) -> tuple[str, str]:
             ip = match.group(1)
             if not _PRIVATE_IPV6_RE.match(ip):
                 return "public", ip
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        _log.debug("ip addr failed during network type detection: %s", exc)
 
     public_ip = get_public_ip(offline=offline)
     return "local", public_ip

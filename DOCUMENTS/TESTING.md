@@ -11,10 +11,74 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.2.2 | 4255 | +17 new tests · 2 updated: `TestStatFallback` · `TestScoringInvariants` · orphan-rule bare-port fix · ClamAV 1pt · ScoreCap.key · INFO domains excluded |
 | v0.2.0 | 4238 | +32 new tests · 3 corrected: scoring refactoring · cron MTA detection · kernel `-unsigned` false positive · IoT log dominance WARN |
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.2.2 — 4255/4255 (2026-05-02)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4255 passed in 4.42s
+```
+
+**New tests (+17):**
+
+#### `tests/test_firewall.py` — `TestOrphanRules` (+3)
+
+| Test | Coverage |
+|------|----------|
+| `test_bare_port_rule_flagged_when_nothing_listening` | `57621 ALLOW IN` with no TCP or UDP listener → flagged as orphan |
+| `test_bare_port_rule_not_flagged_when_tcp_listening` | `57621/tcp` in listening set → not flagged |
+| `test_bare_port_rule_not_flagged_when_udp_listening` | `57621/udp` in listening set → not flagged |
+
+#### `tests/test_scoring.py` — `TestScoringInvariants` (+5)
+
+Structural invariants for the scoring engine — properties that must hold regardless of input:
+
+| Test | Invariant |
+|------|-----------|
+| `test_score_floor_is_zero_on_huge_deduction` | Score never goes below 0 even with 999-point deduction |
+| `test_score_ceiling_is_max_on_no_deductions` | Score equals MAX_SCORE when no deductions |
+| `test_deductions_are_monotone_decreasing` | Each deduction never increases the score |
+| `test_cap_above_current_score_is_noop` | A cap above the current score does not alter it |
+| `test_score_after_domain_override_in_valid_range` | After `apply_domain_score_override()`, score ∈ [0, 10] |
+
+#### `tests/test_domain_scores.py` — `TestScoringInvariants` (+7)
+
+Structural invariants for the domain scoring pipeline:
+
+| Test | Invariant |
+|------|-----------|
+| `test_info_only_findings_do_not_activate_domain` | INFO findings with no deductions do not mark a domain active |
+| `test_warn_finding_activates_domain` | A WARN finding marks the corresponding domain active |
+| `test_alert_finding_activates_domain` | An ALERT finding marks the corresponding domain active |
+| `test_deduction_alone_activates_domain` | A deduction (no finding) still activates the domain |
+| `test_global_average_bounded_by_active_domain_scores` | Global average ∈ [min, max] of active domain scores |
+| `test_all_domain_scores_in_valid_range` | Every domain score always in [0, MAX_SCORE] |
+| `test_compute_global_always_in_valid_range` | `compute_global_from_domains` always returns a value in [0, 10] |
+
+#### `tests/test_manage_logs.py` — `TestStatFallback` (+2)
+
+Regression tests for the v0.2.1 `.stat()` race condition fix. A log file can disappear between the directory scan and the display loop (e.g. logrotate running concurrently). The mock targets only `.log` files to avoid breaking `Path.exists()` on directories (Python 3.12: `exists()` calls `self.stat()` internally).
+
+| Test | Coverage |
+|------|----------|
+| `TestStatFallback.test_cur_logs_stat_oserror_uses_fallback` | `.stat()` raises `OSError` in `cur_logs` loop → output shows `(0 KB)` and `"?"` without crash |
+| `TestStatFallback.test_extra_logs_stat_oserror_uses_fallback` | `.stat()` raises `OSError` in `extra_sections` loop → same fallback output |
+
+**Updated tests (2):**
+
+| File | Test | Change |
+|------|------|--------|
+| `tests/test_clamav.py` | `test_db_very_outdated_deducts_1` (was `_deducts_2`) | `clamav.db_very_outdated` deduction lowered from 2pt to 1pt (Fix 3) |
+| `tests/test_clamav.py` | `test_worst_case` | Total deductions 4→3 (freshclam:1 + db_very_outdated:1 + scan_very_old:1) |
 
 ---
 

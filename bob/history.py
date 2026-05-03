@@ -11,9 +11,12 @@ Format (one JSON object per line):
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 _CONFIG_DIR   = Path.home() / ".config" / "bob"
 _HISTORY_FILE = _CONFIG_DIR / "history.jsonl"
@@ -51,8 +54,8 @@ def save_score(score: int, level: str) -> None:
         with _HISTORY_FILE.open("a", encoding="utf-8") as f:
             f.write(entry + "\n")
         _rotate_if_needed()
-    except OSError:
-        pass
+    except OSError as exc:
+        _log.debug("Failed to save score to history: %s", exc)
 
 
 def _rotate_if_needed() -> None:
@@ -66,8 +69,8 @@ def _rotate_if_needed() -> None:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(content)
             os.replace(str(tmp), str(_HISTORY_FILE))
-    except OSError:
-        pass
+    except OSError as exc:
+        _log.debug("Failed to rotate history file: %s", exc)
 
 
 def load_history(max_entries: int = 50) -> list[dict]:

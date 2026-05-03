@@ -746,7 +746,7 @@
     "not_installed": "Le serveur SSH (sshd) n'est pas installé",
     "not_installed_detail": "Si l'accès SSH est nécessaire : {cmd}",
     "not_active": "Le serveur SSH est installé mais ne fonctionne pas",
-    "not_active_detail": "Activer avec : sudo systemctl enable --now ssh",
+    "not_active_detail": "Le service est désactivé — activez-le si l'accès SSH est nécessaire.",
     "active": "Le serveur SSH est actif",
     "permit_root_login": "La connexion root via SSH est autorisée (PermitRootLogin = {value})",
     "permit_root_login_detail": "Définir PermitRootLogin no dans /etc/ssh/sshd_config, puis : sudo systemctl restart ssh",

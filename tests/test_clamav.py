@@ -162,11 +162,11 @@ class TestDatabaseAge:
         findings = [f for f in result.findings if f.key == "clamav.db_very_outdated"]
         assert findings and findings[0].level == FindingLevel.ALERT
 
-    def test_db_very_outdated_deducts_2(self):
+    def test_db_very_outdated_deducts_1(self):
         snap = make_snap(db_age_days=_DB_ALERT_DAYS + 10)
         result = check_clamav(snap, t=_t)
         pts = sum(d.points for d in result.deductions if d.key == "clamav.db_very_outdated")
-        assert pts == 2
+        assert pts == 1
 
     def test_db_outdated_is_warn(self):
         snap = make_snap(db_age_days=_DB_WARN_DAYS)
@@ -317,8 +317,8 @@ class TestCumulativeDeductions:
             last_scan_date=days_ago_iso(_SCAN_ALERT_DAYS + 5),
         )
         result = check_clamav(snap, t=_t)
-        # freshclam: 1, db_very_outdated: 2, scan_very_old: 1 → 4
-        assert deduction_points(result) == 4
+        # freshclam: 1, db_very_outdated: 1, scan_very_old: 1 → 3
+        assert deduction_points(result) == 3
 
 
 # ---------------------------------------------------------------------------

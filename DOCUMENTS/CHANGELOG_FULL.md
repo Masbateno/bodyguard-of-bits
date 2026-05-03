@@ -6,6 +6,412 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.2.2] — 2026-05-03
+
+Five targeted scoring fixes, a locale fix, a logging uniformity pass across three modules, a firewall orphan-rule fix for protocol-unspecified UFW rules, scoring invariant tests, and equal-weight domain documentation. No new features outside scoring. 4261/4261 tests (+23).
+
+---
+
+### Fix 1 — `ScoreCap.key` propagation (`bob/scoring.py`, `bob/checks/firewall.py`)
+
+#### Problem
+
+`ScoreCap` had no `key` field. When a cap fired, `finalize()` appended a synthetic `Deduction` to `engine.breakdown` with `key=""`:
+
+```python
+self.breakdown.append(
+    Deduction(reason=self._cap.reason, points=delta, context="structural")
+)
+```
+
+`compute_domain_scores()` skips deductions with `key=""` (`_key_to_domain()` returns `None` for empty keys). A firewall-inactive cap that reduced the score by several points contributed zero to the `firewall` domain deductions — the cap was invisible to per-domain scoring.
+
+#### Fix
+
+`ScoreCap` gains `key: str = ""`:
+
+```python
+@dataclass
+class ScoreCap:
+    maximum: int
+    reason:  str
+    key:     str = ""
+```
+
+`CheckResult.set_cap()`, `ScoreEngine.cap()`, and `ScoreEngine.apply()` all propagate the key. `finalize()` uses `self._cap.key` in the synthetic deduction:
+
+```python
+self.breakdown.append(
+    Deduction(reason=self._cap.reason, points=delta, context="structural", key=self._cap.key)
+)
+```
+
+`bob/checks/firewall.py` updated:
+
+```python
+result.set_cap(maximum=3, reason=_t("firewall.inactive"), key="firewall.inactive")
+```
+
+---
+
+### Fix 2 — INFO findings no longer inflate active domain set (`bob/domain_scores.py`)
+
+#### Problem
+
+`active_domains_from_engine()` iterated over all findings regardless of level:
+
+```python
+for finding in engine.findings:
+    domain = _key_to_domain(finding.key)
+    if domain:
+        active.add(domain)
+```
+
+An INFO-only domain — a service installed with no actionable issues (e.g. ClamAV installed, db fresh, scan recent) — was included in `active_domains` and therefore in the global average. This could either dilute scores from genuinely degraded domains or pad the average when a high-score INFO-only domain was included.
+
+#### Fix
+
+`FindingLevel` imported directly from `bob.scoring`. The findings loops now filter to WARN and ALERT only:
+
+```python
+_actionable = (FindingLevel.WARN, FindingLevel.ALERT)
+for finding in engine.findings:
+    if finding.level not in _actionable:
+        continue
+    domain = _key_to_domain(finding.key)
+    if domain:
+        active.add(domain)
+```
+
+The deduction loop is unchanged — a domain with deductions but no WARN/ALERT findings (edge case) is still counted as active via the deduction path.
+
+---
+
+### Fix 3 — `clamav.db_very_outdated` 2pt → 1pt (`bob/checks/clamav.py`)
+
+#### Problem
+
+`check_clamav()` emitted a 2-point deduction for `clamav.db_very_outdated` (database ≥ 30 days old). The `clamav` entry in `_TOOL_CAPS` caps the tool's contribution to 1 point per domain. The second point only affected `engine._raw_score` before domain averaging, creating a silent asymmetry: the raw score punished this finding twice as hard as the domain score did.
+
+#### Fix
+
+```python
+# before
+result.add_deduction(
+    reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
+    points=2, context="local", key="clamav.db_very_outdated",
+)
+
+# after
+result.add_deduction(
+    reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
+    points=1, context="local", key="clamav.db_very_outdated",
+)
+```
+
+Worst-case ClamAV deduction total: `freshclam:1 + db_very_outdated:1 + scan_very_old:1 = 3` (was 4).
+
+---
+
+### Observability — logging uniformity (`bob/history.py`, `bob/ignore.py`, `bob/sysinfo.py`)
+
+Six `except … pass` handlers replaced with `_log.debug()`. `import logging` and `_log = logging.getLogger(__name__)` added to all three modules. Failures remain non-fatal; visible under `--debug`.
+
+#### `bob/history.py`
+
+```python
+# save_score() — before
+except OSError:
+    pass
+
+# save_score() — after
+except OSError as exc:
+    _log.debug("Failed to save score to history: %s", exc)
+
+# _rotate_if_needed() — before
+except OSError:
+    pass
+
+# _rotate_if_needed() — after
+except OSError as exc:
+    _log.debug("Failed to rotate history file: %s", exc)
+```
+
+#### `bob/ignore.py`
+
+```python
+# load_ignore_keys() — before
+except OSError:
+    pass
+
+# load_ignore_keys() — after
+except OSError as exc:
+    _log.debug("Cannot read ignore file %s: %s", path, exc)
+```
+
+#### `bob/sysinfo.py`
+
+`get_user_home()`: SUDO_USER set but not found in the password database — the fallback to `Path.home()` is now logged, which explains unexpected config paths when running under exotic sudo configurations.
+
+`collect_system_info()`: `/etc/os-release` read failure now logged.
+
+`detect_network_type()`: both `ip route` and `ip addr` subprocess failures now logged. Previously these failed silently and the function fell through to `get_public_ip()` with no trace.
+
+```python
+# detect_network_type() — before (both locations)
+except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    pass
+
+# detect_network_type() — after
+except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+    _log.debug("ip route failed during network type detection: %s", exc)
+    # (and separately for ip addr)
+    _log.debug("ip addr failed during network type detection: %s", exc)
+```
+
+---
+
+### Scoring contract documented (`bob/scoring.py`)
+
+`ScoreEngine.finalize()` docstring updated:
+
+```
+Required call sequence (orchestrator contract):
+    engine.finalize()
+    apply_domain_score_override(engine)   # from bob.domain_scores
+
+After finalize() but before apply_domain_score_override(), engine.score
+returns the raw deduction-based score.  The domain-averaged global score
+is only available after apply_domain_score_override() sets the override.
+```
+
+`ScoreEngine.set_global_score()` docstring updated:
+
+```
+Do not call this directly — use apply_domain_score_override(engine)
+from bob.domain_scores, which computes the correct domain average.
+The raw pre-override score remains accessible as engine._raw_score.
+```
+
+---
+
+### Fix 4 — Domain score cap not applied when global raw score is already below threshold (`bob/domain_scores.py`)
+
+#### Problem
+
+`compute_domain_scores()` derives each domain's score by summing the deductions in `engine.breakdown` that map to that domain. When a cap fires during `finalize()` (e.g. `firewall.inactive` → max 3/10), a synthetic delta `Deduction` is appended to `breakdown` **only if** `_raw_score > cap.maximum`:
+
+```python
+# scoring.py — ScoreEngine.finalize()
+if self._cap is not None and self._raw_score > self._cap.maximum:
+    delta = self._raw_score - self._cap.maximum
+    self.breakdown.append(
+        Deduction(reason=self._cap.reason, points=delta, key=self._cap.key)
+    )
+    self._raw_score = self._cap.maximum
+```
+
+On systems with many deductions spread across domains (firewall + hardening + …), the global `_raw_score` can fall below `cap.maximum` before `finalize()` runs. In that case the `if` guard is false, no delta is appended, and `compute_domain_scores()` never sees the cap. The target domain score remains at its raw pre-cap value (e.g. 6/10 for the firewall domain from `-3` INPUT + `-1` FORWARD) instead of the intended capped value (3/10).
+
+The cap note `"Score plafonné à 3 (pare-feu inactif)"` is always shown in the display whenever `engine.cap_info` is set (registered caps are stored in `engine._cap` independently of whether they triggered), so the UI contradicts itself: the note says the score was capped but the domain bar still shows 6/10.
+
+**Found by:** running the tool on an Ubuntu 26.04 VM with UFW inactive and several hardening issues (3× ICMP deductions, no backup, pending firmware updates). The global raw score (10 − 9 = 1) was already below the firewall cap of 3, so the cap delta was never appended and the firewall domain kept its raw 6/10 score.
+
+#### Fix
+
+After accumulating domain deductions from the breakdown, `compute_domain_scores()` now explicitly enforces the engine-level cap on its target domain:
+
+```python
+# domain_scores.py — compute_domain_scores()
+engine_cap = engine.cap_info
+if engine_cap and engine_cap.key:
+    cap_domain = _key_to_domain(engine_cap.key)
+    if cap_domain and cap_domain in domain_deductions:
+        raw_domain = MAX_SCORE - domain_deductions[cap_domain]
+        if raw_domain > engine_cap.maximum:
+            domain_deductions[cap_domain] += raw_domain - engine_cap.maximum
+```
+
+The fix is **idempotent**: if the cap delta was already appended to the breakdown (the normal case where `raw_global > cap`), that delta increased `domain_deductions[cap_domain]`, bringing `raw_domain` down to exactly `cap.maximum`. The guard `raw_domain > cap.maximum` is then false, and nothing extra is added. No double-counting.
+
+#### Impact
+
+- Firewall domain (UFW inactive, few other firewall deductions): **6/10 → 3/10**
+- Global score on the Ubuntu test VM: unchanged (8/10 either way — the two paths coincide due to banker's rounding on 8.5)
+- All other domains: unaffected
+
+---
+
+### Fix 5 — Orphan-rule check misses protocol-unspecified UFW rules (`bob/checks/firewall.py`)
+
+#### Problem
+
+`_check_orphan_rules()` parsed the UFW "To" field with `_PORT_PROTO_RE` which requires an explicit protocol suffix (`/tcp` or `/udp`). A rule written as a bare port number — valid UFW syntax meaning "apply to both TCP and UDP" — produced `m = None` and fell through to `continue`:
+
+```python
+m = _PORT_PROTO_RE.search(line)  # e.g. "57621 ALLOW IN ..." → no match
+if not m:
+    continue  # ← incorrectly labelled "open-any rules"
+```
+
+In practice, `57621 ALLOW IN 192.168.1.0/24` (Spotify Connect) was present in the UFW rules alongside `41681/tcp ALLOW IN 192.168.1.0/24`. BOB correctly flagged `41681/tcp` as an orphan rule (no service listening) but silently skipped `57621`. Found by running the tool on a real machine and comparing the two Spotify Connect rules.
+
+#### Fix
+
+New module-level constant `_PORT_BARE_RE = re.compile(r"^\[\s*\d+\]\s+(\d{1,5})\s", re.IGNORECASE)` matches a bare port in the UFW numbered-status "To" position. When `_PORT_PROTO_RE` fails to match, `_check_orphan_rules` now falls through to `_PORT_BARE_RE`:
+
+```python
+m = _PORT_PROTO_RE.search(line)
+if not m:
+    m2 = _PORT_BARE_RE.match(line)
+    if not m2:
+        continue  # genuine open-any rule
+    port = m2.group(1)
+    if f"{port}/tcp" not in listening_ports and f"{port}/udp" not in listening_ports:
+        orphans.add(port)
+    continue
+```
+
+A bare-port rule is flagged as orphan only if **neither** `port/tcp` nor `port/udp` is currently listening — consistent with UFW's TCP+UDP semantics. The delete command generated (`sudo ufw delete allow 57621`) is also correct for protocol-unspecified rules.
+
+### Scoring invariant tests (`tests/test_scoring.py`, `tests/test_domain_scores.py`)
+
+`TestScoringInvariants` classes added to both test files — 12 new tests for structural properties that must hold regardless of input. This is the property-based testing layer for the scoring pipeline, covering monotonicity, boundedness, and activation semantics.
+
+#### `tests/test_scoring.py` — `TestScoringInvariants` (+5)
+
+```python
+class TestScoringInvariants:
+    def test_score_floor_is_zero_on_huge_deduction(self):
+        engine = ScoreEngine()
+        engine.deduct("flood", 999)
+        assert engine.score == 0
+
+    def test_score_ceiling_is_max_on_no_deductions(self):
+        engine = ScoreEngine()
+        engine.finalize()
+        assert engine.score == MAX_SCORE
+
+    def test_deductions_are_monotone_decreasing(self):
+        engine = ScoreEngine()
+        prev = engine.score
+        for pts in (3, 1, 2, 1, 4):
+            engine.deduct("step", pts)
+            assert engine.score <= prev
+            prev = engine.score
+
+    def test_cap_above_current_score_is_noop(self):
+        engine = ScoreEngine()
+        engine.deduct("reason", 3)   # score = 7
+        score_before = engine.score
+        engine.cap(maximum=9, reason="lenient cap")
+        engine.finalize()
+        assert engine.score == score_before
+
+    def test_score_after_domain_override_in_valid_range(self):
+        from bob.domain_scores import apply_domain_score_override
+        engine = ScoreEngine()
+        engine.deduct("reason", 5)
+        engine.finalize()
+        apply_domain_score_override(engine)
+        assert 0 <= engine.score <= MAX_SCORE
+```
+
+#### `tests/test_domain_scores.py` — `TestScoringInvariants` (+7)
+
+Key tests:
+
+- **INFO-only → domain inactive:** a finding with `level=INFO` and no deduction does not mark the domain as "active" for the global average.
+- **WARN/ALERT → domain active:** these levels do activate the domain, even without a paired deduction.
+- **Deduction alone activates:** `add_deduction(key=...)` without any finding still marks the domain active via the deduction path in `active_domains_from_engine()`.
+- **Global average bounded:** `compute_global_from_domains` result is always `≥ min(active_scores)` and `≤ max(active_scores)`.
+- **Domain scores in range:** `compute_domain_scores` result always in `[0, MAX_SCORE]` for every domain.
+- **Global always in range:** `compute_global_from_domains` always returns a value in `[0, 10]`.
+
+The deduction-only activation test is particularly important: it confirms that `active_domains_from_engine()` checks both the findings path (WARN/ALERT filter) and the deductions path (no filter), and that the two paths are intentionally asymmetric.
+
+---
+
+### Fix 6 — SSH "not running" detail duplicated the remediation command (`bob/locales/fr.json`, `bob/locales/en.json`)
+
+#### Problem
+
+`ssh.not_active_detail` was set to `"Activer avec : sudo systemctl enable --now ssh"` (FR) / `"Enable with: sudo systemctl enable --now ssh"` (EN). The display layer renders both `detail` and `cmd` as separate `→` lines under the "Que faire ?" heading. Since the `cmd` field already contains `"sudo systemctl enable --now ssh"`, the block displayed the command twice:
+
+```
+    Que faire ?
+    → Activer avec : sudo systemctl enable --now ssh   ← detail (contains command)
+    → sudo systemctl enable --now ssh                  ← cmd (same command again)
+```
+
+The `detail` field is intended to explain *why* or provide context; the `cmd` field is the copy-pasteable command. Having the command text in both fields is redundant.
+
+**Found by:** running the tool on Kali Linux, where SSH is installed by default but the daemon is intentionally stopped. The double-command display was visible in the verbose output.
+
+#### Fix
+
+`ssh.not_active_detail` changed to context-only text in both locales:
+- FR: `"Le service est désactivé — activez-le si l'accès SSH est nécessaire."`
+- EN: `"The service is disabled — enable it if SSH access is needed."`
+
+The `cmd` field (`"sudo systemctl enable --now ssh"`) is unchanged and continues to display the actionable command.
+
+### Tests
+
+4261/4261 (+23 new, 2 updated):
+
+#### `tests/test_domain_scores.py` — `TestEngineLevelDomainCap` (+6)
+
+Six new cases in a new class covering the domain-level cap fix:
+
+| Test | Coverage |
+|------|----------|
+| `test_firewall_domain_capped_when_few_deductions` | INPUT −3, FORWARD −1 → raw domain = 6, capped to 3 |
+| `test_firewall_domain_capped_when_many_global_deductions` | 9-point global deductions push raw_score below cap threshold (delta not in breakdown) → domain still capped to 3 |
+| `test_firewall_domain_not_overcapped_when_already_at_cap` | Domain already at cap.maximum → score stays at 3, not pushed below |
+| `test_firewall_domain_score_never_exceeds_cap` | Property: score ≤ 3 for any number of firewall deductions (0–4 extra) |
+| `test_cap_does_not_affect_other_domains` | Cap on `firewall.inactive` leaves hardening domain at MAX_SCORE |
+| `test_all_domain_scores_in_valid_range_with_cap` | All 7 domains in [0, MAX_SCORE] when cap is applied |
+
+#### `tests/test_firewall.py` — `TestOrphanRules` (+3)
+
+Three new cases in the existing `TestOrphanRules` class:
+
+| Test | Coverage |
+|------|----------|
+| `test_bare_port_rule_flagged_when_nothing_listening` | `57621 ALLOW IN` with no TCP or UDP listener → flagged as orphan with `ufw delete allow 57621` |
+| `test_bare_port_rule_not_flagged_when_tcp_listening` | `57621/tcp` present in listening set → not flagged |
+| `test_bare_port_rule_not_flagged_when_udp_listening` | `57621/udp` present in listening set → not flagged |
+
+#### `tests/test_manage_logs.py` — `TestStatFallback` (+2)
+
+Regression for the v0.2.1 `.stat()` race condition fix. The plain-text display loops in `_run_manage_logs_plain()` were updated in v0.2.1 to wrap `.stat()` in `try/except OSError` — but no test covered the fallback path.
+
+A `_stat_raises_for_logs` helper is defined at module level (captured before any test run) that raises `OSError` only for `.log` files, passing through to the real `Path.stat` for directories. This is necessary because Python 3.12's `Path.exists()` calls `self.stat()` internally — a global mock would break `exists()` on directories and cause test failures.
+
+```python
+_real_path_stat = Path.stat
+
+def _stat_raises_for_logs(self, *, follow_symlinks=True):
+    if self.suffix == ".log":
+        raise OSError("race: file disappeared between scan and display")
+    return _real_path_stat(self, follow_symlinks=follow_symlinks)
+```
+
+| Test | Coverage |
+|------|----------|
+| `test_cur_logs_stat_oserror_uses_fallback` | `.stat()` raises in `cur_logs` loop → `"(0 "` and `"?"` in output |
+| `test_extra_logs_stat_oserror_uses_fallback` | `.stat()` raises in `extra_sections` loop → same |
+
+#### `tests/test_clamav.py` (2 updated)
+
+| Test | Before | After |
+|------|--------|-------|
+| `test_db_very_outdated_deducts_1` (was `_deducts_2`) | asserted `pts == 2` | asserts `pts == 1` |
+| `test_worst_case` | asserted total == 4 | asserts total == 3 |
+
+---
+
 ## [v0.2.1] — 2026-05-02
 
 Defensive programming hotfix — 17 targeted improvements identified by a dual-agent code audit (independent runs by Claude and Copilot). No new features, no behavior changes, no new tests. 4238/4238 unchanged.

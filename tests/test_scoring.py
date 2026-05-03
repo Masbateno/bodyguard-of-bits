@@ -338,3 +338,47 @@ class TestCounts:
         r.ok("ok3")
         engine.apply(r)
         assert engine.ok_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Scoring invariants
+# ---------------------------------------------------------------------------
+
+class TestScoringInvariants:
+    """Structural invariants that must hold regardless of input combinations."""
+
+    def test_score_floor_is_zero_on_huge_deduction(self):
+        engine = ScoreEngine()
+        engine.deduct("flood", 999)
+        assert engine.score == 0
+
+    def test_score_ceiling_is_max_on_no_deductions(self):
+        engine = ScoreEngine()
+        engine.finalize()
+        assert engine.score == MAX_SCORE
+
+    def test_deductions_are_monotone_decreasing(self):
+        """Each additional deduction must not increase the score."""
+        engine = ScoreEngine()
+        prev = engine.score
+        for pts in (3, 1, 2, 1, 4):
+            engine.deduct("step", pts)
+            assert engine.score <= prev
+            prev = engine.score
+
+    def test_cap_above_current_score_is_noop(self):
+        """A cap set above the current score must not alter it."""
+        engine = ScoreEngine()
+        engine.deduct("reason", 3)   # score = 7
+        score_before = engine.score
+        engine.cap(maximum=9, reason="lenient cap")
+        engine.finalize()
+        assert engine.score == score_before
+
+    def test_score_after_domain_override_in_valid_range(self):
+        from bob.domain_scores import apply_domain_score_override
+        engine = ScoreEngine()
+        engine.deduct("reason", 5)
+        engine.finalize()
+        apply_domain_score_override(engine)
+        assert 0 <= engine.score <= MAX_SCORE

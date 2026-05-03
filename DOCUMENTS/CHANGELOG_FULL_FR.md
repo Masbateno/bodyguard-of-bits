@@ -6,6 +6,268 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.2.2] — 03-05-2026
+
+Cinq corrections ciblées du scoring, un fix de locale, une passe d'uniformisation du logging sur trois modules, une correction du check de règle UFW sans protocole, une correction du plafond de domaine (UFW inactif), des tests d'invariants scoring et une documentation de la pondération égale des domaines. 4261/4261 tests (+23).
+
+---
+
+### Fix 1 — Propagation `ScoreCap.key` (`bob/scoring.py`, `bob/checks/firewall.py`)
+
+#### Problème
+
+`ScoreCap` n'avait pas de champ `key`. Quand un plafond se déclenchait, `finalize()` ajoutait une `Deduction` synthétique dans `engine.breakdown` avec `key=""` :
+
+```python
+self.breakdown.append(
+    Deduction(reason=self._cap.reason, points=delta, context="structural")
+)
+```
+
+`compute_domain_scores()` ignore les déductions avec `key=""` (`_key_to_domain()` retourne `None` pour les clés vides). Un plafond pare-feu-inactif qui réduisait le score de plusieurs points contribuait zéro aux déductions du domaine `firewall` — le plafond était invisible au scoring par domaine.
+
+#### Correction
+
+`ScoreCap` gagne `key: str = ""` :
+
+```python
+@dataclass
+class ScoreCap:
+    maximum: int
+    reason:  str
+    key:     str = ""
+```
+
+`CheckResult.set_cap()`, `ScoreEngine.cap()` et `ScoreEngine.apply()` propagent tous la clé. `finalize()` utilise `self._cap.key` dans la déduction synthétique :
+
+```python
+self.breakdown.append(
+    Deduction(reason=self._cap.reason, points=delta, context="structural", key=self._cap.key)
+)
+```
+
+`bob/checks/firewall.py` mis à jour :
+
+```python
+result.set_cap(maximum=3, reason=_t("firewall.inactive"), key="firewall.inactive")
+```
+
+---
+
+### Fix 2 — Les findings INFO n'inflatent plus l'ensemble des domaines actifs (`bob/domain_scores.py`)
+
+#### Problème
+
+`active_domains_from_engine()` itérait sur tous les findings sans distinction de niveau :
+
+```python
+for finding in engine.findings:
+    domain = _key_to_domain(finding.key)
+    if domain:
+        active.add(domain)
+```
+
+Un domaine INFO-only — service installé sans aucun problème actionnable (ex. ClamAV installé, base fraîche, scan récent) — était inclus dans `active_domains` et donc dans la moyenne globale. Cela pouvait soit diluer les scores des domaines réellement dégradés, soit gonfler la moyenne quand un domaine INFO-only avec un score élevé était inclus.
+
+#### Correction
+
+`FindingLevel` importé directement depuis `bob.scoring`. Les boucles de findings filtrent maintenant à WARN et ALERT uniquement :
+
+```python
+_actionable = (FindingLevel.WARN, FindingLevel.ALERT)
+for finding in engine.findings:
+    if finding.level not in _actionable:
+        continue
+    domain = _key_to_domain(finding.key)
+    if domain:
+        active.add(domain)
+```
+
+La boucle des déductions reste inchangée — un domaine avec des déductions mais sans finding WARN/ALERT (cas limite) est toujours compté comme actif via le chemin déductions.
+
+---
+
+### Fix 3 — `clamav.db_very_outdated` 2pt → 1pt (`bob/checks/clamav.py`)
+
+#### Problème
+
+`check_clamav()` émettait une déduction de 2 points pour `clamav.db_very_outdated` (base de données ≥ 30 jours). L'entrée `clamav` dans `_TOOL_CAPS` plafonne la contribution de l'outil à 1 point par domaine. Le deuxième point n'affectait que `engine._raw_score` avant la moyenne par domaine, créant une asymétrie silencieuse : le score brut pénalisait ce finding deux fois plus fort que le score par domaine.
+
+#### Correction
+
+```python
+# avant
+result.add_deduction(
+    reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
+    points=2, context="local", key="clamav.db_very_outdated",
+)
+
+# après
+result.add_deduction(
+    reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
+    points=1, context="local", key="clamav.db_very_outdated",
+)
+```
+
+Total de déductions ClamAV en pire cas : `freshclam:1 + db_very_outdated:1 + scan_very_old:1 = 3` (était 4).
+
+---
+
+### Observabilité — logging uniformisé (`bob/history.py`, `bob/ignore.py`, `bob/sysinfo.py`)
+
+Six gestionnaires `except … pass` remplacés par `_log.debug()`. `import logging` et `_log = logging.getLogger(__name__)` ajoutés aux trois modules. Les échecs restent non-fatals ; visibles avec `--debug`.
+
+#### `bob/history.py`
+
+```python
+# save_score() — avant
+except OSError:
+    pass
+
+# save_score() — après
+except OSError as exc:
+    _log.debug("Failed to save score to history: %s", exc)
+
+# _rotate_if_needed() — avant
+except OSError:
+    pass
+
+# _rotate_if_needed() — après
+except OSError as exc:
+    _log.debug("Failed to rotate history file: %s", exc)
+```
+
+#### `bob/ignore.py`
+
+```python
+# load_ignore_keys() — avant
+except OSError:
+    pass
+
+# load_ignore_keys() — après
+except OSError as exc:
+    _log.debug("Cannot read ignore file %s: %s", path, exc)
+```
+
+#### `bob/sysinfo.py`
+
+`get_user_home()` : SUDO_USER défini mais absent de la base de données des mots de passe — le repli sur `Path.home()` est maintenant loggé, ce qui explique les chemins de configuration inattendus lors de l'exécution avec des configurations sudo exotiques.
+
+`collect_system_info()` : l'échec de lecture de `/etc/os-release` est maintenant loggé.
+
+`detect_network_type()` : les deux échecs subprocess (`ip route` et `ip addr`) sont maintenant loggés. Auparavant, ces échecs silencieux faisaient tomber la fonction sur `get_public_ip()` sans aucune trace.
+
+```python
+# detect_network_type() — avant (deux emplacements)
+except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    pass
+
+# detect_network_type() — après
+except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+    _log.debug("ip route failed during network type detection: %s", exc)
+    # (et séparément pour ip addr)
+    _log.debug("ip addr failed during network type detection: %s", exc)
+```
+
+---
+
+### Contrat scoring documenté (`bob/scoring.py`)
+
+Docstring de `ScoreEngine.finalize()` mise à jour :
+
+```
+Required call sequence (orchestrator contract):
+    engine.finalize()
+    apply_domain_score_override(engine)   # from bob.domain_scores
+
+After finalize() but before apply_domain_score_override(), engine.score
+returns the raw deduction-based score.  The domain-averaged global score
+is only available after apply_domain_score_override() sets the override.
+```
+
+Docstring de `ScoreEngine.set_global_score()` mise à jour :
+
+```
+Do not call this directly — use apply_domain_score_override(engine)
+from bob.domain_scores, which computes the correct domain average.
+The raw pre-override score remains accessible as engine._raw_score.
+```
+
+---
+
+### Fix 4 — Plafond de domaine non appliqué si le score brut global est déjà sous le seuil (`bob/domain_scores.py`)
+
+`compute_domain_scores()` calcule le score de chaque domaine en sommant les déductions de `engine.breakdown` qui lui correspondent. Lorsqu'un plafond se déclenche (ex. `firewall.inactive` → max 3/10), `finalize()` ajoute un delta de déduction dans `breakdown` **uniquement si** `_raw_score > cap.maximum`. Sur un système cumulant beaucoup de déductions (pare-feu + durcissement + …), le score brut global peut déjà être sous le seuil du plafond — le delta n'est jamais ajouté, le score du domaine cible reste à sa valeur brute pré-plafond (ex. 6/10 au lieu de 3/10 pour le pare-feu quand UFW est inactif). La note « Score plafonné à 3 » s'affiche quand même (elle lit `engine.cap_info` enregistré, indépendamment du déclenchement). Correction : `compute_domain_scores()` lit maintenant `engine.cap_info` et, si sa clé correspond à un domaine, applique directement le plafond sur le total de déductions de ce domaine. Le fix est idempotent. Trouvé sur une VM Ubuntu 26.04 avec UFW inactif et plusieurs problèmes de durcissement.
+
+### Fix 5 — Check de règle orpheline manquant les règles UFW sans protocole (`bob/checks/firewall.py`)
+
+`_check_orphan_rules()` analysait le champ « To » d'UFW avec `_PORT_PROTO_RE` qui exige un suffixe de protocole explicite (`/tcp` ou `/udp`). Une règle écrite en numéro de port nu — syntaxe UFW valide signifiant « appliquer à TCP et UDP » — produisait `m = None` et tombait dans `continue`. En pratique, `57621 ALLOW IN 192.168.1.0/24` (Spotify Connect) coexistait avec `41681/tcp ALLOW IN 192.168.1.0/24`. BOB signalait correctement `41681/tcp` comme règle orpheline mais ignorait silencieusement `57621`. Nouveau `_PORT_BARE_RE` gère ce cas de repli. Trouvé en exécutant l'outil sur une machine réelle.
+
+### Fix 6 — Locale SSH : commande dupliquée dans le bloc « Que faire ? » (`bob/locales/fr.json`, `bob/locales/en.json`)
+
+`ssh.not_active_detail` contenait la commande de remédiation (`"Activer avec : sudo systemctl enable --now ssh"`). Le moteur d'affichage rendant à la fois le `detail` et le `cmd` sous forme de lignes `→`, le bloc « Que faire ? » affichait deux fois la même commande. Le champ `detail` est destiné au contexte (pourquoi agir), pas à la commande (qui appartient à `cmd`). Corrigé par un texte explicatif sans commande : `"Le service est désactivé — activez-le si l'accès SSH est nécessaire."` Trouvé sur Kali Linux où SSH est installé mais intentionnellement arrêté.
+
+### Tests d'invariants scoring (`tests/test_scoring.py`, `tests/test_domain_scores.py`)
+
+Classes `TestScoringInvariants` ajoutées aux deux fichiers de test — 12 nouveaux tests pour les propriétés structurelles devant tenir quel que soit l'input. C'est la couche de tests de propriétés du pipeline de scoring, couvrant la monotonie, les bornes et la sémantique d'activation.
+
+#### `tests/test_scoring.py` — `TestScoringInvariants` (+5)
+
+Invariants du moteur de scoring : score plancher (0), plafond (MAX), monotonie des déductions, plafond supérieur sans effet, override domaine dans la plage.
+
+#### `tests/test_domain_scores.py` — `TestScoringInvariants` (+7)
+
+Points clés :
+
+- **INFO-only → domaine inactif :** un finding `level=INFO` sans déduction ne marque pas le domaine comme « actif » pour la moyenne globale.
+- **WARN/ALERT → domaine actif :** ces niveaux activent bien le domaine, même sans déduction associée.
+- **Déduction seule active :** `add_deduction(key=...)` sans finding active quand même le domaine via le chemin déductions dans `active_domains_from_engine()`.
+- **Moyenne globale bornée :** résultat de `compute_global_from_domains` toujours `≥ min(scores_actifs)` et `≤ max(scores_actifs)`.
+- **Scores dans la plage :** `compute_domain_scores` produit toujours des valeurs dans `[0, MAX_SCORE]` pour chaque domaine.
+
+Le test d'activation par déduction seule est particulièrement important : il confirme que `active_domains_from_engine()` vérifie à la fois le chemin findings (filtre WARN/ALERT) et le chemin déductions (sans filtre), et que cette asymétrie est intentionnelle.
+
+### Tests
+
+4261/4261 (+23 nouveaux, 2 mis à jour) :
+
+#### `tests/test_domain_scores.py` — `TestEngineLevelDomainCap` (+6)
+
+Six nouveaux cas dans une nouvelle classe couvrant le fix du plafond de domaine : plafond appliqué avec peu de déductions · plafond appliqué quand le score brut global est déjà sous seuil (delta absent du breakdown) · pas de sur-plafonnement si déjà au cap · score ne dépasse jamais le plafond · pas de saignement vers d'autres domaines · tous scores dans la plage.
+
+#### `tests/test_firewall.py` — `TestOrphanRules` (+3)
+
+Trois nouveaux cas dans la classe `TestOrphanRules` existante : règle bare-port signalée si rien en écoute · non signalée si TCP en écoute · non signalée si UDP en écoute.
+
+#### `tests/test_manage_logs.py` — `TestStatFallback` (+2)
+
+Régression pour le fix race condition `.stat()` de v0.2.1. Les boucles d'affichage mode texte dans `_run_manage_logs_plain()` avaient été mises à jour en v0.2.1 pour envelopper `.stat()` dans `try/except OSError` — mais aucun test ne couvrait le chemin de repli.
+
+Un helper `_stat_raises_for_logs` est défini au niveau module (capturé avant tout run de test) qui lève `OSError` uniquement pour les fichiers `.log`, en déléguant au vrai `Path.stat` pour les répertoires. C'est nécessaire car `Path.exists()` de Python 3.12 appelle `self.stat()` en interne — un mock global casserait `exists()` sur les répertoires et ferait échouer les tests.
+
+```python
+_real_path_stat = Path.stat
+
+def _stat_raises_for_logs(self, *, follow_symlinks=True):
+    if self.suffix == ".log":
+        raise OSError("race: file disappeared between scan and display")
+    return _real_path_stat(self, follow_symlinks=follow_symlinks)
+```
+
+| Test | Couverture |
+|------|------------|
+| `test_cur_logs_stat_oserror_uses_fallback` | `.stat()` lève dans la boucle `cur_logs` → `"(0 "` et `"?"` dans la sortie |
+| `test_extra_logs_stat_oserror_uses_fallback` | `.stat()` lève dans la boucle `extra_sections` → idem |
+
+#### `tests/test_clamav.py` (2 mis à jour)
+
+| Test | Avant | Après |
+|------|-------|-------|
+| `test_db_very_outdated_deducts_1` (était `_deducts_2`) | vérifiait `pts == 2` | vérifie `pts == 1` |
+| `test_worst_case` | vérifiait total == 4 | vérifie total == 3 |
+
+---
+
 ## [v0.2.1] — 02-05-2026
 
 Hotfix défensif — 17 améliorations ciblées identifiées par un audit dual-agent (passes indépendantes par Claude et Copilot). Aucune nouvelle fonctionnalité, aucun changement de comportement, aucun nouveau test. 4238/4238 inchangés.

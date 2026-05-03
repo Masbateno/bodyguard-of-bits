@@ -272,3 +272,29 @@ class TestOrphanRules:
         result = check_rules("", numbered, _t, listening_ports=set())
         keys = [f.key for f in result.findings]
         assert "rules.orphan_rule" not in keys
+
+    def test_bare_port_rule_flagged_when_nothing_listening(self):
+        """Protocol-unspecified rule (e.g. '57621') must be flagged as orphan."""
+        numbered = (
+            "[ 1] 22/tcp                     ALLOW IN    Anywhere\n"
+            "[ 2] 57621                      ALLOW IN    192.168.1.0/24\n"
+        )
+        result = check_rules("", numbered, _t, listening_ports={"22/tcp"})
+        keys = [f.key for f in result.findings]
+        assert "rules.orphan_rule" in keys
+        orphan = next(f for f in result.findings if f.key == "rules.orphan_rule")
+        assert "57621" in (orphan.cmd or "")
+
+    def test_bare_port_rule_not_flagged_when_tcp_listening(self):
+        """Bare-port rule must not be flagged if port/tcp is in listening_ports."""
+        numbered = "[ 1] 57621                      ALLOW IN    192.168.1.0/24\n"
+        result = check_rules("", numbered, _t, listening_ports={"57621/tcp"})
+        keys = [f.key for f in result.findings]
+        assert "rules.orphan_rule" not in keys
+
+    def test_bare_port_rule_not_flagged_when_udp_listening(self):
+        """Bare-port rule must not be flagged if port/udp is in listening_ports."""
+        numbered = "[ 1] 57621                      ALLOW IN    192.168.1.0/24\n"
+        result = check_rules("", numbered, _t, listening_ports={"57621/udp"})
+        keys = [f.key for f in result.findings]
+        assert "rules.orphan_rule" not in keys

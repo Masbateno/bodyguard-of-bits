@@ -211,7 +211,7 @@ def check_clamav(snapshot: ClamAVSnapshot, t=None) -> CheckResult:
         )
         result.add_deduction(
             reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
-            points=2, context="local", key="clamav.db_very_outdated",
+            points=1, context="local", key="clamav.db_very_outdated",
         )
     elif snapshot.db_age_days >= _DB_WARN_DAYS:
         result.warn(

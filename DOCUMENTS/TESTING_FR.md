@@ -11,10 +11,74 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.2.2  | 4255  | +17 nouveaux tests · 2 mis à jour : `TestStatFallback` · `TestScoringInvariants` · fix règle UFW sans protocole · ClamAV 1pt · `ScoreCap.key` · domaines INFO exclus |
 | v0.2.0  | 4238  | +32 nouveaux tests · 3 corrigés : `_strip_unsigned` · `_detect_mta` · `set_global_score` · plafonds par outil · dominance IoT WARN |
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.2.2 — 4255/4255 (02-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4255 passed in 4.42s
+```
+
+**Nouveaux tests (+17) :**
+
+#### `tests/test_firewall.py` — `TestOrphanRules` (+3)
+
+| Test | Couverture |
+|------|------------|
+| `test_bare_port_rule_flagged_when_nothing_listening` | `57621 ALLOW IN` sans TCP ni UDP en écoute → signalé comme orphelin |
+| `test_bare_port_rule_not_flagged_when_tcp_listening` | `57621/tcp` dans les ports en écoute → non signalé |
+| `test_bare_port_rule_not_flagged_when_udp_listening` | `57621/udp` dans les ports en écoute → non signalé |
+
+#### `tests/test_scoring.py` — `TestScoringInvariants` (+5)
+
+Invariants structurels du moteur de scoring — propriétés devant tenir quel que soit l'input :
+
+| Test | Invariant |
+|------|-----------|
+| `test_score_floor_is_zero_on_huge_deduction` | Le score ne descend jamais sous 0, même avec 999 points de déduction |
+| `test_score_ceiling_is_max_on_no_deductions` | Le score vaut MAX_SCORE sans déductions |
+| `test_deductions_are_monotone_decreasing` | Chaque déduction ne peut qu'abaisser ou maintenir le score |
+| `test_cap_above_current_score_is_noop` | Un plafond supérieur au score actuel ne le modifie pas |
+| `test_score_after_domain_override_in_valid_range` | Après `apply_domain_score_override()`, score ∈ [0, 10] |
+
+#### `tests/test_domain_scores.py` — `TestScoringInvariants` (+7)
+
+Invariants structurels pour le pipeline de scoring par domaine :
+
+| Test | Invariant |
+|------|-----------|
+| `test_info_only_findings_do_not_activate_domain` | Findings INFO sans déduction n'activent pas le domaine |
+| `test_warn_finding_activates_domain` | Un finding WARN active le domaine correspondant |
+| `test_alert_finding_activates_domain` | Un finding ALERT active le domaine correspondant |
+| `test_deduction_alone_activates_domain` | Une déduction seule (sans finding) active le domaine |
+| `test_global_average_bounded_by_active_domain_scores` | Moyenne globale ∈ [min, max] des scores de domaines actifs |
+| `test_all_domain_scores_in_valid_range` | Chaque score de domaine toujours dans [0, MAX_SCORE] |
+| `test_compute_global_always_in_valid_range` | `compute_global_from_domains` retourne toujours une valeur dans [0, 10] |
+
+#### `tests/test_manage_logs.py` — `TestStatFallback` (+2)
+
+Tests de régression pour le fix race condition `.stat()` de v0.2.1. Un fichier log peut disparaître entre le scan du répertoire et la boucle d'affichage (ex. logrotate en parallèle). Le mock cible uniquement les fichiers `.log` pour ne pas casser `Path.exists()` sur les répertoires (Python 3.12 : `exists()` appelle `self.stat()` en interne).
+
+| Test | Couverture |
+|------|------------|
+| `TestStatFallback.test_cur_logs_stat_oserror_uses_fallback` | `.stat()` lève `OSError` dans la boucle `cur_logs` → sortie affiche `(0 KB)` et `"?"` sans crash |
+| `TestStatFallback.test_extra_logs_stat_oserror_uses_fallback` | `.stat()` lève `OSError` dans la boucle `extra_sections` → même sortie de repli |
+
+**Tests mis à jour (2) :**
+
+| Fichier | Test | Changement |
+|---------|------|------------|
+| `tests/test_clamav.py` | `test_db_very_outdated_deducts_1` (était `_deducts_2`) | Déduction `clamav.db_very_outdated` réduite de 2pt à 1pt (Fix 3) |
+| `tests/test_clamav.py` | `test_worst_case` | Total déductions 4→3 (freshclam:1 + db_very_outdated:1 + scan_very_old:1) |
 
 ---
 

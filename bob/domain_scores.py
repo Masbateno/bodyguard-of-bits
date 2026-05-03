@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from bob.scoring import ScoreEngine
 
-from bob.scoring import MAX_SCORE
+from bob.scoring import MAX_SCORE, FindingLevel
 
 # ---------------------------------------------------------------------------
 # Domain definitions
@@ -118,12 +118,17 @@ def active_domains_from_engine(engine: "ScoreEngine") -> frozenset[str]:
     Used to hide domains whose service is not installed (e.g. Samba absent →
     no samba.* findings → domain excluded from the score display).
     """
+    _actionable = (FindingLevel.WARN, FindingLevel.ALERT)
     active: set[str] = set()
     for finding in engine.findings:
+        if finding.level not in _actionable:
+            continue
         domain = _key_to_domain(finding.key)
         if domain:
             active.add(domain)
     for finding in engine.ignored_findings:
+        if finding.level not in _actionable:
+            continue
         domain = _key_to_domain(finding.key)
         if domain:
             active.add(domain)
@@ -172,6 +177,19 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
             tool_contributed[prefix] = already + allowed
             points = allowed
         domain_deductions[domain] += points
+
+    # Apply engine-level domain cap (e.g. firewall inactive → max 3/10 for the
+    # firewall domain).  The cap delta is normally added to the breakdown when the
+    # global raw_score exceeds the cap, but if many other deductions already push
+    # the global raw_score below the cap threshold the delta is never appended.
+    # We enforce it here at the domain level so the displayed score is always ≤ cap.
+    engine_cap = engine.cap_info
+    if engine_cap and engine_cap.key:
+        cap_domain = _key_to_domain(engine_cap.key)
+        if cap_domain and cap_domain in domain_deductions:
+            raw_domain = MAX_SCORE - domain_deductions[cap_domain]
+            if raw_domain > engine_cap.maximum:
+                domain_deductions[cap_domain] += raw_domain - engine_cap.maximum
 
     return {
         domain: {
