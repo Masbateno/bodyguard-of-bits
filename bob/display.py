@@ -445,8 +445,11 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
         lines.extend(_wrap_for_box(icon_prefix, item.message, inner))
         if item.cmd:
             cmd_prefix = " " * len(icon_prefix) + ("ℹ " if item.cmd_type == "check" else "→ ")
-            for content, val in _wrap_for_box(cmd_prefix, item.cmd, inner):
-                lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))
+            cont_prefix = " " * len(cmd_prefix)
+            for i, cmd_line in enumerate(item.cmd.splitlines()):
+                pfx = cmd_prefix if i == 0 else cont_prefix
+                for content, val in _wrap_for_box(pfx, cmd_line, inner):
+                    lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))
         if item.note:
             note_prefix = " " * len(icon_prefix) + "ℹ "
             lines.extend(_wrap_for_box(note_prefix, item.note, inner))

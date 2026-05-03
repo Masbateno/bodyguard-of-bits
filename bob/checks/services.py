@@ -383,10 +383,7 @@ def _check_port_exposure(
         result.info(message=port_msg)
 
     elif exposure == Exposure.NOT_LISTENING:
-        if snap.service.is_high_or_critical:
-            result.warn(message=port_msg, nature="improvement")
-        else:
-            result.info(message=port_msg)
+        result.info(message=port_msg)
 
 
 # ---------------------------------------------------------------------------

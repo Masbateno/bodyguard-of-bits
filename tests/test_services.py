@@ -386,24 +386,26 @@ class TestPortExposureFindings:
         result = check_services([snap])
         assert has_level(result, "info")
 
-    def test_not_listening_critical_adds_warn(self):
-        """NOT_LISTENING: critical service installed but port not listening → WARN."""
+    def test_not_listening_critical_adds_info(self):
+        """NOT_LISTENING: critical service port not listening → INFO only (not a risk)."""
         snap = make_snapshot(
             service=make_service(risk="critical"),
             state=ServiceState.UNKNOWN,
             exposures={"23/tcp": Exposure.NOT_LISTENING},
         )
         result = check_services([snap])
-        assert has_level(result, "warn")
+        assert has_level(result, "info")
+        assert not has_level(result, "warn")
 
-    def test_not_listening_high_adds_warn(self):
+    def test_not_listening_high_adds_info(self):
         snap = make_snapshot(
             service=make_service(risk="high"),
             state=ServiceState.UNKNOWN,
             exposures={"9090/tcp": Exposure.NOT_LISTENING},
         )
         result = check_services([snap])
-        assert has_level(result, "warn")
+        assert has_level(result, "info")
+        assert not has_level(result, "warn")
 
     def test_not_listening_no_deduction(self):
         snap = make_snapshot(
