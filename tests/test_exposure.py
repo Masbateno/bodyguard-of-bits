@@ -311,12 +311,11 @@ class TestSshItem:
         assert item.color == "ok"
 
     def test_not_installed_info_is_ok(self):
-        # ssh.not_installed is emitted at INFO level — must still show "not running"
         engine = _make_engine(("ssh.not_installed", FindingLevel.INFO))
         items = _call(engine=engine)
         item = _item(items, "ssh")
         assert item.color == "ok"
-        assert item.detail == _t("exposure.ssh_not_running")
+        assert item.detail == _t("exposure.ssh_not_installed")
 
     def test_not_installed_overrides_password_auth(self):
         engine = _make_engine(
@@ -326,7 +325,14 @@ class TestSshItem:
         items = _call(engine=engine)
         item = _item(items, "ssh")
         assert item.color == "ok"
-        assert item.detail == _t("exposure.ssh_not_running")
+        assert item.detail == _t("exposure.ssh_not_installed")
+
+    def test_not_active_shows_stopped_text(self):
+        engine = _make_engine(("ssh.not_active", FindingLevel.WARN))
+        items = _call(engine=engine)
+        item = _item(items, "ssh")
+        assert item.color == "ok"
+        assert item.detail == _t("exposure.ssh_stopped")
 
     def test_info_findings_do_not_affect_ssh(self):
         engine = _make_engine(("ssh.password_auth", FindingLevel.INFO))

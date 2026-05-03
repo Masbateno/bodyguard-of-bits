@@ -161,7 +161,7 @@
     },
     "state": {
       "active_enabled": "Service active and set to start automatically at boot",
-      "active_disabled": "Service is currently active but will not restart automatically",
+      "active_disabled": "{label} is currently active but will not restart automatically",
       "inactive_enabled": "Service is stopped but enabled at boot — may start at next reboot",
       "inactive_disabled": "{label} is installed but stopped and disabled. No immediate risk.",
       "installed_inactive_critical": "{label} is installed on this system — service is currently stopped, but the presence of this package is a potential attack vector",
@@ -697,7 +697,9 @@
     "info_decreased": "{delta} info notice(s) resolved since last audit",
     "info_increased": "{delta} new info notice(s) since last audit",
     "key_appeared": "New finding: {finding}",
-    "key_resolved": "Resolved: {finding}"
+    "key_resolved": "Resolved: {finding}",
+    "variable_deductions_increased": "Variable deductions +{delta} pt(s) (logs, network traffic)",
+    "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)"
   },
   "watch": {
     "header": "bob --watch  │  Interval: {interval}s  │  Ctrl+C to quit",
@@ -2004,7 +2006,8 @@
     "open_ports": "Listening ports",
     "no_open_ports": "none on all-interfaces",
     "ssh": "SSH",
-    "ssh_not_running": "not installed / not running",
+    "ssh_not_installed": "not installed",
+    "ssh_stopped": "installed — not running",
     "ssh_ok": "key-only, root login disabled",
     "ssh_root": "root login allowed",
     "ssh_password": "password auth enabled",

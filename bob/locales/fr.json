@@ -161,7 +161,7 @@
     },
     "state": {
       "active_enabled": "Service actif et démarré automatiquement au démarrage",
-      "active_disabled": "Le service est actif en ce moment, mais ne redémarrera pas automatiquement.",
+      "active_disabled": "{label} est actif en ce moment, mais ne redémarrera pas automatiquement.",
       "inactive_enabled": "Le service est arrêté mais activé au démarrage — peut démarrer au prochain redémarrage",
       "inactive_disabled": "{label} est installé mais arrêté et désactivé. Pas de risque immédiat.",
       "installed_inactive_critical": "{label} est installé sur ce système — le service est arrêté, mais la présence de ce paquet constitue un vecteur d'attaque potentiel",
@@ -697,7 +697,9 @@
     "info_decreased": "{delta} notice(s) informative(s) résolu(e)(s) depuis le dernier audit",
     "info_increased": "{delta} nouvelle(s) notice(s) informative(s) depuis le dernier audit",
     "key_appeared": "Nouveau finding : {finding}",
-    "key_resolved": "Résolu : {finding}"
+    "key_resolved": "Résolu : {finding}",
+    "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
+    "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)"
   },
   "watch": {
     "header": "bob --watch  │  Intervalle : {interval}s  │  Ctrl+C pour quitter",
@@ -2004,7 +2006,8 @@
     "open_ports": "Ports en écoute",
     "no_open_ports": "aucun sur toutes interfaces",
     "ssh": "SSH",
-    "ssh_not_running": "non installé / non démarré",
+    "ssh_not_installed": "non installé",
+    "ssh_stopped": "installé — non démarré",
     "ssh_ok": "clé uniquement, connexion root désactivée",
     "ssh_root": "connexion root autorisée",
     "ssh_password": "authentification par mot de passe activée",

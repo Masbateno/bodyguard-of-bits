@@ -302,7 +302,7 @@ def _check_single_service(
     # Active but not enabled at boot
     if snap.state == ServiceState.ACTIVE_DISABLED:
         result.warn(
-            message=_t("services.state.active_disabled"),
+            message=_t("services.state.active_disabled", label=snap.label),
             nature="improvement",
         )
 

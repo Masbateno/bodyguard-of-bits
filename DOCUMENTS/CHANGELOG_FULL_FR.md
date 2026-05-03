@@ -6,6 +6,233 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.2.3] — 03-05-2026
+
+Huit corrections identifiées lors d'une tournée d'audit multi-VM systématique (Linux Mint desktop, Debian 13, Kali, VM Linux Mint, Ubuntu 26.04). Trois corrections comportementales dans la couche de vérification, deux corrections infrastructure, et trois corrections de précision UX trouvées par comparaison multi-distros. Aucune nouvelle fonctionnalité. 4262/4262 tests (+1).
+
+---
+
+### Fix 1 — NOT_LISTENING toujours INFO (`bob/checks/services.py`, `tests/test_services.py`)
+
+#### Problème
+
+`_check_exposure()` dans `services.py` comportait une branche conditionnelle sur la sévérité pour `Exposure.NOT_LISTENING` :
+
+```python
+elif exposure == Exposure.NOT_LISTENING:
+    if snap.service.is_high_or_critical:
+        result.warn(message=port_msg, nature="improvement")
+    else:
+        result.info(message=port_msg)
+```
+
+Pour les services CRITIQUE/ÉLEVÉ (ex. Mosquitto, Redis, SSH) avec un port enregistré mais non lié activement, cela produisait un finding `⚠ [ATTENTION]` avec `nature="improvement"`. Ce finding apparaissait dans la boîte résumé sous "⚠ Améliorations possibles", alors qu'un port qui n'écoute pas est un état neutre — le service n'expose pas le port, ce qui est favorable.
+
+Trouvé sur : Linux Mint desktop (Telnet NOT_LISTENING dans le résumé malgré l'absence d'installation) et VM Linux Mint (Mosquitto 8883 en WARN alors que seul 1883 était lié).
+
+#### Correction
+
+```python
+elif exposure == Exposure.NOT_LISTENING:
+    result.info(message=port_msg)
+```
+
+La branche conditionnelle sur la sévérité est supprimée. `NOT_LISTENING` est informationnel sur tous les services.
+
+---
+
+### Fix 2 — Dominance locale IoT : déduction supprimée (`bob/checks/logs.py`, `tests/test_logs.py`)
+
+#### Problème
+
+`_check_local_dominance()` détecte quand une seule IP privée domine les logs UFW bloqués — pattern causé par des appareils IoT diffusant en UDP sur le réseau local. Précédemment :
+
+```python
+result.warn(
+    message=_t("logs.local_dominance", ...),
+    key="logs.local_dominance",
+    nature="improvement",
+)
+result.add_deduction(
+    reason=_t("deduction.local_dominance", ...),
+    points=1,
+    key="logs.local_dominance",
+)
+```
+
+Déduire 1 point pour du trafic IoT bénin était incorrect. La fonction identifiait déjà la source comme une adresse privée et la qualifiait de pattern faible sévérité ; pénaliser le score était contradictoire.
+
+Trouvé sur : Linux Mint desktop (score inférieur aux attentes ; diffusion IoT d'une prise connectée réduisant le score de 1 pt).
+
+#### Correction
+
+```python
+result.info(
+    message=_t("logs.local_dominance", ...),
+    key="logs.local_dominance",
+)
+```
+
+Rétrogradé en `result.info()`, sans déduction. Le message informatif reste visible dans l'audit complet.
+
+---
+
+### Fix 3 — Heredoc non tronqué (`bob/display.py`)
+
+#### Problème
+
+`_add_finding_lines()` passait la chaîne `item.cmd` entière à `_wrap_for_box()` :
+
+```python
+for content, val in _wrap_for_box(cmd_prefix, item.cmd, inner):
+    lines.append(...)
+```
+
+`_wrap_for_box()` appelle `text.split()` en interne, qui découpe sur tous les espaces blancs y compris `\n`. Les commandes multi-lignes (blocs heredoc dans les étapes de remédiation auditd) étaient fusionnées en une seule ligne continue, les rendant illisibles.
+
+Trouvé sur : Linux Mint desktop (bloc heredoc auditd affiché sur une seule ligne dans la boîte résumé).
+
+#### Correction
+
+```python
+cont_prefix = " " * len(cmd_prefix)
+for i, cmd_line in enumerate(item.cmd.splitlines()):
+    pfx = cmd_prefix if i == 0 else cont_prefix
+    for content, val in _wrap_for_box(pfx, cmd_line, inner):
+        lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))
+```
+
+Chaque ligne de `item.cmd` est traitée indépendamment par `_wrap_for_box()`. Les lignes de continuation utilisent un préfixe aligné (indenté pour correspondre au marqueur `→ ` ou `ℹ ` de la première ligne).
+
+---
+
+### Fix 4 — Garde contre les symlinks circulaires dans `--install-completion` (`bob/completion.py`)
+
+#### Problème
+
+`_install_completion()` vérifiait :
+
+```python
+candidate = home / ".local" / "bin" / "bob"
+if candidate.exists():
+    bin_src = candidate
+```
+
+Quand pipx était installé en root (`/usr/local/bin/bob`) et que `--install-completion` était exécuté en tant qu'utilisateur, `~/.local/bin/bob` était déjà un symlink pointant vers le binaire système. L'utiliser comme `bin_src` amenait l'installeur de completion à créer un nouveau symlink au même chemin pointant vers lui-même, produisant une chaîne circulaire (`~/.local/bin/bob → lui-même`).
+
+Trouvé sur : desktop de l'utilisateur après `--install-completion` ; `pipx upgrade` affichait ensuite un avertissement de symlink circulaire.
+
+#### Correction
+
+```python
+if candidate.exists() and candidate.resolve() != dst_bin.resolve():
+    bin_src = candidate
+```
+
+`resolve()` suit tous les symlinks jusqu'au chemin canonique. Si `candidate` et `dst_bin` se résolvent vers le même chemin, le candidat est ignoré et le binaire système est utilisé directement. `exists()` retourne déjà `False` pour les symlinks cassés ou circulaires, donc la vérification combinée couvre tous les cas d'échec.
+
+---
+
+### Fix 5 — Python 3.9 retiré (`pyproject.toml`, `.github/workflows/tests.yml`, `.github/workflows/publish.yml`)
+
+#### Problème
+
+Python 3.9 a atteint sa fin de vie en octobre 2025. `Path.stat()` n'accepte pas `follow_symlinks` en argument nommé avant Python 3.10, causant une `TypeError` dans `tests/test_manage_logs.py` sur le runner CI 3.9.
+
+#### Correction
+
+- `requires-python = ">=3.10"` dans `pyproject.toml` (était `">=3.9"`).
+- Classifier Python 3.9 supprimé de `pyproject.toml`.
+- Matrice CI dans `tests.yml` et `publish.yml` passée de `["3.9", "3.10", "3.12"]` à `["3.10", "3.12"]`.
+
+---
+
+### Fix 6 — Compare : delta de déductions variables (`bob/compare.py`, locales)
+
+#### Problème
+
+`AuditBaseline` stockait `score`, `alert_count`, `warn_count` et `finding_keys`, mais pas le total des points de déduction bruts. Quand le score changeait entre deux audits sans changement structurel (mêmes clés de findings, mêmes counts alertes/warns — ex. parce que les déductions basées sur les logs variaient avec l'activité réseau), `display_delta()` affichait uniquement :
+
+```
+⚠ Score dégradé de N point(s)
+```
+
+sans autre explication, empêchant l'utilisateur de comprendre pourquoi le score avait bougé.
+
+Trouvé sur : VM Debian 13 et VM Kali (delta de score sans explication structurelle).
+
+#### Correction
+
+`AuditBaseline` gagne `deduction_total: int = 0` (la valeur par défaut `0` permet le chargement des anciens baselines sans erreur). `AuditDelta` gagne `deduction_delta: int = 0`. `build_baseline()` calcule `sum(d.points for d in engine.breakdown)`. `load_baseline()` lit `raw.get("deduction_total", 0)`.
+
+`display_delta()` affiche le message de déductions variables quand :
+- `deduction_delta != 0`, ET
+- aucune explication structurelle n'existe (`alert_delta == 0`, `warn_delta == 0`, `new_finding_keys` vide, `resolved_finding_keys` vide).
+
+Nouvelles clés i18n : `compare.variable_deductions_increased`, `compare.variable_deductions_decreased`.
+
+---
+
+### Fix 7 — Surface d'attaque : label SSH scindé (`bob/exposure.py`, locales, `tests/test_exposure.py`)
+
+#### Problème
+
+`compute_exposure()` utilisait une seule clé i18n pour deux états SSH distincts :
+
+```python
+if "ssh.not_installed" in all_keys or "ssh.not_active" in bad_keys:
+    detail=t("exposure.ssh_not_running")  # "non installé / non démarré"
+```
+
+Quand SSH était installé mais son service arrêté (ex. Kali Linux, où `sshd` est intentionnellement inactif), le tableau de surface d'attaque affichait "non installé / non démarré" — factuellement incorrect, le paquet étant présent.
+
+Trouvé sur : VM Kali (SSH installé mais arrêté ; label indiquait "non installé").
+
+#### Correction
+
+```python
+if "ssh.not_installed" in all_keys:
+    detail=t("exposure.ssh_not_installed")   # "non installé"
+elif "ssh.not_active" in bad_keys:
+    detail=t("exposure.ssh_stopped")          # "installé — non démarré"
+```
+
+La clé `ssh_not_running` est remplacée par deux clés distinctes : `ssh_not_installed` et `ssh_stopped`. Nouveau test : `test_not_active_shows_stopped_text`.
+
+---
+
+### Fix 8 — Services : message `active_disabled` avec label du service (`bob/checks/services.py`, locales)
+
+#### Problème
+
+Quand un service était actif mais non activé au démarrage (`ServiceState.ACTIVE_DISABLED`), le message de finding était :
+
+```
+"Le service est actif en ce moment, mais ne redémarrera pas automatiquement."
+```
+
+Dans l'audit complet, ce message était contextuellement clair (il apparaissait sous l'en-tête de section `▶ NomDuService`). Dans la boîte résumé, le nom du service était absent, empêchant l'utilisateur d'identifier quel service était concerné sans parcourir l'audit complet.
+
+Trouvé sur : VM Linux Mint (Redis actif mais non activé ; boîte résumé affichait le message sans "Redis").
+
+#### Correction
+
+Chaîne i18n : `"{label} est actif en ce moment, mais ne redémarrera pas automatiquement."` (FR et EN mis à jour). Site d'appel : `_t("services.state.active_disabled", label=snap.label)`.
+
+---
+
+### Tests
+
+4262/4262 (+1 nouveau, 4 renommés/mis à jour) :
+
+| Fichier | Modification |
+|---------|-------------|
+| `tests/test_services.py` | `test_not_listening_critical_adds_warn` → `_adds_info` · `test_not_listening_high_adds_warn` → `_adds_info` · assertions changées en `has_level(result, "info")` et `not has_level(result, "warn")` |
+| `tests/test_logs.py` | `test_finding_is_warn_level` → `test_finding_is_info_level` (asserte `FindingLevel.INFO`) · `test_score_deduction_one_point` → `test_no_score_deduction` (asserte `len(local_deductions) == 0`) |
+| `tests/test_exposure.py` | `test_not_installed_info_is_ok` et `test_not_installed_overrides_password_auth` assertent la clé `exposure.ssh_not_installed` · +1 `test_not_active_shows_stopped_text` asserte la clé `exposure.ssh_stopped` |
+
+---
+
 ## [v0.2.2] — 03-05-2026
 
 Cinq corrections ciblées du scoring, un fix de locale, une passe d'uniformisation du logging sur trois modules, une correction du check de règle UFW sans protocole, une correction du plafond de domaine (UFW inactif), des tests d'invariants scoring et une documentation de la pondération égale des domaines. 4261/4261 tests (+23).

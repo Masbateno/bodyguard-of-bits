@@ -69,6 +69,7 @@ class AuditBaseline:
     open_ports:      list[str]       = field(default_factory=list)
     active_services: list[str]       = field(default_factory=list)
     finding_keys:    list[str] | None = None  # None = pre-v1.22 baseline (key absent)
+    deduction_total: int = 0                  # 0 = pre-v0.2.3 baseline (field absent)
 
 
 @dataclass
@@ -90,6 +91,7 @@ class AuditDelta:
     stopped_services: list[str]   # became inactive
     new_finding_keys:      list[str] = field(default_factory=list)  # ALERT/WARN keys new since last audit
     resolved_finding_keys: list[str] = field(default_factory=list)  # ALERT/WARN keys resolved
+    deduction_delta:       int = 0                                   # change in total raw deduction points
 
     def is_empty(self) -> bool:
         """Return True when no changes were detected since the previous audit."""
@@ -147,6 +149,7 @@ def build_baseline(
         for f in engine.findings
         if f.key and f.level in (FindingLevel.ALERT, FindingLevel.WARN)
     })
+    deduction_total = sum(d.points for d in engine.breakdown)
 
     return AuditBaseline(
         timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -157,6 +160,7 @@ def build_baseline(
         open_ports=open_ports,
         active_services=active_services,
         finding_keys=finding_keys,
+        deduction_total=deduction_total,
     )
 
 
@@ -197,6 +201,7 @@ def load_baseline(path: Path | None = None) -> AuditBaseline | None:
             open_ports=list(raw.get("open_ports", [])),
             active_services=list(raw.get("active_services", [])),
             finding_keys=list(raw["finding_keys"]) if isinstance(raw.get("finding_keys"), list) else None,
+            deduction_total=int(raw.get("deduction_total", 0)),
         )
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         logger.debug("load_baseline: could not read %s: %s", src, exc)
@@ -248,6 +253,7 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
         stopped_services=sorted(prev_svcs - curr_svcs),
         new_finding_keys=new_finding_keys,
         resolved_finding_keys=resolved_finding_keys,
+        deduction_delta=curr.deduction_total - prev.deduction_total,
     )
 
 
@@ -296,6 +302,21 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
         output_mod.print_ok(t("compare.info_decreased", delta=abs(delta.info_delta)))
     elif delta.info_delta > 0:
         output_mod.print_info(t("compare.info_increased", delta=delta.info_delta))
+
+    # --- Variable deductions (score moved without structural key/count changes) ---
+    has_structural_explanation = (
+        delta.alert_delta != 0
+        or delta.warn_delta != 0
+        or delta.new_finding_keys
+        or delta.resolved_finding_keys
+    )
+    if delta.deduction_delta != 0 and not has_structural_explanation:
+        if delta.deduction_delta > 0:
+            output_mod.print_info(t("compare.variable_deductions_increased",
+                                     delta=delta.deduction_delta))
+        else:
+            output_mod.print_info(t("compare.variable_deductions_decreased",
+                                     delta=abs(delta.deduction_delta)))
 
     # --- New / resolved ALERT+WARN finding keys ---
     for key in delta.new_finding_keys:

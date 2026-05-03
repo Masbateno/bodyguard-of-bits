@@ -128,11 +128,17 @@ def compute_exposure(
     if "ssh.weak_ciphers" in bad_keys or "ssh.weak_kex" in bad_keys:
         ssh_issues.append(t("exposure.ssh_weak_crypto"))
 
-    if "ssh.not_installed" in all_keys or "ssh.not_active" in bad_keys:
+    if "ssh.not_installed" in all_keys:
         items.append(ExposureItem(
             label=t("exposure.ssh"),
             icon="✔", color="ok",
-            detail=t("exposure.ssh_not_running"),
+            detail=t("exposure.ssh_not_installed"),
+        ))
+    elif "ssh.not_active" in bad_keys:
+        items.append(ExposureItem(
+            label=t("exposure.ssh"),
+            icon="✔", color="ok",
+            detail=t("exposure.ssh_stopped"),
         ))
     elif ssh_issues:
         color = "alert" if any(k in alert_keys for k in

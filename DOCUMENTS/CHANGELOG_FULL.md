@@ -6,6 +6,235 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.2.3] — 2026-05-03
+
+Eight fixes identified during a systematic multi-VM audit round (Linux Mint desktop, Debian 13, Kali, Linux Mint test VM, Ubuntu 26.04). Three behavioural bug fixes in the check layer, two infrastructure fixes, and three UX precision fixes found by cross-distro comparison. No new features. 4262/4262 tests (+1).
+
+---
+
+### Fix 1 — NOT_LISTENING always INFO (`bob/checks/services.py`, `tests/test_services.py`)
+
+#### Problem
+
+`_check_exposure()` in `services.py` had a severity-based branch for `Exposure.NOT_LISTENING`:
+
+```python
+elif exposure == Exposure.NOT_LISTENING:
+    if snap.service.is_high_or_critical:
+        result.warn(message=port_msg, nature="improvement")
+    else:
+        result.info(message=port_msg)
+```
+
+For HIGH/CRITICAL services (e.g. Mosquitto, Redis, SSH) with a registered port that was not actively bound, this produced a `⚠ [ATTENTION]` finding with `nature="improvement"`. That finding appeared in the summary box under "⚠ Améliorations possibles", even though a non-listening port is a neutral state — the service is not exposing the port, which is good.
+
+The original intent was to flag services that should be listening but aren't. In practice, services legitimately bind only a subset of their registered ports (Mosquitto 1883 only, Nginx 80 only, etc.), making this a systematic false positive for HIGH/CRITICAL services.
+
+Found on: Linux Mint desktop (Telnet NOT_LISTENING in summary despite not being installed) and Linux Mint test VM (Mosquitto 8883 as WARN when only 1883 was bound).
+
+#### Fix
+
+```python
+elif exposure == Exposure.NOT_LISTENING:
+    result.info(message=port_msg)
+```
+
+The severity branch is removed. `NOT_LISTENING` is informational on all services.
+
+---
+
+### Fix 2 — IoT local dominance: deduction removed (`bob/checks/logs.py`, `tests/test_logs.py`)
+
+#### Problem
+
+`_check_local_dominance()` detects when a single private IP dominates UFW block logs — a pattern caused by IoT devices broadcasting UDP on the local network. Previously:
+
+```python
+result.warn(
+    message=_t("logs.local_dominance", ...),
+    key="logs.local_dominance",
+    nature="improvement",
+)
+result.add_deduction(
+    reason=_t("deduction.local_dominance", ...),
+    points=1,
+    key="logs.local_dominance",
+)
+```
+
+Deducting 1 point for benign IoT traffic was incorrect. The function already identifies the source as a private address and labels it as a low-severity pattern; penalising the score was contradictory.
+
+Found on: Linux Mint desktop (score lower than expected; IoT broadcast from a smart plug reducing score by 1 pt).
+
+#### Fix
+
+```python
+result.info(
+    message=_t("logs.local_dominance", ...),
+    key="logs.local_dominance",
+)
+```
+
+Demoted to `result.info()`, no deduction. The informational message still surfaces in the full audit output.
+
+---
+
+### Fix 3 — Heredoc commands no longer mangled (`bob/display.py`)
+
+#### Problem
+
+`_add_finding_lines()` passed the full `item.cmd` string to `_wrap_for_box()`:
+
+```python
+for content, val in _wrap_for_box(cmd_prefix, item.cmd, inner):
+    lines.append(...)
+```
+
+`_wrap_for_box()` calls `text.split()` internally, which splits on all whitespace including `\n`. Multi-line commands (heredoc blocks used in `auditd` remediation steps) were collapsed into a single continuous line, making them unreadable.
+
+Found on: Linux Mint desktop (auditd heredoc rule block displayed as one line in the summary box).
+
+#### Fix
+
+```python
+cont_prefix = " " * len(cmd_prefix)
+for i, cmd_line in enumerate(item.cmd.splitlines()):
+    pfx = cmd_prefix if i == 0 else cont_prefix
+    for content, val in _wrap_for_box(pfx, cmd_line, inner):
+        lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))
+```
+
+Each line of `item.cmd` is processed independently by `_wrap_for_box()`. Continuation lines use an aligned prefix (indented to match the first line's `→ ` or `ℹ ` marker).
+
+---
+
+### Fix 4 — Circular symlink guard in `--install-completion` (`bob/completion.py`)
+
+#### Problem
+
+`_install_completion()` checked:
+
+```python
+candidate = home / ".local" / "bin" / "bob"
+if candidate.exists():
+    bin_src = candidate
+```
+
+When pipx was installed system-wide (`/usr/local/bin/bob`) and `--install-completion` was run as the user, `~/.local/bin/bob` was already a symlink pointing at the system binary. Using it as `bin_src` caused the completion installer to create a new symlink at the same path pointing back at itself, producing a circular chain (`~/.local/bin/bob → itself`).
+
+Found on: user's desktop after running `--install-completion`; `pipx upgrade` then printed a circular symlink warning.
+
+#### Fix
+
+```python
+if candidate.exists() and candidate.resolve() != dst_bin.resolve():
+    bin_src = candidate
+```
+
+`resolve()` follows all symlinks to the canonical path. If `candidate` and `dst_bin` resolve to the same path, the candidate is skipped and the system binary is used directly. `exists()` already returns `False` for broken or circular symlinks, so the combined check covers all failure modes.
+
+---
+
+### Fix 5 — Python 3.9 dropped (`pyproject.toml`, `.github/workflows/tests.yml`, `.github/workflows/publish.yml`)
+
+#### Problem
+
+Python 3.9 reached end-of-life in October 2025. `Path.stat()` does not accept `follow_symlinks` as a keyword argument until Python 3.10, causing `TypeError` in `tests/test_manage_logs.py` on the 3.9 CI runner.
+
+#### Fix
+
+- `requires-python = ">=3.10"` in `pyproject.toml` (was `">=3.9"`).
+- Python 3.9 classifier removed from `pyproject.toml`.
+- CI matrix in `tests.yml` and `publish.yml` changed from `["3.9", "3.10", "3.12"]` to `["3.10", "3.12"]`.
+
+---
+
+### Fix 6 — Compare: variable deduction delta (`bob/compare.py`, locales)
+
+#### Problem
+
+`AuditBaseline` stored `score`, `alert_count`, `warn_count`, and `finding_keys`, but not the total raw deduction points. When the score changed between audits without any structural change (same finding keys, same alert/warn counts — e.g. because log-based deductions varied with network activity), `display_delta()` showed only:
+
+```
+⚠ Score dégradé de N point(s)
+```
+
+with no further explanation, leaving the user unable to understand why the score moved.
+
+Found on: Debian 13 VM and Kali VM (score delta without structural explanation).
+
+#### Fix
+
+`AuditBaseline` gains `deduction_total: int = 0` (default `0` keeps old baselines loadable without error). `AuditDelta` gains `deduction_delta: int = 0`. `build_baseline()` computes `sum(d.points for d in engine.breakdown)`. `load_baseline()` reads `raw.get("deduction_total", 0)`.
+
+`display_delta()` shows the variable-deductions message when:
+- `deduction_delta != 0`, AND
+- no structural explanation exists (`alert_delta == 0`, `warn_delta == 0`, `new_finding_keys` empty, `resolved_finding_keys` empty).
+
+New i18n keys: `compare.variable_deductions_increased`, `compare.variable_deductions_decreased`.
+
+---
+
+### Fix 7 — Exposure: SSH state label split (`bob/exposure.py`, locales, `tests/test_exposure.py`)
+
+#### Problem
+
+`compute_exposure()` used a single i18n key for two distinct SSH states:
+
+```python
+if "ssh.not_installed" in all_keys or "ssh.not_active" in bad_keys:
+    detail=t("exposure.ssh_not_running")  # "non installé / non démarré"
+```
+
+When SSH was installed but its service was stopped (e.g. Kali Linux, where `sshd` is intentionally inactive), the attack-surface table displayed "non installé / non démarré" — factually incorrect, as the package was present.
+
+Found on: Kali VM (SSH installed but stopped; label claimed "non installé").
+
+#### Fix
+
+```python
+if "ssh.not_installed" in all_keys:
+    detail=t("exposure.ssh_not_installed")   # "non installé"
+elif "ssh.not_active" in bad_keys:
+    detail=t("exposure.ssh_stopped")          # "installé — non démarré"
+```
+
+The `ssh_not_running` key is replaced by two distinct keys: `ssh_not_installed` and `ssh_stopped`. New test: `test_not_active_shows_stopped_text`.
+
+---
+
+### Fix 8 — Services: `active_disabled` message includes service label (`bob/checks/services.py`, locales)
+
+#### Problem
+
+When a service was active but not enabled at boot (`ServiceState.ACTIVE_DISABLED`), the finding message was:
+
+```
+"Le service est actif en ce moment, mais ne redémarrera pas automatiquement."
+```
+
+In the full audit output this was contextually clear (it appeared under the `▶ ServiceName` section header). In the summary box the service name was absent, leaving the user unable to identify which service was concerned without scrolling through the full output.
+
+Found on: Linux Mint test VM (Redis active but not enabled; summary box showed the message without "Redis").
+
+#### Fix
+
+i18n string: `"{label} est actif en ce moment, mais ne redémarrera pas automatiquement."` (FR/EN both updated). Call site: `_t("services.state.active_disabled", label=snap.label)`.
+
+---
+
+### Tests
+
+4262/4262 (+1 new, 4 renamed/updated):
+
+| File | Change |
+|------|--------|
+| `tests/test_services.py` | `test_not_listening_critical_adds_warn` → `_adds_info` · `test_not_listening_high_adds_warn` → `_adds_info` · assertions changed to `has_level(result, "info")` and `not has_level(result, "warn")` |
+| `tests/test_logs.py` | `test_finding_is_warn_level` → `test_finding_is_info_level` (asserts `FindingLevel.INFO`) · `test_score_deduction_one_point` → `test_no_score_deduction` (asserts `len(local_deductions) == 0`) |
+| `tests/test_exposure.py` | `test_not_installed_info_is_ok` and `test_not_installed_overrides_password_auth` assert `exposure.ssh_not_installed` key · +1 `test_not_active_shows_stopped_text` asserts `exposure.ssh_stopped` key |
+
+---
+
 ## [v0.2.2] — 2026-05-03
 
 Five targeted scoring fixes, a locale fix, a logging uniformity pass across three modules, a firewall orphan-rule fix for protocol-unspecified UFW rules, scoring invariant tests, and equal-weight domain documentation. No new features outside scoring. 4261/4261 tests (+23).
