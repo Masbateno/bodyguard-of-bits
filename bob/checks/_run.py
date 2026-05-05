@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 _CMD_TIMEOUT = 10  # seconds — shared across all check modules
 
@@ -46,6 +47,10 @@ def _command_exists(name: str) -> bool:
 def _identity_t(key: str, **kwargs) -> str:
     """Fallback translation function — returns the key itself."""
     return key
+
+
+TranslationFunc = Callable[..., str]
+"""Type alias for BOB's translation function: t(key, **kwargs) -> str."""
 
 
 def _is_safe_config_path(path) -> bool:

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, NamedTuple, Tuple
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -193,7 +193,7 @@ def _is_nopasswd_all(line: str) -> bool:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_file_perms(snapshot: FilePermsSnapshot, *, t=None) -> CheckResult:
+def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check sensitive file permissions and sudoers configuration.
 

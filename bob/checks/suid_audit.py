@@ -18,7 +18,7 @@ import stat
 import subprocess
 from dataclasses import dataclass, field
 
-from bob.checks._run import _C_LOCALE_ENV, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -189,7 +189,7 @@ class SuidSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_suid_audit(snapshot: SuidSnapshot, t=None) -> CheckResult:
+def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check for unexpected SUID/SGID binaries.
 

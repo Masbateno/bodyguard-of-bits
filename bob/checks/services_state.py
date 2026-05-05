@@ -22,7 +22,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import List
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 
@@ -152,7 +152,7 @@ class ServicesStateSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_services_state(snapshot: ServicesStateSnapshot, *, t=None) -> CheckResult:
+def check_services_state(snapshot: ServicesStateSnapshot, *, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit security-relevant systemd services for unexpected inactivity.
 

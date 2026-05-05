@@ -52,6 +52,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from bob.checks._run import TranslationFunc
 from bob.scoring import CheckResult
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ class PluginCheck:
     path:    Path
     _module: Any
 
-    def run(self, t=None) -> CheckResult:
+    def run(self, t: TranslationFunc | None = None) -> CheckResult:
         """
         Execute the plugin's run_check() function.
 

@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _C_LOCALE_ENV, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
 from bob.scoring import CheckResult
 
 logger = logging.getLogger(__name__)
@@ -190,7 +190,7 @@ class LogsSnapshot:
 def check_logs(
     snapshot: LogsSnapshot,
     audited_ports: set[str] | None = None,
-    t=None,
+    t: TranslationFunc | None = None,
 ) -> CheckResult:
     """
     Analyse log snapshot and return findings.

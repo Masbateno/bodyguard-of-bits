@@ -28,7 +28,7 @@ import os
 import glob
 from dataclasses import dataclass
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Possible states returned by the detection logic
@@ -114,7 +114,7 @@ class SecureBootSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_secure_boot(snapshot: SecureBootSnapshot, t=None,
+def check_secure_boot(snapshot: SecureBootSnapshot, t: TranslationFunc | None = None,
                       profile_name: str = "server") -> CheckResult:
     """
     Analyse SecureBootSnapshot and return findings.

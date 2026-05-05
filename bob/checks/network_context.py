@@ -23,7 +23,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from bob.checks._run import _identity_t, _run
+from bob.checks._run import TranslationFunc, _identity_t, _run
 from bob.scoring import CheckResult
 
 
@@ -105,7 +105,7 @@ class NetworkContextSnapshot:
 _SENSITIVE_REMOTE_PORTS = {3306, 5432, 6379, 27017, 5984}  # MySQL, PG, Redis, Mongo, CouchDB
 
 
-def check_network_context(snapshot: NetworkContextSnapshot, t=None) -> CheckResult:
+def check_network_context(snapshot: NetworkContextSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit the network context snapshot and return findings.
 

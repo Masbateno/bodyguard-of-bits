@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -161,7 +161,7 @@ class UserAccountsSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_user_accounts(snapshot: UserAccountsSnapshot, *, t=None) -> CheckResult:
+def check_user_accounts(snapshot: UserAccountsSnapshot, *, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit user accounts for security issues.
 

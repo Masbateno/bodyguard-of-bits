@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from bob.checks._run import _C_LOCALE_ENV, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
 from bob.scoring import CheckResult
 
 _LOG_PATHS: list[Path] = [
@@ -188,7 +188,7 @@ class AuthLogSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_auth_log(snapshot: AuthLogSnapshot, t=None) -> CheckResult:
+def check_auth_log(snapshot: AuthLogSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse recent SSH logins and flag public-IP access.
 

@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 _VENDOR_RE = re.compile(r"^vendor_id\s*:\s*(.+)", re.MULTILINE | re.IGNORECASE)
@@ -109,7 +109,7 @@ class FirmwareSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_firmware(snapshot: FirmwareSnapshot, t=None) -> CheckResult:
+def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit firmware update status and CPU microcode installation.
 

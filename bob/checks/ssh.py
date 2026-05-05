@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ class SSHSnapshot:
 # Main check function (pure logic — no I/O)
 # ---------------------------------------------------------------------------
 
-def check_ssh(snapshot: SSHSnapshot, t=None, ssh_exposed: bool = True) -> CheckResult:
+def check_ssh(snapshot: SSHSnapshot, t: TranslationFunc | None = None, ssh_exposed: bool = True) -> CheckResult:
     """
     Check SSH server and client configuration.
 

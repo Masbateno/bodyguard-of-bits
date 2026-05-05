@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from bob.checks._run import _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 _WARN_DAYS      = 30
@@ -130,7 +130,7 @@ class SslCertsSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_ssl_certs(snapshot: SslCertsSnapshot, t=None) -> CheckResult:
+def check_ssl_certs(snapshot: SslCertsSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Evaluate certificate expiry and emit findings.
 

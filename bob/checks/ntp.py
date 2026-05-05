@@ -18,7 +18,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Known NTP service unit names (checked in order)
@@ -114,7 +114,7 @@ def _check_sync_fallback(service: str) -> bool:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_ntp(snapshot: NtpSnapshot, t=None) -> CheckResult:
+def check_ntp(snapshot: NtpSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse NTP snapshot and return findings.
 

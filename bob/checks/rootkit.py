@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 # Age thresholds (days)
@@ -170,7 +170,7 @@ def _scan_age_days(iso_date: str) -> Optional[int]:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_rootkit(snapshot: RootkitSnapshot, t=None) -> CheckResult:
+def check_rootkit(snapshot: RootkitSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse rootkit scanner snapshot and return findings.
 

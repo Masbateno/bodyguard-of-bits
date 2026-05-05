@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 _UMASK_RE = re.compile(r"^(?!\s*#)\s*(?:umask|UMASK)\s+([0-7]{3,4})\b", re.MULTILINE)
@@ -159,7 +159,7 @@ class UmaskSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_umask(snapshot: UmaskSnapshot, t=None) -> CheckResult:
+def check_umask(snapshot: UmaskSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Evaluate system umask and return a CheckResult.
 

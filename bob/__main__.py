@@ -192,6 +192,8 @@ def _run(argv=None) -> int:
             if config.profile:
                 user_config.set_profile(config.profile)
             active_profile = load_profile(profile_name)
+            if profile_name not in ("", "default", "server") and active_profile.name != profile_name:
+                output.print_warn(t("audit.profile_not_found", profile=profile_name))
 
             if config.watch_mode:
                 from bob.watch import run_watch
@@ -280,7 +282,6 @@ def _run(argv=None) -> int:
                     if not config.quiet:
                         output.print_info(f"Webhook: POST → {_webhook_url} [{_status}]")
                 except Exception as _exc:  # noqa: BLE001
-                    _log.warning("Webhook failed: %s", _exc)
                     print(f"Warning: webhook failed: {_exc}", file=sys.stderr)
             # ------------------------------------------------------------------------
 
@@ -388,7 +389,7 @@ def main(argv=None) -> int:
     except PermissionError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_ERROR
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"Fatal error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 

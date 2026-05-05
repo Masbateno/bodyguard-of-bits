@@ -29,7 +29,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Optional
 
-from bob.checks._run import _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 logger = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ class VirtSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_virtualization(snapshot: VirtSnapshot, t=None) -> CheckResult:
+def check_virtualization(snapshot: VirtSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse virtualisation snapshot and return a CheckResult.
 

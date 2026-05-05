@@ -18,7 +18,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass, field
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ class DesktopAppsSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_desktop_apps(snapshot: DesktopAppsSnapshot, t=None) -> CheckResult:
+def check_desktop_apps(snapshot: DesktopAppsSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse desktop apps snapshot and return findings.
 

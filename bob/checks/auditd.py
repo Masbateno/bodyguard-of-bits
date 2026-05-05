@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Set
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Files we consider essential to watch
@@ -122,7 +122,7 @@ def _count_rules(auditctl_output: str) -> int:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_auditd(snapshot: AuditdSnapshot, t=None,
+def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
                  profile_name: str = "server") -> CheckResult:
     """
     Analyse AuditdSnapshot and return findings.

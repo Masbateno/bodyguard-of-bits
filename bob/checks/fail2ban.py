@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Jail names that protect SSH (checked via substring match)
@@ -104,7 +104,7 @@ def _parse_jails(status_output: str) -> List[str]:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_fail2ban(snapshot: Fail2banSnapshot, t=None) -> CheckResult:
+def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse Fail2ban snapshot and return findings.
 

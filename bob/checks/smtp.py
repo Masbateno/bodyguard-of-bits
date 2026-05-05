@@ -20,7 +20,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Optional
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 # MTA binary names (process detection)
@@ -131,7 +131,7 @@ def _check_port_25() -> tuple[bool, str]:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_smtp(snapshot: SmtpSnapshot, t=None) -> CheckResult:
+def check_smtp(snapshot: SmtpSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse SMTP snapshot and return findings.
 

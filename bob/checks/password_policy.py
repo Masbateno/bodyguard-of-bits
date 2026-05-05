@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -157,7 +157,7 @@ class PasswordPolicySnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_password_policy(snapshot: PasswordPolicySnapshot, *, t=None) -> CheckResult:
+def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit the system password policy for security weaknesses.
 

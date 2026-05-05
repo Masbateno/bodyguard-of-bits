@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 _OPEN_ANY_RE = re.compile(
@@ -131,7 +131,7 @@ class FirewallStatus:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_firewall(status: FirewallStatus, t=None) -> CheckResult:
+def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> CheckResult:
     """
     Evaluate firewall status and return findings and deductions.
 
@@ -393,7 +393,7 @@ def _check_ipv6_coverage(
 # UFW logging check
 # ---------------------------------------------------------------------------
 
-def check_ufw_logging(status: FirewallStatus, t=None) -> CheckResult:
+def check_ufw_logging(status: FirewallStatus, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check that UFW logging is enabled at an appropriate level.
 

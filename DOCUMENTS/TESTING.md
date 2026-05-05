@@ -11,11 +11,81 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.2.4 | 4274 | +12 new tests: Debian -unsigned kernel UX · deduction_total None sentinel · 2 in test_kernel_modules · 10 in test_compare |
+| v0.2.3 | 4262 | +1 new · 4 renamed: NOT_LISTENING INFO · IoT no deduction · SSH stopped label split |
 | v0.2.2 | 4255 | +17 new tests · 2 updated: `TestStatFallback` · `TestScoringInvariants` · orphan-rule bare-port fix · ClamAV 1pt · ScoreCap.key · INFO domains excluded |
 | v0.2.0 | 4238 | +32 new tests · 3 corrected: scoring refactoring · cron MTA detection · kernel `-unsigned` false positive · IoT log dominance WARN |
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.2.4 — 4274/4274 (2026-05-05)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4274 passed in 4.65s
+```
+
+**New tests (+12):**
+
+#### `tests/test_kernel_modules.py` (+2)
+
+| Test | Coverage |
+|------|----------|
+| `test_up_to_date_names_running_kernel_not_unsigned_sibling` | Running `amd64` with `-unsigned` sibling sorted as `most_recent` → OK message names the running kernel, not the unsigned sibling |
+| `test_debian_signed_unsigned_pair_uses_obsolete_same_message` | Signed/unsigned pair at the top of the kernel list → `kernels_obsolete_same` key selected (no "running / latest" pair in text), not `kernels_obsolete` |
+
+#### `tests/test_compare.py` — `TestDisplayDelta` (+4)
+
+| Test | Coverage |
+|------|----------|
+| `test_variable_deductions_increased_shown_without_structural_change` | `deduction_delta > 0`, no structural change (no alert/warn delta, no new/resolved keys) → variable-deductions message shown |
+| `test_variable_deductions_decreased_shown_without_structural_change` | `deduction_delta < 0`, no structural change → variable-deductions decrease message shown |
+| `test_variable_deductions_suppressed_when_warn_delta` | `deduction_delta != 0` but `warn_delta != 0` → message suppressed (structural change explains score move) |
+| `test_variable_deductions_suppressed_when_new_finding_key` | `deduction_delta != 0` but `new_finding_keys` non-empty → message suppressed |
+
+#### `tests/test_compare.py` — `TestDeductionTracking` (new class, +6)
+
+| Test | Coverage |
+|------|----------|
+| `test_deduction_total_none_in_new_baseline_defaults` | `AuditBaseline()` default `deduction_total` is `None` (not `0`) |
+| `test_load_baseline_returns_none_when_field_absent` | Old JSON without `"deduction_total"` key → `None` after `load_baseline()` |
+| `test_load_baseline_returns_int_when_field_present` | New JSON with `"deduction_total": 5` → `5` (int) after `load_baseline()` |
+| `test_deduction_delta_zero_when_prev_is_old_baseline` | `prev.deduction_total is None` → `compute_delta()` returns `deduction_delta == 0` |
+| `test_deduction_delta_computed_when_both_tracked` | Both sides have int `deduction_total` → correct signed delta computed |
+| `test_deduction_delta_zero_when_unchanged` | Same value on both sides → `deduction_delta == 0` |
+
+---
+
+### v0.2.3 — 4262/4262 (2026-05-03)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4262 passed in 4.53s
+```
+
+**New tests (+1):**
+
+#### `tests/test_exposure.py` (+1)
+
+| Test | Coverage |
+|------|----------|
+| `test_not_active_shows_stopped_text` | SSH installed but service stopped → attack-surface table uses `exposure.ssh_stopped` key ("installé — non démarré"), not the merged `ssh_not_running` key |
+
+**Updated/renamed tests (4):**
+
+| File | Test | Change |
+|------|------|--------|
+| `tests/test_services.py` | `test_not_listening_critical_adds_warn` → `test_not_listening_critical_adds_info` | `NOT_LISTENING` demoted to INFO regardless of service severity |
+| `tests/test_services.py` | `test_not_listening_high_adds_warn` → `test_not_listening_high_adds_info` | Same — also asserts no WARN finding present |
+| `tests/test_logs.py` | `test_finding_is_warn_level` → `test_finding_is_info_level` | IoT local dominance demoted to INFO — asserts `FindingLevel.INFO` |
+| `tests/test_logs.py` | `test_score_deduction_one_point` → `test_no_score_deduction` | IoT local dominance: no deduction — asserts `len(local_deductions) == 0` |
 
 ---
 

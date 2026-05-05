@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -98,7 +98,7 @@ class HardeningSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_hardening(snapshot: HardeningSnapshot, t=None) -> CheckResult:
+def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check system hardening configuration.
 

@@ -12,6 +12,16 @@ import shlex
 import subprocess
 
 
+def _has_shell_ops(cmd: str) -> bool:
+    """Return True if cmd contains shell operators requiring shell=True."""
+    _SHELL_TOKENS = frozenset({"&&", "||", ";", "|", ">", ">>", "<", "&"})
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return True  # malformed quoting — treat as unsafe
+    return any(tok in _SHELL_TOKENS or tok.startswith("`") or tok.startswith("$(")
+               for tok in tokens)
+
 
 def run_fixes(engine, config, t) -> None:
     """Display and optionally apply automatic fixes."""
@@ -76,7 +86,6 @@ def run_fixes(engine, config, t) -> None:
         print(f"\033[1;33m  ⚠  {auto_msg}\033[0m")
         print()
 
-    _SHELL_OPS = ("&&", "||", ";", "|", ">", "<", "`", "$(")
     applied_cmds = []
     skipped_cmds = 0
 
@@ -91,7 +100,7 @@ def run_fixes(engine, config, t) -> None:
             answer = input(f"  {t('fixes.apply_prompt')} ").strip().lower()
 
         if answer == "y":
-            if any(op in cmd for op in _SHELL_OPS):
+            if _has_shell_ops(cmd):
                 print(f"  ✖ {t('fixes.manual')} (unsafe shell syntax in command)")
                 skipped_cmds += 1
                 print()

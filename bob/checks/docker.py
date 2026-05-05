@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 logger = logging.getLogger(__name__)
@@ -144,7 +144,7 @@ class DockerSnapshot:
 def check_docker(
     snapshot: DockerSnapshot,
     network_context: str = "local",
-    t=None,
+    t: TranslationFunc | None = None,
 ) -> CheckResult:
     """
     Evaluate Docker security snapshot and return findings.

@@ -722,6 +722,7 @@
   "audit": {
     "starting": "Starting audit",
     "audit_profile": "Audit profile: {profile}",
+    "profile_not_found": "Profile '{profile}' not found — using default (server)",
     "report_saved": "Detailed report: {path}",
     "running_checks": "Active checks: {checks}"
   },

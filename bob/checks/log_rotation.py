@@ -18,7 +18,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _C_LOCALE_ENV, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -101,7 +101,7 @@ class LogRotationSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_log_rotation(snapshot: LogRotationSnapshot, t=None) -> CheckResult:
+def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check log rotation and system journaling configuration.
 

@@ -482,3 +482,65 @@ class TestDisplayDelta:
     def test_resolved_finding_key_uses_ok(self):
         calls = self._run(_make_delta(resolved_finding_keys=["clamav.db_outdated"]))
         assert any("compare.key_resolved" in m for m in calls["ok"])
+
+    def test_variable_deductions_increased_shown_without_structural_change(self):
+        calls = self._run(_make_delta(deduction_delta=3))
+        assert any("compare.variable_deductions_increased" in m for m in calls["info"])
+
+    def test_variable_deductions_decreased_shown_without_structural_change(self):
+        calls = self._run(_make_delta(deduction_delta=-2))
+        assert any("compare.variable_deductions_decreased" in m for m in calls["info"])
+
+    def test_variable_deductions_suppressed_when_warn_delta(self):
+        calls = self._run(_make_delta(deduction_delta=5, warn_delta=1))
+        assert not any("compare.variable_deductions" in m for m in calls["info"])
+
+    def test_variable_deductions_suppressed_when_new_finding_key(self):
+        calls = self._run(_make_delta(deduction_delta=5, new_finding_keys=["hardening.rp_filter_disabled"]))
+        assert not any("compare.variable_deductions" in m for m in calls["info"])
+
+
+# ---------------------------------------------------------------------------
+# deduction_total tracking — pre-v0.2.3 baseline sentinel
+# ---------------------------------------------------------------------------
+
+class TestDeductionTracking:
+    def test_deduction_total_none_in_new_baseline_defaults(self):
+        bl = make_baseline()
+        assert bl.deduction_total is None
+
+    def test_load_baseline_returns_none_when_field_absent(self, tmp_path):
+        path = tmp_path / "bl.json"
+        path.write_text(json.dumps({"timestamp": "t", "score": 8,
+                                    "alert_count": 0, "warn_count": 2}),
+                        encoding="utf-8")
+        bl = load_baseline(path=path)
+        assert bl is not None
+        assert bl.deduction_total is None
+
+    def test_load_baseline_returns_int_when_field_present(self, tmp_path):
+        path = tmp_path / "bl.json"
+        path.write_text(json.dumps({"timestamp": "t", "score": 8,
+                                    "alert_count": 0, "warn_count": 2,
+                                    "deduction_total": 5}),
+                        encoding="utf-8")
+        bl = load_baseline(path=path)
+        assert bl is not None
+        assert bl.deduction_total == 5
+
+    def test_deduction_delta_zero_when_prev_is_old_baseline(self):
+        prev = make_baseline(deduction_total=None)
+        curr = make_baseline(deduction_total=13)
+        d = compute_delta(prev, curr)
+        assert d.deduction_delta == 0
+
+    def test_deduction_delta_computed_when_both_tracked(self):
+        prev = make_baseline(deduction_total=8)
+        curr = make_baseline(deduction_total=11)
+        d = compute_delta(prev, curr)
+        assert d.deduction_delta == 3
+
+    def test_deduction_delta_zero_when_unchanged(self):
+        bl = make_baseline(deduction_total=7)
+        d = compute_delta(bl, bl)
+        assert d.deduction_delta == 0

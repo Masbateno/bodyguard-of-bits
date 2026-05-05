@@ -16,6 +16,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from bob.checks._run import TranslationFunc
+
 _log = logging.getLogger(__name__)
 
 _CONFIG_DIR   = Path.home() / ".config" / "bob"
@@ -104,7 +106,7 @@ def _trend(entries: list[dict], idx: int) -> str:
     return "→"
 
 
-def render_history(entries: list[dict], t=None) -> list[str]:
+def render_history(entries: list[dict], t: TranslationFunc | None = None) -> list[str]:
     """
     Render score history as a sparkline + table.
 
@@ -142,7 +144,7 @@ def render_history(entries: list[dict], t=None) -> list[str]:
     return lines
 
 
-def display_history(t=None) -> None:
+def display_history(t: TranslationFunc | None = None) -> None:
     """Load and print score history to stdout."""
     entries = load_history()
     for line in render_history(entries, t=t):

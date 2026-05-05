@@ -11,11 +11,81 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.2.4  | 4274  | +12 nouveaux tests : UX kernel Debian -unsigned · sentinel None deduction_total · 2 dans test_kernel_modules · 10 dans test_compare |
+| v0.2.3  | 4262  | +1 nouveau · 4 renommés : NOT_LISTENING INFO · IoT sans déduction · label SSH arrêté scindé |
 | v0.2.2  | 4255  | +17 nouveaux tests · 2 mis à jour : `TestStatFallback` · `TestScoringInvariants` · fix règle UFW sans protocole · ClamAV 1pt · `ScoreCap.key` · domaines INFO exclus |
 | v0.2.0  | 4238  | +32 nouveaux tests · 3 corrigés : `_strip_unsigned` · `_detect_mta` · `set_global_score` · plafonds par outil · dominance IoT WARN |
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.2.4 — 4274/4274 (05-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4274 passed in 4.65s
+```
+
+**Nouveaux tests (+12) :**
+
+#### `tests/test_kernel_modules.py` (+2)
+
+| Test | Couverture |
+|------|------------|
+| `test_up_to_date_names_running_kernel_not_unsigned_sibling` | Kernel courant `amd64` avec sibling `-unsigned` trié en `most_recent` → le message OK nomme le kernel courant, pas le sibling non-signé |
+| `test_debian_signed_unsigned_pair_uses_obsolete_same_message` | Paire signé/non-signé en tête de la liste → clé `kernels_obsolete_same` sélectionnée (sans paire "courant / récent" dans le texte), pas `kernels_obsolete` |
+
+#### `tests/test_compare.py` — `TestDisplayDelta` (+4)
+
+| Test | Couverture |
+|------|------------|
+| `test_variable_deductions_increased_shown_without_structural_change` | `deduction_delta > 0`, aucun changement structurel (pas de delta alertes/warns, pas de clés nouvelles/résolues) → message déductions variables affiché |
+| `test_variable_deductions_decreased_shown_without_structural_change` | `deduction_delta < 0`, aucun changement structurel → message de diminution des déductions affiché |
+| `test_variable_deductions_suppressed_when_warn_delta` | `deduction_delta != 0` mais `warn_delta != 0` → message supprimé (changement structurel explique le mouvement de score) |
+| `test_variable_deductions_suppressed_when_new_finding_key` | `deduction_delta != 0` mais `new_finding_keys` non vide → message supprimé |
+
+#### `tests/test_compare.py` — `TestDeductionTracking` (nouvelle classe, +6)
+
+| Test | Couverture |
+|------|------------|
+| `test_deduction_total_none_in_new_baseline_defaults` | Valeur par défaut de `AuditBaseline().deduction_total` est `None` (pas `0`) |
+| `test_load_baseline_returns_none_when_field_absent` | Ancien JSON sans clé `"deduction_total"` → `None` après `load_baseline()` |
+| `test_load_baseline_returns_int_when_field_present` | Nouveau JSON avec `"deduction_total": 5` → entier `5` après `load_baseline()` |
+| `test_deduction_delta_zero_when_prev_is_old_baseline` | `prev.deduction_total is None` → `compute_delta()` retourne `deduction_delta == 0` |
+| `test_deduction_delta_computed_when_both_tracked` | Les deux côtés ont un `deduction_total` entier → delta signé correct calculé |
+| `test_deduction_delta_zero_when_unchanged` | Même valeur des deux côtés → `deduction_delta == 0` |
+
+---
+
+### v0.2.3 — 4262/4262 (03-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4262 passed in 4.53s
+```
+
+**Nouveaux tests (+1) :**
+
+#### `tests/test_exposure.py` (+1)
+
+| Test | Couverture |
+|------|------------|
+| `test_not_active_shows_stopped_text` | SSH installé mais service arrêté → tableau de surface d'attaque utilise la clé `exposure.ssh_stopped` ("installé — non démarré"), pas la clé fusionnée `ssh_not_running` |
+
+**Tests mis à jour / renommés (4) :**
+
+| Fichier | Test | Changement |
+|---------|------|------------|
+| `tests/test_services.py` | `test_not_listening_critical_adds_warn` → `test_not_listening_critical_adds_info` | `NOT_LISTENING` rétrogradé en INFO quelle que soit la sévérité du service |
+| `tests/test_services.py` | `test_not_listening_high_adds_warn` → `test_not_listening_high_adds_info` | Idem — asserte aussi l'absence de finding WARN |
+| `tests/test_logs.py` | `test_finding_is_warn_level` → `test_finding_is_info_level` | Dominance locale IoT rétrogradée en INFO — asserte `FindingLevel.INFO` |
+| `tests/test_logs.py` | `test_score_deduction_one_point` → `test_no_score_deduction` | Dominance locale IoT sans déduction — asserte `len(local_deductions) == 0` |
 
 ---
 

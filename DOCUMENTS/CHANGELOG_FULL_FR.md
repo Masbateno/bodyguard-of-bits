@@ -6,6 +6,220 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.2.4] — 05-05-2026
+
+Passe de durcissement du codebase post-audit, déclenchée par une revue systématique de l'ensemble du projet à la suite de la tournée multi-VM v0.2.3. Deux bugs UX kernel Debian `-unsigned` corrigés, une régression dans le pattern sentinel `deduction_total` résolue, les annotations de type propagées à toutes les signatures de vérification, la détection des opérateurs shell durcie, et le fallback de profil rendu visible. Aucun nouveau check, aucun changement comportemental. 4274/4274 tests (+12).
+
+---
+
+### Fix 1 — `kernels_up_to_date` nomme le kernel courant, pas le sibling `-unsigned` (`bob/checks/kernel_modules.py`, `tests/test_kernel_modules.py`)
+
+#### Problème
+
+Sur les systèmes Debian avec les deux variantes d'un package kernel installées (ex. `linux-image-6.12.74+deb13+1-amd64` et `linux-image-6.12.74+deb13+1-amd64-unsigned`), `_kernel_sort_key()` les trie alphabétiquement après correspondance sur le même préfixe numérique. La variante non-signée se retrouve en dernière position et devient `most_recent`.
+
+Dans `_check_installed_kernels()`, le message OK "kernel à jour" passait `version=most_recent` :
+
+```python
+result.ok(
+    message=_t("kernel_modules.kernels_up_to_date", version=most_recent),
+    ...
+)
+```
+
+Quand `running = "6.12.74+deb13+1-amd64"` et `most_recent = "6.12.74+deb13+1-amd64-unsigned"`, le message affiché nommait le sibling `-unsigned` plutôt que le kernel dans lequel le système avait réellement démarré.
+
+#### Correction
+
+```python
+result.ok(
+    message=_t("kernel_modules.kernels_up_to_date", version=running),
+    ...
+)
+```
+
+Le message nomme maintenant toujours le kernel courant, quelle que soit la variante triée en dernier.
+
+---
+
+### Fix 2 — Bon template de message pour les paires signées/non-signées (`bob/checks/kernel_modules.py`, `tests/test_kernel_modules.py`)
+
+#### Problème
+
+`_check_installed_kernels()` sélectionne entre deux templates de message i18n :
+
+- `kernels_obsolete_same` — utilisé quand `running == most_recent` (le kernel courant est le plus récent ; certains anciens peuvent être nettoyés). Pas de paire "courant / récent" dans le texte.
+- `kernels_obsolete` — utilisé quand `running != most_recent` (un redémarrage mettrait à jour le kernel). Inclut les deux versions dans le texte.
+
+La comparaison était littérale :
+
+```python
+if running == most_recent:
+    _msg = _t("kernel_modules.kernels_obsolete_same", ...)
+else:
+    _msg = _t("kernel_modules.kernels_obsolete", ...)
+```
+
+Sur Debian avec une paire signé/non-signé, `running = "6.12.74+deb13+1-amd64"` et `most_recent = "6.12.74+deb13+1-amd64-unsigned"`. Ce sont sémantiquement la même version de kernel (même ABI, même niveau de sécurité), mais la comparaison littérale retourne `False`. L'outil utilisait incorrectement `kernels_obsolete`, sous-entendant que l'utilisateur devait redémarrer pour appliquer un kernel plus récent — factuellement faux.
+
+`_strip_unsigned()` existait déjà dans le module précisément pour cette normalisation mais n'était pas appliqué dans ce chemin de code.
+
+#### Correction
+
+```python
+if _strip_unsigned(running) == _strip_unsigned(most_recent):
+    _msg = _t("kernel_modules.kernels_obsolete_same", ...)
+else:
+    _msg = _t("kernel_modules.kernels_obsolete", ...)
+```
+
+Les deux côtés sont normalisés avant la comparaison. Une paire signé/non-signé sélectionne maintenant correctement `kernels_obsolete_same`.
+
+---
+
+### Fix 3 — Sentinel `None` pour `deduction_total` évite un faux delta lors de la mise à jour (`bob/compare.py`, `tests/test_compare.py`)
+
+#### Problème
+
+v0.2.3 a introduit `deduction_total: int = 0` dans `AuditBaseline` et affichait un message "Déductions variables ±N pt(s)" dans `display_delta()` quand `deduction_delta != 0`. La valeur par défaut était `0`, et `load_baseline()` utilisait :
+
+```python
+deduction_total=int(raw.get("deduction_total", 0))
+```
+
+Les fichiers JSON de baseline pré-v0.2.3 ne contiennent pas la clé `"deduction_total"`. L'appel retournait `0`. Au premier audit suivant, `deduction_delta = curr.deduction_total - 0`. Comme `curr.deduction_total` est presque toujours positif (il y a presque toujours des déductions), le message des déductions variables apparaissait à chaque première exécution après une mise à jour depuis un baseline pré-v0.2.3 — un faux positif : rien n'avait réellement changé, le champ n'existait simplement pas dans l'ancien baseline.
+
+C'est exactement le même mode d'échec que celui déjà résolu pour `finding_keys` avec le sentinel `list[str] | None = None`.
+
+#### Correction
+
+```python
+# AuditBaseline
+deduction_total: int | None = None   # None = baseline pré-v0.2.3 (champ absent)
+
+# load_baseline()
+deduction_total=int(raw["deduction_total"]) if isinstance(raw.get("deduction_total"), int) else None,
+
+# compute_delta()
+deduction_delta=(
+    curr.deduction_total - prev.deduction_total
+    if prev.deduction_total is not None and curr.deduction_total is not None
+    else 0
+),
+```
+
+`None` signifie "l'audit précédent est antérieur à l'introduction du champ". Le calcul du delta est ignoré pour ces baselines, produisant `deduction_delta = 0` et supprimant le message. Les nouveaux baselines écrivent toujours un entier ; les comparaisons suivantes se comportent normalement.
+
+---
+
+### Fix 4 — Alias de type `TranslationFunc` sur toutes les signatures de check (`bob/checks/_run.py`, 42 fichiers)
+
+#### Problème
+
+La fonction de traduction `t` était passée en argument nommé à toutes les fonctions `check_*` avec l'annotation `t=None` (non typée). Les vérificateurs de type ne pouvaient pas inférer la signature de l'appelable, et les IDEs n'offraient pas de complétion pour des appels comme `_t("clé", param=valeur)`. Il n'existait pas non plus de lieu unique pour documenter le contrat de la fonction.
+
+#### Correction
+
+`bob/checks/_run.py` (déjà importé par chaque module de check) gagne :
+
+```python
+from typing import Callable
+
+TranslationFunc = Callable[..., str]
+"""Type alias pour la fonction de traduction de BOB : t(key, **kwargs) -> str."""
+```
+
+Les 42 signatures de fonctions `check_*` dans 40 fichiers de checks, `bob/history.py` et `bob/plugin_checks.py` sont mises à jour :
+
+```python
+# Avant
+def check_firewall(snapshot, *, t=None, ...):
+
+# Après
+def check_firewall(snapshot, *, t: TranslationFunc | None = None, ...):
+```
+
+Les deux occurrences restantes de `t=None` sont des fonctions auxiliaires privées (`_check_installed_kernels`, `_check_exposure`) où l'annotation ajouterait du bruit sans bénéfice.
+
+---
+
+### Fix 5 — `_has_shell_ops()` via tokenisation `shlex` (`bob/fixes.py`)
+
+#### Problème
+
+`_run_fix()` utilisait la correspondance par sous-chaîne pour décider si une commande de remédiation nécessitait `shell=True` :
+
+```python
+_SHELL_OPS = ("&&", "||", "|", ";", ">", ">>")
+
+if any(op in cmd for op in _SHELL_OPS):
+    subprocess.run(cmd, shell=True, ...)
+else:
+    subprocess.run(shlex.split(cmd), shell=False, ...)
+```
+
+`op in cmd` correspond partout dans la chaîne, y compris dans les arguments entre guillemets et les chemins de fichiers. Une commande avec un chemin contenant `>` ou un argument de type `--format=json>output` serait incorrectement routée vers `shell=True`, introduisant une surface d'injection shell inutile.
+
+#### Correction
+
+```python
+def _has_shell_ops(cmd: str) -> bool:
+    """Retourne True si cmd contient des opérateurs shell nécessitant shell=True."""
+    _SHELL_TOKENS = frozenset({"&&", "||", ";", "|", ">", ">>", "<", "&"})
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return True   # guillemets malformés — traité comme non sûr
+    return any(tok in _SHELL_TOKENS or tok.startswith("`") or tok.startswith("$(")
+               for tok in tokens)
+```
+
+`shlex.split()` tokenise la commande comme le ferait un shell POSIX, en retirant les guillemets sans rien substituer. Les opérateurs ne sont correspondus qu'en tant que tokens complets. Les guillemets malformés retournent prudemment `True` plutôt que de lever une exception.
+
+---
+
+### Fix 6 — Fallback de profil maintenant visible (`bob/__main__.py`, locales)
+
+#### Problème
+
+`load_profile()` retournait silencieusement le profil `server` par défaut quand le nom de profil demandé n'était pas trouvé. Quand un utilisateur passait `--profile=laptop` (profil inexistant), l'audit s'exécutait avec le profil `server` sans aucune indication dans la sortie. L'utilisateur ne pouvait pas distinguer "profil actif" de "profil ignoré silencieusement".
+
+#### Correction
+
+```python
+active_profile = load_profile(profile_name)
+if profile_name not in ("", "default", "server") and active_profile.name != profile_name:
+    output.print_warn(t("audit.profile_not_found", profile=profile_name))
+```
+
+La garde exclut les alias du profil par défaut (`""`, `"default"`, `"server"`) pour éviter les avertissements parasites quand aucun profil n'est spécifié. Nouvelles clés i18n :
+
+- `en.json` : `"profile_not_found": "Profile '{profile}' not found — using default (server)"`
+- `fr.json` : `"profile_not_found": "Profil '{profile}' introuvable — utilisation du profil par défaut (server)"`
+
+---
+
+### Tests
+
+4274/4274 (+12 nouveaux, tous verts) :
+
+| Fichier | Tests ajoutés |
+|---------|--------------|
+| `tests/test_kernel_modules.py` | `test_up_to_date_names_running_kernel_not_unsigned_sibling` — asserte le nom du kernel courant dans le message OK, pas le sibling `-unsigned` |
+| `tests/test_kernel_modules.py` | `test_debian_signed_unsigned_pair_uses_obsolete_same_message` — asserte la clé `kernels_obsolete_same` quand une paire signé/non-signé est au sommet |
+| `tests/test_compare.py` | `test_variable_deductions_increased_shown_without_structural_change` |
+| `tests/test_compare.py` | `test_variable_deductions_decreased_shown_without_structural_change` |
+| `tests/test_compare.py` | `test_variable_deductions_suppressed_when_warn_delta` |
+| `tests/test_compare.py` | `test_variable_deductions_suppressed_when_new_finding_key` |
+| `tests/test_compare.py` | `test_deduction_total_none_in_new_baseline_defaults` — le défaut de `AuditBaseline()` est `None` |
+| `tests/test_compare.py` | `test_load_baseline_returns_none_when_field_absent` — ancien JSON sans champ → `None` |
+| `tests/test_compare.py` | `test_load_baseline_returns_int_when_field_present` — nouveau JSON avec champ → entier |
+| `tests/test_compare.py` | `test_deduction_delta_zero_when_prev_is_old_baseline` — prev `None` → delta = 0 |
+| `tests/test_compare.py` | `test_deduction_delta_computed_when_both_tracked` — deux entiers → delta correct |
+| `tests/test_compare.py` | `test_deduction_delta_zero_when_unchanged` — même valeur des deux côtés → 0 |
+
+---
+
 ## [v0.2.3] — 03-05-2026
 
 Huit corrections identifiées lors d'une tournée d'audit multi-VM systématique (Linux Mint desktop, Debian 13, Kali, VM Linux Mint, Ubuntu 26.04). Trois corrections comportementales dans la couche de vérification, deux corrections infrastructure, et trois corrections de précision UX trouvées par comparaison multi-distros. Aucune nouvelle fonctionnalité. 4262/4262 tests (+1).

@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 # Age threshold before a stale check is flagged
@@ -146,7 +146,7 @@ def _check_age_days(iso_date: str) -> Optional[int]:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_file_integrity(snapshot: FileIntegritySnapshot, t=None) -> CheckResult:
+def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Analyse FileIntegritySnapshot and return findings.
 

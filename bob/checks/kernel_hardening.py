@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -85,7 +85,7 @@ def _fix_cmd(sysctl_key: str, value: int) -> str:
     )
 
 
-def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t=None) -> CheckResult:
+def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check kernel hardening parameters.
 

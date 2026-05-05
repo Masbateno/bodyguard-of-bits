@@ -722,6 +722,7 @@
   "audit": {
     "starting": "Démarrage de l'audit",
     "audit_profile": "Profil d'audit : {profile}",
+    "profile_not_found": "Profil '{profile}' introuvable — utilisation du profil par défaut (server)",
     "report_saved": "Rapport détaillé : {path}",
     "running_checks": "Checks actifs : {checks}"
   },

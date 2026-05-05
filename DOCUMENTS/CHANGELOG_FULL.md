@@ -6,6 +6,220 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.2.4] — 2026-05-05
+
+Post-audit codebase hardening pass triggered by a systematic review of the full codebase after the v0.2.3 multi-VM audit tour. Two Debian `-unsigned` kernel UX bugs fixed, a regression in the `deduction_total` sentinel pattern corrected, type annotations propagated to all check signatures, shell operator detection hardened, and profile fallback made visible. No new checks or behavioural changes. 4274/4274 tests (+12).
+
+---
+
+### Fix 1 — `kernels_up_to_date` names running kernel, not `-unsigned` sibling (`bob/checks/kernel_modules.py`, `tests/test_kernel_modules.py`)
+
+#### Problem
+
+On Debian systems with both a signed and an unsigned kernel package installed (e.g. `linux-image-6.12.74+deb13+1-amd64` and `linux-image-6.12.74+deb13+1-amd64-unsigned`), `_kernel_sort_key()` sorts them alphabetically after matching on the same numeric prefix. The unsigned variant sorts last and becomes `most_recent`.
+
+In `_check_installed_kernels()`, the "kernel up to date" OK message passed `version=most_recent`:
+
+```python
+result.ok(
+    message=_t("kernel_modules.kernels_up_to_date", version=most_recent),
+    ...
+)
+```
+
+When `running = "6.12.74+deb13+1-amd64"` and `most_recent = "6.12.74+deb13+1-amd64-unsigned"`, the displayed message named the `-unsigned` sibling rather than the kernel the system was actually booted into.
+
+#### Fix
+
+```python
+result.ok(
+    message=_t("kernel_modules.kernels_up_to_date", version=running),
+    ...
+)
+```
+
+The message now always names the running kernel, regardless of which variant sorts last.
+
+---
+
+### Fix 2 — Correct message template for signed/unsigned pair (`bob/checks/kernel_modules.py`, `tests/test_kernel_modules.py`)
+
+#### Problem
+
+`_check_installed_kernels()` selects between two i18n message templates:
+
+- `kernels_obsolete_same` — used when `running == most_recent` (running is on the latest kernel; some older kernels can be cleaned up). No "running / latest" pair in the text.
+- `kernels_obsolete` — used when `running != most_recent` (reboot would upgrade the running kernel). Includes both versions in the text.
+
+The comparison was literal:
+
+```python
+if running == most_recent:
+    _msg = _t("kernel_modules.kernels_obsolete_same", ...)
+else:
+    _msg = _t("kernel_modules.kernels_obsolete", ...)
+```
+
+On Debian with a signed/unsigned pair, `running = "6.12.74+deb13+1-amd64"` and `most_recent = "6.12.74+deb13+1-amd64-unsigned"`. They are semantically the same kernel version (same ABI, same security level), but the literal comparison returns `False`. The tool incorrectly used `kernels_obsolete`, implying the user needed to reboot to apply a newer kernel — factually wrong.
+
+`_strip_unsigned()` already existed in the module for exactly this normalisation but was not applied in this code path.
+
+#### Fix
+
+```python
+if _strip_unsigned(running) == _strip_unsigned(most_recent):
+    _msg = _t("kernel_modules.kernels_obsolete_same", ...)
+else:
+    _msg = _t("kernel_modules.kernels_obsolete", ...)
+```
+
+Both sides are stripped before comparison. A signed/unsigned pair now correctly selects `kernels_obsolete_same`.
+
+---
+
+### Fix 3 — `deduction_total` None sentinel prevents false delta on upgrade (`bob/compare.py`, `tests/test_compare.py`)
+
+#### Problem
+
+v0.2.3 introduced `deduction_total: int = 0` in `AuditBaseline` and displayed a "Déductions variables ±N pt(s)" message in `display_delta()` when `deduction_delta != 0`. The default was `0`, and `load_baseline()` used:
+
+```python
+deduction_total=int(raw.get("deduction_total", 0))
+```
+
+Pre-v0.2.3 baseline JSON files do not contain the `"deduction_total"` key. The call returned `0`. On the very next audit, `deduction_delta = curr.deduction_total - 0`. Since `curr.deduction_total` is almost always positive (there are nearly always some deductions), the variable-deductions message appeared on every first run after upgrading from a pre-v0.2.3 baseline — a false positive: nothing had actually changed, the field simply didn't exist in the old baseline.
+
+This is the exact same failure mode that was already solved for `finding_keys` with the `list[str] | None = None` sentinel.
+
+#### Fix
+
+```python
+# AuditBaseline
+deduction_total: int | None = None   # None = pre-v0.2.3 baseline (field absent)
+
+# load_baseline()
+deduction_total=int(raw["deduction_total"]) if isinstance(raw.get("deduction_total"), int) else None,
+
+# compute_delta()
+deduction_delta=(
+    curr.deduction_total - prev.deduction_total
+    if prev.deduction_total is not None and curr.deduction_total is not None
+    else 0
+),
+```
+
+`None` means "the previous audit predates the field". Delta computation is skipped for those baselines, producing `deduction_delta = 0` and suppressing the message. New baselines always write an integer; subsequent comparisons behave normally.
+
+---
+
+### Fix 4 — `TranslationFunc` type alias across all check signatures (`bob/checks/_run.py`, 42 files)
+
+#### Problem
+
+The translation function `t` was passed as a keyword argument to all `check_*` functions with the annotation `t=None` (untyped default). Type checkers could not infer the callable signature, and IDEs offered no completion for calls like `_t("key", param=value)`. There was also no single place to document what the function contract was.
+
+#### Fix
+
+`bob/checks/_run.py` (already imported by every check module) gains:
+
+```python
+from typing import Callable
+
+TranslationFunc = Callable[..., str]
+"""Type alias for BOB's translation function: t(key, **kwargs) -> str."""
+```
+
+All 42 `check_*` function signatures across 40 check files, `bob/history.py`, and `bob/plugin_checks.py` updated:
+
+```python
+# Before
+def check_firewall(snapshot, *, t=None, ...):
+
+# After
+def check_firewall(snapshot, *, t: TranslationFunc | None = None, ...):
+```
+
+The two remaining `t=None` occurrences are private helper functions (`_check_installed_kernels`, `_check_exposure`) where the annotation would add noise without benefit.
+
+---
+
+### Fix 5 — `_has_shell_ops()` via `shlex` tokenization (`bob/fixes.py`)
+
+#### Problem
+
+`_run_fix()` used substring matching to decide whether a remediation command needed `shell=True`:
+
+```python
+_SHELL_OPS = ("&&", "||", "|", ";", ">", ">>")
+
+if any(op in cmd for op in _SHELL_OPS):
+    subprocess.run(cmd, shell=True, ...)
+else:
+    subprocess.run(shlex.split(cmd), shell=False, ...)
+```
+
+`op in cmd` matches anywhere in the string, including inside quoted arguments and file paths. A command like `sudo chmod 644 /etc/app/config.d/module>2` (hypothetical path containing `>`) or a command with a `--format=json>output` flag would be incorrectly routed to `shell=True`, introducing an unnecessary shell injection surface.
+
+#### Fix
+
+```python
+def _has_shell_ops(cmd: str) -> bool:
+    """Return True if cmd contains shell operators requiring shell=True."""
+    _SHELL_TOKENS = frozenset({"&&", "||", ";", "|", ">", ">>", "<", "&"})
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return True   # malformed quoting — treat as unsafe
+    return any(tok in _SHELL_TOKENS or tok.startswith("`") or tok.startswith("$(")
+               for tok in tokens)
+```
+
+`shlex.split()` tokenizes the command the same way a POSIX shell would, stripping quotes and expanding nothing. Operators are only matched as complete tokens. Malformed quoting (unclosed quotes) safely falls through to `shell=True` rather than raising.
+
+---
+
+### Fix 6 — Profile fallback now visible (`bob/__main__.py`, locales)
+
+#### Problem
+
+`load_profile()` silently returns the default `server` profile when the requested profile name is not found. When a user passed `--profile=laptop` (a non-existent profile), the audit ran with the `server` profile and there was no indication in the output that the requested profile had not been applied. The user could not distinguish "profile active" from "profile silently ignored".
+
+#### Fix
+
+```python
+active_profile = load_profile(profile_name)
+if profile_name not in ("", "default", "server") and active_profile.name != profile_name:
+    output.print_warn(t("audit.profile_not_found", profile=profile_name))
+```
+
+The guard excludes the default aliases (`""`, `"default"`, `"server"`) to avoid spurious warnings when no profile is specified. New i18n keys:
+
+- `en.json`: `"profile_not_found": "Profile '{profile}' not found — using default (server)"`
+- `fr.json`: `"profile_not_found": "Profil '{profile}' introuvable — utilisation du profil par défaut (server)"`
+
+---
+
+### Tests
+
+4274/4274 (+12 new, all passing):
+
+| File | Tests added |
+|------|-------------|
+| `tests/test_kernel_modules.py` | `test_up_to_date_names_running_kernel_not_unsigned_sibling` — asserts running kernel name in OK message, not `-unsigned` sibling |
+| `tests/test_kernel_modules.py` | `test_debian_signed_unsigned_pair_uses_obsolete_same_message` — asserts `kernels_obsolete_same` key when signed/unsigned pair at top |
+| `tests/test_compare.py` | `test_variable_deductions_increased_shown_without_structural_change` |
+| `tests/test_compare.py` | `test_variable_deductions_decreased_shown_without_structural_change` |
+| `tests/test_compare.py` | `test_variable_deductions_suppressed_when_warn_delta` |
+| `tests/test_compare.py` | `test_variable_deductions_suppressed_when_new_finding_key` |
+| `tests/test_compare.py` | `test_deduction_total_none_in_new_baseline_defaults` — `AuditBaseline()` default is `None` |
+| `tests/test_compare.py` | `test_load_baseline_returns_none_when_field_absent` — old JSON without field → `None` |
+| `tests/test_compare.py` | `test_load_baseline_returns_int_when_field_present` — new JSON with field → integer |
+| `tests/test_compare.py` | `test_deduction_delta_zero_when_prev_is_old_baseline` — None prev → delta = 0 |
+| `tests/test_compare.py` | `test_deduction_delta_computed_when_both_tracked` — both int → correct delta |
+| `tests/test_compare.py` | `test_deduction_delta_zero_when_unchanged` — same value both sides → 0 |
+
+---
+
 ## [v0.2.3] — 2026-05-03
 
 Eight fixes identified during a systematic multi-VM audit round (Linux Mint desktop, Debian 13, Kali, Linux Mint test VM, Ubuntu 26.04). Three behavioural bug fixes in the check layer, two infrastructure fixes, and three UX precision fixes found by cross-distro comparison. No new features. 4262/4262 tests (+1).

@@ -838,3 +838,37 @@ class TestKernelAptUpdate:
         )
         result = check_kernel_modules(snap)
         assert _has_finding(result, "kernel_modules.kernels_update_available", FindingLevel.INFO)
+
+    def test_up_to_date_names_running_kernel_not_unsigned_sibling(self):
+        """kernels_up_to_date must name the running kernel, not the -unsigned sibling."""
+        def _t(key, **kw):
+            return f"{key}:{kw.get('version', '')}"
+
+        snap = _ksnap(
+            running="6.12.74+deb13+1-amd64",
+            installed=["6.12.74+deb13+1-amd64", "6.12.74+deb13+1-amd64-unsigned"],
+            apt_checked=True,
+            apt_update_available=False,
+        )
+        result = check_kernel_modules(snap, t=_t)
+        finding = _get_finding(result, "kernel_modules.kernels_up_to_date")
+        assert finding is not None
+        assert "unsigned" not in finding.message
+        assert "6.12.74+deb13+1-amd64" in finding.message
+
+    def test_debian_signed_unsigned_pair_uses_obsolete_same_message(self):
+        """When running signed == most-recent -unsigned (same version), use _same message."""
+        snap = _ksnap(
+            running="6.12.74+deb13+1-amd64",
+            installed=[
+                "6.12.63+deb13-amd64",
+                "6.12.74+deb13+1-amd64",
+                "6.12.74+deb13+1-amd64-unsigned",
+            ],
+            apt_checked=True,
+            apt_update_available=False,
+        )
+        result = check_kernel_modules(snap, profile_name="desktop")
+        finding = _get_finding(result, "kernel_modules.kernels_obsolete")
+        assert finding is not None
+        assert finding.message == "kernel_modules.kernels_obsolete_same"

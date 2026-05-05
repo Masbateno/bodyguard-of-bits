@@ -35,7 +35,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 
@@ -155,7 +155,7 @@ class KernelModulesSnapshot:
 def check_kernel_modules(
     snapshot: KernelModulesSnapshot,
     *,
-    t=None,
+    t: TranslationFunc | None = None,
     profile_name: str = "server",
 ) -> CheckResult:
     """
@@ -393,7 +393,7 @@ def _check_installed_kernels(
         )
     elif snapshot.apt_checked and not snapshot.apt_update_available:
         result.ok(
-            message=_t("kernel_modules.kernels_up_to_date", version=most_recent),
+            message=_t("kernel_modules.kernels_up_to_date", version=running),
             key="kernel_modules.kernels_up_to_date",
         )
 
@@ -426,7 +426,7 @@ def _check_installed_kernels(
     to_remove = [k for k in kernels if k not in to_keep]
 
     if to_remove:
-        if running == most_recent:
+        if _strip_unsigned(running) == _strip_unsigned(most_recent):
             _msg = _t("kernel_modules.kernels_obsolete_same",
                       count=len(to_remove), running=running)
         else:

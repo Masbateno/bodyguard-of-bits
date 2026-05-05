@@ -27,7 +27,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _identity_t, _is_safe_config_path, _run
+from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, _run
 from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
 
@@ -254,7 +254,7 @@ def check_services(
     snapshots: list[ServiceSnapshot],
     network_context: str = "local",
     ufw_active: bool = True,
-    t=None,
+    t: TranslationFunc | None = None,
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.

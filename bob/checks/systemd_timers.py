@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ class SystemdTimersSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_systemd_timers(snapshot: SystemdTimersSnapshot, t=None) -> CheckResult:
+def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit systemd timers for security-relevant patterns.
 

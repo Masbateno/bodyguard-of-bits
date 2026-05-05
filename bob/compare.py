@@ -69,7 +69,7 @@ class AuditBaseline:
     open_ports:      list[str]       = field(default_factory=list)
     active_services: list[str]       = field(default_factory=list)
     finding_keys:    list[str] | None = None  # None = pre-v1.22 baseline (key absent)
-    deduction_total: int = 0                  # 0 = pre-v0.2.3 baseline (field absent)
+    deduction_total: int | None = None        # None = pre-v0.2.3 baseline (field absent)
 
 
 @dataclass
@@ -201,7 +201,7 @@ def load_baseline(path: Path | None = None) -> AuditBaseline | None:
             open_ports=list(raw.get("open_ports", [])),
             active_services=list(raw.get("active_services", [])),
             finding_keys=list(raw["finding_keys"]) if isinstance(raw.get("finding_keys"), list) else None,
-            deduction_total=int(raw.get("deduction_total", 0)),
+            deduction_total=int(raw["deduction_total"]) if isinstance(raw.get("deduction_total"), int) else None,
         )
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         logger.debug("load_baseline: could not read %s: %s", src, exc)
@@ -253,7 +253,11 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
         stopped_services=sorted(prev_svcs - curr_svcs),
         new_finding_keys=new_finding_keys,
         resolved_finding_keys=resolved_finding_keys,
-        deduction_delta=curr.deduction_total - prev.deduction_total,
+        deduction_delta=(
+            curr.deduction_total - prev.deduction_total
+            if prev.deduction_total is not None and curr.deduction_total is not None
+            else 0
+        ),
     )
 
 

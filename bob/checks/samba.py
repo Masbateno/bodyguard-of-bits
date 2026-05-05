@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from bob.checks._run import _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ class SambaSnapshot:
 # Main check function (pure logic — no I/O)
 # ---------------------------------------------------------------------------
 
-def check_samba(snapshot: SambaSnapshot, t=None) -> CheckResult:
+def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check Samba server security configuration.
 

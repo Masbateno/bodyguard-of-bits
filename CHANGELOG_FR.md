@@ -4,12 +4,46 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.2.4](#v024) | 05-05-2026 | UX kernel Debian -unsigned · sentinel None deduction_total · alias TranslationFunc (42 signatures) · _has_shell_ops() via shlex · avertissement profil introuvable · 4274/4274 tests (+12) |
 | [v0.2.3](#v023) | 03-05-2026 | Corrections tournée multi-VM : NOT_LISTENING WARN→INFO · déduction IoT supprimée · affichage heredoc · garde symlink circulaire · Python 3.9 retiré · delta déductions compare · label SSH surface d'attaque · label active_disabled · 4262/4262 tests (+1) |
 | [v0.2.2](#v022) | 02-05-2026 | Corrections scoring : `ScoreCap.key` · domaines INFO exclus · ClamAV 1pt · logging uniformisé · check règle UFW sans protocole · fix plafond domaine · fix locale SSH detail · tests invariants scoring · 4261/4261 tests (+23) |
 | [v0.2.1](#v021) | 02-05-2026 | Hotfix — passe défensive : crash fix `--manage-logs` · 8 `except Exception` resserrés · 5 regex en module-level · regex email dédupliqué · `getattr` supprimé du scoring |
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.2.4] — 05-05-2026
+
+Passe de durcissement du codebase post-audit : deux bugs UX kernel Debian `-unsigned`, sentinel `None` pour `deduction_total`, alias `TranslationFunc` sur toutes les signatures de vérification, détection des opérateurs shell via shlex, et visibilité du fallback de profil. Aucune nouvelle fonctionnalité. 4274/4274 tests (+12).
+
+### Corrections de bugs — UX kernel Debian (`bob/checks/kernel_modules.py`)
+
+**Fix 1 — `kernels_up_to_date` nomme le kernel courant, pas le sibling -unsigned** — Quand le kernel courant était `6.12.74+deb13+1-amd64` et que son sibling `-unsigned` était le kernel le plus récemment trié, le message "kernel à jour" affichait le nom de la variante `-unsigned` au lieu du kernel en cours d'exécution. Cause : `version=most_recent` était passé à la clé i18n au lieu de `version=running`. Corrigé : `version=running`. Nouveau test : `test_up_to_date_names_running_kernel_not_unsigned_sibling`.
+
+**Fix 2 — Bon template de message pour les paires signées/non-signées** — Quand le kernel courant et le plus récent forment une paire signé/non-signé, le message de nettoyage doit utiliser `kernels_obsolete_same` (sans la paire "courant / récent" dans le texte) plutôt que `kernels_obsolete`. La comparaison `running == most_recent` était littérale et retournait `False` pour cette paire. Corrigé : `_strip_unsigned(running) == _strip_unsigned(most_recent)`. Nouveau test : `test_debian_signed_unsigned_pair_uses_obsolete_same_message`.
+
+### Correction de régression — sentinel `deduction_total` (`bob/compare.py`)
+
+**Fix 3 — Faux "+N pt(s)" au premier audit après mise à jour** — v0.2.3 a ajouté `deduction_total: int = 0` à `AuditBaseline`. Les anciens baselines (pré-v0.2.3) n'ont pas ce champ ; `raw.get("deduction_total", 0)` retournait `0`, puis `deduction_delta = actuel − 0` affichait "Déductions variables +N pt(s)" au premier audit suivant, même sans aucun changement réel. Corrigé : `int | None = None` (même pattern que le sentinel `finding_keys`). `load_baseline()` retourne `None` si le champ est absent ; `compute_delta()` ignore le calcul du delta quand l'un des deux côtés est `None`. +10 nouveaux tests dans `TestDisplayDelta` et `TestDeductionTracking`.
+
+### Qualité du code — passe d'audit codebase
+
+**Typage — alias `TranslationFunc`** (`bob/checks/_run.py`, 40 fichiers checks, `bob/history.py`, `bob/plugin_checks.py`) — `TranslationFunc = Callable[..., str]` défini dans `_run.py` (déjà importé par tous les checks). Les 42 signatures de fonctions `check_*` mises à jour : `t=None` → `t: TranslationFunc | None = None`.
+
+**Sécurité shell — `_has_shell_ops()` via `shlex`** (`bob/fixes.py`) — La détection des opérateurs shell remplace la correspondance naïve par sous-chaîne (`any(op in cmd for op in _SHELL_OPS)`) par une tokenisation via `shlex.split()`. L'ancienne méthode pouvait faussement correspondre à `>` dans des valeurs d'arguments ou des chemins de fichiers. `_has_shell_ops()` vérifie les tokens contre un frozenset, ne traitant que les tokens autonomes comme opérateurs. Les guillemets malformés retournent `True` prudemment (traité comme shell).
+
+**UX — fallback de profil maintenant visible** (`bob/__main__.py`, locales) — Quand `--profile=X` était donné mais que le profil X n'existait pas, `load_profile()` retombait silencieusement sur `server`. L'utilisateur n'avait aucune indication que le profil demandé était introuvable. Corrigé : `output.print_warn(t("audit.profile_not_found", …))` ajouté quand le nom du profil chargé diffère de celui demandé. Nouvelles clés i18n `audit.profile_not_found` en EN et FR.
+
+### Tests
+
+4274/4274 (+12 nouveaux) :
+
+| Fichier | Modification |
+|---------|-------------|
+| `tests/test_kernel_modules.py` | +2 : `test_up_to_date_names_running_kernel_not_unsigned_sibling` · `test_debian_signed_unsigned_pair_uses_obsolete_same_message` |
+| `tests/test_compare.py` | +10 : 4 dans `TestDisplayDelta` (cas affichage/suppression déductions variables) · 6 dans le nouveau `TestDeductionTracking` (sentinel None, chargement/sauvegarde, calcul delta) |
 
 ---
 

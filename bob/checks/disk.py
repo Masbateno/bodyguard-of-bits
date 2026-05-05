@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 
@@ -113,7 +113,7 @@ class DiskSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_disk(snapshot: DiskSnapshot, *, t=None) -> CheckResult:
+def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit disk health and partition usage.
 

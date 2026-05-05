@@ -22,7 +22,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _C_LOCALE_ENV, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -142,7 +142,7 @@ class DockerAuditSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-def check_docker_audit(snapshot: DockerAuditSnapshot, t=None) -> CheckResult:
+def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check Docker container security configuration.
 

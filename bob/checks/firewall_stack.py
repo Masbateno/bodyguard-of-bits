@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 
@@ -103,7 +103,7 @@ class FirewallStackSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_firewall_stack(snapshot: FirewallStackSnapshot, t=None) -> CheckResult:
+def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check for firewall stack conflicts and unexpected configurations.
 

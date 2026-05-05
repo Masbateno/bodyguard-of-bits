@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from bob.checks._run import _identity_t
+from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
 
 
@@ -224,7 +224,7 @@ def _find_unexpected_user_crons() -> list[str]:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_cron_audit(snapshot: CronAuditSnapshot, *, t=None) -> CheckResult:
+def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit cron jobs for known-risky patterns.
 

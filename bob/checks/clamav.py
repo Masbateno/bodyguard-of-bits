@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ class ClamAVSnapshot:
 # Main check function (pure logic — no I/O)
 # ---------------------------------------------------------------------------
 
-def check_clamav(snapshot: ClamAVSnapshot, t=None) -> CheckResult:
+def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check ClamAV antivirus installation and configuration.
 

@@ -24,7 +24,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 
-from bob.checks._run import _identity_t, _run
+from bob.checks._run import TranslationFunc, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Ports above this threshold are considered ephemeral (kernel-assigned)
@@ -156,7 +156,7 @@ def check_ports(
     network_context: str = "local",
     default_incoming_policy: str = "deny",
     ufw_active: bool = True,
-    t=None,
+    t: TranslationFunc | None = None,
 ) -> CheckResult:
     """
     Evaluate listening ports and return findings.

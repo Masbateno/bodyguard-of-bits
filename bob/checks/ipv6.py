@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _identity_t, _run
+from bob.checks._run import TranslationFunc, _identity_t, _run
 from bob.scoring import CheckResult
 
 
@@ -90,7 +90,7 @@ class IPv6Snapshot:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t=None) -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check IPv6 firewall consistency.
 

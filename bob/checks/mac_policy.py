@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Regex: "   N profiles are in enforce mode."
@@ -104,7 +104,7 @@ class MacPolicySnapshot:
 def check_mac_policy(
     snapshot: MacPolicySnapshot,
     *,
-    t=None,
+    t: TranslationFunc | None = None,
     profile_name: str = "server",
 ) -> CheckResult:
     """
