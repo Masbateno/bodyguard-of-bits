@@ -154,14 +154,12 @@ def _run(argv=None) -> int:
         print(f"Error: {_filter_error}", file=sys.stderr)
         return EXIT_ERROR
 
-    # --diff runs the audit silently and shows only the baseline delta
-    if config.diff_mode:
-        config.quiet = True
-
     _machine_mode = config.json_mode or config.csv_mode or config.markdown_mode or config.html_mode
-    if _machine_mode:
+    # diff/breakdown suppress all audit output (bare print() calls bypass quiet=True)
+    _silent_mode  = _machine_mode or config.breakdown_mode or config.diff_mode
+    if _silent_mode:
         config.quiet = True
-    _devnull = open(os.devnull, "w") if _machine_mode else None
+    _devnull = open(os.devnull, "w") if _silent_mode else None
 
     try:
         with (redirect_stdout(_devnull) if _devnull else contextlib.nullcontext()):
@@ -311,14 +309,6 @@ def _run(argv=None) -> int:
                     print()
                     display_delta(compute_delta(prev_baseline, curr_baseline), t, output)
 
-            # --diff: show the delta only (quiet=True suppressed the banner above)
-            if config.diff_mode:
-                if not prev_baseline:
-                    print("No previous baseline found — run a full audit first to establish a baseline.")
-                else:
-                    _delta = compute_delta(prev_baseline, curr_baseline)
-                    display_delta(_delta, t, output)
-
             report.write_risk_context_section(
                 section_title=t("sections.risk_context"),
                 entries=build_risk_context_entries(snapshots, config.lang, t,
@@ -375,6 +365,19 @@ def _run(argv=None) -> int:
         if config.html_mode:
             from bob.html_output import build_html_output
             print(build_html_output(engine, sys_info), end="")
+
+        # stdout restored — display post-audit views with full output (no quiet filter)
+        if config.diff_mode:
+            if not prev_baseline:
+                print("No previous baseline found — run a full audit first to establish a baseline.")
+            else:
+                _delta = compute_delta(prev_baseline, curr_baseline)
+                display_delta(_delta, t, output)
+
+        if config.breakdown_mode:
+            output.init(no_color=config.no_color, quiet=False)
+            from bob.breakdown import display_breakdown
+            display_breakdown(engine, t, output)
 
         return _exit
 

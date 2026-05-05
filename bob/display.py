@@ -415,7 +415,7 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
         elif delta < 0:
             score_str += f"  {_c.yellow}↓ {delta}{_c.reset}"
         else:
-            score_str += f"  →"
+            score_str += f"  = {score}"
 
     lines = [
         (t("scoring.score_label"), score_str),

@@ -11,6 +11,7 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.0 | 4322 | +48 new tests: `--breakdown` display · golden scoring scenarios · 16 in test_breakdown · 32 in test_golden_scenarios · 1 renamed in test_min_level |
 | v0.2.4 | 4274 | +12 new tests: Debian -unsigned kernel UX · deduction_total None sentinel · 2 in test_kernel_modules · 10 in test_compare |
 | v0.2.3 | 4262 | +1 new · 4 renamed: NOT_LISTENING INFO · IoT no deduction · SSH stopped label split |
 | v0.2.2 | 4255 | +17 new tests · 2 updated: `TestStatFallback` · `TestScoringInvariants` · orphan-rule bare-port fix · ClamAV 1pt · ScoreCap.key · INFO domains excluded |
@@ -18,6 +19,58 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.3.0 — 4322/4322 (2026-05-06)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4322 passed in 4.45s
+```
+
+**New tests (+48):**
+
+#### `tests/test_breakdown.py` (new file, +16)
+
+| Class | Test | Coverage |
+|-------|------|----------|
+| `TestBar` | `test_full_score_all_filled` | Score 10 → all filled blocks |
+| `TestBar` | `test_zero_score_all_empty` | Score 0 → all empty blocks |
+| `TestBar` | `test_five_half_filled` | Score 5 → half filled |
+| `TestDisplayBreakdownClean` | `test_no_deductions_message` | No deductions → `no_deductions` key printed |
+| `TestDisplayBreakdownClean` | `test_section_title_printed` | Section header printed |
+| `TestDisplayBreakdownClean` | `test_final_score_ten_shown` | Score 10 → `breakdown.final_score` key printed |
+| `TestDisplayBreakdownWithDeductions` | `test_deductions_header_shown` | Deductions present → header shown |
+| `TestDisplayBreakdownWithDeductions` | `test_deduction_keys_shown` | Each deduction key appears in output |
+| `TestDisplayBreakdownWithDeductions` | `test_raw_score_shown` | `breakdown.raw_score` key printed |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_scores_header_shown` | Active domains → header shown |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_average_shown` | Global override set → `breakdown.domain_average` printed |
+| `TestDisplayBreakdownWithDeductions` | `test_final_score_shown` | `breakdown.final_score` key printed |
+| `TestDisplayBreakdownToolCap` | `test_tool_cap_message_shown_when_exceeded` | Total deductions > cap → tool cap info line shown |
+| `TestDisplayBreakdownToolCap` | `test_no_tool_cap_message_when_within_limit` | Total deductions ≤ cap → no tool cap message |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_shown` | `engine.cap_info` set → `breakdown.engine_cap_applied` shown |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_not_shown_when_absent` | No cap → no cap message |
+
+#### `tests/test_golden_scenarios.py` (new file, +32)
+
+| Class | Tests | Coverage |
+|-------|-------|----------|
+| `TestCleanMachine` | 4 | Score 10/10; no breakdown; no active domains; INFO findings excluded from domain activation |
+| `TestHardenedServer` | 3 | 2 hardening deductions → score 8; domain deductions count; raw breakdown assertions |
+| `TestDefaultDesktop` | 3 | 4 deductions across 3 domains → score 9; per-domain deduction exact counts |
+| `TestPoorlyConfiguredServer` | 3 | Raw score 3; domain average 8; domain average improves over raw |
+| `TestFirewallInactive` | 3 | Engine cap enforced at 3; domain average can exceed capped raw; `cap_info` stored |
+| `TestDebian13Minimal` | 4 | Raw score 2; domain average 6; rootkit tool cap; 6 total hardening deductions after cap |
+| `TestToolCapInvariants` | 4 | rootkit/clamav/file_integrity each capped at 1pt; uncapped tool (ssh) accumulates normally |
+| `TestScoreStability` | 5 | Order independence; same-domain monotonicity; domain independence; score ∈ [0, MAX_SCORE]; raw floor 0 |
+| `TestMultiDomainMachine` | 3 | 5 active domains exact frozenset; each domain deducted once; score 9 |
+
+#### `tests/test_min_level.py` (renamed, +0 net)
+
+`test_stable_shows_right_arrow` → `test_stable_shows_equal` — assertion updated from `"→" in val` to `"= 7" in val`.
 
 ---
 

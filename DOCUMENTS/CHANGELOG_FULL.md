@@ -6,6 +6,207 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.3.0] — 2026-05-06
+
+Scoring transparency milestone. New `--breakdown` (`-B`) flag shows the complete score computation path after an audit. `--explain <key>` gains a SCORING section. Three targeted fixes: kernel `-unsigned` asymmetry in retention logic, orphan `→` on stable score deltas, and "UFW-AU" ASCII art relics in the detailed report. 4322/4322 tests (+48).
+
+---
+
+### Feature 1 — `--breakdown` / `-B` flag (`bob/breakdown.py`, `bob/cli.py`, `bob/__main__.py`, `bob/locales/en.json`, `bob/locales/fr.json`)
+
+#### Motivation
+
+BOB's scoring uses a multi-layer pipeline: per-check deductions → tool caps → engine cap → domain average override. The final score was visible but its derivation was not. Users seeing a 6/10 had no way to understand which deductions contributed, whether a cap had fired, or how domain averaging changed the number.
+
+#### Implementation
+
+New module `bob/breakdown.py` — `display_breakdown(engine, t, output_mod)` — reads the already-finalized `ScoreEngine` and prints:
+
+1. **Deductions** — full table (key · domain · points · context), with `[capped]` annotation for entries that were absorbed by a tool cap.
+2. **Tool caps** — one `[INFO]` line per tool where total raw deductions exceeded the cap.
+3. **Engine cap** — `[WARN]` line if `engine.cap_info` is set (e.g. "firewall inactive — cap at 3").
+4. **Raw score** — `engine._raw_score` before domain averaging.
+5. **Per-domain scores** — each active domain with score, deductions, and a 10-character bar chart.
+6. **Domain-average override** — `[INFO]` line showing the computed average and number of active domains, when `engine._global_override is not None`.
+7. **Final score** — color-coded: green (≥ 8), yellow (≥ 5), red (< 5).
+
+Domain labels are translated via `_domain_label(domain_id, t)` — tries `t(f"domain_scores.{domain_id}")` first (same pattern as `render_domain_scores`), falls back to `_LABELS` then `domain_id.capitalize()`. This ensures French labels (e.g. "Durcissement") appear when running with `--french`.
+
+**stdout management** — `breakdown_mode` is added to `_silent_mode` in `__main__.py`. The entire audit runs inside `with redirect_stdout(devnull)`, suppressing all bare `print()` calls (not just `output.*` calls, which are already suppressed by `quiet=True`). After the `with` block, stdout is restored and `display_breakdown` is called with `output` re-initialized without `quiet`. This is the same pattern used by `diff_mode` and the machine-readable formats.
+
+#### i18n
+
+New `breakdown.*` section in both locale files:
+
+| Key | Purpose |
+|-----|---------|
+| `breakdown.section_title` | Section header |
+| `breakdown.no_deductions` | OK message when no deductions |
+| `breakdown.deductions_header` | "N deduction(s):" sub-header |
+| `breakdown.capped` | Annotation for capped entries |
+| `breakdown.tool_cap_applied` | Tool cap info line |
+| `breakdown.engine_cap_applied` | Engine cap warn line |
+| `breakdown.raw_score` | Raw score line |
+| `breakdown.domain_scores_header` | Domain scores sub-header |
+| `breakdown.domain_average` | Domain average override line |
+| `breakdown.final_score` | Final score line |
+
+#### CLI
+
+`-B` / `--breakdown` added to `bob/cli.py` as a boolean flag. `_silent_mode` in `__main__.py` extended: `_machine_mode or config.breakdown_mode or config.diff_mode`.
+
+---
+
+### Feature 2 — Score-aware `--explain` (`bob/explain.py`)
+
+#### Problem
+
+`bob --explain <key>` showed remediation steps but gave no indication of how the key contributed to the score — which domain it belonged to, whether a tool cap limited its deductions, or how to see its live impact.
+
+#### Fix
+
+New `_explain_scoring(key, t)` function appended at the end of every `run_explain()` call. Reads `_key_to_domain(key)` and `_TOOL_CAPS.get(prefix)` from `bob/domain_scores.py` and prints:
+
+```
+SCORING
+────────────────────────────────────────
+  Domain   : Hardening
+  Tool cap : max 2 pt total for 'hardening' deductions in this domain
+  Impact   : run 'sudo bob --breakdown' to see this key's current score contribution
+```
+
+Keys with no domain mapping (e.g. generic info keys) silently skip the section.
+
+---
+
+### Fix 1 — Kernel `-unsigned` retention asymmetry (`bob/checks/kernel_modules.py`, `tests/test_kernel_modules.py`)
+
+#### Problem
+
+On Debian systems, both signed and unsigned kernel packages are installed side by side:
+
+```
+linux-image-6.12.74+deb13+1-amd64
+linux-image-6.12.74+deb13+1-amd64-unsigned
+```
+
+`_kernel_sort_key()` produces identical numeric tuples for both (same `MAJOR.MINOR.PATCH+ABI`). When tuples are equal, Python's sort is stable, meaning the unsigned variant (appearing later in dpkg output) ends up last in the sorted list and becomes `most_recent`.
+
+The retention loop fills slots from newest down. With three kernels installed and `keep_count=3` (server profile), the loop fills: `running`, `most_recent` (unsigned), and one earlier kernel. The signed variant of the same version as `most_recent` gets no slot and lands in `to_remove` — incorrectly marked as obsolete.
+
+#### Fix
+
+After the retention loop, expand the keep-set to include both variants of every kept base version:
+
+```python
+kernel_set = set(kernels)
+for k in list(to_keep):
+    base = _strip_unsigned(k)
+    if base in kernel_set:
+        to_keep.add(base)
+    unsigned = f"{base}-unsigned"
+    if unsigned in kernel_set:
+        to_keep.add(unsigned)
+```
+
+`_strip_unsigned()` already existed in the module. This expansion is O(keep_count) and runs once after the loop.
+
+Additionally, the obsolete detail message was changed from `recent=most_recent` to `recent=running`. The boot-verification hint ("verify the system boots correctly before removing older kernels") should reference the kernel the system is actually running, not the `-unsigned` sibling that happens to sort last.
+
+---
+
+### Fix 2 — Score delta orphan `→` (`bob/display.py`)
+
+#### Problem
+
+In `print_audit_summary()`, the score line is built as:
+
+```python
+score_str = f"{score}/10"
+if prev_score is not None:
+    delta = score - prev_score
+    if delta > 0:
+        score_str += f"  ↑ +{delta}"
+    elif delta < 0:
+        score_str += f"  ↓ {delta}"
+    else:
+        score_str += f"  →"
+```
+
+When the score was unchanged (`delta == 0`), the line displayed `6/10  →` with nothing after the arrow. The arrow was intended as a "stable" indicator but looked like a truncated line inside the box display.
+
+#### Fix
+
+```python
+    else:
+        score_str += f"  = {score}"
+```
+
+"= 6" is unambiguous: the score equals the previous value.
+
+---
+
+### Fix 3 — "UFW-AU" relics in detailed report (`bob/report.py`, `bob/report_markdown.py`)
+
+#### Problem
+
+`AuditReport.write_header()` contained hardcoded ASCII art letter arrays spelling "UFW-AU" — the acronym of the former tool name "ufw-audit". The letter group list was `[U, F, W, DASH, A, U]`. The header also printed `Firewall : ufw {version}` preceded by the label `UFW`.
+
+In `report_markdown.py`, the firewall entry was labelled `**UFW:**`.
+
+#### Fix
+
+`bob/report.py` — letter groups replaced with `[B, O, B]` using the same Doom block font already used in `output.py`'s terminal banner. Header label changed to `Firewall : ufw {info.ufw_version}`.
+
+`bob/report_markdown.py` — label changed to `**Firewall (UFW):**`.
+
+---
+
+### Tests
+
+4322/4322 (+48 new):
+
+#### `tests/test_breakdown.py` (new file, +16)
+
+| Class | Test | Coverage |
+|-------|------|----------|
+| `TestBar` | `test_full_score_all_filled` | Score 10 → all filled blocks |
+| `TestBar` | `test_zero_score_all_empty` | Score 0 → all empty blocks |
+| `TestBar` | `test_five_half_filled` | Score 5 → half filled |
+| `TestDisplayBreakdownClean` | `test_no_deductions_message` | No deductions → `no_deductions` key printed |
+| `TestDisplayBreakdownClean` | `test_section_title_printed` | Section header printed |
+| `TestDisplayBreakdownClean` | `test_final_score_ten_shown` | Score 10 → `breakdown.final_score` key printed |
+| `TestDisplayBreakdownWithDeductions` | `test_deductions_header_shown` | Deductions present → header shown |
+| `TestDisplayBreakdownWithDeductions` | `test_deduction_keys_shown` | Each deduction key appears in output |
+| `TestDisplayBreakdownWithDeductions` | `test_raw_score_shown` | `breakdown.raw_score` key printed |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_scores_header_shown` | Active domains → header shown |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_average_shown` | Global override set → `breakdown.domain_average` printed |
+| `TestDisplayBreakdownWithDeductions` | `test_final_score_shown` | `breakdown.final_score` key printed |
+| `TestDisplayBreakdownToolCap` | `test_tool_cap_message_shown_when_exceeded` | Total deductions > cap → tool cap info line shown |
+| `TestDisplayBreakdownToolCap` | `test_no_tool_cap_message_when_within_limit` | Total deductions ≤ cap → no tool cap message |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_shown` | `engine.cap_info` set → `breakdown.engine_cap_applied` shown |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_not_shown_when_absent` | No cap → no cap message |
+
+#### `tests/test_golden_scenarios.py` (new file, +32)
+
+| Class | Tests | Coverage |
+|-------|-------|----------|
+| `TestCleanMachine` | 4 | Score 10/10; no breakdown; no active domains; INFO findings excluded from domain activation |
+| `TestHardenedServer` | 3 | 2 hardening deductions → score 8; domain deductions count; raw breakdown assertions |
+| `TestDefaultDesktop` | 3 | 4 deductions across 3 domains → score 9; per-domain deduction exact counts |
+| `TestPoorlyConfiguredServer` | 3 | Raw score 3; domain average 8; domain average improves over raw |
+| `TestFirewallInactive` | 3 | Engine cap enforced at 3; domain average can exceed capped raw; `cap_info` stored |
+| `TestDebian13Minimal` | 4 | Raw score 2; domain average 6; rootkit tool cap; 6 total hardening deductions after cap |
+| `TestToolCapInvariants` | 4 | rootkit/clamav/file_integrity each capped at 1pt; uncapped tool (ssh) accumulates normally |
+| `TestScoreStability` | 5 | Order independence; same-domain monotonicity; domain independence; score ∈ [0, MAX_SCORE]; raw floor 0 |
+| `TestMultiDomainMachine` | 3 | 5 active domains exact frozenset; each domain deducted once; score 9 |
+
+#### `tests/test_min_level.py` (updated, 0 net new)
+
+`test_stable_shows_right_arrow` renamed to `test_stable_shows_equal`; assertion updated from `"→" in val` to `"= 7" in val`. Module docstring updated accordingly.
+
+---
+
 ## [v0.2.4] — 2026-05-05
 
 Post-audit codebase hardening pass triggered by a systematic review of the full codebase after the v0.2.3 multi-VM audit tour. Two Debian `-unsigned` kernel UX bugs fixed, a regression in the `deduction_total` sentinel pattern corrected, type annotations propagated to all check signatures, shell operator detection hardened, and profile fallback made visible. No new checks or behavioural changes. 4274/4274 tests (+12).

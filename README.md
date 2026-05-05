@@ -148,6 +148,12 @@ sudo bob --history                # sparkline of past scores
 sudo bob --diff                   # show only changes since last baseline
 ```
 
+**Score breakdown:**
+```
+sudo bob --breakdown              # full score computation path (-B shorthand)
+sudo bob -B
+```
+
 **Watch mode:**
 ```
 sudo bob --watch=60               # rerun every 60 seconds

@@ -423,6 +423,17 @@ def _check_installed_kernels(
             break
         to_keep.add(k)
 
+    # Expand: keep both signed and unsigned variants of every kept base version
+    # so we never remove one variant while keeping the other for the same kernel.
+    kernel_set = set(kernels)
+    for k in list(to_keep):
+        base = _strip_unsigned(k)
+        if base in kernel_set:
+            to_keep.add(base)
+        unsigned = f"{base}-unsigned"
+        if unsigned in kernel_set:
+            to_keep.add(unsigned)
+
     to_remove = [k for k in kernels if k not in to_keep]
 
     if to_remove:
@@ -437,7 +448,7 @@ def _check_installed_kernels(
             detail=_t("kernel_modules.kernels_obsolete_detail",
                       installed=installed_str,
                       to_remove=", ".join(to_remove),
-                      recent=most_recent),
+                      recent=running),
             cmd=_purge_cmd(to_remove),
             cmd_type="check",
             key="kernel_modules.kernels_obsolete",

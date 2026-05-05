@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.3.0](#v030) | 06-05-2026 | Transparence du scoring `--breakdown` · `--explain` score-aware · fix rétention kernel -unsigned · reliques entête rapport supprimées · affichage delta score · 4322/4322 tests (+48) |
 | [v0.2.4](#v024) | 05-05-2026 | UX kernel Debian -unsigned · sentinel None deduction_total · alias TranslationFunc (42 signatures) · _has_shell_ops() via shlex · avertissement profil introuvable · 4274/4274 tests (+12) |
 | [v0.2.3](#v023) | 03-05-2026 | Corrections tournée multi-VM : NOT_LISTENING WARN→INFO · déduction IoT supprimée · affichage heredoc · garde symlink circulaire · Python 3.9 retiré · delta déductions compare · label SSH surface d'attaque · label active_disabled · 4262/4262 tests (+1) |
 | [v0.2.2](#v022) | 02-05-2026 | Corrections scoring : `ScoreCap.key` · domaines INFO exclus · ClamAV 1pt · logging uniformisé · check règle UFW sans protocole · fix plafond domaine · fix locale SSH detail · tests invariants scoring · 4261/4261 tests (+23) |
@@ -11,6 +12,46 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.3.0] — 06-05-2026
+
+Jalon transparence du scoring : `--breakdown` (`-B`) affiche le chemin complet de calcul du score — déductions, plafonds par outil, plafond moteur, score brut, scores par domaine, surcharge moyenne, et score final. `--explain <clé>` gagne une section SCORING indiquant le domaine et le plafond outil. Trois corrections ciblées : asymétrie `-unsigned` dans la logique de rétention des kernels, flèche `→` orpheline dans la ligne de delta du score, et reliques "UFW-AU" dans le rapport détaillé. 4322/4322 tests (+48).
+
+### Fonctionnalité — option `--breakdown` / `-B` (`bob/breakdown.py`, `bob/cli.py`, `bob/__main__.py`, locales)
+
+Nouvelle vue post-audit qui affiche le chemin complet de calcul du score sans relancer les vérifications. Affiche : toutes les déductions (clé · domaine · points · contexte), les déductions absorbées par les plafonds par outil, si le plafond moteur a été appliqué, le score brut avant moyennage par domaine, les scores par domaine avec barres de progression, si la surcharge de moyenne a été activée, et le score final coloré par sévérité.
+
+Implémenté via `_silent_mode` : la sortie de l'audit est redirigée vers `/dev/null` via `redirect_stdout`, puis le breakdown s'affiche après restauration de stdout. Cela supprime tous les appels `print()` nus (pas seulement les appels `output.*`), donnant une vue propre.
+
+i18n : clés `breakdown.*` ajoutées dans `bob/locales/en.json` et `bob/locales/fr.json`.
+
+### Fonctionnalité — `--explain` score-aware (`bob/explain.py`)
+
+`bob --explain <clé>` ajoute désormais une section SCORING après le texte de remédiation, indiquant le domaine de la clé et le plafond outil applicable. Se termine par une suggestion d'exécuter `sudo bob --breakdown` pour voir la contribution en direct.
+
+### Correction — Asymétrie de rétention kernel `-unsigned` (`bob/checks/kernel_modules.py`)
+
+Sur les systèmes Debian avec des paires de kernels signés/non-signés (ex. `6.12.74+deb13+1-amd64` et `6.12.74+deb13+1-amd64-unsigned`), la variante non-signée triait alphabétiquement en dernier et occupait un slot de rétention, laissant la variante signée incorrectement marquée comme obsolète. Corrigé : après la boucle de rétention, l'ensemble de conservation est étendu pour inclure les deux variantes (signée et non-signée) de chaque version de base conservée. Le message de détail des kernels obsolètes utilise maintenant `recent=running` au lieu de `recent=most_recent` afin que le conseil de vérification après redémarrage nomme toujours le kernel effectivement en cours d'exécution.
+
+### Correction — Flèche orpheline dans le delta de score (`bob/display.py`)
+
+Quand le score était identique entre deux audits consécutifs, la ligne de score affichait `6/10  →` sans valeur après la flèche. Remplacé par `6/10  = 6` (signe égal + score répété) pour la clarté.
+
+### Correction — Reliques "UFW-AU" dans le rapport détaillé (`bob/report.py`, `bob/report_markdown.py`)
+
+Le fichier de rapport détaillé ouvert avec `--detailed` contenait un bandeau ASCII représentant "UFW-AU" (ancien nom de l'outil "ufw-audit") et un champ d'en-tête "UFW: v...". Remplacé par l'art ASCII BOB (même style que le bandeau terminal) et "Firewall: ufw ...". Rapport Markdown mis à jour : "UFW:" → "Firewall (UFW):".
+
+### Tests
+
+4322/4322 (+48 nouveaux) :
+
+| Fichier | Modification |
+|---------|-------------|
+| `tests/test_breakdown.py` | Nouveau fichier — 16 tests : helper barre, moteur propre, déductions, plafond outil, plafond moteur, surcharge domaine, labels français |
+| `tests/test_golden_scenarios.py` | Nouveau fichier — 32 tests : scénarios de scoring bout-en-bout sur 9 classes (machine propre, serveur durci, desktop, mal configuré, pare-feu inactif, Debian minimal, plafonds outil, stabilité, multi-domaine) |
+| `tests/test_min_level.py` | Renommé `test_stable_shows_right_arrow` → `test_stable_shows_equal` pour correspondre au format `= N` |
 
 ---
 

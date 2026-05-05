@@ -356,6 +356,29 @@ def run_explain(key: str, t) -> None:
             print(f"  {_note}")
         print()
 
+    _explain_scoring(norm, t)
+
+
+def _explain_scoring(key: str, t) -> None:
+    """Print the scoring context for *key* (domain, tool cap, breakdown hint)."""
+    from bob.domain_scores import _key_to_domain, _TOOL_CAPS, _LABELS
+
+    domain_id = _key_to_domain(key)
+    if not domain_id:
+        return
+
+    domain_label = _LABELS.get(domain_id, domain_id.capitalize())
+    prefix = key.split(".", 1)[0]
+    tool_cap = _TOOL_CAPS.get(prefix)
+
+    print("SCORING")
+    print("\u2500" * 40)
+    print(f"  Domain   : {domain_label}")
+    if tool_cap is not None:
+        print(f"  Tool cap : max {tool_cap} pt total for '{prefix}' deductions in this domain")
+    print(f"  Impact   : run 'sudo bob --breakdown' to see this key's current score contribution")
+    print()
+
 
 # ---------------------------------------------------------------------------
 # Interactive picker (curses TUI)

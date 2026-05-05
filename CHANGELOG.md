@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.3.0](#v030) | 2026-05-06 | `--breakdown` score transparency · score-aware `--explain` · kernel -unsigned retention fix · report header relics removed · score delta display · 4322/4322 tests (+48) |
 | [v0.2.4](#v024) | 2026-05-05 | Debian -unsigned kernel UX · deduction_total None sentinel · TranslationFunc alias (42 signatures) · _has_shell_ops() via shlex · profile fallback warning · 4274/4274 tests (+12) |
 | [v0.2.3](#v023) | 2026-05-03 | Multi-VM audit fixes: NOT_LISTENING WARN→INFO · IoT deduction removed · heredoc display · completion symlink guard · Python 3.9 dropped · compare deduction delta · SSH exposure label split · active_disabled label · 4262/4262 tests (+1) |
 | [v0.2.2](#v022) | 2026-05-02 | Scoring refinements: `ScoreCap.key` · INFO domains excluded · ClamAV 1pt · logging uniformity · contract documented · orphan-rule fix · domain cap fix (UFW inactive) · SSH detail locale fix · scoring invariant tests · 4261/4261 tests (+23) |
@@ -11,6 +12,46 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.3.0] — 2026-05-06
+
+Scoring transparency milestone: `--breakdown` (`-B`) shows the full score computation path — deductions, tool caps, engine cap, raw score, per-domain scores, domain-average override, and final score. `--explain <key>` gains a SCORING section showing domain membership and tool cap. Three targeted fixes: kernel `-unsigned` asymmetry in retention logic, orphan `→` in the score delta line, and "UFW-AU" ASCII art relics in the detailed report. 4322/4322 tests (+48).
+
+### Feature — `--breakdown` / `-B` flag (`bob/breakdown.py`, `bob/cli.py`, `bob/__main__.py`, locales)
+
+New post-audit view that prints the complete score computation path without re-running checks. Shows: all deductions (key · domain · points · context), which deductions were absorbed by tool caps, whether the engine cap applied, raw score before domain averaging, per-domain scores with progress bars, whether the domain-average override fired, and the final score color-coded by severity.
+
+Implemented using `_silent_mode`: audit output is redirected to `/dev/null` via `redirect_stdout`, then breakdown is displayed after stdout is restored. This suppresses all bare `print()` calls (not just `output.*` calls), giving a clean view.
+
+i18n: `breakdown.*` keys added to both `bob/locales/en.json` and `bob/locales/fr.json`.
+
+### Feature — Score-aware `--explain` (`bob/explain.py`)
+
+`bob --explain <key>` now appends a SCORING section after the remediation text, showing the key's domain and any applicable tool cap. Ends with a hint to run `sudo bob --breakdown` to see the live score contribution.
+
+### Fix — Kernel `-unsigned` retention asymmetry (`bob/checks/kernel_modules.py`)
+
+On Debian systems with signed/unsigned kernel pairs (e.g. `6.12.74+deb13+1-amd64` and `6.12.74+deb13+1-amd64-unsigned`), the unsigned variant sorted alphabetically last and consumed one retention slot, leaving the signed variant incorrectly marked as obsolete. Fixed: after the retention loop, the keep-set is expanded to include both signed and unsigned variants of every kept base version. The obsolete detail message also now uses `recent=running` instead of `recent=most_recent` so the boot-verification hint always names the kernel the system is actually running.
+
+### Fix — Score delta orphan arrow (`bob/display.py`)
+
+When the score was identical between two consecutive audits, the score line showed `6/10  →` with no value after the arrow. Changed to `6/10  = 6` (equals sign + repeated score) for clarity.
+
+### Fix — "UFW-AU" relics in detailed report (`bob/report.py`, `bob/report_markdown.py`)
+
+The detailed report file opened with `--detailed` contained an ASCII art banner spelling "UFW-AU" (from the former tool name "ufw-audit") and a header field "UFW: v...". Replaced with BOB ASCII art (same style as the terminal banner) and "Firewall: ufw ...". Markdown report updated: "UFW:" → "Firewall (UFW):".
+
+### Tests
+
+4322/4322 (+48 new):
+
+| File | Change |
+|------|--------|
+| `tests/test_breakdown.py` | New file — 16 tests: bar helper, clean engine, deductions, tool cap, engine cap, domain override, French labels |
+| `tests/test_golden_scenarios.py` | New file — 32 tests: end-to-end scoring scenarios across 9 test classes (clean, hardened, desktop, poorly configured, firewall inactive, Debian minimal, tool caps, stability, multi-domain) |
+| `tests/test_min_level.py` | Renamed `test_stable_shows_right_arrow` → `test_stable_shows_equal` to match `= N` format |
 
 ---
 

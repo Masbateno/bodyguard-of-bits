@@ -701,6 +701,18 @@
     "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
     "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)"
   },
+  "breakdown": {
+    "section_title": "DÉTAIL DU SCORE",
+    "no_deductions": "Aucune déduction appliquée — audit propre",
+    "deductions_header": "Déductions appliquées ({count}) :",
+    "capped": "[plafonnée — limite outil atteinte]",
+    "tool_cap_applied": "Plafond outil : {tool} — {raw} pt bruts → {counted} pt comptabilisés (plafond : {cap} pt)",
+    "engine_cap_applied": "Plafond de score actif : {reason} (plafond : {maximum}/10)",
+    "raw_score": "Score brut (somme des déductions) : {score}/10",
+    "domain_scores_header": "Scores par domaine (domaines actifs) :",
+    "domain_average": "Moyenne des domaines ({count} domaines actifs) : {score}/10",
+    "final_score": "Score final : {score}/10"
+  },
   "watch": {
     "header": "bob --watch  │  Intervalle : {interval}s  │  Ctrl+C pour quitter",
     "score": "Score {score}/10",

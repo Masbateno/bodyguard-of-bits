@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.0  | 4322  | +48 nouveaux tests : affichage `--breakdown` · scénarios golden scoring · 16 dans test_breakdown · 32 dans test_golden_scenarios · 1 renommé dans test_min_level |
 | v0.2.4  | 4274  | +12 nouveaux tests : UX kernel Debian -unsigned · sentinel None deduction_total · 2 dans test_kernel_modules · 10 dans test_compare |
 | v0.2.3  | 4262  | +1 nouveau · 4 renommés : NOT_LISTENING INFO · IoT sans déduction · label SSH arrêté scindé |
 | v0.2.2  | 4255  | +17 nouveaux tests · 2 mis à jour : `TestStatFallback` · `TestScoringInvariants` · fix règle UFW sans protocole · ClamAV 1pt · `ScoreCap.key` · domaines INFO exclus |
@@ -18,6 +19,58 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.3.0 — 4322/4322 (06-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4322 passed in 4.45s
+```
+
+**Nouveaux tests (+48) :**
+
+#### `tests/test_breakdown.py` (nouveau fichier, +16)
+
+| Classe | Test | Couverture |
+|--------|------|------------|
+| `TestBar` | `test_full_score_all_filled` | Score 10 → tous les blocs remplis |
+| `TestBar` | `test_zero_score_all_empty` | Score 0 → tous les blocs vides |
+| `TestBar` | `test_five_half_filled` | Score 5 → moitié remplie |
+| `TestDisplayBreakdownClean` | `test_no_deductions_message` | Aucune déduction → clé `no_deductions` affichée |
+| `TestDisplayBreakdownClean` | `test_section_title_printed` | En-tête de section affiché |
+| `TestDisplayBreakdownClean` | `test_final_score_ten_shown` | Score 10 → clé `breakdown.final_score` affichée |
+| `TestDisplayBreakdownWithDeductions` | `test_deductions_header_shown` | Déductions présentes → en-tête affiché |
+| `TestDisplayBreakdownWithDeductions` | `test_deduction_keys_shown` | Chaque clé de déduction apparaît dans la sortie |
+| `TestDisplayBreakdownWithDeductions` | `test_raw_score_shown` | Clé `breakdown.raw_score` affichée |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_scores_header_shown` | Domaines actifs → en-tête affiché |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_average_shown` | Surcharge globale définie → `breakdown.domain_average` affiché |
+| `TestDisplayBreakdownWithDeductions` | `test_final_score_shown` | Clé `breakdown.final_score` affichée |
+| `TestDisplayBreakdownToolCap` | `test_tool_cap_message_shown_when_exceeded` | Déductions totales > plafond → ligne info plafond outil affichée |
+| `TestDisplayBreakdownToolCap` | `test_no_tool_cap_message_when_within_limit` | Déductions totales ≤ plafond → pas de message plafond outil |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_shown` | `engine.cap_info` défini → `breakdown.engine_cap_applied` affiché |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_not_shown_when_absent` | Pas de plafond → pas de message plafond |
+
+#### `tests/test_golden_scenarios.py` (nouveau fichier, +32)
+
+| Classe | Tests | Couverture |
+|--------|-------|------------|
+| `TestCleanMachine` | 4 | Score 10/10 ; pas de breakdown ; aucun domaine actif ; findings INFO exclus de l'activation des domaines |
+| `TestHardenedServer` | 3 | 2 déductions durcissement → score 8 ; déductions par domaine ; assertions breakdown brut |
+| `TestDefaultDesktop` | 3 | 4 déductions sur 3 domaines → score 9 ; déductions exactes par domaine |
+| `TestPoorlyConfiguredServer` | 3 | Score brut 3 ; moyenne domaines 8 ; moyenne supérieure au score brut |
+| `TestFirewallInactive` | 3 | Plafond moteur appliqué à 3 ; moyenne domaine peut dépasser le brut plafonné ; `cap_info` stocké |
+| `TestDebian13Minimal` | 4 | Score brut 2 ; moyenne domaines 6 ; plafond outil rootkit ; 6 déductions durcissement après plafond |
+| `TestToolCapInvariants` | 4 | rootkit/clamav/file_integrity plafonnés à 1pt chacun ; outil non-plafonné (ssh) s'accumule normalement |
+| `TestScoreStability` | 5 | Indépendance d'ordre ; monotonicité même-domaine ; indépendance des domaines ; score ∈ [0, MAX_SCORE] ; plancher brut à 0 |
+| `TestMultiDomainMachine` | 3 | 5 domaines actifs exact (frozenset) ; chaque domaine déduit une fois ; score 9 |
+
+#### `tests/test_min_level.py` (renommé, +0 net)
+
+`test_stable_shows_right_arrow` → `test_stable_shows_equal` — assertion mise à jour de `"→" in val` vers `"= 7" in val`.
 
 ---
 

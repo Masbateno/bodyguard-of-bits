@@ -11,7 +11,7 @@ Covers:
   - CLI: invalid value raises CLIError
   - AuditConfig default min_level is empty string
   - Score trend: prev_score None → no arrow
-  - Score trend: improved → ↑, degraded → ↓, stable → →
+  - Score trend: improved → ↑, degraded → ↓, stable → = N
 """
 
 from __future__ import annotations
@@ -317,9 +317,9 @@ class TestScoreTrend:
         val = self._score_str_for(6, 7)
         assert "↓" in val
 
-    def test_stable_shows_right_arrow(self):
+    def test_stable_shows_equal(self):
         val = self._score_str_for(7, 7)
-        assert "→" in val
+        assert "= 7" in val
 
     def test_improved_by_two(self):
         val = self._score_str_for(9, 7)

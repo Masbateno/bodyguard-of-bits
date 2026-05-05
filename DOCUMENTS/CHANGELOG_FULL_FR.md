@@ -6,6 +6,207 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.3.0] — 06-05-2026
+
+Jalon transparence du scoring. Nouvelle option `--breakdown` (`-B`) affichant le chemin complet de calcul du score après un audit. `--explain <clé>` gagne une section SCORING. Trois corrections ciblées : asymétrie `-unsigned` dans la logique de rétention des kernels, flèche `→` orpheline sur les deltas de score stables, et reliques "UFW-AU" dans le rapport détaillé. 4322/4322 tests (+48).
+
+---
+
+### Fonctionnalité 1 — option `--breakdown` / `-B` (`bob/breakdown.py`, `bob/cli.py`, `bob/__main__.py`, `bob/locales/en.json`, `bob/locales/fr.json`)
+
+#### Motivation
+
+Le scoring de BOB utilise un pipeline multicouche : déductions par vérification → plafonds par outil → plafond moteur → surcharge de moyenne par domaine. Le score final était visible mais pas sa dérivation. Les utilisateurs voyant un 6/10 n'avaient aucun moyen de comprendre quelles déductions avaient contribué, si un plafond avait été déclenché, ou comment la moyenne par domaine avait modifié le résultat.
+
+#### Implémentation
+
+Nouveau module `bob/breakdown.py` — `display_breakdown(engine, t, output_mod)` — lit le `ScoreEngine` déjà finalisé et affiche :
+
+1. **Déductions** — tableau complet (clé · domaine · points · contexte), avec annotation `[plafonné]` pour les entrées absorbées par un plafond outil.
+2. **Plafonds par outil** — une ligne `[INFO]` par outil où les déductions brutes totales dépassent le plafond.
+3. **Plafond moteur** — ligne `[ATTENTION]` si `engine.cap_info` est défini (ex. "pare-feu inactif — plafond à 3").
+4. **Score brut** — `engine._raw_score` avant la moyenne par domaine.
+5. **Scores par domaine** — chaque domaine actif avec score, déductions, et barre de progression sur 10 caractères.
+6. **Surcharge de moyenne** — ligne `[INFO]` montrant la moyenne calculée et le nombre de domaines actifs, quand `engine._global_override is not None`.
+7. **Score final** — coloré : vert (≥ 8), jaune (≥ 5), rouge (< 5).
+
+Les labels de domaine sont traduits via `_domain_label(domain_id, t)` — essaie d'abord `t(f"domain_scores.{domain_id}")` (même pattern que `render_domain_scores`), se rabat sur `_LABELS` puis `domain_id.capitalize()`. Cela assure l'apparition des labels français (ex. "Durcissement") lors de l'exécution avec `--french`.
+
+**Gestion de stdout** — `breakdown_mode` est ajouté à `_silent_mode` dans `__main__.py`. Tout l'audit s'exécute dans `with redirect_stdout(devnull)`, supprimant tous les appels `print()` nus (pas seulement les appels `output.*`, déjà supprimés par `quiet=True`). Après le bloc `with`, stdout est restauré et `display_breakdown` est appelé avec `output` réinitialisé sans `quiet`. C'est le même pattern qu'utilise `diff_mode` et les formats lisibles par machine.
+
+#### i18n
+
+Nouvelle section `breakdown.*` dans les deux fichiers de locales :
+
+| Clé | Rôle |
+|-----|------|
+| `breakdown.section_title` | En-tête de section |
+| `breakdown.no_deductions` | Message OK quand aucune déduction |
+| `breakdown.deductions_header` | Sous-en-tête "N déduction(s) :" |
+| `breakdown.capped` | Annotation pour les entrées plafonnées |
+| `breakdown.tool_cap_applied` | Ligne info plafond outil |
+| `breakdown.engine_cap_applied` | Ligne attention plafond moteur |
+| `breakdown.raw_score` | Ligne score brut |
+| `breakdown.domain_scores_header` | Sous-en-tête scores par domaine |
+| `breakdown.domain_average` | Ligne surcharge moyenne domaine |
+| `breakdown.final_score` | Ligne score final |
+
+#### CLI
+
+`-B` / `--breakdown` ajouté à `bob/cli.py` comme option booléenne. `_silent_mode` dans `__main__.py` étendu : `_machine_mode or config.breakdown_mode or config.diff_mode`.
+
+---
+
+### Fonctionnalité 2 — `--explain` score-aware (`bob/explain.py`)
+
+#### Problème
+
+`bob --explain <clé>` affichait les étapes de remédiation mais ne donnait aucune indication sur la contribution de la clé au score — son domaine d'appartenance, si un plafond outil limitait ses déductions, ou comment voir son impact en direct.
+
+#### Correction
+
+Nouvelle fonction `_explain_scoring(key, t)` ajoutée à la fin de chaque appel `run_explain()`. Lit `_key_to_domain(key)` et `_TOOL_CAPS.get(prefix)` depuis `bob/domain_scores.py` et affiche :
+
+```
+SCORING
+────────────────────────────────────────
+  Domain   : Durcissement
+  Tool cap : max 2 pt total for 'hardening' deductions in this domain
+  Impact   : run 'sudo bob --breakdown' to see this key's current score contribution
+```
+
+Les clés sans mapping de domaine (ex. clés info génériques) ignorent silencieusement la section.
+
+---
+
+### Correction 1 — Asymétrie de rétention kernel `-unsigned` (`bob/checks/kernel_modules.py`, `tests/test_kernel_modules.py`)
+
+#### Problème
+
+Sur les systèmes Debian, les paquets kernel signés et non-signés sont installés côte à côte :
+
+```
+linux-image-6.12.74+deb13+1-amd64
+linux-image-6.12.74+deb13+1-amd64-unsigned
+```
+
+`_kernel_sort_key()` produit des tuples numériques identiques pour les deux (même `MAJOR.MINOR.PATCH+ABI`). Quand les tuples sont égaux, le tri de Python est stable, ce qui fait que la variante non-signée (apparaissant plus tard dans la sortie dpkg) se retrouve en dernière position dans la liste triée et devient `most_recent`.
+
+La boucle de rétention remplit les slots du plus récent vers le plus ancien. Avec trois kernels installés et `keep_count=3` (profil server), la boucle remplit : `running`, `most_recent` (non-signé), et un kernel plus ancien. La variante signée de la même version que `most_recent` n'obtient pas de slot et atterrit dans `to_remove` — incorrectement marquée comme obsolète.
+
+#### Correction
+
+Après la boucle de rétention, étendre l'ensemble de conservation pour inclure les deux variantes de chaque version de base conservée :
+
+```python
+kernel_set = set(kernels)
+for k in list(to_keep):
+    base = _strip_unsigned(k)
+    if base in kernel_set:
+        to_keep.add(base)
+    unsigned = f"{base}-unsigned"
+    if unsigned in kernel_set:
+        to_keep.add(unsigned)
+```
+
+`_strip_unsigned()` existait déjà dans le module. Cette expansion est O(keep_count) et s'exécute une seule fois après la boucle.
+
+De plus, le message de détail des kernels obsolètes a été modifié de `recent=most_recent` à `recent=running`. Le conseil de vérification après redémarrage ("vérifiez que le système démarre correctement avant de supprimer les anciens kernels") doit référencer le kernel effectivement en cours d'exécution, pas le sibling `-unsigned` qui trie en dernier par hasard.
+
+---
+
+### Correction 2 — Flèche `→` orpheline dans le delta de score (`bob/display.py`)
+
+#### Problème
+
+Dans `print_audit_summary()`, la ligne de score est construite ainsi :
+
+```python
+score_str = f"{score}/10"
+if prev_score is not None:
+    delta = score - prev_score
+    if delta > 0:
+        score_str += f"  ↑ +{delta}"
+    elif delta < 0:
+        score_str += f"  ↓ {delta}"
+    else:
+        score_str += f"  →"
+```
+
+Quand le score était identique (`delta == 0`), la ligne affichait `6/10  →` sans rien après la flèche. La flèche était censée indiquer "stable" mais ressemblait à une ligne tronquée dans l'affichage de la boîte.
+
+#### Correction
+
+```python
+    else:
+        score_str += f"  = {score}"
+```
+
+"= 6" est sans ambiguïté : le score est égal à la valeur précédente.
+
+---
+
+### Correction 3 — Reliques "UFW-AU" dans le rapport détaillé (`bob/report.py`, `bob/report_markdown.py`)
+
+#### Problème
+
+`AuditReport.write_header()` contenait des tableaux de lettres ASCII codés en dur représentant "UFW-AU" — l'acronyme de l'ancien nom d'outil "ufw-audit". La liste de groupes de lettres était `[U, F, W, TIRET, A, U]`. L'en-tête imprimait aussi `UFW : ufw {version}` précédé de l'étiquette `UFW`.
+
+Dans `report_markdown.py`, l'entrée pare-feu était étiquetée `**UFW:**`.
+
+#### Correction
+
+`bob/report.py` — groupes de lettres remplacés par `[B, O, B]` en utilisant la même police Doom block déjà utilisée dans le bandeau terminal de `output.py`. Étiquette d'en-tête changée en `Firewall : ufw {info.ufw_version}`.
+
+`bob/report_markdown.py` — étiquette changée en `**Firewall (UFW):**`.
+
+---
+
+### Tests
+
+4322/4322 (+48 nouveaux) :
+
+#### `tests/test_breakdown.py` (nouveau fichier, +16)
+
+| Classe | Test | Couverture |
+|--------|------|------------|
+| `TestBar` | `test_full_score_all_filled` | Score 10 → tous les blocs remplis |
+| `TestBar` | `test_zero_score_all_empty` | Score 0 → tous les blocs vides |
+| `TestBar` | `test_five_half_filled` | Score 5 → moitié remplie |
+| `TestDisplayBreakdownClean` | `test_no_deductions_message` | Aucune déduction → clé `no_deductions` affichée |
+| `TestDisplayBreakdownClean` | `test_section_title_printed` | En-tête de section affiché |
+| `TestDisplayBreakdownClean` | `test_final_score_ten_shown` | Score 10 → clé `breakdown.final_score` affichée |
+| `TestDisplayBreakdownWithDeductions` | `test_deductions_header_shown` | Déductions présentes → en-tête affiché |
+| `TestDisplayBreakdownWithDeductions` | `test_deduction_keys_shown` | Chaque clé de déduction apparaît dans la sortie |
+| `TestDisplayBreakdownWithDeductions` | `test_raw_score_shown` | Clé `breakdown.raw_score` affichée |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_scores_header_shown` | Domaines actifs → en-tête affiché |
+| `TestDisplayBreakdownWithDeductions` | `test_domain_average_shown` | Surcharge globale définie → `breakdown.domain_average` affiché |
+| `TestDisplayBreakdownWithDeductions` | `test_final_score_shown` | Clé `breakdown.final_score` affichée |
+| `TestDisplayBreakdownToolCap` | `test_tool_cap_message_shown_when_exceeded` | Déductions totales > plafond → ligne info plafond outil affichée |
+| `TestDisplayBreakdownToolCap` | `test_no_tool_cap_message_when_within_limit` | Déductions totales ≤ plafond → pas de message plafond outil |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_shown` | `engine.cap_info` défini → `breakdown.engine_cap_applied` affiché |
+| `TestDisplayBreakdownEngineCap` | `test_engine_cap_message_not_shown_when_absent` | Pas de plafond → pas de message plafond |
+
+#### `tests/test_golden_scenarios.py` (nouveau fichier, +32)
+
+| Classe | Tests | Couverture |
+|--------|-------|------------|
+| `TestCleanMachine` | 4 | Score 10/10 ; pas de breakdown ; aucun domaine actif ; findings INFO exclus de l'activation des domaines |
+| `TestHardenedServer` | 3 | 2 déductions durcissement → score 8 ; déductions par domaine ; assertions breakdown brut |
+| `TestDefaultDesktop` | 3 | 4 déductions sur 3 domaines → score 9 ; déductions exactes par domaine |
+| `TestPoorlyConfiguredServer` | 3 | Score brut 3 ; moyenne domaines 8 ; moyenne supérieure au score brut |
+| `TestFirewallInactive` | 3 | Plafond moteur appliqué à 3 ; moyenne domaine peut dépasser le brut plafonné ; `cap_info` stocké |
+| `TestDebian13Minimal` | 4 | Score brut 2 ; moyenne domaines 6 ; plafond outil rootkit ; 6 déductions durcissement après plafond |
+| `TestToolCapInvariants` | 4 | rootkit/clamav/file_integrity plafonnés à 1pt chacun ; outil non-plafonné (ssh) s'accumule normalement |
+| `TestScoreStability` | 5 | Indépendance d'ordre ; monotonicité même-domaine ; indépendance des domaines ; score ∈ [0, MAX_SCORE] ; plancher brut à 0 |
+| `TestMultiDomainMachine` | 3 | 5 domaines actifs exact (frozenset) ; chaque domaine déduit une fois ; score 9 |
+
+#### `tests/test_min_level.py` (mis à jour, 0 nouveau net)
+
+`test_stable_shows_right_arrow` renommé en `test_stable_shows_equal` ; assertion mise à jour de `"→" in val` vers `"= 7" in val`. Docstring du module mis à jour en conséquence.
+
+---
+
 ## [v0.2.4] — 05-05-2026
 
 Passe de durcissement du codebase post-audit, déclenchée par une revue systématique de l'ensemble du projet à la suite de la tournée multi-VM v0.2.3. Deux bugs UX kernel Debian `-unsigned` corrigés, une régression dans le pattern sentinel `deduction_total` résolue, les annotations de type propagées à toutes les signatures de vérification, la détection des opérateurs shell durcie, et le fallback de profil rendu visible. Aucun nouveau check, aucun changement comportemental. 4274/4274 tests (+12).

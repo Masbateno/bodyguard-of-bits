@@ -86,6 +86,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 check
 - **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 90-entry rotation
 - **Ignore list** — `--ignore KEY` adds a finding key to `ignore.yml`; `--show-ignored` lists active exceptions; silences matching findings without scoring
 - **`--diff` mode** — runs audit silently and displays only the baseline delta (score, alerts, warnings, info)
+- **`--breakdown` / `-B`** — runs audit silently and displays the full score computation path: all deductions (key · domain · points · context), tool caps, engine cap, raw score, per-domain scores with progress bars, domain-average override, final score color-coded by severity
 - **Plugin check API** — drop a Python file in `~/.config/bob/checks.d/` to add a custom audit check; fail-safe (exceptions never abort the audit); ANSI-sanitized
 
 ### Automation
@@ -407,6 +408,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--json`                | Export summary as JSON (alias for `--format=json`)                |
 | `--json-full`           | Export full audit details as JSON (alias for `--format=json-full`)|
 | `--explain=KEY`         | Print structured explanation for a finding key (`--explain list` shows all) |
+| `-B`, `--breakdown`     | Silent audit — show full score computation path (deductions, tool caps, domain scores, final) |
 | `--diff`                | Silent audit — show only the baseline delta                        |
 | `--webhook=URL`         | POST audit result as JSON to URL after each audit                  |
 | `--webhook-format=FMT`  | Webhook payload format: `auto` (default), `generic`, or `slack`   |

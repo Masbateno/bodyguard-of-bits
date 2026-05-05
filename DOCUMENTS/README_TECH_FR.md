@@ -86,6 +86,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 90 entrées
 - **Liste d'exceptions** — `--ignore KEY` ajoute une clé dans `ignore.yml` ; `--show-ignored` liste les exceptions actives ; les findings correspondants sont masqués sans être scorés
 - **Mode `--diff`** — lance l'audit silencieusement et affiche uniquement le delta (score, alertes, avertissements, INFO)
+- **`--breakdown` / `-B`** — lance l'audit silencieusement et affiche le chemin complet de calcul du score : toutes les déductions (clé · domaine · points · contexte), plafonds par outil, plafond moteur, score brut, scores par domaine avec barres de progression, surcharge de moyenne, score final coloré
 - **API Plugin** — déposer un fichier Python dans `~/.config/bob/checks.d/` pour ajouter une vérification personnalisée ; fail-safe (les exceptions n'interrompent jamais l'audit) ; séquences ANSI nettoyées
 
 ### Automatisation
@@ -407,6 +408,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `--json`                | Exporter le résumé en JSON (alias `--format=json`)                 |
 | `--json-full`           | Exporter l'audit complet en JSON (alias `--format=json-full`)      |
 | `--explain=KEY`         | Afficher l'explication d'une clé de constat (`--explain list` liste tout) |
+| `-B`, `--breakdown`     | Audit silencieux — afficher le chemin complet de calcul du score (déductions, plafonds, domaines, score final) |
 | `--diff`                | Audit silencieux — afficher uniquement le delta de la baseline      |
 | `--webhook=URL`         | Envoyer le résultat d'audit en JSON à l'URL après chaque audit     |
 | `--webhook-format=FMT`  | Format webhook : `auto` (défaut), `generic` ou `slack`            |

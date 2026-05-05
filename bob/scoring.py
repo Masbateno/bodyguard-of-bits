@@ -369,6 +369,16 @@ class ScoreEngine:
         return self._cap
 
     @property
+    def raw_score(self) -> int:
+        """Score after deductions and engine cap, before domain-average override."""
+        return self._raw_score
+
+    @property
+    def global_override(self) -> int | None:
+        """Domain-average override set by apply_domain_score_override(), or None."""
+        return self._global_override
+
+    @property
     def alert_count(self) -> int:
         """Number of ALERT-level findings."""
         return sum(1 for f in self.findings if f.level == FindingLevel.ALERT)

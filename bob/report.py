@@ -163,17 +163,14 @@ class AuditReport:
         """Write the report header with ASCII art banner and system info."""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # ASCII art — UFW-AU in Doom block style, plain text, no colour
+        # ASCII art — BOB in Doom block style, plain text, no colour
         _BOX_INNER = 60
         _BAR       = "═" * _BOX_INNER
 
-        U    = ["██╗   ██╗", "██║   ██║", "██║   ██║", "██║   ██║", "╚██████╔╝", " ╚═════╝ "]
-        F    = ["███████╗",  "██╔════╝",  "█████╗  ",  "██╔══╝  ",  "██║     ",  "╚═╝     "]
-        W    = ["██╗    ██╗", "██║    ██║", "██║ █╗ ██║", "██║███╗██║", "╚███╔███╔╝", " ╚══╝╚══╝ "]
-        DASH = ["   ",        "   ",        "═══",        "   ",        "   ",        "   "      ]
-        A    = [" █████╗ ",  "██╔══██╗",  "███████║",  "██╔══██║",  "██║  ██║",  "╚═╝  ╚═╝"]
+        B = ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔══██╗", "██████╔╝", "╚═════╝ "]
+        O = [" ██████╗ ", "██╔═══██╗", "██║   ██║", "██║   ██║", "╚██████╔╝", " ╚═════╝ "]
 
-        letter_groups = [U, F, W, DASH, A, U]
+        letter_groups = [B, O, B]
 
         self._writeln(f"╔{_BAR}╗")
         for i in range(6):
@@ -195,7 +192,7 @@ class AuditReport:
         self._writeln(f"System      : {info.os_name}")
         self._writeln(f"Host        : {info.hostname}")
         self._writeln(f"Kernel      : {info.kernel}")
-        self._writeln(f"UFW         : ufw {info.ufw_version}")
+        self._writeln(f"Firewall    : ufw {info.ufw_version}")
         self._writeln(f"User        : {info.user}")
         self._writeln(f"Language    : {info.language}")
         self._writeln(f"Port config : {info.config_path}")

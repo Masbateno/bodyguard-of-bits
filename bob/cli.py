@@ -109,6 +109,9 @@ class AuditConfig:
     diff_mode: bool = False
     """-D / --diff: run audit silently and show only changes since the last baseline."""
 
+    breakdown_mode: bool = False
+    """-B / --breakdown: run audit silently and print the full score computation path."""
+
     watch_mode: bool = False
     """--watch[=N]: run the audit every N seconds (default 60) and show only changes."""
 
@@ -283,6 +286,9 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
 
         elif arg in ("-D", "--diff"):
             config.diff_mode = True
+
+        elif arg in ("-B", "--breakdown"):
+            config.breakdown_mode = True
 
         elif arg.startswith("--watch="):
             if config.watch_mode:
@@ -598,6 +604,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("-c, --install-cron",    "Install an automated audit cron job (schedule wizard)")
     opt("-C, --manage-cron",     "List, edit or delete installed cron jobs")
     opt("-m, --manage-logs",     "List and delete saved audit log files")
+    opt("-B, --breakdown",       "Run audit silently and print full score computation path")
     opt("    --reset-baseline",  "Delete the stored audit baseline and exit")
     opt("    --ignore=KEY",      "Add a finding key to the ignore list (~/.config/bob/ignore.yml) and exit")
     opt("    --show-ignored",    "Display suppressed findings in grey alongside normal output")
