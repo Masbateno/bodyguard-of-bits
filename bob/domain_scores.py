@@ -173,7 +173,10 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
             already = tool_contributed.get(prefix, 0)
             allowed = min(points, cap - already)
             if allowed <= 0:
+                deduction.was_capped = True
                 continue
+            if allowed < points:
+                deduction.was_capped = True
             tool_contributed[prefix] = already + allowed
             points = allowed
         domain_deductions[domain] += points
@@ -243,6 +246,8 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
     scores = compute_domain_scores(engine)
     active = active_domains_from_engine(engine)
     engine.set_global_score(compute_global_from_domains(scores, active))
+    engine._domain_scores  = scores
+    engine._active_domains = active
 
 
 # ---------------------------------------------------------------------------

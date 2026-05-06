@@ -735,3 +735,45 @@ class TestScoringInvariants:
         active = active_domains_from_engine(engine)
         result = compute_global_from_domains(scores, active)
         assert 0 <= result <= MAX_SCORE
+
+
+# ---------------------------------------------------------------------------
+# was_capped flag — set by compute_domain_scores()
+# ---------------------------------------------------------------------------
+
+class TestWasCapped:
+    def test_uncapped_deduction_not_marked(self):
+        engine = _make_engine((1, "rootkit.db_outdated"))
+        compute_domain_scores(engine)
+        assert engine.breakdown[0].was_capped is False
+
+    def test_fully_absorbed_deduction_marked(self):
+        # rootkit cap=1: first 1pt passes, second is fully absorbed
+        engine = _make_engine((1, "rootkit.db_outdated"), (1, "rootkit.no_scan"))
+        compute_domain_scores(engine)
+        assert engine.breakdown[0].was_capped is False
+        assert engine.breakdown[1].was_capped is True
+
+    def test_partially_absorbed_deduction_marked(self):
+        # rootkit cap=1: first deduction is 2pt but only 1 counted → partial
+        engine = _make_engine((2, "rootkit.db_outdated"))
+        compute_domain_scores(engine)
+        assert engine.breakdown[0].was_capped is True
+
+    def test_non_tool_cap_key_never_marked(self):
+        # ssh has no tool cap → was_capped stays False regardless of points
+        engine = _make_engine((3, "ssh.password_auth"), (3, "ssh.x11_forwarding"))
+        compute_domain_scores(engine)
+        assert all(not d.was_capped for d in engine.breakdown)
+
+    def test_cached_domain_scores_on_engine(self):
+        engine = _make_engine((1, "ssh.password_auth"))
+        apply_domain_score_override(engine)
+        assert engine.domain_scores == compute_domain_scores(engine)
+        assert "ssh" in engine.active_domains
+
+    def test_engine_domain_scores_empty_before_override(self):
+        engine = _make_engine((1, "ssh.password_auth"))
+        engine.finalize()
+        assert engine.domain_scores == {}
+        assert engine.active_domains == frozenset()

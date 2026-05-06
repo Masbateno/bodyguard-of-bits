@@ -138,6 +138,7 @@ class ChecksResult(NamedTuple):
     ipv6_snapshot:      IPv6Snapshot
     fw_active:          bool = False
     fw_policy:          str  = "unknown"
+    network_context:    str  = "local"
 
 
 def init_report(config: AuditConfig, user_config: UserConfig, t, version: str) -> AuditReport:
@@ -940,4 +941,5 @@ def run_checks(
         ipv6_snapshot=ipv6_snapshot,
         fw_active=fw_status.active,
         fw_policy=fw_status.incoming_policy or "unknown",
+        network_context=network_context,
     )

@@ -3,10 +3,10 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.2.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.3.1-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
-![Language](https://img.shields.io/badge/language-Python%203.9%2B-yellow)
+![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
 
 BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 checks across 9 domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
 
@@ -142,7 +142,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 check
 ## Requirements
 
 - Linux — tested on Linux Mint 22.3, Debian 13.4.0
-- Python 3.9+
+- Python 3.10+
 - `ss` recommended (`iproute2` package) — available by default on modern systems
 - `python3-geoip2` + GeoLite2 database recommended for IP geolocation (optional): `sudo apt install python3-geoip2 geoip-database`
 - `docker` CLI for Docker analysis (optional)
@@ -281,7 +281,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.2.0  │  Linux hardening auditor                                      ║
+║  BOB v0.3.1  │  Linux hardening auditor                                      ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

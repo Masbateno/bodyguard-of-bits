@@ -3,10 +3,10 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.2.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.3.1-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
-![Language](https://img.shields.io/badge/language-Python%203.9%2B-yellow)
+![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
 
 BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 46 vérifications sur 9 domaines, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
@@ -142,7 +142,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 ## Prérequis
 
 - Linux — testé sur Linux Mint 22.3, Debian 13.4.0
-- Python 3.9+
+- Python 3.10+
 - `ss` recommandé (paquet `iproute2`) — disponible par défaut sur les systèmes modernes
 - `python3-geoip2` + base GeoLite2 recommandés pour la géolocalisation IP (optionnel) : `sudo apt install python3-geoip2 geoip-database`
 - `docker` CLI pour l'analyse Docker (optionnel)
@@ -281,7 +281,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.2.0  │  Auditeur de durcissement Linux                               ║
+║  BOB v0.3.1  │  Auditeur de durcissement Linux                               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

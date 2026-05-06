@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.1  | 4328  | +6 nouveaux tests : `TestWasCapped` dans test_domain_scores · flag was_capped · propriétés moteur en cache |
 | v0.3.0  | 4322  | +48 nouveaux tests : affichage `--breakdown` · scénarios golden scoring · 16 dans test_breakdown · 32 dans test_golden_scenarios · 1 renommé dans test_min_level |
 | v0.2.4  | 4274  | +12 nouveaux tests : UX kernel Debian -unsigned · sentinel None deduction_total · 2 dans test_kernel_modules · 10 dans test_compare |
 | v0.2.3  | 4262  | +1 nouveau · 4 renommés : NOT_LISTENING INFO · IoT sans déduction · label SSH arrêté scindé |
@@ -19,6 +20,30 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.3.1 — 4328/4328 (06-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4328 passed in 4.33s
+```
+
+**Nouveaux tests (+6) :**
+
+#### `tests/test_domain_scores.py` — `TestWasCapped` (+6)
+
+| Test | Couverture |
+|------|------------|
+| `test_uncapped_deduction_not_marked` | Déduction dans le plafond outil → `was_capped` reste `False` |
+| `test_fully_absorbed_deduction_marked` | Deuxième déduction après épuisement du plafond → `was_capped = True` |
+| `test_partially_absorbed_deduction_marked` | Déduction dépasse partiellement le plafond restant → `was_capped = True` |
+| `test_non_tool_cap_key_never_marked` | Clé sans préfixe de plafond outil → `was_capped` toujours `False` |
+| `test_cached_domain_scores_on_engine` | Après `apply_domain_score_override()`, `engine.domain_scores` correspond à l'appel direct |
+| `test_engine_domain_scores_empty_before_override` | Avant surcharge, `engine.domain_scores` retourne `{}` |
 
 ---
 

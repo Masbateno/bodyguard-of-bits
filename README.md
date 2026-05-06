@@ -191,7 +191,7 @@ Drop a `.json` file into `~/.config/bob/services.d/` to extend the service regis
 ## Requirements
 
 - Linux — tested on Linux Mint 22.3, Debian 13.4.0
-- Python 3.9+
+- Python 3.10+
 - Root (`sudo`)
 - `ss`, `systemctl` — standard on most Debian-based systems
 

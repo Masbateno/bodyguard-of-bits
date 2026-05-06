@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.3.1](#v031) | 06-05-2026 | Fix version bannière · propagation contexte DDNS · `was_capped` sur Deduction · propriétés moteur en cache · 4328/4328 tests (+6) |
 | [v0.3.0](#v030) | 06-05-2026 | Transparence du scoring `--breakdown` · `--explain` score-aware · fix rétention kernel -unsigned · reliques entête rapport supprimées · affichage delta score · 4322/4322 tests (+48) |
 | [v0.2.4](#v024) | 05-05-2026 | UX kernel Debian -unsigned · sentinel None deduction_total · alias TranslationFunc (42 signatures) · _has_shell_ops() via shlex · avertissement profil introuvable · 4274/4274 tests (+12) |
 | [v0.2.3](#v023) | 03-05-2026 | Corrections tournée multi-VM : NOT_LISTENING WARN→INFO · déduction IoT supprimée · affichage heredoc · garde symlink circulaire · Python 3.9 retiré · delta déductions compare · label SSH surface d'attaque · label active_disabled · 4262/4262 tests (+1) |
@@ -12,6 +13,36 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.3.1] — 06-05-2026
+
+Deux corrections de bugs identifiées lors de la validation multi-VM, plus deux refactorisations architecturales dans le pipeline de décomposition du score. Aucune nouvelle fonctionnalité. 4328/4328 tests (+6).
+
+### Fix — Version bannière bloquée à `0.2.4` (`bob/__init__.py`)
+
+Après la sortie de v0.3.0, `bob/__init__.py` déclarait encore `__version__ = "0.2.4"`. La bannière et `bob -V` affichaient la mauvaise version sur toutes les plateformes. Corrigé.
+
+### Fix — Contexte réseau DDNS non propagé vers l'entête du score (`bob/runner.py`, `bob/__main__.py`)
+
+Quand le DDNS était actif et que des ports ouverts étaient détectés, `run_checks()` mettait à jour `network_context` de `"local"` à `"ddns"` en interne — mais `ChecksResult` (un NamedTuple) ne contenait pas ce champ, donc l'appelant voyait toujours `"local"`. L'entête du résumé affichait "Réseau local uniquement" même sur les machines avec un client DDNS actif. Correction : `network_context: str = "local"` ajouté à `ChecksResult` ; `__main__.py` lit `result.network_context` immédiatement après `run_checks()`.
+
+### Refactorisation — `was_capped: bool` sur `Deduction` (`bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`)
+
+`breakdown.py` re-simulait précédemment le calcul des plafonds outil pour déterminer quelles déductions avaient été absorbées — dupliquant la logique de `compute_domain_scores()` et violant le contrat "rien n'est calculé ici" du module. Correction : `Deduction` gagne `was_capped: bool = False` ; `compute_domain_scores()` le positionne quand une déduction est partiellement ou totalement absorbée. `breakdown.py` lit `d.was_capped` directement.
+
+### Refactorisation — Propriétés `engine.domain_scores` / `engine.active_domains` en cache (`bob/scoring.py`, `bob/domain_scores.py`)
+
+Les modules d'affichage (`__main__.py`, `breakdown.py`) appelaient précédemment `compute_domain_scores()` et `active_domains_from_engine()` indépendamment, risquant un double calcul. Correction : `apply_domain_score_override()` met en cache les résultats sur le moteur ; deux méthodes `@property` les exposent comme `engine.domain_scores` et `engine.active_domains`. Tous les appelants lisent depuis le cache.
+
+### Tests
+
+4328/4328 (+6 nouveaux) :
+
+| Fichier | Modification |
+|---------|--------------|
+| `tests/test_domain_scores.py` | +6 `TestWasCapped` : déductions non-plafonnées / totalement absorbées / partiellement absorbées · clés hors-plafond-outil jamais marquées · scores domaine en cache sur le moteur · état moteur avant la surcharge |
 
 ---
 

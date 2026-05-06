@@ -27,8 +27,6 @@ from bob.domain_scores import (
     _LABELS,
     _TOOL_CAPS,
     _key_to_domain,
-    active_domains_from_engine,
-    compute_domain_scores,
 )
 from bob.scoring import MAX_SCORE
 
@@ -65,26 +63,11 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
     # 1. Deductions                                                        #
     # ------------------------------------------------------------------ #
     breakdown = engine.breakdown
-    tool_contributed: dict[str, int] = {}
-    capped_entries:   set[int]       = set()
 
     if not breakdown:
         output_mod.print_ok(t("breakdown.no_deductions"))
     else:
         output_mod.print_dim(t("breakdown.deductions_header", count=len(breakdown)))
-
-        # Detect which tool prefixes were capped so we can annotate
-        for idx, d in enumerate(breakdown):
-            prefix = d.key.split(".", 1)[0] if d.key else ""
-            cap = _TOOL_CAPS.get(prefix)
-            if cap is not None:
-                already = tool_contributed.get(prefix, 0)
-                new_total = already + d.points
-                if new_total > cap:
-                    capped_entries.add(idx)
-                    tool_contributed[prefix] = cap
-                else:
-                    tool_contributed[prefix] = new_total
 
         # Pre-compute domain IDs once to avoid double _key_to_domain() calls
         domain_ids = [_key_to_domain(d.key) for d in breakdown]
@@ -99,7 +82,7 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
         for idx, d in enumerate(breakdown):
             domain_id  = domain_ids[idx]
             domain_lbl = _domain_label(domain_id, t) if domain_id else "—"
-            capped_tag = f"  {t('breakdown.capped')}" if idx in capped_entries else ""
+            capped_tag = f"  {t('breakdown.capped')}" if d.was_capped else ""
             ctx = d.context or "—"
             line = (
                 f"  {(d.key or '—'):<{key_w}}  "
@@ -113,19 +96,24 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
     # ------------------------------------------------------------------ #
     # 2. Tool caps summary                                                 #
     # ------------------------------------------------------------------ #
-    if tool_contributed:
-        for prefix, counted in tool_contributed.items():
-            cap = _TOOL_CAPS[prefix]
-            total_raw = sum(d.points for d in breakdown
-                            if d.key and d.key.startswith(f"{prefix}."))
-            if total_raw > counted:
-                output_mod.print_info(
-                    t("breakdown.tool_cap_applied",
-                      tool=prefix,
-                      raw=total_raw,
-                      counted=counted,
-                      cap=cap)
-                )
+    capped_prefixes = {
+        d.key.split(".", 1)[0]
+        for d in breakdown
+        if d.was_capped and d.key
+    }
+    for prefix in sorted(capped_prefixes):
+        cap = _TOOL_CAPS.get(prefix)
+        if cap is None:
+            continue
+        total_raw = sum(d.points for d in breakdown
+                        if d.key and d.key.startswith(f"{prefix}."))
+        output_mod.print_info(
+            t("breakdown.tool_cap_applied",
+              tool=prefix,
+              raw=total_raw,
+              counted=cap,
+              cap=cap)
+        )
 
     # ------------------------------------------------------------------ #
     # 3. Engine cap                                                        #
@@ -147,8 +135,8 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
     # ------------------------------------------------------------------ #
     # 5. Domain scores                                                     #
     # ------------------------------------------------------------------ #
-    domain_scores = compute_domain_scores(engine)
-    active        = active_domains_from_engine(engine)
+    domain_scores = engine.domain_scores
+    active        = engine.active_domains
 
     if active:
         output_mod.print_dim(t("breakdown.domain_scores_header"))

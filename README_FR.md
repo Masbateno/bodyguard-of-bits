@@ -191,7 +191,7 @@ Déposez un fichier `.json` dans `~/.config/bob/services.d/` pour étendre le re
 ## Prérequis
 
 - Linux — testé sur Linux Mint 22.3, Debian 13.4.0
-- Python 3.9+
+- Python 3.10+
 - Root (`sudo`)
 - `ss`, `systemctl` — standards sur la plupart des systèmes Debian-based
 

@@ -6,6 +6,103 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.3.1] — 2026-05-06
+
+Two targeted bug fixes found during multi-VM validation, plus two architectural refactors in the score breakdown pipeline. No new features. 4328/4328 tests (+6).
+
+---
+
+### Fix 1 — `__version__` banner stuck at `0.2.4` (`bob/__init__.py`)
+
+#### Problem
+
+After the v0.3.0 release, `bob/__init__.py` still declared `__version__ = "0.2.4"`. The ASCII banner printed by `print_banner()` and the `bob -V` / `bob --version` output both read the version from this module attribute, so all platforms showed `BOB v0.2.4` instead of `BOB v0.3.0`. Found immediately on the first post-v0.3.0 VM audit.
+
+#### Fix
+
+`__version__ = "0.2.4"` → `"0.3.1"`. No other code changes — the version string is the single source of truth for the banner, the version flag, and the JSON output `meta.version` field.
+
+---
+
+### Fix 2 — DDNS network context not propagated to score header (`bob/runner.py`, `bob/__main__.py`)
+
+#### Problem
+
+`run_checks()` calls `ddns_effective_context()` internally to upgrade `network_context` from `"local"` to `"ddns"` when an active DDNS client is detected alongside open unrestricted ports. The function returned correctly, but `ChecksResult` — the NamedTuple returned by `run_checks()` — did not include a `network_context` field. `__main__.py` therefore always used its initial value (`"local"`) for the score summary header and exposure display, regardless of what the DDNS check found.
+
+The effect: machines running ddclient/inadyn/No-IP/DuckDNS with open ports showed "Local network only" in the score header instead of "Public exposure via DDNS". The score computation itself was correct (the exposure penalty is applied inside `run_checks()` before the context value matters for display), so only the header label was wrong.
+
+Found during Kali VM validation with an active DDNS client.
+
+#### Fix
+
+`network_context: str = "local"` added as the last field of `ChecksResult`. The `return ChecksResult(...)` statement in `run_checks()` now includes `network_context=network_context`. In `__main__.py`, `network_context = result.network_context` is assigned immediately after `result = run_checks(...)`, replacing the stale local variable.
+
+---
+
+### Refactor 1 — `was_capped: bool` on `Deduction` (`bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`)
+
+#### Problem
+
+`bob/breakdown.py` declares at its module docstring: *"Nothing is computed here — all data comes from the already-finalized engine."* However, the tool-cap summary section re-implemented the cap accounting from scratch, maintaining a local `tool_contributed` dict and iterating the breakdown twice to identify capped entries. This duplicated the logic in `compute_domain_scores()` and was a latent source of divergence.
+
+#### Fix
+
+`Deduction` (in `bob/scoring.py`) gains `was_capped: bool = False`. `compute_domain_scores()` (in `bob/domain_scores.py`) sets `deduction.was_capped = True` in two places:
+
+- When `allowed <= 0` (fully absorbed — the deduction contributes nothing to its domain).
+- When `allowed < points` (partially absorbed — only part of the deduction is counted).
+
+`breakdown.py` reads `d.was_capped` directly in the deduction table loop (for the `[capped]` annotation) and uses a set comprehension over `d.was_capped` to build the `capped_prefixes` set for the tool-cap summary. The local `tool_contributed` and `capped_entries` tracking is removed entirely.
+
+---
+
+### Refactor 2 — `engine.domain_scores` / `engine.active_domains` cached properties (`bob/scoring.py`, `bob/domain_scores.py`, `bob/__main__.py`, `bob/breakdown.py`)
+
+#### Problem
+
+After `apply_domain_score_override()`, the per-domain scores and active domain set are stable — they will not change. Yet `__main__.py` and `breakdown.py` each imported and called `compute_domain_scores()` and `active_domains_from_engine()` separately, meaning the computation ran twice per audit. Any future divergence between the two call sites would produce inconsistent display.
+
+#### Fix
+
+`ScoreEngine.__init__()` initializes two private caches: `_domain_scores: dict | None = None` and `_active_domains: frozenset | None = None`. `apply_domain_score_override()` assigns to them after computing:
+
+```python
+engine._domain_scores  = scores
+engine._active_domains = active
+```
+
+Two `@property` methods expose them:
+
+```python
+@property
+def domain_scores(self) -> dict:
+    return self._domain_scores or {}
+
+@property
+def active_domains(self) -> frozenset:
+    return self._active_domains or frozenset()
+```
+
+`__main__.py` and `breakdown.py` both switch to `engine.domain_scores` and `engine.active_domains`. The direct imports of `compute_domain_scores` and `active_domains_from_engine` are removed from `__main__.py`.
+
+---
+
+### Tests
+
+4328/4328 (+6 new):
+
+| File | Class | Test | Coverage |
+|------|-------|------|----------|
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_uncapped_deduction_not_marked` | Deduction within cap → `was_capped` stays `False` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_fully_absorbed_deduction_marked` | Deduction after cap exhausted → `was_capped = True` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_partially_absorbed_deduction_marked` | Deduction exceeds remaining cap → `was_capped = True` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_non_tool_cap_key_never_marked` | Key with no tool cap prefix → `was_capped` always `False` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_cached_domain_scores_on_engine` | After override, `engine.domain_scores` matches `compute_domain_scores()` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_engine_domain_scores_empty_before_override` | Before override, `engine.domain_scores` returns `{}` |
+
+---
+
 ## [v0.3.0] — 2026-05-06
 
 Scoring transparency milestone. New `--breakdown` (`-B`) flag shows the complete score computation path after an audit. `--explain <key>` gains a SCORING section. Three targeted fixes: kernel `-unsigned` asymmetry in retention logic, orphan `→` on stable score deltas, and "UFW-AU" ASCII art relics in the detailed report. 4322/4322 tests (+48).

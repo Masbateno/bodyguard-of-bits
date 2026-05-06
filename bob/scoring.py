@@ -85,10 +85,11 @@ class Deduction:
                  finding is skipped or downgraded to INFO.
                  Empty string means the deduction is not profile-controlled.
     """
-    reason:  str
-    points:  int
-    context: str = "local"
-    key:     str = ""
+    reason:    str
+    points:    int
+    context:   str  = "local"
+    key:       str  = ""
+    was_capped: bool = False
 
     def __post_init__(self) -> None:
         if self.points < 0:
@@ -234,6 +235,8 @@ class ScoreEngine:
         self.ignored_findings: list[Finding] = []
         self.ignore_keys: frozenset[str] = frozenset()
         self._finalized: bool = False
+        self._domain_scores: dict | None = None
+        self._active_domains: frozenset | None = None
 
     # ------------------------------------------------------------------
     # Mutation
@@ -377,6 +380,16 @@ class ScoreEngine:
     def global_override(self) -> int | None:
         """Domain-average override set by apply_domain_score_override(), or None."""
         return self._global_override
+
+    @property
+    def domain_scores(self) -> dict:
+        """Per-domain scores cached by apply_domain_score_override(). Empty dict before that."""
+        return self._domain_scores or {}
+
+    @property
+    def active_domains(self) -> "frozenset[str]":
+        """Active domain set cached by apply_domain_score_override(). Empty frozenset before that."""
+        return self._active_domains or frozenset()
 
     @property
     def alert_count(self) -> int:

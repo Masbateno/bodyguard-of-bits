@@ -6,6 +6,103 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.3.1] — 06-05-2026
+
+Deux corrections de bugs identifiées lors de la validation multi-VM, plus deux refactorisations architecturales dans le pipeline de décomposition du score. Aucune nouvelle fonctionnalité. 4328/4328 tests (+6).
+
+---
+
+### Correction 1 — Version bannière bloquée à `0.2.4` (`bob/__init__.py`)
+
+#### Problème
+
+Après la sortie de v0.3.0, `bob/__init__.py` déclarait encore `__version__ = "0.2.4"`. La bannière ASCII affichée par `print_banner()` et la sortie de `bob -V` / `bob --version` lisent toutes deux la version depuis cet attribut de module, donc toutes les plateformes affichaient `BOB v0.2.4` au lieu de `BOB v0.3.0`. Découvert immédiatement lors du premier audit VM post-v0.3.0.
+
+#### Correction
+
+`__version__ = "0.2.4"` → `"0.3.1"`. Aucun autre changement de code — la chaîne de version est l'unique source de vérité pour la bannière, le flag de version, et le champ `meta.version` de la sortie JSON.
+
+---
+
+### Correction 2 — Contexte réseau DDNS non propagé vers l'entête du score (`bob/runner.py`, `bob/__main__.py`)
+
+#### Problème
+
+`run_checks()` appelle `ddns_effective_context()` en interne pour upgrader `network_context` de `"local"` à `"ddns"` quand un client DDNS actif est détecté avec des ports ouverts. La fonction retournait correctement, mais `ChecksResult` — le NamedTuple retourné par `run_checks()` — ne contenait pas de champ `network_context`. `__main__.py` utilisait donc toujours sa valeur initiale (`"local"`) pour l'entête du résumé et l'affichage d'exposition, quels que soient les résultats du check DDNS.
+
+L'effet : les machines faisant tourner ddclient/inadyn/No-IP/DuckDNS avec des ports ouverts affichaient "Réseau local uniquement" dans l'entête du score au lieu de "Exposition publique via DDNS". Le calcul du score lui-même était correct (la pénalité d'exposition est appliquée dans `run_checks()` avant que la valeur du contexte importe pour l'affichage), seule l'étiquette de l'entête était erronée.
+
+Découvert lors de la validation de la VM Kali avec un client DDNS actif.
+
+#### Correction
+
+`network_context: str = "local"` ajouté comme dernier champ de `ChecksResult`. L'instruction `return ChecksResult(...)` dans `run_checks()` inclut désormais `network_context=network_context`. Dans `__main__.py`, `network_context = result.network_context` est assigné immédiatement après `result = run_checks(...)`, remplaçant la variable locale obsolète.
+
+---
+
+### Refactorisation 1 — `was_capped: bool` sur `Deduction` (`bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`)
+
+#### Problème
+
+`bob/breakdown.py` déclare dans son docstring de module : *"Nothing is computed here — all data comes from the already-finalized engine."* Pourtant, la section de résumé des plafonds outil ré-implémentait le calcul des plafonds depuis zéro, maintenant un dict `tool_contributed` local et itérant deux fois sur le breakdown pour identifier les entrées plafonnées. Cela dupliquait la logique de `compute_domain_scores()` et constituait une source latente de divergence.
+
+#### Correction
+
+`Deduction` (dans `bob/scoring.py`) gagne `was_capped: bool = False`. `compute_domain_scores()` (dans `bob/domain_scores.py`) positionne `deduction.was_capped = True` à deux endroits :
+
+- Quand `allowed <= 0` (totalement absorbé — la déduction ne contribue rien à son domaine).
+- Quand `allowed < points` (partiellement absorbé — seule une partie de la déduction est comptée).
+
+`breakdown.py` lit `d.was_capped` directement dans la boucle du tableau de déductions (pour l'annotation `[plafonné]`) et utilise une compréhension d'ensemble sur `d.was_capped` pour construire l'ensemble `capped_prefixes` pour le résumé des plafonds outil. Le suivi local `tool_contributed` et `capped_entries` est supprimé entièrement.
+
+---
+
+### Refactorisation 2 — Propriétés `engine.domain_scores` / `engine.active_domains` en cache (`bob/scoring.py`, `bob/domain_scores.py`, `bob/__main__.py`, `bob/breakdown.py`)
+
+#### Problème
+
+Après `apply_domain_score_override()`, les scores par domaine et l'ensemble de domaines actifs sont stables — ils ne changeront plus. Pourtant `__main__.py` et `breakdown.py` importaient et appelaient `compute_domain_scores()` et `active_domains_from_engine()` séparément, ce qui entraînait un double calcul par audit. Toute divergence future entre les deux sites d'appel produirait un affichage incohérent.
+
+#### Correction
+
+`ScoreEngine.__init__()` initialise deux caches privés : `_domain_scores: dict | None = None` et `_active_domains: frozenset | None = None`. `apply_domain_score_override()` leur assigne les résultats après calcul :
+
+```python
+engine._domain_scores  = scores
+engine._active_domains = active
+```
+
+Deux méthodes `@property` les exposent :
+
+```python
+@property
+def domain_scores(self) -> dict:
+    return self._domain_scores or {}
+
+@property
+def active_domains(self) -> frozenset:
+    return self._active_domains or frozenset()
+```
+
+`__main__.py` et `breakdown.py` basculent tous deux vers `engine.domain_scores` et `engine.active_domains`. Les imports directs de `compute_domain_scores` et `active_domains_from_engine` sont supprimés de `__main__.py`.
+
+---
+
+### Tests
+
+4328/4328 (+6 nouveaux) :
+
+| Fichier | Classe | Test | Couverture |
+|---------|--------|------|------------|
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_uncapped_deduction_not_marked` | Déduction dans le plafond → `was_capped` reste `False` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_fully_absorbed_deduction_marked` | Déduction après épuisement du plafond → `was_capped = True` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_partially_absorbed_deduction_marked` | Déduction dépasse le plafond restant → `was_capped = True` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_non_tool_cap_key_never_marked` | Clé sans préfixe de plafond outil → `was_capped` toujours `False` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_cached_domain_scores_on_engine` | Après surcharge, `engine.domain_scores` correspond à `compute_domain_scores()` |
+| `tests/test_domain_scores.py` | `TestWasCapped` | `test_engine_domain_scores_empty_before_override` | Avant surcharge, `engine.domain_scores` retourne `{}` |
+
+---
+
 ## [v0.3.0] — 06-05-2026
 
 Jalon transparence du scoring. Nouvelle option `--breakdown` (`-B`) affichant le chemin complet de calcul du score après un audit. `--explain <clé>` gagne une section SCORING. Trois corrections ciblées : asymétrie `-unsigned` dans la logique de rétention des kernels, flèche `→` orpheline sur les deltas de score stables, et reliques "UFW-AU" dans le rapport détaillé. 4322/4322 tests (+48).

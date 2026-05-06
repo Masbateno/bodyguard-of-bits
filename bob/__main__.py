@@ -238,6 +238,7 @@ def _run(argv=None) -> int:
             result             = run_checks(config, t, engine, report, registry, network_context,
                                            profile=active_profile,
                                            prev_recurrence=prev_recurrence)
+            network_context    = result.network_context
             snapshots          = result.snapshots
             ports_snapshot     = result.ports_snapshot
             stack_snapshot     = result.stack_snapshot
@@ -291,12 +292,9 @@ def _run(argv=None) -> int:
                                     profile_name=active_profile.name,
                                     prev_score=prev_baseline.score if prev_baseline else None,
                                     fw_policy=fw_policy)
-                from bob.domain_scores import (
-                    compute_domain_scores, render_domain_scores,
-                    active_domains_from_engine,
-                )
-                _domain_scores = compute_domain_scores(engine)
-                _active = active_domains_from_engine(engine)
+                from bob.domain_scores import render_domain_scores
+                _domain_scores = engine.domain_scores
+                _active        = engine.active_domains
                 for _line in render_domain_scores(_domain_scores, t, active_domains=_active):
                     print(_line)
                 print()

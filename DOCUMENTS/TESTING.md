@@ -11,6 +11,7 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.1 | 4328 | +6 new tests: `TestWasCapped` in test_domain_scores · was_capped flag · engine cached properties |
 | v0.3.0 | 4322 | +48 new tests: `--breakdown` display · golden scoring scenarios · 16 in test_breakdown · 32 in test_golden_scenarios · 1 renamed in test_min_level |
 | v0.2.4 | 4274 | +12 new tests: Debian -unsigned kernel UX · deduction_total None sentinel · 2 in test_kernel_modules · 10 in test_compare |
 | v0.2.3 | 4262 | +1 new · 4 renamed: NOT_LISTENING INFO · IoT no deduction · SSH stopped label split |
@@ -19,6 +20,30 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.3.1 — 4328/4328 (2026-05-06)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4328 passed in 4.33s
+```
+
+**New tests (+6):**
+
+#### `tests/test_domain_scores.py` — `TestWasCapped` (+6)
+
+| Test | Coverage |
+|------|----------|
+| `test_uncapped_deduction_not_marked` | Deduction within tool cap → `was_capped` stays `False` |
+| `test_fully_absorbed_deduction_marked` | Second deduction after cap exhausted → `was_capped = True` |
+| `test_partially_absorbed_deduction_marked` | Deduction partially exceeds remaining cap → `was_capped = True` |
+| `test_non_tool_cap_key_never_marked` | Key with no tool-cap prefix → `was_capped` always `False` |
+| `test_cached_domain_scores_on_engine` | After `apply_domain_score_override()`, `engine.domain_scores` matches direct call |
+| `test_engine_domain_scores_empty_before_override` | Before override, `engine.domain_scores` returns `{}` |
 
 ---
 

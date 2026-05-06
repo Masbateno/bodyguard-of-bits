@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.3.1](#v031) | 2026-05-06 | Banner version fix · DDNS context propagation · `was_capped` on Deduction · engine cached properties · 4328/4328 tests (+6) |
 | [v0.3.0](#v030) | 2026-05-06 | `--breakdown` score transparency · score-aware `--explain` · kernel -unsigned retention fix · report header relics removed · score delta display · 4322/4322 tests (+48) |
 | [v0.2.4](#v024) | 2026-05-05 | Debian -unsigned kernel UX · deduction_total None sentinel · TranslationFunc alias (42 signatures) · _has_shell_ops() via shlex · profile fallback warning · 4274/4274 tests (+12) |
 | [v0.2.3](#v023) | 2026-05-03 | Multi-VM audit fixes: NOT_LISTENING WARN→INFO · IoT deduction removed · heredoc display · completion symlink guard · Python 3.9 dropped · compare deduction delta · SSH exposure label split · active_disabled label · 4262/4262 tests (+1) |
@@ -12,6 +13,36 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.3.1] — 2026-05-06
+
+Two targeted bug fixes found during multi-VM validation, plus two architectural refactors in the score breakdown pipeline. No new features. 4328/4328 tests (+6).
+
+### Fix — `__version__` banner stuck at `0.2.4` (`bob/__init__.py`)
+
+After the v0.3.0 release, `bob/__init__.py` still declared `__version__ = "0.2.4"`. The banner and `bob -V` both displayed the wrong version on all platforms. Fixed.
+
+### Fix — DDNS network context not propagated to score header (`bob/runner.py`, `bob/__main__.py`)
+
+When DDNS was active and open ports were detected, `run_checks()` upgraded `network_context` from `"local"` to `"ddns"` internally — but `ChecksResult` (a NamedTuple) did not include a `network_context` field, so the caller always saw `"local"`. The score summary header showed "Local network only" even on machines with an active DDNS client. Fix: `network_context: str = "local"` added to `ChecksResult`; `__main__.py` reads `result.network_context` immediately after `run_checks()`.
+
+### Refactor — `was_capped: bool` on `Deduction` (`bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`)
+
+`breakdown.py` previously re-simulated the tool-cap accounting to determine which deductions were absorbed by a cap — duplicating logic from `compute_domain_scores()` and violating the module's "nothing is computed here" contract. Fix: `Deduction` gains `was_capped: bool = False`; `compute_domain_scores()` sets it when a deduction is partially or fully absorbed. `breakdown.py` reads `d.was_capped` directly.
+
+### Refactor — `engine.domain_scores` / `engine.active_domains` cached properties (`bob/scoring.py`, `bob/domain_scores.py`)
+
+Display modules (`__main__.py`, `breakdown.py`) previously called `compute_domain_scores()` and `active_domains_from_engine()` independently, risking double computation. Fix: `apply_domain_score_override()` caches results on the engine; two `@property` methods expose them as `engine.domain_scores` and `engine.active_domains`. All callers read from the cache.
+
+### Tests
+
+4328/4328 (+6 new):
+
+| File | Change |
+|------|--------|
+| `tests/test_domain_scores.py` | +6 `TestWasCapped`: uncapped / fully absorbed / partially absorbed deductions · non-tool-cap keys never marked · cached domain scores on engine · engine state before override |
 
 ---
 
