@@ -11,6 +11,8 @@ import re
 import shlex
 import subprocess
 
+from bob import output as _output
+
 
 def _has_shell_ops(cmd: str) -> bool:
     """Return True if cmd contains shell operators requiring shell=True."""
@@ -30,24 +32,25 @@ def run_fixes(engine, config, t) -> None:
     manual_items = [f.message for f in engine.findings
                     if f.nature == "action" and not f.cmd]
 
+    _c = _output._c
     W = 62
     print()
-    print(f"\033[1;34m╔{'═'*(W-2)}╗\033[0m")
+    print(f"{_c.blue_bold}╔{'═'*(W-2)}╗{_c.reset}")
     label = t("fixes.title")
     pad = W - 6 - len(label)
-    print(f"\033[1;34m║\033[0m  \033[1m{label}\033[0m{' '*max(0,pad)}  \033[1;34m║\033[0m")
-    print(f"\033[1;34m╠{'═'*(W-2)}╣\033[0m")
+    print(f"{_c.blue_bold}║{_c.reset}  {_c.bold}{label}{_c.reset}{' '*max(0,pad)}  {_c.blue_bold}║{_c.reset}")
+    print(f"{_c.blue_bold}╠{'═'*(W-2)}╣{_c.reset}")
 
     if not auto_items and not manual_items:
         none_msg = t("fixes.none")
         pad = W - 6 - len(none_msg)
-        print(f"\033[1;34m║\033[0m    {none_msg}{' '*max(0,pad)}\033[1;34m║\033[0m")
+        print(f"{_c.blue_bold}║{_c.reset}    {none_msg}{' '*max(0,pad)}{_c.blue_bold}║{_c.reset}")
     else:
         count = len(auto_items)
         count_msg = t("fixes.count", count=count)
         pad = W - 9 - len(count_msg)
-        print(f"\033[1;34m║\033[0m    ✔  {count_msg}{' '*max(0,pad)}\033[1;34m║\033[0m")
-    print(f"\033[1;34m╚{'═'*(W-2)}╝\033[0m")
+        print(f"{_c.blue_bold}║{_c.reset}    ✔  {count_msg}{' '*max(0,pad)}{_c.blue_bold}║{_c.reset}")
+    print(f"{_c.blue_bold}╚{'═'*(W-2)}╝{_c.reset}")
 
     if not auto_items and not manual_items:
         return
@@ -66,15 +69,15 @@ def run_fixes(engine, config, t) -> None:
     # ── Dry-run preview (--fix without --apply) ─────────────────────────────
     if not getattr(config, "apply", False):
         print()
-        print(f"  \033[2m{t('fixes.dry_run_hint')}\033[0m")
+        print(f"  {_c.dim}{t('fixes.dry_run_hint')}{_c.reset}")
         print()
         for msg, cmd in sorted_items:
             safe_cmd = cmd.replace("\n", " ").strip()
             print(f"  ✖  {msg}")
-            print(f"     \033[2m→ {safe_cmd}\033[0m")
+            print(f"     {_c.dim}→ {safe_cmd}{_c.reset}")
             print()
         if manual_items:
-            print(f"  \033[1;33m{t('fixes.manual_items_title')}\033[0m")
+            print(f"  {_c.yellow_bold}{t('fixes.manual_items_title')}{_c.reset}")
             for msg in manual_items:
                 print(f"  • {msg}")
         return
@@ -83,7 +86,7 @@ def run_fixes(engine, config, t) -> None:
     # Auto-fix mode banner — visible warning so the user knows what's happening
     if config.yes:
         auto_msg = t("fixes.auto_mode_banner", count=len(sorted_items))
-        print(f"\033[1;33m  ⚠  {auto_msg}\033[0m")
+        print(f"{_c.yellow_bold}  ⚠  {auto_msg}{_c.reset}")
         print()
 
     applied_cmds = []
@@ -132,13 +135,13 @@ def run_fixes(engine, config, t) -> None:
     # Auto-fix summary — list every command that was applied
     if config.yes and applied_cmds:
         print()
-        print(f"\033[1;34m  [{t('fixes.auto_summary_title')}]\033[0m")
+        print(f"{_c.blue_bold}  [{t('fixes.auto_summary_title')}]{_c.reset}")
         for cmd in applied_cmds:
             print(f"  ✔ {cmd}")
 
     # Manual items — findings with no automatic fix
     if manual_items:
         print()
-        print(f"  \033[1;33m{t('fixes.manual_items_title')}\033[0m")
+        print(f"  {_c.yellow_bold}{t('fixes.manual_items_title')}{_c.reset}")
         for msg in manual_items:
             print(f"  • {msg}")

@@ -160,6 +160,7 @@ class CheckResult:
     findings:    List[Finding]   = field(default_factory=list)
     open_ports:  List[str]       = field(default_factory=list)
     caps:        List[ScoreCap]  = field(default_factory=list)
+    log_data:    "dict | None"   = field(default=None)
 
     def add_deduction(self, reason: str, points: int, context: str = "local", key: str = "") -> None:
         """Convenience method to append a deduction."""
@@ -294,6 +295,11 @@ class ScoreEngine:
         """
         if self._cap is None or maximum < self._cap.maximum:
             self._cap = ScoreCap(maximum=maximum, reason=reason, key=key)
+
+    def set_domain_scores(self, scores: dict, active: "frozenset[str]") -> None:
+        """Cache domain scores computed by apply_domain_score_override()."""
+        self._domain_scores  = scores
+        self._active_domains = active
 
     def set_global_score(self, score: int) -> None:
         """

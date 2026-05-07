@@ -153,12 +153,14 @@ def print_ok(message: str, detail: str = "") -> None:
 
 def print_warn(message: str, detail: str = "") -> None:
     """Print a yellow WARNING status line."""
-    _print_status(f"{_c.yellow_bold}⚠{_c.reset}", "ATTENTION", _c.yellow, message, detail)
+    from bob.i18n import t as _t
+    _print_status(f"{_c.yellow_bold}⚠{_c.reset}", _t("status.warn"), _c.yellow, message, detail)
 
 
 def print_alert(message: str, detail: str = "") -> None:
     """Print a red ALERT status line."""
-    _print_status(f"{_c.red_bold}✖{_c.reset}", "ALERTE", _c.red, message, detail)
+    from bob.i18n import t as _t
+    _print_status(f"{_c.red_bold}✖{_c.reset}", _t("status.alert"), _c.red, message, detail)
 
 
 def print_info(message: str, detail: str = "") -> None:
@@ -181,9 +183,9 @@ def _print_status(
     message: str,
     detail: str,
 ) -> None:
-    print(f"{icon} {colour}[{label}]{_c.reset} {message}")
+    _p(f"{icon} {colour}[{label}]{_c.reset} {message}")
     if detail:
-        print(f"    {_c.dim}{detail}{_c.reset}")
+        _p(f"    {_c.dim}{detail}{_c.reset}")
 
 
 # ---------------------------------------------------------------------------
@@ -321,10 +323,10 @@ def print_risk_context(
         level_colour = _c.orange_bold
     else:
         level_colour = _c.yellow_bold
-    print(f"    {_c.dim}┄ {title} — {level_colour}{level}{_c.reset}")
-    print(f"    {_c.dim}{exposure_label} : {_c.reset}{_c.dim}{exposure}{_c.reset}")
-    print(f"    {_c.dim}{threat_label}   : {_c.reset}{_c.dim}{threat}{_c.reset}")
-    print()
+    _p(f"    {_c.dim}┄ {title} — {level_colour}{level}{_c.reset}")
+    _p(f"    {_c.dim}{exposure_label} : {_c.reset}{_c.dim}{exposure}{_c.reset}")
+    _p(f"    {_c.dim}{threat_label}   : {_c.reset}{_c.dim}{threat}{_c.reset}")
+    _p()
 
 
 # ---------------------------------------------------------------------------

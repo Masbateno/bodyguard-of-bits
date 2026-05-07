@@ -446,21 +446,21 @@ class TestCheckLogs:
         entries = [make_entry("1.2.3.4", 22, "TCP")]
         snap = make_snapshot(entries=entries)
         result = check_logs(snap)
-        assert hasattr(result, "_log_data")
-        assert result._log_data["total"] == 1
+        assert result.log_data is not None
+        assert result.log_data["total"] == 1
 
     def test_top_ips_in_log_data(self):
         entries = [make_entry("1.2.3.4", 22, "TCP")] * 5
         snap = make_snapshot(entries=entries)
         result = check_logs(snap)
-        top_ips = result._log_data["top_ips"]
+        top_ips = result.log_data["top_ips"]
         assert top_ips[0] == ("1.2.3.4", 5)
 
     def test_service_hits_in_log_data(self):
         entries = [make_entry("1.2.3.4", 22, "TCP")] * 3
         snap = make_snapshot(entries=entries)
         result = check_logs(snap, audited_ports={"22/tcp"})
-        assert result._log_data["svc_hits"].get("22/tcp") == 3
+        assert result.log_data["svc_hits"].get("22/tcp") == 3
 
     def test_translation_used(self):
         def my_t(key, **kwargs): return f"T:{key}"

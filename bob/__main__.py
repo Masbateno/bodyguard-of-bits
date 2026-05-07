@@ -159,7 +159,7 @@ def _run(argv=None) -> int:
     _silent_mode  = _machine_mode or config.breakdown_mode or config.diff_mode
     if _silent_mode:
         config.quiet = True
-    _devnull = open(os.devnull, "w") if _silent_mode else None
+    _devnull = open(os.devnull, "w", encoding="utf-8") if _silent_mode else None
 
     try:
         with (redirect_stdout(_devnull) if _devnull else contextlib.nullcontext()):
@@ -202,6 +202,7 @@ def _run(argv=None) -> int:
 
             prev_baseline   = load_baseline()
             prev_recurrence = load_recurrence()
+            curr_baseline   = None
 
             report   = init_report(config, user_config, t, VERSION)
             engine   = ScoreEngine()

@@ -824,7 +824,8 @@
     "host_key_dsa_reason": "Clé hôte serveur DSA en service : {name}",
     "host_key_rsa_short": "Clé hôte serveur RSA {name} : {bits} bits — envisagez de régénérer à 4096 bits ou de passer à ed25519",
     "host_key_rsa_short_detail": "Les clés hôte RSA inférieures à 4096 bits sont techniquement acceptables mais ne sont plus considérées comme optimales. Les clients et autorités modernes recommandent RSA 4096 bits ou ed25519 pour les clés d'identité serveur.",
-    "host_key_ok": "Clé hôte serveur {name} ({type}) : algorithme fort"
+    "host_key_ok": "Clé hôte serveur {name} ({type}) : algorithme fort",
+    "match_block_skipped": "sshd_config contient un bloc Match — les directives qui le suivent n'ont pas été analysées"
   },
   "file_perms": {
     "world_writable": "{path} accessible en écriture par tous ({mode}) — n'importe quel utilisateur peut modifier ce fichier critique",
@@ -879,7 +880,8 @@
     "unexpected_suid_detail": "Ces binaires s'exécutent en tant que root quel que soit leur lanceur. Vérifiez chacun d'eux, puis supprimez le bit SUID (chmod u-s) ou ajoutez-les à votre liste blanche locale.",
     "unexpected_suid_reason": "{count} binaire(s) SUID inattendu(s) détecté(s)",
     "unexpected_sgid": "{count} binaire(s) SGID inattendu(s) : {paths}",
-    "unexpected_sgid_detail": "Les binaires SGID s'exécutent avec les privilèges du groupe du fichier. Moins dangereux que SUID, mais méritent une vérification."
+    "unexpected_sgid_detail": "Les binaires SGID s'exécutent avec les privilèges du groupe du fichier. Moins dangereux que SUID, mais méritent une vérification.",
+    "whitelisted": "{count} binaire(s) SUID ignoré(s) par la liste blanche utilisateur : {paths}"
   },
   "docker_audit": {
     "scan_error": "Démon Docker inaccessible — vérification de sécurité des conteneurs ignorée",

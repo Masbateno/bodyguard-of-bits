@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.2  | 4347  | +21 nouveaux (whitelist utilisateur) −2 supprimés (DC-1 code mort) : `TestFromSystemUserWhitelist` · `TestGetSuidWhitelist` · `TestGlobMatching` dans test_suid_audit |
 | v0.3.1  | 4328  | +6 nouveaux tests : `TestWasCapped` dans test_domain_scores · flag was_capped · propriétés moteur en cache |
 | v0.3.0  | 4322  | +48 nouveaux tests : affichage `--breakdown` · scénarios golden scoring · 16 dans test_breakdown · 32 dans test_golden_scenarios · 1 renommé dans test_min_level |
 | v0.2.4  | 4274  | +12 nouveaux tests : UX kernel Debian -unsigned · sentinel None deduction_total · 2 dans test_kernel_modules · 10 dans test_compare |
@@ -20,6 +21,63 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.3.2 — 4347/4347 (07-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4347 passed in 5.23s
+```
+
+**Net : +19 depuis v0.3.1 (+21 nouveaux tests whitelist, −2 tests code mort supprimés)**
+
+**Nouveaux tests (+21) :**
+
+#### `tests/test_suid_audit.py` — `TestFromSystemUserWhitelist` (+8)
+
+| Test | Couverture |
+|------|------------|
+| `test_whitelisted_suid_emits_info` | Snapshot avec chemins whitelistés → résultat INFO `suid_audit.whitelisted` |
+| `test_whitelisted_suid_no_deduction` | Chemins whitelistés → aucune déduction |
+| `test_whitelisted_suid_ok_result_when_no_unexpected` | Tout supprimé → `suid_audit.ok` toujours présent |
+| `test_whitelisted_suid_warn_result_when_unexpected_remain` | Mix whitelisté + inattendu → les deux résultats présents |
+| `test_whitelisted_count_in_info_message` | 2 chemins whitelistés → "2" dans le message INFO |
+| `test_no_whitelisted_finding_when_list_empty` | `whitelisted_suid` vide → pas de résultat INFO |
+| `test_whitelisted_truncation_at_10` | 11 chemins whitelistés → suffixe "+1 more" |
+
+#### `tests/test_suid_audit.py` — `TestGetSuidWhitelist` (+7)
+
+| Test | Couverture |
+|------|------------|
+| `test_returns_empty_list_when_key_absent` | Clé absente → `[]` |
+| `test_single_pattern` | `kismet_cap_*` → `["kismet_cap_*"]` |
+| `test_multiple_patterns_comma_separated` | `a, b, c` → `["a", "b", "c"]` |
+| `test_strips_whitespace_around_patterns` | `  foo_*  ,  bar  ` → `["foo_*", "bar"]` |
+| `test_empty_value_returns_empty_list` | Valeur chaîne vide → `[]` |
+| `test_commas_only_returns_empty_list` | ` , , ` → `[]` |
+| `test_persists_and_reloads` | Écrit puis rechargé → même liste |
+
+#### `tests/test_suid_audit.py` — `TestGlobMatching` (+7)
+
+| Test | Couverture |
+|------|------------|
+| `test_glob_matches_kismet_cap_prefix` | `kismet_cap_*` correspond à 3 chemins Kismet |
+| `test_exact_name_match` | Pattern basename exact → chemin correspondant whitelisté |
+| `test_non_matching_pattern_leaves_unexpected` | Pattern sans correspondance → chemin reste inattendu |
+| `test_empty_patterns_leaves_all_unexpected` | Patterns vides → tous les chemins restent inattendus |
+| `test_wildcard_star_matches_all` | Pattern `*` → tout whitelisté |
+| `test_partial_glob_mix` | Mix : un correspondant, un non |
+| `test_multiple_patterns_any_match_whitelists` | Deux patterns exacts → chacun correspond à sa cible |
+
+**Tests supprimés (−2, DC-1) :**
+
+`tests/test_suid_audit.py` — `TestIsRootOwned` supprimée avec la fonction `_is_root_owned()` (code mort) :
+- `test_nonexistent_path_returns_false`
+- `test_current_user_file_not_root_owned_when_not_root`
 
 ---
 

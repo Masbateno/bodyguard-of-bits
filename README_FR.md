@@ -176,6 +176,19 @@ Déposez un fichier `.json` dans `~/.config/bob/services.d/` pour étendre le re
 
 ---
 
+## Liste blanche SUID
+
+Sur Kali et autres distributions orientées sécurité, des outils légitimes sont livrés avec le bit SUID positionné. Déclarez les basenames approuvés ou des patterns glob dans `~/.config/bob/config.conf` pour les supprimer du warning "SUID inattendu" :
+
+```
+# ~/.config/bob/config.conf
+suid_whitelist = kismet_cap_*, mon_outil_maison
+```
+
+Les patterns sont appliqués sur le basename du binaire via `fnmatch`. Les binaires supprimés sont rapportés en INFO pour que la liste blanche reste toujours visible.
+
+---
+
 ## Codes de sortie
 
 | Code | Signification |

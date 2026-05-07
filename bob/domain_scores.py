@@ -161,6 +161,10 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
     domain_deductions: dict[str, int] = {d: 0 for d in DOMAINS}
     tool_contributed:  dict[str, int] = {}   # key_prefix → points already counted
 
+    # Reset was_capped before computing — makes this function idempotent
+    for deduction in engine.breakdown:
+        deduction.was_capped = False
+
     for deduction in engine.breakdown:
         key    = deduction.key
         domain = _key_to_domain(key)
@@ -246,8 +250,7 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
     scores = compute_domain_scores(engine)
     active = active_domains_from_engine(engine)
     engine.set_global_score(compute_global_from_domains(scores, active))
-    engine._domain_scores  = scores
-    engine._active_domains = active
+    engine.set_domain_scores(scores, active)
 
 
 # ---------------------------------------------------------------------------

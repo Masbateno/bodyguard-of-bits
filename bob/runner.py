@@ -77,7 +77,7 @@ _ALL_SECTIONS: tuple[str, ...] = (
     "log_rotation", "kernel_modules", "mac_policy", "cron_audit", "services_state",
     "updates", "umask", "memory", "disk", "backup", "auditd", "secure_boot",
     "fail2ban", "clamav", "file_integrity", "rootkit", "ntp", "systemd_timers",
-    "ssl_certs", "firmware", "iptables_nft",
+    "ssl_certs", "firmware", "iptables_nft", "samba", "desktop_apps",
 )
 
 
@@ -428,18 +428,19 @@ def run_checks(
         print()
 
     # ---- CHECK 24 — Samba security audit ----
-    samba_snapshot = SambaSnapshot.from_system()
-    if samba_snapshot.installed and _section_enabled("samba", config, profile):
-        if not config.quiet:
-            print_section(t("sections.samba"))
-        report.write_section(t("sections.samba"))
-        samba_result = check_samba(samba_snapshot, t=t)
-        if profile is not None:
-            apply_profile(samba_result, profile)
-        engine.apply(samba_result)
-        display_result(samba_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    if _section_enabled("samba", config, profile):
+        samba_snapshot = SambaSnapshot.from_system()
+        if samba_snapshot.installed:
+            if not config.quiet:
+                print_section(t("sections.samba"))
+            report.write_section(t("sections.samba"))
+            samba_result = check_samba(samba_snapshot, t=t)
+            if profile is not None:
+                apply_profile(samba_result, profile)
+            engine.apply(samba_result)
+            display_result(samba_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+            if not config.quiet:
+                print()
 
     # ---- CHECK 26 — SMTP local exposure ----
     smtp_snapshot = SmtpSnapshot.from_system()
@@ -566,7 +567,7 @@ def run_checks(
             print()
 
     # ---- CHECK 37 — SUID/SGID binary audit ----
-    suid_snapshot = SuidSnapshot.from_system()
+    suid_snapshot = SuidSnapshot.from_system(user_whitelist=user_config.get_suid_whitelist())
     if _section_enabled("suid_audit", config, profile):
         if not config.quiet:
             print_section(t("sections.suid_audit"))
@@ -862,18 +863,19 @@ def run_checks(
             print()
 
     # ---- CHECK 19 — Desktop application audit ----
-    desktop_snapshot = DesktopAppsSnapshot.from_system()
-    if desktop_snapshot.detected and _section_enabled("desktop_apps", config, profile):
-        if not config.quiet:
-            print_section(t("sections.desktop_apps"))
-        report.write_section(t("sections.desktop_apps"))
-        desktop_result = check_desktop_apps(desktop_snapshot, t=t)
-        if profile is not None:
-            apply_profile(desktop_result, profile)
-        engine.apply(desktop_result)
-        display_result(desktop_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    if _section_enabled("desktop_apps", config, profile):
+        desktop_snapshot = DesktopAppsSnapshot.from_system()
+        if desktop_snapshot.detected:
+            if not config.quiet:
+                print_section(t("sections.desktop_apps"))
+            report.write_section(t("sections.desktop_apps"))
+            desktop_result = check_desktop_apps(desktop_snapshot, t=t)
+            if profile is not None:
+                apply_profile(desktop_result, profile)
+            engine.apply(desktop_result)
+            display_result(desktop_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+            if not config.quiet:
+                print()
 
     # ---- CHECK 45 — Firmware & microcode audit ----
     firmware_snapshot = FirmwareSnapshot.from_system()

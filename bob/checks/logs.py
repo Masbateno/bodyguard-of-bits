@@ -235,8 +235,8 @@ def check_logs(
         svc_hits = _service_hits(snapshot.entries, audited_ports)
 
     # Store structured data on result for the orchestrator to display
-    result._log_data = {                          # type: ignore[attr-defined]
-        "total":         snapshot.total,
+    result.log_data = {
+        "total":          snapshot.total,
         "days_available": snapshot.days_available,
         "log_days":       snapshot.log_days,
         "top_ips":        top_ips,
@@ -250,11 +250,13 @@ def check_logs(
         result.warn(
             message=_t("logs.brute_found") + f" {hit.src_ip} {_t('logs.brute_on')} {hit.port_proto}",
             nature="improvement",
+            key="logs.brute_found",
         )
         result.add_deduction(
             reason=_t("deduction.brute_force", ip=hit.src_ip, port=hit.port_proto),
             points=1,
             context="local",
+            key="logs.brute_found",
         )
 
     # Service hits on high/critical ports get an INFO

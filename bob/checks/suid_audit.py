@@ -12,6 +12,7 @@ The check is split into two parts:
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import shlex
 import stat
@@ -111,18 +112,21 @@ class SuidSnapshot:
     Args:
         suid_paths:        All SUID files found (absolute paths, root-owned).
         sgid_paths:        All pure-SGID files found (not also SUID).
-        unexpected_suid:   SUID binaries whose basename is not in the whitelist.
+        unexpected_suid:   SUID binaries whose basename is not in the built-in
+                           whitelist and not matched by the user whitelist.
         unexpected_sgid:   SGID binaries whose basename is not in the whitelist.
+        whitelisted_suid:  SUID binaries suppressed by the user's glob patterns.
         scan_skipped:      True if find timed out or failed entirely.
     """
-    suid_paths:      list[str] = field(default_factory=list)
-    sgid_paths:      list[str] = field(default_factory=list)
-    unexpected_suid: list[str] = field(default_factory=list)
-    unexpected_sgid: list[str] = field(default_factory=list)
-    scan_skipped:    bool      = False
+    suid_paths:       list[str] = field(default_factory=list)
+    sgid_paths:       list[str] = field(default_factory=list)
+    unexpected_suid:  list[str] = field(default_factory=list)
+    unexpected_sgid:  list[str] = field(default_factory=list)
+    whitelisted_suid: list[str] = field(default_factory=list)
+    scan_skipped:     bool      = False
 
     @classmethod
-    def from_system(cls) -> "SuidSnapshot":
+    def from_system(cls, user_whitelist: list[str] | None = None) -> "SuidSnapshot":
         """
         Run a single find(1) pass over targeted binary directories. Never raises.
 
@@ -167,7 +171,7 @@ class SuidSnapshot:
         except (subprocess.TimeoutExpired, OSError):
             scan_skipped = True
 
-        unexpected_suid = [
+        unknown_suid = [
             p for p in suid_paths
             if os.path.basename(p) not in _KNOWN_SUID
         ]
@@ -176,11 +180,23 @@ class SuidSnapshot:
             if os.path.basename(p) not in _KNOWN_SGID
         ]
 
+        # Apply user glob whitelist (matched on basename)
+        whitelisted_suid: list[str] = []
+        unexpected_suid:  list[str] = []
+        patterns = user_whitelist or []
+        for p in unknown_suid:
+            basename = os.path.basename(p)
+            if patterns and any(fnmatch.fnmatch(basename, pat) for pat in patterns):
+                whitelisted_suid.append(p)
+            else:
+                unexpected_suid.append(p)
+
         return cls(
             suid_paths=sorted(suid_paths),
             sgid_paths=sorted(sgid_paths),
             unexpected_suid=sorted(unexpected_suid),
             unexpected_sgid=sorted(unexpected_sgid),
+            whitelisted_suid=sorted(whitelisted_suid),
             scan_skipped=scan_skipped,
         )
 
@@ -243,6 +259,22 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
             key="suid_audit.unexpected_suid",
         )
 
+    # --- User-whitelisted SUID (INFO only) ---
+    if snapshot.whitelisted_suid:
+        paths_str = ", ".join(snapshot.whitelisted_suid[:10])
+        suffix = (
+            f" (+{len(snapshot.whitelisted_suid) - 10} more)"
+            if len(snapshot.whitelisted_suid) > 10 else ""
+        )
+        result.info(
+            message=_t(
+                "suid_audit.whitelisted",
+                count=len(snapshot.whitelisted_suid),
+                paths=paths_str + suffix,
+            ),
+            key="suid_audit.whitelisted",
+        )
+
     # --- Unexpected SGID (INFO only) ---
     if snapshot.unexpected_sgid:
         paths_str = ", ".join(snapshot.unexpected_sgid[:10])
@@ -262,13 +294,3 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
     return result
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def _is_root_owned(path: str) -> bool:
-    """Return True if the file exists and is owned by root (UID 0)."""
-    try:
-        return os.stat(path).st_uid == 0
-    except OSError:
-        return False

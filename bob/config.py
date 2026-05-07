@@ -280,6 +280,22 @@ class UserConfig:
             raise ValueError(f"Webhook format must be 'auto', 'generic', or 'slack': {fmt!r}")
         self.set("webhook_format", fmt)
 
+    # ------------------------------------------------------------------
+    # SUID whitelist helpers
+    # ------------------------------------------------------------------
+
+    def get_suid_whitelist(self) -> list[str]:
+        """Return user-configured SUID whitelist patterns (glob, matched on basename).
+
+        Reads the ``suid_whitelist`` key from config.conf as a comma-separated
+        list of glob patterns, e.g. ``suid_whitelist = kismet_cap_*, my_tool``.
+        Returns an empty list when the key is absent or empty.
+        """
+        raw = self._data.get("suid_whitelist", "")
+        if not raw:
+            return []
+        return [p.strip() for p in raw.split(",") if p.strip()]
+
     @property
     def path(self) -> Path:
         """Path to the config file."""

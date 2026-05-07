@@ -6,6 +6,98 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.3.2] — 06-05-2026
+
+Liste blanche SUID configurable par l'utilisateur : les patterns déclarés dans `~/.config/bob/config.conf` suppriment les binaires légitimes du warning "SUID inattendu". Plus 14 corrections issues d'une passe de code review (i18n, mode quiet, idempotence moteur, code mort). 4347/4347 tests (+19).
+
+---
+
+### Fonctionnalité — `suid_whitelist` dans `config.conf`
+
+**Fichiers :** `bob/config.py`, `bob/checks/suid_audit.py`, `bob/runner.py`, locales
+
+#### Problème
+
+Sur Kali Linux et autres distributions orientées sécurité, des outils légitimes sont livrés avec le bit SUID positionné (Kismet livre 15+ helpers de capture `kismet_cap_*`, tous root-owned SUID). Ces binaires apparaissent comme "inattendus" dans le rapport BOB — générant 15 avertissements parasites par exécution. Une liste blanche globale codée en dur serait incorrecte : ces binaires n'ont rien à faire sur un serveur de production. La configuration par utilisateur est la seule solution propre.
+
+#### Implémentation
+
+**`bob/config.py` — `UserConfig.get_suid_whitelist() -> list[str]`**
+
+Nouveau helper qui lit la clé `suid_whitelist` dans `~/.config/bob/config.conf`, divise sur les virgules et retourne une liste de patterns glob nettoyés. Retourne `[]` quand la clé est absente ou vide. Suit le pattern existant des helpers `get_profile()` / `get_webhook_url()`.
+
+```
+# ~/.config/bob/config.conf
+suid_whitelist = kismet_cap_*, mon_outil_maison
+```
+
+**`bob/checks/suid_audit.py` — `SuidSnapshot`**
+
+- `SuidSnapshot` reçoit un nouveau champ `whitelisted_suid: list[str]` (défaut `[]`), stockant les chemins supprimés par les patterns utilisateur.
+- `SuidSnapshot.from_system()` reçoit un paramètre `user_whitelist: list[str] | None = None`.
+- Après le filtre sur `_KNOWN_SUID`, un second passage applique `fnmatch.fnmatch(basename, pattern)` pour chaque pattern utilisateur. Les chemins correspondants passent de `unexpected_suid` à `whitelisted_suid`.
+- `check_suid_audit()` émet `suid_audit.whitelisted` (INFO) quand `snapshot.whitelisted_suid` est non vide, avec le nombre et les chemins. Intentionnellement visible — l'utilisateur doit voir que la suppression a eu lieu.
+
+**`bob/runner.py`**
+
+`SuidSnapshot.from_system(user_whitelist=user_config.get_suid_whitelist())` — la liste blanche est chargée depuis `user_config` (déjà dans scope) et passée à l'appel.
+
+#### Décisions de conception
+
+- **Glob sur le basename uniquement** : un matching sur le chemin complet permettrait à des patterns comme `*/opt/*` de supprimer tout ce qui est sous `/opt`. Le matching sur basename est prévisible et sûr.
+- **INFO, pas invisible** : les chemins whitelistés sont rapportés en INFO plutôt que silencieusement supprimés. Si l'utilisateur whiteliste accidentellement `*`, il verra tous ses binaires SUID listés comme "supprimés par la liste blanche" et comprendra qu'il y a un problème.
+- **Patterns séparés par virgules** : cohérent avec la façon dont la liste blanche `_KNOWN_SUID` fonctionne conceptuellement, et facilement éditable dans un fichier texte brut.
+
+---
+
+### Corrections — passe de code review (14 éléments)
+
+Une revue systématique de la base de code a identifié et corrigé les problèmes suivants :
+
+**BUG-2 — `compute_domain_scores()` non-idempotent (`domain_scores.py`)**
+La fonction mutait `deduction.was_capped = True` sur des objets `Deduction` live. Un deuxième appel flipperait des flags supplémentaires sans raison. Correction : reset de tous les `was_capped = False` en début de `compute_domain_scores()` avant tout calcul.
+
+**BUG-3 — `samba` et `desktop_apps` invisibles à `--check`/`--skip` (`runner.py`)**
+Les deux sections étaient protégées par `_section_enabled()` mais absentes de `_ALL_SECTIONS`. `--list-checks` ne les montrait jamais ; `--check samba` était un no-op silencieux. Correction : les deux noms ajoutés à `_ALL_SECTIONS`.
+
+**BUG-4 — Mode quiet contourné par toutes les lignes de statut (`output.py`)**
+`_print_status()` et `print_risk_context()` utilisaient `print()` brut au lieu du wrapper `_p()` qui vérifie `_quiet`. Tous les `print_warn` / `print_alert` / `print_ok` / `print_info` atteignaient stdout même en mode `--quiet`. Correction : tous les `print()` remplacés par `_p()` dans ces deux fonctions.
+
+**BUG-1 — Labels français codés en dur dans `output.py`**
+`print_warn()` émettait `[ATTENTION]` et `print_alert()` émettait `[ALERTE]` inconditionnellement, même sur une install anglaise. Les clés i18n `status.warn = "WARNING"` et `status.alert = "ALERT"` existaient dans `locales/en.json` mais n'étaient jamais appelées. Correction : les deux fonctions appellent désormais `t("status.warn")` / `t("status.alert")` via un import local de `bob.i18n`.
+
+**BUG-5 — Attribut dynamique `result._log_data` sur un dataclass (`scoring.py`, `checks/logs.py`, `display.py`)**
+`check_logs()` posait un attribut `result._log_data` non déclaré avec `# type: ignore`. En cas de chemin d'early-return, `display_log_results()` n'affichait rien silencieusement. Correction : `CheckResult` reçoit un champ propre `log_data: dict | None = field(default=None)` ; `logs.py` et `display.py` mis à jour.
+
+**BUG-6 — Déductions bruteforce sans `key=` (`checks/logs.py`)**
+`result.warn()` et `result.add_deduction()` dans la boucle bruteforce n'avaient pas de `key=`, les rendant invisibles à `--ignore` et aux profils. Correction : `key="logs.brute_found"` ajouté aux deux appels.
+
+**SF-1 — Parse de `sshd_config` silencieusement tronquée aux blocs `Match` (`checks/ssh.py`)**
+Quand un bloc `Match` apparaissait dans `sshd_config`, les directives globales suivantes étaient silencieusement ignorées. Le check pouvait rapporter un faux OK. Correction : `_parse_config_file()` pose `config["_match_block"] = True` ; `_check_sshd_config()` émet `ssh.match_block_skipped` (INFO).
+
+**SF-2 — `curr_baseline` potentiellement non lié (`__main__.py`)**
+`curr_baseline` était assigné à l'intérieur d'un bloc `with redirect_stdout(...)`. Un futur refactoring qui briserait le couplage `diff_mode` provoquerait une `UnboundLocalError`. Correction : `curr_baseline = None` initialisé avant le bloc.
+
+**SEC-1 — `fixes.py` ignore `--no-color` (`fixes.py`)**
+Tous les literals `\033[...]` dans `fixes.py` contournaient le flag `--no-color` et l'infrastructure `output._c`. Rediriger la sortie des fixes vers un fichier produisait des séquences d'échappement brutes. Correction : tous les literals remplacés par `output._c.*`.
+
+**BP-2 — Module externe écrivait sur des attributs `_privés` du moteur (`scoring.py`, `domain_scores.py`)**
+`apply_domain_score_override()` posait directement `engine._domain_scores` et `engine._active_domains`, couplant `domain_scores.py` aux internals de `ScoreEngine`. Correction : méthode publique `ScoreEngine.set_domain_scores(scores, active)` ajoutée.
+
+**BP-3 — Comparaison de chaîne sur la valeur d'un enum (`checks/ssh.py`)**
+`f.level.value in ("warn", "alert", "info")` se briserait silencieusement si un membre de `FindingLevel` était renommé. Correction : `f.level != FindingLevel.OK`.
+
+**BP-1 — `open(os.devnull)` sans `encoding=` (`__main__.py`)**
+Ouverture de fichier en mode texte sans encodage explicite. Correction : `encoding="utf-8"` ajouté.
+
+**INC-2 — `snapshot.from_system()` s'exécutait avant le guard `_section_enabled()` (`runner.py`)**
+`SambaSnapshot.from_system()` et `DesktopAppsSnapshot.from_system()` (qui exécutent des requêtes `dpkg`/subprocess) étaient appelés inconditionnellement, même lors d'un `--skip`. Correction : appels `from_system()` déplacés à l'intérieur du guard `_section_enabled()`.
+
+**DC-1 — `_is_root_owned()` code mort (`checks/suid_audit.py`)**
+Helper privé jamais appelé en production ; la logique inline à la ligne 165 faisait déjà la même chose. Correction : fonction supprimée, ses deux tests unitaires supprimés.
+
+---
+
 ## [v0.3.1] — 06-05-2026
 
 Deux corrections de bugs identifiées lors de la validation multi-VM, plus deux refactorisations architecturales dans le pipeline de décomposition du score. Aucune nouvelle fonctionnalité. 4328/4328 tests (+6).

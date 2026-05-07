@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
-from bob.scoring import CheckResult
+from bob.scoring import CheckResult, FindingLevel
 
 # ---------------------------------------------------------------------------
 # Weak crypto reference sets (OpenSSH deprecated algorithms)
@@ -308,7 +308,7 @@ def check_ssh(snapshot: SSHSnapshot, t: TranslationFunc | None = None, ssh_expos
     # the above informational findings have reduced real-world impact.
     if not ssh_exposed:
         has_non_ok = any(
-            f.level.value in ("warn", "alert", "info")
+            f.level != FindingLevel.OK
             for f in result.findings
         )
         if has_non_ok:
@@ -636,6 +636,12 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
         result.info(
             message=_t("ssh.no_allow_users"),
             key="ssh.no_allow_users",
+        )
+
+    if cfg.get("_match_block"):
+        result.info(
+            message=_t("ssh.match_block_skipped"),
+            key="ssh.match_block_skipped",
         )
 
     if not found_issue:
@@ -1005,6 +1011,7 @@ def _parse_config_file(
             continue
         # Stop at Match blocks — conditional overrides not handled
         if re.match(r"^match\b", stripped, re.IGNORECASE):
+            config["_match_block"] = True
             break
 
         # Include directive

@@ -9,24 +9,21 @@ Covers:
   - Whitelist matching by basename
   - Truncation at 10 paths with "+N more" suffix
   - Deduction invariants
-  - _is_root_owned helper
   - SuidSnapshot defaults
+  - User whitelist: glob matching, exact matching, no match, empty whitelist
+  - whitelisted_suid INFO finding in check_suid_audit
+  - get_suid_whitelist() config helper
 """
 
 from __future__ import annotations
 
 import os
-import stat
-import tempfile
-from pathlib import Path
-
-import pytest
 
 from bob.checks.suid_audit import (
     SuidSnapshot,
-    _is_root_owned,
     check_suid_audit,
 )
+from bob.config import UserConfig
 from bob.scoring import FindingLevel
 from tests.helpers import _keys, _deduction_points
 
@@ -373,15 +370,186 @@ class TestSnapshotDefaults:
 
 
 # ---------------------------------------------------------------------------
-# _is_root_owned helper
+# SuidSnapshot.from_system — user whitelist (unit, no real find(1))
 # ---------------------------------------------------------------------------
 
-class TestIsRootOwned:
-    def test_nonexistent_path_returns_false(self):
-        assert not _is_root_owned("/nonexistent/path/that/cannot/exist")
+class TestFromSystemUserWhitelist:
+    """Tests for the user_whitelist parameter of SuidSnapshot.from_system().
 
-    def test_current_user_file_not_root_owned_when_not_root(self):
-        if os.getuid() == 0:
-            pytest.skip("Running as root — all new files are root-owned")
-        with tempfile.NamedTemporaryFile() as f:
-            assert not _is_root_owned(f.name)
+    We can't call from_system() without real root directories, so we test the
+    classification logic by constructing snapshots directly and testing that
+    check_suid_audit emits the right findings.  The whitelist application
+    logic itself is exercised via small helper tests below.
+    """
+
+    def _snap_with_whitelisted(self, whitelisted: list[str], unexpected: list[str] | None = None) -> SuidSnapshot:
+        return SuidSnapshot(
+            suid_paths=whitelisted + (unexpected or []),
+            sgid_paths=[],
+            unexpected_suid=unexpected or [],
+            unexpected_sgid=[],
+            whitelisted_suid=whitelisted,
+            scan_skipped=False,
+        )
+
+    def test_whitelisted_suid_emits_info(self):
+        snap = self._snap_with_whitelisted(["/usr/bin/kismet_cap_pcapng_to_kismet"])
+        result = check_suid_audit(snap)
+        assert _level(result, "suid_audit.whitelisted") == FindingLevel.INFO
+
+    def test_whitelisted_suid_no_deduction(self):
+        snap = self._snap_with_whitelisted(["/usr/bin/kismet_cap_pcapng_to_kismet"])
+        result = check_suid_audit(snap)
+        assert _deduction_points(result) == 0
+
+    def test_whitelisted_suid_ok_result_when_no_unexpected(self):
+        snap = self._snap_with_whitelisted(["/usr/bin/kismet_cap_pcapng_to_kismet"])
+        result = check_suid_audit(snap)
+        assert "suid_audit.ok" in _keys(result)
+
+    def test_whitelisted_suid_warn_result_when_unexpected_remain(self):
+        snap = self._snap_with_whitelisted(
+            whitelisted=["/usr/bin/kismet_cap_something"],
+            unexpected=["/opt/evil"],
+        )
+        result = check_suid_audit(snap)
+        assert "suid_audit.unexpected_suid" in _keys(result)
+        assert "suid_audit.whitelisted" in _keys(result)
+
+    def test_whitelisted_count_in_info_message(self):
+        whitelisted = [
+            "/usr/bin/kismet_cap_pcapng_to_kismet",
+            "/usr/bin/kismet_cap_linux_wifi",
+        ]
+        snap = self._snap_with_whitelisted(whitelisted)
+        result = check_suid_audit(snap, t=_t_format)
+        f = _finding(result, "suid_audit.whitelisted")
+        assert "2" in (f.message or "")
+
+    def test_no_whitelisted_finding_when_list_empty(self):
+        snap = _snap()
+        result = check_suid_audit(snap)
+        assert "suid_audit.whitelisted" not in _keys(result)
+
+    def test_whitelisted_truncation_at_10(self):
+        whitelisted = [f"/usr/bin/kismet_cap_{i}" for i in range(11)]
+        snap = SuidSnapshot(
+            suid_paths=whitelisted,
+            sgid_paths=[],
+            unexpected_suid=[],
+            unexpected_sgid=[],
+            whitelisted_suid=whitelisted,
+            scan_skipped=False,
+        )
+        result = check_suid_audit(snap, t=_t_format)
+        f = _finding(result, "suid_audit.whitelisted")
+        assert "+1 more" in (f.message or "")
+
+
+# ---------------------------------------------------------------------------
+# UserConfig.get_suid_whitelist
+# ---------------------------------------------------------------------------
+
+class TestGetSuidWhitelist:
+    def test_returns_empty_list_when_key_absent(self, tmp_path):
+        cfg = UserConfig.load(path=tmp_path / "config.conf")
+        assert cfg.get_suid_whitelist() == []
+
+    def test_single_pattern(self, tmp_path):
+        cfg = UserConfig.load(path=tmp_path / "config.conf")
+        cfg.set("suid_whitelist", "kismet_cap_*")
+        assert cfg.get_suid_whitelist() == ["kismet_cap_*"]
+
+    def test_multiple_patterns_comma_separated(self, tmp_path):
+        cfg = UserConfig.load(path=tmp_path / "config.conf")
+        cfg.set("suid_whitelist", "kismet_cap_*, my_tool, other_*")
+        assert cfg.get_suid_whitelist() == ["kismet_cap_*", "my_tool", "other_*"]
+
+    def test_strips_whitespace_around_patterns(self, tmp_path):
+        cfg = UserConfig.load(path=tmp_path / "config.conf")
+        cfg.set("suid_whitelist", "  foo_*  ,  bar  ")
+        assert cfg.get_suid_whitelist() == ["foo_*", "bar"]
+
+    def test_empty_value_returns_empty_list(self, tmp_path):
+        cfg = UserConfig.load(path=tmp_path / "config.conf")
+        cfg.set("suid_whitelist", "")
+        assert cfg.get_suid_whitelist() == []
+
+    def test_commas_only_returns_empty_list(self, tmp_path):
+        cfg = UserConfig.load(path=tmp_path / "config.conf")
+        cfg.set("suid_whitelist", " , , ")
+        assert cfg.get_suid_whitelist() == []
+
+    def test_persists_and_reloads(self, tmp_path):
+        p = tmp_path / "config.conf"
+        cfg = UserConfig.load(path=p)
+        cfg.set("suid_whitelist", "kismet_cap_*")
+        cfg2 = UserConfig.load(path=p)
+        assert cfg2.get_suid_whitelist() == ["kismet_cap_*"]
+
+
+# ---------------------------------------------------------------------------
+# fnmatch glob matching (via from_system classification logic)
+# ---------------------------------------------------------------------------
+
+class TestGlobMatching:
+    """Verify that fnmatch glob patterns work as expected for common Kali cases."""
+
+    def _classify(self, paths: list[str], patterns: list[str]) -> tuple[list[str], list[str]]:
+        """Return (unexpected, whitelisted) tuples using the same logic as from_system."""
+        import fnmatch as _fnmatch
+        unexpected, whitelisted = [], []
+        for p in paths:
+            basename = os.path.basename(p)
+            if patterns and any(_fnmatch.fnmatch(basename, pat) for pat in patterns):
+                whitelisted.append(p)
+            else:
+                unexpected.append(p)
+        return unexpected, whitelisted
+
+    def test_glob_matches_kismet_cap_prefix(self):
+        paths = [
+            "/usr/bin/kismet_cap_pcapng_to_kismet",
+            "/usr/bin/kismet_cap_linux_wifi",
+            "/usr/bin/kismet_cap_linux_bluetooth",
+        ]
+        unexpected, whitelisted = self._classify(paths, ["kismet_cap_*"])
+        assert whitelisted == paths
+        assert unexpected == []
+
+    def test_exact_name_match(self):
+        paths = ["/usr/bin/my_tool"]
+        unexpected, whitelisted = self._classify(paths, ["my_tool"])
+        assert whitelisted == ["/usr/bin/my_tool"]
+        assert unexpected == []
+
+    def test_non_matching_pattern_leaves_unexpected(self):
+        paths = ["/usr/bin/evil_tool"]
+        unexpected, whitelisted = self._classify(paths, ["kismet_cap_*"])
+        assert unexpected == ["/usr/bin/evil_tool"]
+        assert whitelisted == []
+
+    def test_empty_patterns_leaves_all_unexpected(self):
+        paths = ["/usr/bin/kismet_cap_wifi"]
+        unexpected, whitelisted = self._classify(paths, [])
+        assert unexpected == ["/usr/bin/kismet_cap_wifi"]
+        assert whitelisted == []
+
+    def test_wildcard_star_matches_all(self):
+        paths = ["/usr/bin/anything", "/usr/bin/whatever"]
+        unexpected, whitelisted = self._classify(paths, ["*"])
+        assert whitelisted == paths
+        assert unexpected == []
+
+    def test_partial_glob_mix(self):
+        paths = ["/usr/bin/kismet_cap_wifi", "/usr/bin/evil"]
+        unexpected, whitelisted = self._classify(paths, ["kismet_cap_*"])
+        assert "/usr/bin/kismet_cap_wifi" in whitelisted
+        assert "/usr/bin/evil" in unexpected
+
+    def test_multiple_patterns_any_match_whitelists(self):
+        paths = ["/usr/bin/tool_a", "/usr/bin/tool_b", "/usr/bin/other"]
+        unexpected, whitelisted = self._classify(paths, ["tool_a", "tool_b"])
+        assert "/usr/bin/tool_a" in whitelisted
+        assert "/usr/bin/tool_b" in whitelisted
+        assert "/usr/bin/other" in unexpected

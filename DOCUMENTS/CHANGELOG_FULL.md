@@ -6,6 +6,98 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.3.2] — 2026-05-06
+
+User-configurable SUID whitelist: patterns declared in `~/.config/bob/config.conf` suppress known-legitimate binaries from the "unexpected SUID" warning. Plus 14 code-review fixes covering i18n, quiet-mode bypass, engine idempotency, and dead-code removal. 4347/4347 tests (+19).
+
+---
+
+### Feature — `suid_whitelist` in `config.conf`
+
+**Files:** `bob/config.py`, `bob/checks/suid_audit.py`, `bob/runner.py`, locales
+
+#### Problem
+
+On Kali Linux and other security-focused distributions, legitimate tools ship with the SUID bit set (Kismet ships 15+ `kismet_cap_*` capture helpers, all root-owned SUID). These appear as "unexpected" SUID binaries in BOB's report — generating 15 noisy warnings per run. A global hard-coded whitelist would be incorrect: those binaries have no business on a production server. Per-user configuration is the only clean solution.
+
+#### Implementation
+
+**`bob/config.py` — `UserConfig.get_suid_whitelist() -> list[str]`**
+
+New helper that reads the `suid_whitelist` key from `~/.config/bob/config.conf`, splits on commas, and returns a list of stripped glob pattern strings. Returns `[]` when the key is absent or empty. Follows the existing `get_profile()` / `get_webhook_url()` helper pattern.
+
+```
+# ~/.config/bob/config.conf
+suid_whitelist = kismet_cap_*, my_enterprise_tool
+```
+
+**`bob/checks/suid_audit.py` — `SuidSnapshot`**
+
+- `SuidSnapshot` gains a new field `whitelisted_suid: list[str]` (default `[]`), storing paths suppressed by user patterns.
+- `SuidSnapshot.from_system()` gains a `user_whitelist: list[str] | None = None` parameter.
+- After filtering against `_KNOWN_SUID`, a second pass applies `fnmatch.fnmatch(basename, pattern)` for each user pattern. Matching paths move from `unexpected_suid` to `whitelisted_suid`.
+- `check_suid_audit()` emits `suid_audit.whitelisted` (INFO) when `snapshot.whitelisted_suid` is non-empty, with count and paths. This is intentionally visible — the user should see that suppression happened.
+
+**`bob/runner.py`**
+
+`SuidSnapshot.from_system(user_whitelist=user_config.get_suid_whitelist())` — whitelist is loaded from `user_config` (already in scope) and passed at call time.
+
+#### Design decisions
+
+- **Glob on basename only**: matching on full path would let patterns like `*/opt/*` suppress everything under `/opt`. Basename matching is predictable and safe.
+- **INFO, not invisible**: whitelisted paths are reported as INFO rather than silently dropped. If the user accidentally whitelists `*`, they'll see all their SUID binaries listed as "suppressed by whitelist" and know something is wrong.
+- **Comma-separated patterns**: consistent with how the existing `_KNOWN_SUID` whitelist works conceptually, and trivially editable in a plain text file.
+
+---
+
+### Fixes — code review pass (14 items)
+
+A systematic review of the codebase identified and fixed the following issues:
+
+**BUG-2 — `compute_domain_scores()` non-idempotent (`domain_scores.py`)**
+The function mutated `deduction.was_capped = True` on live `Deduction` objects. A second call would flip additional flags spuriously. Fix: reset all `was_capped = False` at the start of `compute_domain_scores()` before recomputing.
+
+**BUG-3 — `samba` and `desktop_apps` invisible to `--check`/`--skip` (`runner.py`)**
+Both sections were gated by `_section_enabled()` but absent from `_ALL_SECTIONS`. `--list-checks` never showed them; `--check samba` was a silent no-op. Fix: both names added to `_ALL_SECTIONS`.
+
+**BUG-4 — Quiet mode bypassed by all status lines (`output.py`)**
+`_print_status()` and `print_risk_context()` used bare `print()` instead of the `_p()` wrapper that checks `_quiet`. Every `print_warn` / `print_alert` / `print_ok` / `print_info` call reached stdout even in `--quiet` mode. Fix: replaced all `print()` calls with `_p()` in both functions.
+
+**BUG-1 — French labels hardcoded in `output.py`**
+`print_warn()` emitted `[ATTENTION]` and `print_alert()` emitted `[ALERTE]` unconditionally, even on English installs. The i18n keys `status.warn = "WARNING"` and `status.alert = "ALERT"` existed in `locales/en.json` but were never called. Fix: both functions now call `t("status.warn")` / `t("status.alert")` via a local import of `bob.i18n`.
+
+**BUG-5 — `result._log_data` dynamic attribute on a dataclass (`scoring.py`, `checks/logs.py`, `display.py`)**
+`check_logs()` set an undeclared `result._log_data` attribute with `# type: ignore`. If an early-return path was hit, `display_log_results()` silently showed nothing. Fix: `CheckResult` gains a proper `log_data: dict | None = field(default=None)` field; `logs.py` and `display.py` updated accordingly.
+
+**BUG-6 — Bruteforce deductions missing `key=` (`checks/logs.py`)**
+`result.warn()` and `result.add_deduction()` in the bruteforce loop had no `key=`, making them invisible to `--ignore` and profiles. Fix: `key="logs.brute_found"` added to both calls.
+
+**SF-1 — `sshd_config` parse silently truncated at `Match` blocks (`checks/ssh.py`)**
+When a `Match` block appeared in `sshd_config`, subsequent global directives were silently discarded. The check could report a false OK for options defined after the block. Fix: `_parse_config_file()` sets `config["_match_block"] = True`; `_check_sshd_config()` emits `ssh.match_block_skipped` (INFO) to warn the user.
+
+**SF-2 — `curr_baseline` potentially unbound (`__main__.py`)**
+`curr_baseline` was assigned inside a `with redirect_stdout(...)` block. In a future refactor that breaks the `diff_mode` coupling, an `UnboundLocalError` would occur at runtime. Fix: `curr_baseline = None` initialised before the block.
+
+**SEC-1 — `fixes.py` ignores `--no-color` (`fixes.py`)**
+All `\033[...]` escape literals in `fixes.py` bypassed the `--no-color` flag and the `output._c` infrastructure. Piping fix output to a file produced raw escape sequences. Fix: all literals replaced with `output._c.*` attributes.
+
+**BP-2 — External module wrote to `_private` engine attributes (`scoring.py`, `domain_scores.py`)**
+`apply_domain_score_override()` directly set `engine._domain_scores` and `engine._active_domains`, coupling `domain_scores.py` to `ScoreEngine` internals. Fix: `ScoreEngine.set_domain_scores(scores, active)` public method added; `domain_scores.py` calls it instead.
+
+**BP-3 — String comparison against enum value (`checks/ssh.py`)**
+`f.level.value in ("warn", "alert", "info")` would silently break if any `FindingLevel` member was renamed. Fix: `f.level != FindingLevel.OK`.
+
+**BP-1 — `open(os.devnull)` without `encoding=` (`__main__.py`)**
+Text-mode file open without explicit encoding relies on locale default. Fix: `encoding="utf-8"` added.
+
+**INC-2 — `snapshot.from_system()` ran before `_section_enabled()` check (`runner.py`)**
+`SambaSnapshot.from_system()` and `DesktopAppsSnapshot.from_system()` (which run `dpkg`/subprocess queries) were called unconditionally, even when the section was skipped via `--skip`. Fix: `from_system()` calls moved inside the `_section_enabled()` guard.
+
+**DC-1 — `_is_root_owned()` dead code (`checks/suid_audit.py`)**
+Private helper never called in production code; inline logic at line 165 already performed the same check. Fix: function deleted; its two unit tests removed.
+
+---
+
 ## [v0.3.1] — 2026-05-06
 
 Two targeted bug fixes found during multi-VM validation, plus two architectural refactors in the score breakdown pipeline. No new features. 4328/4328 tests (+6).

@@ -176,6 +176,19 @@ Drop a `.json` file into `~/.config/bob/services.d/` to extend the service regis
 
 ---
 
+## SUID whitelist
+
+On Kali and other security-focused distributions, legitimate tools ship with the SUID bit set. Declare approved basenames or glob patterns in `~/.config/bob/config.conf` to suppress them from the "unexpected SUID" warning:
+
+```
+# ~/.config/bob/config.conf
+suid_whitelist = kismet_cap_*, my_enterprise_tool
+```
+
+Patterns are matched against the binary basename using `fnmatch`. Suppressed binaries are reported as INFO so the whitelist is always visible.
+
+---
+
 ## Exit codes
 
 | Code | Meaning |

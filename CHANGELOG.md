@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.3.2](#v032) | 2026-05-06 | User-configurable SUID whitelist in `config.conf` · 14 code-review fixes (i18n, quiet mode, engine idempotency, dead code) · 4347/4347 tests (+19) |
 | [v0.3.1](#v031) | 2026-05-06 | Banner version fix · DDNS context propagation · `was_capped` on Deduction · engine cached properties · 4328/4328 tests (+6) |
 | [v0.3.0](#v030) | 2026-05-06 | `--breakdown` score transparency · score-aware `--explain` · kernel -unsigned retention fix · report header relics removed · score delta display · 4322/4322 tests (+48) |
 | [v0.2.4](#v024) | 2026-05-05 | Debian -unsigned kernel UX · deduction_total None sentinel · TranslationFunc alias (42 signatures) · _has_shell_ops() via shlex · profile fallback warning · 4274/4274 tests (+12) |
@@ -13,6 +14,55 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.3.2] — 2026-05-06
+
+User-configurable SUID whitelist: patterns declared in `~/.config/bob/config.conf` suppress known-legitimate binaries from the "unexpected SUID" warning. No new warnings — only noise reduction for environments like Kali that ship extra SUID tools. Plus 14 code-review fixes covering i18n labels, quiet-mode bypass, engine idempotency, dead code, and minor bad practices. 4347/4347 tests (+19).
+
+### Feature — `suid_whitelist` in `config.conf` (`bob/config.py`, `bob/checks/suid_audit.py`, `bob/runner.py`)
+
+Users can now declare glob patterns for approved SUID binaries directly in `~/.config/bob/config.conf`:
+
+```
+# ~/.config/bob/config.conf
+suid_whitelist = kismet_cap_*, my_custom_tool
+```
+
+Patterns are matched against the **basename** of each detected SUID binary using `fnmatch`. Matched paths are removed from the "unexpected SUID" list, eliminating false positives on Kali (15+ Kismet capture binaries), enterprise environments, or systems with custom in-house tools.
+
+When at least one binary is suppressed, an INFO finding `suid_audit.whitelisted` reports the count and paths, so users can confirm the whitelist is working without silently hiding everything.
+
+Implementation: `UserConfig.get_suid_whitelist() -> list[str]` reads and parses the comma-separated key. `SuidSnapshot.from_system()` gains a `user_whitelist` parameter; the runner passes `user_config.get_suid_whitelist()` at call time. The suppressed paths are stored in `SuidSnapshot.whitelisted_suid` for transparent reporting.
+
+### Fixes — code review (14 items)
+
+| ID | File | Fix |
+|----|------|-----|
+| BUG-2 | `domain_scores.py` | `compute_domain_scores()` reset `was_capped=False` before recomputing — idempotent now |
+| BUG-3 | `runner.py` | `"samba"` and `"desktop_apps"` added to `_ALL_SECTIONS` — visible to `--check`/`--skip`/`--list-checks` |
+| BUG-4 | `output.py` | `_print_status()` and `print_risk_context()` use `_p()` — quiet mode now respected |
+| BUG-1 | `output.py` | `[ATTENTION]`/`[ALERTE]` → `t("status.warn")`/`t("status.alert")` — i18n wired |
+| BUG-5 | `scoring.py`, `logs.py`, `display.py` | `result._log_data` → proper `CheckResult.log_data` field (no more `# type: ignore`) |
+| BUG-6 | `checks/logs.py` | Bruteforce `warn()` and `add_deduction()` gain `key="logs.brute_found"` — visible to `--ignore` and profiles |
+| SF-1 | `checks/ssh.py` | `sshd_config` parse emits `ssh.match_block_skipped` INFO when a `Match` block truncates parsing |
+| SF-2 | `__main__.py` | `curr_baseline = None` initialised before `with` block — no `UnboundLocalError` risk |
+| SEC-1 | `fixes.py` | Raw `\033[...]` literals replaced by `output._c.*` — respects `--no-color` |
+| BP-2 | `scoring.py`, `domain_scores.py` | `engine.set_domain_scores()` public method — no more direct `_private` attribute writes |
+| BP-3 | `checks/ssh.py` | `f.level.value in (...)` → `f.level != FindingLevel.OK` — enum-safe comparison |
+| BP-1 | `__main__.py` | `open(os.devnull, "w", encoding="utf-8")` — explicit encoding |
+| INC-2 | `runner.py` | `SambaSnapshot`/`DesktopAppsSnapshot.from_system()` moved inside `_section_enabled()` guard — no subprocess on `--skip` |
+| DC-1 | `checks/suid_audit.py` | `_is_root_owned()` deleted — private dead code duplicating inline logic |
+
+### Tests
+
+4347/4347 (+19 net from v0.3.1):
+
+| File | Change |
+|------|--------|
+| `tests/test_suid_audit.py` | +21 across `TestFromSystemUserWhitelist` (8), `TestGetSuidWhitelist` (7), `TestGlobMatching` (7) — −2 `TestIsRootOwned` (deleted with DC-1) |
+| `tests/test_logs.py` | 3 assertions updated `_log_data` → `log_data` (BUG-5) |
 
 ---
 

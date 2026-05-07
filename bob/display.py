@@ -214,11 +214,11 @@ def display_log_results(logs_result, snapshot, config, t, report) -> None:
     from bob.checks.logs import get_ip_geo
     from bob.output import print_ok, print_warn, print_info, print_dim
 
-    if not hasattr(logs_result, "_log_data"):
+    if logs_result.log_data is None:
         display_result(logs_result, report, config.verbose, quiet=config.quiet)
         return
 
-    data = logs_result._log_data
+    data = logs_result.log_data
 
     print_dim(
         f"{t('logs.period')} : {data['log_days']} {t('logs.days_unit')} "

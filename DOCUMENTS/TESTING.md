@@ -11,6 +11,7 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.2 | 4347 | +21 new (user whitelist) −2 removed (DC-1 dead code): `TestFromSystemUserWhitelist` · `TestGetSuidWhitelist` · `TestGlobMatching` in test_suid_audit |
 | v0.3.1 | 4328 | +6 new tests: `TestWasCapped` in test_domain_scores · was_capped flag · engine cached properties |
 | v0.3.0 | 4322 | +48 new tests: `--breakdown` display · golden scoring scenarios · 16 in test_breakdown · 32 in test_golden_scenarios · 1 renamed in test_min_level |
 | v0.2.4 | 4274 | +12 new tests: Debian -unsigned kernel UX · deduction_total None sentinel · 2 in test_kernel_modules · 10 in test_compare |
@@ -20,6 +21,63 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.3.2 — 4347/4347 (2026-05-07)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4347 passed in 5.23s
+```
+
+**Net: +19 from v0.3.1 (+21 new whitelist tests, −2 dead-code tests removed)**
+
+**New tests (+21):**
+
+#### `tests/test_suid_audit.py` — `TestFromSystemUserWhitelist` (+8)
+
+| Test | Coverage |
+|------|----------|
+| `test_whitelisted_suid_emits_info` | Snapshot with whitelisted paths → `suid_audit.whitelisted` INFO finding |
+| `test_whitelisted_suid_no_deduction` | Whitelisted paths → no deduction applied |
+| `test_whitelisted_suid_ok_result_when_no_unexpected` | All suppressed → `suid_audit.ok` still present |
+| `test_whitelisted_suid_warn_result_when_unexpected_remain` | Mix of whitelisted + unexpected → both findings present |
+| `test_whitelisted_count_in_info_message` | 2 whitelisted paths → "2" appears in INFO message |
+| `test_no_whitelisted_finding_when_list_empty` | Empty `whitelisted_suid` → no INFO finding |
+| `test_whitelisted_truncation_at_10` | 11 whitelisted paths → "+1 more" suffix |
+
+#### `tests/test_suid_audit.py` — `TestGetSuidWhitelist` (+7)
+
+| Test | Coverage |
+|------|----------|
+| `test_returns_empty_list_when_key_absent` | Missing key → `[]` |
+| `test_single_pattern` | `kismet_cap_*` → `["kismet_cap_*"]` |
+| `test_multiple_patterns_comma_separated` | `a, b, c` → `["a", "b", "c"]` |
+| `test_strips_whitespace_around_patterns` | `  foo_*  ,  bar  ` → `["foo_*", "bar"]` |
+| `test_empty_value_returns_empty_list` | Empty string value → `[]` |
+| `test_commas_only_returns_empty_list` | ` , , ` → `[]` |
+| `test_persists_and_reloads` | Written and reloaded → same list |
+
+#### `tests/test_suid_audit.py` — `TestGlobMatching` (+7)
+
+| Test | Coverage |
+|------|----------|
+| `test_glob_matches_kismet_cap_prefix` | `kismet_cap_*` matches 3 Kismet paths |
+| `test_exact_name_match` | Exact basename pattern whitelists matching path |
+| `test_non_matching_pattern_leaves_unexpected` | Non-matching pattern → path stays unexpected |
+| `test_empty_patterns_leaves_all_unexpected` | Empty patterns → all paths unexpected |
+| `test_wildcard_star_matches_all` | `*` pattern → everything whitelisted |
+| `test_partial_glob_mix` | Mixed: one matched, one not |
+| `test_multiple_patterns_any_match_whitelists` | Two exact patterns → each matches its target |
+
+**Removed tests (−2, DC-1):**
+
+`tests/test_suid_audit.py` — `TestIsRootOwned` deleted along with `_is_root_owned()` dead code:
+- `test_nonexistent_path_returns_false`
+- `test_current_user_file_not_root_owned_when_not_root`
 
 ---
 

@@ -824,7 +824,8 @@
     "host_key_dsa_reason": "DSA server host key in use: {name}",
     "host_key_rsa_short": "RSA server host key {name}: {bits} bits — consider regenerating at 4096 bits or switching to ed25519",
     "host_key_rsa_short_detail": "RSA host keys below 4096 bits are technically acceptable but no longer considered optimal. Modern clients and CAs recommend 4096-bit RSA or ed25519 for server identity keys.",
-    "host_key_ok": "Server host key {name} ({type}): strong algorithm"
+    "host_key_ok": "Server host key {name} ({type}): strong algorithm",
+    "match_block_skipped": "sshd_config contains a Match block — directives after it were not analysed"
   },
   "file_perms": {
     "world_writable": "{path} is world-writable ({mode}) — any user can modify this critical file",
@@ -879,7 +880,8 @@
     "unexpected_suid_detail": "These binaries run as root regardless of who launches them. Verify each one is intentional, then either remove the SUID bit (chmod u-s) or add it to your local whitelist.",
     "unexpected_suid_reason": "{count} unexpected SUID binary/binaries found",
     "unexpected_sgid": "{count} unexpected SGID binary/binaries: {paths}",
-    "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing."
+    "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing.",
+    "whitelisted": "{count} SUID binary/binaries suppressed by user whitelist: {paths}"
   },
   "docker_audit": {
     "scan_error": "Docker daemon not reachable — container security check skipped",
