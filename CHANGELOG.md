@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.3.4](#v034) | 2026-05-08 | Hotfix — `user_config` not passed to `run_checks()` → `NameError` at end of every audit (v0.3.2 regression) · 4348/4348 tests |
 | [v0.3.3](#v033) | 2026-05-07 | Architectural refactoring — `cron.py` split · `compute_domain_scores()` pure tuple return · `domain_scores` public API · `_draw`/`_read_key` curses helpers · 4348/4348 tests (+1) |
 | [v0.3.2](#v032) | 2026-05-06 | User-configurable SUID whitelist in `config.conf` · 14 code-review fixes (i18n, quiet mode, engine idempotency, dead code) · 4347/4347 tests (+19) |
 | [v0.3.1](#v031) | 2026-05-06 | Banner version fix · DDNS context propagation · `was_capped` on Deduction · engine cached properties · 4328/4328 tests (+6) |
@@ -15,6 +16,16 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.3.4] — 2026-05-08
+
+Hotfix for a regression introduced in v0.3.2. `user_config` was referenced inside `run_checks()` but never passed as a parameter — every audit crashed with `Fatal error: name 'user_config' is not defined` immediately after the kernel hardening section. 4348/4348 tests.
+
+### Fix — `user_config` not passed to `run_checks()` (`bob/runner.py`, `bob/__main__.py`)
+
+`run_checks()` gained `user_whitelist=user_config.get_suid_whitelist()` in v0.3.2 but `user_config` was never added to the function signature. Fix: `user_config: UserConfig | None = None` parameter added; `__main__.py` passes `user_config=user_config` at the call site. Fallback is `[]` when `None` (no whitelist applied).
 
 ---
 

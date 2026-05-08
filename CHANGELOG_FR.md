@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.3.4](#v034) | 08-05-2026 | Hotfix — `user_config` non transmis à `run_checks()` → `NameError` en fin d'audit (régression v0.3.2) · 4348/4348 tests |
 | [v0.3.3](#v033) | 07-05-2026 | Refactoring architectural — split `cron.py` · `compute_domain_scores()` retour tuple pur · API publique `domain_scores` · helpers curses `_draw`/`_read_key` · 4348/4348 tests (+1) |
 | [v0.3.2](#v032) | 06-05-2026 | Liste blanche SUID configurable dans `config.conf` · 14 corrections code review (i18n, mode quiet, idempotence moteur, code mort) · 4347/4347 tests (+19) |
 | [v0.3.1](#v031) | 06-05-2026 | Fix version bannière · propagation contexte DDNS · `was_capped` sur Deduction · propriétés moteur en cache · 4328/4328 tests (+6) |
@@ -15,6 +16,16 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.3.4] — 08-05-2026
+
+Hotfix pour une régression introduite en v0.3.2. `user_config` était référencé dans `run_checks()` sans jamais être passé en paramètre — chaque audit se terminait par `Fatal error: name 'user_config' is not defined` immédiatement après la section durcissement noyau. 4348/4348 tests.
+
+### Fix — `user_config` non transmis à `run_checks()` (`bob/runner.py`, `bob/__main__.py`)
+
+`run_checks()` avait reçu `user_whitelist=user_config.get_suid_whitelist()` en v0.3.2 mais `user_config` n'avait jamais été ajouté à la signature de la fonction. Correction : paramètre `user_config: UserConfig | None = None` ajouté ; `__main__.py` passe `user_config=user_config` au site d'appel. Repli sur `[]` quand `None` (aucune liste blanche appliquée).
 
 ---
 
