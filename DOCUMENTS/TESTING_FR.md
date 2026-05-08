@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.3  | 4348  | +7 nouveaux −6 supprimés (TestWasCapped → TestCappedIndices) : `TestCappedIndices` dans test_domain_scores |
 | v0.3.2  | 4347  | +21 nouveaux (whitelist utilisateur) −2 supprimés (DC-1 code mort) : `TestFromSystemUserWhitelist` · `TestGetSuidWhitelist` · `TestGlobMatching` dans test_suid_audit |
 | v0.3.1  | 4328  | +6 nouveaux tests : `TestWasCapped` dans test_domain_scores · flag was_capped · propriétés moteur en cache |
 | v0.3.0  | 4322  | +48 nouveaux tests : affichage `--breakdown` · scénarios golden scoring · 16 dans test_breakdown · 32 dans test_golden_scenarios · 1 renommé dans test_min_level |
@@ -21,6 +22,33 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.3.3 — 4348/4348 (07-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.21s
+```
+
+**Bilan : +1 par rapport à v0.3.2 (+7 nouveaux tests capped_indices, −6 tests was_capped supprimés)**
+
+#### `tests/test_domain_scores.py` — `TestCappedIndices` remplace `TestWasCapped` (+7, −6)
+
+`TestWasCapped` testait le flag booléen `deduction.was_capped` (supprimé en v0.3.3). Remplacé par `TestCappedIndices` qui teste la valeur de retour `frozenset[int]` de `compute_domain_scores()`.
+
+| Test | Couverture |
+|------|------------|
+| `test_no_cap_returns_empty_frozenset` | Aucun cap déclenché → second retour est `frozenset()` |
+| `test_single_capped_deduction_returns_index` | Une déduction dépasse le cap → indice `0` dans le frozenset retourné |
+| `test_uncapped_deduction_not_in_frozenset` | Déduction dans le cap → indice absent du frozenset |
+| `test_multiple_deductions_only_capped_indices` | Deux déductions, une cappée → seul l'indice cappé est retourné |
+| `test_frozenset_is_immutable` | L'objet retourné est un `frozenset`, pas un `set` |
+| `test_engine_capped_indices_matches_return_value` | `engine.capped_indices` égale le frozenset retourné par `compute_domain_scores()` |
+| `test_non_tool_cap_key_never_capped` | Clé sans préfixe tool-cap → jamais dans le frozenset cappé |
 
 ---
 

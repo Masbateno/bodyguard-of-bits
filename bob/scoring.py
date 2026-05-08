@@ -89,7 +89,6 @@ class Deduction:
     points:    int
     context:   str  = "local"
     key:       str  = ""
-    was_capped: bool = False
 
     def __post_init__(self) -> None:
         if self.points < 0:
@@ -238,6 +237,7 @@ class ScoreEngine:
         self._finalized: bool = False
         self._domain_scores: dict | None = None
         self._active_domains: frozenset | None = None
+        self._capped_indices: frozenset[int] = frozenset()
 
     # ------------------------------------------------------------------
     # Mutation
@@ -296,10 +296,16 @@ class ScoreEngine:
         if self._cap is None or maximum < self._cap.maximum:
             self._cap = ScoreCap(maximum=maximum, reason=reason, key=key)
 
-    def set_domain_scores(self, scores: dict, active: "frozenset[str]") -> None:
+    def set_domain_scores(
+        self,
+        scores: dict,
+        active: "frozenset[str]",
+        capped_indices: "frozenset[int] | None" = None,
+    ) -> None:
         """Cache domain scores computed by apply_domain_score_override()."""
         self._domain_scores  = scores
         self._active_domains = active
+        self._capped_indices = capped_indices or frozenset()
 
     def set_global_score(self, score: int) -> None:
         """
@@ -396,6 +402,11 @@ class ScoreEngine:
     def active_domains(self) -> "frozenset[str]":
         """Active domain set cached by apply_domain_score_override(). Empty frozenset before that."""
         return self._active_domains or frozenset()
+
+    @property
+    def capped_indices(self) -> "frozenset[int]":
+        """Indices in engine.breakdown that were tool-capped during domain score computation."""
+        return self._capped_indices
 
     @property
     def alert_count(self) -> int:

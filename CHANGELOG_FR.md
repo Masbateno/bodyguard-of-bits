@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.3.3](#v033) | 07-05-2026 | Refactoring architectural — split `cron.py` · `compute_domain_scores()` retour tuple pur · API publique `domain_scores` · helpers curses `_draw`/`_read_key` · 4348/4348 tests (+1) |
 | [v0.3.2](#v032) | 06-05-2026 | Liste blanche SUID configurable dans `config.conf` · 14 corrections code review (i18n, mode quiet, idempotence moteur, code mort) · 4347/4347 tests (+19) |
 | [v0.3.1](#v031) | 06-05-2026 | Fix version bannière · propagation contexte DDNS · `was_capped` sur Deduction · propriétés moteur en cache · 4328/4328 tests (+6) |
 | [v0.3.0](#v030) | 06-05-2026 | Transparence du scoring `--breakdown` · `--explain` score-aware · fix rétention kernel -unsigned · reliques entête rapport supprimées · affichage delta score · 4322/4322 tests (+48) |
@@ -14,6 +15,34 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.3.3] — 07-05-2026
+
+Refactoring interne pur — aucune nouvelle fonctionnalité, aucun changement de comportement. Quatre chantiers de nettoyage issus d'une passe de code review. 4348/4348 tests (+1).
+
+### Refactoring — split `cron.py` (`bob/cron.py`, `bob/cron_ui.py`)
+
+`bob/cron.py` (2181L) scindé en deux modules. `bob/cron.py` conserve les types de données, les parsers, la logique et les flux interactifs en texte brut. `bob/cron_ui.py` (nouveau, 955L) regroupe tout le code TUI curses. Les dispatchers `run_install_cron()` / `run_manage_cron()` utilisent des imports paresseux : contrôle `sys.stdout.isatty()` → flux texte brut ; sinon `curses.wrapper(curses_fn)` avec repli sur le flux texte brut en cas de `curses.error`.
+
+`build_script_content(notify_email, log_dir) -> str` extrait des deux flux d'installation vers `cron.py` en tant que fonction pure, éliminant une duplication de 40 lignes.
+
+### Refactoring — `compute_domain_scores()` retour pur (`bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`)
+
+Champ `Deduction.was_capped: bool` supprimé. `compute_domain_scores()` retourne désormais `tuple[dict[str, dict], frozenset[int]]` — le second élément est l'ensemble des indices dans `engine.breakdown` réduits par un plafond outil. `ScoreEngine` met en cache ces indices via `set_domain_scores()` (nouveau paramètre `capped_indices`) et les expose via une propriété `capped_indices`. `breakdown.py` lit `engine.capped_indices` directement.
+
+### Refactoring — API publique `domain_scores.py`
+
+`_LABELS → LABELS`, `_TOOL_CAPS → TOOL_CAPS`, `_key_to_domain → key_to_domain`. Appelants mis à jour : `breakdown.py`, `explain.py`, `tests/test_domain_scores.py`.
+
+### Refactoring — helpers curses `cron_ui.py`
+
+`_WizardEntry(name, hour=3, minute=0)` NamedTuple remplace le stub `class _FakeEntry: pass`. `_draw(stdscr, row, col, text, attr=0)` absorbe 30+ blocs `try: addstr(…) except curses.error: pass`. `_read_key(stdscr) -> int` absorbe 9 blocs `try: get_wch() / except curses.error: continue` + normalisation de touche. Les indices magiques de type de planning remplacés par les constantes `_SCHEDULE_DAILY/WEEKDAYS/MONTHDAYS/CUSTOM`. Réduction nette : 1104L → 955L (−149 lignes).
+
+### Tests
+
+4348/4348 (+1 depuis v0.3.2) : `TestWasCapped` remplacé par `TestCappedIndices` (7 tests) couvrant le contrat de retour frozenset de `compute_domain_scores()`.
 
 ---
 

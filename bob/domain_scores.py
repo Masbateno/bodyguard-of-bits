@@ -16,7 +16,7 @@ Domains:
 Usage:
     from bob.domain_scores import compute_domain_scores, DOMAINS
 
-    scores = compute_domain_scores(engine)
+    scores, _ = compute_domain_scores(engine)
     for domain in DOMAINS:
         info = scores[domain]
         print(f"{info['label']}: {info['score']}/10")
@@ -39,7 +39,7 @@ from bob.scoring import MAX_SCORE, FindingLevel
 DOMAINS: list[str] = ["ssh", "samba", "file_perms", "updates", "hardening", "disk", "firewall"]
 
 # Human-readable English labels for each domain.
-_LABELS: dict[str, str] = {
+LABELS: dict[str, str] = {
     "ssh":        "SSH",
     "samba":      "Samba Security",
     "file_perms": "Files & Access",
@@ -53,7 +53,7 @@ _LABELS: dict[str, str] = {
 # domain score.  Prevents one poorly-maintained tool from dominating the domain
 # score when it emits several independent findings (e.g. rkhunter: db outdated
 # + no scan run = 2 findings for the same configuration problem → capped at 1).
-_TOOL_CAPS: dict[str, int] = {
+TOOL_CAPS: dict[str, int] = {
     "rootkit":        1,   # rkhunter/chkrootkit — db age + scan age
     "clamav":         1,   # ClamAV — db age + scan frequency
     "file_integrity": 1,   # AIDE/Tripwire — presence + freshness
@@ -94,7 +94,7 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
 }
 
 
-def _key_to_domain(key: str | None) -> str | None:
+def key_to_domain(key: str | None) -> str | None:
     """
     Map a deduction key (e.g. 'ssh.password_auth') to its domain.
 
@@ -123,23 +123,23 @@ def active_domains_from_engine(engine: "ScoreEngine") -> frozenset[str]:
     for finding in engine.findings:
         if finding.level not in _actionable:
             continue
-        domain = _key_to_domain(finding.key)
+        domain = key_to_domain(finding.key)
         if domain:
             active.add(domain)
     for finding in engine.ignored_findings:
         if finding.level not in _actionable:
             continue
-        domain = _key_to_domain(finding.key)
+        domain = key_to_domain(finding.key)
         if domain:
             active.add(domain)
     for deduction in engine.breakdown:
-        domain = _key_to_domain(deduction.key)
+        domain = key_to_domain(deduction.key)
         if domain:
             active.add(domain)
     return frozenset(active)
 
 
-def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
+def compute_domain_scores(engine: "ScoreEngine") -> "tuple[dict[str, dict], frozenset[int]]":
     """
     Compute per-domain security sub-scores from a finalized ScoreEngine.
 
@@ -152,35 +152,34 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
         engine: A finalized ScoreEngine (engine.finalize() must have been called).
 
     Returns:
-        Dict mapping domain identifier → {
-            "score":      int  — 0 to 10,
-            "deductions": int  — total points deducted in this domain,
-            "label":      str  — human-readable English label,
-        }
+        Tuple of:
+          - dict mapping domain identifier → {
+                "score":      int  — 0 to 10,
+                "deductions": int  — total points deducted in this domain,
+                "label":      str  — human-readable English label,
+            }
+          - frozenset[int] of indices in engine.breakdown that were tool-capped
     """
     domain_deductions: dict[str, int] = {d: 0 for d in DOMAINS}
     tool_contributed:  dict[str, int] = {}   # key_prefix → points already counted
+    capped_indices:    set[int]        = set()
 
-    # Reset was_capped before computing — makes this function idempotent
-    for deduction in engine.breakdown:
-        deduction.was_capped = False
-
-    for deduction in engine.breakdown:
+    for i, deduction in enumerate(engine.breakdown):
         key    = deduction.key
-        domain = _key_to_domain(key)
+        domain = key_to_domain(key)
         if domain is None:
             continue
         points = deduction.points
         prefix = key.split(".", 1)[0] if key else ""
-        cap    = _TOOL_CAPS.get(prefix)
+        cap    = TOOL_CAPS.get(prefix)
         if cap is not None:
             already = tool_contributed.get(prefix, 0)
             allowed = min(points, cap - already)
             if allowed <= 0:
-                deduction.was_capped = True
+                capped_indices.add(i)
                 continue
             if allowed < points:
-                deduction.was_capped = True
+                capped_indices.add(i)
             tool_contributed[prefix] = already + allowed
             points = allowed
         domain_deductions[domain] += points
@@ -192,20 +191,21 @@ def compute_domain_scores(engine: "ScoreEngine") -> dict[str, dict]:
     # We enforce it here at the domain level so the displayed score is always ≤ cap.
     engine_cap = engine.cap_info
     if engine_cap and engine_cap.key:
-        cap_domain = _key_to_domain(engine_cap.key)
+        cap_domain = key_to_domain(engine_cap.key)
         if cap_domain and cap_domain in domain_deductions:
             raw_domain = MAX_SCORE - domain_deductions[cap_domain]
             if raw_domain > engine_cap.maximum:
                 domain_deductions[cap_domain] += raw_domain - engine_cap.maximum
 
-    return {
+    scores = {
         domain: {
             "score":      max(0, min(MAX_SCORE, MAX_SCORE - domain_deductions[domain])),
             "deductions": domain_deductions[domain],
-            "label":      _LABELS.get(domain, domain.capitalize()),
+            "label":      LABELS.get(domain, domain.capitalize()),
         }
         for domain in DOMAINS
     }
+    return scores, frozenset(capped_indices)
 
 
 # ---------------------------------------------------------------------------
@@ -247,10 +247,10 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
     Args:
         engine: A finalized ScoreEngine instance.
     """
-    scores = compute_domain_scores(engine)
+    scores, capped_indices = compute_domain_scores(engine)
     active = active_domains_from_engine(engine)
     engine.set_global_score(compute_global_from_domains(scores, active))
-    engine.set_domain_scores(scores, active)
+    engine.set_domain_scores(scores, active, capped_indices)
 
 
 # ---------------------------------------------------------------------------

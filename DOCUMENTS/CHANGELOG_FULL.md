@@ -6,6 +6,149 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.3.3] — 2026-05-07
+
+Pure internal refactoring — no new features, no behaviour changes. Four cleanup tasks driven by a code-review pass: `cron.py` split, `compute_domain_scores()` pure return, `domain_scores` public API, and `cron_ui.py` curses helpers. 4348/4348 tests (+1).
+
+---
+
+### Refactoring — `cron.py` split
+
+**Files:** `bob/cron.py`, `bob/cron_ui.py` (new)
+
+#### Problem
+
+`bob/cron.py` had grown to 2 181 lines combining heterogeneous concerns: data types, parsers, cron-logic, plain-text interactive flows, and an entire curses TUI. The curses code imported `curses` at module level, so any test that imported `cron` without a TTY triggered a `_curses.error` on import. The install and manage flows each contained an independent 40-line bash-script generation block — identical logic copy-pasted.
+
+#### Implementation
+
+**Split**
+
+`bob/cron.py` retains all data types, parsers, domain logic, and plain-text interactive flows. `bob/cron_ui.py` (new, 955L) holds all curses TUI code. The dispatchers `run_install_cron()` / `run_manage_cron()` use a lazy-import pattern:
+
+```python
+if sys.stdout.isatty():
+    try:
+        import curses
+        curses.wrapper(_run_install_cron_curses)
+    except curses.error:
+        _run_install_cron_plain(...)
+else:
+    _run_install_cron_plain(...)
+```
+
+The `import curses as _c` inside `cron_ui.py` functions is intentional: moving it to module level would break test imports that run without a terminal.
+
+**`build_script_content(notify_email, log_dir) -> str`**
+
+Pure function extracted from both install flows into `cron.py`, eliminating a 40-line duplication. Returns the full bash script string. Called from both `_run_install_cron_plain()` and `_run_install_cron_curses()`.
+
+---
+
+### Refactoring — `compute_domain_scores()` pure return
+
+**Files:** `bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`
+
+#### Problem
+
+`compute_domain_scores()` communicated which deductions were capped by setting `deduction.was_capped = True` as a side-effect on live `Deduction` objects. This was non-idempotent (fixed in v0.3.2 by resetting at the top), but the root cause remained: a function mutating its inputs to pass information to callers. `breakdown.py` iterated `engine.breakdown` and checked `was_capped` to annotate the breakdown table.
+
+#### Implementation
+
+`Deduction.was_capped: bool` field removed from the dataclass.
+
+`compute_domain_scores()` now returns `tuple[dict[str, dict], frozenset[int]]` — the second element is the set of indices in `engine.breakdown` that were reduced by a domain cap. The function computes this frozenset purely from the comparison `effective < raw` without touching any object.
+
+`ScoreEngine.set_domain_scores()` gains a `capped_indices: frozenset[int]` parameter, stored as `_capped_indices`. New `capped_indices` property exposes it. `breakdown.py` reads `engine.capped_indices` instead of inspecting `was_capped` on each deduction.
+
+#### Design decisions
+
+- **`frozenset[int]` not `set[Deduction]`**: indices are stable within a single `compute_domain_scores()` call; the frozenset is immutable and safe to cache. References to `Deduction` objects would create an implicit dependency on object identity.
+- **Returning the frozenset rather than storing it inside `compute_domain_scores()`**: the function now has no side-effects, which makes it trivially testable with a direct `return_value` assertion.
+
+---
+
+### Refactoring — `domain_scores.py` public API
+
+**Files:** `bob/domain_scores.py`, `bob/breakdown.py`, `bob/explain.py`, `tests/test_domain_scores.py`
+
+#### Problem
+
+Three module-level names — `_LABELS`, `_TOOL_CAPS`, `_key_to_domain` — were effectively public: used directly by `breakdown.py` and `explain.py`. The leading underscore implied they were private internals, but external callers depended on them. This was a false signal: any caller seeing `from bob.domain_scores import _LABELS` had to know they were importing a private name.
+
+#### Implementation
+
+Simple rename: `_LABELS → LABELS`, `_TOOL_CAPS → TOOL_CAPS`, `_key_to_domain → key_to_domain`. All callers updated (`breakdown.py`, `explain.py`, `tests/test_domain_scores.py`). No logic changed.
+
+---
+
+### Refactoring — `cron_ui.py` curses helpers
+
+**Files:** `bob/cron_ui.py`
+
+#### Problem
+
+`cron_ui.py` had three categories of structural duplication:
+
+1. **Script generation**: 40-line bash script duplicated between plain-text and curses install flows (covered above by `build_script_content`).
+2. **Safe `addstr`**: every screen-write was wrapped in `try: stdscr.addstr(...) except _c.error: pass` — 30+ identical 3-line blocks.
+3. **Keypress reading**: every interactive loop contained `try: ch = stdscr.get_wch() / except _c.error: continue` followed by `isinstance(ch, int)` / `isinstance(ch, str)` normalisation — 9 separate duplications.
+4. **Magic schedule indices**: `if choice == 2 / 3 / 4` scattered across `_curses_schedule_wizard` with no explanation of what 2, 3, 4 meant.
+5. **`_FakeEntry` stub**: a bare `class _FakeEntry: pass` with `entry.name = raw_name` attribute set at runtime — untyped, undocumented.
+
+#### Implementation
+
+**`_WizardEntry(name, hour=3, minute=0)` NamedTuple**
+
+Replaces `_FakeEntry`. Created at `STEP_SCHEDULE` with `_WizardEntry(raw_name)`, passed to `_curses_schedule_wizard`. Typed, documented, immutable.
+
+**`_draw(stdscr, row, col, text, attr=0) -> None`**
+
+```python
+def _draw(stdscr, row: int, col: int, text: str, attr: int = 0) -> None:
+    try:
+        stdscr.addstr(row, col, text, attr)
+    except Exception:
+        pass
+```
+
+Absorbs all 30+ `try/except curses.error` blocks. Uses `except Exception` (not `except _c.error`) because `curses` is not imported at module level — `_c` is a local alias inside each function.
+
+**`_read_key(stdscr) -> int`**
+
+```python
+def _read_key(stdscr) -> int:
+    try:
+        ch = stdscr.get_wch()
+    except Exception:
+        return -1
+    if isinstance(ch, int):
+        return ch
+    if isinstance(ch, str) and len(ch) == 1:
+        return ord(ch)
+    return -1
+```
+
+Returns -1 on error or unrecognised input. Callers that previously `continue`d on error now fall through all `if/elif` chains without matching — same loop-restart behaviour. The single edge case where `-1` could be mistakenly matched (`_run_manage_cron_curses` confirm-delete) was audited: the `if key in (ord("y"), ord("Y"))` guard means `-1` simply cancels, which is the documented "any key: cancel" behaviour.
+
+**`_SCHEDULE_DAILY/WEEKDAYS/MONTHDAYS/CUSTOM = 1, 2, 3, 4`**
+
+Named constants replace magic indices in `_curses_schedule_wizard`.
+
+#### Net result
+
+1 104L → 955L (−149 lines, −13 %).
+
+---
+
+### Tests
+
+4 348 / 4 348 (+1 from v0.3.2).
+
+`TestWasCapped` (checked the `was_capped` flag) replaced by `TestCappedIndices` (7 tests) covering the frozenset return contract of `compute_domain_scores()`: empty set when no cap is hit, correct indices when caps fire, immutability of the returned frozenset.
+
+---
+
 ## [v0.3.2] — 2026-05-06
 
 User-configurable SUID whitelist: patterns declared in `~/.config/bob/config.conf` suppress known-legitimate binaries from the "unexpected SUID" warning. Plus 14 code-review fixes covering i18n, quiet-mode bypass, engine idempotency, and dead-code removal. 4347/4347 tests (+19).

@@ -100,14 +100,14 @@ class TestHardenedServer:
 
     def test_hardening_domain_deducted(self):
         engine = self._make()
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 2
         # Verify against raw breakdown as independent source
         assert any(d.key == "kernel_hardening.ptrace_unrestricted" for d in engine.breakdown)
         assert any(d.key == "kernel_modules.risky_fs" for d in engine.breakdown)
 
     def test_other_domains_clean(self):
-        scores = compute_domain_scores(self._make())
+        scores, _ = compute_domain_scores(self._make())
         assert scores["ssh"]["score"] == MAX_SCORE
         assert scores["firewall"]["score"] == MAX_SCORE
 
@@ -132,11 +132,11 @@ class TestDefaultDesktop:
         assert self._make().score == 9
 
     def test_ssh_domain_deducted(self):
-        scores = compute_domain_scores(self._make())
+        scores, _ = compute_domain_scores(self._make())
         assert scores["ssh"]["deductions"] == 1
 
     def test_updates_domain_deducted(self):
-        scores = compute_domain_scores(self._make())
+        scores, _ = compute_domain_scores(self._make())
         assert scores["updates"]["deductions"] == 1
 
 
@@ -238,7 +238,7 @@ class TestDebian13Minimal:
 
     def test_rootkit_cap_applied(self):
         engine = self._make()
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         rootkit_raw = sum(
             d.points for d in engine.breakdown
             if d.key and d.key.startswith("rootkit.")
@@ -258,7 +258,7 @@ class TestToolCapInvariants:
             (1, "rootkit.db_outdated"),
             (1, "rootkit.no_scan"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 1
         assert scores["hardening"]["score"] == 9
 
@@ -267,7 +267,7 @@ class TestToolCapInvariants:
             (1, "clamav.db_very_outdated"),
             (1, "clamav.scan_very_old"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 1
 
     def test_file_integrity_two_deductions_capped_at_one(self):
@@ -275,7 +275,7 @@ class TestToolCapInvariants:
             (1, "file_integrity.not_installed"),
             (1, "file_integrity.db_outdated"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 1
 
     def test_uncapped_tool_accumulates_normally(self):
@@ -284,7 +284,7 @@ class TestToolCapInvariants:
             (1, "ssh.password_auth"),
             (1, "ssh.permit_root_login"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["ssh"]["deductions"] == 2
 
 
@@ -321,7 +321,7 @@ class TestScoreStability:
             (1, "ssh.password_auth"),
             (1, "firewall.open_port"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["ssh"]["score"] == 9
         assert scores["firewall"]["score"] == 9
         assert scores["updates"]["score"] == MAX_SCORE
@@ -361,7 +361,7 @@ class TestMultiDomainMachine:
         assert active == frozenset({"ssh", "updates", "hardening", "samba", "disk"})
 
     def test_each_domain_deducted_once(self):
-        scores = compute_domain_scores(self._make())
+        scores, _ = compute_domain_scores(self._make())
         for domain in ("ssh", "updates", "hardening", "samba", "disk"):
             assert scores[domain]["deductions"] == 1, f"{domain} should have 1 pt deducted"
 

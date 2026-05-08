@@ -92,7 +92,7 @@ def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
     from bob.scoring import FindingLevel
 
     from bob.domain_scores import compute_domain_scores, DOMAINS
-    _ds = compute_domain_scores(engine)
+    _ds, _ = compute_domain_scores(engine)
 
     return {
         "source":    "bob",

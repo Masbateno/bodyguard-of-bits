@@ -361,15 +361,15 @@ def run_explain(key: str, t) -> None:
 
 def _explain_scoring(key: str, t) -> None:
     """Print the scoring context for *key* (domain, tool cap, breakdown hint)."""
-    from bob.domain_scores import _key_to_domain, _TOOL_CAPS, _LABELS
+    from bob.domain_scores import key_to_domain, TOOL_CAPS, LABELS
 
-    domain_id = _key_to_domain(key)
+    domain_id = key_to_domain(key)
     if not domain_id:
         return
 
-    domain_label = _LABELS.get(domain_id, domain_id.capitalize())
+    domain_label = LABELS.get(domain_id, domain_id.capitalize())
     prefix = key.split(".", 1)[0]
-    tool_cap = _TOOL_CAPS.get(prefix)
+    tool_cap = TOOL_CAPS.get(prefix)
 
     print("SCORING")
     print("\u2500" * 40)

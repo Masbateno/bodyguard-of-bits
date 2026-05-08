@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.3.3](#v033) | 2026-05-07 | Architectural refactoring — `cron.py` split · `compute_domain_scores()` pure tuple return · `domain_scores` public API · `_draw`/`_read_key` curses helpers · 4348/4348 tests (+1) |
 | [v0.3.2](#v032) | 2026-05-06 | User-configurable SUID whitelist in `config.conf` · 14 code-review fixes (i18n, quiet mode, engine idempotency, dead code) · 4347/4347 tests (+19) |
 | [v0.3.1](#v031) | 2026-05-06 | Banner version fix · DDNS context propagation · `was_capped` on Deduction · engine cached properties · 4328/4328 tests (+6) |
 | [v0.3.0](#v030) | 2026-05-06 | `--breakdown` score transparency · score-aware `--explain` · kernel -unsigned retention fix · report header relics removed · score delta display · 4322/4322 tests (+48) |
@@ -14,6 +15,34 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.3.3] — 2026-05-07
+
+Pure internal refactoring — no new features, no behaviour changes. Four related cleanup tasks driven by a code-review pass on the codebase. 4348/4348 tests (+1).
+
+### Refactoring — `cron.py` split (`bob/cron.py`, `bob/cron_ui.py`)
+
+`bob/cron.py` (2181L) was split into two modules. `bob/cron.py` retains all data types, parsers, logic, and plain-text interactive flows. `bob/cron_ui.py` (new, 955L) holds all curses TUI code. Dispatchers `run_install_cron()` / `run_manage_cron()` use a lazy-import pattern: check `sys.stdout.isatty()` → plain-text flow; otherwise `curses.wrapper(curses_fn)` with `curses.error` fallback to plain-text.
+
+`build_script_content(notify_email, log_dir) -> str` extracted from both install flows into `cron.py` as a pure function, eliminating a 40-line duplication.
+
+### Refactoring — `compute_domain_scores()` pure return (`bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`)
+
+`Deduction.was_capped: bool` field removed. `compute_domain_scores()` now returns `tuple[dict[str, dict], frozenset[int]]` — the second element is the set of indices in `engine.breakdown` that were reduced by a tool cap. `ScoreEngine` caches these indices via `set_domain_scores()` (new `capped_indices` parameter) and exposes them through a `capped_indices` property. `breakdown.py` reads `engine.capped_indices` directly.
+
+### Refactoring — `domain_scores.py` public API
+
+`_LABELS → LABELS`, `_TOOL_CAPS → TOOL_CAPS`, `_key_to_domain → key_to_domain`. Callers updated: `breakdown.py`, `explain.py`, `tests/test_domain_scores.py`.
+
+### Refactoring — `cron_ui.py` curses helpers
+
+`_WizardEntry(name, hour=3, minute=0)` NamedTuple replaces `class _FakeEntry: pass` stub. `_draw(stdscr, row, col, text, attr=0)` absorbs 30+ `try: addstr(…) except curses.error: pass` blocks. `_read_key(stdscr) -> int` absorbs 9 `try: get_wch() / except curses.error: continue` + ch-normalisation blocks. Schedule type magic indices replaced by `_SCHEDULE_DAILY/WEEKDAYS/MONTHDAYS/CUSTOM` constants. Net reduction: 1104L → 955L (−149 lines).
+
+### Tests
+
+4348/4348 (+1 from v0.3.2): `TestWasCapped` replaced by `TestCappedIndices` (7 tests) covering the frozenset return contract of `compute_domain_scores()`.
 
 ---
 

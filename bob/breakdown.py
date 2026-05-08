@@ -24,9 +24,9 @@ from bob.checks._run import TranslationFunc
 
 from bob.domain_scores import (
     DOMAINS,
-    _LABELS,
-    _TOOL_CAPS,
-    _key_to_domain,
+    LABELS,
+    TOOL_CAPS,
+    key_to_domain,
 )
 from bob.scoring import MAX_SCORE
 
@@ -41,11 +41,11 @@ def _bar(score: int) -> str:
 
 
 def _domain_label(domain_id: str, t) -> str:
-    """Return a translated domain label, falling back to _LABELS then domain_id."""
+    """Return a translated domain label, falling back to LABELS then domain_id."""
     translated = t(f"domain_scores.{domain_id}")
     if translated != f"domain_scores.{domain_id}":
         return translated
-    return _LABELS.get(domain_id, domain_id.capitalize())
+    return LABELS.get(domain_id, domain_id.capitalize())
 
 
 def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_mod) -> None:
@@ -69,8 +69,8 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
     else:
         output_mod.print_dim(t("breakdown.deductions_header", count=len(breakdown)))
 
-        # Pre-compute domain IDs once to avoid double _key_to_domain() calls
-        domain_ids = [_key_to_domain(d.key) for d in breakdown]
+        # Pre-compute domain IDs once to avoid double key_to_domain() calls
+        domain_ids = [key_to_domain(d.key) for d in breakdown]
 
         # Column widths
         key_w    = max((len(d.key or "—") for d in breakdown), default=10)
@@ -79,10 +79,11 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
             default=1,
         )
 
+        capped = engine.capped_indices
         for idx, d in enumerate(breakdown):
             domain_id  = domain_ids[idx]
             domain_lbl = _domain_label(domain_id, t) if domain_id else "—"
-            capped_tag = f"  {t('breakdown.capped')}" if d.was_capped else ""
+            capped_tag = f"  {t('breakdown.capped')}" if idx in capped else ""
             ctx = d.context or "—"
             line = (
                 f"  {(d.key or '—'):<{key_w}}  "
@@ -98,11 +99,11 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
     # ------------------------------------------------------------------ #
     capped_prefixes = {
         d.key.split(".", 1)[0]
-        for d in breakdown
-        if d.was_capped and d.key
+        for idx, d in enumerate(breakdown)
+        if idx in engine.capped_indices and d.key
     }
     for prefix in sorted(capped_prefixes):
-        cap = _TOOL_CAPS.get(prefix)
+        cap = TOOL_CAPS.get(prefix)
         if cap is None:
             continue
         total_raw = sum(d.points for d in breakdown

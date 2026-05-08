@@ -11,6 +11,7 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.3 | 4348 | +7 new −6 removed (TestWasCapped → TestCappedIndices): `TestCappedIndices` in test_domain_scores |
 | v0.3.2 | 4347 | +21 new (user whitelist) −2 removed (DC-1 dead code): `TestFromSystemUserWhitelist` · `TestGetSuidWhitelist` · `TestGlobMatching` in test_suid_audit |
 | v0.3.1 | 4328 | +6 new tests: `TestWasCapped` in test_domain_scores · was_capped flag · engine cached properties |
 | v0.3.0 | 4322 | +48 new tests: `--breakdown` display · golden scoring scenarios · 16 in test_breakdown · 32 in test_golden_scenarios · 1 renamed in test_min_level |
@@ -21,6 +22,33 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.3.3 — 4348/4348 (2026-05-07)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.21s
+```
+
+**Net: +1 from v0.3.2 (+7 new capped_indices tests, −6 was_capped tests removed)**
+
+#### `tests/test_domain_scores.py` — `TestCappedIndices` replaces `TestWasCapped` (+7, −6)
+
+`TestWasCapped` tested the `deduction.was_capped` bool flag (removed in v0.3.3). Replaced by `TestCappedIndices` which tests the `frozenset[int]` return value of `compute_domain_scores()`.
+
+| Test | Coverage |
+|------|----------|
+| `test_no_cap_returns_empty_frozenset` | No tool cap triggered → second return value is `frozenset()` |
+| `test_single_capped_deduction_returns_index` | One deduction exceeds cap → index `0` in returned frozenset |
+| `test_uncapped_deduction_not_in_frozenset` | Deduction within cap → index absent from frozenset |
+| `test_multiple_deductions_only_capped_indices` | Two deductions, one capped → only the capped index returned |
+| `test_frozenset_is_immutable` | Returned object is a `frozenset`, not a `set` |
+| `test_engine_capped_indices_matches_return_value` | `engine.capped_indices` equals the frozenset returned by `compute_domain_scores()` |
+| `test_non_tool_cap_key_never_capped` | Key with no tool-cap prefix → never in capped frozenset |
 
 ---
 

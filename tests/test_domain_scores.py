@@ -13,8 +13,8 @@ import pytest
 
 from bob.domain_scores import (
     DOMAINS,
-    _TOOL_CAPS,
-    _key_to_domain,
+    TOOL_CAPS,
+    key_to_domain,
     active_domains_from_engine,
     apply_domain_score_override,
     compute_domain_scores,
@@ -56,42 +56,42 @@ def _clean_engine() -> ScoreEngine:
 
 
 # ---------------------------------------------------------------------------
-# _key_to_domain
+# key_to_domain
 # ---------------------------------------------------------------------------
 
 class TestKeyToDomain:
     def test_ssh_key(self):
-        assert _key_to_domain("ssh.password_auth") == "ssh"
+        assert key_to_domain("ssh.password_auth") == "ssh"
 
     def test_file_perms_key(self):
-        assert _key_to_domain("file_perms.world_writable") == "file_perms"
+        assert key_to_domain("file_perms.world_writable") == "file_perms"
 
     def test_updates_key(self):
-        assert _key_to_domain("updates.security_pending") == "updates"
+        assert key_to_domain("updates.security_pending") == "updates"
 
     def test_hardening_key(self):
-        assert _key_to_domain("hardening.rp_filter_disabled") == "hardening"
+        assert key_to_domain("hardening.rp_filter_disabled") == "hardening"
 
     def test_firewall_key_falls_back(self):
-        assert _key_to_domain("firewall.inactive") == "firewall"
+        assert key_to_domain("firewall.inactive") == "firewall"
 
     def test_unknown_prefix_falls_back_to_firewall(self):
-        assert _key_to_domain("ports.public_port") == "firewall"
+        assert key_to_domain("ports.public_port") == "firewall"
 
     def test_empty_key_returns_none(self):
-        assert _key_to_domain("") is None
+        assert key_to_domain("") is None
 
     def test_none_key_returns_none(self):
-        assert _key_to_domain(None) is None
+        assert key_to_domain(None) is None
 
     def test_dot_only_key_falls_back_to_firewall(self):
-        assert _key_to_domain(".") == "firewall"
+        assert key_to_domain(".") == "firewall"
 
     def test_double_dot_key_uses_first_segment(self):
-        assert _key_to_domain("ssh..weird") == "ssh"
+        assert key_to_domain("ssh..weird") == "ssh"
 
     def test_no_dot_key_falls_back_to_firewall(self):
-        assert _key_to_domain("something") == "firewall"
+        assert key_to_domain("something") == "firewall"
 
 
 # ---------------------------------------------------------------------------
@@ -100,33 +100,33 @@ class TestKeyToDomain:
 
 class TestComputeDomainScoresStructure:
     def test_returns_all_domains(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         for d in DOMAINS:
             assert d in scores
 
     def test_each_entry_has_score(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         for d in DOMAINS:
             assert "score" in scores[d]
 
     def test_each_entry_has_deductions(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         for d in DOMAINS:
             assert "deductions" in scores[d]
 
     def test_each_entry_has_label(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         for d in DOMAINS:
             assert "label" in scores[d]
             assert scores[d]["label"]  # non-empty
 
     def test_clean_engine_all_max(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         for d in DOMAINS:
             assert scores[d]["score"] == MAX_SCORE
 
     def test_clean_engine_zero_deductions(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         for d in DOMAINS:
             assert scores[d]["deductions"] == 0
 
@@ -138,29 +138,29 @@ class TestComputeDomainScoresStructure:
 class TestComputeDomainScoresAttribution:
     def test_ssh_deduction_reduces_ssh_score(self):
         engine = _make_engine((3, "ssh.permit_root_login"))
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["ssh"]["score"] < MAX_SCORE
 
     def test_ssh_deduction_does_not_affect_other_domains(self):
         engine = _make_engine((3, "ssh.permit_root_login"))
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         for d in DOMAINS:
             if d != "ssh":
                 assert scores[d]["score"] == MAX_SCORE
 
     def test_updates_deduction_reduces_updates_score(self):
         engine = _make_engine((2, "updates.security_pending"))
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["updates"]["score"] < MAX_SCORE
 
     def test_hardening_deduction_reduces_hardening_score(self):
         engine = _make_engine((1, "hardening.rp_filter_disabled"))
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["score"] < MAX_SCORE
 
     def test_file_perms_deduction_reduces_file_perms_score(self):
         engine = _make_engine((2, "file_perms.world_writable"))
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["file_perms"]["score"] < MAX_SCORE
 
     def test_score_floor_is_zero(self):
@@ -171,7 +171,7 @@ class TestComputeDomainScoresAttribution:
             result.add_deduction(reason=f"ded {i}", points=5, key="ssh.permit_root_login")
         engine.apply(result)
         engine.finalize()
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["ssh"]["score"] >= 0
 
     def test_deductions_without_key_are_excluded(self):
@@ -181,7 +181,7 @@ class TestComputeDomainScoresAttribution:
         result.add_deduction(reason="synthetic", points=2, key="")
         engine.apply(result)
         engine.finalize()
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         for d in DOMAINS:
             assert scores[d]["deductions"] == 0
 
@@ -193,7 +193,7 @@ class TestComputeDomainScoresAttribution:
             (2, "ssh.password_auth"),
             (3, "ssh.permit_root_login"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["ssh"]["deductions"] == 5
         assert scores["ssh"]["score"] == MAX_SCORE - 5
 
@@ -203,7 +203,7 @@ class TestComputeDomainScoresAttribution:
             (2, "ssh.password_auth"),
             (3, "updates.security_pending"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["ssh"]["score"] < MAX_SCORE
         assert scores["updates"]["score"] < MAX_SCORE
         assert scores["hardening"]["score"] == MAX_SCORE
@@ -216,13 +216,13 @@ class TestComputeDomainScoresAttribution:
         result.add_deduction(reason="open port", points=2, key="ports.public_port")
         engine.apply(result)
         engine.finalize()
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["firewall"]["deductions"] == 2
         assert scores["firewall"]["score"] == MAX_SCORE - 2
 
     def test_score_never_exceeds_max(self):
         """Domain score must never exceed MAX_SCORE even with a clean engine."""
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         for d in DOMAINS:
             assert scores[d]["score"] <= MAX_SCORE
 
@@ -233,7 +233,7 @@ class TestComputeDomainScoresAttribution:
         result.alert(message="test finding", key="ssh.password_auth")
         engine.apply(result)
         engine.finalize()
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["ssh"]["deductions"] == 0
         assert scores["ssh"]["score"] == MAX_SCORE
 
@@ -248,7 +248,7 @@ class TestToolCaps:
             (1, "rootkit.db_outdated"),
             (1, "rootkit.no_scan"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 1
         assert scores["hardening"]["score"] == MAX_SCORE - 1
 
@@ -257,7 +257,7 @@ class TestToolCaps:
             (1, "clamav.db_outdated"),
             (1, "clamav.scan_old"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 1
         assert scores["hardening"]["score"] == MAX_SCORE - 1
 
@@ -266,7 +266,7 @@ class TestToolCaps:
             (1, "file_integrity.not_installed"),
             (1, "file_integrity.no_run"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 1
 
     def test_uncapped_prefix_accumulates_fully(self):
@@ -274,7 +274,7 @@ class TestToolCaps:
             (1, "hardening.rp_filter_disabled"),
             (1, "hardening.send_redirects_enabled"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 2
         assert scores["hardening"]["score"] == MAX_SCORE - 2
 
@@ -306,7 +306,7 @@ class TestEngineLevelDomainCap:
             (3, "firewall.input_accept"),
             (1, "firewall.forward_accept"),
         ])
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["firewall"]["score"] == 3
 
     def test_firewall_domain_capped_when_many_global_deductions(self):
@@ -323,7 +323,7 @@ class TestEngineLevelDomainCap:
         ])
         # Global raw_score = 10 - 9 = 1, already below cap (3) → delta not in breakdown
         assert engine._raw_score <= 3  # cap did not fire via breakdown
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         # But firewall domain (raw=6) must still be capped at 3
         assert scores["firewall"]["score"] == 3
 
@@ -334,7 +334,7 @@ class TestEngineLevelDomainCap:
             (1, "firewall.forward_accept"),
             (3, "firewall.open_ports"),  # raw domain = 10-7 = 3 = cap
         ])
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["firewall"]["score"] == 3  # already there, not pushed below
 
     def test_firewall_domain_score_never_exceeds_cap(self):
@@ -343,7 +343,7 @@ class TestEngineLevelDomainCap:
                 [(1, f"firewall.issue_{i}") for i in range(extra)],
                 cap_maximum=3,
             )
-            scores = compute_domain_scores(engine)
+            scores, _ = compute_domain_scores(engine)
             assert scores["firewall"]["score"] <= 3, (
                 f"firewall score {scores['firewall']['score']} exceeds cap=3 "
                 f"with {extra} extra deductions"
@@ -354,7 +354,7 @@ class TestEngineLevelDomainCap:
             (3, "firewall.input_accept"),
             (1, "firewall.forward_accept"),
         ])
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         # Only firewall is capped; hardening untouched
         assert scores["hardening"]["score"] == MAX_SCORE
 
@@ -364,7 +364,7 @@ class TestEngineLevelDomainCap:
             (1, "firewall.forward_accept"),
             (1, "hardening.send_redirects"),
         ])
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         for d in DOMAINS:
             assert 0 <= scores[d]["score"] <= MAX_SCORE
 
@@ -376,19 +376,19 @@ class TestEngineLevelDomainCap:
             (1, "rootkit.no_scan"),
             (1, "clamav.db_outdated"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 2   # rootkit=1 + clamav=1
 
     def test_cap_respects_first_deduction_points(self):
         # A single 2-point deduction against a cap of 1 is clamped to 1
         engine = _make_engine((2, "clamav.db_very_outdated"))
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         assert scores["hardening"]["deductions"] == 1
 
     def test_tool_caps_dict_contains_expected_keys(self):
-        assert "rootkit"        in _TOOL_CAPS
-        assert "clamav"         in _TOOL_CAPS
-        assert "file_integrity" in _TOOL_CAPS
+        assert "rootkit"        in TOOL_CAPS
+        assert "clamav"         in TOOL_CAPS
+        assert "file_integrity" in TOOL_CAPS
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +402,7 @@ class TestComputeGlobalFromDomains:
             (1, "ssh.password_auth"),
             (2, "hardening.ptrace_unrestricted"),
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         active = active_domains_from_engine(engine)
         result = compute_global_from_domains(scores, active)
         assert result == round((9 + 8) / 2)
@@ -423,7 +423,7 @@ class TestComputeGlobalFromDomains:
 
     def test_result_non_negative(self):
         engine = _make_engine(*[(10, f"hardening.issue_{i}") for i in range(8)])
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         active = active_domains_from_engine(engine)
         assert compute_global_from_domains(scores, active) >= 0
 
@@ -477,42 +477,42 @@ class TestApplyDomainScoreOverride:
 
 class TestRenderDomainScores:
     def test_returns_list_of_strings(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         lines = render_domain_scores(scores)
         assert isinstance(lines, list)
         assert all(isinstance(l, str) for l in lines)
 
     def test_contains_all_domain_labels(self):
-        from bob.domain_scores import _LABELS
-        scores = compute_domain_scores(_clean_engine())
+        from bob.domain_scores import LABELS
+        scores, _ = compute_domain_scores(_clean_engine())
         combined = "\n".join(render_domain_scores(scores))
-        for label in _LABELS.values():
+        for label in LABELS.values():
             assert label in combined
 
     def test_shows_score_fractions(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         combined = "\n".join(render_domain_scores(scores))
         assert "/10" in combined
 
     def test_custom_title_via_t(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         lines = render_domain_scores(scores, t=lambda k, **_: "MY TITLE" if k == "domain_scores.title" else k)
         assert any("MY TITLE" in l for l in lines)
 
     def test_bar_chars_present(self):
-        scores = compute_domain_scores(_clean_engine())
+        scores, _ = compute_domain_scores(_clean_engine())
         combined = "\n".join(render_domain_scores(scores))
         assert "█" in combined
 
     def test_render_order_matches_domains(self):
         """Domain labels must appear in the canonical DOMAINS order."""
-        from bob.domain_scores import _LABELS
-        scores = compute_domain_scores(_clean_engine())
+        from bob.domain_scores import LABELS
+        scores, _ = compute_domain_scores(_clean_engine())
         lines = render_domain_scores(scores)
         # Find which line each domain's label first appears on
         positions = []
         for domain in DOMAINS:
-            label = _LABELS[domain]
+            label = LABELS[domain]
             for i, line in enumerate(lines):
                 if label in line:
                     positions.append(i)
@@ -522,7 +522,7 @@ class TestRenderDomainScores:
     def test_render_partial_score_bar(self):
         """A non-max score must produce a bar with both filled and empty chars."""
         engine = _make_engine((5, "ssh.permit_root_login"))
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         lines = render_domain_scores(scores)
         ssh_line = next(l for l in lines if "SSH" in l)
         assert "█" in ssh_line
@@ -713,7 +713,7 @@ class TestScoringInvariants:
             (2, "ssh.password_auth"),             # ssh: 8
             (4, "hardening.rp_filter_disabled"),  # hardening: 6
         )
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         active = active_domains_from_engine(engine)
         global_score = compute_global_from_domains(scores, active)
         active_scores = [scores[d]["score"] for d in active if d in scores]
@@ -722,7 +722,7 @@ class TestScoringInvariants:
     def test_all_domain_scores_in_valid_range(self):
         """Every domain score must always be in [0, MAX_SCORE]."""
         engine = _make_engine(*[(5, f"hardening.issue_{i}") for i in range(5)])
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         for d in DOMAINS:
             assert 0 <= scores[d]["score"] <= MAX_SCORE, f"{d} score out of range"
 
@@ -731,49 +731,56 @@ class TestScoringInvariants:
         engine = _make_engine(*[
             (10, f"{pref}.issue") for pref in ["ssh", "updates", "hardening", "file_perms"]
         ])
-        scores = compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
         active = active_domains_from_engine(engine)
         result = compute_global_from_domains(scores, active)
         assert 0 <= result <= MAX_SCORE
 
 
 # ---------------------------------------------------------------------------
-# was_capped flag — set by compute_domain_scores()
+# capped_indices — returned by compute_domain_scores(), cached on engine
 # ---------------------------------------------------------------------------
 
-class TestWasCapped:
-    def test_uncapped_deduction_not_marked(self):
+class TestCappedIndices:
+    def test_uncapped_deduction_not_in_indices(self):
         engine = _make_engine((1, "rootkit.db_outdated"))
-        compute_domain_scores(engine)
-        assert engine.breakdown[0].was_capped is False
+        _, capped = compute_domain_scores(engine)
+        assert 0 not in capped
 
-    def test_fully_absorbed_deduction_marked(self):
+    def test_fully_absorbed_deduction_in_indices(self):
         # rootkit cap=1: first 1pt passes, second is fully absorbed
         engine = _make_engine((1, "rootkit.db_outdated"), (1, "rootkit.no_scan"))
-        compute_domain_scores(engine)
-        assert engine.breakdown[0].was_capped is False
-        assert engine.breakdown[1].was_capped is True
+        _, capped = compute_domain_scores(engine)
+        assert 0 not in capped
+        assert 1 in capped
 
-    def test_partially_absorbed_deduction_marked(self):
-        # rootkit cap=1: first deduction is 2pt but only 1 counted → partial
+    def test_partially_absorbed_deduction_in_indices(self):
+        # rootkit cap=1: first deduction is 2pt but only 1 counted → partial cap
         engine = _make_engine((2, "rootkit.db_outdated"))
-        compute_domain_scores(engine)
-        assert engine.breakdown[0].was_capped is True
+        _, capped = compute_domain_scores(engine)
+        assert 0 in capped
 
-    def test_non_tool_cap_key_never_marked(self):
-        # ssh has no tool cap → was_capped stays False regardless of points
+    def test_non_tool_cap_key_never_in_indices(self):
+        # ssh has no tool cap → capped_indices is empty
         engine = _make_engine((3, "ssh.password_auth"), (3, "ssh.x11_forwarding"))
-        compute_domain_scores(engine)
-        assert all(not d.was_capped for d in engine.breakdown)
+        _, capped = compute_domain_scores(engine)
+        assert len(capped) == 0
 
     def test_cached_domain_scores_on_engine(self):
         engine = _make_engine((1, "ssh.password_auth"))
         apply_domain_score_override(engine)
-        assert engine.domain_scores == compute_domain_scores(engine)
+        scores, _ = compute_domain_scores(engine)
+        assert engine.domain_scores == scores
         assert "ssh" in engine.active_domains
 
-    def test_engine_domain_scores_empty_before_override(self):
+    def test_engine_capped_indices_empty_before_override(self):
         engine = _make_engine((1, "ssh.password_auth"))
         engine.finalize()
         assert engine.domain_scores == {}
         assert engine.active_domains == frozenset()
+        assert engine.capped_indices == frozenset()
+
+    def test_engine_capped_indices_set_after_override(self):
+        engine = _make_engine((2, "rootkit.db_outdated"))
+        apply_domain_score_override(engine)
+        assert 0 in engine.capped_indices

@@ -6,6 +6,149 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.3.3] — 07-05-2026
+
+Refactoring interne pur — aucune nouvelle fonctionnalité, aucun changement de comportement. Quatre tâches de nettoyage issues d'une passe de code review : découpage de `cron.py`, retour pur de `compute_domain_scores()`, API publique de `domain_scores`, helpers curses dans `cron_ui.py`. 4348/4348 tests (+1).
+
+---
+
+### Refactoring — découpage de `cron.py`
+
+**Fichiers :** `bob/cron.py`, `bob/cron_ui.py` (nouveau)
+
+#### Problème
+
+`bob/cron.py` avait atteint 2 181 lignes en mélangeant des préoccupations hétérogènes : types de données, parsers, logique cron, flux interactifs en texte brut, et un TUI curses complet. Le code curses importait `curses` au niveau module, ce qui déclenchait une `_curses.error` à l'import dans tout test sans TTY. Les flux d'installation et de gestion contenaient chacun un bloc de génération de script bash de 40 lignes — logique identique copié-collée.
+
+#### Implémentation
+
+**Découpage**
+
+`bob/cron.py` conserve tous les types de données, parsers, logique domaine, et flux interactifs en texte brut. `bob/cron_ui.py` (nouveau, 955L) contient tout le code TUI curses. Les dispatchers `run_install_cron()` / `run_manage_cron()` utilisent un pattern d'import paresseux :
+
+```python
+if sys.stdout.isatty():
+    try:
+        import curses
+        curses.wrapper(_run_install_cron_curses)
+    except curses.error:
+        _run_install_cron_plain(...)
+else:
+    _run_install_cron_plain(...)
+```
+
+Le `import curses as _c` à l'intérieur des fonctions de `cron_ui.py` est intentionnel : le déplacer au niveau module casserait les imports dans les tests sans terminal.
+
+**`build_script_content(notify_email, log_dir) -> str`**
+
+Fonction pure extraite des deux flux d'installation dans `cron.py`, éliminant une duplication de 40 lignes. Retourne la chaîne complète du script bash. Appelée depuis `_run_install_cron_plain()` et `_run_install_cron_curses()`.
+
+---
+
+### Refactoring — retour pur de `compute_domain_scores()`
+
+**Fichiers :** `bob/scoring.py`, `bob/domain_scores.py`, `bob/breakdown.py`
+
+#### Problème
+
+`compute_domain_scores()` communiquait quelles déductions étaient cappées en posant `deduction.was_capped = True` comme effet de bord sur des objets `Deduction` live. Non-idempotent (corrigé en v0.3.2 par un reset en début de fonction), mais la cause racine restait : une fonction qui mutait ses entrées pour transmettre une information aux appelants. `breakdown.py` itérait `engine.breakdown` et vérifiait `was_capped` pour annoter le tableau de breakdown.
+
+#### Implémentation
+
+Champ `Deduction.was_capped: bool` supprimé du dataclass.
+
+`compute_domain_scores()` retourne désormais `tuple[dict[str, dict], frozenset[int]]` — le second élément est l'ensemble des indices dans `engine.breakdown` réduits par un cap de domaine. La fonction calcule ce frozenset purement par comparaison `effective < raw` sans toucher aucun objet.
+
+`ScoreEngine.set_domain_scores()` reçoit un paramètre `capped_indices: frozenset[int]`, stocké en `_capped_indices`. Nouvelle propriété `capped_indices` pour l'exposer. `breakdown.py` lit `engine.capped_indices` au lieu d'inspecter `was_capped` sur chaque déduction.
+
+#### Décisions de conception
+
+- **`frozenset[int]` et non `set[Deduction]`** : les indices sont stables dans un appel `compute_domain_scores()` ; le frozenset est immuable et sûr en cache. Des références à des objets `Deduction` créeraient une dépendance implicite sur l'identité des objets.
+- **Retour du frozenset plutôt que stockage interne** : la fonction n'a plus d'effets de bord, ce qui la rend trivialement testable par assertion directe sur la valeur de retour.
+
+---
+
+### Refactoring — API publique de `domain_scores.py`
+
+**Fichiers :** `bob/domain_scores.py`, `bob/breakdown.py`, `bob/explain.py`, `tests/test_domain_scores.py`
+
+#### Problème
+
+Trois noms au niveau module — `_LABELS`, `_TOOL_CAPS`, `_key_to_domain` — étaient effectivement publics : utilisés directement par `breakdown.py` et `explain.py`. Le tiret bas suggérait qu'ils étaient des détails internes privés, mais des appelants externes en dépendaient. Signal trompeur : tout appelant voyant `from bob.domain_scores import _LABELS` savait qu'il importait un nom privé.
+
+#### Implémentation
+
+Renommage simple : `_LABELS → LABELS`, `_TOOL_CAPS → TOOL_CAPS`, `_key_to_domain → key_to_domain`. Tous les appelants mis à jour (`breakdown.py`, `explain.py`, `tests/test_domain_scores.py`). Aucune logique modifiée.
+
+---
+
+### Refactoring — helpers curses dans `cron_ui.py`
+
+**Fichiers :** `bob/cron_ui.py`
+
+#### Problème
+
+`cron_ui.py` présentait trois catégories de duplication structurelle :
+
+1. **Génération de script** : script bash de 40 lignes dupliqué entre les flux d'installation texte brut et curses (traité ci-dessus par `build_script_content`).
+2. **`addstr` sécurisé** : chaque écriture à l'écran était enveloppée dans `try: stdscr.addstr(...) except _c.error: pass` — 30+ blocs identiques de 3 lignes.
+3. **Lecture de touche** : chaque boucle interactive contenait `try: ch = stdscr.get_wch() / except _c.error: continue` suivi d'une normalisation `isinstance(ch, int)` / `isinstance(ch, str)` — 9 duplications séparées.
+4. **Indices magiques de planning** : `if choice == 2 / 3 / 4` disséminé dans `_curses_schedule_wizard` sans explication de ce que signifient 2, 3, 4.
+5. **Stub `_FakeEntry`** : une bare `class _FakeEntry: pass` avec attribut `entry.name = raw_name` posé au runtime — non typé, non documenté.
+
+#### Implémentation
+
+**`_WizardEntry(name, hour=3, minute=0)` NamedTuple**
+
+Remplace `_FakeEntry`. Créé à `STEP_SCHEDULE` avec `_WizardEntry(raw_name)`, passé à `_curses_schedule_wizard`. Typé, documenté, immuable.
+
+**`_draw(stdscr, row, col, text, attr=0) -> None`**
+
+```python
+def _draw(stdscr, row: int, col: int, text: str, attr: int = 0) -> None:
+    try:
+        stdscr.addstr(row, col, text, attr)
+    except Exception:
+        pass
+```
+
+Absorbe les 30+ blocs `try/except curses.error`. Utilise `except Exception` (et non `except _c.error`) car `curses` n'est pas importé au niveau module — `_c` est un alias local à l'intérieur de chaque fonction.
+
+**`_read_key(stdscr) -> int`**
+
+```python
+def _read_key(stdscr) -> int:
+    try:
+        ch = stdscr.get_wch()
+    except Exception:
+        return -1
+    if isinstance(ch, int):
+        return ch
+    if isinstance(ch, str) and len(ch) == 1:
+        return ord(ch)
+    return -1
+```
+
+Retourne -1 en cas d'erreur ou d'entrée non reconnue. Les appelants qui faisaient précédemment `continue` sur erreur laissent désormais tomber toutes les branches `if/elif` sans match — comportement de redémarrage de boucle identique. Le seul cas limite où `-1` pourrait être matché par erreur (`_run_manage_cron_curses` confirm-delete) a été audité : le guard `if key in (ord("y"), ord("Y"))` signifie que `-1` annule simplement, ce qui est le comportement "toute touche : annuler" documenté.
+
+**`_SCHEDULE_DAILY/WEEKDAYS/MONTHDAYS/CUSTOM = 1, 2, 3, 4`**
+
+Constantes nommées remplaçant les indices magiques dans `_curses_schedule_wizard`.
+
+#### Résultat net
+
+1 104L → 955L (−149 lignes, −13 %).
+
+---
+
+### Tests
+
+4 348 / 4 348 (+1 par rapport à v0.3.2).
+
+`TestWasCapped` (vérifiait le flag `was_capped`) remplacé par `TestCappedIndices` (7 tests) couvrant le contrat de retour frozenset de `compute_domain_scores()` : ensemble vide quand aucun cap n'est déclenché, indices corrects quand les caps s'appliquent, immuabilité du frozenset retourné.
+
+---
+
 ## [v0.3.2] — 06-05-2026
 
 Liste blanche SUID configurable par l'utilisateur : les patterns déclarés dans `~/.config/bob/config.conf` suppriment les binaires légitimes du warning "SUID inattendu". Plus 14 corrections issues d'une passe de code review (i18n, mode quiet, idempotence moteur, code mort). 4347/4347 tests (+19).

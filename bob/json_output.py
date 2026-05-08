@@ -127,7 +127,7 @@ def build_json_data(
 
     # Domain sub-scores (always included)
     from bob.domain_scores import compute_domain_scores, DOMAINS
-    _ds = compute_domain_scores(engine)
+    _ds, _ = compute_domain_scores(engine)
     data["domain_scores"] = {
         domain: {"score": _ds[domain]["score"], "label": _ds[domain]["label"]}
         for domain in DOMAINS
