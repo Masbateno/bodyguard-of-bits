@@ -163,6 +163,7 @@ def run_checks(
     network_context: str,
     profile: AuditProfile | None = None,
     prev_recurrence: "dict[str, int] | None" = None,
+    user_config: UserConfig | None = None,
 ) -> ChecksResult:
     """Run all audit checks in sequence."""
     _pr: dict[str, int] = prev_recurrence or {}
@@ -567,7 +568,9 @@ def run_checks(
             print()
 
     # ---- CHECK 37 — SUID/SGID binary audit ----
-    suid_snapshot = SuidSnapshot.from_system(user_whitelist=user_config.get_suid_whitelist())
+    suid_snapshot = SuidSnapshot.from_system(
+        user_whitelist=user_config.get_suid_whitelist() if user_config is not None else []
+    )
     if _section_enabled("suid_audit", config, profile):
         if not config.quiet:
             print_section(t("sections.suid_audit"))

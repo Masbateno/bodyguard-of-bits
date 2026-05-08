@@ -238,7 +238,8 @@ def _run(argv=None) -> int:
 
             result             = run_checks(config, t, engine, report, registry, network_context,
                                            profile=active_profile,
-                                           prev_recurrence=prev_recurrence)
+                                           prev_recurrence=prev_recurrence,
+                                           user_config=user_config)
             network_context    = result.network_context
             snapshots          = result.snapshots
             ports_snapshot     = result.ports_snapshot
