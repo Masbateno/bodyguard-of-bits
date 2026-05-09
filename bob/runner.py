@@ -167,6 +167,21 @@ def run_checks(
 ) -> ChecksResult:
     """Run all audit checks in sequence."""
     _pr: dict[str, int] = prev_recurrence or {}
+    _pname = profile.name if profile is not None else "server"
+
+    def _sec(section: str, snapshot, check_fn, **check_kwargs) -> None:
+        if not _section_enabled(section, config, profile):
+            return
+        if not config.quiet:
+            print_section(t(f"sections.{section}"))
+        report.write_section(t(f"sections.{section}"))
+        result = check_fn(snapshot, t=t, **check_kwargs)
+        if profile is not None:
+            apply_profile(result, profile)
+        engine.apply(result)
+        display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+        if not config.quiet:
+            print()
 
     # =========================================================================
     # GROUP 1 — FIREWALL & RÉSEAU
@@ -262,17 +277,7 @@ def run_checks(
 
     # ---- CHECK 10 — IPv6 consistency ----
     ipv6_snapshot = IPv6Snapshot.from_system()
-    if _section_enabled("ipv6", config, profile):
-        if not config.quiet:
-            print_section(t("sections.ipv6"))
-        report.write_section(t("sections.ipv6"))
-        ipv6_result = check_ipv6(ipv6_snapshot, ufw_active=fw_status.active, t=t)
-        if profile is not None:
-            apply_profile(ipv6_result, profile)
-        engine.apply(ipv6_result)
-        display_result(ipv6_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active)
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES
@@ -445,17 +450,7 @@ def run_checks(
 
     # ---- CHECK 26 — SMTP local exposure ----
     smtp_snapshot = SmtpSnapshot.from_system()
-    if _section_enabled("smtp", config, profile):
-        if not config.quiet:
-            print_section(t("sections.smtp"))
-        report.write_section(t("sections.smtp"))
-        smtp_result = check_smtp(smtp_snapshot, t=t)
-        if profile is not None:
-            apply_profile(smtp_result, profile)
-        engine.apply(smtp_result)
-        display_result(smtp_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("smtp", smtp_snapshot, check_smtp)
 
     # =========================================================================
     # GROUP 3 — CONTRÔLE D'ACCÈS
@@ -466,71 +461,23 @@ def run_checks(
 
     # ---- CHECK 11 — SSH security ----
     ssh_snapshot = SSHSnapshot.from_system()
-    if _section_enabled("ssh", config, profile):
-        if not config.quiet:
-            print_section(t("sections.ssh"))
-        report.write_section(t("sections.ssh"))
-        ssh_result = check_ssh(ssh_snapshot, t=t, ssh_exposed=_ssh_exposed)
-        if profile is not None:
-            apply_profile(ssh_result, profile)
-        engine.apply(ssh_result)
-        display_result(ssh_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("ssh", ssh_snapshot, check_ssh, ssh_exposed=_ssh_exposed)
 
     # ---- CHECK 42 — SSH auth.log login analysis ----
     auth_log_snapshot = AuthLogSnapshot.from_system()
-    if _section_enabled("auth_log", config, profile):
-        if not config.quiet:
-            print_section(t("sections.auth_log"))
-        report.write_section(t("sections.auth_log"))
-        auth_log_result = check_auth_log(auth_log_snapshot, t=t)
-        engine.apply(auth_log_result)
-        display_result(auth_log_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("auth_log", auth_log_snapshot, check_auth_log)
 
     # ---- CHECK 17 — User account audit ----
     user_accounts_snapshot = UserAccountsSnapshot.from_system()
-    if _section_enabled("user_accounts", config, profile):
-        if not config.quiet:
-            print_section(t("sections.user_accounts"))
-        report.write_section(t("sections.user_accounts"))
-        user_accounts_result = check_user_accounts(user_accounts_snapshot, t=t)
-        if profile is not None:
-            apply_profile(user_accounts_result, profile)
-        engine.apply(user_accounts_result)
-        display_result(user_accounts_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("user_accounts", user_accounts_snapshot, check_user_accounts)
 
     # ---- CHECK 18 — Password policy audit ----
     password_policy_snapshot = PasswordPolicySnapshot.from_system()
-    if _section_enabled("password_policy", config, profile):
-        if not config.quiet:
-            print_section(t("sections.password_policy"))
-        report.write_section(t("sections.password_policy"))
-        password_policy_result = check_password_policy(password_policy_snapshot, t=t)
-        if profile is not None:
-            apply_profile(password_policy_result, profile)
-        engine.apply(password_policy_result)
-        display_result(password_policy_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("password_policy", password_policy_snapshot, check_password_policy)
 
     # ---- CHECK 12 — Sensitive file permissions + sudoers ----
     file_perms_snapshot = FilePermsSnapshot.from_system()
-    if _section_enabled("file_perms", config, profile):
-        if not config.quiet:
-            print_section(t("sections.file_perms"))
-        report.write_section(t("sections.file_perms"))
-        file_perms_result = check_file_perms(file_perms_snapshot, t=t)
-        if profile is not None:
-            apply_profile(file_perms_result, profile)
-        engine.apply(file_perms_result)
-        display_result(file_perms_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("file_perms", file_perms_snapshot, check_file_perms)
 
     # =========================================================================
     # GROUP 4 — DURCISSEMENT SYSTÈME
@@ -541,47 +488,17 @@ def run_checks(
 
     # ---- CHECK 9 — System hardening ----
     hardening_snapshot = HardeningSnapshot.from_system()
-    if _section_enabled("hardening", config, profile):
-        if not config.quiet:
-            print_section(t("sections.hardening"))
-        report.write_section(t("sections.hardening"))
-        hardening_result = check_hardening(hardening_snapshot, t=t)
-        if profile is not None:
-            apply_profile(hardening_result, profile)
-        engine.apply(hardening_result)
-        display_result(hardening_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("hardening", hardening_snapshot, check_hardening)
 
     # ---- CHECK 36 — Kernel hardening ----
     kernel_hardening_snapshot = KernelHardeningSnapshot.from_system()
-    if _section_enabled("kernel_hardening", config, profile):
-        if not config.quiet:
-            print_section(t("sections.kernel_hardening"))
-        report.write_section(t("sections.kernel_hardening"))
-        kernel_hardening_result = check_kernel_hardening(kernel_hardening_snapshot, t=t)
-        if profile is not None:
-            apply_profile(kernel_hardening_result, profile)
-        engine.apply(kernel_hardening_result)
-        display_result(kernel_hardening_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("kernel_hardening", kernel_hardening_snapshot, check_kernel_hardening)
 
     # ---- CHECK 37 — SUID/SGID binary audit ----
     suid_snapshot = SuidSnapshot.from_system(
         user_whitelist=user_config.get_suid_whitelist() if user_config is not None else []
     )
-    if _section_enabled("suid_audit", config, profile):
-        if not config.quiet:
-            print_section(t("sections.suid_audit"))
-        report.write_section(t("sections.suid_audit"))
-        suid_result = check_suid_audit(suid_snapshot, t=t)
-        if profile is not None:
-            apply_profile(suid_result, profile)
-        engine.apply(suid_result)
-        display_result(suid_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("suid_audit", suid_snapshot, check_suid_audit)
 
     # ---- CHECK 38 — Docker container security audit ----
     docker_audit_snapshot = DockerAuditSnapshot.from_system()
@@ -600,127 +517,35 @@ def run_checks(
 
     # ---- CHECK 39 — Log rotation & system journaling ----
     log_rotation_snapshot = LogRotationSnapshot.from_system()
-    if _section_enabled("log_rotation", config, profile):
-        if not config.quiet:
-            print_section(t("sections.log_rotation"))
-        report.write_section(t("sections.log_rotation"))
-        log_rotation_result = check_log_rotation(log_rotation_snapshot, t=t)
-        if profile is not None:
-            apply_profile(log_rotation_result, profile)
-        engine.apply(log_rotation_result)
-        display_result(log_rotation_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("log_rotation", log_rotation_snapshot, check_log_rotation)
 
     # ---- CHECK 14 — Kernel module audit ----
     kernel_modules_snapshot = KernelModulesSnapshot.from_system()
-    if _section_enabled("kernel_modules", config, profile):
-        if not config.quiet:
-            print_section(t("sections.kernel_modules"))
-        report.write_section(t("sections.kernel_modules"))
-        kernel_modules_result = check_kernel_modules(
-            kernel_modules_snapshot, t=t,
-            profile_name=profile.name if profile is not None else "server",
-        )
-        if profile is not None:
-            apply_profile(kernel_modules_result, profile)
-        engine.apply(kernel_modules_result)
-        display_result(kernel_modules_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("kernel_modules", kernel_modules_snapshot, check_kernel_modules, profile_name=_pname)
 
     # ---- CHECK 34 — MAC policy (AppArmor / SELinux) ----
     mac_policy_snapshot = MacPolicySnapshot.from_system()
-    if _section_enabled("mac_policy", config, profile):
-        if not config.quiet:
-            print_section(t("sections.mac_policy"))
-        report.write_section(t("sections.mac_policy"))
-        mac_policy_result = check_mac_policy(
-            mac_policy_snapshot, t=t,
-            profile_name=profile.name if profile is not None else "server",
-        )
-        if profile is not None:
-            apply_profile(mac_policy_result, profile)
-        engine.apply(mac_policy_result)
-        display_result(mac_policy_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("mac_policy", mac_policy_snapshot, check_mac_policy, profile_name=_pname)
 
     # ---- CHECK 15 — Cron job audit ----
     cron_audit_snapshot = CronAuditSnapshot.from_system()
-    if _section_enabled("cron_audit", config, profile):
-        if not config.quiet:
-            print_section(t("sections.cron_audit"))
-        report.write_section(t("sections.cron_audit"))
-        cron_audit_result = check_cron_audit(cron_audit_snapshot, t=t)
-        if profile is not None:
-            apply_profile(cron_audit_result, profile)
-        engine.apply(cron_audit_result)
-        display_result(cron_audit_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("cron_audit", cron_audit_snapshot, check_cron_audit)
 
     # ---- CHECK 16 — Service state audit ----
     services_state_snapshot = ServicesStateSnapshot.from_system()
-    if _section_enabled("services_state", config, profile):
-        if not config.quiet:
-            print_section(t("sections.services_state"))
-        report.write_section(t("sections.services_state"))
-        services_state_result = check_services_state(services_state_snapshot, t=t)
-        if profile is not None:
-            apply_profile(services_state_result, profile)
-        engine.apply(services_state_result)
-        display_result(services_state_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("services_state", services_state_snapshot, check_services_state)
 
     # ---- CHECK 13 — System updates ----
     updates_snapshot = UpdatesSnapshot.from_system()
-    if _section_enabled("updates", config, profile):
-        if not config.quiet:
-            print_section(t("sections.updates"))
-        report.write_section(t("sections.updates"))
-        updates_result = check_updates(
-            updates_snapshot, t=t,
-            profile_name=profile.name if profile is not None else "server",
-        )
-        if profile is not None:
-            apply_profile(updates_result, profile)
-        engine.apply(updates_result)
-        display_result(updates_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("updates", updates_snapshot, check_updates, profile_name=_pname)
 
     # ---- CHECK 41 — System umask ----
     umask_snapshot = UmaskSnapshot.from_system()
-    if _section_enabled("umask", config, profile):
-        if not config.quiet:
-            print_section(t("sections.umask"))
-        report.write_section(t("sections.umask"))
-        umask_result = check_umask(umask_snapshot, t=t)
-        if profile is not None:
-            apply_profile(umask_result, profile)
-        engine.apply(umask_result)
-        display_result(umask_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("umask", umask_snapshot, check_umask)
 
     # ---- CHECK 23 — Memory & Swap ----
     memory_snapshot = MemorySnapshot.from_system()
-    if _section_enabled("memory", config, profile):
-        if not config.quiet:
-            print_section(t("sections.memory"))
-        report.write_section(t("sections.memory"))
-        memory_result = check_memory(
-            memory_snapshot, t=t,
-            profile_name=profile.name if profile is not None else "server",
-        )
-        if profile is not None:
-            apply_profile(memory_result, profile)
-        engine.apply(memory_result)
-        display_result(memory_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("memory", memory_snapshot, check_memory, profile_name=_pname)
 
     # ---- CHECK 22 — Disk health (SMART + partition usage) ----
     disk_snapshot = DiskSnapshot.from_system()
@@ -746,124 +571,35 @@ def run_checks(
 
     # ---- CHECK 35 — Backup solution ----
     backup_snapshot = BackupSnapshot.from_system()
-    if _section_enabled("backup", config, profile):
-        if not config.quiet:
-            print_section(t("sections.backup"))
-        report.write_section(t("sections.backup"))
-        backup_result = check_backup(
-            backup_snapshot, t=t,
-            profile_name=profile.name if profile is not None else "server",
-        )
-        if profile is not None:
-            apply_profile(backup_result, profile)
-        engine.apply(backup_result)
-        display_result(backup_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("backup", backup_snapshot, check_backup, profile_name=_pname)
 
     # ---- CHECK 31 — Linux Audit Framework (auditd) ----
     auditd_snapshot = AuditdSnapshot.from_system()
-    if _section_enabled("auditd", config, profile):
-        if not config.quiet:
-            print_section(t("sections.auditd"))
-        report.write_section(t("sections.auditd"))
-        auditd_result = check_auditd(
-            auditd_snapshot, t=t,
-            profile_name=profile.name if profile is not None else "server",
-        )
-        if profile is not None:
-            apply_profile(auditd_result, profile)
-        engine.apply(auditd_result)
-        display_result(auditd_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("auditd", auditd_snapshot, check_auditd, profile_name=_pname)
 
     # ---- CHECK 32 — Secure Boot ----
     secure_boot_snapshot = SecureBootSnapshot.from_system()
-    if _section_enabled("secure_boot", config, profile):
-        if not config.quiet:
-            print_section(t("sections.secure_boot"))
-        report.write_section(t("sections.secure_boot"))
-        secure_boot_result = check_secure_boot(
-            secure_boot_snapshot, t=t,
-            profile_name=profile.name if profile is not None else "server",
-        )
-        if profile is not None:
-            apply_profile(secure_boot_result, profile)
-        engine.apply(secure_boot_result)
-        display_result(secure_boot_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("secure_boot", secure_boot_snapshot, check_secure_boot, profile_name=_pname)
 
     # ---- CHECK 29 — Fail2ban intrusion prevention ----
     fail2ban_snapshot = Fail2banSnapshot.from_system()
-    if _section_enabled("fail2ban", config, profile):
-        if not config.quiet:
-            print_section(t("sections.fail2ban"))
-        report.write_section(t("sections.fail2ban"))
-        fail2ban_result = check_fail2ban(fail2ban_snapshot, t=t)
-        if profile is not None:
-            apply_profile(fail2ban_result, profile)
-        engine.apply(fail2ban_result)
-        display_result(fail2ban_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("fail2ban", fail2ban_snapshot, check_fail2ban)
 
     # ---- CHECK 25 — ClamAV antivirus audit ----
     clamav_snapshot = ClamAVSnapshot.from_system()
-    if _section_enabled("clamav", config, profile):
-        if not config.quiet:
-            print_section(t("sections.clamav"))
-        report.write_section(t("sections.clamav"))
-        clamav_result = check_clamav(clamav_snapshot, t=t)
-        if profile is not None:
-            apply_profile(clamav_result, profile)
-        engine.apply(clamav_result)
-        display_result(clamav_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("clamav", clamav_snapshot, check_clamav)
 
     # ---- CHECK 33 — File integrity monitoring (AIDE / Tripwire) ----
     file_integrity_snapshot = FileIntegritySnapshot.from_system()
-    if _section_enabled("file_integrity", config, profile):
-        if not config.quiet:
-            print_section(t("sections.file_integrity"))
-        report.write_section(t("sections.file_integrity"))
-        file_integrity_result = check_file_integrity(file_integrity_snapshot, t=t)
-        if profile is not None:
-            apply_profile(file_integrity_result, profile)
-        engine.apply(file_integrity_result)
-        display_result(file_integrity_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("file_integrity", file_integrity_snapshot, check_file_integrity)
 
     # ---- CHECK 30 — Rootkit & integrity scan ----
     rootkit_snapshot = RootkitSnapshot.from_system()
-    if _section_enabled("rootkit", config, profile):
-        if not config.quiet:
-            print_section(t("sections.rootkit"))
-        report.write_section(t("sections.rootkit"))
-        rootkit_result = check_rootkit(rootkit_snapshot, t=t)
-        if profile is not None:
-            apply_profile(rootkit_result, profile)
-        engine.apply(rootkit_result)
-        display_result(rootkit_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("rootkit", rootkit_snapshot, check_rootkit)
 
     # ---- CHECK 28 — NTP time synchronisation ----
     ntp_snapshot = NtpSnapshot.from_system()
-    if _section_enabled("ntp", config, profile):
-        if not config.quiet:
-            print_section(t("sections.ntp"))
-        report.write_section(t("sections.ntp"))
-        ntp_result = check_ntp(ntp_snapshot, t=t)
-        if profile is not None:
-            apply_profile(ntp_result, profile)
-        engine.apply(ntp_result)
-        display_result(ntp_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("ntp", ntp_snapshot, check_ntp)
 
     # ---- CHECK 19 — Desktop application audit ----
     if _section_enabled("desktop_apps", config, profile):
@@ -882,45 +618,15 @@ def run_checks(
 
     # ---- CHECK 45 — Firmware & microcode audit ----
     firmware_snapshot = FirmwareSnapshot.from_system()
-    if _section_enabled("firmware", config, profile):
-        if not config.quiet:
-            print_section(t("sections.firmware"))
-        report.write_section(t("sections.firmware"))
-        firmware_result = check_firmware(firmware_snapshot, t=t)
-        if profile is not None:
-            apply_profile(firmware_result, profile)
-        engine.apply(firmware_result)
-        display_result(firmware_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("firmware", firmware_snapshot, check_firmware)
 
     # ---- CHECK 44 — Systemd timers audit ----
     timers_snapshot = SystemdTimersSnapshot.from_system()
-    if _section_enabled("systemd_timers", config, profile):
-        if not config.quiet:
-            print_section(t("sections.systemd_timers"))
-        report.write_section(t("sections.systemd_timers"))
-        timers_result = check_systemd_timers(timers_snapshot, t=t)
-        if profile is not None:
-            apply_profile(timers_result, profile)
-        engine.apply(timers_result)
-        display_result(timers_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("systemd_timers", timers_snapshot, check_systemd_timers)
 
     # ---- CHECK 43 — TLS/SSL certificate expiry ----
     ssl_certs_snapshot = SslCertsSnapshot.from_system()
-    if _section_enabled("ssl_certs", config, profile):
-        if not config.quiet:
-            print_section(t("sections.ssl_certs"))
-        report.write_section(t("sections.ssl_certs"))
-        ssl_certs_result = check_ssl_certs(ssl_certs_snapshot, t=t)
-        if profile is not None:
-            apply_profile(ssl_certs_result, profile)
-        engine.apply(ssl_certs_result)
-        display_result(ssl_certs_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            print()
+    _sec("ssl_certs", ssl_certs_snapshot, check_ssl_certs)
 
     # ---- Plugin checks (user-defined, checks.d/) ----
     for plugin in load_plugin_checks():

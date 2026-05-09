@@ -6,6 +6,223 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.3.5] — 2026-05-08
+
+Pure internal refactoring and locale fix — no new features, no behaviour changes, no new tests. Two independent cleanup tasks plus a content fix: `runner.py` repetitive section blocks replaced by a `_sec` closure (−295 lines), `ssh.py` triplicated weak-algo logic replaced by a `_check_weak_algo` helper (−26 lines), and four translation keys still referencing the former tool name `UFW-AUDIT` corrected to `BOB`. 4348/4348 tests.
+
+---
+
+### Refactoring — `runner.py` `_sec` closure
+
+**Files:** `bob/runner.py` (951 L → 656 L, −295 lines)
+
+#### Problem
+
+`run_checks()` contained 29 nearly-identical 7–13 line blocks, one per audit section:
+
+```python
+if _section_enabled("kernel_modules", config, profile):
+    if not config.quiet:
+        print_section(t("sections.kernel_modules"))
+    report.write_section(t("sections.kernel_modules"))
+    result = check_kernel_modules(km_snapshot, t=t, profile_name=_pname)
+    if profile is not None:
+        apply_profile(result, profile)
+    engine.apply(result)
+    display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    if not config.quiet:
+        print()
+```
+
+951 lines total. The repetition made it impossible to apply a cross-cutting change (e.g. add a hook between every section) without editing 29 sites.
+
+#### Implementation
+
+**`_pname` pre-computed once** after `_pr`:
+
+```python
+_pname = profile.name if profile is not None else "server"
+```
+
+Used by the 7 sections that accept `profile_name=`: `kernel_modules`, `mac_policy`, `updates`, `memory`, `backup`, `auditd`, `secure_boot`. `check_firmware` does not accept `profile_name` — it was intentionally excluded.
+
+**`_sec` closure** defined immediately after:
+
+```python
+def _sec(section: str, snapshot, check_fn, **check_kwargs) -> None:
+    if not _section_enabled(section, config, profile):
+        return
+    if not config.quiet:
+        print_section(t(f"sections.{section}"))
+    report.write_section(t(f"sections.{section}"))
+    result = check_fn(snapshot, t=t, **check_kwargs)
+    if profile is not None:
+        apply_profile(result, profile)
+    engine.apply(result)
+    display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    if not config.quiet:
+        print()
+```
+
+29 standard blocks replaced by single-line calls:
+
+```python
+_sec("kernel_modules", km_snapshot,  check_kernel_modules,  profile_name=_pname)
+_sec("ssh",           ssh_snapshot,  check_ssh,             ssh_exposed=_ssh_exposed)
+_sec("ipv6",          ipv6_snapshot, check_ipv6,            ufw_active=fw_status.active)
+# …and 26 more
+```
+
+Sections kept manual (not converted): firewall, rules, ufw_logging, network groups/display, samba, docker_audit, desktop_apps, iptables_nft (all have conditional logic around `.installed`, `.detected`, or `not fw_status.active` that cannot be abstracted into the closure without added complexity).
+
+**`apply_profile` now applied to `auth_log`** — previously omitted by oversight. No-op in practice (no current profile defines auth_log-specific overrides), but now consistent with all other sections.
+
+#### Design decisions
+
+- **Closure over module-level helper**: `_sec` captures `config`, `profile`, `engine`, `report`, `t`, `_pr` from the enclosing scope. A module-level helper would require passing all six as parameters on every call — more verbose, no benefit.
+- **`check_fn(snapshot, t=t, **check_kwargs)` not `check_fn(snapshot, **{"t": t, **check_kwargs})`**: `t` is always positional-keyword; keyword-splat form is correct and explicit.
+
+---
+
+### Refactoring — `ssh.py` `_check_weak_algo` helper
+
+**Files:** `bob/checks/ssh.py` (1406 L → 1380 L, −26 lines)
+
+#### Problem
+
+`_check_sshd_config()` contained three identical 16-line blocks to check for weak Ciphers, MACs, and KexAlgorithms:
+
+```python
+cipher_str = cfg.get("ciphers", "")
+if cipher_str:
+    configured = {c.strip().lower() for c in cipher_str.split(",")}
+    weak = sorted(configured & _WEAK_CIPHERS)
+    if weak:
+        joined = ", ".join(weak)
+        result.warn(
+            message=_t("ssh.weak_ciphers", ciphers=joined),
+            nature="improvement", cmd="", key="ssh.weak_ciphers",
+        )
+        result.add_deduction(
+            reason=_t("ssh.weak_ciphers", ciphers=joined),
+            points=2, context="local", key="ssh.weak_ciphers",
+        )
+        found_issue = True
+```
+
+Repeated for `macs` and `kexalgorithms` with only the variable names, set names, translation keys, and point values differing.
+
+#### Implementation
+
+Module-level helper `_check_weak_algo` extracted before `_parse_config_file`:
+
+```python
+def _check_weak_algo(
+    cfg: dict, result: "CheckResult", _t,
+    cfg_key: str, weak_set: "frozenset[str]", t_key: str, param: str, points: int,
+) -> bool:
+    """Flag weak crypto algorithm entries; return True if any found."""
+    algo_str = cfg.get(cfg_key, "")
+    if not algo_str:
+        return False
+    configured = {a.strip().lower() for a in algo_str.split(",")}
+    weak = sorted(configured & weak_set)
+    if not weak:
+        return False
+    joined = ", ".join(weak)
+    result.warn(
+        message=_t(t_key, **{param: joined}),
+        nature="improvement", cmd="", key=t_key,
+    )
+    result.add_deduction(
+        reason=_t(t_key, **{param: joined}),
+        points=points, context="local", key=t_key,
+    )
+    return True
+```
+
+Three call sites in `_check_sshd_config`:
+
+```python
+found_issue |= _check_weak_algo(cfg, result, _t, "ciphers",       _WEAK_CIPHERS, "ssh.weak_ciphers", "ciphers", 2)
+found_issue |= _check_weak_algo(cfg, result, _t, "macs",          _WEAK_MACS,    "ssh.weak_macs",    "macs",    1)
+found_issue |= _check_weak_algo(cfg, result, _t, "kexalgorithms", _WEAK_KEX,     "ssh.weak_kex",     "kex",     1)
+```
+
+#### Design decision
+
+**Module-level (not closure)**: unlike `_sec`, this helper takes all its inputs as parameters and has no dependency on outer scope. A module-level function makes it independently testable and visible to future callers.
+
+---
+
+### Fix — locale strings `UFW-AUDIT` → `BOB`
+
+**Files:** `bob/locales/en.json`, `bob/locales/fr.json`
+
+#### Problem
+
+Four translation keys in both locale files still referenced the former tool name `UFW-AUDIT` instead of `BOB`:
+
+| Key | Before (EN) | After (EN) |
+|-----|-------------|------------|
+| `install_cron.title` | `UFW-AUDIT CRON SETUP` | `BOB CRON SETUP` |
+| `manage_cron.title` | `UFW-AUDIT CRON MANAGEMENT` | `BOB CRON MANAGEMENT` |
+| `manage_cron.no_crons` | `No UFW-AUDIT cron jobs installed.` | `No BOB cron jobs installed.` |
+| `report.title` | `UFW-AUDIT REPORT` | `BOB REPORT` |
+
+These strings appeared in the cron setup and management screens, and in the report section title. Other `UFW` references in the locale files are legitimate — they refer to the UFW firewall tool itself, not the former tool name.
+
+#### Implementation
+
+Simple string replacement in both `en.json` and `fr.json`. No logic changes.
+
+---
+
+## [v0.3.4] — 2026-05-08
+
+Hotfix release — no new features, no behaviour changes, no new tests. Fixes a fatal `NameError` introduced in v0.3.2: `user_config` was not passed to `run_checks()`. 4348/4348 tests.
+
+---
+
+### Fix — `user_config` not passed to `run_checks()`
+
+**Files:** `bob/runner.py`, `bob/__main__.py`
+
+#### Problem
+
+v0.3.2 added SUID user whitelisting. `run_checks()` was extended with a call to `user_config.get_suid_whitelist()` inside the SUID check block (CHECK 37), but `user_config` was never added as a parameter to `run_checks()`. The call site in `__main__.py` therefore did not pass it.
+
+Result: every audit run that reached CHECK 37 (SUID/SGID audit) crashed with:
+
+```
+NameError: name 'user_config' is not defined
+```
+
+This was a fatal regression on all machines — the audit always reaches CHECK 37.
+
+#### Implementation
+
+`runner.py` — added parameter and guarded access:
+
+```python
+def run_checks(
+    ...
+    user_config: UserConfig | None = None,   # added
+) -> ChecksResult:
+    ...
+    suid_snapshot = SuidSnapshot.from_system(
+        user_whitelist=user_config.get_suid_whitelist() if user_config is not None else []
+    )
+```
+
+`__main__.py` — updated call site to pass `user_config`.
+
+#### Validation
+
+Tested on 5 VMs (Linux Mint 22.3, Debian 13, Ubuntu 26.04, Kali, so6desktop) — full audit completes without error on all.
+
+---
+
 ## [v0.3.3] — 2026-05-07
 
 Pure internal refactoring — no new features, no behaviour changes. Four cleanup tasks driven by a code-review pass: `cron.py` split, `compute_domain_scores()` pure return, `domain_scores` public API, and `cron_ui.py` curses helpers. 4348/4348 tests (+1).

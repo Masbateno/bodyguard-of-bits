@@ -11,6 +11,8 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.5 | 4348 | Aucun nouveau test — refactoring pur (`runner.py` closure `_sec`, `ssh.py` helper `_check_weak_algo`) |
+| v0.3.4 | 4348 | Aucun nouveau test — hotfix uniquement (`user_config` NameError sur whitelist SUID) |
 | v0.3.3  | 4348  | +7 nouveaux −6 supprimés (TestWasCapped → TestCappedIndices) : `TestCappedIndices` dans test_domain_scores |
 | v0.3.2  | 4347  | +21 nouveaux (whitelist utilisateur) −2 supprimés (DC-1 code mort) : `TestFromSystemUserWhitelist` · `TestGetSuidWhitelist` · `TestGlobMatching` dans test_suid_audit |
 | v0.3.1  | 4328  | +6 nouveaux tests : `TestWasCapped` dans test_domain_scores · flag was_capped · propriétés moteur en cache |
@@ -22,6 +24,32 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.3.5 — 4348/4348 (08-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.22s
+```
+
+**Aucun nouveau test — refactoring pur (`runner.py` closure `_sec` −295 lignes, `ssh.py` helper `_check_weak_algo` −26 lignes)**
+
+---
+
+### v0.3.4 — 4348/4348 (08-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.17s
+```
+
+**Aucun nouveau test — hotfix uniquement (passage de `user_config` à `run_checks()` — `NameError` sur la whitelist SUID)**
 
 ---
 

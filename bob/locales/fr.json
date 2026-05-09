@@ -336,7 +336,7 @@
     "history_title": "Historique des scores (derniers {count} audit(s))"
   },
   "install_cron": {
-    "title": "INSTALLATION CRON UFW-AUDIT",
+    "title": "INSTALLATION CRON BOB",
     "landing_prompt": "Créer un nouvel audit planifié",
     "quit_hint": "Entrez 'q' à n'importe quelle invite pour annuler.",
     "cancelled": "Assistant annulé.",
@@ -366,8 +366,8 @@
     "invalid_time": "Format d'heure invalide (attendu HH:MM)"
   },
   "manage_cron": {
-    "title": "GESTION DES CRONS UFW-AUDIT",
-    "no_crons": "Aucun cron UFW-AUDIT installé. Lancez : sudo bob --install-cron",
+    "title": "GESTION DES CRONS BOB",
+    "no_crons": "Aucun cron BOB installé. Lancez : sudo bob --install-cron",
     "prompt_intro": "Gérer vos crons :",
     "prompt_ex_edit": "modifier le cron n°1",
     "prompt_ex_email": "modifier l'email de notification du cron n°1",
@@ -429,7 +429,7 @@
     "port_saved": "Port {port} sauvegardé pour les prochaines exécutions"
   },
   "report": {
-    "title": "RAPPORT UFW-AUDIT",
+    "title": "RAPPORT BOB",
     "system_info": "INFORMATIONS SYSTÈME",
     "next_steps": "PROCHAINES ÉTAPES",
     "next_1": "Traitez d'abord toutes les alertes.",

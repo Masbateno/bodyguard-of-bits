@@ -316,7 +316,7 @@
     "history_title": "Score history (last {count} audit(s))"
   },
   "install_cron": {
-    "title": "UFW-AUDIT CRON SETUP",
+    "title": "BOB CRON SETUP",
     "landing_prompt": "Create a new scheduled audit",
     "quit_hint": "Enter 'q' at any prompt to cancel.",
     "cancelled": "Wizard cancelled.",
@@ -346,8 +346,8 @@
     "invalid_time": "Invalid time format (expected HH:MM)"
   },
   "manage_cron": {
-    "title": "UFW-AUDIT CRON MANAGEMENT",
-    "no_crons": "No UFW-AUDIT cron jobs installed. Run: sudo bob --install-cron",
+    "title": "BOB CRON MANAGEMENT",
+    "no_crons": "No BOB cron jobs installed. Run: sudo bob --install-cron",
     "prompt_intro": "Manage your cron jobs:",
     "prompt_ex_edit": "edit cron job #1",
     "prompt_ex_email": "edit notification email for cron #1",
@@ -429,7 +429,7 @@
     "port_saved": "Port {port} saved for future runs"
   },
   "report": {
-    "title": "UFW-AUDIT REPORT",
+    "title": "BOB REPORT",
     "system_info": "SYSTEM INFORMATION",
     "next_steps": "NEXT STEPS",
     "next_1": "Address all alerts first.",

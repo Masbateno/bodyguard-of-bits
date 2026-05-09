@@ -11,6 +11,8 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.5 | 4348 | No new tests — pure refactoring (`runner.py` `_sec` closure, `ssh.py` `_check_weak_algo`) |
+| v0.3.4 | 4348 | No new tests — hotfix only (`user_config` NameError) |
 | v0.3.3 | 4348 | +7 new −6 removed (TestWasCapped → TestCappedIndices): `TestCappedIndices` in test_domain_scores |
 | v0.3.2 | 4347 | +21 new (user whitelist) −2 removed (DC-1 dead code): `TestFromSystemUserWhitelist` · `TestGetSuidWhitelist` · `TestGlobMatching` in test_suid_audit |
 | v0.3.1 | 4328 | +6 new tests: `TestWasCapped` in test_domain_scores · was_capped flag · engine cached properties |
@@ -22,6 +24,32 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.3.5 — 4348/4348 (2026-05-08)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.22s
+```
+
+**No new tests — pure refactoring (`runner.py` `_sec` closure −295 lines, `ssh.py` `_check_weak_algo` −26 lines)**
+
+---
+
+### v0.3.4 — 4348/4348 (2026-05-08)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.17s
+```
+
+**No new tests — hotfix only (pass `user_config` to `run_checks()` — `NameError` on SUID whitelist)**
 
 ---
 

@@ -543,59 +543,10 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
         )
         found_issue = True
 
-    # Weak Ciphers
-    ciphers_str = cfg.get("ciphers", "")
-    if ciphers_str:
-        configured = {c.strip().lower() for c in ciphers_str.split(",")}
-        weak = sorted(configured & _WEAK_CIPHERS)
-        if weak:
-            result.warn(
-                message=_t("ssh.weak_ciphers", ciphers=", ".join(weak)),
-                nature="improvement",
-                cmd="",
-                key="ssh.weak_ciphers",
-            )
-            result.add_deduction(
-                reason=_t("ssh.weak_ciphers", ciphers=", ".join(weak)),
-                points=2, context="local", key="ssh.weak_ciphers",
-            )
-            found_issue = True
-
-    # Weak MACs
-    macs_str = cfg.get("macs", "")
-    if macs_str:
-        configured = {m.strip().lower() for m in macs_str.split(",")}
-        weak = sorted(configured & _WEAK_MACS)
-        if weak:
-            result.warn(
-                message=_t("ssh.weak_macs", macs=", ".join(weak)),
-                nature="improvement",
-                cmd="",
-                key="ssh.weak_macs",
-            )
-            result.add_deduction(
-                reason=_t("ssh.weak_macs", macs=", ".join(weak)),
-                points=1, context="local", key="ssh.weak_macs",
-            )
-            found_issue = True
-
-    # Weak KexAlgorithms
-    kex_str = cfg.get("kexalgorithms", "")
-    if kex_str:
-        configured = {k.strip().lower() for k in kex_str.split(",")}
-        weak = sorted(configured & _WEAK_KEX)
-        if weak:
-            result.warn(
-                message=_t("ssh.weak_kex", kex=", ".join(weak)),
-                nature="improvement",
-                cmd="",
-                key="ssh.weak_kex",
-            )
-            result.add_deduction(
-                reason=_t("ssh.weak_kex", kex=", ".join(weak)),
-                points=1, context="local", key="ssh.weak_kex",
-            )
-            found_issue = True
+    # Weak Ciphers / MACs / KexAlgorithms
+    found_issue |= _check_weak_algo(cfg, result, _t, "ciphers",      _WEAK_CIPHERS, "ssh.weak_ciphers", "ciphers", 2)
+    found_issue |= _check_weak_algo(cfg, result, _t, "macs",         _WEAK_MACS,    "ssh.weak_macs",    "macs",    1)
+    found_issue |= _check_weak_algo(cfg, result, _t, "kexalgorithms", _WEAK_KEX,    "ssh.weak_kex",     "kex",     1)
 
     # AllowTcpForwarding
     atf = cfg.get("allowtcpforwarding", "yes").lower()
@@ -981,6 +932,30 @@ def _check_known_hosts(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
+
+def _check_weak_algo(
+    cfg: dict, result: "CheckResult", _t,
+    cfg_key: str, weak_set: "frozenset[str]", t_key: str, param: str, points: int,
+) -> bool:
+    """Flag weak crypto algorithm entries; return True if any found."""
+    algo_str = cfg.get(cfg_key, "")
+    if not algo_str:
+        return False
+    configured = {a.strip().lower() for a in algo_str.split(",")}
+    weak = sorted(configured & weak_set)
+    if not weak:
+        return False
+    joined = ", ".join(weak)
+    result.warn(
+        message=_t(t_key, **{param: joined}),
+        nature="improvement", cmd="", key=t_key,
+    )
+    result.add_deduction(
+        reason=_t(t_key, **{param: joined}),
+        points=points, context="local", key=t_key,
+    )
+    return True
+
 
 def _parse_config_file(
     path: Path,

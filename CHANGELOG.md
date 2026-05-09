@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.3.5](#v035) | 2026-05-08 | Refactoring — `runner.py` `_sec` closure (−295L) · `ssh.py` `_check_weak_algo` helper · locale fix 4× `UFW-AUDIT` → `BOB` · 4348/4348 tests |
 | [v0.3.4](#v034) | 2026-05-08 | Hotfix — `user_config` not passed to `run_checks()` → `NameError` at end of every audit (v0.3.2 regression) · 4348/4348 tests |
 | [v0.3.3](#v033) | 2026-05-07 | Architectural refactoring — `cron.py` split · `compute_domain_scores()` pure tuple return · `domain_scores` public API · `_draw`/`_read_key` curses helpers · 4348/4348 tests (+1) |
 | [v0.3.2](#v032) | 2026-05-06 | User-configurable SUID whitelist in `config.conf` · 14 code-review fixes (i18n, quiet mode, engine idempotency, dead code) · 4347/4347 tests (+19) |
@@ -16,6 +17,26 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.3.5] — 2026-05-08
+
+Pure internal refactoring and locale fix — no new features, no behaviour changes. 4348/4348 tests.
+
+### Refactoring — `runner.py` `_sec` closure (`bob/runner.py`)
+
+`run_checks()` (951L) contained ~29 identical 7–13 line blocks: `_section_enabled` guard + `print_section` + `report.write_section` + `check_fn` call + `apply_profile` + `engine.apply` + `display_result` + trailing `print()`. Extracted as a `_sec(section, snapshot, check_fn, **kwargs)` closure that captures `config`, `profile`, `engine`, `report`, `t`, `_pr` from the outer scope. All standard sections use `_sec`; exceptions kept manual: firewall/network headers, ports, logs, DDNS, docker, virtualisation, samba, docker_audit, desktop_apps, iptables_nft, disk (extra display call). Net: 951L → 656L (−295 lines). `_pname` pre-computed for the 8 sections that accept `profile_name=`.
+
+`auth_log` previously omitted `apply_profile` — now consistent with all other sections (no-op in practice as no profile currently defines auth_log overrides).
+
+### Refactoring — `ssh.py` `_check_weak_algo` helper (`bob/checks/ssh.py`)
+
+`_check_sshd_config()` had three structurally identical 16-line blocks for weak Ciphers, MACs, and KexAlgorithms. Extracted as `_check_weak_algo(cfg, result, _t, cfg_key, weak_set, t_key, param, points) -> bool`. The three blocks collapse to three one-liner calls. Net: −26 lines.
+
+### Fix — locale strings `UFW-AUDIT` → `BOB` (`bob/locales/en.json`, `bob/locales/fr.json`)
+
+Four translation keys still referenced the former tool name `UFW-AUDIT` instead of `BOB`: `install_cron.title`, `manage_cron.title`, `manage_cron.no_crons`, `report.title`. Replaced in both locale files.
 
 ---
 
