@@ -20,7 +20,6 @@ from __future__ import annotations
 import re
 import sys
 
-from bob import output as _output
 from bob.cis_refs import get_cis_ref
 
 # ---------------------------------------------------------------------------

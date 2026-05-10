@@ -35,9 +35,11 @@ if TYPE_CHECKING:  # avoid circular imports at runtime
     from bob.checks.services import ServiceSnapshot
     from bob.scoring import ScoreEngine
 
+from bob.sysinfo import chown_to_sudo_user, get_user_home
+
 logger = logging.getLogger(__name__)
 
-_CONFIG_DIR    = Path.home() / ".config" / "bob"
+_CONFIG_DIR    = get_user_home() / ".config" / "bob"
 _BASELINE_FILENAME = "last_baseline.json"
 _BASELINE_PATH = _CONFIG_DIR / _BASELINE_FILENAME
 
@@ -173,11 +175,13 @@ def save_baseline(baseline: AuditBaseline, path: Path | None = None) -> None:
     dest = path or (_CONFIG_DIR / _BASELINE_FILENAME)
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
+        chown_to_sudo_user(dest.parent)
         tmp = dest.with_name(dest.name + ".tmp")
         fd  = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(asdict(baseline), fh, ensure_ascii=False, indent=2)
         tmp.replace(dest)
+        chown_to_sudo_user(dest)
     except OSError as exc:
         logger.debug("save_baseline: could not write %s: %s", dest, exc)
 

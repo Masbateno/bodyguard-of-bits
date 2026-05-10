@@ -31,10 +31,12 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from bob.sysinfo import chown_to_sudo_user, get_user_home
+
 logger = logging.getLogger(__name__)
 
-# Default config directory follows XDG Base Directory spec
-_DEFAULT_CONFIG_DIR = Path.home() / ".config" / "bob"
+# Default config directory follows XDG Base Directory spec — resolved via SUDO_USER under sudo
+_DEFAULT_CONFIG_DIR = get_user_home() / ".config" / "bob"
 _CONFIG_FILENAME = "config.conf"
 _EMAILS_FILENAME = "emails"
 
@@ -98,6 +100,7 @@ class EmailStore:
         try:
             self._path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
             self._path.parent.chmod(0o700)
+            chown_to_sudo_user(self._path.parent)
         except OSError as exc:
             logger.warning("Could not create config directory %s: %s", self._path.parent, exc)
 
@@ -122,6 +125,7 @@ class EmailStore:
                 for addr in self._emails:
                     fh.write(f"{addr}\n")
             tmp_path.replace(self._path)
+            chown_to_sudo_user(self._path)
         except OSError as exc:
             logger.error("Could not write emails file %s: %s", self._path, exc)
             raise
@@ -310,6 +314,7 @@ class UserConfig:
         try:
             self._path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
             self._path.parent.chmod(0o700)
+            chown_to_sudo_user(self._path.parent)
         except OSError as exc:
             logger.warning("Could not create config directory %s: %s", self._path.parent, exc)
 
@@ -363,6 +368,7 @@ class UserConfig:
                 for key in sorted(self._data.keys()):
                     fh.write(f"{key}={self._data[key]}\n")
             tmp_path.replace(self._path)
+            chown_to_sudo_user(self._path)
         except OSError as exc:
             logger.error("Could not write config file %s: %s", self._path, exc)
             raise

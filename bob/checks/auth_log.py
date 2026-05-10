@@ -19,9 +19,8 @@ import re
 import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
 from bob.scoring import CheckResult

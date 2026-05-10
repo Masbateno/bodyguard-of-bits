@@ -32,6 +32,25 @@ def get_user_home() -> Path:
     return Path.home()
 
 
+def chown_to_sudo_user(path: Path) -> None:
+    """
+    When running under sudo, chown a file or directory back to the invoking user.
+
+    No-op when SUDO_USER is unset, when the path doesn't exist, or when chown fails
+    (the call needs root privileges). Used after creating user-config files/directories
+    so the real user can still read/edit them in non-sudo sessions.
+    """
+    sudo_user = os.environ.get("SUDO_USER", "")
+    if not sudo_user or not re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
+        return
+    try:
+        import pwd
+        pw = pwd.getpwnam(sudo_user)
+        os.chown(path, pw.pw_uid, pw.pw_gid)
+    except (KeyError, OSError) as exc:
+        _log.debug("chown_to_sudo_user(%s) failed: %s", path, exc)
+
+
 # ---------------------------------------------------------------------------
 # System info
 # ---------------------------------------------------------------------------

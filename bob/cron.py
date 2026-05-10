@@ -401,7 +401,6 @@ def prompt_email(t) -> str:
 def _run_install_cron_plain(user_config, config, t) -> int:
     """Install a cron job for automated audits using the schedule wizard."""
     import os
-    import shutil
     from datetime import datetime
     from pathlib import Path
     from bob import output
@@ -817,13 +816,15 @@ def edit_cron_email(entry, t) -> None:
     if entry.script_path.exists():
         try:
             text = entry.script_path.read_text(encoding="utf-8")
-            # Fix: script uses NOTIFY_EMAILS (plural)
-            text = re.sub(
-                r"^NOTIFY_EMAILS=.*$",
+            # Match both NOTIFY_EMAILS= (current) and NOTIFY_EMAIL= (legacy) for backward compat
+            text, n = re.subn(
+                r"^NOTIFY_EMAILS?=.*$",
                 lambda _: f"NOTIFY_EMAILS={shlex.quote(new_email)}",
                 text,
                 flags=re.MULTILINE,
             )
+            if n == 0:
+                print(f"  ⚠ {t('manage_cron.email_not_found_in_script')}")
             _atomic_write(entry.script_path, text)
         except OSError as exc:
             print(f"  ✖ Cannot update script: {exc}")

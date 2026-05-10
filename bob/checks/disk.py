@@ -25,8 +25,7 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult

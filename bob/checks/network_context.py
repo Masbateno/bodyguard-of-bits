@@ -19,12 +19,24 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections import Counter
 from dataclasses import dataclass, field
 
 from bob.checks._run import TranslationFunc, _identity_t, _run
 from bob.scoring import CheckResult
+
+
+_PRIVATE_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -295,21 +307,14 @@ def _extract_process(raw: str) -> str:
 
 
 def _is_private_or_loopback(addr: str) -> bool:
-    """Return True if addr is a loopback or RFC-1918 private address."""
-    if addr.startswith("127.") or addr == "::1":
-        return True
-    parts = addr.split(".")
-    if len(parts) != 4:
-        return False
+    """Return True for loopback, RFC-1918, IPv6 ::1, ULA (fc00::/7), or link-local (fe80::/10)."""
+    # Strip IPv6 zone-id (e.g. "fe80::1%eth0") which ipaddress doesn't accept
+    bare = addr.split("%", 1)[0]
     try:
-        a, b = int(parts[0]), int(parts[1])
+        ip = ipaddress.ip_address(bare)
     except ValueError:
         return False
-    return (
-        a == 10
-        or (a == 172 and 16 <= b <= 31)
-        or (a == 192 and b == 168)
-    )
+    return any(ip in net for net in _PRIVATE_NETWORKS)
 
 
 # ---------------------------------------------------------------------------

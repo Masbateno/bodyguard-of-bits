@@ -17,7 +17,6 @@ Usage:
 from __future__ import annotations
 
 import re
-import shutil
 import sys
 import unicodedata
 from typing import NamedTuple
@@ -348,7 +347,6 @@ def print_summary_box(lines: list[tuple[str, str]]) -> None:
         ])
     """
     inner = _TERM_WIDTH - 2
-    bar = "─" * inner
 
     print(f"{_c.blue_bold}╔{'═' * inner}╗{_c.reset}")
     for label, value in lines:

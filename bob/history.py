@@ -14,13 +14,13 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 
 from bob.checks._run import TranslationFunc
+from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 _log = logging.getLogger(__name__)
 
-_CONFIG_DIR   = Path.home() / ".config" / "bob"
+_CONFIG_DIR   = get_user_home() / ".config" / "bob"
 _HISTORY_FILE = _CONFIG_DIR / "history.jsonl"
 
 _SPARK_CHARS        = " ▁▂▃▄▅▆▇█"   # 9 chars → score 0–10 mapped to indices 0–8
@@ -48,13 +48,17 @@ def save_score(score: int, level: str) -> None:
     """Append current audit score to history.jsonl."""
     try:
         _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        chown_to_sudo_user(_CONFIG_DIR)
         entry = json.dumps({
             "ts":    datetime.now(timezone.utc).isoformat(),
             "score": score,
             "level": level,
         })
+        existed = _HISTORY_FILE.exists()
         with _HISTORY_FILE.open("a", encoding="utf-8") as f:
             f.write(entry + "\n")
+        if not existed:
+            chown_to_sudo_user(_HISTORY_FILE)
         _rotate_if_needed()
     except OSError as exc:
         _log.debug("Failed to save score to history: %s", exc)
@@ -71,6 +75,7 @@ def _rotate_if_needed() -> None:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(content)
             os.replace(str(tmp), str(_HISTORY_FILE))
+            chown_to_sudo_user(_HISTORY_FILE)
     except OSError as exc:
         _log.debug("Failed to rotate history file: %s", exc)
 

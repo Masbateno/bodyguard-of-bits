@@ -17,8 +17,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult

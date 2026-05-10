@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.3.6](#v036) | 09-05-2026 | Passe code review — `Path.home()` → `get_user_home()` (sudo-aware) sur 7 modules · ULA/link-local IPv6 dans `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepté · header journalisation UFW masqué si UFW inactif · regex legacy `NOTIFY_EMAIL` · 22 imports inutilisés supprimés · 47 clés de locales mortes retirées · 4348/4348 tests |
 | [v0.3.5](#v035) | 08-05-2026 | Refactoring — closure `_sec` dans `runner.py` (−295L) · helper `_check_weak_algo` dans `ssh.py` · correctif locale 4× `UFW-AUDIT` → `BOB` · 4348/4348 tests |
 | [v0.3.4](#v034) | 08-05-2026 | Hotfix — `user_config` non transmis à `run_checks()` → `NameError` en fin d'audit (régression v0.3.2) · 4348/4348 tests |
 | [v0.3.3](#v033) | 07-05-2026 | Refactoring architectural — split `cron.py` · `compute_domain_scores()` retour tuple pur · API publique `domain_scores` · helpers curses `_draw`/`_read_key` · 4348/4348 tests (+1) |
@@ -17,6 +18,50 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.3.6] — 09-05-2026
+
+Passe de code review suite à un audit approfondi du code. Aucune nouvelle fonctionnalité, aucun changement de comportement — corrections de bugs, hygiène et cohérence. 4348/4348 tests.
+
+### Correctif — `Path.home()` retourne `/root` sous sudo (`bob/config.py`, `bob/recurrence.py`, `bob/history.py`, `bob/registry.py`, `bob/compare.py`, `bob/profiles.py`, `bob/plugin_checks.py`, `bob/ignore.py`)
+
+Sept modules utilisaient `Path.home()` à l'import pour calculer les répertoires de configuration/plugins/baseline. Sous `sudo`, cela résolvait `/root/.config/bob/` au lieu du home de l'utilisateur invoquant — cassant silencieusement les profils utilisateur, les plugins de services, les plugins de checks, la baseline et la persistance recurrence/history. Le helper correct `bob.sysinfo.get_user_home()` (qui honore `SUDO_USER`) existait déjà mais n'était utilisé qu'à deux endroits. Les sept modules importent et utilisent désormais `get_user_home()`. `bob/ignore.py` avait sa propre logique dupliquée — remplacée par un appel au helper partagé.
+
+Pour compléter le correctif, un nouveau helper `bob.sysinfo.chown_to_sudo_user(path)` est appelé après chaque création/écriture de fichier ou dossier de configuration utilisateur sous sudo, afin que l'utilisateur invoquant conserve l'accès lecture/écriture en sessions non-sudo (no-op hors contexte sudo). Appliqué dans `config.py`, `compare.py`, `recurrence.py`, `history.py`, `ignore.py` après chaque `mkdir(parents=True)` et après chaque `replace`/`write_text` atomique. Les lectures `registry.py`, `profiles.py` et `plugin_checks.py` reçoivent une garde `PermissionError` afin qu'un répertoire inaccessible en lecture (état hérité d'un run sudo antérieur au fix) retombe gracieusement sur « aucun plugin trouvé » au lieu de crasher.
+
+### Correctif — `AllowTcpForwarding local` signalé comme avertissement (`bob/checks/ssh.py`)
+
+Le check n'acceptait que `AllowTcpForwarding no` comme sûr. Définir `local` (plus restrictif que la valeur par défaut `yes` et explicitement recommandé dans le texte de remédiation BOB) était incorrectement compté comme un problème et déduisait 1 point. Désormais `no` et `local` sont tous deux acceptés.
+
+### Correctif — En-tête journalisation UFW affiché quand UFW inactif (`bob/runner.py`)
+
+Quand UFW était inactif, `check_ufw_logging()` retournait un `CheckResult` vide, mais `runner.py` imprimait quand même l'en-tête de section (`JOURNALISATION UFW`), produisant un en-tête suivi d'aucune entrée. L'en-tête n'est désormais imprimé que si `fw_status.active`.
+
+### Correctif — ULA et link-local IPv6 traités comme externes (`bob/checks/network_context.py`)
+
+`_is_private_or_loopback()` couvrait la loopback IPv4, RFC-1918 et `::1` IPv6 mais omettait `fc00::/7` (Unique Local Addresses) et `fe80::/10` (link-local). Les connexions dans ces plages étaient classées externes, produisant des avertissements faux positifs. Réécrit via `ipaddress.ip_network()` avec la même liste de réseaux que `bob/checks/auth_log.py`.
+
+### Correctif — Regex `NOTIFY_EMAIL` legacy silencieusement ignoré (`bob/cron.py`, `bob/locales/{en,fr}.json`)
+
+`edit_cron_email()` ne matchait que `NOTIFY_EMAILS=` (pluriel — format actuel) et non `NOTIFY_EMAIL=` (singulier — scripts pré-v0.x). Les anciens scripts voyaient une mise à jour d'email "réussie" qui ne patchait en réalité rien. Match désormais `NOTIFY_EMAILS?=` et avertit si aucune ligne n'a été remplacée (nouvelle clé locale `manage_cron.email_not_found_in_script`).
+
+### Refactoring — `_check_weak_algo` déplacé dans la section sub-check (`bob/checks/ssh.py`)
+
+Le helper était placé dans la section `# Parsing helpers` mais c'est logiquement un sub-check (il écrit sur `result`, appelle `_t`). Déplacé près des autres fonctions `_check_*` pour respecter la convention du projet.
+
+### Nettoyage — 22 imports inutilisés supprimés (pyflakes)
+
+Vestiges de refactorings successifs : `dataclasses.field` dans 6 modules sans valeurs par défaut ; `typing.Optional` dans 4 modules ; `pathlib.Path` dans 2 ; `bob.scoring.{ScoreEngine, Finding, FindingLevel}` dans `report.py` ; `shutil`, `_C_LOCALE_ENV`, `prompt_emails`, `WebhookError`, etc. Le shadowing de `dataclasses.field` par le paramètre `field` dans `_extract_field()` résolu en renommant en `field_name`. Variable morte `found_issue` dans `check_hardening()` (jamais lue) supprimée avec ses 8 affectations.
+
+### Nettoyage — 47 clés de locales mortes supprimées (`bob/locales/{en,fr}.json`)
+
+Audit de chaque clé contre les sites d'appel `t()` et `_t()` réels (incluant les patterns dynamiques `f"prefix.{var}"`). Supprimés : tout `cli.help_*` (14 clés, remplacé par `print_help` codé en dur dans `cli.py`), tout `errors.*`, `geo.*`, `profile.*`, plus orphelines dans `report`, `manage_cron`, `install_cron`, `prerequisites`, `network_context`, `ddns`, `logs`, `ports`, `summary`, `fixes`, `risk_context`, `log_dir`, `config`, `deduction`, `status`. Les deux fichiers restent synchrones en clés : 1435 → 1388 clés (−47), 2049 → 1994 lignes par fichier.
+
+### Tests
+
+4348/4348 (inchangé vs v0.3.5). Tous les correctifs sont couverts par les tests existants ; aucune régression introduite. Validé bout en bout sur so6desktop (Linux Mint 22.3) — audit complet avec score 8/10 et toutes les sections correctement rendues.
 
 ---
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from bob.checks._run import _C_LOCALE_ENV, _command_exists, _identity_t, _run
+from bob.checks._run import _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 

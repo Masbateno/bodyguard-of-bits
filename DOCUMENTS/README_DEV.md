@@ -115,7 +115,7 @@ This separation allows the entire business logic to be tested by instantiating s
 ```
 bob/
 ├── __init__.py
-├── __main__.py          # Orchestrator (~481 lines — pure coordination)
+├── __main__.py          # Orchestrator (~400 lines — pure coordination)
 ├── _paths.py            # Path resolution for data files
 ├── cli.py               # AuditConfig + parse_args()
 ├── config.py            # UserConfig, EmailStore

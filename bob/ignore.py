@@ -15,9 +15,10 @@ When running via sudo, the real user's home directory is used
 from __future__ import annotations
 
 import logging
-import os
 import re
 from pathlib import Path
+
+from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 _log = logging.getLogger(__name__)
 
@@ -33,16 +34,7 @@ _KEY_LINE_RE = re.compile(r"^\s*-\s+key:\s+(\S+)\s*$")
 
 def _ignore_file_path() -> Path:
     """Return the ignore.yml path for the effective (non-root) user."""
-    sudo_user = os.environ.get("SUDO_USER")
-    if sudo_user:
-        try:
-            import pwd
-            home = Path(pwd.getpwnam(sudo_user).pw_dir)
-        except (KeyError, ImportError):
-            home = Path.home()
-    else:
-        home = Path.home()
-    return home / ".config" / "bob" / _IGNORE_FILENAME
+    return get_user_home() / ".config" / "bob" / _IGNORE_FILENAME
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +77,7 @@ def add_ignore_key(key: str, path: Path | None = None) -> bool:
         return False
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        chown_to_sudo_user(path.parent)
         if path.exists():
             content = path.read_text(encoding="utf-8")
             if "ignore:" in content:
@@ -94,6 +87,7 @@ def add_ignore_key(key: str, path: Path | None = None) -> bool:
         else:
             content = f"ignore:\n  - key: {key}\n"
         path.write_text(content, encoding="utf-8")
+        chown_to_sudo_user(path)
         return True
     except OSError:
         return False

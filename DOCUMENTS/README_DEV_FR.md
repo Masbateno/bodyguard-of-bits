@@ -115,7 +115,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 ```
 bob/
 ├── __init__.py
-├── __main__.py          # Orchestrateur (~481 lignes — coordination pure)
+├── __main__.py          # Orchestrateur (~400 lignes — coordination pure)
 ├── _paths.py            # Résolution des chemins de données
 ├── cli.py               # AuditConfig + parse_args()
 ├── config.py            # UserConfig, EmailStore

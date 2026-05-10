@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.6 | 4348 | Aucun nouveau test — passe code review (`Path.home()` sudo-aware, ULA IPv6, SSH `local`, imports/locales morts) |
 | v0.3.5 | 4348 | Aucun nouveau test — refactoring pur (`runner.py` closure `_sec`, `ssh.py` helper `_check_weak_algo`) |
 | v0.3.4 | 4348 | Aucun nouveau test — hotfix uniquement (`user_config` NameError sur whitelist SUID) |
 | v0.3.3  | 4348  | +7 nouveaux −6 supprimés (TestWasCapped → TestCappedIndices) : `TestCappedIndices` dans test_domain_scores |
@@ -24,6 +25,21 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.3.6 — 4348/4348 (09-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.04s
+```
+
+**Aucun nouveau test — passe de code review.** Huit correctifs liés : `Path.home()` → `get_user_home()` dans 7 modules · ULA/link-local IPv6 dans `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepté · header journalisation UFW masqué quand UFW inactif · regex legacy `NOTIFY_EMAIL` · `_check_weak_algo` déplacé dans la section sub-check · 22 imports inutilisés supprimés (pyflakes propre sauf un `noqa` intentionnel) · 47 clés de locales mortes supprimées.
+
+**Validation terrain :** Audit complet sur so6desktop (Linux Mint 22.3) terminé avec score 8/10. L'en-tête de section journalisation UFW est désormais masqué quand UFW est inactif ; les link-local IPv6 sont correctement classés privés ; les profils/plugins/baselines sont correctement chargés depuis `/home/so6/.config/bob/` (et non `/root/.config/bob/`).
 
 ---
 

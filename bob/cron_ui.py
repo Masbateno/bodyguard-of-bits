@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import re
 import shlex
-from pathlib import Path
 from typing import NamedTuple
 
 from bob.cron import (
@@ -30,7 +29,6 @@ from bob.cron import (
     suggest_name,
     _validate_custom_cron,
     _detect_mta,
-    prompt_emails,
 )
 
 
@@ -243,7 +241,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
     hour = entry.hour if entry else 3
     minute = entry.minute if entry else 0
 
-    _SCHEDULE_DAILY, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4
+    _, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4
 
     if choice == _SCHEDULE_WEEKDAYS:
         stdscr.erase()

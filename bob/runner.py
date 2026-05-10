@@ -230,14 +230,15 @@ def run_checks(
         print()
         print(ufw_verbose)
 
-    # ---- CHECK 40 — UFW logging level ----
-    if not config.quiet:
-        print_section(t("sections.ufw_logging"))
-    report.write_section(t("sections.ufw_logging"))
+    # ---- CHECK 40 — UFW logging level (skipped when UFW inactive — covered by check_firewall) ----
+    if fw_status.active:
+        if not config.quiet:
+            print_section(t("sections.ufw_logging"))
+        report.write_section(t("sections.ufw_logging"))
 
-    ufw_logging_result = check_ufw_logging(fw_status, t=t)
-    engine.apply(ufw_logging_result)
-    display_result(ufw_logging_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+        ufw_logging_result = check_ufw_logging(fw_status, t=t)
+        engine.apply(ufw_logging_result)
+        display_result(ufw_logging_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
     # ---- CHECK 46 — iptables / nftables (UFW inactive only) ----
     if not fw_status.active and _section_enabled("iptables_nft", config, profile):

@@ -548,9 +548,9 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     found_issue |= _check_weak_algo(cfg, result, _t, "macs",         _WEAK_MACS,    "ssh.weak_macs",    "macs",    1)
     found_issue |= _check_weak_algo(cfg, result, _t, "kexalgorithms", _WEAK_KEX,    "ssh.weak_kex",     "kex",     1)
 
-    # AllowTcpForwarding
+    # AllowTcpForwarding — "local" is acceptable (more restrictive than "yes", documented in remediation)
     atf = cfg.get("allowtcpforwarding", "yes").lower()
-    if atf not in ("no",):
+    if atf not in ("no", "local"):
         result.warn(
             message=_t("ssh.allow_tcp_forwarding"),
             detail=_t("ssh.allow_tcp_forwarding_detail"),
@@ -597,6 +597,30 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
 
     if not found_issue:
         result.ok(message=_t("ssh.config_ok"), key="ssh.config_ok")
+
+
+def _check_weak_algo(
+    cfg: dict, result: "CheckResult", _t,
+    cfg_key: str, weak_set: "frozenset[str]", t_key: str, param: str, points: int,
+) -> bool:
+    """Flag weak crypto algorithm entries; return True if any found."""
+    algo_str = cfg.get(cfg_key, "")
+    if not algo_str:
+        return False
+    configured = {a.strip().lower() for a in algo_str.split(",")}
+    weak = sorted(configured & weak_set)
+    if not weak:
+        return False
+    joined = ", ".join(weak)
+    result.warn(
+        message=_t(t_key, **{param: joined}),
+        nature="improvement", cmd="", key=t_key,
+    )
+    result.add_deduction(
+        reason=_t(t_key, **{param: joined}),
+        points=points, context="local", key=t_key,
+    )
+    return True
 
 
 def _check_ssh_dir(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
@@ -932,30 +956,6 @@ def _check_known_hosts(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
-
-def _check_weak_algo(
-    cfg: dict, result: "CheckResult", _t,
-    cfg_key: str, weak_set: "frozenset[str]", t_key: str, param: str, points: int,
-) -> bool:
-    """Flag weak crypto algorithm entries; return True if any found."""
-    algo_str = cfg.get(cfg_key, "")
-    if not algo_str:
-        return False
-    configured = {a.strip().lower() for a in algo_str.split(",")}
-    weak = sorted(configured & weak_set)
-    if not weak:
-        return False
-    joined = ", ".join(weak)
-    result.warn(
-        message=_t(t_key, **{param: joined}),
-        nature="improvement", cmd="", key=t_key,
-    )
-    result.add_deduction(
-        reason=_t(t_key, **{param: joined}),
-        points=points, context="local", key=t_key,
-    )
-    return True
-
 
 def _parse_config_file(
     path: Path,

@@ -28,10 +28,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
-
-if TYPE_CHECKING:
-    from bob.scoring import ScoreEngine, Finding, FindingLevel
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

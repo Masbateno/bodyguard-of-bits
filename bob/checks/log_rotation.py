@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t

@@ -29,7 +29,6 @@ from bob.sysinfo import detect_network_context
 
 if TYPE_CHECKING:
     from bob.cli import AuditConfig
-    from bob.config import UserConfig
     from bob.profiles import AuditProfile
     from bob.registry import ServiceRegistry
 

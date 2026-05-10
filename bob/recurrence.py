@@ -13,9 +13,11 @@ import json
 import logging
 from pathlib import Path
 
+from bob.sysinfo import chown_to_sudo_user, get_user_home
+
 _log = logging.getLogger(__name__)
 
-_CONFIG_DIR       = Path.home() / ".config" / "bob"
+_CONFIG_DIR       = get_user_home() / ".config" / "bob"
 _RECURRENCE_PATH  = _CONFIG_DIR / "recurrence.json"
 
 
@@ -50,10 +52,12 @@ def save_recurrence(data: dict[str, int], path: Path | None = None) -> None:
     tmp = dest.with_name(dest.name + ".tmp")
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
+        chown_to_sudo_user(dest.parent)
         with tmp.open("w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2)
             fh.write("\n")
         tmp.replace(dest)
+        chown_to_sudo_user(dest)
     except OSError:
         tmp.unlink(missing_ok=True)
 

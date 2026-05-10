@@ -78,16 +78,12 @@
     "firmware": "FIRMWARE & MICROCODE AUDIT"
   },
   "status": {
-    "ok": "OK",
     "warn": "WARNING",
-    "alert": "ALERT",
-    "info": "INFO"
+    "alert": "ALERT"
   },
   "prerequisites": {
     "ufw_installed": "UFW is installed",
-    "ufw_missing": "UFW is not installed — install it with: sudo apt install ufw",
-    "ss_available": "Network analysis tool available (ss)",
-    "ss_missing": "ss not available — install iproute2: sudo apt install iproute2"
+    "ufw_missing": "UFW is not installed — install it with: sudo apt install ufw"
   },
   "firewall": {
     "active": "UFW firewall is active",
@@ -134,10 +130,7 @@
   },
   "network_context": {
     "no_interfaces": "No network interfaces found",
-    "interfaces_found": "{count} network interface(s) active",
     "tunnel_active": "Tunnel interface active: {name}",
-    "no_connections": "No established TCP connections",
-    "connections_found": "{count} established TCP connection(s)",
     "sensitive_remote": "Established connection to external host on sensitive port {port} ({addr})",
     "col_interface": "INTERFACE",
     "col_type": "TYPE",
@@ -186,7 +179,6 @@
     "all_covered": "All ports listening on 0.0.0.0 are covered by a UFW rule",
     "uncovered": "Port {port} listening on all interfaces without explicit UFW rule",
     "uncovered_local": "Port {port} — bound to localhost only — no external exposure",
-    "ephemeral_ignored": "Ephemeral port ignored (>{threshold}) — kernel-assigned temporary port: {port}",
     "system_port": "Internal system port — no risk (legitimate OS service, no UFW rule needed): {port} ({service})",
     "listening_count": "{count} listening port(s) detected on this system",
     "listening_detail": "Listening ports detail:",
@@ -214,8 +206,6 @@
     "svc_hits": "Attempts on installed service ports",
     "svc_hits_none": "No attempts on installed service ports",
     "attempts": "attempt(s)",
-    "geo_unavailable": "whois not available — install it for IP geolocation (sudo apt install whois)",
-    "local_network": "local network",
     "geoip2_unavailable": "GeoIP2 library not found in the bob environment — IP geolocation disabled",
     "geoip2_unavailable_cmd": "pipx inject bob geoip2",
     "geoip2_no_db": "GeoIP2 installed but no GeoLite2-Country database found — IP geolocation disabled",
@@ -228,9 +218,7 @@
     "domain": "Configured domain",
     "no_domain": "Domain not extracted (check configuration manually)",
     "no_open_ports": "No UFW port open without source restriction detected",
-    "ports_title": "Ports potentially exposed to the internet",
     "warn": "DDNS active with open port(s) without source restriction — verify exposure is intentional",
-    "high_warn": "High-risk service potentially internet-exposed via DDNS",
     "advice": "If this exposure is intentional: keep services up to date, enable authentication, and consider Fail2ban.",
     "inactive": "DDNS client installed but service is inactive"
   },
@@ -276,7 +264,6 @@
     "block_action": "Action required",
     "block_improve": "Possible improvements",
     "block_improve_disclaimer": "Commands shown are suggestions — verify and adapt to your network before running",
-    "block_normal": "Normal configuration",
     "implicit_policy": "Service(s) relying on default UFW policy rather than explicit rules. Correct if policy is deny, but an explicit rule is more robust.",
     "implicit_svcs": "Affected service(s)",
     "scope_line1": "This score covers firewall, services, SSH, access control, updates, system hardening, and detection tools.",
@@ -284,9 +271,7 @@
   },
   "log_dir": {
     "prompt": "Where to store detailed reports?",
-    "default_hint": "Press Enter for the default directory",
-    "saved": "Location saved: {path}",
-    "use": "Reports stored in: {path}"
+    "saved": "Location saved: {path}"
   },
   "manage_logs": {
     "title": "REPORT MANAGEMENT",
@@ -334,7 +319,6 @@
     "invalid_days": "No valid day specified",
     "preview": "→ Schedule: {schedule}",
     "prompt_time": "Execution time (HH:MM, default 03:00)",
-    "prompt_email": "Notification email (optional, Enter to skip)",
     "mta_missing": "No sendmail found — notification emails won't be delivered. Install: sudo apt install postfix  or  sudo apt install msmtp-mta",
     "mta_found": "Mail transport: {mta} (sendmail available — notifications will be delivered)",
     "no_log_dir": "No log location configured — set it first with: sudo bob -d",
@@ -342,7 +326,6 @@
     "script_written": "Script created: {path}",
     "cron_written": "Cron installed: {path}",
     "done_schedule": "Automated audit '{name}' configured — {schedule}",
-    "done": "Automated audit configured — next daily run at {time}",
     "invalid_time": "Invalid time format (expected HH:MM)"
   },
   "manage_cron": {
@@ -367,9 +350,9 @@
     "edit_what": "Edit '{name}' — what to change?",
     "edit_schedule_option": "Schedule",
     "edit_email_option": "Notification email",
-    "edit_schedule": "Edit schedule for '{name}':",
     "edit_email": "Edit notification email for '{name}':",
     "email_updated": "Cron '{name}' — email updated: {email}",
+    "email_not_found_in_script": "No NOTIFY_EMAIL line found in the script — email not patched (script may be outdated).",
     "no_email": "(none)",
     "confirm_update": "Apply this new schedule? [y/N]",
     "updated": "Cron '{name}' updated — {schedule}",
@@ -409,7 +392,6 @@
     "apply_prompt": "Apply this fix? [y/N]",
     "applied": "Applied",
     "manual": "manual — apply the command manually",
-    "done": "Fixes complete. Re-run the audit to verify.",
     "auto_mode_banner": "AUTO-FIX MODE — {count} fix(es) will be applied automatically",
     "auto_summary_title": "AUTO-FIX SUMMARY",
     "manual_items_title": "Manual actions required (no automatic fix available):",
@@ -419,46 +401,16 @@
   "risk_context": {
     "title": "Risk context",
     "exposure": "Exposure",
-    "threat": "Potential threat",
-    "level": "Risk level"
+    "threat": "Potential threat"
   },
   "config": {
     "found": "Configuration found: {path}",
-    "reconfigure_hint": "To reset it: bob --reconfigure",
-    "port_prompt": "Enter port for {label}",
-    "port_saved": "Port {port} saved for future runs"
+    "reconfigure_hint": "To reset it: bob --reconfigure"
   },
   "report": {
-    "title": "BOB REPORT",
-    "system_info": "SYSTEM INFORMATION",
-    "next_steps": "NEXT STEPS",
     "next_1": "Address all alerts first.",
     "next_2": "Review warnings and assess their impact.",
     "next_3": "Re-run the audit after each change to verify."
-  },
-  "cli": {
-    "help_usage": "Usage: bob [OPTIONS]",
-    "help_verbose": "  -v, --verbose           Show detailed port exposure for each service",
-    "help_detailed": "  -d, --detailed          Save full audit report to a log file",
-    "help_fix": "  --fix                   Offer to apply automatic corrections after the audit",
-    "help_yes": "  -y, --yes               Auto-confirm all fixes (use with caution)",
-    "help_reconf": "  --reconfigure           Reset saved port configuration and re-ask",
-    "help_nocolor": "  --no-color              Disable colour output",
-    "help_json": "  --json                  Export summary as JSON",
-    "help_jsonfull": "  --json-full             Export full audit details as JSON",
-    "help_logdays": "  --log-days=N            Analyse the last N days of UFW logs (default: 7)",
-    "help_french": "  --french                Switch interface to French",
-    "help_version": "  --version               Show version and exit",
-    "help_help": "  -h, --help              Show this help message",
-    "help_default": "  Run without options for a standard audit with coloured output."
-  },
-  "errors": {
-    "must_be_root": "This script must be run as root: sudo bob",
-    "ufw_not_found": "UFW is not installed on this system",
-    "unknown_option": "Unknown option: {option}"
-  },
-  "geo": {
-    "local_network": "local network"
   },
   "service_risk": {
     "local_exposure_note": "Intrinsic risk (see above) — actual exposure: LOW (SSH not reachable from the internet on this network)",
@@ -743,7 +695,6 @@
     "netbios_no_rule": "NetBIOS port {port} without UFW rule",
     "port_no_rule": "Port {port} on 0.0.0.0 without UFW rule",
     "brute_force": "Bruteforce {ip} on {port}",
-    "local_dominance": "Local source {ip} dominates block log ({pct}% of traffic)",
     "service_open_world": "{label} {port} open world"
   },
   "ignored": {
@@ -751,11 +702,6 @@
     "tag": "IGNORED",
     "summary": "{count} finding(s) silenced by ignore.yml — run with --show-ignored to display them",
     "hint": "Run `bob --ignore {check_key}` to silence this finding permanently"
-  },
-  "profile": {
-    "active": "Audit profile: {name}",
-    "not_found": "Profile {name!r} not found — using default (server)",
-    "section_skipped": "Section skipped by profile ({name})"
   },
   "ssh": {
     "not_installed": "SSH server (sshd) is not installed",

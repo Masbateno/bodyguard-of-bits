@@ -27,7 +27,6 @@ import re
 import shlex
 import subprocess
 from dataclasses import dataclass, field
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult

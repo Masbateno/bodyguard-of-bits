@@ -88,7 +88,6 @@ def _run(argv=None) -> int:
         return EXIT_OK
 
     if config.list_checks:
-        from bob.runner import _ALL_SECTIONS
         sections = sorted(_ALL_SECTIONS)
         col = max(len(s) for s in sections) + 2
         cols = max(1, 76 // col)
@@ -275,7 +274,7 @@ def _run(argv=None) -> int:
                 _webhook_fmt = config.webhook_format if config.webhook_format != "auto" \
                     else user_config.get_webhook_format()
                 try:
-                    from bob.webhook import WebhookError, send_webhook
+                    from bob.webhook import send_webhook
                     _status = send_webhook(
                         _webhook_url, engine, sys_info, VERSION,
                         fmt=_webhook_fmt,

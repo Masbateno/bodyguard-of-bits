@@ -6,6 +6,336 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.3.6] — 2026-05-09
+
+Code-review pass after a deep audit of the codebase. No new features, no behaviour changes, no new tests — only bug fixes, hygiene cleanup, and consistency improvements. Eight related fixes covering sudo-aware path resolution, IPv6 private-range coverage, SSH check semantics, UFW section rendering, cron legacy compatibility, sub-check placement, dead imports, and dead locale keys. 4348/4348 tests.
+
+---
+
+### Fix — `Path.home()` resolves to `/root` under sudo (+ chown helper for files written under sudo)
+
+**Files:** `bob/config.py`, `bob/recurrence.py`, `bob/history.py`, `bob/registry.py`, `bob/compare.py`, `bob/profiles.py`, `bob/plugin_checks.py`, `bob/ignore.py`, `bob/sysinfo.py`
+
+#### Problem
+
+Seven modules computed module-level path constants using `Path.home()`:
+
+```python
+_DEFAULT_CONFIG_DIR = Path.home() / ".config" / "bob"        # config.py
+_PLUGIN_DIR        = Path.home() / ".config" / "bob" / "services.d"  # registry.py
+_USER_PROFILES_DIR = Path.home() / ".config" / "bob" / "profiles"    # profiles.py
+# ... and 4 more
+```
+
+`Path.home()` consults `$HOME`. Under `sudo`, `$HOME` is typically `/root` (preserved across the sudo boundary on most distros). Result: BOB looked for user profiles at `/root/.config/bob/profiles/`, plugins at `/root/.config/bob/services.d/`, baseline at `/root/.config/bob/last_baseline.json`, etc. — never reading the invoking user's actual configuration.
+
+A correct helper already existed: `bob.sysinfo.get_user_home()` honours `SUDO_USER` and falls back to `Path.home()`:
+
+```python
+def get_user_home() -> Path:
+    sudo_user = os.environ.get("SUDO_USER", "")
+    if sudo_user and re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
+        import pwd
+        try:
+            return Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            ...
+    return Path.home()
+```
+
+…but it was used in only two places (`sysinfo.py:91`, `manage_logs.py:155`).
+
+#### Implementation
+
+All seven modules import `get_user_home` from `bob.sysinfo` and replace `Path.home()` with `get_user_home()` in the affected constants. Resolution still happens at import time (preserving the existing API surface — many callers reference these constants directly), but now correctly points at the invoking user's home. `bob/ignore.py` had its own duplicated `SUDO_USER` lookup — replaced with a call to the shared helper.
+
+#### Companion fix — `chown_to_sudo_user(path)` helper
+
+Pointing the config to `~/.config/bob/` under sudo is only half the fix: writes happen as root, so each newly created file ends up owned by root. In a subsequent non-sudo session the user can no longer read or edit their own config.
+
+A new helper `bob.sysinfo.chown_to_sudo_user(path)` chowns a path back to `SUDO_USER`'s uid/gid. No-op when:
+- `SUDO_USER` is unset (i.e. running as a real root login or a regular user)
+- `SUDO_USER` fails the validation regex
+- The chown call itself fails (best-effort — the helper swallows `OSError`)
+
+Applied at every user-config write site:
+- `bob/config.py` — after `mkdir(parents=True, mode=0o700)` and after each atomic `replace` (UserConfig + EmailStore)
+- `bob/compare.py` — after `mkdir(parents=True)` and after `tmp.replace(dest)` for the baseline
+- `bob/recurrence.py` — after `mkdir(parents=True)` and after `tmp.replace(dest)`
+- `bob/history.py` — after `mkdir(parents=True)`, after the first `open("a")` if the file did not pre-exist, and after every rotation `os.replace`
+- `bob/ignore.py` — after `mkdir(parents=True)` and after `write_text`
+
+#### Companion fix — `PermissionError` guards on plugin reads
+
+Existing installations may have a `~/.config/bob/services.d/` or `checks.d/` directory created by root from a pre-fix sudo run. After the fix, the user session tries to read these directories and gets `PermissionError`. Three lookup sites gain a guard so the audit gracefully falls back to "no plugin loaded" instead of crashing:
+
+- `bob/registry.py:_load_plugins` — `_PLUGIN_DIR.is_dir()` and `_PLUGIN_DIR.glob()` wrapped in try/except PermissionError
+- `bob/plugin_checks.py:load_plugin_checks` — same pattern on `_PLUGIN_CHECKS_DIR`
+- `bob/profiles.py:_resolve_path` — `candidate.is_file()` wrapped per directory, falls through to the next one
+
+#### Design notes
+
+- The helper validates `SUDO_USER` against a strict regex before looking it up via `pwd.getpwnam` — defends against env-var injection.
+- No circular import risk: `bob.sysinfo` only imports from stdlib at module level (`bob.report` and `bob.output` are imported lazily inside `collect_system_info()`).
+- The `Path.home()` fallback inside `get_user_home()` preserves behaviour when invoked outside a sudo context.
+- `chown_to_sudo_user` is best-effort — failures are logged at debug level and never propagate. The fallback (file owned by root) is the pre-fix behaviour, so failure mode equals previous behaviour.
+
+#### Migration for existing users
+
+Users who ran a pre-fix BOB version under sudo may have a root-owned `~/.config/bob/`. To restore access:
+
+```
+sudo chown -R "$USER:$USER" ~/.config/bob/
+```
+
+Future sudo runs will automatically chown new files via the helper.
+
+---
+
+### Fix — `AllowTcpForwarding local` flagged as a warning
+
+**Files:** `bob/checks/ssh.py:553`
+
+#### Problem
+
+The SSH check accepted only `AllowTcpForwarding no` as safe:
+
+```python
+atf = cfg.get("allowtcpforwarding", "yes").lower()
+if atf not in ("no",):
+    result.warn(message=_t("ssh.allow_tcp_forwarding"), ...)
+    result.add_deduction(reason=..., points=1, ...)
+```
+
+OpenSSH supports a third value — `local` — which permits port forwarding only between processes on the SSH server itself, not between the client and arbitrary hosts. It is more restrictive than `yes` and is explicitly recommended in BOB's own remediation text (`how` field in `locales/en.json`):
+
+> "If specific users need port forwarding, use: `AllowTcpForwarding local`"
+
+Setting `local` was therefore both *more secure than the default* and *contradicted by BOB's own scoring*: it triggered the warning and deducted 1 point.
+
+#### Implementation
+
+```python
+if atf not in ("no", "local"):
+```
+
+Both `no` and `local` are now accepted. `yes` (default) and `all` continue to trigger the warning.
+
+---
+
+### Fix — UFW logging section header shown when UFW inactive
+
+**Files:** `bob/runner.py:233`
+
+#### Problem
+
+```python
+# ---- CHECK 40 — UFW logging level ----
+if not config.quiet:
+    print_section(t("sections.ufw_logging"))
+report.write_section(t("sections.ufw_logging"))
+
+ufw_logging_result = check_ufw_logging(fw_status, t=t)
+engine.apply(ufw_logging_result)
+display_result(ufw_logging_result, report, ...)
+```
+
+`check_ufw_logging()` returns an empty `CheckResult` when UFW is inactive (line 407–408 of `firewall.py`), since the case is already covered by `check_firewall`. But the section header is printed unconditionally, producing this on screen and in the report when UFW is off:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  UFW LOGGING                                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+…followed immediately by the next section. Visually noisy.
+
+#### Implementation
+
+Wrap the entire block in `if fw_status.active:`. When UFW is inactive, the header is not printed and the (empty) result is not displayed.
+
+---
+
+### Fix — IPv6 ULA and link-local treated as external
+
+**Files:** `bob/checks/network_context.py:297`
+
+#### Problem
+
+`_is_private_or_loopback()` recognized:
+- IPv4 loopback (`127.0.0.0/8`)
+- IPv4 RFC-1918 (`10/8`, `172.16/12`, `192.168/16`)
+- IPv6 loopback (`::1`)
+
+But missed two important IPv6 ranges:
+- `fc00::/7` — Unique Local Addresses (RFC-4193, the IPv6 equivalent of RFC-1918)
+- `fe80::/10` — link-local addresses (typically used for neighbour discovery, not external connectivity)
+
+A connection between two `fe80::` addresses on the same link, or two `fc00::` addresses on a private network, was classified as *external* — leading to spurious warnings and miscategorised exposure.
+
+The same module previously used a hand-rolled string-prefix check. By contrast, `bob/checks/auth_log.py` already used `ipaddress.ip_network()` with the correct list:
+
+```python
+_PRIVATE_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+)
+```
+
+#### Implementation
+
+`network_context.py` now uses the same `_PRIVATE_NETWORKS` tuple and the same `ipaddress.ip_address()`-based check:
+
+```python
+def _is_private_or_loopback(addr: str) -> bool:
+    bare = addr.split("%", 1)[0]   # strip IPv6 zone-id (e.g. "fe80::1%eth0")
+    try:
+        ip = ipaddress.ip_address(bare)
+    except ValueError:
+        return False
+    return any(ip in net for net in _PRIVATE_NETWORKS)
+```
+
+Aligned with `auth_log.py`. The `%`-stripping handles zone identifiers in link-local addresses, which `ipaddress.ip_address()` doesn't accept directly.
+
+---
+
+### Fix — `NOTIFY_EMAIL` legacy regex silently skipped
+
+**Files:** `bob/cron.py:820`, `bob/locales/en.json`, `bob/locales/fr.json`
+
+#### Problem
+
+`edit_cron_email()` patches the `NOTIFY_EMAILS=` line in BOB-installed cron scripts:
+
+```python
+text = re.sub(
+    r"^NOTIFY_EMAILS=.*$",
+    lambda _: f"NOTIFY_EMAILS={shlex.quote(new_email)}",
+    text, flags=re.MULTILINE,
+)
+```
+
+Pre-v0.x scripts used the singular `NOTIFY_EMAIL=` (no S). Users who installed crons with an early version saw the function report success — but no line matched, so nothing changed. Silent failure.
+
+#### Implementation
+
+```python
+text, n = re.subn(
+    r"^NOTIFY_EMAILS?=.*$",   # match both forms
+    lambda _: f"NOTIFY_EMAILS={shlex.quote(new_email)}",   # always rewrite to current form
+    text, flags=re.MULTILINE,
+)
+if n == 0:
+    print(f"  ⚠ {t('manage_cron.email_not_found_in_script')}")
+```
+
+`subn()` returns the substitution count. When zero, a warning is printed using a new locale key:
+- EN: `"No NOTIFY_EMAIL line found in the script — email not patched (script may be outdated)."`
+- FR: `"Aucune ligne NOTIFY_EMAIL trouvée dans le script — email non mis à jour (script obsolète ?)."`
+
+Old scripts are migrated to the new key (`NOTIFY_EMAILS=`) on next edit.
+
+---
+
+### Refactor — `_check_weak_algo` moved to sub-check section
+
+**Files:** `bob/checks/ssh.py`
+
+#### Problem
+
+`bob/checks/ssh.py` is organised by section comment headers:
+- `# Sub-check functions` — `_check_host_keys`, `_check_sshd_config`, …
+- `# Parsing helpers` — `_parse_config_file`, `_collect_private_keys`, …
+
+`_check_weak_algo` (introduced in v0.3.5 to deduplicate weak-cipher / weak-MAC / weak-kex logic) was placed under `# Parsing helpers`. But it accepts a `CheckResult` and writes findings via `result.warn()` / `result.add_deduction()` — by every relevant signal it is a sub-check, not a parsing helper.
+
+#### Implementation
+
+Moved to immediately follow `_check_sshd_config` (its only caller), ahead of `_check_ssh_dir`. The `# Parsing helpers` section now contains only true parsing functions.
+
+---
+
+### Cleanup — 22 unused imports removed
+
+**Files:** `bob/__main__.py`, `bob/cron_ui.py`, `bob/output.py`, `bob/explain.py`, `bob/exposure.py`, `bob/registry.py`, `bob/report.py`, `bob/cron.py`, `bob/watch.py`, `bob/checks/iptables_nftables.py`, `bob/checks/firmware.py`, `bob/checks/ports.py`, `bob/checks/log_rotation.py`, `bob/checks/auth_log.py`, `bob/checks/logs.py`, `bob/checks/virtualization.py`, `bob/checks/smtp.py`, `bob/checks/disk.py`, `bob/checks/auditd.py`, `bob/checks/ddns.py`, `bob/checks/hardening.py`
+
+#### Problem
+
+`pyflakes bob/` reported 22 unused imports — vestiges of successive refactorings (v0.3.0 → v0.3.5):
+- `dataclasses.field` in 6 modules where no `field()` calls remain
+- `typing.{Optional, List, Tuple, Dict}` in 4 modules
+- `pathlib.Path` in 2 modules
+- `bob.scoring.{ScoreEngine, Finding, FindingLevel}` in `report.py` (TYPE_CHECKING block)
+- `shutil` in `output.py` and `cron.py` (local re-import)
+- `bob.checks._run._C_LOCALE_ENV` in `iptables_nftables.py`
+- `bob.cron.prompt_emails`, `pathlib.Path` in `cron_ui.py`
+- `bob.config.UserConfig` in `watch.py`
+- `bob.webhook.WebhookError` in `__main__.py` (replaced by `Exception` catch)
+- `bob.runner._ALL_SECTIONS` re-imported locally in `__main__.py:91`
+
+Plus three structural issues:
+1. `bob/checks/logs.py:633` — parameter name `field` shadowed `dataclasses.field` from line 25, triggering both the unused-import warning and a redefinition warning. Renamed to `field_name`.
+2. `bob/checks/hardening.py:114` — local variable `found_issue = False` was assigned at 8 sites (`found_issue = True`) but never read. All 8 assignments and the initialiser removed.
+3. `bob/output.py:351` — `bar = "─" * inner` calculated but unused; `bob/cron_ui.py:244` — `_SCHEDULE_DAILY` unpacked from a tuple but never referenced (replaced by `_`).
+
+#### Implementation
+
+Each import was traced (grep for the symbol in the file) before removal. Where a TYPE_CHECKING block became empty (`bob/report.py`), the entire block including `if TYPE_CHECKING:` was removed.
+
+The single remaining pyflakes warning is `bob/__main__.py:24` — an intentional `# noqa: F401` re-export of `AuditConfig` for callers that do `from bob.__main__ import AuditConfig`.
+
+---
+
+### Cleanup — 47 dead locale keys removed
+
+**Files:** `bob/locales/en.json`, `bob/locales/fr.json`
+
+#### Problem
+
+Both locale files had grown to 2049 lines / 1435 keys each. An audit of every key against actual `t()` and `_t()` call sites — including dynamic patterns like `t(f"services.exposure.{name}")` and indirect references via `t_key` parameters in helpers — revealed 47 truly orphaned keys.
+
+#### Implementation
+
+Removed (grouped by parent):
+
+| Parent | Keys removed | Reason |
+|--------|-----|--------|
+| `cli.help_*` | 14 | Old help system replaced by hardcoded `print_help()` in `cli.py:555` |
+| `errors.*` | 3 | Entire object: `must_be_root`, `unknown_option`, `ufw_not_found` (all replaced by exceptions) |
+| `geo.*` | 1 | Entire object: `local_network` |
+| `profile.*` | 3 | Entire object: `active`, `not_found`, `section_skipped` |
+| `report.*` | 3 | `title`, `next_steps`, `system_info` |
+| `cli.help`, `errors`, `geo`, `profile` | (objects) | Entire empty objects deleted |
+| Various leaves | 20 | `prerequisites.{ss_available, ss_missing}`, `network_context.{interfaces_found, no_connections, connections_found}`, `ports.ephemeral_ignored`, `logs.{geo_unavailable, local_network}`, `ddns.{ports_title, high_warn}`, `summary.block_normal`, `fixes.done`, `risk_context.level`, `log_dir.{default_hint, use}`, `install_cron.{prompt_email, done}`, `manage_cron.edit_schedule`, `config.{port_prompt, port_saved}`, `deduction.local_dominance`, `status.{ok, info}` |
+
+Preserved despite no usage:
+- `_meta.lang`, `_meta.version` — reserved metadata keys
+
+Both files stay synchronised (1388 keys each, EN/FR parity verified).
+
+#### Design notes
+
+Audit performed by extracting every flattened key, then grepping for both static (`t("key.subkey")`) and dynamic (`f"key.{var}"`) usage. Conservative approach: any key with even a remote possibility of dynamic reference was kept.
+
+Lines saved: 2049 → 1994 (−55 per file, −110 total).
+
+---
+
+### Tests
+
+4348/4348 — no test changes. All fixes are covered by existing tests; no regression introduced. Pyflakes is clean (one intentional `# noqa: F401` remains for `AuditConfig` re-export).
+
+Validated end-to-end on so6desktop (Linux Mint 22.3) — full audit completes with score 8/10 (Pare-feu & Services 10/10, SSH 7/10, Durcissement 6/10) and renders all sections correctly. UFW logging section appears (UFW active); IPv6 consistency section indicates "link-local only"; profiles, plugins, and baselines are correctly loaded from `/home/so6/.config/bob/`.
+
+---
+
 ## [v0.3.5] — 2026-05-08
 
 Pure internal refactoring and locale fix — no new features, no behaviour changes, no new tests. Two independent cleanup tasks plus a content fix: `runner.py` repetitive section blocks replaced by a `_sec` closure (−295 lines), `ssh.py` triplicated weak-algo logic replaced by a `_check_weak_algo` helper (−26 lines), and four translation keys still referencing the former tool name `UFW-AUDIT` corrected to `BOB`. 4348/4348 tests.

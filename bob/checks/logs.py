@@ -22,7 +22,7 @@ import logging
 import re
 import subprocess
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -630,9 +630,9 @@ def _parse_timestamp(line: str, current_year: int) -> Optional[datetime]:
     return None
 
 
-def _extract_field(line: str, field: str) -> Optional[str]:
+def _extract_field(line: str, field_name: str) -> Optional[str]:
     """Extract a KEY=value field from a UFW log line (max 256 chars)."""
-    match = re.search(rf"\b{re.escape(field)}=(\S{{1,256}})", line)
+    match = re.search(rf"\b{re.escape(field_name)}=(\S{{1,256}})", line)
     return match.group(1) if match else None
 
 

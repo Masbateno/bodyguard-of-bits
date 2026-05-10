@@ -11,6 +11,7 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.3.6 | 4348 | No new tests — code-review pass (sudo-aware `Path.home()`, IPv6 ULA, SSH `local`, dead imports/locales) |
 | v0.3.5 | 4348 | No new tests — pure refactoring (`runner.py` `_sec` closure, `ssh.py` `_check_weak_algo`) |
 | v0.3.4 | 4348 | No new tests — hotfix only (`user_config` NameError) |
 | v0.3.3 | 4348 | +7 new −6 removed (TestWasCapped → TestCappedIndices): `TestCappedIndices` in test_domain_scores |
@@ -24,6 +25,21 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.3.6 — 4348/4348 (2026-05-09)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4348 passed in 5.04s
+```
+
+**No new tests — code-review pass.** Eight related fixes: `Path.home()` → `get_user_home()` in 7 modules · IPv6 ULA/link-local in `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepted · UFW logging header skipped when UFW inactive · `NOTIFY_EMAIL` legacy regex · `_check_weak_algo` moved to sub-check section · 22 unused imports removed (pyflakes clean except for one intentional `noqa`) · 47 dead locale keys removed.
+
+**Field validation:** Full audit on so6desktop (Linux Mint 22.3) completed with score 8/10. UFW logging section header now hidden when UFW inactive; IPv6 link-local correctly classified as private; profiles/plugins/baselines correctly loaded from `/home/so6/.config/bob/` (not `/root/.config/bob/`).
 
 ---
 

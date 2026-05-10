@@ -25,11 +25,12 @@ import json
 import keyword
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
 from bob._paths import resolve_share_dir
+from bob.sysinfo import get_user_home
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,8 @@ _DATA_DIR = (_share_path / "data") if _share_path else (Path(__file__).parent / 
 _SERVICES_FILE = _DATA_DIR / "services.json"
 
 # User plugin directory — drop *.json files here to add custom services
-# Resolved at import time so it always reflects the current home directory
-_PLUGIN_DIR = Path.home() / ".config" / "bob" / "services.d"
+# Resolved at import time via SUDO_USER so it points to the invoking user's home
+_PLUGIN_DIR = get_user_home() / ".config" / "bob" / "services.d"
 
 # Valid values for the risk field
 VALID_RISKS = frozenset({"low", "medium", "high", "critical"})
@@ -203,11 +204,20 @@ def _load_plugins(services: list[Service], ids_seen: set[str]) -> None:
         services:  Mutable list to append valid plugin services into.
         ids_seen:  Set of already-registered IDs used for duplicate detection.
     """
-    if not _PLUGIN_DIR.is_dir():
+    try:
+        if not _PLUGIN_DIR.is_dir():
+            return
+    except PermissionError:
+        # Directory exists but is not readable (e.g. created by root via sudo).
+        # Skip plugins gracefully — the user can fix ownership separately.
         return
 
     _MAX_PLUGIN_SIZE = 256 * 1024  # 256 KB per plugin
-    for plugin_file in sorted(_PLUGIN_DIR.glob("*.json")):
+    try:
+        plugin_files = sorted(_PLUGIN_DIR.glob("*.json"))
+    except PermissionError:
+        return
+    for plugin_file in plugin_files:
         try:
             with plugin_file.open(encoding="utf-8") as fh:
                 content = fh.read(_MAX_PLUGIN_SIZE + 1)

@@ -54,10 +54,11 @@ from typing import Any
 
 from bob.checks._run import TranslationFunc
 from bob.scoring import CheckResult
+from bob.sysinfo import get_user_home
 
 logger = logging.getLogger(__name__)
 
-_PLUGIN_CHECKS_DIR = Path.home() / ".config" / "bob" / "checks.d"
+_PLUGIN_CHECKS_DIR = get_user_home() / ".config" / "bob" / "checks.d"
 _MAX_PLUGIN_SIZE   = 64 * 1024   # 64 KB — technical limit, not a security boundary
 
 # Full ANSI CSI escape sequences (e.g. \x1b[31m) — must run before control-char filter
@@ -143,12 +144,16 @@ def load_plugin_checks(
         List of PluginCheck objects in filename-sorted order.
     """
     directory = plugin_dir or _PLUGIN_CHECKS_DIR
-    if not directory.is_dir():
+    try:
+        if not directory.is_dir():
+            return []
+        plugin_paths = sorted(directory.glob("*.py"))
+    except PermissionError:
+        # Directory exists but is not readable (e.g. owned by root from a sudo run).
         return []
 
     plugins: list[PluginCheck] = []
-
-    for plugin_path in sorted(directory.glob("*.py")):
+    for plugin_path in plugin_paths:
         check = _load_one(plugin_path)
         if check is not None:
             plugins.append(check)

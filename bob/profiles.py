@@ -41,12 +41,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.scoring import CheckResult, FindingLevel
+from bob.sysinfo import get_user_home
 
 logger = logging.getLogger(__name__)
 
 # Directories searched for profile files (user overrides built-ins)
 _BUILTIN_PROFILES_DIR = Path(__file__).parent / "data" / "profiles"
-_USER_PROFILES_DIR    = Path.home() / ".config" / "bob" / "profiles"
+_USER_PROFILES_DIR    = get_user_home() / ".config" / "bob" / "profiles"
 
 # Levels that can appear as override values in a profile file
 _VALID_OVERRIDE_LEVELS: frozenset[str] = frozenset({"info", "warn", "alert", "skip"})
@@ -142,8 +143,12 @@ def _find_profile_file(name: str) -> Path | None:
     """
     for directory in (_USER_PROFILES_DIR, _BUILTIN_PROFILES_DIR):
         candidate = directory / f"{name}.conf"
-        if candidate.is_file():
-            return candidate
+        try:
+            if candidate.is_file():
+                return candidate
+        except PermissionError:
+            # Directory unreadable (e.g. created by root via sudo) — skip silently.
+            continue
     return None
 
 

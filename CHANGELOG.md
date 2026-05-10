@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.3.6](#v036) | 2026-05-09 | Code-review pass — `Path.home()` → `get_user_home()` (sudo-aware) in 7 modules · IPv6 ULA/link-local in `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepted · UFW logging header skipped when UFW inactive · `NOTIFY_EMAIL` legacy regex · 22 unused imports cleaned · 47 dead locale keys removed · 4348/4348 tests |
 | [v0.3.5](#v035) | 2026-05-08 | Refactoring — `runner.py` `_sec` closure (−295L) · `ssh.py` `_check_weak_algo` helper · locale fix 4× `UFW-AUDIT` → `BOB` · 4348/4348 tests |
 | [v0.3.4](#v034) | 2026-05-08 | Hotfix — `user_config` not passed to `run_checks()` → `NameError` at end of every audit (v0.3.2 regression) · 4348/4348 tests |
 | [v0.3.3](#v033) | 2026-05-07 | Architectural refactoring — `cron.py` split · `compute_domain_scores()` pure tuple return · `domain_scores` public API · `_draw`/`_read_key` curses helpers · 4348/4348 tests (+1) |
@@ -17,6 +18,50 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.3.6] — 2026-05-09
+
+Code-review pass following a deep audit of the codebase. No new features, no behaviour changes — bug fixes, hygiene, and consistency. 4348/4348 tests.
+
+### Fix — `Path.home()` resolves to `/root` under sudo (`bob/config.py`, `bob/recurrence.py`, `bob/history.py`, `bob/registry.py`, `bob/compare.py`, `bob/profiles.py`, `bob/plugin_checks.py`, `bob/ignore.py`)
+
+Seven modules used `Path.home()` at module import to compute config/plugin/baseline directories. Under `sudo`, this resolves to `/root/.config/bob/` instead of the invoking user's home — silently breaking user profiles, service plugins, check plugins, baseline, and recurrence/history persistence. The correct helper `bob.sysinfo.get_user_home()` (which honours `SUDO_USER`) already existed but was used in only two places. All seven modules now import and use `get_user_home()`. `bob/ignore.py` had its own duplicated logic — replaced with a call to the shared helper.
+
+To complete the fix, a new helper `bob.sysinfo.chown_to_sudo_user(path)` is called after each user-config directory/file is created or written under sudo, so the invoking user retains read/write access in non-sudo sessions (no-op when not running under sudo). Applied in `config.py`, `compare.py`, `recurrence.py`, `history.py`, `ignore.py` after `mkdir(parents=True)` and after each atomic `replace`/`write_text`. The `registry.py`, `profiles.py`, and `plugin_checks.py` lookups gain a `PermissionError` guard so a directory inaccessible at read time (legacy state from a pre-fix sudo run) gracefully falls back to "no plugin found" instead of crashing.
+
+### Fix — `AllowTcpForwarding local` flagged as a warning (`bob/checks/ssh.py`)
+
+The check accepted only `AllowTcpForwarding no` as safe. Setting `local` (which is more restrictive than the default `yes` and explicitly recommended in BOB's own remediation text) was incorrectly counted as an issue and deducted 1 point. Now both `no` and `local` are accepted.
+
+### Fix — UFW logging section header shown when UFW inactive (`bob/runner.py`)
+
+When UFW was inactive, `check_ufw_logging()` returned an empty `CheckResult` but `runner.py` still printed the section header (`UFW LOGGING`), producing a header followed by no findings. The header is now only printed when `fw_status.active`.
+
+### Fix — IPv6 ULA and link-local treated as external (`bob/checks/network_context.py`)
+
+`_is_private_or_loopback()` covered IPv4 loopback, RFC-1918, and IPv6 `::1` but missed `fc00::/7` (Unique Local Addresses) and `fe80::/10` (link-local). Connections within those ranges were classified as external, producing spurious warnings. Rewritten using `ipaddress.ip_network()` with the same network list as `bob/checks/auth_log.py`.
+
+### Fix — `NOTIFY_EMAIL` legacy regex silently skipped (`bob/cron.py`, `bob/locales/{en,fr}.json`)
+
+`edit_cron_email()` matched only `NOTIFY_EMAILS=` (plural — current format) but not `NOTIFY_EMAIL=` (singular — pre-v0.x scripts). Old scripts saw a "successful" email update that didn't actually patch anything. Now matches both `NOTIFY_EMAILS?=` and warns when no line was matched (new locale key `manage_cron.email_not_found_in_script`).
+
+### Refactor — `_check_weak_algo` moved to sub-check section (`bob/checks/ssh.py`)
+
+The helper was placed in the `# Parsing helpers` section but is logically a sub-check (writes to `result`, calls `_t`). Moved next to the other `_check_*` functions for consistency with project convention.
+
+### Cleanup — 22 unused imports removed (pyflakes)
+
+Vestiges from successive refactorings: `dataclasses.field` in 6 modules where no field defaults exist; `typing.Optional` in 4 modules; `pathlib.Path` in 2; `bob.scoring.{ScoreEngine, Finding, FindingLevel}` in `report.py`; `shutil`, `_C_LOCALE_ENV`, `prompt_emails`, `WebhookError`, etc. Variable shadowing of `dataclasses.field` by parameter `field` in `_extract_field()` resolved by renaming to `field_name`. Dead variable `found_issue` in `check_hardening()` (never read) removed along with all 8 assignments.
+
+### Cleanup — 47 dead locale keys removed (`bob/locales/{en,fr}.json`)
+
+Audit of every key against actual `t()` and `_t()` call sites (including dynamic `f"prefix.{var}"` patterns). Removed: entire `cli.help_*` (14 keys, replaced by hardcoded `print_help` in `cli.py`), entire `errors.*`, `geo.*`, `profile.*` objects, plus orphans in `report`, `manage_cron`, `install_cron`, `prerequisites`, `network_context`, `ddns`, `logs`, `ports`, `summary`, `fixes`, `risk_context`, `log_dir`, `config`, `deduction`, `status`. Both files stay key-synchronised: 1435 → 1388 keys (−47), 2049 → 1994 lines per file.
+
+### Tests
+
+4348/4348 (no change vs v0.3.5). All fixes covered by existing tests; no regression introduced. Validated end-to-end on so6desktop (Linux Mint 22.3) — full audit completes with score 8/10 and renders all sections correctly.
 
 ---
 

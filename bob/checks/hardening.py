@@ -111,7 +111,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
     """
     _t = t if t is not None else _identity_t
     result = CheckResult()
-    found_issue = False  # tracks deduction-worthy (warn-level) issues only
 
     # --- rp_filter (reverse path filtering) ---
     # 0 = disabled (insecure), 1 = strict mode (best), 2 = loose mode (weaker)
@@ -134,8 +133,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.rp_filter_disabled",
         )
-        found_issue = True
-
     # --- ICMP redirects ---
     if not snapshot.accept_redirects:
         result.ok(message=_t("hardening.redirects_ok"),
@@ -153,8 +150,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.redirects_enabled",
         )
-        found_issue = True
-
     # --- log_martians ---
     if snapshot.log_martians:
         result.ok(message=_t("hardening.log_martians_ok"),
@@ -196,8 +191,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.tcp_syncookies_disabled",
         )
-        found_issue = True
-
     # --- accept_source_route (IP source routing) ---
     if not snapshot.accept_source_route:
         result.ok(
@@ -217,8 +210,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.accept_source_route_enabled",
         )
-        found_issue = True
-
     # --- IPv6 ICMP redirects ---
     if not snapshot.accept_redirects_v6:
         result.ok(
@@ -238,8 +229,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.accept_redirects_v6_enabled",
         )
-        found_issue = True
-
     # --- send_redirects ---
     if not snapshot.send_redirects:
         result.ok(
@@ -260,8 +249,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.send_redirects_enabled",
         )
-        found_issue = True
-
     # --- fs.protected_hardlinks ---
     if snapshot.protected_hardlinks:
         result.ok(
@@ -281,8 +268,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.protected_hardlinks_disabled",
         )
-        found_issue = True
-
     # --- fs.protected_symlinks ---
     if snapshot.protected_symlinks:
         result.ok(
@@ -302,8 +287,6 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             context="local",
             key="hardening.protected_symlinks_disabled",
         )
-        found_issue = True
-
     return result
 
 
