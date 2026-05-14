@@ -87,6 +87,10 @@ class Service:
     """
     Immutable representation of a network service known to BOB.
 
+    The JSON shape accepted by ``from_dict()`` is described formally in
+    ``bob/data/schemas/service.schema.json`` (Draft 2020-12 JSON Schema).
+    Both validators must stay in sync — the test suite enforces this.
+
     Args:
         id:         Unique identifier (e.g. "ssh", "nginx").
         label:      Human-readable display name (e.g. "SSH Server").
@@ -194,11 +198,74 @@ class Service:
 # Registry
 # ---------------------------------------------------------------------------
 
+_CURRENT_PLUGIN_SCHEMA_VERSION = 1
+
+
+def _extract_plugin_entries(raw: object, plugin_name: str) -> list | None:
+    """
+    Resolve a plugin file's parsed JSON into a flat list of service entries.
+
+    Two shapes are accepted:
+
+    1. **Raw array** (legacy / current default): the file is a JSON array of
+       service objects.
+    2. **Wrapped object** (forward-compat): the file is an object with
+       ``{"schema_version": 1, "services": [...]}``. The wrapper lets future
+       schema versions be gated explicitly. Currently only ``schema_version: 1``
+       is accepted; higher versions are rejected with a warning so users see a
+       clear "upgrade BOB" hint instead of silent half-loading.
+
+    Returns the list of service entries, or ``None`` on irrecoverable error
+    (logs a warning and the caller skips the file).
+    """
+    if isinstance(raw, list):
+        return raw
+
+    if isinstance(raw, dict):
+        sv = raw.get("schema_version")
+        if not isinstance(sv, int):
+            logger.warning(
+                "Plugin %s: wrapped form requires integer 'schema_version' — skipped",
+                plugin_name,
+            )
+            return None
+        if sv > _CURRENT_PLUGIN_SCHEMA_VERSION:
+            logger.warning(
+                "Plugin %s: schema_version=%d is newer than this BOB build supports "
+                "(max %d) — skipped. Upgrade BOB or downgrade the plugin.",
+                plugin_name, sv, _CURRENT_PLUGIN_SCHEMA_VERSION,
+            )
+            return None
+        if sv < 1:
+            logger.warning(
+                "Plugin %s: schema_version=%d is invalid (must be >= 1) — skipped",
+                plugin_name, sv,
+            )
+            return None
+        services_raw = raw.get("services")
+        if not isinstance(services_raw, list):
+            logger.warning(
+                "Plugin %s: wrapped form requires 'services' array — skipped",
+                plugin_name,
+            )
+            return None
+        return services_raw
+
+    logger.warning(
+        "Plugin %s must be a JSON array or a wrapped object — skipped",
+        plugin_name,
+    )
+    return None
+
+
 def _load_plugins(services: list[Service], ids_seen: set[str]) -> None:
     """
     Scan _PLUGIN_DIR for *.json plugin files and merge valid entries into
     the services list. Errors in individual files are logged and skipped —
     they never abort the audit.
+
+    Each file may use either the raw-array shape or the wrapped
+    {schema_version, services} shape. See _extract_plugin_entries().
 
     Args:
         services:  Mutable list to append valid plugin services into.
@@ -229,11 +296,11 @@ def _load_plugins(services: list[Service], ids_seen: set[str]) -> None:
             logger.warning("Plugin %s could not be loaded: %s — skipped", plugin_file.name, exc)
             continue
 
-        if not isinstance(raw, list):
-            logger.warning("Plugin %s must contain a JSON array — skipped", plugin_file.name)
+        entries = _extract_plugin_entries(raw, plugin_file.name)
+        if entries is None:
             continue
 
-        for i, entry in enumerate(raw):
+        for i, entry in enumerate(entries):
             try:
                 service = Service.from_dict(entry)
             except (ValueError, KeyError) as exc:

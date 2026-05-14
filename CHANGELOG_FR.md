@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.4.0](#v040) | 14-05-2026 | Phase 1 distro-ready — codes de retour / détection locale POSIX (`$LANG`) / contrat de sortie JSON (`schema_version`, champs `key`) / alias map `--explain` / JSON Schema formel pour `services.json` (avec hardening passe #1 : regex port stricte 1–65535 · factorisation `$defs` · contraintes métier `if/then` · wrapper plugin-file avec `schema_version`) · passe #2 : descriptions schémas, `services-list.minItems`, fixtures à classes réelles remplaçant MagicMock, compat shim RefResolver→referencing · suffixe `= N` redondant sur score stable supprimé · 4430/4430 tests (+82) |
 | [v0.3.6](#v036) | 09-05-2026 | Passe code review — `Path.home()` → `get_user_home()` (sudo-aware) sur 7 modules · ULA/link-local IPv6 dans `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepté · header journalisation UFW masqué si UFW inactif · regex legacy `NOTIFY_EMAIL` · 22 imports inutilisés supprimés · 47 clés de locales mortes retirées · 4348/4348 tests |
 | [v0.3.5](#v035) | 08-05-2026 | Refactoring — closure `_sec` dans `runner.py` (−295L) · helper `_check_weak_algo` dans `ssh.py` · correctif locale 4× `UFW-AUDIT` → `BOB` · 4348/4348 tests |
 | [v0.3.4](#v034) | 08-05-2026 | Hotfix — `user_config` non transmis à `run_checks()` → `NameError` en fin d'audit (régression v0.3.2) · 4348/4348 tests |
@@ -18,6 +19,44 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.4.0] — 14-05-2026
+
+Phase 1 de la roadmap distro-ready — cinq contrats d'API publique figés pour que scripts, dashboards et packagers downstream puissent s'appuyer sur un comportement stable. Aucune nouvelle fonctionnalité, aucun changement breaking (additif uniquement). 4405/4405 tests (+57).
+
+### Contrat stable — Codes de retour documentés comme API publique (`bob/__main__.py`, `bob/cli.py`, `DOCUMENTS/README_TECH.md`)
+
+Les 5 codes de retour (`EXIT_OK=0`, `EXIT_WARNINGS=1`, `EXIT_ALERTS=2`, `EXIT_ERROR=3`, `EXIT_TARGET_MISSED=4`) sont désormais formellement promus au rang d'API publique de BOB : leurs valeurs et sémantiques ne changeront pas au sein d'une même version majeure. Documentés dans `--help` (avec ajout du code 4 manquant) et dans une section dédiée du README_TECH. Constantes exportées depuis `bob.__main__` pour usage programmatique.
+
+### Contrat stable — Détection automatique de la locale via POSIX `$LANG` (`bob/i18n.py`, `bob/cli.py`, `tests/conftest.py`)
+
+`bob.i18n.detect_system_lang()` (nouveau) interroge `$LC_ALL` / `$LC_MESSAGES` / `$LANG` dans l'ordre POSIX standard et résout vers `"fr"` pour les locales `fr_*` ou `"en"` sinon (incluant `C`, `POSIX`, `C.UTF-8`, langues non supportées). `parse_args()` l'appelle comme valeur par défaut quand ni `--lang=` ni `--french` n'est passé ; les flags explicites priment toujours. Nouvelle fixture autouse dans `tests/conftest.py` force `LANG=C` pour des tests déterministes indépendants de la locale hôte.
+
+### Contrat stable — Schéma de sortie JSON documenté + champ `key` exposé (`bob/json_output.py`, `bob/scoring.py`)
+
+`schema_version="1"` était déjà présent ; cette release formalise le contrat : les clés top-level ne disparaissent jamais / ne sont jamais renommées au sein de v1, les ajouts sont libres, les changements breaking incrémentent à v2. Nouvelles constantes `SCHEMA_V1_REQUIRED_KEYS` et `SCHEMA_V1_FULL_KEYS` rendent le contrat testable. `Finding.key` et `Deduction.key` sont désormais sérialisés comme champ `key` sur chaque entrée — les clients peuvent matcher les findings via des clés pointées stables sans dépendre de `message`/`reason` localisés. Référence complète du schéma ajoutée à README_TECH (tableau de chaque clé top-level, structure des objets imbriqués, exemple de matching indépendant de la locale).
+
+### Contrat stable — Alias map `--explain` + politique de freeze (`bob/explain.py`)
+
+`EXPLAIN_KEY_ALIASES: dict[str, str]` introduit (vide pour l'instant) afin que les futurs renommages aient un chemin de migration documenté : ancien nom → nouveau nom, alias n'expire jamais au sein de la même version majeure du schéma. `normalize_key()` consulte la map après le strip des segments de chemin. Le docstring du module énonce explicitement la politique de freeze : pas de suppression, pas de renommage, pas de glissement sémantique, ajouts libres. 16 clés load-bearing explicitement testées comme figées.
+
+### Contrat stable — JSON Schema formel pour les plugins services (`bob/data/schemas/`, `pyproject.toml`)
+
+Deux fichiers JSON Schema Draft 2020-12 (`service.schema.json`, `services-list.schema.json`) décrivent la forme de `services.json` et des plugins utilisateur `*.json`. La liste bundled (`bob/data/services.json`) est vérifiée comme conforme au schéma. Les schémas sont livrés via `package_data` afin que les packagers de distros puissent valider les plugins utilisateur en externe avec `check-jsonschema` / `ajv`. La validation Python dans `Service.from_dict()` reste la source de vérité au runtime (zéro dépendance runtime ajoutée) ; le JSON Schema le reflète pour le tooling externe.
+
+### Bonus UX — Suffixe `= N` redondant sur score inchangé supprimé (`bob/display.py`)
+
+Quand le score était inchangé vs l'audit précédent, la boîte récap affichait `Score de sécurité : 8/10  = 8` — le `= 8` était un vestige d'un marqueur de delta antérieur. Supprimé : le score stable affiche désormais simplement `8/10` (le score est déjà visible). Test renommé `test_stable_shows_equal` → `test_stable_shows_no_annotation`.
+
+### Tests
+
+4405/4405 (+57) : 16 nouveaux dans `test_i18n.py` (12 `detect_system_lang` + 4 intégration CLI), 15 dans le nouveau `test_json_schema.py` (invariants top-level, types de champs, exposition des clés stables), 6 dans `test_explain.py` (alias map + politique freeze), 20 dans le nouveau `test_services_schema.py` (schéma valide, services bundled conformes, échantillons valides/invalides, parité Python ↔ Schema).
+
+### Validation terrain
+
+Audit bout en bout sur so6desktop (Linux Mint 22.3) — score 8/10, toutes les sections rendues correctement, locale auto-détectée comme français via `$LANG=fr_FR.UTF-8`.
 
 ---
 

@@ -6,6 +6,414 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.4.0] — 2026-05-14
+
+Phase 1 of the distro-ready roadmap (see `project_distro_roadmap` memory) — five public-API contracts frozen so that scripts, dashboards, and downstream packagers can rely on stable behavior across versions. No new features, no breaking changes — additive only. 4405/4405 tests (+57). Plus a small UX fix on the unchanged-score display.
+
+The roadmap targets in order of difficulty:
+- AUR / COPR community packaging — viable now
+- Debian unstable / Fedora COPR official — ~6 months post-v0.4.0
+- Debian main / Fedora main — 12–18 months minimum (requires sustained contract stability)
+
+This release ticks the first 5 boxes of Phase 1: exit codes, locale fallback, JSON output contract, --explain key freeze, and plugin schema. Phase 2 (architectural decoupling: pure `bob.core`, isolated `bob.tui`, strict `--offline`) is next on the roadmap.
+
+---
+
+### Stable contract — Exit codes documented as public API
+
+**Files:** `bob/__main__.py`, `bob/cli.py`, `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problem
+
+The 5 exit codes (`0`/`1`/`2`/`3`/`4`) were defined as constants in `bob/__main__.py` and used consistently in `_run()`, but had no formal API status. The `--help` text documented `0`/`1`/`2`/`3` but **omitted `4`** (`EXIT_TARGET_MISSED`). README_TECH had a table but didn't promise stability.
+
+External scripts (CI pipelines, cron wrappers, monitoring agents) need a contract: a code's value and meaning must not drift across versions.
+
+#### Implementation
+
+- Added a "STABLE PUBLIC API" docstring block above the exit-code constants explicitly stating they are part of BOB's public contract — no removal, no semantic shift within a major version, additions only.
+- Added missing `4` to `--help` ("EXIT CODES" section) along with a pointer to README_TECH.
+- Promoted the README_TECH section: added a quote block stating the stability promise, expanded the table with the constant names (`EXIT_OK`, …), and added a code snippet showing how to import them programmatically.
+- Mirrored in README_TECH_FR.
+
+The 18 existing tests in `tests/test_exit_codes.py` already lock in the values and the decision logic — they now serve as the contract enforcement.
+
+#### Design notes
+
+The `_run()` function's exit-code decision (target → alerts → warnings → ok) is unit-tested via `_decide_exit()`, a faithful copy isolated from the audit pipeline. This is the canonical mapping: any future change must update both copies and bump tests deliberately.
+
+---
+
+### Stable contract — Locale auto-detection from POSIX `$LANG`
+
+**Files:** `bob/i18n.py`, `bob/cli.py`, `tests/conftest.py`, `tests/test_i18n.py`, `tests/test_cli.py`, `bob/cli.py` (--help), `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problem
+
+BOB's interface defaulted to English unless `--french` or `--lang=fr` was explicitly passed. Any other Unix tool (`man`, `git`, `apt`, `gcc`, …) honors `$LANG` / `$LC_*` automatically. A French user lab-typing `sudo bob` got English; this was surprising and didn't match POSIX expectations.
+
+For distro packaging, this matters even more: a Debian package shipping BOB must integrate seamlessly with the system locale. A user with `LANG=fr_FR.UTF-8` should get French output without flag gymnastics.
+
+#### Implementation
+
+New function `bob.i18n.detect_system_lang() -> str`:
+
+```python
+def detect_system_lang() -> str:
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(var, "").strip()
+        if not value or value in ("C", "POSIX", "C.UTF-8", "C.utf8"):
+            continue
+        prefix = value.split(".", 1)[0].split("@", 1)[0]
+        lang = prefix.split("_", 1)[0].lower()
+        if lang in SUPPORTED_LANGS:
+            return lang
+        return DEFAULT_LANG
+    return DEFAULT_LANG
+```
+
+Probe order matches POSIX (`LC_ALL` overrides `LC_MESSAGES` overrides `LANG`). Empty values fall through to the next candidate. `C` / `POSIX` / `C.UTF-8` / unsupported languages → fallback to `DEFAULT_LANG = "en"`.
+
+`bob.cli.parse_args()` now tracks whether the user passed `--lang=` / `--french` via a local `lang_explicit` flag. After argv parsing, if the flag is still `False`, `config.lang = detect_system_lang()`. Explicit flags always win — the detection is a default, not an override.
+
+`tests/conftest.py` (new): an autouse fixture sets `LC_ALL=C`/`LANG=C` before every test, so locale-dependent CLI defaults resolve predictably regardless of the developer's host locale. Tests that need a specific locale set it explicitly with `monkeypatch.setenv()`.
+
+#### Tests
+
+- 12 new tests in `TestDetectSystemLang` class: empty env, `C`, `POSIX`, `C.UTF-8`, `fr_FR.UTF-8`, `fr_BE`, `fr_FR@euro`, `en_US.UTF-8`, unsupported `ja_JP`/`de_DE`/`es_ES`/`zh_CN`, `LC_ALL` overrides, `LC_MESSAGES` overrides, empty `LC_ALL` falls through.
+- 4 integration tests in `tests/test_cli.py`: `--french` overrides system locale, `--lang=en` overrides system locale, default uses `fr` when system locale is French, default uses `en` when `LANG=C`.
+
+#### Design notes
+
+The decision to default to system locale (instead of always `en`) is a UX improvement, not a breaking change for any documented contract — `--lang=en` continues to work and forces English explicitly. The change is documented in `--help` ("default: detected from $LANG, fallback en") and in both README_TECH variants. Existing CI/scripts that don't set `LC_ALL` see no change because `LANG=C` falls back to `en`.
+
+---
+
+### Stable contract — JSON output schema documented + `key` field exposed
+
+**Files:** `bob/json_output.py`, `tests/test_json_schema.py` (new), `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problem
+
+The `--json` output had `"schema_version": "1"` since v0.2.x but no formal contract: top-level keys could disappear or rename without notice, the schema had no test enforcement, and clients had to match findings via the localized `message` / `reason` strings (which differ between `en` and `fr`).
+
+For distro adoption this is a blocker: a Debian-packaged dashboard parsing BOB output cannot be expected to switch matching logic per-locale, nor can it survive silent schema drift across BOB releases.
+
+#### Implementation
+
+Added stability docstring at the top of `bob/json_output.py` formalizing the rules:
+
+> - Top-level keys never disappear, never get renamed, never change semantics within a given major `schema_version`.
+> - New top-level keys MAY be added in any release; clients should ignore unknown keys.
+> - Nested dicts follow the same rule.
+> - Breaking changes bump `schema_version` to a new major (`"2"`, `"3"`…).
+
+Two new module-level constants make the contract testable:
+
+```python
+SCHEMA_V1_REQUIRED_KEYS = frozenset({
+    "schema_version", "version", "host", "timestamp", "score", "score_max",
+    "risk", "network_context", "public_ip", "alerts", "warnings",
+    "deductions", "domain_scores",
+})
+SCHEMA_V1_FULL_KEYS = frozenset({
+    "findings", "services", "open_ports", "firewall_stack",
+    "hardening", "ipv6",
+})
+```
+
+Added `"key": d.key` to each `deductions[]` entry and `"key": f.key` to each `findings[]` entry. These are stable dotted i18n keys (`firewall.logging_off`, `ssh.password_auth`, …) that never change across locales and never rename without an alias entry — clients should match on `key`, not on `reason`/`message`.
+
+`DOCUMENTS/README_TECH.md` (and FR) gain a full "JSON output schema" section: stability promise quoted, complete top-level key table with types and descriptions, structure of `deductions[]` / `domain_scores` / full-mode keys, locale-independent matching example with `jq`.
+
+#### Tests
+
+`tests/test_json_schema.py` (new, 15 tests, 4 classes):
+
+- `TestSchemaVersion` — schema_version is a string, currently `"1"`.
+- `TestRequiredKeysAlwaysPresent` — required keys in short and full mode, no full-only keys leak into short mode.
+- `TestFieldTypes` — `score`/`score_max`/`alerts`/`warnings` are int, `risk` is string, `timestamp` is ISO 8601.
+- `TestStableKeysExposed` — every deduction and finding has a `key` field, dotted-path format.
+- `TestDomainScoresStructure` — `domain_scores` is a dict-of-dicts with `score` (int) and `label` (str).
+
+#### Design notes
+
+The `key` field exposure is the foundation for the Phase 2 architectural decoupling: once `Finding.message` is decoupled from `_t()` (planned next phase), the JSON output will become fully locale-independent — clients can format messages themselves from the keys.
+
+---
+
+### Stable contract — `--explain` alias map + freeze policy
+
+**Files:** `bob/explain.py`, `tests/test_explain.py`
+
+#### Problem
+
+The 112 `--explain` keys (e.g. `ssh.password_auth`, `firewall.logging_off`, `kernel_hardening.aslr_disabled`) are also used as `Finding.key` and `Deduction.key` — they form a public namespace that scripts and dashboards match on. Renaming any key was a silent breaking change.
+
+#### Implementation
+
+Added an explicit "STABLE PUBLIC API — `--explain` KEY FREEZE POLICY" section to the module docstring stating four rules: no removal, no semantic shift, renames go through `EXPLAIN_KEY_ALIASES`, additions are free.
+
+Introduced `EXPLAIN_KEY_ALIASES: dict[str, str]` as the migration mechanism for renames. Currently empty — no key has been renamed yet. The map exists so any future rename has a documented, tested path: add `"old_name": "new_name"` here and clients calling `bob --explain old_name` (or matching `Finding.key == "old_name"` in JSON) keep working indefinitely.
+
+`normalize_key()` was extended to consult the alias map after path-segment stripping:
+
+```python
+def normalize_key(key: str) -> str:
+    m = _NORMALIZE_RE.match(key)
+    if m:
+        key = f"{m.group(1)}.{m.group(2)}"
+    return EXPLAIN_KEY_ALIASES.get(key, key)
+```
+
+#### Tests
+
+6 new tests in `tests/test_explain.py`:
+
+- `TestExplainKeyAliases` (5 tests): alias map is dict, alias targets are valid canonical keys, alias keys are NOT in the canonical set (no overlap), `normalize_key()` resolves aliases, passthrough when no alias.
+- `TestExplainKeyFreezePolicy` (1 test): a frozen subset of 16 load-bearing keys (`ssh.password_auth`, `ssh.permit_root_login`, `firewall.logging_off`, `kernel_hardening.aslr_disabled`, …) must always be in `EXPLAIN_KEYS` — failure points to either restoring them or registering an alias.
+
+#### Design notes
+
+The freeze policy is intentionally per-key (not per-group): groups can be reorganised in `_EXPLAIN_GROUPS` without breaking any contract, only individual keys are sticky.
+
+---
+
+### Stable contract — Plugin services formal JSON Schema
+
+**Files:** `bob/data/schemas/service.schema.json` (new), `bob/data/schemas/services-list.schema.json` (new), `pyproject.toml`, `bob/registry.py`, `tests/test_services_schema.py` (new), `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problem
+
+Service definitions (`bob/data/services.json` + user plugins in `~/.config/bob/services.d/`) had a hand-rolled validator in `Service.from_dict()` (Python-only, distributed across 36 lines). Distro packagers and plugin authors had no machine-readable contract: the rules (required fields, regex for ports, enum for risk, identifier rules for `config_key`) had to be reverse-engineered from the Python code or by trial and error.
+
+#### Implementation
+
+Two Draft 2020-12 JSON Schema files:
+
+- **`service.schema.json`** describes a single service entry (the dict passed to `Service.from_dict()`):
+  - `additionalProperties: false` (no unknown fields)
+  - 7 required fields (`id`, `label`, `packages`, `services`, `ports`, `risk`, `config_key`)
+  - Strict patterns: `id` is `^[a-zA-Z][a-zA-Z0-9_-]*$`, ports are `^[1-9][0-9]{0,4}/(tcp|udp)$`, `config_key` is a Python identifier
+  - `risk` is enum `{low, medium, high, critical}`
+  - Conditional via `allOf` / `if/then`: when `config_key="fixed"`, `ports` must have `minItems: 1`
+  - `detection` (optional) with `binary` / `snap` / `config_files` arrays
+- **`services-list.schema.json`** wraps the array form (the entire `services.json` file or a user plugin file).
+
+Schemas shipped via `package_data` so they're available at `bob/data/schemas/*.json` after pip install — any external tooling (`check-jsonschema`, `ajv`, IDE plugins) can validate user plugins.
+
+The Python validator in `Service.from_dict()` remains the runtime source of truth — **zero added runtime dependency**. The JSON Schema mirrors it for external tooling.
+
+`bob/registry.py` `Service` class docstring now points to the schema file as the formal contract.
+
+`DOCUMENTS/README_TECH.md` (and FR) gains a "Service plugin schema" subsection with a complete example and an explanation of required vs optional fields. The pre-fix note about `Path.home()` resolving to `/root` is also updated to reflect v0.3.6's `get_user_home()` fix.
+
+#### Tests
+
+`tests/test_services_schema.py` (new, 20 tests, 5 classes):
+
+- `TestSchemasAreWellFormed` — schemas pass Draft 2020-12 self-validation, have proper `$id`/`title`.
+- `TestBundledServicesMatchSchema` — bundled `services.json` validates entry-by-entry, IDs are unique.
+- `TestValidPluginSamples` — 3 sample valid plugins (minimal fixed, with detection block, user config_key).
+- `TestInvalidPluginSamples` — 8 rejection cases (missing required field, invalid risk, malformed port, port 0, port > 65535 via Python, unknown field, fixed without ports, ID with spaces, empty binary string).
+- `TestSchemaPythonParity` — what the schema accepts is also accepted by `Service.from_dict()`, what fails Python is also caught by the schema.
+
+`jsonschema` is a test-only dependency, not runtime — uses `pytest.importorskip` so the test file simply skips on systems where it's not installed.
+
+#### Design notes
+
+The port-range constraint (1–65535) is enforced by Python only — the schema's regex permits 1–99999 for simplicity. Documented in the schema's `description`. Acceptable trade-off: the `Service.from_dict()` parity test ensures invalid ports are rejected at runtime; external linters get a "good enough" warning that catches obvious mistakes (port 0, decimals, non-numeric strings).
+
+The `binary` field accepts both binary names (resolved via `$PATH`) and absolute paths — the bundled `services.json` uses both forms (e.g. `"in.telnetd"` for telnet, `"/usr/sbin/postfix"` would also be valid).
+
+---
+
+### Hardening — Plugin schema rewritten after external review
+
+**Files:** `bob/data/schemas/service.schema.json`, `bob/data/schemas/services-list.schema.json`, `bob/data/schemas/plugin-file.schema.json` (new), `bob/data/services.json`, `bob/registry.py`, `tests/test_services_schema.py`
+
+#### Problem
+
+An external review (ChatGPT analysis prompted by the user) flagged 10 issues with the JSON Schema introduced earlier in this release. Five of them were real contract leaks that would mislead distro packagers and external linters; this section addresses them. The remaining five (typed `ports: [{port,proto}]`, `port_resolution` object replacing `config_key` enum-vs-identifier mix, multi-PM `packages: {apt:[],dnf:[]}`, typed `binary` union, plugin-file metadata wrapper) are breaking changes deferred to schema v2 (planned for v0.5.0).
+
+The five fixed in this release:
+
+1. **Description promises that the schema can't validate.** The previous version stated "must be unique across all loaded services" and "mirrors `Service.from_dict()` validation" — both lies. JSON Schema cannot enforce cross-document uniqueness, and the schema only mirrored a *subset* of Python validation (notably missing the reserved-keyword check and the strict 1–65535 port range).
+2. **Port regex deliberately lax** (`^[1-9][0-9]{0,4}/(tcp|udp)$` permitted `99999/tcp`). A schema-valid plugin could fail at runtime — broke the "schema-valid == application-valid" contract.
+3. **No `$defs` factorization** — repeated string patterns scattered across properties.
+4. **Missing business constraints** — `config_key="auto"` without `config_files` was valid, an empty `detection: {}` was valid, and a plugin with `packages: []`, `services: []`, no `detection` was valid (and undetectable at runtime).
+5. **No `schema_version` in plugin files** — impossible to gate future schema migrations cleanly.
+6. **`$id` pointed at `github.com/.../blob/main/...`** — unstable URL (HTML page, branch-dependent, not raw, not versioned).
+
+#### Implementation
+
+**`service.schema.json`** rewritten with:
+
+- **`$defs` block** factorizing 6 reusable sub-schemas: `Identifier`, `PythonIdentifier`, `PackageName`, `SystemdUnit`, `PortProto`, `BinaryRef`, `AbsolutePath`. Each carries an explicit description noting v2-planned changes (typed ports, typed binary union).
+- **Strict port regex** `^(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})/(tcp|udp)$` enforcing exactly 1–65535. Schema-valid now equals Python-valid.
+- **Clear scope description** stating which invariants the schema enforces vs which are runtime-only (cross-service uniqueness, Python reserved-keyword exclusion).
+- **3 `allOf` business constraints** via `if/then` and `anyOf`:
+  1. `config_key="fixed"` requires `ports.minItems: 1` (already present).
+  2. `config_key="auto"` requires `detection.config_files.minItems: 1` (new — without it, auto-detection has nothing to parse).
+  3. Service must be detectable: at least one of `packages`, `services`, or `detection.{binary|snap}` non-empty (new — prevents loading invisible services).
+- **`detection.minProperties: 1`** — empty detection blocks (`detection: {}`) rejected.
+- **Versioned `$id`** pointing at `raw.githubusercontent.com/.../v0.4.0/...` — stable, raw, version-pinned.
+
+**`plugin-file.schema.json`** (new) describes the two accepted shapes for `~/.config/bob/services.d/*.json`:
+
+```json
+[ { ...service... }, { ... } ]
+```
+
+…or:
+
+```json
+{
+  "schema_version": 1,
+  "services": [ { ...service... } ]
+}
+```
+
+The wrapper exists so future schema migrations (v2 typed ports, etc.) can be gated explicitly via `schema_version`. Currently only `schema_version: 1` is accepted; reserved fields like `metadata` / `disabled` are rejected today and earmarked for future versions.
+
+**`bob/registry.py`**: new helper `_extract_plugin_entries(raw, plugin_name) -> list | None` consumes either shape. The constant `_CURRENT_PLUGIN_SCHEMA_VERSION = 1` gates: higher versions are rejected with a "upgrade BOB or downgrade the plugin" warning so users get a clear hint instead of silent half-loading. Lower or non-integer versions are also rejected. The legacy raw-array path is unchanged — backward compatibility preserved.
+
+**`bob/data/services.json`**: 4 bundled services had a `detection: {binary: [], snap: [], config_files: []}` block that added zero signal. Removed entirely. `postgresql` and `syncthing` had `config_key="auto"` without `config_files` (functionally equivalent to `fixed`) — migrated to `config_key="fixed"` to match reality.
+
+#### Tests
+
+`tests/test_services_schema.py` extended from 20 to 42 tests (+22):
+
+- `TestInvalidPluginSamples` updated: `test_port_above_65535_rejected_by_schema` (no longer Python-only), plus boundary tests `test_port_65535_accepted` / `test_port_65536_rejected`.
+- `TestBusinessConstraints` (new, 7 tests): `auto` without `config_files` rejected, `auto` with empty array rejected, `auto` with paths accepted, undetectable service rejected, binary-only / snap-only detection accepted, empty `detection: {}` rejected.
+- `TestPluginFileWrapper` (new, 6 tests): legacy array accepted, wrapped v1 accepted, missing `schema_version` rejected, missing `services` rejected, v2 currently rejected, extra fields rejected.
+- `TestRegistryAcceptsBothShapes` (new, 7 tests): Python `_extract_plugin_entries` accepts both shapes, rejects unknown / zero / non-int / missing services, rejects non-array/non-dict.
+
+`jsonschema.RefResolver` used for cross-file `$ref` resolution (kept for compatibility with jsonschema 4.10+; the modern `referencing` Registry from 4.18+ would also work).
+
+#### Design notes
+
+- **Schema v2 deferred deliberately.** Refactoring `ports: ["22/tcp"]` → `ports: [{port: 22, proto: "tcp"}]` impacts `bob/data/services.json` (32 services), the `Service` dataclass, `_PORT_RE`, every check that iterates `service.ports`, plus extensive test fixture rewrites. That work belongs in v0.5.0 with explicit migration documentation, not bundled into this release.
+- **The wrapper pre-empts the v2 problem.** Today `schema_version: 1` is the only accepted value, but the field exists in the file format from now on. When v2 ships, plugin files declaring `schema_version: 2` get the new validator; v1 plugins keep working through a compat path.
+- **Empty `detection` blocks were silently broken.** Some bundled services carried them as boilerplate; removing them surfaces actual detection signal and prevents future copy-paste of dead config.
+
+---
+
+### Hardening pass #2 — schema descriptions, test fixtures, RefResolver compat
+
+**Files:** `bob/data/schemas/services-list.schema.json`, `bob/data/schemas/plugin-file.schema.json`, `tests/conftest.py`, `tests/test_json_schema.py`, `tests/test_services_schema.py`
+
+#### Problem
+
+A second external review pass on the freshly hardened schema and test files surfaced a smaller round of legitimate issues — none structural this time, but worth fixing before shipping the v0.4.0 contract:
+
+1. **`services-list.schema.json`**: an empty array `[]` was structurally valid (no `minItems`). A user creating a plugin file and forgetting to add entries got a silently-loaded zero-services file.
+2. **`plugin-file.schema.json`**: the description used "schema_version: 1 implicit fallback" wording that wasn't reflected in the schema itself, and didn't explain *why* `maximum: 1` was deliberate or *why* `additionalProperties: false` rejects the very fields the description calls "reserved". Risk: a packager reads the description and thinks the schema misbehaves.
+3. **`tests/conftest.py`**: `import os` was unused (pyflakes warning), and the docstring promised more than the fixture delivers (sets env vars only, doesn't call `setlocale()` for libc/ICU consumers).
+4. **`tests/test_json_schema.py`**: heavy `MagicMock` injection in fixtures meant a renamed attribute in `build_json_data`'s real argument types (e.g. `sys_info.fqdn` instead of `sys_info.hostname`) would pass silently — mocks invent attributes on access. The timestamp validator was a substring check (`"T" in ts`) that accepts plenty of non-ISO strings. The contract had a single source (the production constants `SCHEMA_V1_REQUIRED_KEYS` / `SCHEMA_V1_FULL_KEYS`) so a bad edit to the constants left tests tautological.
+5. **`tests/test_services_schema.py`**: `RefResolver` is deprecated in jsonschema ≥ 4.18 (we're on 4.10 today; CI runners on newer images would emit `DeprecationWarning`). The four per-class `validator` fixtures duplicated the same one-liner. The duplicate-id check used `ids.count(x)` per element (O(n²)). Several `assert errors` checks didn't pin which field the error was about — a regression elsewhere in the schema could mask a missing test.
+
+#### Implementation
+
+**Schemas:**
+
+- `services-list.schema.json`: added `"minItems": 1`. Description rewritten to clarify it is the canonical bundled-list shape and to point users to `plugin-file.schema.json` for new plugin files. Explicit note that cross-service `id` uniqueness is runtime-only (consistent with `service.schema.json` SCOPE clause).
+- `plugin-file.schema.json`: title gains `— schema v1` suffix to make versioning explicit. Top-level description restructured into three sections:
+  - **Why `maximum: 1`**: each major schema bump ships its OWN `plugin-file.schema.json` at a NEW `$id`. A v2 plugin file MUST be validated against the v2 schema, not this one.
+  - **Why `additionalProperties: false` rejects "reserved" fields**: rejecting today prevents collision with the meaning v2/v3 will give them.
+  - **Runtime fallback `[…] → schema_version: 1`**: explicitly noted as an `_extract_plugin_entries` convenience, NOT a schema rule.
+
+**conftest.py:** removed unused `import os`. Docstring explicitly states "only sets process environment variables. It does NOT call `setlocale()`" and justifies the explicit triple `LC_ALL`/`LC_MESSAGES`/`LANG` (POSIX precedence makes the last two redundant when `LC_ALL` is set, but the explicit triple documents the intent and is robust against downstream code probing any single var directly).
+
+**test_json_schema.py:** complete rewrite of the fixtures:
+- `MagicMock` replaced by real `SystemInfo`, `PortsSnapshot`, `FirewallStackSnapshot`, `NetworkContextSnapshot`, `CheckResult` instances. A renamed attribute in `bob.json_output.build_json_data` now raises `AttributeError` instead of getting auto-mocked.
+- Timestamp test uses `datetime.fromisoformat(ts)` (strict ISO 8601) and asserts `tzinfo is not None`.
+- Contract source duplicated: a hard-coded `EXPECTED_REQUIRED_KEYS_V1` / `EXPECTED_FULL_KEYS_V1` set in the test file matches against the production constants, so an edit to either side without the other is caught (`test_constants_match_expected_set`).
+- New `test_short_mode_strict_set` rejects unexpected keys leaking into short mode — additive changes must be explicit (move to full mode or bump schema_version).
+- Engine creation lifted into a pytest fixture (was duplicated 12+ times via `_make_engine()` calls).
+
+**test_services_schema.py:**
+- New helper `_make_resolved_validator(root, extra_schemas)` tries the modern `referencing.Registry` path first (jsonschema ≥ 4.18) and falls back to legacy `RefResolver` (4.10–4.17). Single migration point when the legacy branch eventually goes.
+- Module-scope `service_validator` fixture replaces four per-class duplicates; the per-class `validator` fixtures become single-line delegates.
+- `test_bundled_services_have_unique_ids` switched to `Counter` (O(n)).
+- Targeted asserts using `e.absolute_path` instead of message substring matching on the most informative tests: `test_invalid_port_format`, `test_port_zero_rejected`, `test_port_above_65535_rejected_by_schema`, `test_id_with_spaces_rejected`, `test_empty_binary_string_rejected`. `absolute_path` is stable across jsonschema versions; `e.message` is not.
+
+#### Tests
+
+Total **4430/4430** (was 4427 before this pass — net +3, all defense-in-depth):
+- `test_json_schema.py`: 15 → 17 (+`test_short_mode_strict_set`, +`test_constants_match_expected_set`).
+- `test_services_schema.py`: 42 → 43 (+`test_services_list_rejects_empty_array` — verifies the new `minItems: 1`).
+- All existing tests pass after the MagicMock-to-real refactor — proof that the production code accesses exactly the attributes the dataclasses expose (no hidden divergence).
+
+#### Design notes
+
+- **Why two hardening passes instead of one cleanly factored release.** Each pass was prompted by a separate external review (ChatGPT) over the user's IDE-selected files. Splitting them in the changelog preserves the "what was missed first time" trace, which is useful for postmortems and for understanding the iterative tightening.
+- **`assert errors` vs `assert errors[i].absolute_path == [...]`** — kept `assert errors` on the trivial cases (e.g. `test_unknown_field_rejected`, `test_fixed_without_ports_rejected`) where the failure mode is "any error". Tightened only on tests where multiple distinct violations could mask each other.
+- **Defense in depth via duplicated key list.** The `EXPECTED_REQUIRED_KEYS_V1` set in the test file is intentionally a copy of `SCHEMA_V1_REQUIRED_KEYS`. The test `test_constants_match_expected_set` is the safety net: an unintended edit to the production constant flips the test red, forcing the editor to acknowledge the contract change.
+
+---
+
+### Bonus UX — `= N` redundant suffix on unchanged score removed
+
+**Files:** `bob/display.py`, `tests/test_min_level.py`
+
+#### Problem
+
+Field test on so6desktop showed:
+
+```
+║  Score de sécurité : 8/10  = 8                                               ║
+```
+
+The `= 8` was a vestige of a v0.3.0 fix ("score delta orphan arrow: stable score shows = N instead of bare →") — the original intent was to avoid a bare `→` when the score was unchanged, but the `= N` form ended up redundant: the score `8/10` is already two characters earlier on the same line.
+
+#### Implementation
+
+In `bob/display.py:print_audit_summary()`, the `delta == 0` branch is removed entirely:
+
+```python
+score_str = f"{score}/10"
+if prev_score is not None:
+    delta = score - prev_score
+    if delta > 0:
+        score_str += f"  {_c.green}↑ +{delta}{_c.reset}"
+    elif delta < 0:
+        score_str += f"  {_c.yellow}↓ {delta}{_c.reset}"
+    # delta == 0: score unchanged, no annotation needed
+```
+
+`tests/test_min_level.py:TestScoreTrend::test_stable_shows_equal` renamed to `test_stable_shows_no_annotation` and inverted: now asserts that no `↑`/`↓` arrow appears and the value is exactly `"7/10"` (no suffix).
+
+---
+
+### Tests summary — 4430/4430 (+82)
+
+| Test file | Class | New | Existing |
+|---|---|----:|----:|
+| `tests/test_exit_codes.py` | (existing) | 0 | 18 |
+| `tests/test_i18n.py` | `TestDetectSystemLang` | +12 | — |
+| `tests/test_cli.py` | `TestParse::test_*_locale` | +4 | — |
+| `tests/test_json_schema.py` (new) | 4 classes | +17 | — |
+| `tests/test_explain.py` | `TestExplainKeyAliases`, `TestExplainKeyFreezePolicy` | +6 | — |
+| `tests/test_services_schema.py` (new) | 9 classes | +43 | — |
+| `tests/test_min_level.py` | `TestScoreTrend::test_stable_shows_no_annotation` | renamed | — |
+| `tests/conftest.py` (new) | autouse fixture forces `LANG=C` | — | — |
+
+Notes on the trajectory of these counts during v0.4.0 development:
+- `test_services_schema.py`: 20 (initial) → 42 (post-review hardening pass #1) → 43 (pass #2 added `test_services_list_rejects_empty_array` for the new `minItems: 1`).
+- `test_json_schema.py`: 15 (initial) → 17 (pass #2 added `test_short_mode_strict_set` and `test_constants_match_expected_set` as defense-in-depth against silent contract drift).
+
+### Field validation
+
+End-to-end audit on so6desktop (Linux Mint 22.3) confirms:
+- v0.4.0 banner correctly displayed
+- Locale auto-detected as French via `$LANG=fr_FR.UTF-8`
+- All sections render correctly; UFW logging shown (UFW active), IPv6 link-local correctly classified, plugins/profiles loaded from `/home/so6/.config/bob/`
+- Score 8/10, delta tracked from previous audit, "Score inchangé" line shown without redundant `= 8` suffix
+- 4405 tests green, pyflakes clean (one intentional `# noqa: F401`)
+
+---
+
 ## [v0.3.6] — 2026-05-09
 
 Code-review pass after a deep audit of the codebase. No new features, no behaviour changes, no new tests — only bug fixes, hygiene cleanup, and consistency improvements. Eight related fixes covering sudo-aware path resolution, IPv6 private-range coverage, SSH check semantics, UFW section rendering, cron legacy compatibility, sub-check placement, dead imports, and dead locale keys. 4348/4348 tests.

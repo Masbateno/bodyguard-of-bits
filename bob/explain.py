@@ -13,6 +13,25 @@ Usage:
     from bob.explain import run_explain
     run_explain("ssh.password_auth", t)
     run_explain("list", t)          # prints all available keys
+
+==============================================================================
+STABLE PUBLIC API — `--explain` KEY FREEZE POLICY
+==============================================================================
+
+The keys exposed via `--explain` (and also surfaced as `Finding.key` /
+`Deduction.key` in the JSON output) are part of BOB's public contract:
+
+  - **No removal** — once a key is published in a release, it stays callable
+    for the lifetime of the major schema version.
+  - **No semantic shift** — a key always describes the same underlying check.
+  - **Renames go through `EXPLAIN_KEY_ALIASES`** — the old name keeps working
+    indefinitely (or at least one full major release cycle before the alias
+    itself can be retired).
+  - **Additions are free** — new keys can be added in any minor release.
+
+Clients (scripts, dashboards, distro packagers) can rely on the key set and
+match findings via `key`, locale-independent, across versions.
+==============================================================================
 """
 
 from __future__ import annotations
@@ -210,6 +229,28 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
 EXPLAIN_KEYS: list[str] = [k for _, keys in _EXPLAIN_GROUPS for k in keys]
 
 # ---------------------------------------------------------------------------
+# Key aliases — backward compatibility for renamed keys
+# ---------------------------------------------------------------------------
+#
+# When a key is renamed, add an entry here:  old_name → new_name
+# `normalize_key()` resolves aliases transparently so old scripts/clients
+# referencing the legacy name keep working.
+#
+# Aliases never expire within the same major schema version. A future major
+# bump (schema_version "2") MAY drop aliases, but each removal must be
+# announced one full minor release in advance with a deprecation notice.
+#
+# Currently empty — no key has been renamed yet. This map exists so a future
+# rename has a documented, tested migration path.
+# ---------------------------------------------------------------------------
+
+EXPLAIN_KEY_ALIASES: dict[str, str] = {
+    # Example (commented out, kept for reference):
+    # "ssh.permit_root":  "ssh.permit_root_login",   # renamed in v0.X.0
+}
+
+
+# ---------------------------------------------------------------------------
 # Key normalisation
 # ---------------------------------------------------------------------------
 
@@ -227,13 +268,21 @@ def normalize_key(key: str) -> str:
     """
     Return the canonical explain-lookup key.
 
-    'file_perms.shadow.world_writable'  →  'file_perms.world_writable'
-    'ssh.password_auth'                 →  'ssh.password_auth'   (unchanged)
+    Resolution order:
+      1. Strip path-segment middles for ``file_perms.*`` keys
+         (``file_perms.shadow.world_writable`` → ``file_perms.world_writable``).
+      2. Resolve via ``EXPLAIN_KEY_ALIASES`` if the result is a legacy name
+         (e.g. an alias added when a key was renamed).
+
+    Examples:
+        'file_perms.shadow.world_writable'  →  'file_perms.world_writable'
+        'ssh.password_auth'                 →  'ssh.password_auth'   (unchanged)
+        '<legacy_name>'                     →  '<current_name>'      (via aliases)
     """
     m = _NORMALIZE_RE.match(key)
     if m:
-        return f"{m.group(1)}.{m.group(2)}"
-    return key
+        key = f"{m.group(1)}.{m.group(2)}"
+    return EXPLAIN_KEY_ALIASES.get(key, key)
 
 
 # ---------------------------------------------------------------------------

@@ -317,9 +317,12 @@ class TestScoreTrend:
         val = self._score_str_for(6, 7)
         assert "↓" in val
 
-    def test_stable_shows_equal(self):
+    def test_stable_shows_no_annotation(self):
+        # Score unchanged: no delta annotation (the score itself is enough).
         val = self._score_str_for(7, 7)
-        assert "= 7" in val
+        assert val == "7/10"
+        assert "↑" not in val
+        assert "↓" not in val
 
     def test_improved_by_two(self):
         val = self._score_str_for(9, 7)

@@ -42,10 +42,20 @@ from bob.runner import (
 from bob.scoring import ScoreEngine
 from bob.sysinfo import collect_system_info, detect_network_context
 
-EXIT_OK           = 0  # clean audit — no alerts, no warnings
-EXIT_WARNINGS     = 1  # warnings detected
-EXIT_ALERTS       = 2  # alerts detected (action required)
-EXIT_ERROR        = 3  # technical error
+# ---------------------------------------------------------------------------
+# Exit codes — STABLE PUBLIC API
+# ---------------------------------------------------------------------------
+# These exit codes are part of BOB's public API. Scripts and CI pipelines may
+# depend on them. They will not change within a major version (no removal,
+# no semantic shift). New codes may be added at the end if needed.
+#
+# Documented in --help and DOCUMENTS/README_TECH.md.
+# ---------------------------------------------------------------------------
+
+EXIT_OK            = 0  # clean audit — no alerts, no warnings
+EXIT_WARNINGS      = 1  # warnings detected (improvements suggested)
+EXIT_ALERTS        = 2  # alerts detected (action required)
+EXIT_ERROR         = 3  # technical error (CLI parsing, IO, internal)
 EXIT_TARGET_MISSED = 4  # --target N specified and score < N
 
 

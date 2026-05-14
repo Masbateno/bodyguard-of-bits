@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,34 @@ _MAX_LOCALE_SIZE = 512 * 1024  # 512 KB
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def detect_system_lang() -> str:
+    """
+    Detect the user's preferred language from POSIX locale environment variables.
+
+    Probes (in standard POSIX order): ``$LC_ALL``, ``$LC_MESSAGES``, ``$LANG``.
+    Returns one of ``SUPPORTED_LANGS`` (``"en"`` or ``"fr"``).
+
+    Falls back to ``DEFAULT_LANG`` when:
+      - none of the env vars are set
+      - the locale is ``C`` or ``POSIX``
+      - the locale prefix doesn't match any supported language
+
+    A locale of the form ``fr_FR.UTF-8``, ``fr_BE``, ``fr_CA@something`` resolves
+    to ``"fr"``. Anything else (incl. ``ja_JP``, ``de_DE``) → ``"en"``.
+    """
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(var, "").strip()
+        if not value or value in ("C", "POSIX", "C.UTF-8", "C.utf8"):
+            continue
+        # strip codeset (.UTF-8) and modifier (@euro)
+        prefix = value.split(".", 1)[0].split("@", 1)[0]
+        # 2-letter language code is the first segment of "ll_CC"
+        lang = prefix.split("_", 1)[0].lower()
+        if lang in SUPPORTED_LANGS:
+            return lang
+        return DEFAULT_LANG
+    return DEFAULT_LANG
 
 def init(lang: str = DEFAULT_LANG) -> None:
     """

@@ -182,12 +182,7 @@
       "5432/tcp"
     ],
     "risk": "critical",
-    "config_key": "auto",
-    "detection": {
-      "binary": [],
-      "snap": [],
-      "config_files": []
-    }
+    "config_key": "fixed"
   },
   {
     "id": "transmission",
@@ -246,12 +241,7 @@
       "5353/udp"
     ],
     "risk": "low",
-    "config_key": "fixed",
-    "detection": {
-      "binary": [],
-      "snap": [],
-      "config_files": []
-    }
+    "config_key": "fixed"
   },
   {
     "id": "cups",
@@ -376,12 +366,7 @@
       "32400/tcp"
     ],
     "risk": "medium",
-    "config_key": "fixed",
-    "detection": {
-      "binary": [],
-      "snap": [],
-      "config_files": []
-    }
+    "config_key": "fixed"
   },
   {
     "id": "homeassistant",
@@ -498,12 +483,7 @@
       "22000/tcp"
     ],
     "risk": "medium",
-    "config_key": "auto",
-    "detection": {
-      "binary": [],
-      "snap": [],
-      "config_files": []
-    }
+    "config_key": "fixed"
   },
   {
     "id": "telnet",

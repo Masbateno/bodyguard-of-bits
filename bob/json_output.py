@@ -1,4 +1,18 @@
-"""JSON serialization of audit results."""
+"""
+JSON serialization of audit results — stable public output contract.
+
+The structure below is part of BOB's public API. Backwards-compatibility rules:
+
+  - Top-level keys never disappear, never get renamed, never change semantics
+    within a given major ``schema_version``.
+  - New top-level keys MAY be added in any release; clients should ignore
+    unknown keys.
+  - Nested dicts follow the same rule. Nested keys may be added but never
+    removed/renamed within the same major schema version.
+  - Breaking changes bump ``schema_version`` to a new major (``"2"``, ``"3"``…).
+
+For full schema reference, see DOCUMENTS/README_TECH.md → "JSON output schema".
+"""
 
 from __future__ import annotations
 
@@ -14,6 +28,34 @@ from bob.report import SystemInfo
 from bob.scoring import ScoreEngine
 
 _SCHEMA_VERSION = "1"
+
+# Top-level keys ALWAYS present in the output, regardless of `full=`.
+# Tests assert this set as a hard invariant (no removal, no rename within v1).
+SCHEMA_V1_REQUIRED_KEYS = frozenset({
+    "schema_version",
+    "version",
+    "host",
+    "timestamp",
+    "score",
+    "score_max",
+    "risk",
+    "network_context",
+    "public_ip",
+    "alerts",
+    "warnings",
+    "deductions",
+    "domain_scores",
+})
+
+# Additional top-level keys present only when `full=True` (--json-full).
+SCHEMA_V1_FULL_KEYS = frozenset({
+    "findings",
+    "services",
+    "open_ports",
+    "firewall_stack",
+    "hardening",        # only when hardening_snapshot provided
+    "ipv6",             # only when ipv6_snapshot provided
+})
 
 
 def build_json_data(
@@ -44,13 +86,14 @@ def build_json_data(
         "alerts":          engine.alert_count,
         "warnings":        engine.warn_count,
         "deductions": [
-            {"reason": d.reason, "points": d.points}
+            {"reason": d.reason, "points": d.points, "key": d.key}
             for d in engine.breakdown if d.points > 0
         ],
     }
     if full:
         data["findings"] = [
             {
+                "key":     f.key,
                 "level":   f.level.value,
                 "message": f.message,
                 "nature":  f.nature,

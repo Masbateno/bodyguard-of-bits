@@ -74,6 +74,79 @@ class TestNormalizeKey:
 # EXPLAIN_KEYS list
 # ---------------------------------------------------------------------------
 
+class TestExplainKeyAliases:
+    """Backward-compat alias map for renamed --explain keys."""
+
+    def test_alias_map_is_dict(self):
+        from bob.explain import EXPLAIN_KEY_ALIASES
+        assert isinstance(EXPLAIN_KEY_ALIASES, dict)
+
+    def test_alias_targets_resolve_to_valid_keys(self):
+        """Every alias target must be a real key in the canonical set."""
+        from bob.explain import EXPLAIN_KEY_ALIASES
+        for old, new in EXPLAIN_KEY_ALIASES.items():
+            assert new in EXPLAIN_KEYS, (
+                f"Alias {old!r} → {new!r}: target is not in EXPLAIN_KEYS. "
+                "Either the rename is wrong, or the new key was never added."
+            )
+
+    def test_alias_keys_are_not_in_canonical_set(self):
+        """Old/aliased names should not appear in the canonical key list."""
+        from bob.explain import EXPLAIN_KEY_ALIASES
+        for old in EXPLAIN_KEY_ALIASES:
+            assert old not in EXPLAIN_KEYS, (
+                f"Legacy alias {old!r} should not also exist as a current key — "
+                "remove from canonical set or remove the alias."
+            )
+
+    def test_normalize_key_resolves_aliases(self, monkeypatch):
+        """When an alias is registered, normalize_key follows the mapping."""
+        from bob import explain
+        # Register a temporary alias for the duration of this test
+        monkeypatch.setitem(explain.EXPLAIN_KEY_ALIASES, "ssh.legacy_root_login", "ssh.permit_root_login")
+        assert explain.normalize_key("ssh.legacy_root_login") == "ssh.permit_root_login"
+
+    def test_normalize_key_passthrough_when_no_alias(self):
+        """Unknown / non-aliased keys pass through unchanged."""
+        from bob.explain import normalize_key
+        assert normalize_key("ssh.password_auth") == "ssh.password_auth"
+        assert normalize_key("nonexistent.key") == "nonexistent.key"
+
+
+class TestExplainKeyFreezePolicy:
+    """Public-API stability — these keys must NEVER disappear within v1 schema."""
+
+    # A representative subset of "load-bearing" keys that scripts and dashboards
+    # are most likely to match on. Removing any of these = breaking change.
+    _FROZEN_CORE_KEYS = frozenset({
+        "ssh.password_auth",
+        "ssh.permit_root_login",
+        "ssh.permit_empty_passwords",
+        "ssh.weak_ciphers",
+        "ssh.allow_tcp_forwarding",
+        "ssh.x11_forwarding",
+        "ssh.max_auth_tries",
+        "firewall.logging_off",
+        "kernel_hardening.aslr_disabled",
+        "kernel_modules.risky_fs",
+        "auditd.not_installed",
+        "auditd.no_rules",
+        "secure_boot.disabled",
+        "file_integrity.not_installed",
+        "user_accounts.uid_zero",
+        "user_accounts.empty_password",
+    })
+
+    def test_core_keys_present_in_canonical_set(self):
+        """Frozen core keys must remain in EXPLAIN_KEYS — schema_version v1 contract."""
+        canonical = set(EXPLAIN_KEYS)
+        missing = self._FROZEN_CORE_KEYS - canonical
+        assert not missing, (
+            f"v1 schema contract broken — frozen keys missing: {missing}. "
+            "Either restore them or add them to EXPLAIN_KEY_ALIASES (alias map)."
+        )
+
+
 class TestExplainKeysList:
     def test_has_one_hundred_twelve_keys(self):
         assert len(EXPLAIN_KEYS) == 112

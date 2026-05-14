@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Masbateno/bodyguard-of-bits/v0.4.0/bob/data/schemas/service.schema.json",
+  "title": "BOB service definition",
+  "description": "Schema for a single service entry inside services.json or a *.json file dropped into ~/.config/bob/services.d/.\n\nSCOPE: This schema validates the structural and syntactic shape of a service entry. It does NOT enforce all runtime constraints. The following invariants are validated by bob.registry.Service.from_dict() at load time and CANNOT be expressed in pure JSON Schema:\n  * cross-service uniqueness of `id` across all loaded services (a single document can pass schema validation but fail at runtime when its IDs clash with another file)\n  * `config_key` must not be a Python reserved keyword (the regex permits any valid identifier; the keyword check is runtime-only)\n\nA document that validates against this schema is structurally well-formed; whether it loads successfully into BOB also depends on the runtime checks above. Schema major version: 1 (additive changes only within v1; breaking changes bump to v2 and gate via the optional `schema_version` field on plugin file wrappers — see plugin-file.schema.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "label", "packages", "services", "ports", "risk", "config_key"],
+
+  "$defs": {
+    "Identifier": {
+      "description": "Lowercase identifier used for service IDs and similar slug-like fields.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+    },
+    "PythonIdentifier": {
+      "description": "Valid Python identifier shape. NOTE: Python reserved keywords are NOT excluded by this schema; the runtime validator rejects them.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "PackageName": {
+      "description": "Package identifier as understood by the host package manager (apt, dnf, …). The current build is Debian/Ubuntu-focused; future multi-PM support may expand this to a typed object.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "SystemdUnit": {
+      "description": "systemd unit name (with or without a .service suffix).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "PortProto": {
+      "description": "Port descriptor in 'number/proto' form. Number is 1–65535, proto is tcp or udp. NOTE: this string-based encoding will be replaced by a typed object {port,proto} in schema v2; do not extend with new sub-fields here.",
+      "type": "string",
+      "pattern": "^(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})/(tcp|udp)$"
+    },
+    "BinaryRef": {
+      "description": "Bare command name (resolved via $PATH at runtime) or absolute path. Schema v2 will switch to a typed union {name|path}.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "AbsolutePath": {
+      "description": "Absolute filesystem path (must start with /).",
+      "type": "string",
+      "pattern": "^/",
+      "maxLength": 512
+    }
+  },
+
+  "properties": {
+    "id": {
+      "description": "Identifier for the service (e.g. 'ssh', 'nginx'). Cross-service uniqueness is enforced at runtime, not by this schema.",
+      "$ref": "#/$defs/Identifier"
+    },
+    "label": {
+      "description": "Human-readable display name (e.g. 'SSH Server').",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "packages": {
+      "description": "Package names looked up via the host package manager. Empty array is allowed for binary-only / snap-only services.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/PackageName" },
+      "maxItems": 32
+    },
+    "services": {
+      "description": "systemd units checked for active/enabled state.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/SystemdUnit" },
+      "maxItems": 32
+    },
+    "ports": {
+      "description": "Default ports in 'number/proto' format. Required when config_key='fixed'. Range strictly 1–65535.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/PortProto" },
+      "maxItems": 32
+    },
+    "risk": {
+      "description": "Risk classification — drives default scoring weight when the service is exposed.",
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "config_key": {
+      "description": "Port resolution strategy. Current encoding mixes an enum ('fixed', 'ask', 'auto') with a free-form identifier (e.g. 'ssh_port', read from the user config file). Schema v2 will split this into a typed `port_resolution` object.",
+      "$ref": "#/$defs/PythonIdentifier"
+    },
+    "detection": {
+      "description": "Extended detection hints for services not installable via the host package manager alone. At least one of `binary`, `snap`, or `config_files` should be non-empty if provided — an empty `detection: {}` adds no signal.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "binary": {
+          "description": "Bare command names (resolved via $PATH) or absolute paths.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/BinaryRef" },
+          "maxItems": 16
+        },
+        "snap": {
+          "description": "Snap package names checked via 'snap list'.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "maxItems": 16
+        },
+        "config_files": {
+          "description": "Absolute config file paths used to auto-detect the service port (when config_key='auto').",
+          "type": "array",
+          "items": { "$ref": "#/$defs/AbsolutePath" },
+          "maxItems": 16
+        }
+      }
+    }
+  },
+
+  "allOf": [
+    {
+      "title": "config_key='fixed' requires at least one port",
+      "if":   { "properties": { "config_key": { "const": "fixed" } }, "required": ["config_key"] },
+      "then": { "properties": { "ports": { "minItems": 1 } } }
+    },
+    {
+      "title": "config_key='auto' requires detection.config_files (else nothing to parse)",
+      "if":   { "properties": { "config_key": { "const": "auto" } }, "required": ["config_key"] },
+      "then": {
+        "required": ["detection"],
+        "properties": {
+          "detection": {
+            "required": ["config_files"],
+            "properties": {
+              "config_files": { "minItems": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "Service must be detectable: at least one of packages, services, or detection.{binary|snap}",
+      "anyOf": [
+        { "properties": { "packages": { "minItems": 1 } }, "required": ["packages"] },
+        { "properties": { "services": { "minItems": 1 } }, "required": ["services"] },
+        {
+          "required": ["detection"],
+          "properties": {
+            "detection": {
+              "anyOf": [
+                { "properties": { "binary": { "minItems": 1 } }, "required": ["binary"] },
+                { "properties": { "snap":   { "minItems": 1 } }, "required": ["snap"]   }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.0 | 4430 | Phase 1 distro-ready (+82) : `TestDetectSystemLang` (12) · `TestExplainKeyAliases` + `TestExplainKeyFreezePolicy` (6) · `test_json_schema.py` (17 — incl. strict-set + defense-in-depth contre dérive des constantes) · `test_services_schema.py` (43 — incl. `$defs`, regex port stricte 1–65535, contraintes métier, wrapper plugin-file, `minItems: 1` sur services-list) · 4 intégration locale CLI |
 | v0.3.6 | 4348 | Aucun nouveau test — passe code review (`Path.home()` sudo-aware, ULA IPv6, SSH `local`, imports/locales morts) |
 | v0.3.5 | 4348 | Aucun nouveau test — refactoring pur (`runner.py` closure `_sec`, `ssh.py` helper `_check_weak_algo`) |
 | v0.3.4 | 4348 | Aucun nouveau test — hotfix uniquement (`user_config` NameError sur whitelist SUID) |
@@ -25,6 +26,104 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.4.0 — 4430/4430 (14-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4430 passed in 5.52s
+```
+
+**Net : +82 (aucune suppression).** Contrats Phase 1 distro-ready figés, plus deux passes de hardening post-revue :
+- **Passe #1** (+22 tests dans `test_services_schema.py`) : regex port stricte 1–65535, factorisation `$defs`, contraintes métier `if/then`/`anyOf`, wrapper `schema_version` plugin-file.
+- **Passe #2** (+3 tests, defense-in-depth) : `services-list.minItems: 1` (rejette les tableaux vides), fixtures à classes réelles remplaçant `MagicMock` dans `test_json_schema.py` (les attributs renommés lèvent `AttributeError` au lieu d'être auto-mockés), `EXPECTED_REQUIRED_KEYS_V1` dupliqué pour détecter la dérive du contrat, compat shim `RefResolver`→`referencing` pour jsonschema 4.18+, asserts via `e.absolute_path` au lieu du matching de message fragile.
+
+#### `tests/test_i18n.py` — `TestDetectSystemLang` (+12)
+
+Détection automatique de locale POSIX (`$LC_ALL` / `$LC_MESSAGES` / `$LANG`) :
+
+| Test | Couverture |
+|---|---|
+| `test_no_env_returns_default` | Aucune var env définie → `"en"` |
+| `test_lang_c_returns_default` | `LANG=C` → `"en"` |
+| `test_lang_posix_returns_default` | `LANG=POSIX` → `"en"` |
+| `test_lang_c_utf8_returns_default` | `LANG=C.UTF-8` → `"en"` |
+| `test_fr_fr_returns_fr` | `LANG=fr_FR.UTF-8` → `"fr"` |
+| `test_fr_be_returns_fr` | `LANG=fr_BE` → `"fr"` |
+| `test_fr_with_modifier_returns_fr` | `LANG=fr_FR.UTF-8@euro` → `"fr"` |
+| `test_en_us_returns_en` | `LANG=en_US.UTF-8` → `"en"` |
+| `test_unsupported_lang_falls_back_to_default` | `ja_JP`/`de_DE`/`es_ES`/`zh_CN` → `"en"` |
+| `test_lc_all_overrides_lang` | `LC_ALL=fr` prime sur `LANG=en` |
+| `test_lc_messages_overrides_lang` | `LC_MESSAGES=fr` prime sur `LANG=en` |
+| `test_empty_lc_all_falls_through_to_lang` | `LC_ALL=""` → consulte `LANG` |
+
+#### `tests/test_cli.py` — intégration locale (+4)
+
+| Test | Couverture |
+|---|---|
+| `test_french_overrides_system_locale` | `--french` gagne sur `LANG=ja_JP` |
+| `test_lang_explicit_overrides_system_locale` | `--lang=en` gagne sur `LANG=fr_FR` |
+| `test_default_uses_system_locale_when_fr` | Défaut → `fr` quand `LANG=fr_FR.UTF-8` |
+| `test_default_uses_en_when_lang_c` | Défaut → `en` quand `LANG=C` |
+
+#### `tests/test_json_schema.py` (nouveau, +17)
+
+Invariants du schéma de sortie JSON — contrat d'API publique :
+
+| Classe | Tests |
+|---|---:|
+| `TestSchemaVersion` | 2 |
+| `TestRequiredKeysAlwaysPresent` | 6 |
+| `TestFieldTypes` | 5 |
+| `TestStableKeysExposed` | 3 |
+| `TestDomainScoresStructure` | 1 |
+
+Vérifie `schema_version="1"`, clés top-level requises, types de champs, champ `key` indépendant de la locale sur chaque finding/deduction.
+
+**Hardening passe #2 :** toutes les injections `MagicMock` dans les fixtures remplacées par les vraies dataclasses BOB (`SystemInfo`, `PortsSnapshot`, `FirewallStackSnapshot`, `NetworkContextSnapshot`, `CheckResult`) — un attribut renommé dans `bob.json_output.build_json_data` lève `AttributeError` au lieu d'être silencieusement auto-mocké. Le test de timestamp utilise désormais `datetime.fromisoformat()` (ISO 8601 strict). Deux nouveaux tests defense-in-depth : `test_short_mode_strict_set` (rejette les clés inattendues qui fuiraient en mode short) et `test_constants_match_expected_set` (attrape la dérive entre les constantes de production et le contrat hard-codé côté test).
+
+#### `tests/test_explain.py` — alias map + freeze (+6)
+
+| Test | Couverture |
+|---|---|
+| `test_alias_map_is_dict` | `EXPLAIN_KEY_ALIASES` est un dict |
+| `test_alias_targets_resolve_to_valid_keys` | Chaque cible d'alias existe dans le set canonique |
+| `test_alias_keys_are_not_in_canonical_set` | Les alias ne shadowent pas les vraies clés |
+| `test_normalize_key_resolves_aliases` | Alias enregistré est résolu |
+| `test_normalize_key_passthrough_when_no_alias` | Clés inconnues passent inchangées |
+| `test_core_keys_present_in_canonical_set` | 16 clés "load-bearing" figées doivent rester dans `EXPLAIN_KEYS` |
+
+#### `tests/test_services_schema.py` (nouveau, +43)
+
+JSON Schema formel pour les plugins services (Draft 2020-12), étendu après deux passes de hardening post-revue :
+
+| Classe | Tests | Couverture |
+|---|---:|---|
+| `TestSchemasAreWellFormed` | 4 | Les schémas passent l'auto-validation Draft 2020-12 ; `services-list` rejette les tableaux vides (passe #2 : `minItems: 1`) |
+| `TestBundledServicesMatchSchema` | 3 | `services.json` bundled valide entrée par entrée ; IDs uniques (`Counter` O(n)) |
+| `TestValidPluginSamples` | 3 | Plugins valides échantillons (minimal fixed, avec detection, user config_key) |
+| `TestInvalidPluginSamples` | 10 | Cas de rejet : champ manquant, mauvais risk, mauvais port, port 0/65536, champ inconnu, fixed sans ports, ID avec espaces, string binary vide. Passe #2 : 5 d'entre eux assert désormais via `e.absolute_path` (stable entre versions de jsonschema) au lieu du matching de substring de message. |
+| `TestSchemaPythonParity` | 2 | Alignement Schema-valid ↔ Python-valid |
+| `TestBusinessConstraints` (nouveau passe #1) | 7 | `auto` requiert `config_files`, service indétectable rejeté, `detection: {}` vide rejeté |
+| `TestPluginFileWrapper` (nouveau passe #1) | 6 | Array legacy + wrapped `{schema_version, services}` acceptés ; v2 / extras rejetés. Passe #2 : résolution cross-file `$ref` via le compat shim `_make_resolved_validator` (`referencing` moderne d'abord, fallback `RefResolver` legacy). |
+| `TestRegistryAcceptsBothShapes` (nouveau passe #1) | 7 | Parité Python `_extract_plugin_entries` avec le méta-schéma |
+| Tests aux bornes | 2 | Port 65535 accepté, 65536 rejeté (regex stricte) |
+
+Une fixture module-scope `service_validator` est partagée entre toutes les classes (passe #2 — remplace 4 duplications par-classe d'un one-liner).
+
+`jsonschema` est une dépendance test-only (utilise `pytest.importorskip`).
+
+#### `tests/test_min_level.py` — affichage du score
+
+`TestScoreTrend::test_stable_shows_equal` renommé `test_stable_shows_no_annotation` et inversé : un score stable affiche désormais exactement `"7/10"` (sans suffixe `= 7`).
+
+#### `tests/conftest.py` (nouveau)
+
+Fixture autouse force `LC_ALL=C`/`LANG=C` pour chaque test, rendant les défauts CLI dépendants de la locale déterministes indépendamment de la locale hôte du dev.
 
 ---
 

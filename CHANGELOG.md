@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.4.0](#v040) | 2026-05-14 | Phase 1 distro-ready — exit codes / locale auto-detect (POSIX `$LANG`) / JSON output contract (`schema_version`, `key` fields) / `--explain` alias map / `services.json` formal JSON Schema (with post-review hardening pass #1: strict 1–65535 port regex · `$defs` factorization · `if/then` business constraints · plugin-file `schema_version` wrapper) · pass #2: schema descriptions, `services-list.minItems`, real-class fixtures replacing MagicMock, RefResolver→referencing compat shim · `= N` redundant suffix on stable score removed · 4430/4430 tests (+82) |
 | [v0.3.6](#v036) | 2026-05-09 | Code-review pass — `Path.home()` → `get_user_home()` (sudo-aware) in 7 modules · IPv6 ULA/link-local in `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepted · UFW logging header skipped when UFW inactive · `NOTIFY_EMAIL` legacy regex · 22 unused imports cleaned · 47 dead locale keys removed · 4348/4348 tests |
 | [v0.3.5](#v035) | 2026-05-08 | Refactoring — `runner.py` `_sec` closure (−295L) · `ssh.py` `_check_weak_algo` helper · locale fix 4× `UFW-AUDIT` → `BOB` · 4348/4348 tests |
 | [v0.3.4](#v034) | 2026-05-08 | Hotfix — `user_config` not passed to `run_checks()` → `NameError` at end of every audit (v0.3.2 regression) · 4348/4348 tests |
@@ -18,6 +19,44 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.4.0] — 2026-05-14
+
+Phase 1 of the distro-ready roadmap — five public-API contracts frozen so that scripts, dashboards and downstream packagers can rely on stable behavior. No new features, no breaking changes (additive only). 4405/4405 tests (+57).
+
+### Stable contract — Exit codes documented as public API (`bob/__main__.py`, `bob/cli.py`, `DOCUMENTS/README_TECH.md`)
+
+The 5 exit codes (`EXIT_OK=0`, `EXIT_WARNINGS=1`, `EXIT_ALERTS=2`, `EXIT_ERROR=3`, `EXIT_TARGET_MISSED=4`) are now formally promoted to BOB's public API: their values and semantics will not change within a major version. Documented in `--help` (with the missing exit-code 4 mention added) and in a dedicated section of README_TECH. Constants exported from `bob.__main__` for programmatic access.
+
+### Stable contract — Locale auto-detection from POSIX `$LANG` (`bob/i18n.py`, `bob/cli.py`, `tests/conftest.py`)
+
+`bob.i18n.detect_system_lang()` (new) probes `$LC_ALL` / `$LC_MESSAGES` / `$LANG` in standard POSIX order and resolves to `"fr"` for `fr_*` locales or `"en"` otherwise (incl. `C`, `POSIX`, `C.UTF-8`, unsupported languages). `parse_args()` calls it as the default when neither `--lang=` nor `--french` is passed; explicit flags always override. New autouse fixture in `tests/conftest.py` forces `LANG=C` for deterministic tests regardless of host locale.
+
+### Stable contract — JSON output schema documented + `key` field exposed (`bob/json_output.py`, `bob/scoring.py`)
+
+`schema_version="1"` was already present; this release formalizes the contract: top-level keys never disappear/rename within v1, additions are free, breaking changes bump to v2. New constants `SCHEMA_V1_REQUIRED_KEYS` and `SCHEMA_V1_FULL_KEYS` make the contract testable. `Finding.key` and `Deduction.key` are now serialized as `key` field on each entry — clients can match findings via stable dotted keys without depending on the localized `message`/`reason`. Full schema reference added to README_TECH (table of every top-level key, structure of nested objects, locale-independent matching example).
+
+### Stable contract — `--explain` alias map + freeze policy (`bob/explain.py`)
+
+`EXPLAIN_KEY_ALIASES: dict[str, str]` introduced (empty for now) so future renames have a documented migration path: old name → new name, alias never expires within the same major schema version. `normalize_key()` consults the map after path-segment stripping. Module docstring states the freeze policy explicitly: no removal, no rename, no semantic shift, additions free. 16 load-bearing keys explicitly tested as frozen.
+
+### Stable contract — Plugin services formal JSON Schema (`bob/data/schemas/`, `pyproject.toml`)
+
+Two Draft 2020-12 JSON Schema files (`service.schema.json`, `services-list.schema.json`) describe the shape of `services.json` and user `*.json` plugins. Bundled list (`bob/data/services.json`) is verified to validate against the schema. Schemas are shipped via `package_data` so distro packagers can validate user plugins externally with `check-jsonschema` / `ajv`. Python validation in `Service.from_dict()` remains the runtime source of truth (zero added runtime dependency); the JSON Schema mirrors it for external tooling.
+
+### Bonus UX — `= N` redundant suffix on unchanged score removed (`bob/display.py`)
+
+When the score was unchanged vs the previous audit, the summary box showed `Security score : 8/10  = 8` — the `= 8` was a vestige of an earlier delta marker. Removed: stable score now displays simply `8/10` (the score is already shown). Test renamed `test_stable_shows_equal` → `test_stable_shows_no_annotation`.
+
+### Tests
+
+4405/4405 (+57): 16 new in `test_i18n.py` (12 `detect_system_lang` + 4 CLI integration), 15 in new `test_json_schema.py` (top-level invariants, field types, stable-key exposure), 6 in `test_explain.py` (alias map + freeze policy), 20 in new `test_services_schema.py` (schema valid, bundled services match, sample valid/invalid plugins, Python ↔ Schema parity).
+
+### Field validation
+
+End-to-end audit on so6desktop (Linux Mint 22.3) — score 8/10, all sections render correctly, locale auto-detected as French via `$LANG=fr_FR.UTF-8`.
 
 ---
 

@@ -79,6 +79,27 @@ class TestFlags:
     def test_french(self):
         assert parse_args(["--french"]).lang == "fr"
 
+    def test_french_overrides_system_locale(self, monkeypatch):
+        # Even on a Japanese system, --french wins
+        monkeypatch.setenv("LANG", "ja_JP.UTF-8")
+        assert parse_args(["--french"]).lang == "fr"
+
+    def test_lang_explicit_overrides_system_locale(self, monkeypatch):
+        monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+        assert parse_args(["--lang=en"]).lang == "en"
+
+    def test_default_uses_system_locale_when_fr(self, monkeypatch):
+        monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+        monkeypatch.delenv("LC_ALL", raising=False)
+        monkeypatch.delenv("LC_MESSAGES", raising=False)
+        assert parse_args([]).lang == "fr"
+
+    def test_default_uses_en_when_lang_c(self, monkeypatch):
+        monkeypatch.setenv("LANG", "C")
+        monkeypatch.delenv("LC_ALL", raising=False)
+        monkeypatch.delenv("LC_MESSAGES", raising=False)
+        assert parse_args([]).lang == "en"
+
     def test_version(self):
         assert parse_args(["--version"]).show_version
 

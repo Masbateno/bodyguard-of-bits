@@ -414,8 +414,7 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             score_str += f"  {_c.green}↑ +{delta}{_c.reset}"
         elif delta < 0:
             score_str += f"  {_c.yellow}↓ {delta}{_c.reset}"
-        else:
-            score_str += f"  = {score}"
+        # delta == 0: score unchanged, no annotation needed (the score is already shown)
 
     lines = [
         (t("scoring.score_label"), score_str),

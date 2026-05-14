@@ -6,6 +6,414 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.4.0] — 14-05-2026
+
+Phase 1 de la roadmap distro-ready (voir mémoire `project_distro_roadmap`) — cinq contrats d'API publique figés pour que scripts, dashboards et packagers downstream puissent s'appuyer sur un comportement stable entre versions. Aucune nouvelle fonctionnalité, aucun changement breaking — additif uniquement. 4405/4405 tests (+57). Plus un petit correctif UX sur l'affichage du score inchangé.
+
+Cibles de la roadmap par ordre de difficulté :
+- AUR / COPR communautaire — viable maintenant
+- Debian unstable / Fedora COPR officiel — ~6 mois post-v0.4.0
+- Debian main / Fedora main — 12–18 mois minimum (nécessite stabilité soutenue des contrats)
+
+Cette release coche les 5 premières cases de la Phase 1 : codes de retour, fallback locale, contrat de sortie JSON, freeze des clés `--explain`, schéma de plugins. La Phase 2 (découplage architectural : `bob.core` pur, `bob.tui` isolé, `--offline` strict) est la prochaine étape.
+
+---
+
+### Contrat stable — Codes de retour documentés comme API publique
+
+**Fichiers :** `bob/__main__.py`, `bob/cli.py`, `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problème
+
+Les 5 codes de retour (`0`/`1`/`2`/`3`/`4`) étaient définis comme constantes dans `bob/__main__.py` et utilisés de façon cohérente dans `_run()`, mais sans statut formel d'API. Le texte `--help` documentait `0`/`1`/`2`/`3` mais **omettait `4`** (`EXIT_TARGET_MISSED`). README_TECH avait un tableau mais ne promettait pas de stabilité.
+
+Les scripts externes (pipelines CI, wrappers cron, agents de monitoring) ont besoin d'un contrat : la valeur et le sens d'un code ne doit pas dériver entre versions.
+
+#### Implémentation
+
+- Ajout d'un bloc docstring "STABLE PUBLIC API" au-dessus des constantes de codes de retour, énonçant explicitement qu'ils font partie du contrat public de BOB — pas de suppression, pas de glissement sémantique au sein d'une version majeure, ajouts seulement.
+- Ajout du `4` manquant dans `--help` (section "EXIT CODES") avec un pointeur vers README_TECH.
+- Promotion de la section README_TECH : ajout d'un bloc citation énonçant la promesse de stabilité, tableau étendu avec les noms de constantes (`EXIT_OK`, …), et snippet de code montrant comment les importer programmatiquement.
+- Miroir dans README_TECH_FR.
+
+Les 18 tests existants dans `tests/test_exit_codes.py` verrouillent déjà les valeurs et la logique de décision — ils servent désormais d'application du contrat.
+
+#### Notes de design
+
+La décision de code de sortie de `_run()` (target → alerts → warnings → ok) est testée unitairement via `_decide_exit()`, une copie fidèle isolée du pipeline d'audit. C'est le mapping canonique : tout futur changement doit mettre à jour les deux copies et faire évoluer les tests délibérément.
+
+---
+
+### Contrat stable — Détection automatique de la locale via POSIX `$LANG`
+
+**Fichiers :** `bob/i18n.py`, `bob/cli.py`, `tests/conftest.py`, `tests/test_i18n.py`, `tests/test_cli.py`, `bob/cli.py` (--help), `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problème
+
+L'interface de BOB par défaut était l'anglais sauf si `--french` ou `--lang=fr` était passé explicitement. Tout autre outil Unix (`man`, `git`, `apt`, `gcc`, …) honore automatiquement `$LANG` / `$LC_*`. Un utilisateur français tapant `sudo bob` obtenait l'anglais ; surprenant et non-conforme aux attentes POSIX.
+
+Pour le packaging distro, c'est encore plus important : un paquet Debian livrant BOB doit s'intégrer harmonieusement avec la locale système. Un utilisateur avec `LANG=fr_FR.UTF-8` doit obtenir une sortie française sans gymnastique de flags.
+
+#### Implémentation
+
+Nouvelle fonction `bob.i18n.detect_system_lang() -> str` :
+
+```python
+def detect_system_lang() -> str:
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(var, "").strip()
+        if not value or value in ("C", "POSIX", "C.UTF-8", "C.utf8"):
+            continue
+        prefix = value.split(".", 1)[0].split("@", 1)[0]
+        lang = prefix.split("_", 1)[0].lower()
+        if lang in SUPPORTED_LANGS:
+            return lang
+        return DEFAULT_LANG
+    return DEFAULT_LANG
+```
+
+L'ordre de probe correspond à POSIX (`LC_ALL` prime sur `LC_MESSAGES` qui prime sur `LANG`). Les valeurs vides retombent sur le candidat suivant. `C` / `POSIX` / `C.UTF-8` / langues non supportées → fallback sur `DEFAULT_LANG = "en"`.
+
+`bob.cli.parse_args()` suit désormais si l'utilisateur a passé `--lang=` / `--french` via un flag local `lang_explicit`. Après le parsing argv, si le flag est encore `False`, `config.lang = detect_system_lang()`. Les flags explicites priment toujours — la détection est un défaut, pas un override.
+
+`tests/conftest.py` (nouveau) : une fixture autouse définit `LC_ALL=C`/`LANG=C` avant chaque test, afin que les défauts CLI dépendants de la locale se résolvent prévisiblement, indépendamment de la locale hôte du dev. Les tests qui ont besoin d'une locale spécifique la définissent explicitement avec `monkeypatch.setenv()`.
+
+#### Tests
+
+- 12 nouveaux tests dans la classe `TestDetectSystemLang` : env vide, `C`, `POSIX`, `C.UTF-8`, `fr_FR.UTF-8`, `fr_BE`, `fr_FR@euro`, `en_US.UTF-8`, non supportés `ja_JP`/`de_DE`/`es_ES`/`zh_CN`, override par `LC_ALL`, override par `LC_MESSAGES`, `LC_ALL` vide retombe.
+- 4 tests d'intégration dans `tests/test_cli.py` : `--french` override la locale système, `--lang=en` override la locale système, default utilise `fr` quand la locale système est française, default utilise `en` quand `LANG=C`.
+
+#### Notes de design
+
+La décision de défaut sur la locale système (au lieu de toujours `en`) est une amélioration UX, pas un breaking change pour un contrat documenté — `--lang=en` continue de fonctionner et force l'anglais explicitement. Le changement est documenté dans `--help` ("default: detected from $LANG, fallback en") et dans les deux variantes README_TECH. Les CI/scripts existants qui ne définissent pas `LC_ALL` ne voient aucun changement parce que `LANG=C` retombe sur `en`.
+
+---
+
+### Contrat stable — Schéma de sortie JSON documenté + champ `key` exposé
+
+**Fichiers :** `bob/json_output.py`, `tests/test_json_schema.py` (nouveau), `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problème
+
+La sortie `--json` avait `"schema_version": "1"` depuis v0.2.x mais sans contrat formel : les clés top-level pouvaient disparaître ou être renommées sans préavis, le schéma n'avait aucun test d'enforcement, et les clients devaient matcher les findings via les chaînes `message` / `reason` localisées (qui diffèrent entre `en` et `fr`).
+
+Pour l'adoption distro c'est un blocage : un dashboard packagé Debian parsant la sortie BOB ne peut pas être attendu de switcher la logique de matching par locale, ni survivre à une dérive silencieuse du schéma entre releases BOB.
+
+#### Implémentation
+
+Ajout d'un docstring de stabilité en tête de `bob/json_output.py` formalisant les règles :
+
+> - Les clés top-level ne disparaissent jamais, ne sont jamais renommées, ne changent jamais de sémantique au sein d'une même version majeure de `schema_version`.
+> - De nouvelles clés top-level PEUVENT être ajoutées dans n'importe quelle release ; les clients doivent ignorer les clés inconnues.
+> - Les dicts imbriqués suivent la même règle.
+> - Les changements breaking incrémentent `schema_version` à un nouveau majeur (`"2"`, `"3"`…).
+
+Deux nouvelles constantes module-level rendent le contrat testable :
+
+```python
+SCHEMA_V1_REQUIRED_KEYS = frozenset({
+    "schema_version", "version", "host", "timestamp", "score", "score_max",
+    "risk", "network_context", "public_ip", "alerts", "warnings",
+    "deductions", "domain_scores",
+})
+SCHEMA_V1_FULL_KEYS = frozenset({
+    "findings", "services", "open_ports", "firewall_stack",
+    "hardening", "ipv6",
+})
+```
+
+Ajout de `"key": d.key` à chaque entrée `deductions[]` et `"key": f.key` à chaque entrée `findings[]`. Ce sont des clés i18n stables en notation pointée (`firewall.logging_off`, `ssh.password_auth`, …) qui ne changent jamais entre locales et ne sont jamais renommées sans entrée d'alias — les clients doivent matcher sur `key`, pas sur `reason`/`message`.
+
+`DOCUMENTS/README_TECH.md` (et FR) gagnent une section complète "Schéma de sortie JSON" : promesse de stabilité citée, tableau complet des clés top-level avec types et descriptions, structure de `deductions[]` / `domain_scores` / clés full-mode, exemple de matching indépendant de la locale avec `jq`.
+
+#### Tests
+
+`tests/test_json_schema.py` (nouveau, 15 tests, 4 classes) :
+
+- `TestSchemaVersion` — schema_version est une string, actuellement `"1"`.
+- `TestRequiredKeysAlwaysPresent` — clés requises en mode short et full, aucune clé full-only ne fuit en mode short.
+- `TestFieldTypes` — `score`/`score_max`/`alerts`/`warnings` sont int, `risk` est string, `timestamp` est ISO 8601.
+- `TestStableKeysExposed` — chaque deduction et finding a un champ `key`, format dotted-path.
+- `TestDomainScoresStructure` — `domain_scores` est un dict-of-dicts avec `score` (int) et `label` (str).
+
+#### Notes de design
+
+L'exposition du champ `key` est la fondation du découplage architectural Phase 2 : une fois `Finding.message` découplé de `_t()` (planifié dans la prochaine phase), la sortie JSON deviendra entièrement indépendante de la locale — les clients pourront formater eux-mêmes les messages depuis les clés.
+
+---
+
+### Contrat stable — Alias map `--explain` + politique de freeze
+
+**Fichiers :** `bob/explain.py`, `tests/test_explain.py`
+
+#### Problème
+
+Les 112 clés `--explain` (e.g. `ssh.password_auth`, `firewall.logging_off`, `kernel_hardening.aslr_disabled`) sont aussi utilisées comme `Finding.key` et `Deduction.key` — elles forment un namespace public sur lequel scripts et dashboards matchent. Renommer une clé était un breaking change silencieux.
+
+#### Implémentation
+
+Ajout d'une section explicite "STABLE PUBLIC API — `--explain` KEY FREEZE POLICY" au docstring du module, énonçant quatre règles : pas de suppression, pas de glissement sémantique, les renommages passent par `EXPLAIN_KEY_ALIASES`, ajouts libres.
+
+Introduction de `EXPLAIN_KEY_ALIASES: dict[str, str]` comme mécanisme de migration pour les renommages. Vide pour l'instant — aucune clé n'a encore été renommée. La map existe pour qu'un futur renommage ait un chemin documenté et testé : ajouter `"old_name": "new_name"` ici et les clients appelant `bob --explain old_name` (ou matchant `Finding.key == "old_name"` en JSON) continuent de fonctionner indéfiniment.
+
+`normalize_key()` étendue pour consulter la map d'alias après le strip des segments de chemin :
+
+```python
+def normalize_key(key: str) -> str:
+    m = _NORMALIZE_RE.match(key)
+    if m:
+        key = f"{m.group(1)}.{m.group(2)}"
+    return EXPLAIN_KEY_ALIASES.get(key, key)
+```
+
+#### Tests
+
+6 nouveaux tests dans `tests/test_explain.py` :
+
+- `TestExplainKeyAliases` (5 tests) : la map d'alias est un dict, les cibles d'alias sont des clés canoniques valides, les clés d'alias ne sont PAS dans le set canonique (pas d'overlap), `normalize_key()` résout les alias, passthrough sans alias.
+- `TestExplainKeyFreezePolicy` (1 test) : un sous-ensemble figé de 16 clés load-bearing (`ssh.password_auth`, `ssh.permit_root_login`, `firewall.logging_off`, `kernel_hardening.aslr_disabled`, …) doit toujours être dans `EXPLAIN_KEYS` — l'échec pointe soit vers leur restauration, soit vers l'enregistrement d'un alias.
+
+#### Notes de design
+
+La politique de freeze est intentionnellement par clé (pas par groupe) : les groupes peuvent être réorganisés dans `_EXPLAIN_GROUPS` sans casser de contrat, seules les clés individuelles sont sticky.
+
+---
+
+### Contrat stable — JSON Schema formel pour les plugins services
+
+**Fichiers :** `bob/data/schemas/service.schema.json` (nouveau), `bob/data/schemas/services-list.schema.json` (nouveau), `pyproject.toml`, `bob/registry.py`, `tests/test_services_schema.py` (nouveau), `DOCUMENTS/README_TECH.md` (FR/EN)
+
+#### Problème
+
+Les définitions de services (`bob/data/services.json` + plugins utilisateur dans `~/.config/bob/services.d/`) avaient un validateur fait main dans `Service.from_dict()` (Python uniquement, distribué sur 36 lignes). Les packagers de distro et auteurs de plugins n'avaient aucun contrat machine-readable : les règles (champs requis, regex pour les ports, enum pour le risk, règles d'identifier pour `config_key`) devaient être reverse-engineerées depuis le code Python ou par essai-erreur.
+
+#### Implémentation
+
+Deux fichiers JSON Schema Draft 2020-12 :
+
+- **`service.schema.json`** décrit une seule entrée service (le dict passé à `Service.from_dict()`) :
+  - `additionalProperties: false` (aucun champ inconnu)
+  - 7 champs requis (`id`, `label`, `packages`, `services`, `ports`, `risk`, `config_key`)
+  - Patterns stricts : `id` est `^[a-zA-Z][a-zA-Z0-9_-]*$`, ports `^[1-9][0-9]{0,4}/(tcp|udp)$`, `config_key` est un identifier Python
+  - `risk` est enum `{low, medium, high, critical}`
+  - Conditionnel via `allOf` / `if/then` : quand `config_key="fixed"`, `ports` doit avoir `minItems: 1`
+  - `detection` (optionnel) avec arrays `binary` / `snap` / `config_files`
+- **`services-list.schema.json`** wraps la forme tableau (le fichier `services.json` entier ou un fichier plugin utilisateur).
+
+Schémas livrés via `package_data` afin qu'ils soient disponibles à `bob/data/schemas/*.json` après pip install — n'importe quel tooling externe (`check-jsonschema`, `ajv`, plugins d'IDE) peut valider les plugins utilisateur.
+
+Le validateur Python dans `Service.from_dict()` reste la source de vérité au runtime — **zéro dépendance runtime ajoutée**. Le JSON Schema le reflète pour le tooling externe.
+
+Le docstring de la classe `bob/registry.py` `Service` pointe désormais vers le fichier schéma comme contrat formel.
+
+`DOCUMENTS/README_TECH.md` (et FR) gagne une sous-section "Schéma de plugin de service" avec un exemple complet et l'explication des champs requis vs optionnels. La note antérieure sur la résolution de `Path.home()` vers `/root` est aussi mise à jour pour refléter le fix v0.3.6 `get_user_home()`.
+
+#### Tests
+
+`tests/test_services_schema.py` (nouveau, 20 tests, 5 classes) :
+
+- `TestSchemasAreWellFormed` — les schémas passent l'auto-validation Draft 2020-12, ont `$id`/`title` propres.
+- `TestBundledServicesMatchSchema` — `services.json` bundled valide entrée par entrée, IDs uniques.
+- `TestValidPluginSamples` — 3 plugins valides échantillons (minimal fixed, avec block detection, user config_key).
+- `TestInvalidPluginSamples` — 8 cas de rejet (champ requis manquant, risk invalide, port malformé, port 0, port > 65535 via Python, champ inconnu, fixed sans ports, ID avec espaces, string binary vide).
+- `TestSchemaPythonParity` — ce que le schema accepte est aussi accepté par `Service.from_dict()`, ce qui échoue Python est aussi attrapé par le schema.
+
+`jsonschema` est une dépendance test-only, pas runtime — utilise `pytest.importorskip` pour que le fichier de tests skippe simplement sur les systèmes sans cette installation.
+
+#### Notes de design
+
+La contrainte de plage de ports (1–65535) est appliquée par Python uniquement — le regex du schema permet 1–99999 pour la simplicité. Documenté dans la `description` du schema. Compromis acceptable : le test de parité `Service.from_dict()` garantit que les ports invalides sont rejetés au runtime ; les linters externes obtiennent un warning "good enough" qui attrape les erreurs évidentes (port 0, décimaux, chaînes non numériques).
+
+Le champ `binary` accepte à la fois des noms de binaires (résolus via `$PATH`) et des chemins absolus — le `services.json` bundled utilise les deux formes (e.g. `"in.telnetd"` pour telnet, `"/usr/sbin/postfix"` serait aussi valide).
+
+---
+
+### Hardening — Schéma de plugin réécrit après revue externe
+
+**Fichiers :** `bob/data/schemas/service.schema.json`, `bob/data/schemas/services-list.schema.json`, `bob/data/schemas/plugin-file.schema.json` (nouveau), `bob/data/services.json`, `bob/registry.py`, `tests/test_services_schema.py`
+
+#### Problème
+
+Une revue externe (analyse ChatGPT proposée par l'utilisateur) a relevé 10 points sur le JSON Schema introduit plus tôt dans cette release. Cinq d'entre eux étaient de vraies fuites de contrat qui auraient induit en erreur les packagers de distros et linters externes ; cette section les corrige. Les cinq autres (`ports: [{port,proto}]` typé, objet `port_resolution` remplaçant le mix enum/identifier de `config_key`, `packages: {apt:[],dnf:[]}` multi-PM, union typée pour `binary`, wrapper plugin avec metadata) sont des breaking changes reportés au schéma v2 (planifié pour v0.5.0).
+
+Les cinq corrigés dans cette release :
+
+1. **Promesses des descriptions que le schéma ne valide pas.** La version précédente affirmait « must be unique across all loaded services » et « mirrors `Service.from_dict()` validation » — les deux étaient mensongers. JSON Schema ne peut pas valider l'unicité cross-document, et le schéma ne reflétait qu'un *sous-ensemble* de la validation Python (notamment manquait le check des reserved keywords et la plage stricte 1–65535 pour les ports).
+2. **Regex port délibérément lâche** (`^[1-9][0-9]{0,4}/(tcp|udp)$` permettait `99999/tcp`). Un plugin schema-valide pouvait échouer au runtime — cassait le contrat « schema-valid == application-valid ».
+3. **Pas de factorisation `$defs`** — patterns string répétés dispersés dans les properties.
+4. **Contraintes métier manquantes** — `config_key="auto"` sans `config_files` était valide, un `detection: {}` vide était valide, et un plugin avec `packages: []`, `services: []`, sans `detection` était valide (et indétectable au runtime).
+5. **Pas de `schema_version` dans les fichiers plugin** — impossible de gater proprement les futures migrations de schéma.
+6. **`$id` pointait vers `github.com/.../blob/main/...`** — URL instable (page HTML, branch-dépendante, pas raw, pas versionnée).
+
+#### Implémentation
+
+**`service.schema.json`** réécrit avec :
+
+- **Bloc `$defs`** factorisant 6 sous-schémas réutilisables : `Identifier`, `PythonIdentifier`, `PackageName`, `SystemdUnit`, `PortProto`, `BinaryRef`, `AbsolutePath`. Chacun porte une description explicite annonçant les changements planifiés en v2 (ports typés, union binary typée).
+- **Regex port stricte** `^(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})/(tcp|udp)$` validant exactement 1–65535. Schema-valide égale désormais Python-valide.
+- **Description de scope claire** énonçant quels invariants le schéma applique vs quels invariants restent runtime-only (unicité cross-service, exclusion des reserved keywords Python).
+- **3 contraintes métier `allOf`** via `if/then` et `anyOf` :
+  1. `config_key="fixed"` requiert `ports.minItems: 1` (déjà présent).
+  2. `config_key="auto"` requiert `detection.config_files.minItems: 1` (nouveau — sans ça, l'auto-détection n'a rien à parser).
+  3. Le service doit être détectable : au moins un parmi `packages`, `services`, ou `detection.{binary|snap}` non-vide (nouveau — empêche de charger des services invisibles).
+- **`detection.minProperties: 1`** — blocs detection vides (`detection: {}`) rejetés.
+- **`$id` versionné** pointant vers `raw.githubusercontent.com/.../v0.4.0/...` — stable, raw, pin de version.
+
+**`plugin-file.schema.json`** (nouveau) décrit les deux formes acceptées pour `~/.config/bob/services.d/*.json` :
+
+```json
+[ { ...service... }, { ... } ]
+```
+
+…ou :
+
+```json
+{
+  "schema_version": 1,
+  "services": [ { ...service... } ]
+}
+```
+
+Le wrapper existe pour que les futures migrations de schéma (v2 ports typés, etc.) puissent être gatées explicitement via `schema_version`. Aujourd'hui seul `schema_version: 1` est accepté ; les champs réservés comme `metadata` / `disabled` sont rejetés aujourd'hui et marqués pour les versions futures.
+
+**`bob/registry.py`** : nouveau helper `_extract_plugin_entries(raw, plugin_name) -> list | None` consomme les deux formes. La constante `_CURRENT_PLUGIN_SCHEMA_VERSION = 1` filtre : les versions supérieures sont rejetées avec un warning « upgrade BOB or downgrade the plugin » donnant un hint clair plutôt qu'un demi-chargement silencieux. Versions inférieures ou non-entières aussi rejetées. Le chemin legacy raw-array est inchangé — rétrocompatibilité préservée.
+
+**`bob/data/services.json`** : 4 services bundled avaient un bloc `detection: {binary: [], snap: [], config_files: []}` qui n'apportait aucun signal. Supprimé entièrement. `postgresql` et `syncthing` avaient `config_key="auto"` sans `config_files` (fonctionnellement équivalent à `fixed`) — migrés à `config_key="fixed"` pour matcher la réalité.
+
+#### Tests
+
+`tests/test_services_schema.py` étendu de 20 à 42 tests (+22) :
+
+- `TestInvalidPluginSamples` mis à jour : `test_port_above_65535_rejected_by_schema` (plus seulement Python), plus tests aux bornes `test_port_65535_accepted` / `test_port_65536_rejected`.
+- `TestBusinessConstraints` (nouveau, 7 tests) : `auto` sans `config_files` rejeté, `auto` avec array vide rejeté, `auto` avec paths accepté, service indétectable rejeté, détection binary-only / snap-only acceptée, `detection: {}` vide rejetée.
+- `TestPluginFileWrapper` (nouveau, 6 tests) : array legacy accepté, wrapped v1 accepté, `schema_version` manquant rejeté, `services` manquant rejeté, v2 actuellement rejetée, champs extras rejetés.
+- `TestRegistryAcceptsBothShapes` (nouveau, 7 tests) : `_extract_plugin_entries` Python accepte les deux formes, rejette unknown / zero / non-int / services manquants, rejette non-array/non-dict.
+
+`jsonschema.RefResolver` utilisé pour la résolution cross-file `$ref` (conservé pour compat avec jsonschema 4.10+ ; le `referencing` Registry moderne de 4.18+ marcherait aussi).
+
+#### Notes de design
+
+- **Schéma v2 reporté délibérément.** Refactoriser `ports: ["22/tcp"]` → `ports: [{port: 22, proto: "tcp"}]` impacte `bob/data/services.json` (32 services), la dataclass `Service`, `_PORT_RE`, chaque check qui itère sur `service.ports`, plus d'importantes réécritures de fixtures de tests. Ce travail appartient à v0.5.0 avec documentation de migration explicite, pas dans cette release.
+- **Le wrapper pré-empte le problème v2.** Aujourd'hui `schema_version: 1` est la seule valeur acceptée, mais le champ existe dans le format de fichier dès maintenant. Quand v2 sortira, les fichiers plugin déclarant `schema_version: 2` obtiennent le nouveau validateur ; les plugins v1 continuent de fonctionner via un chemin de compat.
+- **Les blocs `detection` vides étaient silencieusement cassés.** Certains services bundled les portaient comme boilerplate ; les retirer fait remonter le vrai signal de détection et évite de futurs copier-coller de config morte.
+
+---
+
+### Hardening passe #2 — descriptions schémas, fixtures tests, compat RefResolver
+
+**Fichiers :** `bob/data/schemas/services-list.schema.json`, `bob/data/schemas/plugin-file.schema.json`, `tests/conftest.py`, `tests/test_json_schema.py`, `tests/test_services_schema.py`
+
+#### Problème
+
+Une seconde passe de revue externe sur les schémas et fichiers de tests fraîchement durcis a fait remonter une plus petite série de problèmes légitimes — aucun structurel cette fois, mais à corriger avant de figer le contrat v0.4.0 :
+
+1. **`services-list.schema.json`** : un tableau vide `[]` était structurellement valide (pas de `minItems`). Un utilisateur créant un fichier plugin et oubliant d'ajouter des entrées obtenait un fichier silencieusement chargé avec zéro service.
+2. **`plugin-file.schema.json`** : la description utilisait un wording "schema_version: 1 fallback implicite" qui n'était pas reflété dans le schéma lui-même, et n'expliquait pas *pourquoi* `maximum: 1` est délibéré ou *pourquoi* `additionalProperties: false` rejette les champs mêmes que la description appelle "réservés". Risque : un packager lit la description et pense que le schéma déraille.
+3. **`tests/conftest.py`** : `import os` inutilisé (warning pyflakes), et le docstring promettait plus que la fixture n'apporte (set juste les variables d'environnement, n'appelle pas `setlocale()` pour les consommateurs libc/ICU).
+4. **`tests/test_json_schema.py`** : injection massive de `MagicMock` dans les fixtures — un attribut renommé dans les types réels passés à `build_json_data` (e.g. `sys_info.fqdn` au lieu de `sys_info.hostname`) passait silencieusement (les mocks inventent les attributs au moment de l'accès). Le validateur de timestamp était un check de substring (`"T" in ts`) qui accepte plein de chaînes non-ISO. Le contrat avait une seule source (les constantes de production `SCHEMA_V1_REQUIRED_KEYS` / `SCHEMA_V1_FULL_KEYS`), donc un edit malheureux des constantes laissait les tests tautologiques.
+5. **`tests/test_services_schema.py`** : `RefResolver` est déprécié dans jsonschema ≥ 4.18 (on est sur 4.10 aujourd'hui ; les runners CI sur images plus récentes émettraient `DeprecationWarning`). Les quatre fixtures `validator` par classe dupliquaient le même one-liner. Le check duplicate-id utilisait `ids.count(x)` par élément (O(n²)). Plusieurs `assert errors` ne pinaient pas quel champ l'erreur concerne — une régression ailleurs dans le schéma pouvait masquer un test manquant.
+
+#### Implémentation
+
+**Schémas :**
+
+- `services-list.schema.json` : ajout `"minItems": 1`. Description réécrite pour clarifier qu'il s'agit de la forme canonique de la liste bundled et pour rediriger les utilisateurs vers `plugin-file.schema.json` pour les nouveaux fichiers plugin. Note explicite que l'unicité cross-service de `id` est runtime-only (cohérent avec la clause SCOPE de `service.schema.json`).
+- `plugin-file.schema.json` : le titre gagne le suffixe `— schema v1` pour rendre le versioning explicite. Description top-level restructurée en trois sections :
+  - **Pourquoi `maximum: 1`** : chaque bump majeur de schéma livre son PROPRE `plugin-file.schema.json` à un NOUVEL `$id`. Un fichier plugin v2 DOIT être validé contre le schéma v2, pas celui-ci.
+  - **Pourquoi `additionalProperties: false` rejette les champs "réservés"** : rejeter aujourd'hui empêche les collisions avec le sens que v2/v3 leur donneront.
+  - **Fallback runtime `[…] → schema_version: 1`** : explicitement noté comme une convenance d'`_extract_plugin_entries`, PAS une règle du schéma.
+
+**conftest.py** : retiré l'import `os` inutilisé. Docstring énonce explicitement "only sets process environment variables. It does NOT call `setlocale()`" et justifie le triple explicite `LC_ALL`/`LC_MESSAGES`/`LANG` (la précédence POSIX rend les deux derniers redondants quand `LC_ALL` est défini, mais le triple explicite documente l'intention et est robuste contre du code aval qui sonderait directement n'importe quelle variable).
+
+**test_json_schema.py** : réécriture complète des fixtures :
+- `MagicMock` remplacés par des instances réelles `SystemInfo`, `PortsSnapshot`, `FirewallStackSnapshot`, `NetworkContextSnapshot`, `CheckResult`. Un attribut renommé dans `bob.json_output.build_json_data` lève désormais `AttributeError` au lieu d'être auto-mocké.
+- Le test de timestamp utilise `datetime.fromisoformat(ts)` (ISO 8601 strict) et assert `tzinfo is not None`.
+- Source du contrat dupliquée : un set hard-codé `EXPECTED_REQUIRED_KEYS_V1` / `EXPECTED_FULL_KEYS_V1` dans le fichier de test matche contre les constantes de production, donc un edit d'un côté sans l'autre est attrapé (`test_constants_match_expected_set`).
+- Nouveau `test_short_mode_strict_set` rejette les clés inattendues qui fuiraient en mode short — les ajouts additifs doivent être explicites (déplacer en full mode ou bumper schema_version).
+- Création du engine soulevée dans une fixture pytest (était dupliquée 12+ fois via des appels `_make_engine()`).
+
+**test_services_schema.py :**
+- Nouveau helper `_make_resolved_validator(root, extra_schemas)` essaie le path moderne `referencing.Registry` d'abord (jsonschema ≥ 4.18) et retombe sur le `RefResolver` legacy (4.10–4.17). Point de migration unique quand la branche legacy disparaîtra.
+- Fixture module-scope `service_validator` remplace quatre duplications par classe ; les fixtures par classe `validator` deviennent des delegates d'une ligne.
+- `test_bundled_services_have_unique_ids` passe à `Counter` (O(n)).
+- Asserts ciblés via `e.absolute_path` au lieu de matching de substring sur le message, dans les tests les plus informatifs : `test_invalid_port_format`, `test_port_zero_rejected`, `test_port_above_65535_rejected_by_schema`, `test_id_with_spaces_rejected`, `test_empty_binary_string_rejected`. `absolute_path` est stable entre versions de jsonschema ; `e.message` ne l'est pas.
+
+#### Tests
+
+Total **4430/4430** (était 4427 avant cette passe — net +3, tous defense-in-depth) :
+- `test_json_schema.py` : 15 → 17 (+`test_short_mode_strict_set`, +`test_constants_match_expected_set`).
+- `test_services_schema.py` : 42 → 43 (+`test_services_list_rejects_empty_array` — vérifie le nouveau `minItems: 1`).
+- Tous les tests existants passent après le refactor MagicMock-vers-réel — preuve que le code de production accède exactement aux attributs que les dataclasses exposent (aucune divergence cachée).
+
+#### Notes de design
+
+- **Pourquoi deux passes de hardening au lieu d'une release proprement factorisée.** Chaque passe a été déclenchée par une revue externe distincte (ChatGPT) sur les fichiers sélectionnés par l'utilisateur dans son IDE. Les séparer dans le changelog préserve la trace "ce qui a été manqué la première fois", utile pour les postmortems et pour comprendre le resserrement itératif.
+- **`assert errors` vs `assert errors[i].absolute_path == [...]`** — gardé `assert errors` sur les cas triviaux (e.g. `test_unknown_field_rejected`, `test_fixed_without_ports_rejected`) où le mode de défaillance est "n'importe quelle erreur". Resserré uniquement sur les tests où plusieurs violations distinctes pourraient se masquer mutuellement.
+- **Defense in depth via liste de clés dupliquée.** Le set `EXPECTED_REQUIRED_KEYS_V1` dans le fichier de test est intentionnellement une copie de `SCHEMA_V1_REQUIRED_KEYS`. Le test `test_constants_match_expected_set` est le filet de sécurité : un edit non-intentionnel de la constante de production fait passer le test au rouge, forçant l'éditeur à acquitter le changement de contrat.
+
+---
+
+### Bonus UX — Suffixe `= N` redondant sur score inchangé supprimé
+
+**Fichiers :** `bob/display.py`, `tests/test_min_level.py`
+
+#### Problème
+
+Le test terrain sur so6desktop a montré :
+
+```
+║  Score de sécurité : 8/10  = 8                                               ║
+```
+
+Le `= 8` était un vestige d'un fix v0.3.0 ("score delta orphan arrow: stable score shows = N instead of bare →") — l'intention originelle était d'éviter une `→` orpheline quand le score était inchangé, mais la forme `= N` finit redondante : le score `8/10` est déjà deux caractères avant sur la même ligne.
+
+#### Implémentation
+
+Dans `bob/display.py:print_audit_summary()`, la branche `delta == 0` est supprimée entièrement :
+
+```python
+score_str = f"{score}/10"
+if prev_score is not None:
+    delta = score - prev_score
+    if delta > 0:
+        score_str += f"  {_c.green}↑ +{delta}{_c.reset}"
+    elif delta < 0:
+        score_str += f"  {_c.yellow}↓ {delta}{_c.reset}"
+    # delta == 0: score unchanged, no annotation needed
+```
+
+`tests/test_min_level.py:TestScoreTrend::test_stable_shows_equal` renommé `test_stable_shows_no_annotation` et inversé : assert désormais qu'aucune flèche `↑`/`↓` n'apparaît et que la valeur est exactement `"7/10"` (sans suffixe).
+
+---
+
+### Récap tests — 4430/4430 (+82)
+
+| Fichier de test | Classe | Nouveaux | Existants |
+|---|---|----:|----:|
+| `tests/test_exit_codes.py` | (existants) | 0 | 18 |
+| `tests/test_i18n.py` | `TestDetectSystemLang` | +12 | — |
+| `tests/test_cli.py` | `TestParse::test_*_locale` | +4 | — |
+| `tests/test_json_schema.py` (nouveau) | 4 classes | +17 | — |
+| `tests/test_explain.py` | `TestExplainKeyAliases`, `TestExplainKeyFreezePolicy` | +6 | — |
+| `tests/test_services_schema.py` (nouveau) | 9 classes | +43 | — |
+| `tests/test_min_level.py` | `TestScoreTrend::test_stable_shows_no_annotation` | renommé | — |
+| `tests/conftest.py` (nouveau) | fixture autouse force `LANG=C` | — | — |
+
+Notes sur la trajectoire de ces décomptes pendant le développement de v0.4.0 :
+- `test_services_schema.py` : 20 (initial) → 42 (passe de hardening post-revue #1) → 43 (passe #2 a ajouté `test_services_list_rejects_empty_array` pour le nouveau `minItems: 1`).
+- `test_json_schema.py` : 15 (initial) → 17 (passe #2 a ajouté `test_short_mode_strict_set` et `test_constants_match_expected_set` comme defense-in-depth contre les dérives silencieuses du contrat).
+
+### Validation terrain
+
+Audit bout en bout sur so6desktop (Linux Mint 22.3) confirme :
+- Bannière v0.4.0 correctement affichée
+- Locale auto-détectée comme français via `$LANG=fr_FR.UTF-8`
+- Toutes les sections rendues correctement ; journalisation UFW affichée (UFW actif), link-local IPv6 correctement classés, plugins/profils chargés depuis `/home/so6/.config/bob/`
+- Score 8/10, delta tracé depuis l'audit précédent, ligne "Score inchangé" affichée sans suffixe redondant `= 8`
+- 4405 tests verts, pyflakes propre (un seul `# noqa: F401` intentionnel)
+
+---
+
 ## [v0.3.6] — 09-05-2026
 
 Passe de code review suite à un audit approfondi du code. Aucune nouvelle fonctionnalité, aucun changement de comportement, aucun nouveau test — uniquement des corrections de bugs, du nettoyage d'hygiène et des améliorations de cohérence. Huit correctifs liés couvrant la résolution de chemin sudo-aware, la couverture des plages privées IPv6, la sémantique du check SSH, le rendu de section UFW, la compatibilité legacy cron, le placement des sub-checks, les imports morts et les clés de locales mortes. 4348/4348 tests.

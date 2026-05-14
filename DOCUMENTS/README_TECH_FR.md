@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.3.6-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.4.0-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
@@ -72,7 +72,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Sortie & UX
 
-- **Interface bilingue** — anglais par défaut, français avec `--french`
+- **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` ou `--lang=en`
 - **Mode sans couleur** — `--no-color` pour une sortie propre dans les pipes et fichiers log
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit
 - **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 112 clés dans 26 groupes ; 17 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
@@ -436,32 +436,152 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `~/.config/bob/services.d/*.json`  | Répertoire de plugins — définitions de services personnalisés (voir note) |
 | `bob_YYYYMMDD_HHMMSS.log`          | Rapport détaillé (créé avec `-d`, dans le répertoire configuré)          |
 
-> **Répertoire de plugins et `sudo` :** bob s'exécute en root. Sous `sudo`, `Path.home()` retourne `/root`,
-> donc le répertoire de plugins actif est `/root/.config/bob/services.d/`, et non le home de l'utilisateur appelant.
-> Placez vos fichiers de plugins à cet emplacement pour qu'ils soient chargés à l'exécution.
+> **Répertoire de plugins et `sudo` :** depuis v0.3.6 BOB résout `~/.config/bob/` vers le home
+> de l'utilisateur invoquant (via `SUDO_USER`), donc les plugins déposés dans `/home/<vous>/.config/bob/services.d/`
+> sont correctement chargés sous `sudo bob`. Les fichiers écrits par BOB sous sudo sont automatiquement chownés vers l'utilisateur.
 >
-> **Futur paquet `.deb` :** ce comportement changera au profit du répertoire système `/etc/bob/services.d/`,
-> conformément à la convention Debian et pour éliminer l'ambiguïté liée à `sudo`/home.
+> **Forme des fichiers plugins :** chaque fichier `*.json` est un tableau JSON d'objets service.
+> Le contrat formel est publié comme `bob/data/schemas/service.schema.json` (JSON Schema Draft 2020-12)
+> et `bob/data/schemas/services-list.schema.json` pour le wrapper tableau. Voir "Schéma de plugin de service" ci-dessous.
+>
+> **Futur paquet `.deb` :** le répertoire système `/etc/bob/services.d/` sera ajouté comme chemin
+> de chargement additionnel (sans supprimer celui per-user) pour la convention Debian standard.
+
+### Schéma de plugin de service
+
+Les définitions de services sont validées contre `bob/data/schemas/service.schema.json` (Draft 2020-12, livré avec le paquet). Les deux `services.json` bundled et les plugins utilisateur suivent la même forme par entrée :
+
+```json
+{
+  "id":         "myservice",
+  "label":      "My Service",
+  "packages":   ["mypackage"],
+  "services":   ["myservice"],
+  "ports":      ["8080/tcp"],
+  "risk":       "medium",
+  "config_key": "fixed",
+  "detection": {
+    "binary":       ["/usr/local/bin/myapp"],
+    "snap":         ["myapp-snap"],
+    "config_files": ["/etc/myapp/config.yml"]
+  }
+}
+```
+
+**Champs obligatoires :** `id`, `label`, `packages`, `services`, `ports`, `risk`, `config_key`. **Optionnel :** `detection`. `risk` ∈ `{"low", "medium", "high", "critical"}`. `config_key` vaut `"fixed"`, `"ask"`, `"auto"`, ou un identifier Python. **Plage de port 1–65535** (stricte).
+
+**Contraintes métier appliquées par le schéma :**
+
+- `config_key="fixed"` requiert au moins un port.
+- `config_key="auto"` requiert `detection.config_files` non-vide (l'auto-resolver a besoin de fichiers à parser).
+- Un service doit être détectable : au moins un parmi `packages`, `services`, ou `detection.{binary|snap}` doit être non-vide.
+- Un bloc `detection: {}` vide est rejeté (n'apporte aucun signal).
+
+**Forme du fichier plugin.** Un fichier plugin utilisateur sous `~/.config/bob/services.d/*.json` peut utiliser l'une des deux formes équivalentes :
+
+1. **Tableau brut** (legacy / défaut actuel) — un tableau JSON nu d'objets service.
+2. **Objet wrappé** (forward-compat) — `{"schema_version": 1, "services": [ ... ]}`. Le wrapper existe pour que les futures migrations de schéma puissent être gatées explicitement via `schema_version`. Seul `schema_version: 1` est accepté aujourd'hui ; les champs réservés comme `metadata`, `disabled` sont marqués pour les versions futures.
+
+Voir `bob/data/schemas/plugin-file.schema.json` pour le méta-schéma du wrapper. Valider en externe avec n'importe quel outil JSON Schema 2020-12 (e.g. `check-jsonschema`, `ajv`).
+
+**Scope du schéma.** Le schéma valide la structure et la forme syntaxique. Il **n'applique pas** : l'unicité cross-service de `id` (check runtime) et l'exclusion des reserved keywords Python pour `config_key` (check runtime). Un document conforme au schéma peut quand même être rejeté au chargement si ces invariants runtime sont violés — la source de vérité canonique reste `bob.registry.Service.from_dict()`.
 
 ---
 
 ## Codes de retour
 
+> **API publique stable** — ces codes font partie du contrat de BOB. Ils ne changeront pas au sein d'une version majeure (pas de suppression, pas de glissement sémantique). De nouveaux codes pourront être ajoutés en fin de liste si nécessaire.
+
 En mode `--quiet`, le code de retour indique le résultat de l'audit :
 
-| Code | Signification |
-|------|---------------|
-| `0`  | Audit propre — aucune alerte, aucun avertissement |
-| `1`  | Avertissements détectés |
-| `2`  | Alertes détectées — action requise |
-| `3`  | Erreur technique |
-| `4`  | Score inférieur au seuil `--target N` |
+| Code | Constante | Signification |
+|------|-----------|---------------|
+| `0`  | `EXIT_OK`            | Audit propre — aucune alerte, aucun avertissement |
+| `1`  | `EXIT_WARNINGS`      | Avertissements détectés (améliorations suggérées) |
+| `2`  | `EXIT_ALERTS`        | Alertes détectées — action requise |
+| `3`  | `EXIT_ERROR`         | Erreur technique (parsing CLI, IO, interne) |
+| `4`  | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N |
+
+Les constantes sont exposées dans `bob.__main__` pour un usage programmatique :
+
+```python
+from bob.__main__ import EXIT_OK, EXIT_WARNINGS, EXIT_ALERTS, EXIT_ERROR, EXIT_TARGET_MISSED
+```
 
 Exemple cron — audit quotidien à 6h, mail en cas de problème :
 
 ```bash
 0 6 * * * sudo bob --quiet -d || echo "bob exit $? on $(hostname)" | mail -s "UFW Alert" admin@example.com
 ```
+
+---
+
+## Schéma de sortie JSON
+
+> **API publique stable** — la structure produite par `--json` / `--json-full` (ou `--format=json`) fait partie du contrat de BOB. Règles de rétrocompatibilité :
+>
+> - Les clés top-level ne disparaissent jamais, ne sont jamais renommées, ne changent jamais de sémantique au sein d'une même version majeure de `schema_version`.
+> - De nouvelles clés top-level PEUVENT être ajoutées dans n'importe quelle release ; les clients doivent ignorer les clés inconnues.
+> - Les dicts imbriqués suivent la même règle (ajouts OK, suppressions/renommages = breaking).
+> - Les changements breaking incrémentent `schema_version` à un nouveau majeur (`"2"`, `"3"`…).
+
+### Clés top-level (toujours présentes)
+
+| Clé | Type | Description |
+|---|---|---|
+| `schema_version` | string | Version majeure du schéma (actuellement `"1"`) |
+| `version` | string | Version de BOB qui produit la sortie |
+| `host` | string | Nom d'hôte (`uname -n`) |
+| `timestamp` | string | Timestamp UTC ISO 8601 |
+| `score` | int (0–10) | Score de sécurité global |
+| `score_max` | int | Toujours `10` |
+| `risk` | string | Niveau de risque : `"low"`, `"medium"`, `"high"`, `"critical"` |
+| `network_context` | string | `"local"`, `"private"`, ou `"public"` |
+| `public_ip` | string | IP publique (vide derrière NAT) |
+| `alerts` | int | Nombre de findings ALERT |
+| `warnings` | int | Nombre de findings WARN |
+| `deductions` | array | Déductions de score (voir ci-dessous) |
+| `domain_scores` | object | Sous-scores par domaine (voir ci-dessous) |
+
+### Structure `deductions[]`
+
+```json
+{ "reason": "Journalisation UFW désactivée", "points": 2, "key": "firewall.logging_off" }
+```
+
+Le champ `key` est une **clé i18n stable en notation pointée** (`<domaine>.<finding>`) — c'est sur ce champ qu'il faut matcher (et non sur `reason` localisée) pour une logique cliente stable entre locales.
+
+### Structure `domain_scores`
+
+```json
+{
+  "firewall_services": { "score": 10, "label": "Pare-feu & Services" },
+  "ssh":               { "score": 7,  "label": "SSH" },
+  "hardening":         { "score": 6,  "label": "Durcissement système" }
+}
+```
+
+Les clés de domaines sont stables (`firewall_services`, `ssh`, `hardening`, `detection`, `disk`, `auth`, `cron`).
+
+### Clés additionnelles en mode complet (`--json-full`)
+
+| Clé | Type | Description |
+|---|---|---|
+| `findings` | array | Tous les findings avec `{ key, level, message, nature, cmd, note }` |
+| `services` | array | Services réseau installés avec `{ name, installed, active, risk, ports }` |
+| `open_ports` | array | Ports en écoute sur `0.0.0.0` avec `{ port, address, process }` |
+| `firewall_stack` | object | Détection bypass UFW : docker, libvirt, nftables, ip_forward, etc. |
+| `hardening` | object | Flags sysctl/AppArmor (uniquement quand collectés) |
+| `ipv6` | object | Cohérence pile IPv6 (uniquement quand collectées) |
+
+### Exemple de matching stable (indépendant de la locale)
+
+```bash
+# Matcher un finding spécifique par clé, indépendamment de la locale
+sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
+```
+
+Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--explain` — elles ne changeront pas sans bump majeur du schéma.
 
 ---
 

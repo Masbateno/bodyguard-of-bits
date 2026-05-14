@@ -175,6 +175,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
         argv = sys.argv[1:]
 
     config = AuditConfig()
+    lang_explicit = False  # tracks whether --lang= or --french was passed
 
     i = 0
     while i < len(argv):
@@ -212,12 +213,14 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
 
         elif arg == "--french":
             config.lang = "fr"
+            lang_explicit = True
 
         elif arg.startswith("--lang="):
             value = arg.split("=", 1)[1]
             if not value:
                 raise CLIError("--lang= requires a language code (e.g. en, fr)")
             config.lang = value
+            lang_explicit = True
 
         elif arg in ("-l", "--log-days") and i + 1 < len(argv):
             i += 1
@@ -546,6 +549,12 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             f"Incompatible options: {' and '.join(active_modes)} cannot be used together"
         )
 
+    # POSIX locale auto-detection — only when --lang/--french wasn't explicitly set.
+    # Honours $LC_ALL / $LC_MESSAGES / $LANG. C/POSIX → fallback to default (en).
+    if not lang_explicit:
+        from bob.i18n import detect_system_lang
+        config.lang = detect_system_lang()
+
     return config
 
 # ---------------------------------------------------------------------------
@@ -596,8 +605,8 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("    --webhook-format=F","Webhook format: auto (default), generic, or slack")
 
     section("CONFIGURATION — language and settings")
-    opt("    --lang=CODE",       "Set interface language: en (default), fr")
-    opt("    --french",          "Shortcut for --lang=fr")
+    opt("    --lang=CODE",       "Set interface language: en, fr (default: detected from $LANG, fallback en)")
+    opt("    --french",          "Shortcut for --lang=fr (overrides detection)")
     opt("-r, --reconfigure",     "Reset saved port configuration and re-ask")
 
     section("MAINTENANCE — cron jobs and logs")
@@ -642,11 +651,12 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     print("  sudo bob -w https://hooks.slack.com/...  Send to Slack")
     print("  bob -e ssh.password_auth        Explain a finding (no sudo)")
 
-    section("EXIT CODES  (--quiet / scripting mode)")
+    section("EXIT CODES  (stable public API — see DOCUMENTS/README_TECH.md)")
     print("  0   No issues detected")
     print("  1   Warnings present")
     print("  2   Alerts present — action required")
     print("  3   Technical error")
+    print("  4   --target N specified and score < N")
 
     print()
     print("Documentation: https://github.com/Masbateno/bodyguard-of-bits")
