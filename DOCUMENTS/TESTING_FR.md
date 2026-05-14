@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.1 | 4449 | Phase 2 distro-ready (+19) : extraction `bob/tui/cron` (0 nouveau test — couvert par l'existant) · intégration `--offline` (+3 dans `test_webhook.py`) · `test_formatter.py` (14 nouveaux — reconstruction indépendante de la locale + 4 edge cases post-revue) · `test_json_schema.py` (+2 — exposition champ `template_vars`) |
 | v0.4.0 | 4430 | Phase 1 distro-ready (+82) : `TestDetectSystemLang` (12) · `TestExplainKeyAliases` + `TestExplainKeyFreezePolicy` (6) · `test_json_schema.py` (17 — incl. strict-set + defense-in-depth contre dérive des constantes) · `test_services_schema.py` (43 — incl. `$defs`, regex port stricte 1–65535, contraintes métier, wrapper plugin-file, `minItems: 1` sur services-list) · 4 intégration locale CLI |
 | v0.3.6 | 4348 | Aucun nouveau test — passe code review (`Path.home()` sudo-aware, ULA IPv6, SSH `local`, imports/locales morts) |
 | v0.3.5 | 4348 | Aucun nouveau test — refactoring pur (`runner.py` closure `_sec`, `ssh.py` helper `_check_weak_algo`) |
@@ -26,6 +27,54 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.4.1 — 4449/4449 (14-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4449 passed in 5.07s
+```
+
+**Net : +19 (aucune suppression).** Phase 2 distro-ready (découplage architectural) : extraction `bob/tui/`, tests d'intégration `--offline`, représentation findings/deductions indépendante de la locale via `template_vars`, plus une passe de hardening post-revue sur `bob/formatter.py` (4 tests edge-case).
+
+#### `tests/test_formatter.py` (nouveau, +14)
+
+`bob.formatter` — reconstruction de message indépendante de la locale :
+
+| Classe | Tests | Couverture |
+|---|---:|---|
+| `TestFormatFinding` | 5 | Ordre de résolution : key + template_vars render via i18n, key seul retourne template, sans key fallback message, key inconnue fallback, cas vide |
+| `TestFormatDeduction` | 2 | Même ordre de résolution appliqué à `Deduction.key` + `template_vars` → `reason` |
+| `TestLocaleRoundtrip` | 1 | Même `(key, template_vars)` donne du texte différent en `fr` vs `en` — le sens du découplage |
+| `TestBackwardCompatibility` | 2 | Findings legacy (sans key, sans template_vars) passent inchangés |
+| `TestFormatterEdgeCases` (post-revue) | 4 | Empty template_vars sur template avec placeholders retourne raw, partial template_vars raise KeyError, key gagne sur mismatched message, empty message + no key retourne "" |
+
+#### `tests/test_webhook.py` (+3)
+
+Contrat mode `--offline` strict :
+
+| Test | Couverture |
+|---|---|
+| `test_webhook_with_offline_flag_parses` | Le parser CLI accepte `--offline --webhook=URL` ensemble (non mutuellement exclusifs au parsing) |
+| `test_offline_skips_webhook_send` | Mirroir de la branche de décision `__main__.py:277` — échoue si le gate offline est jamais abandonné |
+| `test_get_public_ip_offline_skips_urllib` | Monkeypatch de `sysinfo.urllib` avec stub explosif ; lève AssertionError si urlopen est atteint en mode offline |
+
+#### `tests/test_json_schema.py` (+2)
+
+Champ `template_vars` exposé dans la sortie JSON :
+
+| Test | Couverture |
+|---|---|
+| `test_each_deduction_has_template_vars_field` | Chaque deduction expose `template_vars` dict (vide pour les checks legacy) |
+| `test_each_finding_has_template_vars_field` | Chaque finding (mode full) expose `template_vars` dict |
+
+#### `bob/tui/cron.py` (extraction — aucun nouveau test)
+
+`bob/cron_ui.py` (952 lignes) déplacé vers `bob/tui/cron.py` via `git mv`. Les 4430 tests existants exercent déjà le chemin d'import ; la suite complète est restée à 4430/4430 après le déplacement, prouvant que le rename est transparent.
 
 ---
 

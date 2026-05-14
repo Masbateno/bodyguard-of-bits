@@ -67,7 +67,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | Module | Rôle |
 |---|---|
 | `cron.py` | Gestion cron — `CronEntry`, `list_installed_crons()`, `build_script_content()`, logique wizard planification (`run_install_cron()` / `run_manage_cron()` dispatchers — flux texte brut + dispatch curses en import paresseux) |
-| `cron_ui.py` | TUI curses pour l'installation et la gestion cron — `_WizardEntry`, `_draw()`, `_read_key()`, `_run_install_cron_curses()`, `_run_manage_cron_curses()` |
+| `tui/cron.py` | TUI curses pour l'installation et la gestion cron — `_WizardEntry`, `_draw()`, `_read_key()`, `_run_install_cron_curses()`, `_run_manage_cron_curses()`. Vit sous `bob.tui` afin que le reste de `bob.*` reste importable sur les systèmes sans curses (extraction v0.4.1). |
 | `_tty.py` | Lecteur ligne mode raw — `read_line(prompt) → str \| None` ; Échap retourne `None` ; repli `input()` en non-TTY |
 
 ### Modules de vérification (`checks/`)
@@ -120,7 +120,9 @@ bob/
 ├── cli.py               # AuditConfig + parse_args()
 ├── config.py            # UserConfig, EmailStore
 ├── cron.py              # CronEntry, logique wizard planification, build_script_content()
-├── cron_ui.py           # TUI curses pour --install-cron / --manage-cron
+├── tui/
+│   ├── __init__.py      # bob.tui — sous-package curses optionnel (v0.4.1)
+│   └── cron.py          # TUI curses pour --install-cron / --manage-cron (était bob/cron_ui.py avant v0.4.1)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
 ├── fixes.py             # Interface mode fix (interactif + auto-fix)
 ├── i18n.py              # t(key) avec notation pointée

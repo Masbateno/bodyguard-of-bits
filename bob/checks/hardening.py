@@ -177,6 +177,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         result.ok(
             message=_t("hardening.tcp_syncookies_ok", value=snapshot.tcp_syncookies),
             key="hardening.tcp_syncookies_ok",
+            template_vars={"value": snapshot.tcp_syncookies},  # pilot v0.4.1
         )
     else:
         result.warn(

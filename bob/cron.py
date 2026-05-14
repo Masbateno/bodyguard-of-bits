@@ -10,7 +10,7 @@ Handles:
 - Interactive install wizard (plain-text flow)
 - Interactive management (plain-text flow)
 
-Curses TUI code lives in bob.cron_ui.
+Curses TUI code lives in bob.tui.cron.
 """
 
 from __future__ import annotations
@@ -603,7 +603,7 @@ def run_install_cron(user_config, config, t) -> int:
         return _run_install_cron_plain(user_config, config, t)
     import curses as _curses
     import os as _os
-    from bob.cron_ui import _run_install_cron_curses
+    from bob.tui.cron import _run_install_cron_curses
     _os.environ.setdefault("ESCDELAY", "25")
     try:
         return _curses.wrapper(lambda scr: _run_install_cron_curses(scr, user_config, config, t))
@@ -1142,7 +1142,7 @@ def run_manage_cron(config, t) -> int:
         return _run_manage_cron_plain(config, t)
     import curses as _curses
     import os as _os
-    from bob.cron_ui import _run_manage_cron_curses
+    from bob.tui.cron import _run_manage_cron_curses
     _os.environ.setdefault("ESCDELAY", "25")
     try:
         return _curses.wrapper(lambda scr: _run_manage_cron_curses(scr, config, t))

@@ -136,6 +136,51 @@ def init(lang: str = DEFAULT_LANG) -> None:
         _default_translations = _translations
 
 
+def try_t(key: str, **kwargs: Any) -> "str | None":
+    """
+    Resolve ``key`` in the active locale or return ``None`` if absent.
+
+    Unlike :func:`t`, this function distinguishes "key missing" from "key with
+    bracket-formatted value": missing → ``None``, present → the rendered string.
+    This is the helper to use when a caller needs to react to a missing key
+    instead of degrading silently to the ``"[key]"`` sentinel.
+
+    Args:
+        key:    Dot-separated translation key.
+        kwargs: Optional named placeholders for str.format().
+
+    Returns:
+        Rendered translated string, or ``None`` if:
+          - i18n has not been initialised yet, OR
+          - the key does not exist in the active locale and the default EN
+            fallback, OR
+          - the resolved value is not a string.
+
+    Raises:
+        KeyError: If a required placeholder is missing from kwargs at
+                  interpolation time. (Same as ``str.format``.)
+
+    Notes:
+        Introduced in v0.4.1 to give ``bob.formatter`` a clean way to detect
+        missing keys without parsing the ``"[key]"`` sentinel produced by
+        :func:`t`. See :func:`t` for the legacy sentinel-returning variant
+        used by the rest of the codebase.
+    """
+    if not _initialized:
+        return None
+    value = _resolve(key, _translations)
+    if value is None and _default_translations is not _translations:
+        value = _resolve(key, _default_translations)
+    if value is None or not isinstance(value, str):
+        return None
+    if kwargs:
+        # str.format raises KeyError for missing placeholders — we let it
+        # propagate so callers can distinguish "key missing" (None return)
+        # from "key present but call site forgot a kwarg" (KeyError).
+        return value.format(**kwargs)
+    return value
+
+
 def t(key: str, **kwargs: Any) -> str:
     """
     Return the translated string for key.

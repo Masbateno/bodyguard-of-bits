@@ -86,19 +86,25 @@ def build_json_data(
         "alerts":          engine.alert_count,
         "warnings":        engine.warn_count,
         "deductions": [
-            {"reason": d.reason, "points": d.points, "key": d.key}
+            {
+                "reason":        d.reason,
+                "points":        d.points,
+                "key":           d.key,
+                "template_vars": d.template_vars,
+            }
             for d in engine.breakdown if d.points > 0
         ],
     }
     if full:
         data["findings"] = [
             {
-                "key":     f.key,
-                "level":   f.level.value,
-                "message": f.message,
-                "nature":  f.nature,
-                "cmd":     f.cmd,
-                "note":    f.note,
+                "key":           f.key,
+                "level":         f.level.value,
+                "message":       f.message,
+                "nature":        f.nature,
+                "cmd":           f.cmd,
+                "note":          f.note,
+                "template_vars": f.template_vars,
             }
             for f in engine.findings
         ]

@@ -6,6 +6,223 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.4.1] — 14-05-2026
+
+**Phase 2 de la roadmap distro-ready — découplage architectural.** Trois zones traitées : finalisation `--offline`, isolation curses sous `bob/tui/`, et représentation findings/deductions indépendante de la locale via `template_vars` additif. Plus une passe de hardening post-revue sur `bob/formatter.py` (API resserrée, tests edge-case). Tous les changements sont non-breaking (additifs). 4449/4449 tests (+19).
+
+La roadmap Phase 2 vise un paquet Debian `bob-core` installable sans curses et sans texte localisé enfoui dans la sortie JSON. Cette release pose les fondations sans casser l'API existante.
+
+---
+
+### Zone 2.1 — Mode `--offline` strict finalisé
+
+**Fichiers :** `tests/test_webhook.py`
+
+#### Problème
+
+Le flag `-o` / `--offline` existe depuis v0.4.0 et gatait déjà les deux sites touchant le réseau (`bob.sysinfo.get_public_ip` HTTP, `bob.webhook.send_webhook` POST). Manquait pour un vrai audit distro-ready : un inventaire bout en bout de tous les appels qui pourraient toucher le réseau, et des tests d'intégration qui figent le contrat.
+
+#### Implémentation
+
+Audit réseau (survey only, pas de modif de code) :
+
+| Site | Verdict |
+|---|---|
+| `bob/sysinfo.py:158` `urllib.request.urlopen` (`get_public_ip`) | ✅ gaté par `offline=True` |
+| `bob/webhook.py:send_webhook` POST HTTP | ✅ gaté par `__main__.py:277` |
+| `bob/checks/kernel_modules.py` `apt-cache policy` | ✅ lecture cache local |
+| `bob/checks/firmware.py` `fwupdmgr get-updates` | ✅ lecture cache local |
+| `bob/checks/auth_log.py` `journalctl` | ✅ local |
+| `bob/checks/ssl_certs.py` `openssl x509 -in <file>` | ✅ fichier local |
+| Autres (`ss`, `iptables`, `nft`, …) | ✅ tous locaux |
+
+Conclusion : aucun site réseau oublié, le plumbing `--offline` est complet.
+
+3 nouveaux tests dans `tests/test_webhook.py` qui figent le contrat (CLI parse OK, webhook skip, urllib short-circuit).
+
+#### Notes de design
+
+Pourquoi un test miroir de la branche de décision plutôt qu'un test d'intégration full `_run()` : l'orchestration pipeline tire des dizaines de dépendances (FS, subprocess, locale, ScoreEngine, …). Mirorer la condition à 2 lignes donne la même couverture pour une fraction du coût de maintenance.
+
+---
+
+### Zone 2.2 — Sous-package curses `bob/tui/`
+
+**Fichiers :** nouveau `bob/tui/__init__.py`, `bob/cron_ui.py` → `bob/tui/cron.py` (git mv), `bob/cron.py` (sites d'import), `DOCUMENTS/README_DEV.md` (FR + EN)
+
+#### Problème
+
+Pour un paquet Debian `bob-core` qui tourne dans des conteneurs minimaux (sans curses), le reste de `bob.*` doit rester importable sans curses installé. Les `import curses` étaient déjà lazy (à l'intérieur des fonctions) mais `bob/cron_ui.py` vivait au top-level de `bob.*`, suggérant qu'il faisait partie du module core. Un packager lisant la structure du projet ne pouvait pas dire que `cron_ui` était optionnel.
+
+#### Implémentation
+
+- Nouveau `bob/tui/__init__.py` documente la politique du sous-package.
+- `git mv bob/cron_ui.py bob/tui/cron.py` (historique préservé).
+- `bob/cron.py` : 2 sites d'import lazy updates, docstring module ajusté.
+- `setuptools.packages.find` config (`include = ["bob*"]`) couvre déjà `bob.tui` automatiquement — pas de changement `pyproject.toml`.
+- `DOCUMENTS/README_DEV.md` + FR : arbre de structure mis à jour.
+
+#### Notes de design
+
+- **Pourquoi un sous-package plutôt qu'une distribution séparée.** Le split en `bob-core` + `bob-tui` sur PyPI est une préoccupation de packaging, pas de code. La distribution `bob` continue à tout livrer ; le layout sous-package est la fondation pour qu'un futur packager Debian puisse split sans toucher au code.
+- **`explain.py`, `manage_logs.py`, `cron.py` non déplacés.** Mélangent logique métier et bits TUI. Out of scope.
+
+---
+
+### Zone 2.3 — Findings indépendants de la locale via `template_vars` additif
+
+**Fichiers :** `bob/scoring.py`, `bob/json_output.py`, nouveau `bob/formatter.py`, `bob/checks/ssh.py`, `bob/checks/hardening.py`, `bob/checks/firewall.py`, nouveau `tests/test_formatter.py`, `tests/test_json_schema.py`
+
+#### Problème
+
+Jusqu'à v0.4.0, `Finding.message` et `Deduction.reason` étaient des strings déjà formatées dans la locale active. Les consommateurs externes du JSON n'avaient aucun moyen de :
+- Rendre le même finding dans une autre locale.
+- Matcher les findings par leur clé sémantique stable sans parser la chaîne localisée.
+
+`Finding.key` (ajouté en Phase 1) donnait un nom stable, mais les variables interpolées dans le template étaient perdues. Un client voulant "la liste des ciphers signalés comme faibles" devait parser le `message` localisé.
+
+L'objectif Phase 2 est `bob.core` *pur* — sans `print()`, sans `_t()`, sans curses. Cette release pose le premier pas additif : exposer `(key, template_vars)` partout en parallèle du legacy `message`/`reason`.
+
+#### Implémentation
+
+##### Deux nouveaux champs dataclass
+
+```python
+@dataclass
+class Deduction:
+    ...
+    template_vars: dict = field(default_factory=dict)   # NOUVEAU
+
+@dataclass
+class Finding:
+    ...
+    template_vars: dict = field(default_factory=dict)   # NOUVEAU
+```
+
+Le nom `template_vars` est délibéré : il documente que le dict contient les variables passées à `.format(**kwargs)` du template i18n. Nous avons évité `context` (déjà pris par `Deduction.context: str` signifiant le scope réseau) et `vars`/`params` (trop générique).
+
+##### Helpers de convenance acceptent `template_vars=`
+
+`CheckResult.add_finding`, `.ok`, `.info`, `.warn`, `.alert`, `.add_deduction` gagnent tous un kwarg optionnel `template_vars=None`. Les sites d'appel legacy ne nécessitent ZÉRO changement.
+
+##### Nouveau module `bob.formatter`
+
+`format_finding(finding, lang=None) -> str` et `format_deduction(deduction, lang=None) -> str` implémentent le rendu indépendant de la locale. Ordre de résolution :
+
+1. Si `key` est défini ET `template_vars` non-vide → render `_t(key, **template_vars)`.
+2. Si `key` défini sans template_vars → render `_t(key)` si la résolution est clean.
+3. Sinon fallback sur `finding.message` / `deduction.reason` (chemin legacy).
+
+Le fallback à l'étape 3 rend le formatter 100% rétrocompatible.
+
+Le paramètre `lang` est réservé pour une future API permettant de rendre le même finding dans plusieurs locales sans flipper la locale du processus.
+
+##### Trois checks pilotes migrés
+
+- **`bob/checks/ssh.py`** — `_check_host_keys` (4 sites) avec `template_vars={"name": ..., "bits": ..., "type": ...}` selon le cas.
+- **`bob/checks/hardening.py`** — `tcp_syncookies_ok` avec `value=snapshot.tcp_syncookies`.
+- **`bob/checks/firewall.py`** — `firewall.logging_ok` et `logging_verbose` avec `level=level`.
+
+Dans chaque cas, le `message=_t("key", **vars)` existant est préservé (compat) et `template_vars={...vars...}` ajouté en parallèle.
+
+##### `template_vars` exposé dans la sortie JSON
+
+`bob/json_output.py` sérialise désormais `template_vars` sur chaque deduction et chaque finding (full mode) :
+
+```json
+{
+  "deductions": [
+    {
+      "reason": "DSA host key: ssh_host_dsa_key",
+      "points": 1,
+      "key": "ssh.host_key_dsa",
+      "template_vars": {"name": "ssh_host_dsa_key"}
+    }
+  ]
+}
+```
+
+Le champ est toujours présent (dict vide pour les checks legacy). C'est additif.
+
+#### Tests
+
+`tests/test_formatter.py` (nouveau, 10 tests) : ordre de résolution, roundtrip locale, rétrocompatibilité.
+`tests/test_json_schema.py` (+2) : exposition `template_vars` dans le JSON.
+`tests/test_webhook.py` (+3) : contrat offline (couvert en Zone 2.1).
+
+Total : **+15 tests** (4430 → 4445).
+
+#### Notes de design
+
+- **Option B vs Option A.** Option B = additive, pas de breaking, ce que cette release livre. Option A (breaking : suppression de `message`, `template_vars` obligatoire) reportée à v0.5.0+ quand les 40 checks auront été migrés et que le schéma JSON pourra livrer un v2.
+- **Pourquoi 3 pilotes, pas les 40 d'un coup.** Migration mécanique ~500 lignes — possible mais error-prone. Le pattern est documenté via les pilotes ; le reste peut venir incrémentalement (v0.4.2, v0.4.3, …).
+- **Dict vide ≠ None.** Choix de `field(default_factory=dict)` plutôt que `Optional[dict]` pour uniformité JSON.
+
+---
+
+### Hardening passe — revue de `bob/formatter.py`
+
+**Fichiers :** `bob/formatter.py`, `bob/i18n.py`, `tests/test_formatter.py`
+
+#### Problème
+
+Une revue post-implémentation de `formatter.py` (analyse ChatGPT externe demandée par l'utilisateur) a relevé quatre problèmes d'API/architecture légitimes sur un module qui s'apprête à devenir un contrat public stable pour les packagers downstream :
+
+1. **Paramètre `lang=` mensonger.** `format_finding(finding, lang=None)` exposait un override de locale qui était un no-op silencieux (`_ = lang` — l'état global `bob.i18n.t()` gagnait toujours). Les appelants externes passant `lang="fr"` obtiendraient toujours la locale du process sans aucune indication. Piège pour les packagers distros qui piperaient les sorties dans leur propre pipeline.
+2. **Détection fragile de clé manquante via `startswith("[")`.** `_render_key` retournait `"[key]"` (sentinelle `bob.i18n.t()` pour clés absentes) et l'appelant vérifiait `startswith("[")` pour la détecter. Couple le formatter à une convention `t()` non documentée ; un changement futur de cette sentinelle casserait silencieusement le formatter.
+3. **`except (KeyError, TypeError, ValueError)` trop large.** Catcher `TypeError` et `ValueError` masque de vrais bugs Python (e.g. changement d'API `_t()`). Ne devrait swallow que ce qui est vraiment attendu (mismatch de placeholder depuis `str.format`).
+4. **Le mot "reproducible" dans la docstring sur-promet** ce que le module peut livrer alors que ~40 checks utilisent encore le chemin legacy `message=`-only.
+
+#### Implémentation
+
+1. **Paramètre `lang=` supprimé** (Option A de la revue). Le réintroduire quand `bob.i18n` deviendra pur (v0.5.x avec l'extraction complète `bob.core`) est préférable à garder une signature mensongère aujourd'hui. La signature pour v0.4.1 est désormais `format_finding(finding) -> str` et `format_deduction(deduction) -> str`.
+
+2. **Nouveau `bob.i18n.try_t(key, **kwargs) -> str | None`** ajouté : détection clean de clé manquante sans parser la sentinelle `"[key]"`. Comportement :
+   - Retourne `None` pour les clés absentes (dans la locale active et le fallback EN).
+   - Retourne la string rendue en cas de succès.
+   - Propage `KeyError` depuis `str.format()` quand un placeholder requis est manquant — responsabilité de l'appelant, pas une dégradation runtime.
+   Le legacy `bob.i18n.t()` continue de retourner `"[key]"` pour le reste du codebase qui s'appuie sur ce contrat ; seul `formatter` utilise la nouvelle fonction.
+
+3. **Gestion des exceptions resserrée dans `_try_render`** : plus de catch-all. `try_t` retourne `None` proprement pour les clés manquantes ; `KeyError` depuis `str.format()` (placeholder manquant = bug côté check) propage afin que le bug surface immédiatement au lieu de se dégrader silencieusement vers `finding.message`.
+
+4. **Docstrings réécrites** : "reproducible" → "progressively reconstructible" + une section "Current state (v0.4.1)" précisant exactement ce qui est reproductible aujourd'hui et ce qui ne l'est pas. Le couplage entre `Finding.key` / clé `--explain` / clé i18n / clé de matching JSON (= un ABI textuel) est désormais explicitement reconnu avec un pointeur vers la freeze policy de `bob/explain.py`.
+
+#### Tests
+
+`tests/test_formatter.py` étendu de 10 à 14 tests (+4 dans la nouvelle classe `TestFormatterEdgeCases`) :
+
+| Test | Couverture |
+|---|---|
+| `test_empty_template_vars_with_placeholder_template_returns_raw` | Edge case : `template_vars` vide + clé dont le template a des placeholders → template brut retourné avec `{placeholders}` littéraux intacts (cohérent avec `i18n.t()`, fait surface le bug visuellement) |
+| `test_partial_template_vars_raises_keyerror` | `template_vars` non-vide manquant un placeholder requis → `KeyError` propage (pas de fallback silencieux) |
+| `test_mismatched_key_vs_message_uses_key` | Le chemin key gagne quand il résout proprement, même si `message` dit autre chose (la représentation structurée fait autorité une fois populée) |
+| `test_empty_finding_message_with_no_key` | Retourne `""` (pas `None`) quand ni key ni message n'est défini — préserve le contrat documenté "retourne toujours une string" |
+
+Décompte total des tests v0.4.1 : **4445 → 4449** (+4 depuis la passe de hardening).
+
+#### Notes de design
+
+- **Pourquoi faire surface `KeyError` au lieu de fallback sur `message`.** Un placeholder manquant signifie que le check a déclaré une key dont le template a besoin d'une variable que le check n'a pas fournie. Utiliser silencieusement `finding.message` masquerait un bug côté check et laisserait les clients sans signal. Lever l'exception force le bug à être visible dans la suite de tests où il devrait être attrapé.
+- **Pourquoi `try_t` et pas refactoriser `t()`.** Le legacy `t()` retournant `"[key]"` est utilisé partout dans le codebase pour "afficher mais ne pas crasher". Changer son contrat de retour ricocherait sur 600+ sites d'appel. Ajouter `try_t` comme fonction sœur donne au formatter un signal clé-manquante clean sans perturber la sémantique existante.
+- **Pourquoi retirer `lang=` plutôt que le fixer.** Implémenter proprement le switch de locale par appel nécessite de rendre `bob.i18n` réentrant (objet instance plutôt qu'état module-level) — travail qui appartient à v0.5.x avec le refactor complet `bob.core`. Exposer un paramètre aujourd'hui qui ment sur son implémentation est pire que ne pas l'exposer.
+
+---
+
+### Contexte roadmap
+
+Après v0.4.1, le plan Phase 2 est :
+
+| Item | Statut |
+|---|---|
+| 2.1 `--offline` strict | ✅ fait (vérifié + testé) |
+| 2.2 isolation curses (`bob/tui/`) | ✅ fait (cron_ui déplacé) |
+| 2.3 découplage core/i18n — Option B (additive) | ✅ fait (3 pilotes + formatter + JSON) |
+| 2.3 découplage core/i18n — Option A (breaking) | ⏳ v0.5.0+ |
+| Vague 2 schéma (typed ports, `port_resolution`) | ⏳ v0.5.0+ |
+| Phase 3 (man pages, debian/, profil AppArmor, SECURITY.md) | ⏳ futur |
+
+---
+
 ## [v0.4.0] — 14-05-2026
 
 Phase 1 de la roadmap distro-ready (voir mémoire `project_distro_roadmap`) — cinq contrats d'API publique figés pour que scripts, dashboards et packagers downstream puissent s'appuyer sur un comportement stable entre versions. Aucune nouvelle fonctionnalité, aucun changement breaking — additif uniquement. 4405/4405 tests (+57). Plus un petit correctif UX sur l'affichage du score inchangé.

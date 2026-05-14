@@ -425,11 +425,13 @@ def check_ufw_logging(status: FirewallStatus, t: TranslationFunc | None = None) 
         result.ok(
             message=_t("firewall.logging_ok", level=level),
             key="firewall.logging_ok",
+            template_vars={"level": level},  # pilot v0.4.1
         )
     elif level in ("high", "full"):
         result.info(
             message=_t("firewall.logging_verbose", level=level),
             key="firewall.logging_verbose",
+            template_vars={"level": level},  # pilot v0.4.1
         )
     else:
         result.info(

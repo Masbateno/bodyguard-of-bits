@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.4.1](#v041) | 2026-05-14 | Phase 2 distro-ready (architectural decoupling) — `bob/tui/` extracted (curses optional) · `Finding.template_vars` / `Deduction.template_vars` additive fields for locale-independent reconstruction · new `bob.formatter` module + post-review hardening pass (`lang=` removed, `i18n.try_t()`, narrowed `except KeyError`) · 3 pilot checks migrated (ssh, hardening, firewall) · template_vars exposed in JSON output · `--offline` mode verified + integration tests · 4449/4449 tests (+19) |
 | [v0.4.0](#v040) | 2026-05-14 | Phase 1 distro-ready — exit codes / locale auto-detect (POSIX `$LANG`) / JSON output contract (`schema_version`, `key` fields) / `--explain` alias map / `services.json` formal JSON Schema (with post-review hardening pass #1: strict 1–65535 port regex · `$defs` factorization · `if/then` business constraints · plugin-file `schema_version` wrapper) · pass #2: schema descriptions, `services-list.minItems`, real-class fixtures replacing MagicMock, RefResolver→referencing compat shim · `= N` redundant suffix on stable score removed · 4430/4430 tests (+82) |
 | [v0.3.6](#v036) | 2026-05-09 | Code-review pass — `Path.home()` → `get_user_home()` (sudo-aware) in 7 modules · IPv6 ULA/link-local in `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepted · UFW logging header skipped when UFW inactive · `NOTIFY_EMAIL` legacy regex · 22 unused imports cleaned · 47 dead locale keys removed · 4348/4348 tests |
 | [v0.3.5](#v035) | 2026-05-08 | Refactoring — `runner.py` `_sec` closure (−295L) · `ssh.py` `_check_weak_algo` helper · locale fix 4× `UFW-AUDIT` → `BOB` · 4348/4348 tests |
@@ -19,6 +20,53 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.4.1] — 2026-05-14
+
+Phase 2 of the distro-ready roadmap — architectural decoupling. Three zones tackled: `--offline` mode finalization, curses isolation via `bob/tui/`, and locale-independent representation of findings via additive `template_vars`. Plus a post-review hardening pass on `bob/formatter.py` (4 edge-case tests + tightened API). All changes are non-breaking (additive). 4449/4449 tests (+19).
+
+### Zone 2.1 — `--offline` strict mode verified
+
+The `-o` / `--offline` flag (already present since v0.4.0) was audited end-to-end: all network-touching sites are either already gated (HTTP `get_public_ip`, webhook POST) or are local-only (apt-cache, fwupdmgr get-updates, journalctl, openssl x509). Added 2 integration tests in `tests/test_webhook.py` that pin the offline contract: webhook is NOT sent when `config.offline=True` even with a webhook URL set, and `get_public_ip(offline=True)` short-circuits before any `urllib` call.
+
+### Zone 2.2 — `bob/tui/` curses subpackage
+
+`bob/cron_ui.py` (952 lines) moved to `bob/tui/cron.py` under a new `bob.tui` subpackage. Curses imports were already lazy (inside functions) — this release makes the separation physical. The 2 call sites in `bob/cron.py` updated to `from bob.tui.cron import ...`. The rest of `bob.*` (audit pipeline, checks, scoring, JSON output) remains importable on systems without curses, which is the prerequisite for a future `bob-core` Debian package separate from `bob-tui`.
+
+### Zone 2.3 — Locale-independent findings (additive)
+
+Two new optional fields on `Finding` and `Deduction`:
+
+```python
+@dataclass
+class Finding:
+    ...
+    key:           str  = ""    # already since v0.3.7
+    template_vars: dict = field(default_factory=dict)   # new in v0.4.1
+```
+
+`template_vars` is the mapping of variables that the check passed to its i18n template (e.g. `{"ciphers": "aes128-cbc, des-cbc"}` for `ssh.weak_ciphers`). When non-empty, an external client can rebuild the localized message from `(key, template_vars, locale)` without depending on the pre-formatted `message` string.
+
+New module `bob.formatter` exposes `format_finding(finding, lang=None)` and `format_deduction(deduction, lang=None)`. Resolution order: `key + template_vars` → `key` alone → fallback to pre-formatted `message` (legacy path, fully backward compatible).
+
+`CheckResult.warn/alert/info/ok/add_finding/add_deduction` helpers accept an optional `template_vars=` kwarg. The 3 pilot checks (`bob/checks/ssh.py`, `hardening.py`, `firewall.py`) demonstrate the migration: same `message=_t("key", **vars)` is kept (legacy compat) and `template_vars={...vars...}` is added in parallel. JSON output now exposes `template_vars` on every deduction and finding (additive field — empty dict for legacy checks).
+
+### Roadmap context
+
+This release closes Zone 2.1 + 2.2 + 2.3 (Option B additive) of the Phase 2 plan. Three pilot checks demonstrate the pattern; the remaining 40 checks can be migrated incrementally without breaking changes. Option A (full breaking refactor — `Finding.message` removed in favor of `Finding.template_vars` mandatory) is deferred to v0.5.0+ together with the schema v2 plugin contracts.
+
+### Tests
+
+4449/4449 (+19):
+- 3 new in `tests/test_webhook.py` for offline mode (skip POST, urllib short-circuit, CLI compat)
+- 14 new in `tests/test_formatter.py` (10 base: resolution order, locale roundtrip, backward compat; +4 post-review edge cases: partial template_vars, mismatch key/message, empty inputs)
+- 2 new in `tests/test_json_schema.py` (`template_vars` exposed in JSON for every deduction and finding)
+
+### Field validation
+
+End-to-end audit on so6desktop: `bob.tui.cron` loads cleanly, the 3 pilot checks emit `template_vars` correctly, `bob --json` exposes the new field on every entry, `--offline` skips the webhook.
 
 ---
 

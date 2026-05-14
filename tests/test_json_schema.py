@@ -257,6 +257,23 @@ class TestStableKeysExposed:
             if d["key"]:  # may be empty for legacy/uncategorized deductions
                 assert "." in d["key"], f"Key {d['key']!r} should be dotted"
 
+    def test_each_deduction_has_template_vars_field(self, engine, minimal_args):
+        """v0.4.1+: every deduction exposes `template_vars` (dict, may be empty)."""
+        data = _build(engine, minimal_args)
+        for d in data["deductions"]:
+            assert "template_vars" in d, (
+                "Deduction must expose template_vars for locale-independent "
+                "reconstruction (Phase 2 contract). Empty dict is OK for legacy checks."
+            )
+            assert isinstance(d["template_vars"], dict)
+
+    def test_each_finding_has_template_vars_field(self, engine, minimal_args):
+        """v0.4.1+: every finding exposes `template_vars` (dict, may be empty)."""
+        data = _build(engine, minimal_args, full=True)
+        for f in data["findings"]:
+            assert "template_vars" in f
+            assert isinstance(f["template_vars"], dict)
+
 
 # ---------------------------------------------------------------------------
 # Domain scores structure — already tested in test_domain_scores.py but

@@ -11,6 +11,7 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.1 | 4449 | Phase 2 distro-ready (+19): `bob/tui/cron` extraction (0 new tests — covered by existing) · `--offline` integration (+3 in `test_webhook.py`) · `test_formatter.py` (14 new — locale-independent reconstruction + 4 edge cases post-review) · `test_json_schema.py` (+2 — `template_vars` field exposure) |
 | v0.4.0 | 4430 | Phase 1 distro-ready (+82): `TestDetectSystemLang` (12) · `TestExplainKeyAliases` + `TestExplainKeyFreezePolicy` (6) · `test_json_schema.py` (17 — incl. strict-set + constants-drift defense in depth) · `test_services_schema.py` (43 — incl. `$defs`, strict 1–65535 port regex, business constraints, plugin-file wrapper, `minItems: 1` on services-list) · 4 CLI locale integration |
 | v0.3.6 | 4348 | No new tests — code-review pass (sudo-aware `Path.home()`, IPv6 ULA, SSH `local`, dead imports/locales) |
 | v0.3.5 | 4348 | No new tests — pure refactoring (`runner.py` `_sec` closure, `ssh.py` `_check_weak_algo`) |
@@ -26,6 +27,54 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.4.1 — 4449/4449 (2026-05-14)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4449 passed in 5.07s
+```
+
+**Net: +19 (no removals).** Phase 2 distro-ready (architectural decoupling): `bob/tui/` extraction, `--offline` integration tests, locale-independent finding/deduction representation via `template_vars`, plus a post-review hardening pass on `bob/formatter.py` (4 edge-case tests).
+
+#### `tests/test_formatter.py` (new, +14)
+
+`bob.formatter` — locale-independent message reconstruction:
+
+| Class | Tests | Coverage |
+|---|---:|---|
+| `TestFormatFinding` | 5 | Resolution order: key + template_vars renders via i18n, key alone returns template, no key falls back to message, unknown key falls back, empty input edge case |
+| `TestFormatDeduction` | 2 | Same resolution order applied to `Deduction.key` + `template_vars` → `reason` |
+| `TestLocaleRoundtrip` | 1 | Same `(key, template_vars)` yields different text in `fr` vs `en` — the whole point of the decoupling |
+| `TestBackwardCompatibility` | 2 | Legacy findings (no key, no template_vars) pass through unchanged |
+| `TestFormatterEdgeCases` (post-review) | 4 | Empty template_vars on placeholder template returns raw, partial template_vars raises KeyError, key wins over mismatched message, empty message + no key returns "" |
+
+#### `tests/test_webhook.py` (+3)
+
+`--offline` strict mode contract:
+
+| Test | Coverage |
+|---|---|
+| `test_webhook_with_offline_flag_parses` | CLI parser accepts `--offline --webhook=URL` together (not mutually exclusive at parse time) |
+| `test_offline_skips_webhook_send` | Mirrors `__main__.py:277` decision branch — fails if the offline gate is ever dropped |
+| `test_get_public_ip_offline_skips_urllib` | Monkeypatches `sysinfo.urllib` with an exploding stub; raises AssertionError if any urlopen reached in offline mode |
+
+#### `tests/test_json_schema.py` (+2)
+
+`template_vars` field exposed in JSON output:
+
+| Test | Coverage |
+|---|---|
+| `test_each_deduction_has_template_vars_field` | Every deduction exposes `template_vars` dict (empty for legacy checks) |
+| `test_each_finding_has_template_vars_field` | Every finding (full mode) exposes `template_vars` dict |
+
+#### `bob/tui/cron.py` (extraction — no new tests)
+
+`bob/cron_ui.py` (952 lines) moved to `bob/tui/cron.py` via `git mv`. The 4430 existing tests already exercise the import path; the full suite remained 4430/4430 after the move, proving the rename is transparent.
 
 ---
 

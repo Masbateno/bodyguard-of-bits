@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.4.1](#v041) | 14-05-2026 | Phase 2 distro-ready (découplage architectural) — `bob/tui/` extrait (curses optionnel) · champs additifs `Finding.template_vars` / `Deduction.template_vars` pour reconstruction indépendante de la locale · nouveau module `bob.formatter` + passe de hardening post-revue (`lang=` retiré, `i18n.try_t()`, `except KeyError` resserré) · 3 checks pilotes migrés (ssh, hardening, firewall) · template_vars exposé dans la sortie JSON · mode `--offline` vérifié + tests d'intégration · 4449/4449 tests (+19) |
 | [v0.4.0](#v040) | 14-05-2026 | Phase 1 distro-ready — codes de retour / détection locale POSIX (`$LANG`) / contrat de sortie JSON (`schema_version`, champs `key`) / alias map `--explain` / JSON Schema formel pour `services.json` (avec hardening passe #1 : regex port stricte 1–65535 · factorisation `$defs` · contraintes métier `if/then` · wrapper plugin-file avec `schema_version`) · passe #2 : descriptions schémas, `services-list.minItems`, fixtures à classes réelles remplaçant MagicMock, compat shim RefResolver→referencing · suffixe `= N` redondant sur score stable supprimé · 4430/4430 tests (+82) |
 | [v0.3.6](#v036) | 09-05-2026 | Passe code review — `Path.home()` → `get_user_home()` (sudo-aware) sur 7 modules · ULA/link-local IPv6 dans `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepté · header journalisation UFW masqué si UFW inactif · regex legacy `NOTIFY_EMAIL` · 22 imports inutilisés supprimés · 47 clés de locales mortes retirées · 4348/4348 tests |
 | [v0.3.5](#v035) | 08-05-2026 | Refactoring — closure `_sec` dans `runner.py` (−295L) · helper `_check_weak_algo` dans `ssh.py` · correctif locale 4× `UFW-AUDIT` → `BOB` · 4348/4348 tests |
@@ -19,6 +20,53 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.4.1] — 14-05-2026
+
+Phase 2 de la roadmap distro-ready — découplage architectural. Trois zones traitées : finalisation du mode `--offline`, isolation curses via `bob/tui/`, et représentation indépendante de la locale des findings via `template_vars` additif. Plus une passe de hardening post-revue sur `bob/formatter.py` (4 tests edge-case + API resserrée). Tous les changements sont non-breaking (additifs). 4449/4449 tests (+19).
+
+### Zone 2.1 — Mode `--offline` strict vérifié
+
+Le flag `-o` / `--offline` (déjà présent depuis v0.4.0) a été audité bout en bout : tous les sites touchant le réseau sont soit déjà gatés (HTTP `get_public_ip`, POST webhook), soit purement locaux (apt-cache, fwupdmgr get-updates, journalctl, openssl x509). Ajout de 2 tests d'intégration dans `tests/test_webhook.py` qui figent le contrat offline : le webhook n'est PAS envoyé quand `config.offline=True` même si une URL webhook est fournie, et `get_public_ip(offline=True)` court-circuite avant tout appel `urllib`.
+
+### Zone 2.2 — Sous-package curses `bob/tui/`
+
+`bob/cron_ui.py` (952 lignes) déplacé vers `bob/tui/cron.py` sous un nouveau sous-package `bob.tui`. Les imports curses étaient déjà lazy (à l'intérieur des fonctions) — cette release rend la séparation physique. Les 2 sites d'appel dans `bob/cron.py` mis à jour vers `from bob.tui.cron import ...`. Le reste de `bob.*` (pipeline d'audit, checks, scoring, sortie JSON) reste importable sur des systèmes sans curses, prérequis pour un futur paquet Debian `bob-core` séparé de `bob-tui`.
+
+### Zone 2.3 — Findings indépendants de la locale (additif)
+
+Deux nouveaux champs optionnels sur `Finding` et `Deduction` :
+
+```python
+@dataclass
+class Finding:
+    ...
+    key:           str  = ""    # déjà depuis v0.3.7
+    template_vars: dict = field(default_factory=dict)   # nouveau en v0.4.1
+```
+
+`template_vars` est le mapping des variables que le check a passées à son template i18n (e.g. `{"ciphers": "aes128-cbc, des-cbc"}` pour `ssh.weak_ciphers`). Quand non-vide, un client externe peut reconstruire le message localisé depuis `(key, template_vars, locale)` sans dépendre de la chaîne pré-formatée `message`.
+
+Nouveau module `bob.formatter` expose `format_finding(finding, lang=None)` et `format_deduction(deduction, lang=None)`. Ordre de résolution : `key + template_vars` → `key` seul → fallback sur `message` pré-formaté (chemin legacy, totalement rétrocompatible).
+
+Les helpers `CheckResult.warn/alert/info/ok/add_finding/add_deduction` acceptent un kwarg `template_vars=` optionnel. Les 3 checks pilotes (`bob/checks/ssh.py`, `hardening.py`, `firewall.py`) démontrent la migration : le même `message=_t("key", **vars)` est gardé (compat legacy) et `template_vars={...vars...}` ajouté en parallèle. La sortie JSON expose désormais `template_vars` sur chaque deduction et finding (champ additif — dict vide pour les checks legacy).
+
+### Contexte roadmap
+
+Cette release ferme les zones 2.1 + 2.2 + 2.3 (Option B additive) du plan Phase 2. Trois checks pilotes démontrent le pattern ; les 40 checks restants peuvent être migrés de manière incrémentale sans breaking change. L'Option A (refactor breaking complet — `Finding.message` retiré au profit de `Finding.template_vars` obligatoire) est reportée à v0.5.0+ avec les contrats v2 du schéma plugin.
+
+### Tests
+
+4449/4449 (+19) :
+- 3 nouveaux dans `tests/test_webhook.py` pour le mode offline (skip POST, court-circuit urllib, compat CLI)
+- 14 nouveaux dans `tests/test_formatter.py` (10 base : ordre de résolution, roundtrip locale, rétrocompat ; +4 edge cases post-revue : partial template_vars, mismatch key/message, inputs vides)
+- 2 nouveaux dans `tests/test_json_schema.py` (`template_vars` exposé dans le JSON pour chaque deduction et finding)
+
+### Validation terrain
+
+Audit bout en bout sur so6desktop : `bob.tui.cron` se charge proprement, les 3 checks pilotes émettent `template_vars` correctement, `bob --json` expose le nouveau champ sur chaque entrée, `--offline` skip le webhook.
 
 ---
 

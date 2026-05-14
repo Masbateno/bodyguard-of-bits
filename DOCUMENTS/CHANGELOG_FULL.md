@@ -6,6 +6,263 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.4.1] — 2026-05-14
+
+**Phase 2 of the distro-ready roadmap — architectural decoupling.** Three zones tackled: `--offline` finalization, curses isolation under `bob/tui/`, and locale-independent finding/deduction representation via additive `template_vars`. Plus a post-review hardening pass on `bob/formatter.py` (API tightened, edge-case tests). All changes are non-breaking (additive). 4449/4449 tests (+19).
+
+The Phase 2 roadmap targets a `bob-core` Debian package that can be installed without curses and without locale text baked into the JSON output. This release lays the groundwork without breaking the existing API.
+
+---
+
+### Zone 2.1 — `--offline` strict mode finalized
+
+**Files:** `tests/test_webhook.py`
+
+#### Problem
+
+The `-o` / `--offline` flag has been present since v0.4.0 and was already gating the two network-touching sites (`bob.sysinfo.get_public_ip` HTTP, `bob.webhook.send_webhook` POST). What was missing for a real distro-ready audit:
+
+- An end-to-end inventory of all subprocess and library calls that could conceivably touch the network, with explicit "this is local, no gating needed" / "this is gated by `--offline`" classification.
+- Integration tests that pin the contract: if a future refactor accidentally drops the offline gate, the test suite fails immediately.
+
+#### Implementation
+
+Network audit (no code changes — survey only):
+
+| Site | Verdict |
+|---|---|
+| `bob/sysinfo.py:158` `urllib.request.urlopen` (`get_public_ip`) | ✅ gated by `offline=True` |
+| `bob/webhook.py:send_webhook` HTTP POST | ✅ gated by `__main__.py:277 if _webhook_url and not config.offline` |
+| `bob/checks/kernel_modules.py` `apt-cache policy` / `apt list --upgradable` | ✅ local cache reads, no network |
+| `bob/checks/firmware.py` `fwupdmgr get-updates` | ✅ local cache read |
+| `bob/checks/auth_log.py` `journalctl` | ✅ local |
+| `bob/checks/ssl_certs.py` `openssl x509 -in <file>` | ✅ local file |
+| `bob/checks/firewall_stack.py`, `bob/checks/ports.py`, etc. | ✅ all local (`ss`, `iptables`, `nft`, …) |
+
+Conclusion: no missed network sites, the existing `--offline` plumbing is complete.
+
+New tests in `tests/test_webhook.py`:
+
+- `TestCLIWebhookParsing.test_webhook_with_offline_flag_parses` — CLI parser accepts `--offline --webhook=URL` together (they are not mutually exclusive at parse time; the offline gate is enforced at runtime).
+- `TestOfflineModeNetworkContract.test_offline_skips_webhook_send` — mirrors the `__main__.py:277` decision branch to lock in the behavior; if the condition changes, the test fails.
+- `TestOfflineModeNetworkContract.test_get_public_ip_offline_skips_urllib` — monkeypatches `sysinfo.urllib` with an exploding stub; if any `urlopen` is reached in `offline=True` mode, the test raises AssertionError.
+
+#### Design notes
+
+Why "mirror the decision branch" rather than test the full `_run()` orchestration: the audit pipeline pulls dozens of dependencies (filesystem, subprocess, locale, ScoreEngine, …) — testing the integration end-to-end would mock half the universe. Mirroring the 2-line offline gate as a smoke test gives the same coverage at a fraction of the maintenance cost. If the `__main__.py:277` line ever changes, both the production line AND the test will be touched in the same commit, surfacing the contract change explicitly.
+
+---
+
+### Zone 2.2 — `bob/tui/` curses subpackage
+
+**Files:** new `bob/tui/__init__.py`, `bob/cron_ui.py` → `bob/tui/cron.py` (git mv), `bob/cron.py` (import sites), `DOCUMENTS/README_DEV.md` (FR + EN)
+
+#### Problem
+
+For a `bob-core` Debian package that runs in minimal containers (no curses), the rest of `bob.*` must remain importable without curses installed. The `import curses` calls were already lazy (inside functions) but the file `bob/cron_ui.py` lived at the top level of `bob.*`, suggesting it was part of the core module list. A packager reading the project structure could not tell that `cron_ui` was optional.
+
+#### Implementation
+
+- New `bob/tui/__init__.py` documents the subpackage's policy: curses imports allowed at top of module here (we're in TUI-land), the rest of `bob.*` must NEVER import from `bob.tui.*` at module load time — only lazily inside functions.
+- `git mv bob/cron_ui.py bob/tui/cron.py` (history preserved).
+- `bob/cron.py` updated:
+  - Module docstring `Curses TUI code lives in bob.cron_ui.` → `Curses TUI code lives in bob.tui.cron.`
+  - 2 lazy import sites: `from bob.cron_ui import _run_install_cron_curses` / `_run_manage_cron_curses` → `from bob.tui.cron import ...`
+- `setuptools.packages.find` config (`include = ["bob*"]`) already covers `bob.tui` automatically — no `pyproject.toml` change needed.
+- `DOCUMENTS/README_DEV.md` + FR: structure tree updated, `cron_ui.py` row replaced with `tui/cron.py` row carrying a note about the v0.4.1 extraction.
+
+#### Tests
+
+No new tests required — the existing 4430 tests already exercise the import path. The full suite remained 4430/4430 after the move (before adding Zone 2.3 tests), proving the rename is transparent.
+
+#### Design notes
+
+- **Why a subpackage rather than a separate distribution.** Splitting into `bob-core` + `bob-tui` distributions on PyPI is a packaging concern, not a code concern. The current `bob` distribution still ships everything; the subpackage layout is the foundation that lets a future Debian packager split the two without touching the code.
+- **`explain.py`, `manage_logs.py`, `cron.py` not moved.** Those modules mix business logic and TUI bits with curses imports already lazy. Moving them would require a bigger split (separate the curses sections per-file). Out of scope for this release — they remain in `bob/` for now.
+
+---
+
+### Zone 2.3 — Locale-independent findings via additive `template_vars`
+
+**Files:** `bob/scoring.py`, `bob/json_output.py`, new `bob/formatter.py`, `bob/checks/ssh.py`, `bob/checks/hardening.py`, `bob/checks/firewall.py`, new `tests/test_formatter.py`, `tests/test_json_schema.py`
+
+#### Problem
+
+Until v0.4.0, BOB's `Finding.message` and `Deduction.reason` were strings already formatted in the active locale (`message=_t("ssh.weak_ciphers", ciphers="aes128-cbc")`). External consumers of the JSON output had no way to:
+- Render the same finding in a different locale.
+- Match findings by their stable semantic key without parsing the localized message string.
+
+`Finding.key` (added in Phase 1) gave a stable name, but the variable values that were interpolated into the i18n template were lost: only the rendered string survived. A client wanting "the list of ciphers reported as weak" had to parse the localized `message`.
+
+The Phase 2 goal is `bob.core` *pure* — no `print()`, no `_t()`, no curses. This release takes the additive first step: expose `(key, template_vars)` everywhere alongside the legacy `message`/`reason`, so external clients can reconstruct the localized text from the structured parts without touching the formatted string.
+
+#### Implementation
+
+##### Two new dataclass fields
+
+```python
+@dataclass
+class Deduction:
+    reason:        str
+    points:        int
+    context:       str  = "local"
+    key:           str  = ""
+    template_vars: dict = field(default_factory=dict)   # NEW
+
+@dataclass
+class Finding:
+    level:         FindingLevel
+    message:       str
+    detail:        str = ""
+    nature:        str = ""
+    cmd:           str = ""
+    cmd_type:      str = "fix"
+    note:          str = ""
+    key:           str = ""
+    template_vars: dict = field(default_factory=dict)   # NEW
+```
+
+The name `template_vars` is deliberate: it documents that the dict contains the variables passed to the i18n template's `.format(**kwargs)` call. We avoided `context` (already taken by `Deduction.context: str` meaning network scope — `"local"` / `"public"`) and `vars`/`params` (too generic).
+
+##### Convenience helpers accept `template_vars=`
+
+`CheckResult.add_finding`, `.ok`, `.info`, `.warn`, `.alert`, `.add_deduction` all gain an optional `template_vars=None` kwarg. When None, the dataclass field defaults to `{}` (empty dict). Legacy call sites need ZERO changes; new call sites can opt into structured representation.
+
+##### New module `bob.formatter`
+
+`format_finding(finding, lang=None) -> str` and `format_deduction(deduction, lang=None) -> str` implement the locale-independent rendering. Resolution order:
+
+1. If `key` is set AND `template_vars` is non-empty → render `_t(key, **template_vars)`.
+2. If `key` is set but no template_vars → render `_t(key)` if it resolves cleanly.
+3. Otherwise fall back to `finding.message` / `deduction.reason` (legacy path).
+
+The fallback in step 3 makes the formatter 100% backward-compatible: a check that hasn't been migrated still works exactly as before.
+
+The `lang` parameter is reserved (`_ = lang`) for a future API where callers can render the same finding in multiple locales without flipping the process-wide locale. Today, `bob.i18n.init()`'s active locale is used. Defining the parameter now keeps a future enhancement non-breaking.
+
+##### Three pilot checks migrated
+
+To demonstrate the pattern and verify that the field plays well with real data, three call sites in three different check files were migrated:
+
+- **`bob/checks/ssh.py`** — `_check_host_keys` (4 sites): `ssh.host_key_dsa` (DSA host key), `ssh.host_key_dsa_reason` (matching deduction), `ssh.host_key_rsa_short` (RSA < 4096 bits with `bits=hk.rsa_bits`), `ssh.host_key_ok` (algorithm fine, with `type=hk.key_type.upper()`).
+- **`bob/checks/hardening.py`** — `tcp_syncookies_ok` with `value=snapshot.tcp_syncookies`.
+- **`bob/checks/firewall.py`** — `firewall.logging_ok` and `firewall.logging_verbose` with `level=level`.
+
+In every case, the existing `message=_t("key", **vars)` is preserved (backward compat) and `template_vars={...vars...}` is added in parallel. Both paths now coexist: the legacy `message` is what the terminal displays today, the new `template_vars` is what a future locale-independent client (or v1.0 `bob.core` without `_t()`) will use.
+
+##### `template_vars` exposed in JSON output
+
+`bob/json_output.py` now serializes `template_vars` on every deduction and every finding (full mode):
+
+```json
+{
+  "deductions": [
+    {
+      "reason": "DSA host key: ssh_host_dsa_key",
+      "points": 1,
+      "key": "ssh.host_key_dsa",
+      "template_vars": {"name": "ssh_host_dsa_key"}
+    }
+  ]
+}
+```
+
+The field is always present (empty dict for legacy checks that don't fill it). This is additive — the existing `SCHEMA_V1_REQUIRED_KEYS` strict-set test was extended (not rewritten) to verify the new field's presence.
+
+#### Tests
+
+`tests/test_formatter.py` (new, 10 tests):
+
+| Class | Coverage |
+|---|---|
+| `TestFormatFinding` | 5 tests: key + template_vars renders via i18n, key alone returns template, no key falls back to message, unknown key falls back, empty input edge case |
+| `TestFormatDeduction` | 2 tests: key + template_vars renders, no key falls back to reason |
+| `TestLocaleRoundtrip` | 1 test: same `(key, template_vars)` yields different text in `fr` vs `en` — the whole point of the refactor |
+| `TestBackwardCompatibility` | 2 tests: legacy findings (no key, no template_vars) pass through unchanged |
+
+`tests/test_json_schema.py` (+2): `test_each_deduction_has_template_vars_field`, `test_each_finding_has_template_vars_field`.
+
+`tests/test_webhook.py` (+3): offline mode network contract (covered in Zone 2.1 above).
+
+Total: **+15 tests** (4430 → 4445).
+
+#### Design notes
+
+- **Option B vs Option A.** Option B is what this release ships: additive new field, full backward compat, both `message` and `template_vars` coexist. Option A (full breaking: drop `message`, only `template_vars` allowed) is deferred to v0.5.0+ when all 40 checks have been migrated and the JSON schema can ship a v2. The Phase 1 plugin-file wrapper (`schema_version` field) already pre-empts that migration.
+- **Why three pilots, not all 40 at once.** Migrating every check would be ~500 lines mechanical edits — possible but error-prone, and the JSON schema test now enforces `template_vars` is always present so a botched migration would show up immediately. The pattern is documented through the pilots; the rest can come incrementally in subsequent point releases (v0.4.2, v0.4.3, …).
+- **Empty dict ≠ None.** We chose `field(default_factory=dict)` rather than `Optional[dict]` to keep JSON output uniform: every entry has `template_vars`, the difference between "legacy check" and "migrated check" is the dict's size, not its presence/absence. Simpler client logic.
+
+---
+
+### Hardening pass — `bob/formatter.py` review
+
+**Files:** `bob/formatter.py`, `bob/i18n.py`, `tests/test_formatter.py`
+
+#### Problem
+
+A post-implementation review of `formatter.py` (external ChatGPT analysis prompted by the user) flagged four legitimate API/architecture issues on a module that is about to become a stable public contract for downstream packagers:
+
+1. **Mendacious `lang=` parameter.** `format_finding(finding, lang=None)` exposed a locale-override parameter that was a silent no-op (`_ = lang` — the global `bob.i18n.t()` state always won). External callers passing `lang="fr"` would still get the process locale and have no indication. Trap for distro packagers who pipe outputs through their own pipeline.
+2. **Fragile `startswith("[")` missing-key detection.** `_render_key` returned `"[key]"` (the `bob.i18n.t()` sentinel for missing keys) and the caller checked `startswith("[")` to detect that. Couples the formatter to an undocumented `t()` convention; a future change to that sentinel would silently break the formatter.
+3. **`except (KeyError, TypeError, ValueError)` too broad.** Catching `TypeError` and `ValueError` hides real Python bugs (e.g. an `_t()` API change). Should only swallow what's truly expected (placeholder mismatch from `str.format`).
+4. **"Reproducible" wording in docstring overpromises** what the module can deliver while ~40 checks still use the legacy `message=`-only path.
+
+#### Implementation
+
+1. **`lang=` parameter removed** (Option A from the review). Adding it back when `bob.i18n` becomes pure (v0.5.x along with full `bob.core` extraction) is preferable to keeping a lying signature today. The signature for v0.4.1 is now `format_finding(finding) -> str` and `format_deduction(deduction) -> str`.
+
+2. **New `bob.i18n.try_t(key, **kwargs) -> str | None`** added: clean missing-key detection without parsing the `"[key]"` sentinel. Behavior:
+   - Returns `None` for missing keys (in active locale and EN fallback).
+   - Returns rendered string on success.
+   - Propagates `KeyError` from `str.format()` when a required placeholder is missing — caller responsibility, not a runtime degradation.
+   The legacy `bob.i18n.t()` keeps returning `"[key]"` for the rest of the codebase that relies on that contract; only `formatter` uses the new function.
+
+3. **Exception handling narrowed in `_try_render`**: no more catch-all. `try_t` returns `None` for missing keys cleanly; `KeyError` from `str.format()` (missing placeholder = check-side bug) propagates so the bug surfaces immediately instead of silently degrading to `finding.message`.
+
+4. **Docstrings rewritten**: "reproducible" → "progressively reconstructible" + a "Current state (v0.4.1)" section spelling out exactly what's reproducible today and what isn't. The coupling between `Finding.key` / `--explain` key / i18n key / JSON matching key (= a textual ABI) is now explicitly acknowledged with a pointer to `bob/explain.py`'s freeze policy.
+
+#### Tests
+
+`tests/test_formatter.py` extended from 10 to 14 tests (+4 in new `TestFormatterEdgeCases` class):
+
+| Test | Coverage |
+|---|---|
+| `test_empty_template_vars_with_placeholder_template_returns_raw` | Edge case: empty `template_vars` + key whose template has placeholders → raw template returned with literal `{placeholders}` intact (consistent with `i18n.t()` behavior, surfaces the bug visually) |
+| `test_partial_template_vars_raises_keyerror` | Non-empty `template_vars` missing a required placeholder → `KeyError` propagates (no silent fallback) |
+| `test_mismatched_key_vs_message_uses_key` | Key path wins when it resolves cleanly, even if `message` says something different (the structured representation is authoritative once populated) |
+| `test_empty_finding_message_with_no_key` | Returns `""` (not `None`) when neither key nor message is set — preserves the documented "always returns a string" contract |
+
+Total v0.4.1 test count: **4445 → 4449** (+4 from hardening pass).
+
+#### Design notes
+
+- **Why surface `KeyError` instead of falling back to `message`.** A missing placeholder means the check declared a key whose template needs a variable the check did not provide. Silently using `finding.message` would hide a check-side bug and leave clients with no signal. Raising forces the bug to be visible in the test suite where it should be caught.
+- **Why `try_t` and not refactoring `t()`.** The legacy `t()` returning `"[key]"` is relied upon throughout the codebase for "show but don't crash" rendering. Changing its return contract would ripple through 600+ call sites. Adding `try_t` as a sibling function gives the formatter a clean missing-key signal without disturbing existing semantics.
+- **Why remove `lang=` rather than fix it.** Properly implementing per-call locale switching requires making `bob.i18n` reentrant (an instance object rather than module-level state) — work that belongs in v0.5.x with the full `bob.core` refactor. Exposing a parameter today that lies about being implemented is worse than not exposing it.
+
+---
+
+### Roadmap context
+
+After v0.4.1, the Phase 2 plan stands at:
+
+| Item | Status |
+|---|---|
+| 2.1 `--offline` strict | ✅ done (verified + tested) |
+| 2.2 curses isolation (`bob/tui/`) | ✅ done (cron_ui moved, lazy imports kept) |
+| 2.3 core / i18n decoupling — Option B (additive) | ✅ done (3 pilot checks + formatter + JSON) |
+| 2.3 core / i18n decoupling — Option A (breaking) | ⏳ v0.5.0+ |
+| Vague 2 schema (typed ports, `port_resolution`, etc.) | ⏳ v0.5.0+ |
+| Phase 3 (man pages, debian/, AppArmor profile, SECURITY.md) | ⏳ future |
+
+Distro readiness levels:
+
+- **AUR / COPR community packaging** — viable now (v0.4.0 already qualified)
+- **Debian unstable / Fedora COPR official** — target ~6 months post-v0.4.1
+- **Debian main / Fedora main** — 12–18 months minimum (requires sustained contract stability + Phase 3)
+
+---
+
 ## [v0.4.0] — 2026-05-14
 
 Phase 1 of the distro-ready roadmap (see `project_distro_roadmap` memory) — five public-API contracts frozen so that scripts, dashboards, and downstream packagers can rely on stable behavior across versions. No new features, no breaking changes — additive only. 4405/4405 tests (+57). Plus a small UX fix on the unchanged-score display.

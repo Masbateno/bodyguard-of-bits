@@ -341,12 +341,14 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 cmd=f"sudo rm {hk.path} {hk.path}.pub && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && sudo systemctl restart ssh",
                 cmd_type="fix",
                 key="ssh.host_key_dsa",
+                template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
             )
             result.add_deduction(
                 reason=_t("ssh.host_key_dsa_reason", name=name),
                 points=1,
                 context="local",
                 key="ssh.host_key_dsa",
+                template_vars={"name": name},  # pilot v0.4.1
             )
 
         elif hk.key_type == "rsa" and hk.rsa_bits is not None and hk.rsa_bits < 4096:
@@ -356,6 +358,7 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 cmd="sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N '' && sudo systemctl restart ssh",
                 cmd_type="fix",
                 key="ssh.host_key_rsa_short",
+                template_vars={"name": name, "bits": hk.rsa_bits},  # pilot v0.4.1
             )
 
         else:
@@ -363,6 +366,7 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
             result.ok(
                 message=_t("ssh.host_key_ok", name=name, type=hk.key_type.upper()),
                 key="ssh.host_key_ok",
+                template_vars={"name": name, "type": hk.key_type.upper()},  # pilot v0.4.1
             )
 
 

@@ -75,20 +75,29 @@ class Deduction:
     A single score deduction with its justification.
 
     Args:
-        reason:  Human-readable explanation (already translated by caller).
-        points:  Number of points deducted (positive integer).
-        context: Network context at time of deduction — "local", "public",
-                 or "structural" (for synthetic cap deductions).
-                 Used for display in the score breakdown.
-        key:     Stable i18n key linking this deduction to its Finding, so
-                 that audit profiles can remove it deterministically when a
-                 finding is skipped or downgraded to INFO.
-                 Empty string means the deduction is not profile-controlled.
+        reason:        Human-readable explanation (already translated by caller).
+        points:        Number of points deducted (positive integer).
+        context:       Network context at time of deduction — "local", "public",
+                       or "structural" (for synthetic cap deductions).
+                       Used for display in the score breakdown.
+        key:           Stable i18n key linking this deduction to its Finding, so
+                       that audit profiles can remove it deterministically when a
+                       finding is skipped or downgraded to INFO.
+                       Empty string means the deduction is not profile-controlled.
+        template_vars: Optional mapping of variables used to interpolate `key`'s
+                       i18n template (e.g. ``{"ciphers": "aes128-cbc, des-cbc"}``
+                       for ``ssh.weak_ciphers``). When non-empty, external clients
+                       can rebuild a localized `reason` from `key + template_vars`
+                       without parsing the pre-formatted `reason` string.
+                       Locale-independent contract — see DOCUMENTS/README_TECH.md
+                       "JSON output schema". Additive since v0.4.1; legacy checks
+                       leave this empty and still ship a fully-formatted `reason`.
     """
-    reason:    str
-    points:    int
-    context:   str  = "local"
-    key:       str  = ""
+    reason:        str
+    points:        int
+    context:       str  = "local"
+    key:           str  = ""
+    template_vars: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.points < 0:
@@ -106,26 +115,33 @@ class Finding:
     A single audit finding for display in the terminal and report.
 
     Args:
-        level:   Severity level (OK, INFO, WARN, ALERT).
-        message: Main finding message (already translated by caller).
-        detail:  Optional secondary detail or recommendation text.
-        nature:   Category used by --fix mode: "action" | "improvement" | "structural" | "".
-        cmd:      Shell command shown in the "Que faire ?" block. Empty string if none.
-        cmd_type: How the command should be rendered: "fix" (→, default) or "check" (ℹ).
-                  Use "check" for read-only diagnostic commands that do not change state.
-        note:     Optional disclaimer or contextual warning shown after the cmd.
-        key:      Stable i18n key linking this finding to a Deduction.reason so
-                  audit profiles can override its severity.  Empty string means
-                  the finding is not individually overridable by profiles.
+        level:         Severity level (OK, INFO, WARN, ALERT).
+        message:       Main finding message (already translated by caller).
+        detail:        Optional secondary detail or recommendation text.
+        nature:        Category used by --fix mode: "action" | "improvement" | "structural" | "".
+        cmd:           Shell command shown in the "Que faire ?" block. Empty string if none.
+        cmd_type:      How the command should be rendered: "fix" (→, default) or "check" (ℹ).
+                       Use "check" for read-only diagnostic commands that do not change state.
+        note:          Optional disclaimer or contextual warning shown after the cmd.
+        key:           Stable i18n key linking this finding to a Deduction.reason so
+                       audit profiles can override its severity.  Empty string means
+                       the finding is not individually overridable by profiles.
+        template_vars: Optional mapping of variables used to interpolate `key`'s
+                       i18n template (e.g. ``{"count": 42}`` for a count placeholder).
+                       When non-empty, external clients can rebuild a localized
+                       message from `key + template_vars` via ``bob.formatter.format_finding()``
+                       without depending on the pre-formatted `message` string.
+                       Additive since v0.4.1; legacy checks leave this empty.
     """
-    level:    FindingLevel
-    message:  str
-    detail:   str = ""
-    nature:   str = ""
-    cmd:      str = ""
-    cmd_type: str = "fix"
-    note:     str = ""
-    key:      str = ""
+    level:         FindingLevel
+    message:       str
+    detail:        str = ""
+    nature:        str = ""
+    cmd:           str = ""
+    cmd_type:      str = "fix"
+    note:          str = ""
+    key:           str = ""
+    template_vars: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -161,9 +177,21 @@ class CheckResult:
     caps:        List[ScoreCap]  = field(default_factory=list)
     log_data:    "dict | None"   = field(default=None)
 
-    def add_deduction(self, reason: str, points: int, context: str = "local", key: str = "") -> None:
-        """Convenience method to append a deduction."""
-        self.deductions.append(Deduction(reason=reason, points=points, context=context, key=key))
+    def add_deduction(
+        self,
+        reason: str,
+        points: int,
+        context: str = "local",
+        key: str = "",
+        template_vars: "dict | None" = None,
+    ) -> None:
+        """Convenience method to append a deduction. See Deduction docstring for template_vars contract."""
+        self.deductions.append(
+            Deduction(
+                reason=reason, points=points, context=context, key=key,
+                template_vars=dict(template_vars) if template_vars else {},
+            )
+        )
 
     def set_cap(self, maximum: int, reason: str, key: str = "") -> None:
         """
@@ -184,28 +212,41 @@ class CheckResult:
         cmd_type: str = "fix",
         note: str = "",
         key: str = "",
+        template_vars: "dict | None" = None,
     ) -> None:
-        """Convenience method to append a finding."""
+        """Convenience method to append a finding. See Finding docstring for template_vars contract."""
         self.findings.append(
-            Finding(level=level, message=message, detail=detail,
-                    nature=nature, cmd=cmd, cmd_type=cmd_type, note=note, key=key)
+            Finding(
+                level=level, message=message, detail=detail,
+                nature=nature, cmd=cmd, cmd_type=cmd_type, note=note, key=key,
+                template_vars=dict(template_vars) if template_vars else {},
+            )
         )
 
-    def ok(self, message: str, detail: str = "", key: str = "") -> None:
+    def ok(self, message: str, detail: str = "", key: str = "",
+           template_vars: "dict | None" = None) -> None:
         """Shorthand for adding an OK finding."""
-        self.add_finding(FindingLevel.OK, message, detail, key=key)
+        self.add_finding(FindingLevel.OK, message, detail, key=key, template_vars=template_vars)
 
-    def info(self, message: str, detail: str = "", cmd: str = "", cmd_type: str = "fix", key: str = "") -> None:
+    def info(self, message: str, detail: str = "", cmd: str = "", cmd_type: str = "fix",
+             key: str = "", template_vars: "dict | None" = None) -> None:
         """Shorthand for adding an INFO finding."""
-        self.add_finding(FindingLevel.INFO, message, detail, cmd=cmd, cmd_type=cmd_type, key=key)
+        self.add_finding(FindingLevel.INFO, message, detail, cmd=cmd, cmd_type=cmd_type,
+                         key=key, template_vars=template_vars)
 
-    def warn(self, message: str, detail: str = "", nature: str = "improvement", cmd: str = "", cmd_type: str = "fix", note: str = "", key: str = "") -> None:
+    def warn(self, message: str, detail: str = "", nature: str = "improvement", cmd: str = "",
+             cmd_type: str = "fix", note: str = "", key: str = "",
+             template_vars: "dict | None" = None) -> None:
         """Shorthand for adding a WARN finding."""
-        self.add_finding(FindingLevel.WARN, message, detail, nature, cmd, cmd_type, note, key=key)
+        self.add_finding(FindingLevel.WARN, message, detail, nature, cmd, cmd_type, note,
+                         key=key, template_vars=template_vars)
 
-    def alert(self, message: str, detail: str = "", nature: str = "action", cmd: str = "", cmd_type: str = "fix", note: str = "", key: str = "") -> None:
+    def alert(self, message: str, detail: str = "", nature: str = "action", cmd: str = "",
+              cmd_type: str = "fix", note: str = "", key: str = "",
+              template_vars: "dict | None" = None) -> None:
         """Shorthand for adding an ALERT finding."""
-        self.add_finding(FindingLevel.ALERT, message, detail, nature, cmd, cmd_type, note, key=key)
+        self.add_finding(FindingLevel.ALERT, message, detail, nature, cmd, cmd_type, note,
+                         key=key, template_vars=template_vars)
 
 
 # ---------------------------------------------------------------------------
