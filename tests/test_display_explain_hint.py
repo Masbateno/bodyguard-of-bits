@@ -113,7 +113,7 @@ class TestNormalizeKey:
         assert normalize_key("file_perms.world_writable") == "file_perms.world_writable"
 
     def test_unknown_key_unchanged(self):
-        assert normalize_key("firewall.inactive") == "firewall.inactive"
+        assert normalize_key("test.nonexistent_key") == "test.nonexistent_key"
 
     def test_empty_string(self):
         assert normalize_key("") == ""
@@ -204,7 +204,7 @@ class TestExplainHintShown:
 
 class TestExplainHintAbsent:
     def test_unknown_key_no_hint(self, capsys):
-        engine = FakeEngine(_make_finding("firewall.inactive"))
+        engine = FakeEngine(_make_finding("test.nonexistent_key"))
         output = _run(engine, capsys)
         assert "bob --explain" not in output
 
@@ -223,11 +223,11 @@ class TestExplainHintAbsent:
         """Only the explainable finding triggers a hint."""
         engine = FakeEngine(
             _make_finding("ssh.password_auth"),
-            _make_finding("firewall.inactive"),
+            _make_finding("test.nonexistent_key"),
         )
         output = _run(engine, capsys)
         assert _hint_lines(output, "ssh.password_auth")
-        assert not _hint_lines(output, "firewall.inactive")
+        assert not _hint_lines(output, "test.nonexistent_key")
 
 
 # ---------------------------------------------------------------------------

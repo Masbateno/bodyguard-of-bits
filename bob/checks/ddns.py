@@ -218,12 +218,15 @@ def check_ddns(
 
     # Installed but inactive
     if not snapshot.active:
-        result.info(message=_t("ddns.inactive") + f": {snapshot.client_name}")
+        result.info(
+            message=_t("ddns.inactive", client=snapshot.client_name),
+            key="ddns.inactive",
+        )
         return result
 
     # Active DDNS client
     result.warn(
-        message=_t("ddns.found") + f": {snapshot.client_name}",
+        message=_t("ddns.found", client=snapshot.client_name),
         nature="improvement",
         key="ddns.found",
     )
@@ -231,9 +234,12 @@ def check_ddns(
     if snapshot.domain:
         from bob.output import sanitize as _sanitize
         safe_domain = _sanitize(snapshot.domain, max_len=253)
-        result.info(message=_t("ddns.domain") + f": {safe_domain}")
+        result.info(
+            message=_t("ddns.domain", domain=safe_domain),
+            key="ddns.domain",
+        )
     else:
-        result.info(message=_t("ddns.no_domain"))
+        result.info(message=_t("ddns.no_domain"), key="ddns.no_domain")
 
     # Find open ports (ALLOW without source restriction, system ports and loopback excluded)
     open_ports = _find_open_ports(

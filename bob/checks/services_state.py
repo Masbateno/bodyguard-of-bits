@@ -105,7 +105,9 @@ class ServicesStateSnapshot:
                 # Format: UNIT-FILE STATE [PRESET]
                 if len(parts) < 2:
                     continue
-                unit_name = parts[0].removesuffix(".service").lower()
+                # Strip ".service" suffix AND the "@instance" part for
+                # instantiated template units (e.g. "auditd@daily.service" → "auditd")
+                unit_name = parts[0].removesuffix(".service").split("@", 1)[0].lower()
                 # "enabled-runtime" covers transient enables (e.g. cloud-init)
                 if parts[1] in ("enabled", "enabled-runtime"):
                     enabled_services.add(unit_name)
@@ -131,8 +133,9 @@ class ServicesStateSnapshot:
             if len(parts) < 3:
                 continue
             # Normalise to lowercase — systemd names are typically lowercase;
-            # strip .service suffix so "ssh.service" → "ssh".
-            unit_name = parts[0].removesuffix(".service").lower()
+            # strip .service suffix AND "@instance" for templates so
+            # "ssh.service" → "ssh" and "auditd@daily.service" → "auditd".
+            unit_name = parts[0].removesuffix(".service").split("@", 1)[0].lower()
             active    = parts[2]  # active / inactive / failed / activating
 
             if unit_name not in SECURITY_SERVICES:

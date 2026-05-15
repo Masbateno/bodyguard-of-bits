@@ -155,7 +155,6 @@
     "state": {
       "active_enabled": "Service actif et démarré automatiquement au démarrage",
       "active_disabled": "{label} est actif en ce moment, mais ne redémarrera pas automatiquement.",
-      "inactive_enabled": "Le service est arrêté mais activé au démarrage — peut démarrer au prochain redémarrage",
       "inactive_disabled": "{label} est installé mais arrêté et désactivé. Pas de risque immédiat.",
       "installed_inactive_critical": "{label} est installé sur ce système — le service est arrêté, mais la présence de ce paquet constitue un vecteur d'attaque potentiel",
       "unknown": "Service installé, état indéterminé"
@@ -171,8 +170,6 @@
       "loopback_no_rule_ufw_inactive": "lié uniquement sur localhost — pas d'exposition externe",
       "not_listening": "n'écoute pas activement — port présent dans le registre mais non détecté sur ce système"
     },
-    "port_from_config": "Port lu depuis la configuration : {port}",
-    "port_auto": "Port détecté automatiquement : {port}",
     "port_exposure": "Port {port} — {exposure}"
   },
   "ports": {
@@ -201,10 +198,10 @@
     "top_ports": "Top ports ciblés",
     "brute_title": "Bruteforce détecté",
     "brute_none": "Aucun bruteforce détecté sur la période",
-    "brute_found": "tentative(s) depuis",
-    "brute_on": "sur",
+    "brute_found": "Tentatives de bruteforce depuis {ip} sur {port}",
     "svc_hits": "Tentatives sur services installés",
     "svc_hits_none": "Aucune tentative sur les ports des services installés",
+    "svc_hits_detail": "{count} tentative(s) sur {port}",
     "attempts": "tentative(s)",
     "geoip2_unavailable": "Bibliothèque GeoIP2 introuvable dans l'environnement bob — géolocalisation IP désactivée",
     "geoip2_unavailable_cmd": "pipx inject bob geoip2",
@@ -214,13 +211,13 @@
   },
   "ddns": {
     "none": "Aucun client DDNS détecté — pas d'exposition externe via DDNS identifiée",
-    "found": "Client DDNS actif détecté",
-    "domain": "Domaine configuré",
+    "found": "Client DDNS actif détecté : {client}",
+    "domain": "Domaine configuré : {domain}",
     "no_domain": "Domaine non extrait (vérifiez la configuration manuellement)",
     "no_open_ports": "Aucun port UFW ouvert sans restriction de source détecté",
     "warn": "DDNS actif avec port(s) ouverts sans restriction — vérifiez que l'exposition est intentionnelle",
     "advice": "Si cette exposition est intentionnelle : maintenez les services à jour, activez l'authentification, et envisagez Fail2ban.",
-    "inactive": "Client DDNS installé mais service inactif"
+    "inactive": "Client DDNS installé mais service inactif : {client}"
   },
   "docker": {
     "not_installed": "Docker non installé — section ignorée",
@@ -562,10 +559,6 @@
     "snap_network": "Le paquet Snap '{pkg}' a des connexions réseau actives — vérifiez qu'il ne contourne pas UFW"
   },
   "hardening": {
-    "no_issues": "Les paramètres de durcissement système sont corrects",
-    "apparmor_not_installed": "AppArmor non détecté — envisagez de l'activer pour le contrôle d'accès obligatoire",
-    "apparmor_enforce": "AppArmor actif — {enforced} profil(s) en mode enforce, {complain} en mode complain",
-    "apparmor_not_enforce": "AppArmor chargé mais en mode {mode} — envisagez de passer en mode enforce",
     "rp_filter_ok": "Filtrage par chemin inverse activé en mode strict (rp_filter=1)",
     "rp_filter_loose": "Filtrage par chemin inverse en mode permissif (rp_filter=2) — envisagez le mode strict (=1)",
     "rp_filter_disabled": "Filtrage par chemin inverse désactivé — risque d'usurpation d'adresse IP",
@@ -1570,7 +1563,29 @@
         "how": "1. Définir umask à 0022 dans /etc/profile :\n   umask 0022\n2. Vérifier :\n   umask  # doit retourner 0022"
       }
     },
+    "prerequisites": {
+      "ufw_missing": {
+        "title": "UFW (pare-feu) n'est pas installé",
+        "why": "Sans pare-feu hôte, chaque service en écoute sur la machine est exposé au réseau auquel elle est connectée. Aucune politique allow/deny par service, aucune politique deny par défaut, aucune trace d'audit des règles. Sur un hôte exposé à internet c'est une faille critique ; sur un hôte LAN-only le système reste trivialement joignable par tout pair compromis.",
+        "how": "1. Installer UFW :\n   sudo apt install ufw\n2. Définir la politique par défaut sûre :\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (Si vous utilisez SSH) l'autoriser avant d'activer :\n   sudo ufw allow 22/tcp\n4. Activer le pare-feu :\n   sudo ufw enable\n5. Vérifier :\n   sudo ufw status verbose"
+      }
+    },
     "firewall": {
+      "inactive": {
+        "title": "UFW est installé mais inactif",
+        "why": "UFW est présent sur le système mais désactivé. Les règles configurées (s'il y en a) ne sont pas appliquées — les connexions entrantes ne sont filtrées que par l'état iptables/nftables sous-jacent existant. Cela signifie en général aucun filtrage au niveau hôte : un redémarrage, un changement réseau ou une règle iptables mal configurée laissent le système totalement exposé. Le statut est aussi trompeur : « ufw installé » suggère une protection qui n'existe pas.",
+        "how": "1. Vérifier l'état inactif :\n   sudo ufw status\n2. S'assurer que SSH (ou tout service à garder joignable) est autorisé avant d'activer :\n   sudo ufw allow 22/tcp\n3. Activer le pare-feu :\n   sudo ufw enable\n4. Vérifier qu'il est actif :\n   sudo ufw status verbose\n5. Confirmer qu'il démarre au boot :\n   sudo systemctl is-enabled ufw"
+      },
+      "policy_open": {
+        "title": "Politique UFW par défaut en ALLOW (tous les ports ouverts par défaut)",
+        "why": "Lorsque la politique par défaut est ALLOW, tous les ports sont joignables sauf si une règle deny explicite les bloque. Cela inverse le modèle de sécurité standard : au lieu d'ouvrir les seuls services nécessaires, il faut énumérer et fermer chaque service inutile. Les nouveaux services (démon fraîchement installé, nouveau conteneur) deviennent joignables immédiatement sans contrôle. Un seul port oublié suffit à une compromission.",
+        "how": "1. Basculer en deny par défaut pour le trafic entrant :\n   sudo ufw default deny incoming\n2. Garder le sortant autorisé (ou restreindre si la politique l'exige) :\n   sudo ufw default allow outgoing\n3. Ré-autoriser les services réellement nécessaires :\n   sudo ufw allow 22/tcp           # SSH\n   sudo ufw allow from 192.168.1.0/24 to any port 445  # Samba sur LAN uniquement\n4. Vérifier :\n   sudo ufw status verbose"
+      },
+      "policy_unknown": {
+        "title": "Politique UFW par défaut indéterminée",
+        "why": "BOB a interrogé ufw status verbose mais n'a pas pu parser la ligne de politique par défaut. Cela signifie en général qu'UFW est dans un état inattendu (format de sortie différent, version trop ancienne, ou service partiellement cassé). Un pare-feu dont la politique est indéterminée n'est pas fiable : on ne sait pas si la valeur par défaut est deny ou allow, donc on ne sait pas quels ports sont joignables.",
+        "how": "1. Inspecter la sortie de statut brute manuellement :\n   sudo ufw status verbose\n2. Chercher la ligne : 'Default: deny (incoming), allow (outgoing), deny (routed)'\n3. Si la ligne Default est absente ou malformée, repartir d'un état propre :\n   sudo ufw disable\n   sudo ufw reset    # supprime toutes les règles — les ré-ajouter ensuite\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n   sudo ufw enable\n4. Vérifier la version UFW (les versions anciennes ont une sortie différente) :\n   ufw --version"
+      },
       "logging_off": {
         "title": "La journalisation du pare-feu UFW est désactivée",
         "why": "Sans journaux pare-feu, les tentatives de connexion bloquées, les scans de ports et les tentatives d'intrusion ne laissent aucune trace. L'investigation forensique après un incident devient impossible — il est impossible de déterminer quand une attaque a commencé, quels ports ont été sondés ou d'où provenait le trafic.",

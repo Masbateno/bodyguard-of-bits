@@ -155,7 +155,6 @@
     "state": {
       "active_enabled": "Service active and set to start automatically at boot",
       "active_disabled": "{label} is currently active but will not restart automatically",
-      "inactive_enabled": "Service is stopped but enabled at boot — may start at next reboot",
       "inactive_disabled": "{label} is installed but stopped and disabled. No immediate risk.",
       "installed_inactive_critical": "{label} is installed on this system — service is currently stopped, but the presence of this package is a potential attack vector",
       "unknown": "Service installed, state undetermined"
@@ -171,8 +170,6 @@
       "loopback_no_rule_ufw_inactive": "bound to localhost only — no external exposure",
       "not_listening": "not actively listening — port in registry but not detected on this system"
     },
-    "port_from_config": "Port read from configuration: {port}",
-    "port_auto": "Port auto-detected: {port}",
     "port_exposure": "Port {port} — {exposure}"
   },
   "ports": {
@@ -201,10 +198,10 @@
     "top_ports": "Top targeted ports",
     "brute_title": "Bruteforce detected",
     "brute_none": "No bruteforce detected in the analysed period",
-    "brute_found": "attempt(s) from",
-    "brute_on": "on",
+    "brute_found": "Bruteforce attempts from {ip} on {port}",
     "svc_hits": "Attempts on installed service ports",
     "svc_hits_none": "No attempts on installed service ports",
+    "svc_hits_detail": "{count} attempt(s) on {port}",
     "attempts": "attempt(s)",
     "geoip2_unavailable": "GeoIP2 library not found in the bob environment — IP geolocation disabled",
     "geoip2_unavailable_cmd": "pipx inject bob geoip2",
@@ -214,13 +211,13 @@
   },
   "ddns": {
     "none": "No DDNS client detected — no DDNS-based external exposure identified",
-    "found": "Active DDNS client detected",
-    "domain": "Configured domain",
+    "found": "Active DDNS client detected: {client}",
+    "domain": "Configured domain: {domain}",
     "no_domain": "Domain not extracted (check configuration manually)",
     "no_open_ports": "No UFW port open without source restriction detected",
     "warn": "DDNS active with open port(s) without source restriction — verify exposure is intentional",
     "advice": "If this exposure is intentional: keep services up to date, enable authentication, and consider Fail2ban.",
-    "inactive": "DDNS client installed but service is inactive"
+    "inactive": "DDNS client installed but service is inactive: {client}"
   },
   "docker": {
     "not_installed": "Docker not installed — section skipped",
@@ -562,10 +559,6 @@
     "snap_network": "Snap package '{pkg}' has active network connections — verify it does not bypass UFW"
   },
   "hardening": {
-    "no_issues": "System hardening parameters look good",
-    "apparmor_not_installed": "AppArmor not detected — consider enabling it for mandatory access control",
-    "apparmor_enforce": "AppArmor active — {enforced} profile(s) in enforce mode, {complain} in complain mode",
-    "apparmor_not_enforce": "AppArmor loaded but in {mode} mode — consider switching to enforce",
     "rp_filter_ok": "Reverse path filtering enabled in strict mode (rp_filter=1)",
     "rp_filter_loose": "Reverse path filtering in loose mode (rp_filter=2) — consider switching to strict mode (=1)",
     "rp_filter_disabled": "Reverse path filtering disabled — risk of IP spoofing attacks",
@@ -1570,7 +1563,29 @@
         "how": "1. Set umask to 0022 in /etc/profile:\n   umask 0022\n2. Verify:\n   umask  # should return 0022"
       }
     },
+    "prerequisites": {
+      "ufw_missing": {
+        "title": "UFW (Uncomplicated Firewall) is not installed",
+        "why": "Without a host firewall, every listening service on the machine is exposed to whatever network it is connected to. There is no per-service allow/deny policy, no inbound default-deny, and no rule audit trail. On an internet-exposed host this is a critical gap; on a LAN-only host it still leaves the system trivially reachable by any compromised peer.",
+        "how": "1. Install UFW:\n   sudo apt install ufw\n2. Set the safe default policy:\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (If you use SSH) allow it before enabling:\n   sudo ufw allow 22/tcp\n4. Enable the firewall:\n   sudo ufw enable\n5. Verify:\n   sudo ufw status verbose"
+      }
+    },
     "firewall": {
+      "inactive": {
+        "title": "UFW firewall is installed but inactive",
+        "why": "UFW is present on the system but disabled. The configured rules (if any) are not enforced — incoming connections are filtered only by whatever underlying iptables/nftables state happens to be active. This usually means no host-level filtering at all: a reboot, network change, or misconfigured iptables rule will leave the system fully exposed. The status is also misleading: 'ufw installed' suggests protection that does not exist.",
+        "how": "1. Verify the inactive state:\n   sudo ufw status\n2. Make sure SSH (or whatever you need to keep reachable) is allowed before enabling:\n   sudo ufw allow 22/tcp\n3. Enable the firewall:\n   sudo ufw enable\n4. Verify it is now active:\n   sudo ufw status verbose\n5. Confirm it starts on boot:\n   sudo systemctl is-enabled ufw"
+      },
+      "policy_open": {
+        "title": "UFW default incoming policy is ALLOW (all ports open by default)",
+        "why": "When the default policy is set to ALLOW, every port is reachable unless an explicit deny rule blocks it. This inverts the standard security model: instead of opening the few services you need, you must enumerate and close every service you don't. New services (a freshly installed daemon, a new container) become reachable immediately with no allowlist gate. A single forgotten port is enough for a compromise.",
+        "how": "1. Switch to deny-by-default for incoming traffic:\n   sudo ufw default deny incoming\n2. Keep outgoing allowed (or restrict if your policy requires it):\n   sudo ufw default allow outgoing\n3. Re-allow the specific services you genuinely need:\n   sudo ufw allow 22/tcp           # SSH\n   sudo ufw allow from 192.168.1.0/24 to any port 445  # Samba on LAN only\n4. Verify:\n   sudo ufw status verbose"
+      },
+      "policy_unknown": {
+        "title": "UFW default incoming policy could not be determined",
+        "why": "BOB queried ufw status verbose but could not parse the default policy line. This usually means UFW is in an unexpected state (output format differs, version too old, or the service is partly broken). A firewall with an undetermined policy cannot be trusted: you do not know whether the default is deny or allow, so you do not know which ports are currently reachable.",
+        "how": "1. Inspect the raw status output manually:\n   sudo ufw status verbose\n2. Look for the line: 'Default: deny (incoming), allow (outgoing), deny (routed)'\n3. If the Default line is missing or malformed, reset to a known state:\n   sudo ufw disable\n   sudo ufw reset    # clears all rules — re-add them afterwards\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n   sudo ufw enable\n4. Verify UFW version (older versions output differently):\n   ufw --version"
+      },
       "logging_off": {
         "title": "UFW firewall logging is disabled",
         "why": "Without firewall logs, blocked connection attempts, port scans, and intrusion attempts leave no trace. Forensic investigation after an incident becomes impossible — you cannot determine when an attack started, which ports were probed, or where traffic came from.",

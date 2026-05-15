@@ -453,13 +453,6 @@ def _read_partition_usage() -> list[PartitionInfo]:
     if not out:
         return []
 
-    _SKIP_TYPES_RE = re.compile(
-        r"^(?:tmpfs|devtmpfs|squashfs|overlay|udev|cgroupfs|none|"
-        r"proc|sysfs|devpts|securityfs|cgroup|pstore|bpf|"
-        r"debugfs|tracefs|hugetlbfs|mqueue|fusectl|configfs)",
-        re.IGNORECASE,
-    )
-
     partitions = []
     for line in out.splitlines()[1:]:   # skip header
         parts = line.split()
@@ -470,8 +463,8 @@ def _read_partition_usage() -> list[PartitionInfo]:
         used_pct_s = parts[4].rstrip("%")
         mountpoint = parts[5]
 
-        if _SKIP_TYPES_RE.match(device):
-            continue
+        # The pseudo-FS list (tmpfs, devtmpfs, squashfs, overlay, proc, sysfs…)
+        # is captured by this single check — none of those start with "/dev/".
         if not device.startswith("/dev/"):
             continue
 

@@ -871,4 +871,4 @@ class TestKernelAptUpdate:
         result = check_kernel_modules(snap, profile_name="desktop")
         finding = _get_finding(result, "kernel_modules.kernels_obsolete")
         assert finding is not None
-        assert finding.message == "kernel_modules.kernels_obsolete_same"
+        assert finding.message.startswith("kernel_modules.kernels_obsolete_same")

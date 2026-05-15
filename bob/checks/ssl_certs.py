@@ -32,7 +32,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
+from bob.checks._run import (
+    TranslationFunc,
+    _C_LOCALE_ENV,
+    _command_exists,
+    _identity_t,
+    _parse_english_month_day,
+)
 from bob.scoring import CheckResult
 
 _WARN_DAYS      = 30
@@ -293,8 +299,22 @@ def _read_cert_expiry(path: Path) -> tuple[Optional[int], str, Optional[str]]:
             return None, "", "could not parse notAfter field"
 
         expiry_str = m.group(1).strip()
-        expiry_dt  = datetime.strptime(expiry_str, "%b %d %H:%M:%S %Y").replace(tzinfo=timezone.utc)
-        days_left  = (expiry_dt - datetime.now(timezone.utc)).days
+        # Don't use datetime.strptime("%b ...") here: it depends on the Python
+        # process LC_TIME, not the subprocess env. _parse_english_month_day
+        # is locale-independent.
+        parts = expiry_str.split()
+        if len(parts) < 4:
+            return None, "", "could not parse notAfter field"
+        parsed = _parse_english_month_day(expiry_str)
+        if parsed is None:
+            return None, "", "could not parse notAfter field"
+        month, day, hh, mm, ss = parsed
+        try:
+            year = int(parts[3])
+        except (ValueError, IndexError):
+            return None, "", "could not parse notAfter year"
+        expiry_dt = datetime(year, month, day, hh, mm, ss, tzinfo=timezone.utc)
+        days_left = (expiry_dt - datetime.now(timezone.utc)).days
         return days_left, expiry_str, None
 
     except subprocess.TimeoutExpired:

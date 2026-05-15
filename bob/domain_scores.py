@@ -24,7 +24,10 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from bob.scoring import ScoreEngine
@@ -104,7 +107,16 @@ def key_to_domain(key: str | None) -> str | None:
     if not key or not isinstance(key, str):
         return None
     prefix = key.split(".", 1)[0]
-    return _PREFIX_TO_DOMAIN.get(prefix, "firewall")
+    domain = _PREFIX_TO_DOMAIN.get(prefix)
+    if domain is None:
+        # New check key without a domain mapping → falls back to firewall.
+        # Log so packagers/devs notice unmapped prefixes when they add checks.
+        logger.debug(
+            "domain_scores: prefix %r has no entry in _PREFIX_TO_DOMAIN, "
+            "defaulting to 'firewall'", prefix,
+        )
+        return "firewall"
+    return domain
 
 
 # ---------------------------------------------------------------------------

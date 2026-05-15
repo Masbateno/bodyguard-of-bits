@@ -4,7 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
-| [v0.4.2](#v042) | 2026-05-14 | Phase 3 distro-ready (packaging discipline) — `SECURITY.md` threat model · 3 man pages · `debian/` source package · RPM spec Fedora COPR · AppArmor profile · Python support policy · pre-release hardening pass (2 critical + 5 important + 4 minor fixes from agent audit) · 4452/4452 tests (+3) |
+| [v0.4.3](#v043) | 2026-05-15 | Doc catch-up + post-audit hardening pass — 4 firewall keys promoted to `EXPLAIN_KEYS` · `--json --json-full` crash fix (5 dead HardeningSnapshot attrs) · `strptime("%b…")` made locale-independent (ssl_certs + logs) · `_is_covered_by_ufw` false-positive killed · email markdown links no longer escaped · cron range validator now rejects out-of-bounds · `key=` on ~30 findings (docker, firewall_stack, network_context, ports) · 7 dead locale keys removed · i18n concat anti-pattern resolved (ddns, logs) · CIS refs added · CHANGELOG short corrected for v0.4.2 · 4468/4468 tests (+4 regression) |
 | [v0.4.1](#v041) | 2026-05-14 | Phase 2 distro-ready (architectural decoupling) — `bob/tui/` extracted (curses optional) · `Finding.template_vars` / `Deduction.template_vars` additive fields for locale-independent reconstruction · new `bob.formatter` module + post-review hardening pass (`lang=` removed, `i18n.try_t()`, narrowed `except KeyError`) · 3 pilot checks migrated (ssh, hardening, firewall) · template_vars exposed in JSON output · `--offline` mode verified + integration tests · 4449/4449 tests (+19) |
 | [v0.4.0](#v040) | 2026-05-14 | Phase 1 distro-ready — exit codes / locale auto-detect (POSIX `$LANG`) / JSON output contract (`schema_version`, `key` fields) / `--explain` alias map / `services.json` formal JSON Schema (with post-review hardening pass #1: strict 1–65535 port regex · `$defs` factorization · `if/then` business constraints · plugin-file `schema_version` wrapper) · pass #2: schema descriptions, `services-list.minItems`, real-class fixtures replacing MagicMock, RefResolver→referencing compat shim · `= N` redundant suffix on stable score removed · 4430/4430 tests (+82) |
 | [v0.3.6](#v036) | 2026-05-09 | Code-review pass — `Path.home()` → `get_user_home()` (sudo-aware) in 7 modules · IPv6 ULA/link-local in `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepted · UFW logging header skipped when UFW inactive · `NOTIFY_EMAIL` legacy regex · 22 unused imports cleaned · 47 dead locale keys removed · 4348/4348 tests |
@@ -24,9 +24,69 @@
 
 ---
 
+## [v0.4.3] — 2026-05-15
+
+Doc catch-up release that grew into a hardening pass. A fresh agent audit on top of the v0.4.2 codebase found **1 critical + 5 important + 8 minor + 6 suggestion** issues — all applied here. Highlights:
+
+- **C1 (critical)** — `bob --json --json-full` crashed with `AttributeError` whenever a `HardeningSnapshot` was passed. Five field reads in `bob/json_output.py` (`fail2ban_active`, `auto_updates_enabled`, `apparmor_mode`, `apparmor_enforced`, `apparmor_complain`) targeted attributes that had migrated to `mac_policy.py`. The dead reads were removed and the JSON output now exposes the actual fields of the dataclass. **A regression test covers the full+snapshot path.**
+- **I1** — `datetime.strptime("%b ...")` is locale-dependent on the **Python process** itself (subprocess `LC_ALL=C` doesn't help). Under `LC_TIME=fr_FR.UTF-8`, `strptime("May 14 ...")` raised `ValueError`, so `_read_cert_expiry` returned "could not parse notAfter" for every cert and `_parse_timestamp` silently dropped every syslog UFW log line. New helper `_parse_english_month_day()` in `bob/checks/_run.py` is locale-independent.
+- **I4** — `_is_covered_by_ufw` regex matched the port number anywhere on a UFW status line, so an IP source like `192.168.1.22` "covered" port 22. Anchored the match to the "To" column (right after `[ N]`).
+- **I3** — HTML email reports rendered `[label](url)` markdown links as **literal `<a>` tags escaped**. Order of operations reversed in `_inline_format()`.
+- **I5** — `_validate_custom_cron` only sanity-checked plain-integer fields. `0-1000 * * * *` and `*/200 * * * *` slipped through silently and were rejected later by cron, losing the schedule. Now validates ranges, lists, and step values across all 5 fields.
+- **I2** — Roughly 30 `result.alert()/.warn()/.info()/.ok()/.add_deduction()` calls in `docker.py`, `firewall_stack.py`, `network_context.py`, `ports.py` lacked `key=`. Without it, `--ignore` / audit profiles / JSON consumers cannot match the findings. Same class of bug as the v0.4.2 C1 fix, but generalised to the next 4 most-affected files.
+
+Plus the originally-planned doc catch-up:
+
+1. **4 firewall keys promoted to `EXPLAIN_KEYS`** — `prerequisites.ufw_missing`, `firewall.inactive`, `firewall.policy_open`, `firewall.policy_unknown` were wired as `Finding.key` in v0.4.2 (so `--ignore` / profiles / JSON consumers matched them) but `bob --explain firewall.policy_open` still returned "not found". This release writes the full title / why / how content in both `en.json` and `fr.json` plus CIS references.
+
+2. **CHANGELOG.md (short) corrected for v0.4.2** — the section had read "**No code changes** · 4449/4449 tests (unchanged)" which was wrong: the hardening pass shipped with v0.4.2 modified 11 Python files and added 3 tests. The section has been rewritten with the full hardening pass detail (C1, C2, I1-I5, M1-M5, S1-S3).
+
+### Minor + suggestions
+
+- **M1** — Removed 7 dead locale keys (vestiges of the AppArmor migration from `hardening.py` to `mac_policy.py`, plus `services.port_auto`, `services.port_from_config`, `services.state.inactive_enabled`).
+- **M2** — `ntp.py:103` `subprocess.run(["ntpstat"])` now passes `env=_C_LOCALE_ENV` for consistency with the rest of the codebase.
+- **M5** — `disk.py` dropped the redundant `_SKIP_TYPES_RE` (already covered by `not device.startswith("/dev/")`).
+- **M6** — Replaced i18n concatenation anti-pattern in `ddns.py` (`_t("ddns.found") + f": {client}"`) and `logs.py` (`_t("logs.brute_found") + ...`) with proper `{placeholder}` keys. `_identity_t` now performs placeholder substitution to mirror production behaviour in tests.
+- **M8** — `services_state.py` now strips `@instance` from systemd unit names so future template units like `auditd@daily.service` map to `auditd`.
+- **S1+S2** — `bob/sysinfo.py` 3 subprocess calls (`ufw --version`, `ip route`, `ip addr`) now pass `env=_C_LOCALE_ENV` for consistency.
+- **S3** — `bob/checks/cron_audit.py` `_read_cron_file()` now skips symlinks under user-controlled directories (SECURITY.md trust boundary — prevents an attacker with write access to `/var/spool/cron/crontabs/` from materialising arbitrary file contents in audit reports).
+- **S5** — `bob/domain_scores.py` `_domain_for_key()` now logs at DEBUG when falling back to "firewall" for unmapped prefixes (helps catch new check keys missing from `_PREFIX_TO_DOMAIN`).
+- **S6** — `bob/__init__.py` defines `__all__`.
+
+### Skipped from the audit report
+
+- **M3** — `os.path` → `pathlib` cleanup in 4 files. Pure cosmetic, no impact.
+- **M4** — Regex compilation in `_is_covered_by_ufw` per call. Python `re` module caches the last 512 patterns, so negligible.
+- **M7** — Lazy `_PLUGIN_DIR` resolution. Reverted because converting the module-level constant to a function broke 20 tests that `patch("bob.registry._PLUGIN_DIR", ...)`. The "gotcha" was speculative; BOB runs one-shot per audit.
+- **S4** — Symlink check on `~/.ssh/authorized_keys` and `~/.ssh/config`. Users may legitimately use symlinks in `~/.ssh/`. Deferred pending design discussion.
+
+### Verified
+
+- `bob --explain firewall.inactive` (EN + FR) — title, WHY IT IS A RISK, HOW TO FIX, CIS ref all present.
+- `bob --explain firewall.policy_open` / `firewall.policy_unknown` / `prerequisites.ufw_missing` — same.
+- `bob --explain firewall.logging_off` — unchanged (pre-existing key, regression-tested).
+- `bob --explain list` — shows "Firewall" group with all 5 keys.
+- `LC_TIME=fr_FR.UTF-8 python3 -c "from datetime import datetime; ..."` — `_parse_english_month_day` succeeds where `strptime("%b ...")` failed.
+- `_is_covered_by_ufw(22, "tcp", ...)` — returns `False` when port 22 only appears inside an IP source like `192.168.1.22`.
+- `build_json_data(full=True, hardening_snapshot=HardeningSnapshot())` — no longer raises `AttributeError`.
+
+### Tests
+
+4468/4468 — +16 vs v0.4.2:
+- +12 parametrised invocations from the 4 new EXPLAIN_KEYS entries (3 parametrised checks × 4 keys: title, WHY/HOW headers, CIS reference).
+- +4 new regression tests in `tests/test_json_schema.py::TestFullModeWithOptionalSnapshots` covering the `full=True` + `hardening_snapshot`/`ipv6_snapshot` paths (the lacuna that let C1 slip into v0.4.2).
+
+### Deferred to a later release
+
+- Systematic migration of the remaining ~37 non-pilot checks to `Finding.template_vars` (Phase 2 Option A). Still on track for **v0.5.0+** per the original roadmap.
+- Multi-distro CI matrix and AUR PKGBUILD (still community-contribution-welcome).
+- `~/.ssh/*` symlink protection (S4 above).
+
+---
+
 ## [v0.4.2] — 2026-05-14
 
-Phase 3 of the distro-ready roadmap — packaging discipline. **No code changes**: this release ships only the packaging artefacts and policy documents that downstream distro maintainers need. 4449/4449 tests (unchanged).
+Phase 3 of the distro-ready roadmap — packaging discipline. Ships packaging artefacts and policy documents that downstream distro maintainers need, plus a pre-release hardening pass that closed 2 critical + 5 important + 4 minor + 1 suggestion findings from an agent audit. 4452/4452 tests (+3 from `tests/test_template_vars_migration.py`).
 
 The repository now contains everything a packager needs to produce a distribution-ready BOB without patching the source.
 
@@ -73,9 +133,28 @@ The repository now contains everything a packager needs to produce a distributio
 - **Fedora COPR official** — same: spec builds; remaining work is COPR account + rpmlint clean.
 - **Debian main / Fedora main** — still 12–18 months minimum, as the policy commits to 12 months of contract stability before request.
 
+### Hardening pass (pre-release audit)
+
+A full pre-release code audit surfaced 2 critical + 5 important + 4 minor + 1 suggestion issues — all fixed in the same release:
+
+- **C1** — `firewall.py`: 4 `result.alert()` / `result.add_deduction()` calls lacked `key=`. Without it, `--ignore` / profiles / JSON consumers could not match the most critical alerts. Fixed with `key="prerequisites.ufw_missing"`, `"firewall.inactive"`, `"firewall.policy_open"` on the relevant calls.
+- **C2** — `debian/apparmor.d/bob`: 10 binaries BOB actually exec's were missing from the profile (`df`, `lsblk`, `dpkg-query`, `getenforce`, `apt-get`, `find`, `ps`, `netstat`, `ntpstat`, `docker`) + line declared `/usr/local/sbin/bob-*` rw whereas `cron.py` writes to `/usr/local/bin/bob-{slug}`. Both fixed.
+- **I1+I2** — `ssl_certs.py` + `virtualization.py`: 3 subprocess calls missing `env=_C_LOCALE_ENV`, breaking date parsing on French locale.
+- **I3** — `bob/_paths.py`: renamed `UFW_AUDIT_SHARE` → `BOB_SHARE` env var (legacy name still honored).
+- **I4** — RPM spec: `Recommends: firewalld` was wrong (BOB only reads ufw). Fixed to `Recommends: ufw`. **M5** adds `Suggests: apparmor`.
+- **I5** — `bob/watch.py`: `run_checks()` called without `user_config=`, silently losing user's SUID whitelist on every `--watch` tick.
+- **M1** — Removed untracked `microsoft.gpg` (residue).
+- **M2** — `bob/formatter.py` docstring clarified (public API, no internal caller in v0.4.x).
+- **M4** — Exposed `bob.compare.BASELINE_PATH` as public symbol.
+- **S1** — New `tests/test_template_vars_migration.py` (3 tests) makes Phase 2 migration debt visible.
+- **S2** — Documented the timeout policy block at the top of `bob/checks/_run.py`.
+- **S3** — Sorted imports in `bob/cron.py` (PEP 8 grouping).
+
+Note: 4 keys are referenced by Findings (`prerequisites.ufw_missing`, `firewall.inactive`, `firewall.policy_open`) but not yet in `EXPLAIN_KEYS` — adding them requires writing full title/why/how/CIS content, deferred to v0.4.3.
+
 ### Tests
 
-4449/4449 (unchanged from v0.4.1). This release ships **no Python code changes** — only packaging artefacts, doc, and policy. Validated:
+4452/4452 (+3 from `tests/test_template_vars_migration.py`). Validated:
 - All 3 man pages render with `man -l` and `groff -man -Tutf8` without errors.
 - 3 schema JSON files remain valid (only the `$id` URL was version-bumped from `v0.4.1` → `v0.4.2`).
 - The 3 ChatGPT-style external reviews of Phase 2 still hold (no contract changes).

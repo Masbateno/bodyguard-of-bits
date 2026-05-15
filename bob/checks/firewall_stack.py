@@ -124,11 +124,13 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
         result.warn(
             message=_t("firewall_stack.iptables_bypass", rule=rule),
             nature="action",
+            key="firewall_stack.iptables_bypass",
         )
         result.add_deduction(
             reason=_t("firewall_stack.iptables_bypass", rule=rule),
             points=2,
             context="local",
+            key="firewall_stack.iptables_bypass",
         )
         found_issue = True
 
@@ -139,17 +141,20 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
         if snapshot.docker_present or snapshot.wireguard_present or snapshot.libvirt_present:
             result.info(
                 message=_t("firewall_stack.forward_routing_ok"),
+                key="firewall_stack.forward_routing_ok",
             )
         else:
             for rule in snapshot.forward_raw_accepts:
                 result.warn(
                     message=_t("firewall_stack.iptables_forward_bypass", rule=rule),
                     nature="action",
+                    key="firewall_stack.iptables_forward_bypass",
                 )
                 result.add_deduction(
                     reason=_t("firewall_stack.iptables_forward_bypass", rule=rule),
                     points=1,
                     context="local",
+                    key="firewall_stack.iptables_forward_bypass",
                 )
             found_issue = True
 
@@ -158,32 +163,36 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
         result.warn(
             message=_t("firewall_stack.nftables_parallel"),
             nature="improvement",
+            key="firewall_stack.nftables_parallel",
         )
         result.add_deduction(
             reason=_t("firewall_stack.nftables_parallel"),
             points=1,
             context="local",
+            key="firewall_stack.nftables_parallel",
         )
         found_issue = True
 
     # --- IP forwarding ---
     if snapshot.ip_forward:
         if snapshot.docker_present or snapshot.wireguard_present or snapshot.libvirt_present:
-            result.ok(message=_t("firewall_stack.ip_forward_ok"))
+            result.ok(message=_t("firewall_stack.ip_forward_ok"), key="firewall_stack.ip_forward_ok")
         else:
             result.warn(
                 message=_t("firewall_stack.ip_forward_enabled"),
                 nature="improvement",
+                key="firewall_stack.ip_forward_enabled",
             )
             result.add_deduction(
                 reason=_t("firewall_stack.ip_forward_enabled"),
                 points=1,
                 context="local",
+                key="firewall_stack.ip_forward_enabled",
             )
             found_issue = True
 
     if not found_issue and not snapshot.forward_raw_accepts:
-        result.ok(message=_t("firewall_stack.no_issues"))
+        result.ok(message=_t("firewall_stack.no_issues"), key="firewall_stack.no_issues")
 
     return result
 

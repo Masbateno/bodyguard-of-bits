@@ -142,6 +142,7 @@ def check_network_context(snapshot: NetworkContextSnapshot, t: TranslationFunc |
         if iface.if_type == "tunnel" and iface.is_up:
             result.info(
                 message=_t("network_context.tunnel_active", name=iface.name),
+                key="network_context.tunnel_active",
             )
 
     # --- Connections ---
@@ -160,6 +161,7 @@ def check_network_context(snapshot: NetworkContextSnapshot, t: TranslationFunc |
                     port=conn.remote_port,
                 ),
                 nature="action",
+                key="network_context.sensitive_remote",
             )
             result.add_deduction(
                 reason=_t(
@@ -169,6 +171,7 @@ def check_network_context(snapshot: NetworkContextSnapshot, t: TranslationFunc |
                 ),
                 points=2,
                 context="public",
+                key="network_context.sensitive_remote",
             )
 
     return result

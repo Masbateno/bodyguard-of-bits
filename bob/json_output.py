@@ -156,15 +156,16 @@ def build_json_data(
         }
         if hardening_snapshot is not None:
             data["hardening"] = {
-                "fail2ban_active":             hardening_snapshot.fail2ban_active,
-                "auto_updates_enabled":        hardening_snapshot.auto_updates_enabled,
-                "apparmor_mode":               hardening_snapshot.apparmor_mode,
-                "apparmor_enforced":           hardening_snapshot.apparmor_enforced,
-                "apparmor_complain":           hardening_snapshot.apparmor_complain,
                 "rp_filter":                   hardening_snapshot.rp_filter,
                 "accept_redirects":            hardening_snapshot.accept_redirects,
                 "log_martians":                hardening_snapshot.log_martians,
                 "icmp_echo_ignore_broadcasts": hardening_snapshot.icmp_echo_ignore_broadcasts,
+                "tcp_syncookies":              hardening_snapshot.tcp_syncookies,
+                "accept_source_route":         hardening_snapshot.accept_source_route,
+                "accept_redirects_v6":         hardening_snapshot.accept_redirects_v6,
+                "send_redirects":              hardening_snapshot.send_redirects,
+                "protected_hardlinks":         hardening_snapshot.protected_hardlinks,
+                "protected_symlinks":          hardening_snapshot.protected_symlinks,
             }
         if ipv6_snapshot is not None:
             data["ipv6"] = {

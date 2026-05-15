@@ -161,36 +161,38 @@ def check_docker(
     result = CheckResult()
 
     if not snapshot.installed:
-        result.info(message=_t("docker.not_installed"))
+        result.info(message=_t("docker.not_installed"), key="docker.not_installed")
         return result
 
     # iptables bypass check
     if snapshot.iptables_disabled:
-        result.ok(message=_t("docker.iptables_disabled"))
+        result.ok(message=_t("docker.iptables_disabled"), key="docker.iptables_disabled")
     else:
         result.warn(
             message=_t("docker.iptables_bypass"),
             nature="improvement",
+            key="docker.iptables_bypass",
         )
-        result.info(message=_t("docker.iptables_bypass_detail1"))
-        result.info(message=_t("docker.iptables_bypass_detail2"))
-        result.info(message=_t("docker.iptables_bypass_detail3"))
-        result.info(message=_t("docker.iptables_bypass_docs"))
+        result.info(message=_t("docker.iptables_bypass_detail1"), key="docker.iptables_bypass_detail1")
+        result.info(message=_t("docker.iptables_bypass_detail2"), key="docker.iptables_bypass_detail2")
+        result.info(message=_t("docker.iptables_bypass_detail3"), key="docker.iptables_bypass_detail3")
+        result.info(message=_t("docker.iptables_bypass_docs"), key="docker.iptables_bypass_docs")
         points = 1 if network_context in ("public", "ddns") else 0
         if points:
             result.add_deduction(
                 reason=_t("docker.iptables_bypass"),
                 points=points,
                 context=network_context,
+                key="docker.iptables_bypass",
             )
 
     # Exposed container ports
     public_ports = [p for p in snapshot.exposed_ports if p.is_public]
 
     if not snapshot.exposed_ports:
-        result.ok(message=_t("docker.no_containers"))
+        result.ok(message=_t("docker.no_containers"), key="docker.no_containers")
     elif not public_ports:
-        result.ok(message=_t("docker.no_public_ports"))
+        result.ok(message=_t("docker.no_public_ports"), key="docker.no_public_ports")
     else:
         for port in public_ports:
             if not snapshot.iptables_disabled:
@@ -202,6 +204,7 @@ def check_docker(
                         f"({_t('docker.exposed_bypass_ufw')})"
                     ),
                     nature="action",
+                    key="docker.exposed_bypass_ufw",
                 )
             else:
                 result.warn(
@@ -210,6 +213,7 @@ def check_docker(
                         f"→ {port.container_port}/{port.proto}"
                     ),
                     nature="improvement",
+                    key="docker.exposed_port",
                 )
             if not snapshot.iptables_disabled:
                 result.add_deduction(
@@ -218,6 +222,7 @@ def check_docker(
                               port=port.port_proto),
                     points=2 if network_context in ("public", "ddns") else 1,
                     context=network_context,
+                    key="docker.exposed_bypass_ufw",
                 )
 
     return result

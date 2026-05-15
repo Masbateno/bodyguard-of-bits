@@ -27,7 +27,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
+from bob.checks._run import (
+    TranslationFunc,
+    _C_LOCALE_ENV,
+    _identity_t,
+    _parse_english_month_day,
+)
 from bob.scoring import CheckResult
 
 logger = logging.getLogger(__name__)
@@ -248,7 +253,7 @@ def check_logs(
     # Findings — bruteforce gets a WARN
     for hit in brute_hits:
         result.warn(
-            message=_t("logs.brute_found") + f" {hit.src_ip} {_t('logs.brute_on')} {hit.port_proto}",
+            message=_t("logs.brute_found", ip=hit.src_ip, port=hit.port_proto),
             nature="improvement",
             key="logs.brute_found",
         )
@@ -262,7 +267,8 @@ def check_logs(
     # Service hits on high/critical ports get an INFO
     for port_proto, count in svc_hits.items():
         result.info(
-            message=f"{count} {_t('logs.attempts')} {_t('logs.brute_on')} {port_proto}",
+            message=_t("logs.svc_hits_detail", count=count, port=port_proto),
+            key="logs.svc_hits_detail",
         )
 
     # Dominant local source — likely IoT mDNS/SSDP/UPnP noise (benign, no deduction)
@@ -614,18 +620,22 @@ def _parse_timestamp(line: str, current_year: int) -> Optional[datetime]:
         r"^([A-Za-z]+ +\d+ +\d{2}:\d{2}:\d{2})", line
     )
     if syslog_match:
+        # Don't use datetime.strptime("%b ...") here: it depends on the Python
+        # process LC_TIME, not the subprocess env. Under fr_FR.UTF-8 "May" fails
+        # to parse. _parse_english_month_day is locale-independent.
+        parsed = _parse_english_month_day(syslog_match.group(1))
+        if parsed is None:
+            return None
+        month, day, hh, mm, ss = parsed
         try:
-            ts = datetime.strptime(
-                f"{syslog_match.group(1)} {current_year}",
-                "%b %d %H:%M:%S %Y",
-            )
-            # Year-boundary fix: if the parsed timestamp is in the future
-            # (e.g. a December entry parsed in January), roll back one year.
-            if ts > datetime.now():
-                ts = ts.replace(year=ts.year - 1)
-            return ts
+            ts = datetime(current_year, month, day, hh, mm, ss)
         except ValueError:
             return None
+        # Year-boundary fix: if the parsed timestamp is in the future
+        # (e.g. a December entry parsed in January), roll back one year.
+        if ts > datetime.now():
+            ts = ts.replace(year=ts.year - 1)
+        return ts
 
     return None
 

@@ -75,7 +75,16 @@ def _command_exists(name: str) -> bool:
 
 
 def _identity_t(key: str, **kwargs) -> str:
-    """Fallback translation function — returns the key itself."""
+    """Fallback translation function — returns the key itself.
+
+    When kwargs are passed (placeholder substitution), appends them in a
+    stable form (``key {a=1, b=2}``) so test assertions that probe substituted
+    values still succeed against the identity translator. Matches the
+    contract of the real ``bob.i18n.t``: kwargs must round-trip into the
+    output string.
+    """
+    if kwargs:
+        return key.format(**kwargs) if "{" in key else key + " " + " ".join(f"{k}={v}" for k, v in kwargs.items())
     return key
 
 
@@ -87,3 +96,37 @@ def _is_safe_config_path(path) -> bool:
     """Return True if path is absolute and not a symlink (safe to read)."""
     p = Path(path)
     return p.is_absolute() and not p.is_symlink()
+
+
+# Locale-independent month abbreviation map (English only).
+# datetime.strptime("%b") parses according to the *Python process* LC_TIME, not
+# the subprocess env. Even when commands are forced to LC_ALL=C via _C_LOCALE_ENV,
+# a Python process running under LC_TIME=fr_FR.UTF-8 will fail to parse "May 14"
+# because it expects "mai 14". This helper bypasses LC_TIME entirely.
+_ENGLISH_MONTH_ABBR = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}
+
+
+def _parse_english_month_day(s: str) -> tuple[int, int, int, int, int] | None:
+    """
+    Parse a string starting with "Mon DD HH:MM:SS" (English month abbreviation).
+
+    Returns ``(month, day, hour, minute, second)`` or ``None`` if the format
+    does not match. Year is not parsed — callers append it. Use this instead
+    of ``datetime.strptime(..., "%b ...")`` whenever the input is known to be
+    English (e.g. ``openssl x509 -enddate`` or syslog with LC_ALL=C).
+    """
+    parts = s.split(maxsplit=4)
+    if len(parts) < 3:
+        return None
+    month = _ENGLISH_MONTH_ABBR.get(parts[0])
+    if month is None:
+        return None
+    try:
+        day = int(parts[1])
+        h, m, sec = parts[2].split(":")
+        return month, day, int(h), int(m), int(sec)
+    except (ValueError, IndexError):
+        return None

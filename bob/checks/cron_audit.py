@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path
 from bob.scoring import CheckResult
 
 
@@ -147,7 +147,15 @@ class CronAuditSnapshot:
 # ---------------------------------------------------------------------------
 
 def _read_cron_file(path: Path, out: list[tuple[str, str]]) -> None:
-    """Read a cron file and append (path_str, line) tuples to out."""
+    """Read a cron file and append (path_str, line) tuples to out.
+
+    Skips symlinks under user-controlled directories: an attacker with write
+    access to /var/spool/cron/crontabs/ could symlink an arbitrary file (e.g.
+    /etc/shadow) and have its content materialise in audit reports. See
+    SECURITY.md "user-controlled config files" trust boundary.
+    """
+    if not _is_safe_config_path(path):
+        return
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:

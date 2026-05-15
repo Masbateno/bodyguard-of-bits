@@ -13,6 +13,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from bob.checks._run import _C_LOCALE_ENV
+
 _log = logging.getLogger(__name__)
 
 
@@ -62,7 +64,10 @@ def collect_system_info(version: str, lang: str):
 
     def run(*args):
         try:
-            r = subprocess.run(list(args), capture_output=True, text=True, timeout=5)
+            r = subprocess.run(
+                list(args), capture_output=True, text=True, timeout=5,
+                env=_C_LOCALE_ENV,
+            )
             return r.stdout.strip()
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return "N/A"
@@ -182,6 +187,7 @@ def detect_network_context(offline: bool = False) -> tuple[str, str]:
         result = subprocess.run(
             ["ip", "route", "show", "default"],
             capture_output=True, text=True, timeout=5,
+            env=_C_LOCALE_ENV,
         )
         if re.search(r"via\s+" + _PRIVATE_IPV4_RE.pattern.removeprefix("^"), result.stdout):
             public_ip = get_public_ip(offline=offline)
@@ -193,6 +199,7 @@ def detect_network_context(offline: bool = False) -> tuple[str, str]:
         result = subprocess.run(
             ["ip", "addr", "show"],
             capture_output=True, text=True, timeout=5,
+            env=_C_LOCALE_ENV,
         )
         # IPv4 public address
         for match in re.finditer(r"inet\s+([\d.]+)/", result.stdout):

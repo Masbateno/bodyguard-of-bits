@@ -41,8 +41,10 @@ _share_path = resolve_share_dir()
 _DATA_DIR = (_share_path / "data") if _share_path else (Path(__file__).parent / "data")
 _SERVICES_FILE = _DATA_DIR / "services.json"
 
-# User plugin directory — drop *.json files here to add custom services
-# Resolved at import time via SUDO_USER so it points to the invoking user's home
+# User plugin directory — drop *.json files here to add custom services.
+# Resolved at import time via SUDO_USER so it points to the invoking user's
+# home. BOB runs one-shot per audit; the import-time resolution is fine for
+# production. Tests patch `bob.registry._PLUGIN_DIR` directly when needed.
 _PLUGIN_DIR = get_user_home() / ".config" / "bob" / "services.d"
 
 # Valid values for the risk field
@@ -260,9 +262,9 @@ def _extract_plugin_entries(raw: object, plugin_name: str) -> list | None:
 
 def _load_plugins(services: list[Service], ids_seen: set[str]) -> None:
     """
-    Scan _PLUGIN_DIR for *.json plugin files and merge valid entries into
-    the services list. Errors in individual files are logged and skipped —
-    they never abort the audit.
+    Scan the per-user plugin directory for *.json plugin files and merge valid
+    entries into the services list. Errors in individual files are logged and
+    skipped — they never abort the audit.
 
     Each file may use either the raw-array shape or the wrapped
     {schema_version, services} shape. See _extract_plugin_entries().

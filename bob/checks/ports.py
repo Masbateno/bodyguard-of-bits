@@ -209,6 +209,7 @@ def check_ports(
                 message=_t("ports.system_port",
                            port=pp,
                            service=svc_name),
+                key="ports.system_port",
             )
             continue
 
@@ -217,17 +218,19 @@ def check_ports(
                 continue
             reported_warn_ports.add(pp)
             if not ufw_active:
-                result.info(message=_t("ports.uncovered", port=pp))
+                result.info(message=_t("ports.uncovered", port=pp), key="ports.uncovered")
                 continue
             result.warn(
                 message=_t("ports.uncovered", port=pp),
                 nature="improvement",
                 cmd=f"sudo ufw allow from 192.168.1.0/24 to any port {lport.port} proto {lport.proto}",
+                key="ports.uncovered_netbios",
             )
             result.add_deduction(
                 reason=_t("deduction.netbios_no_rule", port=pp),
                 points=1,
                 context=network_context,
+                key="ports.uncovered_netbios",
             )
             continue
 
@@ -243,11 +246,17 @@ def check_ports(
             # Downgrade to INFO when there is nothing actionable to show.
             if not ufw_active:
                 pp_info = f"{pp} ({lport.process})" if lport.process else pp
-                result.info(message=_t("ports.uncovered_ufw_inactive", port=pp_info))
+                result.info(
+                    message=_t("ports.uncovered_ufw_inactive", port=pp_info),
+                    key="ports.uncovered_ufw_inactive",
+                )
                 continue
             if default_incoming_policy in ("deny", "reject"):
                 pp_info = f"{pp} ({lport.process})" if lport.process else pp
-                result.info(message=_t("ports.uncovered_default_deny", port=pp_info))
+                result.info(
+                    message=_t("ports.uncovered_default_deny", port=pp_info),
+                    key="ports.uncovered_default_deny",
+                )
                 continue
 
             has_uncovered_public = True
@@ -259,17 +268,20 @@ def check_ports(
                     nature="improvement",
                     cmd=f"sudo ufw deny {pp}",
                     note=note,
+                    key="ports.uncovered",
                 )
             else:
                 result.alert(
                     message=_t("ports.uncovered", port=pp_display),
                     nature="action",
                     cmd=f"sudo ufw deny {pp}",
+                    key="ports.uncovered",
                 )
             result.add_deduction(
                 reason=_t("deduction.port_no_rule", port=pp),
                 points=2 if network_context in ("public", "ddns") else 1,
                 context=network_context,
+                key="ports.uncovered",
             )
 
         elif category == PortCategory.UNCOVERED_LOCAL:
@@ -278,10 +290,11 @@ def check_ports(
             reported_local_ports.add(pp)
             result.info(
                 message=_t("ports.uncovered_local", port=pp),
+                key="ports.uncovered_local",
             )
 
     if not has_uncovered_public and ufw_active:
-        result.ok(message=_t("ports.all_covered"))
+        result.ok(message=_t("ports.all_covered"), key="ports.all_covered")
 
     return result
 
@@ -321,14 +334,19 @@ def _categorize_port(lport: ListeningPort, ufw_rules: str) -> PortCategory:
 
 
 def _is_covered_by_ufw(port: int, proto: str, ufw_rules: str) -> bool:
-    """Return True if a UFW rule covers this port/proto."""
+    """Return True if a UFW rule covers this port/proto.
+
+    Anchored on the "To" column (right after ``[ N]``) to avoid matching the
+    port number anywhere else on the line — e.g. inside an IP source like
+    ``192.168.1.22`` which would otherwise falsely "cover" port 22.
+    """
     pattern = re.compile(
-        r"\[\s*\d+\]\s+.*\b" + re.escape(str(port)) +
+        r"\[\s*\d+\]\s+" + re.escape(str(port)) +
         r"(?:/" + re.escape(proto) + r")?\b",
         re.IGNORECASE,
     )
     for line in ufw_rules.splitlines():
-        if re.match(r"\s*\[\s*\d+\]", line) and pattern.search(line):
+        if pattern.match(line.lstrip()):
             return True
     return False
 

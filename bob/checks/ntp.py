@@ -18,7 +18,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Known NTP service unit names (checked in order)
@@ -101,7 +101,8 @@ def _check_sync_fallback(service: str) -> bool:
     if service == "ntpd" and _command_exists("ntpstat"):
         try:
             result = subprocess.run(
-                ["ntpstat"], capture_output=True, timeout=5
+                ["ntpstat"], capture_output=True, timeout=5,
+                env=_C_LOCALE_ENV,
             )
             return result.returncode == 0
         except (OSError, subprocess.SubprocessError):

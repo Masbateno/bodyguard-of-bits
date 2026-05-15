@@ -440,20 +440,24 @@ def _safe_url(url: str) -> str:
     return "#"
 
 
+_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+
 def _inline_format(text: str) -> str:
-    """Apply inline formatting (bold, code, links) to text."""
-    # Extract links before html.escape so URLs are not mangled (& → &amp; etc.)
-    _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+    """Apply inline formatting (bold, code, links) to text.
+
+    Order matters: escape HTML entities **first**, then translate markdown
+    constructs to HTML tags. The previous order built ``<a>`` tags and then
+    escaped them into ``&lt;a&gt;`` literals — links rendered as visible HTML
+    source in email reports.
+    """
+    text = html.escape(text)
 
     def _replace_link(m: re.Match) -> str:
-        label = html.escape(m.group(1))
-        href  = html.escape(_safe_url(m.group(2)))
-        return f'<a href="{href}">{label}</a>'
+        # label and href are already html.escape()'d via the parent escape pass.
+        return f'<a href="{_safe_url(m.group(2))}">{m.group(1)}</a>'
 
     text = _LINK_RE.sub(_replace_link, text)
-
-    # Escape remaining HTML entities
-    text = html.escape(text)
 
     # Bold: **text** → <strong>text</strong>
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)

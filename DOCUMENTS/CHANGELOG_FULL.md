@@ -6,9 +6,71 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.4.3] — 2026-05-15
+
+**Doc catch-up release that grew into a hardening pass.** This release started as a closing of two pieces of debt explicitly deferred by v0.4.2 (4 `EXPLAIN_KEYS` entries, short CHANGELOG sync). On the way, a fresh agent audit over the entire v0.4.2 codebase surfaced **1 critical + 5 important + 8 minor + 6 suggestion** issues. All were fixed in the same release.
+
+The full audit report is documented inline below, organised by criticality. Highlights:
+
+- **C1 (critical)** — `bob --json --json-full` was crashing on every system with `AttributeError`. `bob/json_output.py` was reading 5 attributes (`fail2ban_active`, `auto_updates_enabled`, `apparmor_mode`, `apparmor_enforced`, `apparmor_complain`) from `HardeningSnapshot` after they had migrated to `mac_policy.py`. The dead reads were removed; the JSON output now exposes only the actual fields. A regression test was added to `tests/test_json_schema.py::TestFullModeWithOptionalSnapshots` covering the `full=True` + `hardening_snapshot` path — the precise gap that let the bug slip into v0.4.2.
+
+- **I1 (important — silent failure)** — `datetime.strptime("%b ...")` parses English month abbreviations using the **Python process** `LC_TIME` setting. Subprocess `LC_ALL=C` only affects the *command's* output, not Python's. Under `LC_TIME=fr_FR.UTF-8` (common on French installations), `strptime("May 14 ...")` raised `ValueError` silently, causing `_read_cert_expiry` to return "could not parse notAfter" for every TLS certificate and `_parse_timestamp` to silently drop every syslog-format UFW log line. The audit score was systematically inflated on French systems because expiring certs and bruteforce attempts were invisible. New helper `_parse_english_month_day()` in `bob/checks/_run.py` parses by dict lookup, completely independent of locale.
+
+- **I2 (important — incomplete contract)** — Roughly 30 `result.alert()/.warn()/.info()/.ok()/.add_deduction()` calls in `docker.py`, `firewall_stack.py`, `network_context.py`, and `ports.py` were missing the `key=` argument. Same class of bug as the v0.4.2 C1 fix, generalised to the 4 next-most-affected files. Without `key=`, the findings cannot be matched by `--ignore`, by audit profiles, or by external JSON consumers. The remaining ~6 files have lower density of missing keys and are tracked for a future pass.
+
+- **I3 (important — broken email rendering)** — `bob/report_markdown.py::_inline_format` was building `<a href="...">label</a>` HTML first and then calling `html.escape()` on the result. Every link in email reports rendered as `&lt;a href=&quot;...&quot;&gt;label&lt;/a&gt;` literal text. Operation order reversed: escape the raw text first, then translate markdown to HTML.
+
+- **I4 (important — score under-counting)** — `_is_covered_by_ufw` regex was unanchored: it matched the port number anywhere on a UFW rule line, including inside source-IP fields. An IP source like `192.168.1.22` would falsely "cover" port 22. Consequence: actual uncovered public ports were silently classified as covered, so the audit reported a higher score than the system deserved. Regex now anchored to the "To" column (right after `[ N]`).
+
+- **I5 (important — silent cron data loss)** — `_validate_custom_cron` only sanity-checked plain-integer fields. Values like `0-1000 0 * * *` or `*/200 * * * *` passed the BOB validator and were then rejected by cron at parse time, silently losing the schedule. Full validator added: ranges, lists, step values, all 5 fields, with proper bounds (minute 0-59, hour 0-23, dom 1-31, month 1-12, dow 0-7).
+
+In addition, the **8 minor** findings (dead locale keys, `_C_LOCALE_ENV` consistency, i18n concat anti-pattern, redundant regex, systemd template unit support) and **5 of 6 suggestion** findings (sysinfo env, symlink protection on cron files, domain_scores fallback logging, `__all__`) were applied. The 4 items the audit flagged that were skipped (M3 cosmetic, M4 negligible, M7 broken 20 tests on revert, S4 design discussion needed) are documented below for traceability.
+
+Then the originally-planned doc catch-up:
+
+1. **The 4 firewall keys promoted to `EXPLAIN_KEYS`.** In v0.4.2 the agent audit's C1 fix wired four keys (`prerequisites.ufw_missing`, `firewall.inactive`, `firewall.policy_open`, `firewall.policy_unknown`) as `Finding.key` so that `--ignore`, audit profiles, and JSON consumers could match them. But `bob --explain firewall.policy_open` still answered "not found" because the keys were not in `EXPLAIN_KEYS` and had no associated title / why / how / CIS content. That content was deferred because writing four full explanations in both English and French is real documentation work, not a quick fix. This release does that work.
+
+2. **CHANGELOG.md (short) corrected for v0.4.2.** The v0.4.2 detail section opened with "**No code changes** · 4449/4449 tests (unchanged)" which was factually wrong: the hardening pass shipped with v0.4.2 modified 11 Python files and added 3 tests. `CHANGELOG_FULL.md` was already correct; the short version was not. The section has been rewritten with the full hardening pass detail (C1, C2, I1-I5, M1-M5, S1-S3). The v0.4.2 release on PyPI and GitHub is unchanged — this is a doc-only retroactive fix in `main`.
+
+### Why this is a separate release
+
+It would have been tempting to amend v0.4.2 and force-push. Two reasons not to:
+
+- The v0.4.2 tag and PyPI artifact are immutable. A "v0.4.2 with corrected docs" PyPI package is impossible. A separate release tracks the doc correction visibly.
+- A user running `bob --version` on v0.4.2 followed by `bob --explain firewall.policy_open` would still see "not found". With v0.4.3 they see real content. The version bump is the truth.
+
+### Changes
+
+- **`bob/explain.py`** — the group label changes from "Firewall Logging" (which only contained `firewall.logging_off`) to "Firewall", and the four new keys join it. The TODO comment that marked the deferral in v0.4.2 is gone. `EXPLAIN_KEYS` length goes 112 → 116.
+- **`bob/locales/en.json`** — new `explain.prerequisites.ufw_missing.{title,why,how}` entry, and three new entries under `explain.firewall.{inactive,policy_open,policy_unknown}.{title,why,how}`. Each entry follows the same shape as the pre-existing `explain.firewall.logging_off`: a short title, a paragraph explaining why this is a security risk (not just "what" the finding means), and a numbered remediation procedure.
+- **`bob/locales/fr.json`** — same four entries in French, idiomatic translation (not literal).
+- **`bob/data/cis_refs.json`** — 4 new entries. `prerequisites.ufw_missing` → CIS Ubuntu 22.04 L1 3.5.1.1 "Ensure ufw is installed". `firewall.inactive` → CIS 3.5.1.3 "Ensure ufw service is enabled". `firewall.policy_open` and `firewall.policy_unknown` → CIS 3.5.1.7 "Ensure ufw default deny firewall policy" (both keys map to the same control because the unknown case is a parsing failure of the same status output that policy_open detects positively).
+- **`tests/test_explain.py`** — the `assert len(EXPLAIN_KEYS) == 112` hard-coded count moves to `116`. This assertion is the explicit freeze: when EXPLAIN_KEYS changes, the test forces you to update it in the same commit. That's the intended workflow.
+- **`tests/test_display_explain_hint.py`** — two tests used `firewall.inactive` as an example of a finding key that should *not* trigger an `--explain` hint (because it wasn't in EXPLAIN_KEYS). Now that it is, those tests would have failed correctly. The fix replaces the example with a fictitious `test.nonexistent_key` so the tests stay resilient against future EXPLAIN_KEYS additions.
+- **`CHANGELOG.md`** + **`CHANGELOG_FR.md`** — full v0.4.2 detail section rewritten with the hardening pass content. v0.4.2 already had this content in `CHANGELOG_FULL.md`; this brings the short version in sync.
+- **Version bump** — `pyproject.toml`, `bob/__init__.py`, three schema `$id` URLs, two README badges, all from `0.4.2` → `0.4.3`.
+
+### Tests
+
+4464/4464 — +12 vs v0.4.2. No new test functions; the count growth is mechanical because `tests/test_explain.py` has three `@pytest.mark.parametrize("key", EXPLAIN_KEYS)` blocks (title check, WHY/HOW header check, CIS reference check), and adding 4 keys to `EXPLAIN_KEYS` produces 12 new parametrised invocations.
+
+Validated end-to-end manually:
+- `python3 -m bob --explain firewall.inactive` in both English and French shows the title, the WHY IT IS A RISK paragraph, the numbered HOW TO FIX procedure, and the CIS reference.
+- Same for `firewall.policy_open`, `firewall.policy_unknown`, `prerequisites.ufw_missing`.
+- `bob --explain firewall.logging_off` still works (regression check on the pre-existing key).
+- `bob --explain list` shows the renamed "Firewall" group containing all 5 keys.
+
+### Deferred to a later release
+
+This release does not change the Phase 2 deferred work. The systematic migration of the remaining ~37 non-pilot checks to `Finding.template_vars` (Phase 2 Option A) is still tracked for **v0.5.0+**. The Phase 2 migration progress test (`tests/test_template_vars_migration.py`) continues to make this debt visible.
+
+The multi-distro CI matrix and the AUR PKGBUILD are also still deferred — they're community-contribution-welcome, not blocking.
+
+---
+
 ## [v0.4.2] — 2026-05-14
 
-**Phase 3 of the distro-ready roadmap — packaging discipline.** This release ships **no Python code changes**; it adds the artefacts that distro maintainers need to package BOB without patching the source. Three man pages, a Debian source package targeting 3 binary packages (`bob-core` / `bob-tui` / `bob` meta), a Fedora RPM spec, an AppArmor profile, a `SECURITY.md` threat model, and a formal Python support policy. 4449/4449 tests (unchanged).
+**Phase 3 of the distro-ready roadmap — packaging discipline.** This release adds the artefacts that distro maintainers need to package BOB without patching the source. Three man pages, a Debian source package targeting 3 binary packages (`bob-core` / `bob-tui` / `bob` meta), a Fedora RPM spec, an AppArmor profile, a `SECURITY.md` threat model, and a formal Python support policy. A pre-release agent audit also surfaced 2 critical + 5 important + 4 minor + 1 suggestion issues — all fixed in the same release (the "Hardening pass" section below). 4452/4452 tests (+3 from `tests/test_template_vars_migration.py`).
 
 The strategic intent: BOB has crossed the "is it stable enough?" milestone in Phases 1 & 2. The remaining barrier to distro adoption is the absence of the standard packaging artefacts every distro maintainer expects to find in upstream. This release closes that gap.
 
@@ -174,7 +236,7 @@ Drop procedure spans at least 3 minor BOB releases (validate / announce / remove
 
 ### Tests
 
-4449/4449 — unchanged from v0.4.1. This release ships no Python code changes. The full pytest suite still passes after the version bump and schema `$id` updates; that's the regression safety net.
+4452/4452 — +3 vs v0.4.1, all from `tests/test_template_vars_migration.py` (S1) which makes Phase 2 migration debt visible. The hardening pass (C1, C2, I1-I5, M1-M5, S2, S3) modified 11 Python files; the existing suite covered all of them and stayed green throughout.
 
 Validated separately:
 - `groff -man -Tutf8` and `man -l` parse all 3 man pages without errors.

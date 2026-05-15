@@ -262,14 +262,64 @@ def _ordinal(n: int) -> str:
 # Cron expression validator
 # ---------------------------------------------------------------------------
 
+_CRON_FIELD_BOUNDS = (
+    ("minute",       0, 59),
+    ("hour",         0, 23),
+    ("day of month", 1, 31),
+    ("month",        1, 12),
+    ("day of week",  0, 7),  # 0 and 7 both = Sunday
+)
+
+
+def _validate_cron_field(field: str, name: str, lo: int, hi: int) -> str:
+    """Validate one cron field. Returns "" on success or an error message.
+
+    Accepts the standard syntax: ``*``, ``N``, ``N-M``, ``*/K``, ``N-M/K``,
+    and comma-separated lists of the above. Rejects out-of-range numbers
+    that the original isdigit-only check let through (e.g. ``0-1000`` or
+    ``*/200``).
+    """
+    for chunk in field.split(","):
+        if not chunk:
+            return f"{name} has an empty entry"
+        # Step: BASE/K
+        if "/" in chunk:
+            base, _, step_s = chunk.partition("/")
+            if not step_s.isdigit() or int(step_s) < 1:
+                return f"{name} step {step_s!r} must be a positive integer"
+            chunk = base
+        # Range: N-M
+        if "-" in chunk and chunk != "*":
+            lo_s, _, hi_s = chunk.partition("-")
+            if not (lo_s.isdigit() and hi_s.isdigit()):
+                return f"{name} range {chunk!r} must be numeric"
+            n, m = int(lo_s), int(hi_s)
+            if not (lo <= n <= hi and lo <= m <= hi):
+                return f"{name} range {chunk!r} out of bounds ({lo}-{hi})"
+            if n > m:
+                return f"{name} range {chunk!r} reversed"
+            continue
+        # Wildcard
+        if chunk == "*":
+            continue
+        # Plain integer
+        if chunk.isdigit():
+            n = int(chunk)
+            if not (lo <= n <= hi):
+                return f"{name} value {n} out of range ({lo}-{hi})"
+            continue
+        return f"{name} value {chunk!r} not understood"
+    return ""
+
+
 def _validate_custom_cron(expr: str) -> str:
     """
     Validate a 5-field cron expression entered by the user.
 
-    Checks:
-    1. Has exactly 5 whitespace-separated fields.
-    2. Minute field, if a plain integer, is in 0–59.
-    3. Hour field, if a plain integer, is in 0–23.
+    Each field is checked for syntax (``*``, ``N``, ``N-M``, ``N-M/K``,
+    comma-separated lists) and bounds — minute 0-59, hour 0-23, dom 1-31,
+    month 1-12, dow 0-7. Out-of-range numbers (e.g. ``0-1000``, ``*/200``)
+    are rejected.
 
     Returns:
         Empty string if valid; a human-readable error message otherwise.
@@ -277,11 +327,10 @@ def _validate_custom_cron(expr: str) -> str:
     if not re.match(r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+$", expr):
         return "expected 5 fields: minute hour dom month dow"
     fields = expr.split()
-    minute_s, hour_s = fields[0], fields[1]
-    if minute_s.isdigit() and not (0 <= int(minute_s) <= 59):
-        return f"minute value {minute_s!r} out of range (0–59)"
-    if hour_s.isdigit() and not (0 <= int(hour_s) <= 23):
-        return f"hour value {hour_s!r} out of range (0–23)"
+    for value, (name, lo, hi) in zip(fields, _CRON_FIELD_BOUNDS):
+        err = _validate_cron_field(value, name, lo, hi)
+        if err:
+            return err
     return ""
 
 

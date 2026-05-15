@@ -149,7 +149,7 @@ class TestExplainKeyFreezePolicy:
 
 class TestExplainKeysList:
     def test_has_one_hundred_twelve_keys(self):
-        assert len(EXPLAIN_KEYS) == 112
+        assert len(EXPLAIN_KEYS) == 116
 
     def test_all_keys_are_strings(self):
         for k in EXPLAIN_KEYS:

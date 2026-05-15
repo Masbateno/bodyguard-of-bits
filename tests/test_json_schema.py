@@ -15,6 +15,8 @@ from datetime import datetime
 import pytest
 
 from bob.checks.firewall_stack import FirewallStackSnapshot
+from bob.checks.hardening import HardeningSnapshot
+from bob.checks.ipv6 import IPv6Snapshot
 from bob.checks.network_context import NetworkContextSnapshot
 from bob.checks.ports import PortsSnapshot
 from bob.json_output import (
@@ -291,3 +293,62 @@ class TestDomainScoresStructure:
             assert "label" in entry
             assert isinstance(entry["score"], int)
             assert isinstance(entry["label"], str)
+
+
+# ---------------------------------------------------------------------------
+# --json-full + optional snapshots (hardening, ipv6) — regression for v0.4.2
+# where build_json_data crashed with AttributeError because the "hardening"
+# block read attributes that had migrated out of HardeningSnapshot (fail2ban,
+# auto_updates, apparmor_*) when AppArmor moved to mac_policy.py. The minimal
+# fixtures above did not exercise the full+hardening_snapshot path.
+# ---------------------------------------------------------------------------
+
+class TestFullModeWithOptionalSnapshots:
+    def test_full_with_hardening_snapshot_does_not_crash(self, engine, minimal_args):
+        """build_json_data must not raise when given full=True + a default HardeningSnapshot."""
+        data = build_json_data(
+            engine=engine, full=True,
+            hardening_snapshot=HardeningSnapshot(),
+            ipv6_snapshot=None,
+            **minimal_args,
+        )
+        assert "hardening" in data
+        assert isinstance(data["hardening"], dict)
+
+    def test_full_with_hardening_keys_match_dataclass_attrs(self, engine, minimal_args):
+        """Every key in data["hardening"] must correspond to a real attribute of
+        the live HardeningSnapshot. Catches the v0.4.2 class of regression
+        (key removed from dataclass but still read by json_output)."""
+        snap = HardeningSnapshot()
+        data = build_json_data(
+            engine=engine, full=True,
+            hardening_snapshot=snap, ipv6_snapshot=None,
+            **minimal_args,
+        )
+        for key in data["hardening"]:
+            assert hasattr(snap, key), (
+                f"json_output.py exposes 'hardening.{key}' but HardeningSnapshot "
+                f"has no such attribute — likely a leftover after a refactor."
+            )
+
+    def test_full_with_ipv6_snapshot_does_not_crash(self, engine, minimal_args):
+        """Same regression guard for ipv6 block."""
+        data = build_json_data(
+            engine=engine, full=True,
+            hardening_snapshot=None,
+            ipv6_snapshot=IPv6Snapshot(),
+            **minimal_args,
+        )
+        assert "ipv6" in data
+        assert isinstance(data["ipv6"], dict)
+
+    def test_full_with_both_snapshots_does_not_crash(self, engine, minimal_args):
+        """The real CLI path passes both snapshots at once."""
+        data = build_json_data(
+            engine=engine, full=True,
+            hardening_snapshot=HardeningSnapshot(),
+            ipv6_snapshot=IPv6Snapshot(),
+            **minimal_args,
+        )
+        assert "hardening" in data
+        assert "ipv6" in data
