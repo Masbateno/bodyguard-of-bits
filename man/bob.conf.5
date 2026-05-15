@@ -1,0 +1,125 @@
+.\" Manpage for ~/.config/bob/config.conf
+.TH BOB.CONF 5 "2026-05-14" "BOB 0.4.2" "File Formats"
+.SH NAME
+bob.conf \- BOB user configuration file
+.
+.SH SYNOPSIS
+.I ~/.config/bob/config.conf
+.PP
+.I /root/.config/bob/config.conf
+(when invoked as actual root without
+.BR SUDO_USER )
+.
+.SH DESCRIPTION
+.B bob
+reads its persistent user-side configuration from
+.IR ~/.config/bob/config.conf .
+The file is a flat
+.B key=value
+text format with one entry per line. Lines starting with
+.B #
+are comments. Order does not matter.
+.PP
+When invoked via
+.BR sudo ,
+.B bob
+honors
+.B SUDO_USER
+and resolves the path against the invoking user's home, not
+.IR /root/ .
+The file is owned by that user with mode
+.BR 0600 .
+.PP
+The file is created by the first-launch wizard
+.RB ( \-\-reconfigure
+re-runs it). It is safe to edit by hand.
+.
+.SH KEYS
+.SS Custom service ports
+For any service in
+.B bob
+'s registry whose
+.B config_key
+declares a user-config key (e.g.
+.IR ssh_port " for SSH), add a line:"
+.PP
+.RS
+.EX
+ssh_port = 2222
+.EE
+.RE
+.PP
+Multi-port services use comma-separated values:
+.PP
+.RS
+.EX
+samba_ports = 445/tcp, 139/tcp
+.EE
+.RE
+.SS Log directory
+.TP
+.B log_dir = \fIPATH\fR
+Directory where
+.B \-d
+writes detailed audit reports. Default:
+.I ~/.local/share/bob/logs/
+(under the invoking user, even via sudo).
+.SS SUID whitelist (since v0.3.2)
+.TP
+.B suid_whitelist = \fIPATTERN[,PATTERN,...]\fR
+Comma-separated
+.BR fnmatch (3)
+patterns matched against the
+.B basename
+of detected SUID binaries. Matched binaries are suppressed from the
+"unexpected SUID" warning. Useful on Kali / pentesting distros that ship
+extra SUID tools intentionally.
+.PP
+Example:
+.PP
+.RS
+.EX
+suid_whitelist = kismet_cap_*, my_custom_tool
+.EE
+.RE
+.PP
+A summary INFO finding
+.RI ( suid_audit.whitelisted )
+reports the count of suppressed paths so the whitelist is never silent.
+.SS Webhook (optional)
+.TP
+.B webhook_url = \fIURL\fR
+Default webhook URL for
+.BR \-\-webhook
+(overridden by an explicit flag on the command line).
+.TP
+.B webhook_format = \fIFMT\fR
+One of
+.BR auto " (default), "
+.BR generic ", "
+.BR slack .
+.
+.SH EMAIL ADDRESS BOOK
+.B bob
+keeps a separate
+.I ~/.config/bob/emails
+file (also mode 0600) for the email-store wizard used by
+.BR \-\-install\-cron .
+One address per line, comment lines start with
+.BR # .
+This is NOT part of
+.IR config.conf .
+.
+.SH RELATED FILES
+See
+.BR bob (1)
+section
+.B FILES
+for the full list of paths
+.B bob
+reads or writes under
+.IR ~/.config/bob/ .
+.
+.SH SEE ALSO
+.BR bob (1),
+.BR bob-profile (5).

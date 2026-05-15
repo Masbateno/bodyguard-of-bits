@@ -1,6 +1,13 @@
 """
 BOB locale-independent message formatter — Phase 2 of the distro-ready roadmap.
 
+Status: this module is a **public API for external integrators** (CI dashboards,
+distro packagers, JSON consumers). No production code path in BOB itself calls
+``format_finding`` / ``format_deduction`` in v0.4.x — the terminal output and
+report pipelines still rely on the pre-formatted ``message`` field of each
+finding. The formatter exists so that downstream tooling can rebuild localized
+text from ``(key, template_vars)`` without parsing the formatted strings.
+
 This module bridges BOB's internal data structures (which carry locale-independent
 ``Finding.key`` + ``Finding.template_vars``) and a human-readable string in the
 currently active locale.

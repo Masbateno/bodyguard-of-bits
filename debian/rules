@@ -1,0 +1,24 @@
+#!/usr/bin/make -f
+# debian/rules for bodyguard-of-bits — pybuild-based build using pyproject.toml.
+#
+# Verbose mode: uncomment to debug pybuild output.
+#export DH_VERBOSE = 1
+
+export PYBUILD_NAME = bodyguard-of-bits
+
+# pybuild discovers tests/ automatically; pin to pytest explicitly.
+export PYBUILD_TEST_PYTEST = 1
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+# Install man pages into bob-core (they document the CLI which lives there).
+# The meta-package bob has no files of its own.
+override_dh_install:
+	dh_install
+	# Install man pages under bob-core
+	install -D -m 0644 man/bob.1          debian/bob-core/usr/share/man/man1/bob.1
+	install -D -m 0644 man/bob.conf.5     debian/bob-core/usr/share/man/man5/bob.conf.5
+	install -D -m 0644 man/bob-profile.5  debian/bob-core/usr/share/man/man5/bob-profile.5
+	# SECURITY.md goes to /usr/share/doc/bob-core/
+	install -D -m 0644 SECURITY.md        debian/bob-core/usr/share/doc/bob-core/SECURITY.md

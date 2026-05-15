@@ -1,0 +1,421 @@
+.\" Manpage for bob (Bodyguard Of Bits)
+.\" Format: man-7 (groff_man). Render with: man -l man/bob.1
+.\" Contact: cedricclauzel30@gmail.com to correct errors or typos.
+.TH BOB 1 "2026-05-14" "BOB 0.4.2" "User Commands"
+.SH NAME
+bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
+.
+.SH SYNOPSIS
+.B sudo bob
+.RI [ OPTIONS ]
+.
+.SH DESCRIPTION
+.B bob
+audits a Linux system against a curated set of hardening checks (firewall,
+SSH, kernel sysctl, services, file permissions, MAC policy, auditd, …) and
+reports findings with severity levels (OK / INFO / WARN / ALERT). It produces
+a colourised terminal summary, an optional detailed log file, and an optional
+JSON output for scripting.
+.PP
+.B bob
+is audit-only: it never modifies system state without explicit user
+confirmation (see
+.B \-\-fix
+and
+.B \-\-apply
+below). The
+.B \-\-offline
+mode disables all outbound network calls and is recommended for distro
+build sandboxes and air-gapped environments.
+.PP
+Most checks require root for full coverage (reading
+.IR /etc/shadow ,
+parsing UFW rules, querying
+.B systemctl
+state). Use
+.B sudo bob
+in normal operation.
+.
+.SH OPTIONS
+.SS Audit control
+.TP
+.BR \-v ", " \-\-verbose
+Show detailed port exposure per service in the services section.
+.TP
+.BR \-d ", " \-\-detailed
+Write a detailed audit report to the configured log directory
+.RI ( ~/.local/share/bob/logs/
+by default).
+.TP
+.B \-\-target=\fIN\fR
+Set a security score target in 1\(en10. When the resulting score is below
+.IR N ,
+.B bob
+exits with code
+.B 4
+(see
+.B EXIT CODES
+below). Useful in CI.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress all terminal output. Use the exit code to detect issues.
+Implies neither
+.B \-d
+nor
+.BR \-\-json .
+.TP
+.BR \-\-no\-color
+Disable ANSI escape sequences in terminal output.
+.
+.SS Output formats
+.TP
+.BR \-j ", " \-\-json
+Emit the audit summary to standard output as JSON
+.RB ( schema_version
+.BR \(dq1\(dq ).
+Suppresses the human-readable terminal box. See
+.B JSON OUTPUT
+below.
+.TP
+.BR \-J ", " \-\-json\-full
+Like
+.BR \-\-json ,
+but includes per-finding, per-service, per-port detail (large payload).
+.TP
+.B \-\-format=\fIFMT\fR
+Where
+.I FMT
+is
+.BR text " (default), "
+.BR json ", or "
+.BR markdown .
+.
+.SS Configuration and i18n
+.TP
+.B \-\-lang=\fICODE\fR
+Set interface language. Currently supported:
+.B en
+(default) and
+.BR fr .
+When neither
+.B \-\-lang
+nor
+.B \-\-french
+is given,
+.B bob
+auto-detects the locale from
+.BR LC_ALL ,
+.BR LC_MESSAGES ,
+or
+.B LANG
+(POSIX precedence). Falls back to English on
+.BR C ,
+.BR POSIX ,
+or an unsupported locale.
+.TP
+.B \-\-french
+Shorthand for
+.BR \-\-lang=fr .
+Overrides the locale detection.
+.TP
+.B \-\-reconfigure
+Re-run the first-launch configuration wizard (custom service ports, log dir).
+.TP
+.B \-\-profile=\fINAME\fR
+Apply an audit profile that adjusts severity overrides per finding key.
+Built-in profiles:
+.BR server " (default), "
+.BR desktop ", "
+.BR container .
+User profiles in
+.IR ~/.config/bob/profiles/*.conf
+take precedence. See
+.BR bob-profile (5).
+.
+.SS Comparison and history
+.TP
+.B \-\-diff
+Show only the delta vs the previous audit (new findings, resolved findings,
+score change). The baseline lives at
+.IR ~/.config/bob/last_baseline.json .
+.TP
+.B \-\-history
+Display a sparkline of the last 50 audit scores from
+.IR ~/.config/bob/history.jsonl .
+.TP
+.B \-\-breakdown ", " \-B
+After the audit, print the complete score computation (deductions, caps,
+per-domain scores). Useful for understanding why the final score is what
+it is.
+.
+.SS Remediation
+.TP
+.BR \-f ", " \-\-fix
+Enter interactive fix mode: each finding with a remediation command prompts
+the user with
+.RB \(dq y/N \(dq.
+.B bob
+NEVER runs a command without explicit user confirmation.
+.TP
+.B \-\-apply
+Like
+.BR \-\-fix ,
+but assume
+.B y
+for every prompt. Use with extreme caution; intended for unattended fix runs
+where the user has reviewed
+.BR \-\-explain
+beforehand.
+.TP
+.B \-\-explain=\fIKEY\fR
+Display a structured explanation for a single finding key. Pass
+.B list
+as the
+.I KEY
+to list all available explain keys (112 keys in v0.4.x).
+.TP
+.B \-e
+Shortcut for
+.BR \-\-explain= .
+.
+.SS Network and integrations
+.TP
+.BR \-o ", " \-\-offline
+Disable all outbound network calls (public IP lookup, webhook POST). Required
+for distro build sandboxes; recommended for air-gapped environments.
+.TP
+.BR \-w ", " \-\-webhook=\fIURL\fR
+POST the audit summary as JSON to
+.IR URL
+after the audit. Skipped if
+.B \-\-offline
+is given.
+.TP
+.B \-\-webhook-format=\fIFMT\fR
+.I FMT
+is
+.BR auto " (default — Slack/generic detection from the URL), "
+.BR generic ", or "
+.BR slack .
+.
+.SS Periodic audits
+.TP
+.B \-\-install\-cron
+Run an interactive wizard to install a cron job that audits the system on
+a schedule and emails the report.
+.TP
+.B \-\-manage\-cron
+Manage installed cron jobs (list, edit schedule/email, delete).
+.TP
+.B \-\-watch=\fIN\fR
+Re-run the audit every
+.I N
+seconds until interrupted with Ctrl\-C. Live-monitoring mode.
+.
+.SS Filters
+.TP
+.B \-\-check=\fIA,B,…\fR
+Run only the named sections (prefix matching:
+.B kernel
+matches
+.BR kernel_hardening " and " kernel_modules ).
+Core checks
+.RB ( firewall ,
+.BR ports ,
+.BR services ,
+.BR logs )
+always run.
+.TP
+.B \-\-skip=\fIA,B,…\fR
+Inverse of
+.BR \-\-check .
+.TP
+.B \-\-list\-checks
+Print all available section names.
+.
+.SS Misc
+.TP
+.B \-\-version
+Print BOB version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print help.
+.TP
+.B \-\-install\-completion
+Install bash completion to
+.IR /etc/bash_completion.d/bob .
+.TP
+.B \-\-manage\-logs
+Manage stored audit reports (list, view, delete) in
+.IR ~/.local/share/bob/logs/ .
+.TP
+.B \-\-ignore=\fIKEY\fR
+Persistently ignore finding
+.I KEY
+across all future audits. Stored in
+.IR ~/.config/bob/ignore.yml .
+.
+.SH EXIT CODES
+Stable public API. These codes do not change within a major version; new
+codes may be added but never removed.
+.TP
+.B 0
+Clean audit \(em no alerts, no warnings.
+.TP
+.B 1
+Warnings detected (improvements suggested).
+.TP
+.B 2
+Alerts detected \(em action required.
+.TP
+.B 3
+Technical error (CLI parsing, IO, internal).
+.TP
+.B 4
+.B \-\-target=\fIN\fR
+specified and score < N.
+.
+.SH JSON OUTPUT
+.B \-\-json
+emits a stable JSON contract (see
+.B schema_version
+.BR \(dq1\(dq ).
+Top-level keys:
+.IR schema_version ,
+.IR version ,
+.IR host ,
+.IR timestamp ,
+.IR score ,
+.IR score_max ,
+.IR risk ,
+.IR network_context ,
+.IR public_ip ,
+.IR alerts ,
+.IR warnings ,
+.IR deductions ,
+.IR domain_scores .
+Full mode
+.RB ( \-\-json\-full )
+adds
+.IR findings ,
+.IR services ,
+.IR open_ports ,
+.IR firewall_stack ,
+.IR hardening ,
+.IR ipv6 .
+.PP
+Each deduction and finding carries a stable dotted
+.B key
+(e.g.
+.BR firewall.logging_off )
+and an optional
+.B template_vars
+dict for locale-independent reconstruction of the message via
+.B bob.formatter.format_finding .
+.PP
+See
+.IR DOCUMENTS/README_TECH.md " section " "JSON output schema"
+for the complete reference.
+.
+.SH FILES
+.TP
+.I ~/.config/bob/config.conf
+User configuration (custom ports, log directory, SUID whitelist). Mode 0600.
+See
+.BR bob.conf (5).
+.TP
+.I ~/.config/bob/profiles/*.conf
+User audit profiles (severity overrides per finding key). See
+.BR bob-profile (5).
+.TP
+.I ~/.config/bob/services.d/*.json
+User service plugin definitions. JSON Schema:
+.IR bob/data/schemas/service.schema.json .
+.TP
+.I ~/.config/bob/checks.d/*.py
+Custom Python audit plugins. NOT sandboxed.
+.TP
+.I ~/.config/bob/last_baseline.json
+Snapshot of the previous audit for
+.B \-\-diff
+comparisons.
+.TP
+.I ~/.config/bob/history.jsonl
+Append-only score history (rotated at 1000 entries).
+.TP
+.I ~/.config/bob/ignore.yml
+Persistently ignored finding keys.
+.TP
+.I ~/.local/share/bob/logs/
+Default detailed-report destination
+.RB ( \-d
+flag).
+.TP
+.I /etc/cron.d/bob-NAME
+System cron entries installed via
+.BR \-\-install\-cron .
+.
+.SH ENVIRONMENT
+.TP
+.B SUDO_USER
+Honored by BOB to resolve
+.RB \(dq ~/.config/bob/ \(dq
+to the invoking user's home rather than
+.IR /root/
+when run via
+.BR sudo .
+.TP
+.BR LC_ALL ", " LC_MESSAGES ", " LANG
+Used for locale auto-detection (POSIX precedence). See
+.BR \-\-lang
+above.
+.TP
+.B BOB_SHARE
+Absolute path to BOB's installed share directory (containing
+.IR locales/ ", " data/ ", etc.).
+Set by the installer entry point — typical values:
+.IR /usr/share/bob/
+(distro packages) or
+.IR /usr/local/share/bob/
+(local installs). When unset, BOB uses the data files bundled inside the
+Python package itself (pipx / pip install layout).
+.TP
+.B UFW_AUDIT_SHARE
+Legacy alias for
+.BR BOB_SHARE ,
+retained for backward compatibility with pre-v0.4.2 installer scripts. Will
+be removed in a future major release.
+.BR BOB_SHARE
+takes precedence when both are set.
+.
+.SH SECURITY
+BOB is an audit-only tool that runs with root privileges. It is part of the
+.B post-compromise
+audit toolchain: a rooted attacker can already lie to BOB about every value
+it reads from
+.IR /proc/ ", " /sys/ ", " /etc/ .
+BOB does not replace a file-integrity scanner (AIDE, Tripwire), an antivirus
+(ClamAV), nor a rootkit detector (rkhunter).
+.PP
+See the project's
+.B SECURITY.md
+file for the complete threat model and the vulnerability disclosure process.
+.
+.SH SEE ALSO
+.BR bob.conf (5),
+.BR bob-profile (5),
+.BR ufw (8),
+.BR systemctl (1),
+.BR fail2ban-client (1),
+.BR auditctl (8).
+.PP
+Project home page:
+.UR https://github.com/Masbateno/bodyguard-of-bits
+.UE
+.
+.SH AUTHOR
+Cédric Clauzel
+.RI < cedricclauzel30@gmail.com >.
+.
+.SH COPYRIGHT
+Copyright \(co 2026 BOB contributors. Licensed under the MIT License.

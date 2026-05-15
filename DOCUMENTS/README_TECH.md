@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.4.1-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.4.2-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
@@ -582,6 +582,41 @@ sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
 ```
 
 The `findings[*].key` and `deductions[*].key` are part of the `--explain` key set — they will not change without a major schema bump.
+
+---
+
+## Python support policy
+
+> **Stable public commitment** — these rules govern when BOB drops support for an older Python.
+
+BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.4.2:
+
+| Python | Status |
+|---|---|
+| 3.13 | ✅ supported (when released — to be tested) |
+| 3.12 | ✅ supported (current development target, CI default) |
+| 3.11 | ✅ supported |
+| 3.10 | ✅ supported (oldest currently supported) |
+| 3.9  | ❌ end of life (dropped in v0.2.3) |
+
+When Python 3.14 ships upstream (~late 2025), Python 3.10 enters a deprecation window:
+- **+ 1 minor BOB release** with both 3.10 and 3.14 in CI to validate.
+- **+ 1 minor BOB release** announcing 3.10 deprecation in the changelog and `--help`.
+- **+ 1 minor BOB release** drops 3.10 from CI and bumps `python_requires` in `pyproject.toml`.
+
+The intent: at least 6 months of advance notice before any drop, mirrored to distros (Debian stable freezes etc.). Packagers can rely on this policy to plan rebuilds.
+
+## Packaging (since v0.4.2)
+
+The repository ships everything a distro maintainer needs to package BOB:
+
+- **`man/bob.1`, `man/bob.conf.5`, `man/bob-profile.5`** — manual pages.
+- **`SECURITY.md`** — threat model + vulnerability disclosure policy.
+- **`debian/`** — Debian source package (3 binaries: `bob-core`, `bob-tui`, `bob` meta-package). Tested with `debhelper-compat (= 13)` and `pybuild-plugin-pyproject`. Lintian-clean target (one info-level override possible for `binary-without-manpage` on `bob` meta-package which has no executable of its own).
+- **`debian/apparmor.d/bob`** — AppArmor profile (shipped in `complain` mode by default, opt-in `enforce`).
+- **`packaging/rpm/bob.spec`** — Fedora / RHEL RPM spec built on `pyproject-rpm-macros`. Targeted at Fedora COPR for the initial distribution.
+
+Packaging contributions welcome — see `SECURITY.md` for the disclosure process if you find a security-relevant issue in the package itself.
 
 ---
 

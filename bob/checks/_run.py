@@ -13,9 +13,39 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 
-_CMD_TIMEOUT = 10  # seconds — shared across all check modules
+_CMD_TIMEOUT = 10  # seconds — default for short commands (ss, ufw, iptables, etc.)
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Timeout policy for subprocess calls
+# ---------------------------------------------------------------------------
+#
+# All subprocess.run() calls in BOB MUST pass a `timeout=` argument to bound
+# the worst-case audit duration. The shared default is `_CMD_TIMEOUT = 10`s.
+# Individual sites override when the command is known to take longer:
+#
+#   * 10s — default, used by `_run()` and most checks.
+#   * 15s — `find` (suid_audit), `apt-cache policy` (kernel_modules):
+#           filesystem walks / dpkg cache reads on slow disks.
+#   * 20s — `apt list --upgradable` (kernel_modules): apt's local DB read
+#           on systems with very large package lists.
+#   * 30s — `apt-get -s upgrade` (updates), `journalctl --since`
+#           (auth_log): legitimately slow on large package sets / long
+#           journal histories.
+#
+# Sites that override the default should keep the `timeout=` kwarg explicit
+# and add a brief comment justifying the value. There is no hard upper bound
+# in the helper itself (a user with a 10-minute fwupdmgr query could pass
+# `timeout=600`), but in practice no check exceeds 30s today.
+#
+# SECURITY note (cf. SECURITY.md trust boundaries — "subprocess output"):
+# every subprocess call MUST have a finite `timeout=`. A subprocess hanging
+# forever would block the entire audit. The grep target enforcing this is:
+#
+#   grep -rn "subprocess.run\(" bob/ | grep -v "timeout="   # must be empty
+#
+# ---------------------------------------------------------------------------
 
 # Force English output for all system commands so regexes work regardless
 # of the system locale (e.g. French UFW outputs "État : actif" instead of

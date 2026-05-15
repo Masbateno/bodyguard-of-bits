@@ -27,7 +27,7 @@ from bob.config import UserConfig
 from bob.display import build_risk_context_entries, print_audit_summary, print_correlations, print_exposure
 from bob.correlation import run_correlations
 from bob.exposure import compute_exposure
-from bob.compare import build_baseline, compute_delta, display_delta, load_baseline, save_baseline, _BASELINE_PATH
+from bob.compare import build_baseline, compute_delta, display_delta, load_baseline, save_baseline, BASELINE_PATH
 from bob.json_output import build_json_data
 from bob.output import print_banner
 from bob.profiles import load_profile
@@ -143,15 +143,15 @@ def _run(argv=None) -> int:
 
     if config.reset_baseline:
         require_root()
-        if _BASELINE_PATH.exists():
+        if BASELINE_PATH.exists():
             try:
-                _BASELINE_PATH.unlink()
-                print(f"Baseline deleted: {_BASELINE_PATH}")
+                BASELINE_PATH.unlink()
+                print(f"Baseline deleted: {BASELINE_PATH}")
             except OSError as exc:
                 print(f"Error: could not delete baseline: {exc}", file=sys.stderr)
                 return EXIT_ERROR
         else:
-            print(f"No baseline found at {_BASELINE_PATH}")
+            print(f"No baseline found at {BASELINE_PATH}")
         return EXIT_OK
 
     require_root()
@@ -207,6 +207,7 @@ def _run(argv=None) -> int:
                 return run_watch(
                     config, config.watch_interval, t, output,
                     registry, active_profile, VERSION,
+                    user_config=user_config,
                 )
 
             prev_baseline   = load_baseline()

@@ -29,6 +29,7 @@ from bob.sysinfo import detect_network_context
 
 if TYPE_CHECKING:
     from bob.cli import AuditConfig
+    from bob.config import UserConfig
     from bob.profiles import AuditProfile
     from bob.registry import ServiceRegistry
 
@@ -48,12 +49,18 @@ def run_watch(
     registry: "ServiceRegistry",
     active_profile: "AuditProfile",
     VERSION: str,
+    user_config: "UserConfig | None" = None,
 ) -> int:
     """
     Watch mode main loop.
 
     Runs a quiet audit every `interval` seconds and prints only changes.
     Blocks until Ctrl+C.
+
+    Args:
+        user_config: User configuration (forwarded to run_checks so the SUID
+                     whitelist and other user-configured behavior match the
+                     non-watch audit path).
 
     Returns:
         0 on clean exit (Ctrl+C).
@@ -80,6 +87,7 @@ def run_watch(
             result = run_checks(
                 watch_cfg, t, engine, _NullReport(), registry, network_context,
                 profile=active_profile,
+                user_config=user_config,
             )
             engine.finalize()
             from bob.domain_scores import apply_domain_score_override as _apply_dso

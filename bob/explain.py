@@ -190,6 +190,12 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Firewall Logging", [
         "firewall.logging_off",
+        # TODO (v0.4.3): add firewall.inactive, firewall.policy_open,
+        # firewall.policy_unknown, prerequisites.ufw_missing here. Already
+        # used as Finding.key (v0.4.2 audit C1 fix) so --ignore / profiles /
+        # JSON matching work — but `bob --explain firewall.policy_open` still
+        # says "not found". Requires writing title/why/how i18n entries in
+        # both en.json and fr.json, plus CIS refs. ~30 min of doc work.
     ]),
     ("TLS / SSL Certificates", [
         "ssl_certs.expired",

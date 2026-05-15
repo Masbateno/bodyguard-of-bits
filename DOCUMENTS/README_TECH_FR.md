@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.4.1-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.4.2-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
@@ -582,6 +582,41 @@ sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
 ```
 
 Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--explain` — elles ne changeront pas sans bump majeur du schéma.
+
+---
+
+## Politique de support Python
+
+> **Engagement public stable** — ces règles régissent quand BOB abandonne le support d'un ancien Python.
+
+BOB supporte les versions Python **N et N-2**, où **N** est la stable upstream actuelle. À partir de v0.4.2 :
+
+| Python | Statut |
+|---|---|
+| 3.13 | ✅ supporté (à la sortie — à tester) |
+| 3.12 | ✅ supporté (cible de développement actuelle, CI par défaut) |
+| 3.11 | ✅ supporté |
+| 3.10 | ✅ supporté (le plus ancien actuellement supporté) |
+| 3.9  | ❌ end of life (abandonné en v0.2.3) |
+
+Quand Python 3.14 sortira upstream (~fin 2025), Python 3.10 entrera en fenêtre de dépréciation :
+- **+ 1 release minor BOB** avec 3.10 et 3.14 en CI pour valider.
+- **+ 1 release minor BOB** annonçant la dépréciation 3.10 dans le changelog et `--help`.
+- **+ 1 release minor BOB** retire 3.10 de la CI et bump `python_requires` dans `pyproject.toml`.
+
+L'intention : au moins 6 mois de préavis avant tout abandon, miroir des gels distros (Debian stable etc.). Les packagers peuvent compter sur cette politique pour planifier leurs rebuilds.
+
+## Packaging (depuis v0.4.2)
+
+Le dépôt livre tout ce qu'il faut à un mainteneur distro pour packager BOB :
+
+- **`man/bob.1`, `man/bob.conf.5`, `man/bob-profile.5`** — pages de manuel.
+- **`SECURITY.md`** — threat model + politique de disclosure de vulnérabilités.
+- **`debian/`** — paquet source Debian (3 binaires : `bob-core`, `bob-tui`, `bob` meta-package). Testé avec `debhelper-compat (= 13)` et `pybuild-plugin-pyproject`. Cible lintian-clean (un override info-level possible sur `binary-without-manpage` pour le meta-package `bob` qui n'a pas d'exécutable propre).
+- **`debian/apparmor.d/bob`** — profil AppArmor (livré en mode `complain` par défaut, `enforce` opt-in).
+- **`packaging/rpm/bob.spec`** — spec RPM Fedora / RHEL bâti sur `pyproject-rpm-macros`. Ciblé Fedora COPR pour la distribution initiale.
+
+Contributions packaging bienvenues — voir `SECURITY.md` pour le processus de disclosure si vous trouvez un problème sécurité dans le packaging lui-même.
 
 ---
 

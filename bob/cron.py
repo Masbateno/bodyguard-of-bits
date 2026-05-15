@@ -20,11 +20,11 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
-
-_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 from typing import Optional
 
 from bob._tty import read_line as _rl
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
 CRON_DIR = Path("/etc/cron.d")
 SCRIPT_DIR = Path("/usr/local/bin")

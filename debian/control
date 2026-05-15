@@ -1,0 +1,77 @@
+Source: bodyguard-of-bits
+Section: admin
+Priority: optional
+Maintainer: Cédric Clauzel <cedricclauzel30@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-setuptools,
+ python3-pytest <!nocheck>,
+Standards-Version: 4.7.0
+Homepage: https://github.com/Masbateno/bodyguard-of-bits
+Vcs-Browser: https://github.com/Masbateno/bodyguard-of-bits
+Vcs-Git: https://github.com/Masbateno/bodyguard-of-bits.git
+Rules-Requires-Root: no
+
+Package: bob-core
+Architecture: all
+Depends:
+ ${python3:Depends},
+ ${misc:Depends},
+ python3 (>= 3.10),
+Recommends:
+ ufw,
+ iproute2,
+ systemd,
+Suggests:
+ fail2ban,
+ rkhunter,
+ clamav,
+ auditd,
+ aide,
+ unattended-upgrades,
+ smartmontools,
+ apparmor,
+ fwupd,
+Description: Linux hardening auditor (CIS benchmark mapping) — core package
+ BOB (Bodyguard Of Bits) audits a Linux system against a curated set of
+ hardening checks (firewall, SSH, kernel sysctl, services, file permissions,
+ MAC policy, auditd, …) and reports findings with severity levels.
+ .
+ BOB is audit-only: it does not modify system state without explicit user
+ confirmation. A --fix mode prompts before each remediation; --offline
+ disables all outbound network calls for air-gapped environments.
+ .
+ This package ships the core audit pipeline and the headless CLI. For the
+ interactive curses TUI (--install-cron / --manage-cron / --manage-logs
+ wizards), install the optional bob-tui package as well.
+
+Package: bob
+Architecture: all
+Depends:
+ bob-core (= ${binary:Version}),
+ ${misc:Depends},
+Description: Linux hardening auditor (CIS benchmark mapping) — meta-package
+ Convenience meta-package pulling in both bob-core and bob-tui for a
+ full BOB installation. Most users want this package.
+ .
+ See bob-core (the audit engine without the curses TUI) and bob-tui
+ (the interactive wizards) for split installations, e.g. in minimal
+ containers or build sandboxes where curses is unwanted.
+
+Package: bob-tui
+Architecture: all
+Depends:
+ bob-core (= ${binary:Version}),
+ ${python3:Depends},
+ ${misc:Depends},
+ python3-curses-pyx:any | python3:any,
+Description: Linux hardening auditor (CIS benchmark mapping) — curses TUI
+ Optional curses-based interactive wizards for BOB: --install-cron,
+ --manage-cron, --manage-logs, the interactive --explain picker, and
+ future TUI flows.
+ .
+ Install this on workstations where the interactive flows are wanted.
+ Headless servers and CI runners typically only need bob-core.

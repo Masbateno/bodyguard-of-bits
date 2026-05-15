@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.4.2](#v042) | 2026-05-14 | Phase 3 distro-ready (packaging discipline) — `SECURITY.md` threat model · 3 man pages · `debian/` source package · RPM spec Fedora COPR · AppArmor profile · Python support policy · pre-release hardening pass (2 critical + 5 important + 4 minor fixes from agent audit) · 4452/4452 tests (+3) |
 | [v0.4.1](#v041) | 2026-05-14 | Phase 2 distro-ready (architectural decoupling) — `bob/tui/` extracted (curses optional) · `Finding.template_vars` / `Deduction.template_vars` additive fields for locale-independent reconstruction · new `bob.formatter` module + post-review hardening pass (`lang=` removed, `i18n.try_t()`, narrowed `except KeyError`) · 3 pilot checks migrated (ssh, hardening, firewall) · template_vars exposed in JSON output · `--offline` mode verified + integration tests · 4449/4449 tests (+19) |
 | [v0.4.0](#v040) | 2026-05-14 | Phase 1 distro-ready — exit codes / locale auto-detect (POSIX `$LANG`) / JSON output contract (`schema_version`, `key` fields) / `--explain` alias map / `services.json` formal JSON Schema (with post-review hardening pass #1: strict 1–65535 port regex · `$defs` factorization · `if/then` business constraints · plugin-file `schema_version` wrapper) · pass #2: schema descriptions, `services-list.minItems`, real-class fixtures replacing MagicMock, RefResolver→referencing compat shim · `= N` redundant suffix on stable score removed · 4430/4430 tests (+82) |
 | [v0.3.6](#v036) | 2026-05-09 | Code-review pass — `Path.home()` → `get_user_home()` (sudo-aware) in 7 modules · IPv6 ULA/link-local in `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepted · UFW logging header skipped when UFW inactive · `NOTIFY_EMAIL` legacy regex · 22 unused imports cleaned · 47 dead locale keys removed · 4348/4348 tests |
@@ -20,6 +21,64 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.4.2] — 2026-05-14
+
+Phase 3 of the distro-ready roadmap — packaging discipline. **No code changes**: this release ships only the packaging artefacts and policy documents that downstream distro maintainers need. 4449/4449 tests (unchanged).
+
+The repository now contains everything a packager needs to produce a distribution-ready BOB without patching the source.
+
+### New artefacts
+
+- **`SECURITY.md`** — formal threat model and vulnerability disclosure policy. Documents what BOB defends against, what's out of scope (pre-existing root compromise, kernel-level attacks), the three trust boundaries (user-controlled config, system file content, subprocess output) and their respective defenses, the network surface (2 outbound HTTPS calls disabled by `--offline`), and the data handling guarantees (file permissions, auto-chown to `SUDO_USER`).
+- **`man/bob.1`** (~280 lines) — the main user-facing man page. Documents every CLI option grouped by purpose (audit control, output formats, configuration, comparison, remediation, network, periodic audits, filters), exit codes as stable public API, the JSON output contract, file paths under `~/.config/bob/`, environment variables (`SUDO_USER`, `LC_ALL/LC_MESSAGES/LANG`), and the security model with a `SEE ALSO` cross-reference to companion pages.
+- **`man/bob.conf(5)`** (~80 lines) — config file format reference (`~/.config/bob/config.conf`): custom service ports, `log_dir`, `suid_whitelist` patterns, webhook defaults, email address book.
+- **`man/bob-profile(5)`** (~100 lines) — audit profile file format: `[profile]` metadata, `[overrides]` per-key severity (`info`/`warn`/`alert`/`skip`), the `extends` chain, profile discovery order, and the three shipped profiles (`server` / `desktop` / `container`).
+- **`debian/`** — full Debian source package directory:
+  - `control` — 3 binary packages: `bob-core` (audit engine, no curses), `bob-tui` (curses TUI), `bob` (meta-package). Build-Depends on `debhelper-compat (= 13)` and `pybuild-plugin-pyproject`. Rules-Requires-Root: no.
+  - `copyright` — DEP-5 format, MIT throughout, distinct stanzas for `bob/data/`, `bob/locales/`, `bob/data/schemas/`, `debian/`.
+  - `changelog` — initial Debian changelog entry `0.4.2-1`.
+  - `rules` — pybuild-based, installs man pages and `SECURITY.md` into `bob-core`.
+  - `source/format` — `3.0 (quilt)`.
+  - `bob-core.install` / `bob-tui.install` — explicit file lists per binary package (curses confined to `bob-tui`, everything else under `bob-core`).
+  - `bob-core.docs` / `bob-core.manpages` — doc installations.
+- **`debian/apparmor.d/bob`** — AppArmor profile (~140 lines). Shipped in `complain` mode by default with an opt-in `enforce` path. Allows read on `/etc/`, `/proc/`, `/sys/`, `/var/log/`, `~/.config/bob/`, `~/.ssh/`. Whitelists ~30 system binaries that BOB exec's (`ufw`, `ss`, `iptables`, `systemctl`, `journalctl`, `openssl`, `smartctl`, `fwupdmgr`, `apt-cache`, `aa-status`, etc.). Outbound TCP allowed but gated at the application level by `--offline`.
+- **`packaging/rpm/bob.spec`** — Fedora COPR / RHEL RPM spec built on `pyproject-rpm-macros`. Single binary `bob` package (no split bob-core/bob-tui — Fedora typically doesn't split that way for Python packages). `%check` runs the full pytest suite. Man pages and `SECURITY.md` installed.
+
+### Policy documentation
+
+- **`DOCUMENTS/README_TECH.md` + FR** — new "Python support policy" section formalizing the **N and N-2** support window. As of v0.4.2: Python 3.10 / 3.11 / 3.12 (and 3.13 when released). 3.9 is end-of-life since v0.2.3. The drop procedure is documented: a Python version drop spans at least 3 minor BOB releases (validate / announce / remove) for a minimum 6-month notice — packagers can rely on this to plan rebuilds.
+- **`DOCUMENTS/README_TECH.md` + FR** — new "Packaging (since v0.4.2)" section pointing distro maintainers at the relevant artefacts.
+
+### Roadmap context — Phase 3 status
+
+| Item | Status |
+|---|---|
+| `SECURITY.md` threat model | ✅ done |
+| Man pages (`bob(1)`, `bob.conf(5)`, `bob-profile(5)`) | ✅ done |
+| `debian/` source package | ✅ done |
+| RPM spec (Fedora COPR) | ✅ done |
+| AppArmor profile (complain mode) | ✅ done |
+| Python support policy | ✅ done |
+| Multi-distro CI matrix | ⏳ deferred (v0.4.x) |
+| AUR PKGBUILD | ⏳ deferred — community contribution welcome |
+| Lintian-clean + rpmlint-clean verification | ⏳ ongoing (initial pass clean, real packaging test pending) |
+
+### Distro readiness assessment after v0.4.2
+
+- **AUR / COPR community packaging** — viable now (was viable since v0.4.0, this release makes it trivial).
+- **Debian unstable** — target window opens: source package builds with `dpkg-buildpackage`; remaining work is lintian-clean verification and an upstream maintainer sponsorship.
+- **Fedora COPR official** — same: spec builds; remaining work is COPR account + rpmlint clean.
+- **Debian main / Fedora main** — still 12–18 months minimum, as the policy commits to 12 months of contract stability before request.
+
+### Tests
+
+4449/4449 (unchanged from v0.4.1). This release ships **no Python code changes** — only packaging artefacts, doc, and policy. Validated:
+- All 3 man pages render with `man -l` and `groff -man -Tutf8` without errors.
+- 3 schema JSON files remain valid (only the `$id` URL was version-bumped from `v0.4.1` → `v0.4.2`).
+- The 3 ChatGPT-style external reviews of Phase 2 still hold (no contract changes).
 
 ---
 

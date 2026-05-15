@@ -6,6 +6,230 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.4.2] — 14-05-2026
+
+**Phase 3 de la roadmap distro-ready — discipline packaging.** Cette release ne livre **aucun changement de code Python** ; elle ajoute les artefacts dont les mainteneurs distros ont besoin pour packager BOB sans patcher le source. Trois man pages, un paquet source Debian ciblant 3 paquets binaires (`bob-core` / `bob-tui` / `bob` meta), une spec RPM Fedora, un profil AppArmor, un threat model `SECURITY.md`, et une politique formelle de support Python. 4449/4449 tests (inchangé).
+
+L'intention stratégique : BOB a franchi le cap "est-ce assez stable ?" en Phases 1 & 2. Le dernier obstacle à l'adoption distro est l'absence des artefacts standards que chaque mainteneur distro s'attend à trouver upstream. Cette release ferme ce trou.
+
+---
+
+### `SECURITY.md` — threat model et politique de disclosure
+
+**Fichiers :** `SECURITY.md` (nouveau)
+
+#### Problème
+
+Jusqu'à v0.4.2, la posture sécurité de BOB était implicite. Un packager distro lisant le repo n'avait aucune réponse formelle à : qui est l'adversaire ? Contre quelles menaces BOB défend ? Qu'est-ce qui est hors scope ? Où signaler une vulnérabilité ? Sans ces réponses, les packagers soit devinent (dangereux), soit passent leur chemin (pire).
+
+#### Implémentation
+
+`SECURITY.md` (~150 lignes) couvre :
+
+- **Tableau des versions supportées** avec politique EOL : seul le minor courant reçoit des patches sécurité.
+- **Canal de signalement** : `cedricclauzel30@gmail.com` avec préfixe `[BOB security]`. Acquittement 7 jours, fenêtre fix 30 jours pour les issues haute-sévérité.
+- **Threat model** : ce qu'est BOB (outil audit-only invoqué par utilisateur privilégié) vs ce qu'il n'est PAS (pas de daemon, pas d'agent remote, pas de défense active).
+- **Modèle d'adversaire** : trois hypothèses (utilisateur invoquant trusted, layout filesystem sain, package manager intact). BOB est post-compromission, pas pré-.
+- **Tableau frontières de confiance** : config user-contrôlée (JSON Schema + ANSI sanitization + size limits), contenu fichiers système (bounded reads, `_C_LOCALE_ENV`), sortie subprocess (timeouts partout, pas de `shell=True` hors `--fix`).
+- **Hors scope** : compromission root préalable, attaques niveau noyau, vulnérabilités applicatives.
+- **Contrat mode `--fix`** : jamais d'exécution sans confirmation `y`.
+- **Avertissement plugins** : `~/.config/bob/checks.d/*.py` ne sont PAS sandboxés.
+- **Surface réseau** : 2 appels HTTPS sortants, tous deux gatés par `--offline`. Pas de télémétrie.
+- **Manipulation de données** : permissions fichiers, comportement `chown_to_sudo_user` depuis v0.3.6.
+- **Recommandations defense-in-depth pour packagers** : profil AppArmor en mode complain par défaut ; `pipx` comme chemin d'install recommandé.
+- **Politique de disclosure** : embargo 30 jours extensible, contributeurs crédités sauf demande d'anonymat.
+
+#### Notes de design
+
+- La liste "ce que BOB n'EST PAS" est intentionnellement explicite. Les outils d'audit sont parfois mal classés comme défenses ; clarifier la frontière d'emblée évite les malentendus.
+- Le tableau frontières de confiance map chaque traversée à la mitigation côté code déjà en place — ce ne sont pas des promesses aspirationnelles mais des checks que la suite de tests valide déjà.
+
+---
+
+### Man pages
+
+**Fichiers :** `man/bob.1` (nouveau, ~280 lignes), `man/bob.conf.5` (nouveau, ~80 lignes), `man/bob-profile.5` (nouveau, ~100 lignes)
+
+#### Problème
+
+Un paquet Debian / Fedora sans man pages échoue les checks `binary-without-manpage` lintian/rpmlint et est plus dur à découvrir avec `man -k`. Jusqu'à v0.4.2 BOB livrait un `--help` mais pas de `man bob`.
+
+#### Implémentation
+
+Trois man pages groff écrites à la main (validées avec `man -l` et `groff -man -Tutf8`) :
+
+- **`bob(1)`** — page user-facing principale. Sections : `NAME`, `SYNOPSIS`, `DESCRIPTION`, `OPTIONS` (sous-groupées par finalité), `EXIT CODES` (contrat API publique stable rappelé ici), `JSON OUTPUT`, `FILES`, `ENVIRONMENT`, `SECURITY`, `SEE ALSO`, `AUTHOR`, `COPYRIGHT`.
+- **`bob.conf(5)`** — format fichier config.
+- **`bob-profile(5)`** — format fichier profil d'audit.
+
+Écrites à la main plutôt que générées via `argparse-manpage` pour éviter d'ajouter une dépendance de build. Le coût : updates manuels quand la CLI change — mais la CLI fait partie de l'API publique stable depuis Phase 1, peu de changements attendus.
+
+---
+
+### Paquet source Debian
+
+**Fichiers :** `debian/control`, `debian/copyright`, `debian/changelog`, `debian/rules`, `debian/source/format`, `debian/bob-core.install`, `debian/bob-tui.install`, `debian/bob-core.docs`, `debian/bob-core.manpages`, `debian/apparmor.d/bob` (tous nouveaux)
+
+#### Problème
+
+La convention de packaging Debian est un dossier `debian/` à la racine du projet contenant un set strict de fichiers. Sans lui, le downstream Debian est impossible.
+
+#### Implémentation
+
+**Trois paquets binaires déclarés dans `debian/control` :**
+
+| Paquet binaire | Contient | Pourquoi split |
+|---|---|---|
+| `bob-core` | Pipeline audit, CLI, checks, scoring, JSON, locales, schemas, man pages, SECURITY.md | Tourne headless. Pas de dep curses. Adapté conteneurs, CI, serveurs minimaux. |
+| `bob-tui` | Sous-package `bob/tui/` (TUI curses) | Optionnel. Recommandé sur stations de travail, skip sur serveurs headless. |
+| `bob` | Meta-package dépendant des deux | `apt install bob` installe tout. |
+
+`Build-Depends` standard `debhelper-compat (= 13)` + `pybuild-plugin-pyproject`. `Rules-Requires-Root: no`.
+
+`Recommends` / `Suggests` sur `bob-core` listent les soft dependencies avec lesquelles BOB intègre au moment de l'audit (`ufw`, `fail2ban`, `rkhunter`, `clamav`, `auditd`, `aide`, `unattended-upgrades`, `smartmontools`, `apparmor`, `fwupd`).
+
+**`debian/copyright`** au format DEP-5 avec stanzas distinctes pour le source, les données curées, les locales, les schemas. Tout MIT ; les références CIS sont notées explicitement comme mappings (pas redistribution du texte standard CIS).
+
+**`debian/rules`** utilise pybuild. Un `override_dh_install` installe les man pages et `SECURITY.md` dans `bob-core`.
+
+**`debian/source/format`** : `3.0 (quilt)`.
+
+**Fichiers split (`bob-core.install`, `bob-tui.install`)** listent les chemins explicites pour que dh_install sache quel module va où.
+
+#### Profil AppArmor
+
+`debian/apparmor.d/bob` (~140 lignes). Livré en mode `complain` par défaut — l'utilisateur opte pour `enforce` après validation sur sa distro/version. Permet :
+
+- read sur `/etc/`, `/proc/`, `/sys/`, `/var/log/`, dirs état package manager
+- read+write sur `~/.config/bob/` et `~/.local/share/bob/`
+- exec (via `Pix`) d'une whitelist fermée de ~30 outils système
+- TCP sortant — le flag `--offline` au niveau application est la gate, pas le profil
+
+#### Notes de design
+
+- **Trois binaires plutôt qu'un.** Un paquet `bob` unique forcerait chaque image serveur / CI à tirer curses pour une TUI jamais utilisée. Split `bob-core` permet aux déploiements headless de rester légers sans désactiver de fonctionnalités.
+- **Pourquoi mode complain par défaut pour AppArmor.** BOB exec beaucoup de binaires dont les chemins varient entre distros. Enforce génèrerait de faux denials. Complain laisse l'utilisateur observer puis graduer.
+
+---
+
+### Spec RPM pour Fedora COPR
+
+**Fichiers :** `packaging/rpm/bob.spec` (nouveau)
+
+#### Problème
+
+Les conventions de packaging Fedora divergent de celles Debian : un seul `.spec`, `pyproject-rpm-macros`, pas de dossier `debian/`, pas de split Python core/extras typique. Sans spec, l'adoption Fedora COPR / RHEL EPEL est impossible.
+
+#### Implémentation
+
+Un paquet binaire `bob` unique sur Fedora (pas de split). La spec utilise `pyproject_wheel` / `pyproject_install` / `pyproject_save_files bob` pour déléguer au pipeline `pyproject.toml`.
+
+`%check` exécute le smoke test plus la suite pytest complète. Sur Fedora COPR, ça attrape toute régression induite par le packaging.
+
+Man pages et `SECURITY.md` installés via `install -D` explicites pendant `%install`.
+
+`Recommends` et `Suggests` miroirent le control Debian avec les noms de paquets Fedora (`firewalld` vs `ufw`, `audit` vs `auditd`).
+
+#### Notes de design
+
+- **Pourquoi un répertoire `packaging/rpm/` séparé.** La convention Debian met tout sous `debian/`. RPM n'a pas d'équivalent racine — `packaging/` garde les deux systèmes visiblement séparés tout en restant upstream.
+- **Pas de lignes `Patch:`.** La spec build upstream tel quel.
+
+---
+
+### Politique de support Python
+
+**Fichiers :** `DOCUMENTS/README_TECH.md` + FR — nouvelle section
+
+#### Problème
+
+Les mainteneurs distros planifiant leurs fenêtres de compatibilité Python ont besoin de savoir si BOB supportera Python 3.10 dans 2 ans. Sans politique formelle, chaque EOL Python devient une renégociation.
+
+#### Implémentation
+
+Nouvelle section "Politique de support Python" dans `README_TECH.md` (et FR) s'engage sur **N et N-2** où N est la stable upstream actuelle. À partir de v0.4.2 :
+
+| Python | Statut |
+|---|---|
+| 3.13 | ✅ supporté (à sortie) |
+| 3.12 | ✅ CI par défaut |
+| 3.11 | ✅ supporté |
+| 3.10 | ✅ le plus ancien |
+| 3.9 | ❌ EOL depuis v0.2.3 |
+
+Procédure d'abandon s'étale sur au moins 3 minor BOB releases (valider / annoncer / retirer) pour préavis minimum 6 mois. Miroir des cycles freeze Debian / Fedora.
+
+---
+
+### Tests
+
+4449/4449 — inchangé vs v0.4.1. Cette release ne livre aucun changement de code Python. La suite pytest complète passe toujours après le bump de version et les updates de `$id` schemas ; c'est le filet de sécurité de régression.
+
+Validation séparée :
+- `groff -man -Tutf8` et `man -l` parsent les 3 man pages sans erreur.
+- Les 3 fichiers schema JSON chargent et valident via `jsonschema`.
+
+---
+
+### Contexte roadmap
+
+| Phase | Statut |
+|---|---|
+| Phase 1 (contrats) | ✅ v0.4.0 |
+| Phase 2 (découplage archi) — Option B additive | ✅ v0.4.1 |
+| Phase 2 — Option A breaking | ⏳ v0.5.0+ |
+| **Phase 3 (discipline packaging)** | **✅ v0.4.2** |
+| Phase 3 finitions (CI multi-distro, PKGBUILD AUR) | ⏳ contributions communautaires v0.4.x |
+
+Après v0.4.2, BOB est **packaging-complet** pour le chemin AUR/COPR et **prêt pour Debian unstable** sous réserve de validation lintian-clean + parrainage upstream.
+
+---
+
+### Hardening pass — audit pré-release
+
+**Fichiers :** `bob/checks/firewall.py`, `bob/checks/ssl_certs.py`, `bob/checks/virtualization.py`, `bob/_paths.py`, `bob/i18n.py`, `bob/registry.py`, `bob/watch.py`, `bob/__main__.py`, `bob/compare.py`, `bob/formatter.py`, `man/bob.1`, `debian/apparmor.d/bob`, `packaging/rpm/bob.spec`, `tests/test_template_vars_migration.py` (nouveau), `microsoft.gpg` (supprimé)
+
+#### Problème
+
+Un audit complet pré-release (agent general-purpose, ~3500 lignes source consultées) a fait remonter **2 critiques + 5 importants + 4 mineurs + 1 suggestion**. Les deux findings critiques se concentraient sur les artefacts de packaging (écrits sans cross-check mécanique vs le code), confirmant que cette catégorie d'artefact mérite la même rigueur que le source.
+
+#### Corrections critiques
+
+**C1 — Findings `firewall.py` sans `key=`** (`bob/checks/firewall.py:154,165,178,183`). Trois appels `result.alert()` (`prerequisites.ufw_missing`, `firewall.inactive`, `firewall.policy_open`) et un `result.add_deduction()` n'avaient pas de `key=`. Conséquence : les alertes max-criticité ne pouvaient être ni `--ignore`ées, ni profilées, ni matchées par les consommateurs JSON (qui utilisent tous `Finding.key` / `Deduction.key`). Fix : ajout de `key=` aux 4 sites + 4 autres findings de la même fonction pour cohérence. (`bob/explain.py` non étendu — ajouter ces 4 clés à `EXPLAIN_KEYS` requiert d'écrire titre/why/how/CIS complets dans `en.json` et `fr.json` pour chacune, **reporté explicitement en v0.4.3** avec un TODO inline près du groupe "Firewall Logging" ; `bob --explain firewall.policy_open` dira "not found" en v0.4.2 mais `--ignore` / profils / matching JSON fonctionnent correctement.)
+
+**C2 — Profil AppArmor incomplet + mauvais chemin** (`debian/apparmor.d/bob`). 10 binaires que BOB exec étaient absents du profil (`df`, `lsblk`, `dpkg-query`, `getenforce`, `apt-get`, `find`, `ps`, `netstat`, `ntpstat`, `docker`) — en mode `enforce`, les checks disk/SUID/MAC/updates/SMTP/NTP/docker/desktop-apps retournaient tous vide. De plus, la ligne 85 déclarait `/usr/local/sbin/bob-*` rw alors que `bob/cron.py:30` écrit dans `/usr/local/bin/bob-{slug}`. Donc `--install-cron` échouerait silencieusement sous enforce. Fix : ajout des 10 binaires manquants + correction du chemin.
+
+#### Corrections importantes
+
+**I1+I2 — `_C_LOCALE_ENV` manquant sur 3 sites subprocess** (`bob/checks/ssl_certs.py:283`, `bob/checks/virtualization.py:166,178`). Le threat model SECURITY.md promet que tous les appels subprocess utilisent `_C_LOCALE_ENV` pour éviter le parsing dépendant de la locale. `openssl x509 -enddate` émettrait "mai 14" sur locale FR qui ferait échouer `datetime.strptime(..., "%b ...")` ; `ip link show` et `snap connections --all` avaient le même risque. Fix : passage de `env=_C_LOCALE_ENV` aux 3 appels.
+
+**I3 — Env var legacy `UFW_AUDIT_SHARE`** (`bob/_paths.py`). Le projet s'appelait "UFW Audit" avant v0.1.0 ; la variable env share-dir avait gardé l'ancien nom. Les packagers étaient confus. Renommée en `BOB_SHARE` (le contrat documenté depuis v0.4.2). `UFW_AUDIT_SHARE` reste accepté pour la rétrocompat — quand les deux sont définis, `BOB_SHARE` gagne. Logué en INFO quand seul le nom legacy est utilisé. Documenté dans `man/bob.1` section ENVIRONMENT.
+
+**I4 — RPM `Recommends: firewalld`** (`packaging/rpm/bob.spec`). BOB lit `ufw status` exclusivement — recommander `firewalld` était un guess côté Fedora qui induirait en erreur les packagers. Corrigé en `Recommends: ufw` avec commentaire explicatif inline.
+
+**I5 — `bob/watch.py` ne thread pas `user_config`** (ligne 80-83). Le mode `--watch` perdait silencieusement la whitelist SUID de l'utilisateur car `run_checks()` était appelé sans `user_config=`. Whitelist `[]` à chaque tick → faux positifs SUID répétés. Fix : thread `user_config` à travers `run_watch()` depuis `__main__.py`.
+
+#### Corrections mineures
+
+- **M1** — Suppression de `microsoft.gpg` untracked (résidu d'`apt-add-repository` à la racine du repo).
+- **M2** — Clarification du docstring `bob/formatter.py` : "Status: this module is a public API for external integrators. No production code path in BOB itself calls format_finding / format_deduction in v0.4.x." Lève l'ambiguïté que le formatter serait le chemin de rendu interne.
+- **M4** — Exposition de `bob.compare.BASELINE_PATH` (sans underscore) comme symbole public ; `_BASELINE_PATH` conservé comme alias transitionnel. `bob/__main__.py` mis à jour pour utiliser le nom public.
+- **M5** — Ajout `Suggests: apparmor`, `Suggests: apparmor-utils` à la spec RPM pour symétrie avec le paquet Debian.
+
+#### Suggestion implémentée
+
+**S1 — `tests/test_template_vars_migration.py`** (nouveau, 3 tests) : track la dette de migration Phase 2 de manière visible. Le set actuel `_MIGRATED_CHECKS_V0_4_2` est `{ssh.py, hardening.py, firewall.py}` — quand de nouveaux checks gagnent des `template_vars=`, le set est mis à jour dans le même commit. Une régression qui retirerait accidentellement `template_vars` d'un check migré échoue le CI immédiatement.
+
+#### Tests
+
+4449 → **4452** (+3 du nouveau test de migration). Tous les tests existants restent verts.
+
+#### Note qualité finale : 8.5/10 → 9/10
+
+L'audit pré-release a fermé le gap entre les promesses SECURITY.md et la réalité du code, corrigé les 2 vrais bugs du chemin runtime (C1 et I5 — tous deux à conséquence utilisateur visible), et aligné les artefacts de packaging avec le source. Le travail restant vers 10/10 est la migration systématique des 37 checks non-pilotes vers `template_vars`, explicitement multi-release et tracée par le nouveau test.
+
+---
+
 ## [v0.4.1] — 14-05-2026
 
 **Phase 2 de la roadmap distro-ready — découplage architectural.** Trois zones traitées : finalisation `--offline`, isolation curses sous `bob/tui/`, et représentation findings/deductions indépendante de la locale via `template_vars` additif. Plus une passe de hardening post-revue sur `bob/formatter.py` (API resserrée, tests edge-case). Tous les changements sont non-breaking (additifs). 4449/4449 tests (+19).

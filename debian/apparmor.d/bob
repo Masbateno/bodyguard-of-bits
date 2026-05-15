@@ -1,0 +1,159 @@
+#include <tunables/global>
+
+# AppArmor profile for BOB (Bodyguard Of Bits) — Linux hardening auditor.
+#
+# Default policy: complain (audit-only). Switch to enforce after validating
+# on your distro / version combination — BOB invokes many system tools and
+# each distro layouts paths slightly differently.
+#
+#   sudo aa-complain /etc/apparmor.d/bob   # default in this package
+#   sudo aa-enforce  /etc/apparmor.d/bob   # opt-in after testing
+#
+# Profile scope: BOB reads system state from /etc, /proc, /sys, /var/log,
+# /run, ~/.config/bob, ~/.ssh, and execs a closed whitelist of system tools
+# (ufw, ss, iptables, systemctl, journalctl, openssl, smartctl, fwupdmgr,
+# dpkg, apt-cache, aa-status, mokutil, bootctl, sysctl, ip, swapon, rkhunter,
+# clamscan, freshclam, vmstat). It writes only to ~/.config/bob/ and the
+# user-chosen log dir, plus a webhook over the network when configured.
+#
+# This profile MUST allow:
+#   - read on the entire /etc, /proc, /sys, /var/log tree
+#   - exec on the whitelisted tools
+#   - read on /usr/share/bob/* (data files installed by the package)
+#   - read+write on ~/.config/bob/ and the user-chosen log dir
+#   - network outbound (HTTPS) for the public IP lookup and webhook,
+#     unless --offline is in effect
+#
+# Lock-down opportunities (out of scope for v0.4.2):
+#   - confine to read-only on /etc /proc /sys (BOB never writes there)
+#   - deny exec of anything not on the whitelist
+
+/usr/bin/bob /usr/local/bin/bob /usr/lib/python3/dist-packages/bob/__main__.py {
+  #include <abstractions/base>
+  #include <abstractions/python>
+  #include <abstractions/openssl>
+  #include <abstractions/nameservice>
+
+  # --- Python interpreter and stdlib -------------------------------------
+  /usr/bin/python3*   ix,
+  /usr/lib/python3*/  r,
+  /usr/lib/python3*/**  r,
+  /etc/python3*/      r,
+  /etc/python3*/**    r,
+
+  # --- BOB package data --------------------------------------------------
+  /usr/share/bob/     r,
+  /usr/share/bob/**   r,
+  /usr/lib/python3*/dist-packages/bob/     r,
+  /usr/lib/python3*/dist-packages/bob/**   r,
+  /usr/lib/python3*/site-packages/bob/     r,
+  /usr/lib/python3*/site-packages/bob/**   r,
+
+  # --- System state reads ------------------------------------------------
+  /etc/                r,
+  /etc/**              r,
+  /proc/               r,
+  /proc/**             r,
+  /sys/                r,
+  /sys/**              r,
+  /var/log/            r,
+  /var/log/**          r,
+  /run/utmp            r,
+  /run/systemd/        r,
+  /run/systemd/**      r,
+  /var/lib/dpkg/       r,
+  /var/lib/dpkg/**     r,
+  /var/cache/apt/      r,
+  /var/cache/apt/**    r,
+  /var/lib/clamav/     r,
+  /var/lib/clamav/**   r,
+  /var/lib/rkhunter/   r,
+  /var/lib/rkhunter/** r,
+
+  # --- User home (config / logs) -----------------------------------------
+  owner @{HOME}/.config/bob/        rw,
+  owner @{HOME}/.config/bob/**      rwk,
+  owner @{HOME}/.local/share/bob/   rw,
+  owner @{HOME}/.local/share/bob/** rwk,
+  owner @{HOME}/.ssh/               r,
+  owner @{HOME}/.ssh/**             r,
+  # ssh client config & known_hosts only — never private keys actual reads
+  # (BOB only stat()s the files to check permissions).
+
+  # --- Cron install (system-wide, root only) -----------------------------
+  # Note: SCRIPT_DIR in bob/cron.py is /usr/local/bin (not /usr/local/sbin).
+  /etc/cron.d/bob-*    rw,
+  /usr/local/bin/bob-* rw,
+
+  # --- Whitelisted exec targets (system tools) ---------------------------
+  /usr/sbin/ufw           Pix,
+  /usr/bin/ss             Pix,
+  /usr/sbin/iptables      Pix,
+  /usr/sbin/ip6tables     Pix,
+  /usr/sbin/nft           Pix,
+  /bin/systemctl          Pix,
+  /usr/bin/systemctl      Pix,
+  /usr/bin/journalctl     Pix,
+  /usr/bin/openssl        Pix,
+  /usr/sbin/smartctl      Pix,
+  /usr/bin/fwupdmgr       Pix,
+  /usr/bin/dpkg           Pix,
+  /usr/bin/apt            Pix,
+  /usr/bin/apt-cache      Pix,
+  /usr/sbin/aa-status     Pix,
+  /usr/sbin/apparmor_status Pix,
+  /usr/sbin/sestatus      Pix,
+  /usr/bin/mokutil        Pix,
+  /usr/bin/bootctl        Pix,
+  /sbin/sysctl            Pix,
+  /usr/sbin/sysctl        Pix,
+  /sbin/ip                Pix,
+  /usr/bin/ip             Pix,
+  /sbin/swapon            Pix,
+  /usr/sbin/swapon        Pix,
+  /usr/bin/timedatectl    Pix,
+  /usr/bin/chronyc        Pix,
+  /usr/bin/rkhunter       Pix,
+  /usr/bin/chkrootkit     Pix,
+  /usr/bin/clamscan       Pix,
+  /usr/bin/clamdscan      Pix,
+  /usr/bin/freshclam      Pix,
+  /usr/bin/aide           Pix,
+  /usr/sbin/auditctl      Pix,
+  /usr/sbin/auditd        Pix,
+  /usr/sbin/fail2ban-client Pix,
+  /usr/sbin/postconf      Pix,
+  /usr/bin/snap           Pix,
+  /usr/bin/vmstat         Pix,
+  /usr/bin/who            Pix,
+  /usr/bin/last           Pix,
+  /usr/bin/uname          Pix,
+  /usr/bin/lsmod          Pix,
+  /sbin/lsmod             Pix,
+  # Added in v0.4.2 post-audit (binaries actually exec'd by checks):
+  /usr/bin/df             Pix,
+  /bin/df                 Pix,
+  /usr/bin/lsblk          Pix,
+  /bin/lsblk              Pix,
+  /usr/bin/dpkg-query     Pix,
+  /usr/sbin/getenforce    Pix,
+  /usr/bin/apt-get        Pix,
+  /usr/bin/find           Pix,
+  /usr/bin/ps             Pix,
+  /bin/ps                 Pix,
+  /usr/bin/netstat        Pix,
+  /bin/netstat            Pix,
+  /usr/bin/ntpstat        Pix,
+  /usr/bin/docker         Pix,
+
+  # --- Network (HTTPS for public IP lookup + webhook) --------------------
+  # Allow outbound; --offline mode is enforced at the application level.
+  network inet stream,
+  network inet6 stream,
+
+  # --- Misc ---------------------------------------------------------------
+  /dev/tty           rw,
+  /dev/null          rw,
+  /dev/urandom       r,
+  /tmp/**            rwk,
+}

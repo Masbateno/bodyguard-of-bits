@@ -1,0 +1,146 @@
+.\" Manpage for BOB audit profile files
+.TH BOB-PROFILE 5 "2026-05-14" "BOB 0.4.2" "File Formats"
+.SH NAME
+bob-profile \- BOB audit profile file format (severity overrides per finding key)
+.
+.SH SYNOPSIS
+.I ~/.config/bob/profiles/\fINAME\fI.conf
+.PP
+Built-in profiles (shipped with the package):
+.RS
+.IR bob/data/profiles/server.conf
+.PP
+.IR bob/data/profiles/desktop.conf
+.PP
+.IR bob/data/profiles/container.conf
+.RE
+.PP
+Selection: invoke
+.B bob --profile=NAME
+or set the default via the configuration file. User profiles override
+built-in profiles with the same name.
+.
+.SH DESCRIPTION
+An audit profile lets the operator adjust the severity of specific findings
+to match the deployment context. A
+.B desktop
+machine has different tradeoffs than a public-facing
+.BR server ;
+.B container
+images don't run an SSH server at all.
+.PP
+Each profile file is an INI-like text format with one or more sections.
+The
+.B [profile]
+section declares metadata; the
+.B [overrides]
+section maps finding keys to new severity levels.
+.PP
+A profile may
+.B extend
+another profile to inherit its overrides.
+.
+.SH FILE FORMAT
+.SS [profile]
+.TP
+.B name
+Profile identifier (e.g.
+.IR workstation ).
+Defaults to the file's basename without extension.
+.TP
+.B description
+Free-text description shown by
+.BR \-\-list-profiles .
+.TP
+.B extends
+.RB ( optional )
+Name of a parent profile to inherit from. Up to 5 levels of inheritance are
+allowed; cycles are detected and rejected at load time.
+.SS [overrides]
+One line per override:
+.PP
+.RS
+.B \fIfinding.key\fR = \fIlevel\fR
+.RE
+.PP
+where
+.I level
+is one of:
+.TP
+.B info
+Demote the finding to INFO. It no longer counts as a warning or an alert and
+does not deduct from the score.
+.TP
+.B warn
+Force WARN level (default for most checks).
+.TP
+.B alert
+Force ALERT level (counts as "action required" in the summary box and exit
+code 2).
+.TP
+.B skip
+Skip the finding entirely. The check still runs but no finding is emitted
+for this key.
+.PP
+Keys not listed in
+.B [overrides]
+keep their default severity.
+.
+.SH EXAMPLE
+.PP
+.I ~/.config/bob/profiles/headless-server.conf
+.PP
+.RS
+.EX
+[profile]
+name        = headless-server
+description = Server with no GUI: ignore desktop-only findings
+extends     = server
+
+[overrides]
+ssh.x11_forwarding             = skip
+ssh.allow_tcp_forwarding       = info
+hardening.dmesg_restrict       = warn
+.EE
+.RE
+.
+.SH PROFILE FILE DISCOVERY
+.B bob
+searches in this order:
+.PP
+.RS 4
+.IP 1. 4
+.IR ~/.config/bob/profiles/ \fINAME\fI.conf
+(user override, takes precedence)
+.IP 2. 4
+.IR bob/data/profiles/ \fINAME\fI.conf
+(built-in, shipped with the package)
+.RE
+.PP
+The first match wins.
+.
+.SH SHIPPED PROFILES (overview)
+.TP
+.B server
+Default. Strict on SSH, kernel hardening, auditd. Standard for internet-facing
+infrastructure.
+.TP
+.B desktop
+Relaxed: tolerant of X11 forwarding, ports bound to localhost only,
+.B fail2ban
+not enforced.
+.TP
+.B container
+Minimal scope: ignores SSH (containers usually don't run sshd), tolerates
+.BR send_redirects ,
+no MAC policy enforcement.
+.
+.SH SEE ALSO
+.BR bob (1),
+.BR bob.conf (5).
+.PP
+Full list of available finding keys:
+.B bob --explain list
+.PP
+Per-key documentation:
+.B bob --explain KEY

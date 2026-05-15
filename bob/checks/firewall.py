@@ -155,10 +155,11 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
             message=_t("prerequisites.ufw_missing"),
             nature="action",
             cmd="sudo apt install ufw",
+            key="prerequisites.ufw_missing",
         )
         return result  # nothing more to check
 
-    result.ok(message=_t("prerequisites.ufw_installed"))
+    result.ok(message=_t("prerequisites.ufw_installed"), key="prerequisites.ufw_installed")
 
     # --- UFW active ---
     if not status.active:
@@ -166,12 +167,13 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
             message=_t("firewall.inactive"),
             nature="action",
             cmd="sudo ufw enable",
+            key="firewall.inactive",
         )
         # Request a score cap — processed automatically by ScoreEngine.apply()
         result.set_cap(maximum=3, reason=_t("firewall.inactive"), key="firewall.inactive")
         return result
 
-    result.ok(message=_t("firewall.active"))
+    result.ok(message=_t("firewall.active"), key="firewall.active")
 
     # --- Default incoming policy ---
     if status.incoming_policy == "allow":
@@ -179,18 +181,21 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
             message=_t("firewall.policy_open"),
             nature="action",
             cmd="sudo ufw default deny incoming",
+            key="firewall.policy_open",
         )
         result.add_deduction(
             reason=_t("firewall.policy_open"),
             points=3,
             context="local",
+            key="firewall.policy_open",
         )
     elif status.incoming_policy == "deny":
-        result.ok(message=_t("firewall.policy_ok"))
+        result.ok(message=_t("firewall.policy_ok"), key="firewall.policy_ok")
     else:
         result.warn(
             message=_t("firewall.policy_unknown"),
             nature="improvement",
+            key="firewall.policy_unknown",
         )
 
     return result

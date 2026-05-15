@@ -11,6 +11,7 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.2 | 4452 | Phase 3 distro-ready (packaging discipline) + pre-release hardening pass — 2 critical + 5 important + 4 minor fixes from agent audit. +3 tests in new `test_template_vars_migration.py` |
 | v0.4.1 | 4449 | Phase 2 distro-ready (+19): `bob/tui/cron` extraction (0 new tests — covered by existing) · `--offline` integration (+3 in `test_webhook.py`) · `test_formatter.py` (14 new — locale-independent reconstruction + 4 edge cases post-review) · `test_json_schema.py` (+2 — `template_vars` field exposure) |
 | v0.4.0 | 4430 | Phase 1 distro-ready (+82): `TestDetectSystemLang` (12) · `TestExplainKeyAliases` + `TestExplainKeyFreezePolicy` (6) · `test_json_schema.py` (17 — incl. strict-set + constants-drift defense in depth) · `test_services_schema.py` (43 — incl. `$defs`, strict 1–65535 port regex, business constraints, plugin-file wrapper, `minItems: 1` on services-list) · 4 CLI locale integration |
 | v0.3.6 | 4348 | No new tests — code-review pass (sudo-aware `Path.home()`, IPv6 ULA, SSH `local`, dead imports/locales) |
@@ -27,6 +28,35 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.4.2 — 4452/4452 (2026-05-14)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4452 passed in 5.25s
+```
+
+**Net: +3.** Phase 3 distro-ready (packaging discipline) ships packaging artefacts — no Python code changes there. A separate pre-release hardening pass (agent audit) added small code fixes (firewall keys, `_C_LOCALE_ENV` on 3 sites, `watch.py` user_config threading, AppArmor binary list, `BOB_SHARE` rename with fallback) and one new test file `test_template_vars_migration.py` (3 tests) that tracks Phase 2 migration debt visibly.
+
+Separate validation:
+
+| Artefact | Validation command | Result |
+|---|---|---|
+| `man/bob.1` | `groff -man -Tutf8 man/bob.1 >/dev/null && man -l man/bob.1` | ✓ |
+| `man/bob.conf.5` | same | ✓ |
+| `man/bob-profile.5` | same | ✓ |
+| `bob/data/schemas/*.json` | `python3 -c "import json; json.load(open(f))"` × 3 | ✓ |
+| `debian/control` | manual review, syntax matches dh-make output | ✓ |
+| `debian/copyright` | DEP-5 format, manual review | ✓ |
+| `debian/rules` | executable (`chmod +x`), valid Makefile syntax | ✓ |
+| `debian/apparmor.d/bob` | manual review, paths cross-checked against `bob/checks/*` exec sites | ✓ |
+| `packaging/rpm/bob.spec` | manual review, `pyproject-rpm-macros` patterns | ✓ |
+
+Full `dpkg-buildpackage` + `lintian` + `rpmbuild` + `rpmlint` validation is deferred to the first community packaging attempt (AUR/COPR or first Debian unstable upload). Upstream commits to fixing any lintian/rpmlint issues reported in subsequent patch releases.
 
 ---
 

@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 _WARN_DAYS      = 30
@@ -283,6 +283,7 @@ def _read_cert_expiry(path: Path) -> tuple[Optional[int], str, Optional[str]]:
         proc = subprocess.run(
             ["openssl", "x509", "-enddate", "-noout", "-in", str(path)],
             capture_output=True, text=True, timeout=5,
+            env=_C_LOCALE_ENV,
         )
         if proc.returncode != 0:
             return None, "", (proc.stderr.strip() or "openssl error")

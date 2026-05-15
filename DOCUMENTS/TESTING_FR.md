@@ -11,6 +11,7 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.2 | 4452 | Phase 3 distro-ready (discipline packaging) + passe de hardening pré-release — 2 critiques + 5 importants + 4 mineurs corrigés depuis audit agent. +3 tests dans nouveau `test_template_vars_migration.py` |
 | v0.4.1 | 4449 | Phase 2 distro-ready (+19) : extraction `bob/tui/cron` (0 nouveau test — couvert par l'existant) · intégration `--offline` (+3 dans `test_webhook.py`) · `test_formatter.py` (14 nouveaux — reconstruction indépendante de la locale + 4 edge cases post-revue) · `test_json_schema.py` (+2 — exposition champ `template_vars`) |
 | v0.4.0 | 4430 | Phase 1 distro-ready (+82) : `TestDetectSystemLang` (12) · `TestExplainKeyAliases` + `TestExplainKeyFreezePolicy` (6) · `test_json_schema.py` (17 — incl. strict-set + defense-in-depth contre dérive des constantes) · `test_services_schema.py` (43 — incl. `$defs`, regex port stricte 1–65535, contraintes métier, wrapper plugin-file, `minItems: 1` sur services-list) · 4 intégration locale CLI |
 | v0.3.6 | 4348 | Aucun nouveau test — passe code review (`Path.home()` sudo-aware, ULA IPv6, SSH `local`, imports/locales morts) |
@@ -27,6 +28,35 @@ Chaque test vérifie que BOB détecte (et corrige) correctement une mauvaise con
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.4.2 — 4452/4452 (14-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4452 passed in 5.25s
+```
+
+**Net : +3.** Phase 3 distro-ready (discipline packaging) livre des artefacts de packaging — aucun changement code Python à ce niveau. Une passe de hardening pré-release séparée (audit agent) a ajouté de petits fix code (firewall keys, `_C_LOCALE_ENV` sur 3 sites, threading `user_config` dans `watch.py`, liste binaires AppArmor, renommage `BOB_SHARE` avec fallback) et un nouveau fichier de test `test_template_vars_migration.py` (3 tests) qui track visiblement la dette de migration Phase 2.
+
+Validation séparée :
+
+| Artefact | Commande de validation | Résultat |
+|---|---|---|
+| `man/bob.1` | `groff -man -Tutf8 man/bob.1 >/dev/null && man -l man/bob.1` | ✓ |
+| `man/bob.conf.5` | idem | ✓ |
+| `man/bob-profile.5` | idem | ✓ |
+| `bob/data/schemas/*.json` | `python3 -c "import json; json.load(open(f))"` × 3 | ✓ |
+| `debian/control` | revue manuelle, syntaxe correspond à sortie dh-make | ✓ |
+| `debian/copyright` | format DEP-5, revue manuelle | ✓ |
+| `debian/rules` | exécutable (`chmod +x`), syntaxe Makefile valide | ✓ |
+| `debian/apparmor.d/bob` | revue manuelle, chemins cross-checkés contre sites exec `bob/checks/*` | ✓ |
+| `packaging/rpm/bob.spec` | revue manuelle, patterns `pyproject-rpm-macros` | ✓ |
+
+Validation complète `dpkg-buildpackage` + `lintian` + `rpmbuild` + `rpmlint` reportée à la première tentative de packaging communautaire (AUR/COPR ou premier upload Debian unstable). Upstream s'engage à corriger tout issue lintian/rpmlint signalée dans les patch releases suivantes.
 
 ---
 

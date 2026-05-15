@@ -28,7 +28,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
 from bob.scoring import CheckResult
 
 logger = logging.getLogger(__name__)
@@ -166,6 +166,7 @@ def _get_network_interfaces() -> list[str]:
         result = subprocess.run(
             ["ip", "link", "show"],
             capture_output=True, text=True, timeout=5,
+            env=_C_LOCALE_ENV,
         )
         return re.findall(r"^\d+:\s+(\S+):", result.stdout, re.MULTILINE)
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
@@ -178,6 +179,7 @@ def _get_snap_network_packages() -> list[str]:
         result = subprocess.run(
             ["snap", "connections", "--all"],
             capture_output=True, text=True, timeout=10,
+            env=_C_LOCALE_ENV,
         )
         pkgs = []
         for line in result.stdout.splitlines():

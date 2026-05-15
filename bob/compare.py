@@ -43,6 +43,11 @@ _CONFIG_DIR    = get_user_home() / ".config" / "bob"
 _BASELINE_FILENAME = "last_baseline.json"
 _BASELINE_PATH = _CONFIG_DIR / _BASELINE_FILENAME
 
+# Public alias — external code should reference this instead of the underscore
+# version. Kept side-by-side so existing callers (bob.__main__) keep working
+# during the migration. The underscore form may be removed in a future major.
+BASELINE_PATH = _BASELINE_PATH
+
 
 # ---------------------------------------------------------------------------
 # Data structures

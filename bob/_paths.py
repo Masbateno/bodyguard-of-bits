@@ -2,6 +2,16 @@
 Shared path resolution for BOB installed data files.
 
 Used by i18n.py and registry.py to locate locale and service data files.
+
+Environment variable contract
+-----------------------------
+``BOB_SHARE`` (preferred) — absolute path to the directory containing BOB's
+shipped data (locales/, data/, …). Set by the installer entry point (typically
+to ``/usr/local/share/bob`` or ``/usr/share/bob`` for distro packages).
+
+``UFW_AUDIT_SHARE`` (legacy alias) — accepted for backward compatibility with
+pre-v0.4.2 installer scripts. Will be dropped in a future major release.
+``BOB_SHARE`` takes precedence when both are set.
 """
 
 from __future__ import annotations
@@ -12,21 +22,28 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_ENV_PRIMARY = "BOB_SHARE"
+_ENV_LEGACY  = "UFW_AUDIT_SHARE"   # pre-v0.4.2 name — kept for compat
+
 
 def resolve_share_dir() -> Path | None:
     """
-    Return the validated UFW_AUDIT_SHARE directory, or None if unset/invalid.
+    Return the validated share directory, or None if unset/invalid.
 
-    Reads the UFW_AUDIT_SHARE environment variable (set by the installer
-    entry point to /usr/local/share/bob). Resolves all symlinks to
-    prevent symlink-chain attacks where an intermediate path component
-    points outside the intended tree.
+    Reads ``BOB_SHARE`` first (the documented contract since v0.4.2), then
+    falls back to the legacy ``UFW_AUDIT_SHARE`` for installers that haven't
+    been updated yet. Resolves all symlinks to prevent symlink-chain attacks
+    where an intermediate path component points outside the intended tree.
 
     Returns:
-        Resolved Path if the variable is set and points to an absolute
-        directory; None otherwise (fall back to package-local data).
+        Resolved Path if either variable is set and points to an absolute
+        directory; None otherwise (callers fall back to package-local data).
     """
-    share = os.environ.get("UFW_AUDIT_SHARE", "").strip()
+    share = os.environ.get(_ENV_PRIMARY, "").strip()
+    source = _ENV_PRIMARY
+    if not share:
+        share = os.environ.get(_ENV_LEGACY, "").strip()
+        source = _ENV_LEGACY
     if not share:
         return None
     try:
@@ -34,9 +51,15 @@ def resolve_share_dir() -> Path | None:
         # (catches broken symlinks and non-existent directories early)
         resolved = Path(share).resolve(strict=True)
     except OSError as exc:
-        logger.warning("UFW_AUDIT_SHARE could not be resolved, ignoring: %r (%s)", share, exc)
+        logger.warning("%s could not be resolved, ignoring: %r (%s)", source, share, exc)
         return None
     if resolved.is_absolute() and resolved.is_dir():
+        if source == _ENV_LEGACY:
+            logger.info(
+                "Using legacy env var %s — please update your installer to %s "
+                "(both are accepted today; the legacy name will be dropped in a future major release).",
+                _ENV_LEGACY, _ENV_PRIMARY,
+            )
         return resolved
-    logger.warning("UFW_AUDIT_SHARE is invalid or unsafe, ignoring: %r", share)
+    logger.warning("%s is invalid or unsafe, ignoring: %r", source, share)
     return None
