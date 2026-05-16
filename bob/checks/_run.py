@@ -93,9 +93,51 @@ TranslationFunc = Callable[..., str]
 
 
 def _is_safe_config_path(path) -> bool:
-    """Return True if path is absolute and not a symlink (safe to read)."""
+    """Return True if path is absolute and not a symlink (safe to read).
+
+    Use this for **system** config paths (``/etc/cron.d/``, ``/etc/sudoers.d/``,
+    ``/var/spool/cron/crontabs/``) where any symlink is suspect. For paths
+    under a user's home where dotfiles symlinks are legitimate (e.g. dotfiles
+    managed via git), use ``_is_safe_user_path()`` instead.
+    """
     p = Path(path)
     return p.is_absolute() and not p.is_symlink()
+
+
+def _is_safe_user_path(path, owner_home) -> bool:
+    """Return True if reading ``path`` is safe in the context of ``owner_home``.
+
+    Differs from ``_is_safe_config_path``: a symlink is **accepted** when its
+    resolved target is inside ``owner_home``. Defends against the case where
+    an attacker with write access to a user's home places a symlink pointing
+    outside (e.g. ``~/.ssh/authorized_keys → /etc/shadow``) and tricks BOB
+    running under sudo into materialising the target file contents in the
+    audit report.
+
+    Args:
+        path:       Path to check.
+        owner_home: User home directory (Path or str) that ``path`` should
+                    belong to. Symlinks inside this directory are accepted.
+
+    Returns:
+        True if the path is absolute, exists, and either is not a symlink or
+        is a symlink whose target stays inside ``owner_home``.
+    """
+    p = Path(path)
+    if not p.is_absolute():
+        return False
+    if p.is_symlink():
+        try:
+            target = p.resolve(strict=True)
+        except OSError:
+            return False
+        home = Path(owner_home).resolve()
+        try:
+            target.relative_to(home)
+            return True
+        except ValueError:
+            return False
+    return True
 
 
 # Locale-independent month abbreviation map (English only).

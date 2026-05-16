@@ -16,12 +16,24 @@ Usage:
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
 from bob.checks._run import _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
+
+
+# Age threshold (in seconds) above which the APT cache is considered stale.
+# 7 days mirrors the typical unattended-upgrades refresh window; beyond this
+# the cache will under-report upgrades available upstream.
+_APT_CACHE_STALE_THRESHOLD = 7 * 86400  # 7 days
+
+# pkgcache.bin is the binary APT cache; its mtime tracks the last successful
+# `apt-get update`. /var/lib/apt/lists/ holds the InRelease files we could
+# also stat, but pkgcache.bin is simpler and equally reliable in practice.
+_APT_CACHE_FILE = Path("/var/cache/apt/pkgcache.bin")
 
 
 # ---------------------------------------------------------------------------
@@ -34,12 +46,26 @@ class UpdatesSnapshot:
     Raw snapshot of system update state.
 
     All I/O happens in from_system(). check_updates() is pure logic.
+
+    Fields:
+        apt_available:        ``apt-get`` is on $PATH.
+        pending_security:     Package names with a ``-security`` source suite.
+        pending_regular:      Package names from other sources.
+        unattended_installed: ``unattended-upgrades`` package present.
+        unattended_enabled:   ``unattended-upgrades`` actually configured to run.
+        apt_cache_age_days:   ``None`` if pkgcache.bin not found; otherwise
+                              number of full days since the cache was refreshed.
+        upgradable_count:     ``apt list --upgradable`` count (cross-check
+                              against the simulated dist-upgrade). ``None`` if
+                              the command isn't available or failed.
     """
     apt_available:          bool = False
     pending_security:       List[str] = field(default_factory=list)
     pending_regular:        List[str] = field(default_factory=list)
     unattended_installed:   bool = False
     unattended_enabled:     bool = False
+    apt_cache_age_days:     int | None = None
+    upgradable_count:       int | None = None
 
     @classmethod
     def from_system(cls) -> "UpdatesSnapshot":
@@ -57,6 +83,8 @@ class UpdatesSnapshot:
         snap.apt_available = True
         snap.pending_security, snap.pending_regular = _collect_pending_updates()
         snap.unattended_installed, snap.unattended_enabled = _check_unattended()
+        snap.apt_cache_age_days = _apt_cache_age_days()
+        snap.upgradable_count = _count_upgradable()
 
         return snap
 
@@ -67,7 +95,13 @@ class UpdatesSnapshot:
 
 def _collect_pending_updates() -> tuple[list[str], list[str]]:
     """
-    Run ``apt-get -s upgrade`` and parse Inst lines.
+    Run ``apt-get -s dist-upgrade`` and parse Inst lines.
+
+    Uses ``dist-upgrade`` (not ``upgrade``) because plain ``upgrade`` is
+    conservative — it refuses to upgrade any package that would require
+    installing a new package or removing an existing one. On Debian/Ubuntu
+    this hides every security update bundled with a kernel transition or a
+    new soname (e.g. ``linux-image-amd64 → linux-image-6.12.86-amd64``).
 
     Returns:
         (security, regular) — lists of package names by update type.
@@ -77,7 +111,7 @@ def _collect_pending_updates() -> tuple[list[str], list[str]]:
     security: list[str] = []
     regular:  list[str] = []
 
-    out = _run("apt-get", "-s", "upgrade", timeout=30)
+    out = _run("apt-get", "-s", "dist-upgrade", timeout=30)
     if not out:
         return security, regular
 
@@ -95,6 +129,49 @@ def _collect_pending_updates() -> tuple[list[str], list[str]]:
 
     # Deduplicate while preserving order (apt can emit the same package twice)
     return list(dict.fromkeys(security)), list(dict.fromkeys(regular))
+
+
+def _apt_cache_age_days() -> int | None:
+    """Return age of the APT cache in days, or ``None`` if it cannot be read.
+
+    Reading /var/cache/apt/pkgcache.bin requires no privileges. We use mtime
+    because it reflects the last successful ``apt-get update``.
+    """
+    try:
+        mtime = _APT_CACHE_FILE.stat().st_mtime
+    except OSError:
+        return None
+    age_seconds = time.time() - mtime
+    if age_seconds < 0:
+        return 0
+    return int(age_seconds // 86400)
+
+
+def _count_upgradable() -> int | None:
+    """Return the count from ``apt list --upgradable``, or ``None`` on failure.
+
+    Cross-check against the simulated dist-upgrade — if dist-upgrade reports 0
+    pending while apt-list reports N > 0, the cache may be stale or a
+    transitional state is in play and the user deserves a warning.
+
+    Format::
+
+        Listing... Done
+        pkg/suite 1.1 amd64 [upgradable from: 1.0]
+        ...
+    """
+    # apt list defaults to a coloured pager-aware output on TTY; force a
+    # terminal-friendly mode with 2>/dev/null on the warning line apt emits
+    # via stderr ("WARNING: apt does not have a stable CLI interface...").
+    out = _run("apt", "list", "--upgradable", timeout=20)
+    if not out:
+        return None
+    count = 0
+    for line in out.splitlines():
+        # Skip header / blank / WARNING lines.
+        if "/" in line and "[upgradable from" in line:
+            count += 1
+    return count
 
 
 def _check_unattended() -> tuple[bool, bool]:
@@ -171,6 +248,38 @@ def check_updates(
             key="updates.no_apt",
         )
         return result
+
+    # --- APT cache stale ----------------------------------------------------
+    # Without a fresh cache, dist-upgrade simulation reports stale data.
+    # We warn the user before reporting "0 pending" to avoid false reassurance.
+    cache_age = snapshot.apt_cache_age_days
+    if cache_age is not None and cache_age * 86400 >= _APT_CACHE_STALE_THRESHOLD:
+        result.warn(
+            message=_t("updates.apt_cache_stale", days=cache_age),
+            detail=_t("updates.apt_cache_stale_detail"),
+            cmd="sudo apt update",
+            key="updates.apt_cache_stale",
+        )
+
+    # --- Cross-check dist-upgrade vs apt list --upgradable ------------------
+    # If apt list reports upgradable packages while dist-upgrade returned
+    # zero, the simulation likely failed silently (locked, broken state, etc.).
+    # The cache_stale warning above already covers the stale-cache case.
+    if (
+        snapshot.upgradable_count is not None
+        and snapshot.upgradable_count > 0
+        and not security
+        and not regular
+    ):
+        result.warn(
+            message=_t(
+                "updates.dist_upgrade_inconsistent",
+                count=snapshot.upgradable_count,
+            ),
+            detail=_t("updates.dist_upgrade_inconsistent_detail"),
+            cmd="sudo apt update && sudo apt list --upgradable",
+            key="updates.dist_upgrade_inconsistent",
+        )
 
     # --- Security packages pending ------------------------------------------
     if security:

@@ -215,7 +215,7 @@
     "domain": "Domaine configuré : {domain}",
     "no_domain": "Domaine non extrait (vérifiez la configuration manuellement)",
     "no_open_ports": "Aucun port UFW ouvert sans restriction de source détecté",
-    "warn": "DDNS actif avec port(s) ouverts sans restriction — vérifiez que l'exposition est intentionnelle",
+    "warn": "DDNS actif avec port(s) ouverts sans restriction ({ports}) — vérifiez que l'exposition est intentionnelle",
     "advice": "Si cette exposition est intentionnelle : maintenez les services à jour, activez l'authentification, et envisagez Fail2ban.",
     "inactive": "Client DDNS installé mais service inactif : {client}"
   },
@@ -792,6 +792,10 @@
     "unattended_not_configured": "unattended-upgrades non configuré — les correctifs de sécurité nécessitent une intervention manuelle",
     "unattended_not_configured_detail": "Installer et activer : sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
     "unattended_not_configured_reason": "unattended-upgrades non configuré",
+    "apt_cache_stale": "Le cache APT a {days} jour(s) — les mises à jour pendantes peuvent être sous-rapportées",
+    "apt_cache_stale_detail": "BOB lit /var/cache/apt/pkgcache.bin pour déterminer ce qui est en attente. Avec un cache obsolète, la simulation dist-upgrade peut retourner 0 paquet alors que des mises à jour de sécurité sont disponibles en amont. Rafraîchir d'abord, puis relancer l'audit.",
+    "dist_upgrade_inconsistent": "{count} paquet(s) signalés upgradables par apt mais la simulation dist-upgrade retourne zéro — état incohérent",
+    "dist_upgrade_inconsistent_detail": "apt list --upgradable signale des paquets en attente alors que apt-get -s dist-upgrade retourne zéro. Cela indique généralement que la base APT est dans un état transitoire (dépendances cassées, paquet bloqué) ou qu'un autre gestionnaire de paquets détient le verrou. Lancer apt update puis apt list --upgradable pour investiguer.",
     "ok": "Les paquets système sont à jour"
   },
   "kernel_hardening": {
@@ -1892,6 +1896,9 @@
     "apparmor_no_enforce": "AppArmor actif mais aucun profil en mode enforce ({complain} en plainte)",
     "apparmor_no_enforce_detail": "Tous les profils sont en mode plainte — les violations sont journalisées mais non bloquées. Passez en mode enforce pour bloquer activement les attaques.",
     "apparmor_no_enforce_reason": "AppArmor actif mais aucun profil en enforce",
+    "apparmor_no_profiles": "AppArmor actif mais aucun profil chargé — le framework tourne sans rien à appliquer",
+    "apparmor_no_profiles_detail": "AppArmor est activé dans le noyau mais ni le mode enforce ni le mode plainte ne contiennent de profil. Le framework MAC est en pratique inerte. Installer les paquets de profils (apparmor-profiles, apparmor-profiles-extra) et lancer aa-enforce pour les passer en mode enforce.",
+    "apparmor_no_profiles_reason": "AppArmor actif mais aucun profil chargé",
     "apparmor_inactive": "AppArmor installé mais le service n'est pas actif",
     "apparmor_inactive_detail": "Le module AppArmor est présent mais le service ne fonctionne pas. Sans framework MAC actif, les processus exploités s'exécutent avec tous les privilèges.",
     "apparmor_inactive_reason": "AppArmor installé mais inactif",
@@ -1994,6 +2001,7 @@
     "brute_force_ok": "fail2ban actif",
     "updates": "Mises à jour sécurité",
     "updates_pending": "mises à jour de sécurité en attente",
+    "updates_unknown": "état inconnu — cache APT obsolète ou incohérent",
     "updates_ok": "à jour"
   },
   "corr": {

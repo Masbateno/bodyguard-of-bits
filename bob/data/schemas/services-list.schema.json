@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/Masbateno/bodyguard-of-bits/v0.4.3/bob/data/schemas/services-list.schema.json",
+  "$id": "https://raw.githubusercontent.com/Masbateno/bodyguard-of-bits/v0.4.4/bob/data/schemas/services-list.schema.json",
   "title": "BOB services list (raw array form)",
   "description": "Bare JSON array of Service objects. This is the canonical shape of the bundled bob/data/services.json. User plugin files in ~/.config/bob/services.d/ MAY use this raw form (legacy / current default) but the recommended top-level schema for new plugin files is plugin-file.schema.json, which also accepts a wrapped object form with explicit schema_version. The runtime loader (bob.registry._extract_plugin_entries) accepts both shapes for plugin files. Cross-service uniqueness of `id` is enforced at runtime, not by this schema (an array with two entries sharing the same id passes structural validation but the second one is rejected at load time with a 'duplicate id' warning).",
   "type": "array",

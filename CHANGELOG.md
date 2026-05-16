@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.4.4](#v044) | 2026-05-15 | Cross-distro terrain hardening — **critical `updates.py` bug** (4/4 Debian-family VMs: 21 Ubuntu LTS security updates undetected): `apt-get -s upgrade` → `dist-upgrade` · stale APT cache detection · cross-check vs `apt list --upgradable` · "Surface d'attaque" propagates `updates_unknown` instead of false "à jour" · AppArmor "0 profil chargé" dedicated key · SMART skip on all-virtual disks · DDNS ports inline in WARN · S4 redesign `_is_safe_user_path` home-bounded · M4 refactor `_parse_ufw_covered_ports` (1 parse + O(1) lookup) · I2 wave-2 `key=` on services/virtualization · new locale-coverage test (catches `[xxx.yyy]` sentinel regressions) · 4489/4489 tests (+21) |
 | [v0.4.3](#v043) | 2026-05-15 | Doc catch-up + post-audit hardening pass — 4 firewall keys promoted to `EXPLAIN_KEYS` · `--json --json-full` crash fix (5 dead HardeningSnapshot attrs) · `strptime("%b…")` made locale-independent (ssl_certs + logs) · `_is_covered_by_ufw` false-positive killed · email markdown links no longer escaped · cron range validator now rejects out-of-bounds · `key=` on ~30 findings (docker, firewall_stack, network_context, ports) · 7 dead locale keys removed · i18n concat anti-pattern resolved (ddns, logs) · CIS refs added · CHANGELOG short corrected for v0.4.2 · 4468/4468 tests (+4 regression) |
 | [v0.4.1](#v041) | 2026-05-14 | Phase 2 distro-ready (architectural decoupling) — `bob/tui/` extracted (curses optional) · `Finding.template_vars` / `Deduction.template_vars` additive fields for locale-independent reconstruction · new `bob.formatter` module + post-review hardening pass (`lang=` removed, `i18n.try_t()`, narrowed `except KeyError`) · 3 pilot checks migrated (ssh, hardening, firewall) · template_vars exposed in JSON output · `--offline` mode verified + integration tests · 4449/4449 tests (+19) |
 | [v0.4.0](#v040) | 2026-05-14 | Phase 1 distro-ready — exit codes / locale auto-detect (POSIX `$LANG`) / JSON output contract (`schema_version`, `key` fields) / `--explain` alias map / `services.json` formal JSON Schema (with post-review hardening pass #1: strict 1–65535 port regex · `$defs` factorization · `if/then` business constraints · plugin-file `schema_version` wrapper) · pass #2: schema descriptions, `services-list.minItems`, real-class fixtures replacing MagicMock, RefResolver→referencing compat shim · `= N` redundant suffix on stable score removed · 4430/4430 tests (+82) |
@@ -21,6 +22,77 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.4.4] — 2026-05-15
+
+Cross-distro terrain hardening release. Four fresh VM tests (Debian 13, Kali Rolling, Linux Mint 22.3, Ubuntu 26.04 LTS — all installed from PyPI via `pipx upgrade`) surfaced **one critical bug, three minor bugs, and confirmed the v0.4.3 fixes work in the wild**. All fixes plus the audit-deferred items from v0.4.3 are bundled here.
+
+### 🔴 Critical — `updates.py` reports "0 pending" on every fresh Debian-family install
+
+Reproduced on **4/4** vanilla VMs:
+
+| Distro | apt-reported pending | of which security | BOB v0.4.3 |
+|---|---|---|---|
+| Debian 13 | 59 | unknown | 0 |
+| Kali Rolling | 868 | unknown | 0 |
+| Mint 22.3 (test VM) | 33 | unknown | 0 |
+| **Ubuntu 26.04 LTS** | **23** | **21 LTS security** | **0** |
+
+Two compounding causes:
+
+1. **Conservative `apt-get -s upgrade`.** `upgrade` (not `dist-upgrade`) refuses any pending package that would require installing a new one or removing another. On Debian/Ubuntu this hides every security update bundled with a kernel transition or a new soname.
+2. **Stale APT cache.** BOB reads `/var/cache/apt/pkgcache.bin`; if `apt update` hasn't run recently the cache reports an outdated state.
+
+Three layered fixes:
+
+- Switched `apt-get -s upgrade` → `apt-get -s dist-upgrade` in [`bob/checks/updates.py:_collect_pending_updates`](bob/checks/updates.py).
+- Added `apt_cache_age_days` to `UpdatesSnapshot`. When > 7 days old → new WARN `updates.apt_cache_stale` with `cmd="sudo apt update"`.
+- Added `upgradable_count` (from `apt list --upgradable`) cross-check. When `dist-upgrade` returns 0 but `apt list` returns N > 0 → new WARN `updates.dist_upgrade_inconsistent`.
+
+**Cascade** to [`bob/exposure.py`](bob/exposure.py) — the "Surface d'attaque" summary previously displayed `✔ Mises à jour sécurité à jour` even when the snapshot was unreliable. Now displays `⚠ état inconnu — cache APT obsolète ou incohérent` when either of the two new WARNs is present. False reassurance on a security check is worse than admitting we don't know.
+
+### 🟡 Minor — three cosmetic regressions from cross-distro VMs
+
+- **AppArmor "0 profile loaded" case** (Kali). v0.4.3 emitted `AppArmor active but no profiles in enforce mode (0 in complain)` — the parenthetical contradicted itself when Kali had literally 0 profiles total. New dedicated path in [`bob/checks/mac_policy.py`](bob/checks/mac_policy.py): when enforce == 0 AND complain == 0 → new key `mac_policy.apparmor_no_profiles` with message "AppArmor active but no profiles loaded — the framework is running with nothing to enforce" and recommendation to install `apparmor-profiles` / `apparmor-profiles-extra`.
+- **SMART "all passed" on VM-only systems** (Kali). On a VM with `/dev/vda`, BOB displayed `ℹ /dev/vda — SMART not applicable` immediately followed by `✔ All disks passed SMART`. Misleading — no real SMART read had been performed. [`bob/checks/disk.py`](bob/checks/disk.py) now only emits `disk.ok` when at least one **real** (non-virtual) SMART check actually ran.
+- **DDNS open-ports list rendered as orphan sub-items** (Mint test VM). The `→ 22/tcp` / `→ 80/tcp` lines appeared visually as actions of the INFO advice, but they were the list of ports targeted by the WARN. Now interpolated inline in the WARN message: `DDNS actif avec port(s) ouverts sans restriction (22/tcp, 80/tcp) — ...`. The display-side print loop in [`bob/runner.py`](bob/runner.py) is gone.
+
+### Items deferred from the v0.4.3 audit pass
+
+These were flagged by the agent audit on v0.4.2 and explicitly deferred. All applied here:
+
+- **S4 redesign — symlink-safe ssh reads.** v0.4.3 deliberately did NOT apply `_is_safe_config_path()` to `~/.ssh/authorized_keys` or `~/.ssh/config` because that would break legitimate dotfile setups (configs symlinked from a git repo). New helper [`_is_safe_user_path(path, owner_home)`](bob/checks/_run.py) accepts symlinks that resolve **inside** the owner's home, rejects those pointing outside. Applied in [`bob/checks/ssh.py`](bob/checks/ssh.py) to `authorized_keys`, `~/.ssh/config`, and `known_hosts`. Closes the SECURITY.md trust-boundary gap on user-controlled config files.
+- **M4 refactor — `_parse_ufw_covered_ports`.** Previously `_is_covered_by_ufw` recompiled a regex for every port checked against the same UFW rules text. Now [`bob/checks/ports.py`](bob/checks/ports.py) parses the rules **once** into a `set[(port, proto)]`, and lookups are O(1). Carries the v0.4.3 I4 fix (anchored "To"-column matching) cleanly. The old text-based API is preserved for backward compatibility.
+- **I2 wave 2 — `key=` on remaining findings.** v0.4.3 covered `docker.py`, `firewall_stack.py`, `network_context.py`, `ports.py` (4 files). This release finishes the pattern on [`bob/checks/services.py`](bob/checks/services.py) (10 added) and [`bob/checks/virtualization.py`](bob/checks/virtualization.py) (2 added). `disk.py`, `docker_audit.py`, `desktop_apps.py`, `memory.py`, `suid_audit.py` were already at 100% coverage.
+- **i18n coverage test.** v0.4.3 had a near-miss when `logs.attempts` was removed from both locales but still referenced by 7 sites in `display.py`. Only the terrain test caught the resulting `[logs.attempts]` sentinel. New [`tests/test_locale_coverage.py`](tests/test_locale_coverage.py) scans all `bob/**/*.py` for `t("KEY")` / `_t("KEY")` calls and asserts each resolves in **both** en.json and fr.json, plus EN/FR structural parity. Any future removal of a still-referenced key fails CI.
+
+### Skipped from the v0.4.3 audit report
+
+- **M3** (`os.path` → `pathlib` in 4 files). Cosmetic, no impact.
+- **M7** (lazy `_PLUGIN_DIR` resolution). Already discarded in v0.4.3 — the gotcha was speculative and the attempt broke 20 tests. **Decision permanent.**
+
+### Tests
+
+4485/4485 — +17 vs v0.4.3:
+- +10 in [`tests/test_updates.py`](tests/test_updates.py) — 5 cache-stale cases, 5 dist-upgrade-inconsistency cases.
+- +2 in [`tests/test_mac_policy.py`](tests/test_mac_policy.py) — desktop INFO and server WARN paths for the new `apparmor_no_profiles` key.
+- +9 in [`tests/test_locale_coverage.py`](tests/test_locale_coverage.py) — full corpus scan, EN+FR locale resolution, parity, dynamic-prefix coverage, sanity baseline (5 tests); plus exhaustive `explain.*` coverage generated from `EXPLAIN_KEYS` + non-empty-string check (3 tests, closes a blind spot the previous bypass had) and placeholder parity between EN/FR (1 test, guards against the `{count}` vs `{cnt}` runtime crash class).
+
+### Validated cross-distro
+
+The v0.4.3 fixes confirmed working in the wild on **5 different systems**:
+- Linux Mint 22.3 (dev box + test VM): UFW active, DDNS scenario, full audit
+- Debian 13 (VM): minimal, smoke test
+- Kali Rolling (VM): 15 unexpected SUID (kismet_cap_*), NOPASSWD:ALL, COMPOUND risk detection
+- Ubuntu 26.04 LTS (VM): UFW inactive → `firewall.inactive` ALERT correctly triggered with CIS ref + `--explain` link (validates the v0.4.2 C1 + v0.4.3 EXPLAIN_KEYS chain in production)
+
+### Deferred to a later release
+
+- M3 cosmetic cleanup (`os.path` → `pathlib`) — to be included in an eventual "consistency pass" release.
+- Phase 2 Option A — systematic `Finding.template_vars` migration on the ~37 remaining checks. Still on track for v0.5.0+.
+- Multi-distro CI matrix and AUR PKGBUILD (still community-contribution-welcome).
 
 ---
 

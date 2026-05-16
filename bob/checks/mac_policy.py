@@ -166,6 +166,38 @@ def check_mac_policy(
             )
         return result
 
+    # --- AppArmor active but no profile in enforce nor in complain mode ----
+    # Distinct case from "no_enforce": there are literally no profiles loaded
+    # (typical on stock Kali). Phrasing matters — saying "0 in complain" inside
+    # a "no_enforce" message implies complain profiles exist when they don't.
+    if (
+        snapshot.apparmor_active
+        and snapshot.apparmor_enforcing == 0
+        and snapshot.apparmor_complain == 0
+    ):
+        if profile_name == "desktop":
+            result.info(
+                message=_t("mac_policy.apparmor_no_profiles"),
+                detail=_t("mac_policy.apparmor_no_profiles_detail"),
+                cmd="sudo apt install apparmor-profiles apparmor-profiles-extra",
+                key="mac_policy.apparmor_no_profiles",
+            )
+        else:
+            result.warn(
+                message=_t("mac_policy.apparmor_no_profiles"),
+                detail=_t("mac_policy.apparmor_no_profiles_detail"),
+                cmd="sudo apt install apparmor-profiles apparmor-profiles-extra",
+                nature="improvement",
+                key="mac_policy.apparmor_no_profiles",
+            )
+            result.add_deduction(
+                reason=_t("mac_policy.apparmor_no_profiles_reason"),
+                points=1,
+                context="local",
+                key="mac_policy.apparmor_no_profiles",
+            )
+        return result
+
     # --- AppArmor active but no profiles in enforce mode -------------------
     if snapshot.apparmor_active and snapshot.apparmor_enforcing == 0:
         if profile_name == "desktop":

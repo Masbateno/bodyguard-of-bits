@@ -215,7 +215,7 @@
     "domain": "Configured domain: {domain}",
     "no_domain": "Domain not extracted (check configuration manually)",
     "no_open_ports": "No UFW port open without source restriction detected",
-    "warn": "DDNS active with open port(s) without source restriction — verify exposure is intentional",
+    "warn": "DDNS active with open port(s) without source restriction ({ports}) — verify exposure is intentional",
     "advice": "If this exposure is intentional: keep services up to date, enable authentication, and consider Fail2ban.",
     "inactive": "DDNS client installed but service is inactive: {client}"
   },
@@ -792,6 +792,10 @@
     "unattended_not_configured": "unattended-upgrades not configured — security patches require manual intervention",
     "unattended_not_configured_detail": "Install and enable: sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
     "unattended_not_configured_reason": "unattended-upgrades not configured",
+    "apt_cache_stale": "APT cache is {days} day(s) old — pending updates may be under-reported",
+    "apt_cache_stale_detail": "BOB reads /var/cache/apt/pkgcache.bin to decide what is pending. With a stale cache the dist-upgrade simulation may return 0 packages even when security updates are available upstream. Refresh first, then re-run the audit.",
+    "dist_upgrade_inconsistent": "{count} package(s) reported upgradable by apt but dist-upgrade simulation returned none — inconsistent state",
+    "dist_upgrade_inconsistent_detail": "apt list --upgradable reports pending packages while apt-get -s dist-upgrade reports zero. This usually means the APT database is in a transitional state (broken dependencies, a held package) or another package manager is holding the lock. Run apt update then apt list --upgradable to investigate.",
     "ok": "System packages are up to date"
   },
   "kernel_hardening": {
@@ -1892,6 +1896,9 @@
     "apparmor_no_enforce": "AppArmor active but no profiles in enforce mode ({complain} in complain)",
     "apparmor_no_enforce_detail": "All profiles are in complain mode — violations are logged but not blocked. Switch to enforce mode to actively prevent attacks.",
     "apparmor_no_enforce_reason": "AppArmor active but no profiles enforcing",
+    "apparmor_no_profiles": "AppArmor active but no profiles loaded — the framework is running with nothing to enforce",
+    "apparmor_no_profiles_detail": "AppArmor is enabled in the kernel but neither enforce nor complain mode contains any profile. The MAC framework is effectively inert. Install profile packages (apparmor-profiles, apparmor-profiles-extra) and run aa-enforce to put them in enforce mode.",
+    "apparmor_no_profiles_reason": "AppArmor active but no profiles loaded",
     "apparmor_inactive": "AppArmor installed but service is not active",
     "apparmor_inactive_detail": "The AppArmor module is present but the service is not running. Without an active MAC framework, exploited processes run with full privileges.",
     "apparmor_inactive_reason": "AppArmor installed but inactive",
@@ -1994,6 +2001,7 @@
     "brute_force_ok": "fail2ban active",
     "updates": "Security updates",
     "updates_pending": "security updates pending",
+    "updates_unknown": "state unknown — APT cache stale or inconsistent",
     "updates_ok": "up to date"
   },
   "corr": {

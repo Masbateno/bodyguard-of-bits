@@ -192,10 +192,28 @@ class TestAppArmorNoEnforce:
         assert "aa-enforce" in finding.cmd
 
     def test_active_with_zero_profiles_at_all(self):
-        """Active AppArmor with 0 enforce and 0 complain → still no_enforce."""
+        """Active AppArmor with 0 enforce AND 0 complain → distinct "no_profiles" key.
+
+        v0.4.4: this case (typical on Kali) was previously conflated with
+        "no_enforce" which produced the confusing message "0 in complain".
+        Now it gets a dedicated key with a clear "no profiles loaded" message.
+        """
         snap = _snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=0)
         result = check_mac_policy(snap, t=_t, profile_name="server")
-        assert "mac_policy.apparmor_no_enforce" in _keys(result)
+        assert "mac_policy.apparmor_no_profiles" in _keys(result)
+        assert "mac_policy.apparmor_no_enforce" not in _keys(result)
+
+    def test_no_profiles_desktop_is_info(self):
+        snap = _snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=0)
+        result = check_mac_policy(snap, t=_t, profile_name="desktop")
+        assert "mac_policy.apparmor_no_profiles" in _keys(result)
+        # Desktop profile demotes to INFO — no deduction
+        assert _deduction_points(result) == 0
+
+    def test_no_profiles_server_deducts_one(self):
+        snap = _snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=0)
+        result = check_mac_policy(snap, t=_t, profile_name="server")
+        assert _deduction_points(result) == 1
 
 
 # ---------------------------------------------------------------------------

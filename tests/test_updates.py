@@ -422,3 +422,78 @@ class TestDesktopProfile:
         )
         result = check_updates(snap, profile_name="workstation")
         assert _has_finding(result, "updates.unattended_not_configured", FindingLevel.INFO)
+
+
+# ---------------------------------------------------------------------------
+# v0.4.4: APT cache stale detection
+# ---------------------------------------------------------------------------
+
+class TestAptCacheStale:
+    def test_fresh_cache_no_warning(self):
+        """Cache fresh (< 7 days) — no warning."""
+        snap = base_snapshot(apt_cache_age_days=2)
+        result = check_updates(snap)
+        assert not _has_finding(result, "updates.apt_cache_stale", FindingLevel.WARN)
+
+    def test_stale_cache_warns(self):
+        """Cache > 7 days — must warn so the "0 pending" result is not trusted blindly."""
+        snap = base_snapshot(apt_cache_age_days=14)
+        result = check_updates(snap)
+        assert _has_finding(result, "updates.apt_cache_stale", FindingLevel.WARN)
+
+    def test_stale_cache_message_includes_days(self):
+        snap = base_snapshot(apt_cache_age_days=21)
+        result = check_updates(snap)
+        finding = next(f for f in result.findings if f.key == "updates.apt_cache_stale")
+        assert "21" in finding.message
+
+    def test_no_cache_info_no_warning(self):
+        """apt_cache_age_days=None (cache file missing) — no warning, no crash."""
+        snap = base_snapshot(apt_cache_age_days=None)
+        result = check_updates(snap)
+        assert not _has_finding(result, "updates.apt_cache_stale", FindingLevel.WARN)
+
+    def test_exactly_seven_days_warns(self):
+        """Boundary: exactly 7 days — still warns (>= threshold)."""
+        snap = base_snapshot(apt_cache_age_days=7)
+        result = check_updates(snap)
+        assert _has_finding(result, "updates.apt_cache_stale", FindingLevel.WARN)
+
+
+# ---------------------------------------------------------------------------
+# v0.4.4: dist-upgrade vs apt list --upgradable inconsistency
+# ---------------------------------------------------------------------------
+
+class TestDistUpgradeInconsistency:
+    def test_consistent_zero_no_warning(self):
+        """Both report 0 — system truly up to date."""
+        snap = base_snapshot(upgradable_count=0)
+        result = check_updates(snap)
+        assert not _has_finding(result, "updates.dist_upgrade_inconsistent", FindingLevel.WARN)
+
+    def test_consistent_nonzero_no_warning(self):
+        """Both report N — security pending warning covers it, no inconsistency."""
+        snap = base_snapshot(
+            pending_security=["libssl3"],
+            upgradable_count=5,
+        )
+        result = check_updates(snap)
+        assert not _has_finding(result, "updates.dist_upgrade_inconsistent", FindingLevel.WARN)
+
+    def test_inconsistent_warns(self):
+        """apt list reports N but dist-upgrade returned 0 — exactly the v0.4.3 bug case."""
+        snap = base_snapshot(upgradable_count=23)
+        result = check_updates(snap)
+        assert _has_finding(result, "updates.dist_upgrade_inconsistent", FindingLevel.WARN)
+
+    def test_inconsistent_message_includes_count(self):
+        snap = base_snapshot(upgradable_count=42)
+        result = check_updates(snap)
+        finding = next(f for f in result.findings if f.key == "updates.dist_upgrade_inconsistent")
+        assert "42" in finding.message
+
+    def test_unknown_upgradable_no_warning(self):
+        """upgradable_count=None (apt list failed) — no warning, no crash."""
+        snap = base_snapshot(upgradable_count=None)
+        result = check_updates(snap)
+        assert not _has_finding(result, "updates.dist_upgrade_inconsistent", FindingLevel.WARN)

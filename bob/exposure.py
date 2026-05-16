@@ -177,11 +177,20 @@ def compute_exposure(
         ))
 
     # --- Security updates ---
+    # Order matters: prefer "unknown" over "ok" when the snapshot is unreliable
+    # (stale cache or inconsistent state) — false reassurance on a security
+    # check is worse than admitting we don't know.
     if "updates.security_pending" in bad_keys:
         items.append(ExposureItem(
             label=t("exposure.updates"),
             icon="✖", color="warn",
             detail=t("exposure.updates_pending"),
+        ))
+    elif "updates.apt_cache_stale" in bad_keys or "updates.dist_upgrade_inconsistent" in bad_keys:
+        items.append(ExposureItem(
+            label=t("exposure.updates"),
+            icon="⚠", color="warn",
+            detail=t("exposure.updates_unknown"),
         ))
     else:
         items.append(ExposureItem(

@@ -250,24 +250,30 @@ def check_ddns(
         result.ok(message=_t("ddns.no_open_ports"))
         return result
 
-    # Open ports detected — warn and deduct
+    # Open ports detected — warn and deduct.
+    # The port list is interpolated into the WARN message itself so the reader
+    # immediately sees which ports are at risk, instead of seeing them as
+    # separate "→ 22/tcp" sub-items under the INFO advice (terrain Mint test,
+    # 15-05-2026 — visually confusing).
+    ports_str = ", ".join(open_ports)
     result.warn(
-        message=_t("ddns.warn"),
+        message=_t("ddns.warn", ports=ports_str),
         nature="improvement",
         key="ddns.warn",
     )
     result.add_deduction(
-        reason=_t("ddns.warn"),
+        reason=_t("ddns.warn", ports=ports_str),
         points=1,
         context="local",
         key="ddns.warn",
     )
 
-    # Store open ports for display by orchestrator
+    # Expose the ports list for programmatic access (compare.py baseline diff,
+    # tests). The user-facing rendering is the WARN message above.
     result.open_ports = open_ports
 
-    # Note Fail2ban advice
-    result.info(message=_t("ddns.advice"))
+    # Note Fail2ban advice — port list is already in the WARN above.
+    result.info(message=_t("ddns.advice"), key="ddns.advice")
 
     return result
 

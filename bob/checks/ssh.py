@@ -33,7 +33,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import (
+    TranslationFunc,
+    _command_exists,
+    _identity_t,
+    _is_safe_user_path,
+    _run,
+)
 from bob.scoring import CheckResult, FindingLevel
 
 # ---------------------------------------------------------------------------
@@ -216,9 +222,11 @@ class SSHSnapshot:
             # private keys
             snap.private_keys = _collect_private_keys(ssh_dir)
 
-            # authorized_keys
+            # authorized_keys — accept dotfiles symlinks inside home, reject
+            # symlinks pointing outside (e.g. attacker linking authorized_keys
+            # to /etc/shadow would leak its content into the audit report).
             ak_path = ssh_dir / "authorized_keys"
-            if ak_path.is_file():
+            if ak_path.is_file() and _is_safe_user_path(ak_path, snap.user_home):
                 snap.authorized_keys_exists = True
                 try:
                     snap.authorized_keys_perms = stat.S_IMODE(ak_path.stat().st_mode)
@@ -226,15 +234,15 @@ class SSHSnapshot:
                     pass
                 snap.authorized_keys_entries = _parse_authorized_keys(ak_path)
 
-            # client config
+            # client config — same symlink-out-of-home protection.
             cfg_path = ssh_dir / "config"
-            if cfg_path.is_file():
+            if cfg_path.is_file() and _is_safe_user_path(cfg_path, snap.user_home):
                 snap.client_config_exists = True
                 snap.client_config_entries = _parse_client_config(cfg_path)
 
-            # known_hosts
+            # known_hosts — public data but apply the same protection by symmetry.
             kh_path = ssh_dir / "known_hosts"
-            if kh_path.is_file():
+            if kh_path.is_file() and _is_safe_user_path(kh_path, snap.user_home):
                 snap.known_hosts_exists = True
                 snap.known_hosts_entries = _parse_known_hosts(kh_path)
 

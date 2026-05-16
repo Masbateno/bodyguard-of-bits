@@ -398,8 +398,8 @@ def run_checks(
     )
     engine.apply(ddns_result)
     display_result(ddns_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-    for port in ddns_result.open_ports:
-        output.print_dim(f"  → {port}")
+    # v0.4.4: the port list is now interpolated into the WARN message itself
+    # (see ddns.py); we no longer print "→ 22/tcp" sub-items here.
 
     # ---- CHECK 7 — Docker ----
     if not config.quiet:

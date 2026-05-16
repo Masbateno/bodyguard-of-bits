@@ -292,10 +292,12 @@ def _check_single_service(
             result.warn(
                 message=_t("services.state.installed_inactive_critical", label=snap.label),
                 nature="improvement",
+                key="services.state.installed_inactive_critical",
             )
         else:
             result.info(
                 message=_t("services.state.inactive_disabled", label=snap.label),
+                key="services.state.inactive_disabled",
             )
         return
 
@@ -304,15 +306,22 @@ def _check_single_service(
         result.warn(
             message=_t("services.state.active_disabled", label=snap.label),
             nature="improvement",
+            key="services.state.active_disabled",
         )
 
     # Active and enabled — OK
     if snap.state == ServiceState.ACTIVE_ENABLED:
-        result.ok(message=_t("services.state.active_enabled"))
+        result.ok(
+            message=_t("services.state.active_enabled"),
+            key="services.state.active_enabled",
+        )
 
     # Unknown state — informational
     if snap.state == ServiceState.UNKNOWN:
-        result.info(message=_t("services.state.unknown"))
+        result.info(
+            message=_t("services.state.unknown"),
+            key="services.state.unknown",
+        )
 
     # Analyse each port exposure
     for port, exposure in snap.exposures.items():
@@ -368,22 +377,23 @@ def _check_port_exposure(
         result.warn(
             message=port_msg,
             nature="structural",
+            key="services.exposure.open_local",
         )
 
     elif exposure == Exposure.DENY:
-        result.ok(message=port_msg)
+        result.ok(message=port_msg, key="services.exposure.deny")
 
     elif exposure == Exposure.NO_RULE:
-        result.info(message=port_msg)
+        result.info(message=port_msg, key="services.exposure.no_rule")
 
     elif exposure == Exposure.LOOPBACK:
-        result.info(message=port_msg)
+        result.info(message=port_msg, key="services.exposure.loopback")
 
     elif exposure == Exposure.LOOPBACK_NO_RULE:
-        result.info(message=port_msg)
+        result.info(message=port_msg, key="services.exposure.loopback_no_rule")
 
     elif exposure == Exposure.NOT_LISTENING:
-        result.info(message=port_msg)
+        result.info(message=port_msg, key="services.exposure.not_listening")
 
 
 # ---------------------------------------------------------------------------

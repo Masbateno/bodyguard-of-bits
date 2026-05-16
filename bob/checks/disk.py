@@ -275,7 +275,15 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
             )
 
     # --- All clear ---
-    if not found_issue and snapshot.smartctl_available and snapshot.smart_results:
+    # Only emit the "all SMART passed" success if at least one real (non-virtual)
+    # SMART check actually ran. On VMs / containers where every disk reports
+    # "SMART not applicable", claiming "all passed" was misleading (terrain
+    # test Kali, 15-05-2026) — there were no SMART reads to pass.
+    real_smart_run = any(
+        not sr.virtual and sr.passed is not None
+        for sr in snapshot.smart_results
+    )
+    if not found_issue and snapshot.smartctl_available and real_smart_run:
         result.ok(
             message=_t("disk.ok"),
             key="disk.ok",

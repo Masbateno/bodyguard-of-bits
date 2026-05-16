@@ -6,6 +6,118 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.4.4] — 2026-05-15
+
+**Cross-distro terrain hardening release.** Four fresh VM tests (Debian 13, Kali Rolling, Linux Mint 22.3, Ubuntu 26.04 LTS — all installed from PyPI via `pipx upgrade bodyguard-of-bits`) surfaced one critical bug, three minor cosmetic regressions, and confirmed the v0.4.3 fixes work in the wild. All findings plus the items deferred from the v0.4.3 audit pass (S4 symlink redesign, M4 ports refactor, I2 wave-2 `key=`, locale coverage test) are bundled in this release.
+
+### The critical finding — and why it matters
+
+`bob/checks/updates.py` reported "system up to date" on **every single fresh Debian-family install we tested**. On Ubuntu 26.04 LTS specifically, that meant **21 official LTS security updates went silently undetected**. For a hardening audit tool, this is the worst class of bug — a false-negative on a security-critical check that drains confidence in the entire output.
+
+Two compounding causes:
+
+1. **The `apt-get -s upgrade` command BOB relied on is conservative.** It refuses to upgrade any package that would require installing a new package or removing an existing one. On Debian/Ubuntu, every kernel transition (`linux-image-amd64 → linux-image-6.12.86-amd64`) and every soname bump triggers exactly this case — the whole transitive closure gets held back. Real users routinely run `apt full-upgrade` / `apt dist-upgrade` for this very reason. BOB was simulating a workflow no one actually uses.
+
+2. **The APT cache lives at `/var/cache/apt/pkgcache.bin` and only refreshes when `apt update` runs.** On vanilla installs (typical of test VMs, but also of any user who relies on `unattended-upgrades`-triggered refreshes which may have failed), the cache is days or weeks old. BOB read that stale state and reported "0 pending" with no caveat.
+
+The fix layers three changes in `bob/checks/updates.py`:
+
+- **`apt-get -s upgrade` → `apt-get -s dist-upgrade`** in `_collect_pending_updates()`. Aligns the simulation with what users actually run. Security-update detection (via `-security` suffix on the source suite) is unchanged — `dist-upgrade` outputs the same `Inst` lines, just more of them.
+- **Cache freshness check.** New `apt_cache_age_days: int | None` field on `UpdatesSnapshot`, populated by stat-ing `/var/cache/apt/pkgcache.bin` mtime. When the cache is more than 7 days old, the check emits a new WARN `updates.apt_cache_stale` with a `sudo apt update` recommendation. Days threshold mirrors typical `unattended-upgrades` refresh windows.
+- **Cross-check vs `apt list --upgradable`.** New `upgradable_count: int | None` field, populated by parsing `apt list --upgradable` output (counting `pkg/suite ... [upgradable from: ...]` lines). When `dist-upgrade` simulation reports 0 pending but `apt list` reports N > 0, the snapshot is inconsistent — likely transient state (held packages, broken dependencies) — and a new WARN `updates.dist_upgrade_inconsistent` fires with `sudo apt update && sudo apt list --upgradable` for investigation.
+
+The cascade matters as much as the root fix. The synthetic "Surface d'attaque" summary at the end of every audit had a `Mises à jour sécurité` line that read directly from the engine findings — if no `updates.security_pending` key was emitted, it displayed `✔ à jour`. Of course "no key emitted" was the exact bug. `bob/exposure.py` now checks for the two new WARN keys and displays `⚠ état inconnu — cache APT obsolète ou incohérent` instead of the false `✔`. Refusing to claim "OK" when the data source is unreliable is the right contract for a security tool.
+
+### Three cosmetic regressions from the cross-distro VMs
+
+These don't change scoring but they do change trust. A hardening tool with confusing or contradictory output trains users to ignore it.
+
+**AppArmor "0 profiles loaded" case** (caught on Kali, where stock install has the kernel module enabled but ships zero profile packages). v0.4.3 emitted `AppArmor active but no profiles in enforce mode (0 in complain)`. The parenthetical contradicted itself — implying that complain-mode profiles exist when there are literally none. The fix in `bob/checks/mac_policy.py` distinguishes three states explicitly:
+- `enforce > 0`: OK path, current language preserved.
+- `enforce == 0 AND complain > 0`: existing `apparmor_no_enforce` path with the "switch to enforce" advice (this case applies to a real-world bad-config).
+- `enforce == 0 AND complain == 0` (new): dedicated `apparmor_no_profiles` key with the message "AppArmor active but no profiles loaded — the framework is running with nothing to enforce" and a recommendation to install `apparmor-profiles` / `apparmor-profiles-extra`. Server profile applies a −1 deduction; desktop profile keeps it as INFO.
+
+**SMART "all passed" on VM-only systems** (caught on Kali, /dev/vda). The output was:
+```
+ℹ /dev/vda — SMART not applicable (virtualised or unsupported equipment)
+✔ All disks passed the SMART check — no critical attributes detected
+```
+Logically incoherent — if no SMART read ran, nothing passed. `bob/checks/disk.py` now only emits the `disk.ok` "all passed" success when at least one **real** (non-virtual) SMART check actually returned a result. On VMs and containers where every disk is virtual, the line is simply absent.
+
+**DDNS open-ports list rendered as orphan sub-items** (caught on Mint test VM with ddclient + masbateno.duckdns.org). Previously:
+```
+⚠ DDNS active with open port(s) without source restriction — verify exposure is intentional
+ℹ If this exposure is intentional: keep services up to date...
+    → 22/tcp
+    → 80/tcp
+```
+The `→ 22/tcp` lines visually attached to the INFO advice but logically belonged to the WARN — a reader can't tell what action to take with "22/tcp". The fix in `bob/checks/ddns.py` interpolates the list into the WARN message itself: `DDNS active with open port(s) without source restriction (22/tcp, 80/tcp) — verify exposure is intentional`. The orphan print loop in `bob/runner.py` is removed. The `result.open_ports` field is preserved for programmatic consumers (compare.py baseline diff, JSON output, tests).
+
+### v0.4.3 audit-deferred items, all applied
+
+**S4 redesign — symlink-safe ssh reads.** v0.4.3 had explicitly deferred this because the simplest fix (`_is_safe_config_path()` rejects all symlinks) would have broken legitimate dotfile setups where users symlink `~/.ssh/config` from a git-managed repository. The proper design accepts symlinks that resolve inside the owner's home directory but rejects those pointing outside (an attacker with write access to a user's home placing a symlink to `/etc/shadow` would leak system file contents into the audit report). New helper `_is_safe_user_path(path, owner_home)` in `bob/checks/_run.py`:
+
+```python
+def _is_safe_user_path(path, owner_home) -> bool:
+    p = Path(path)
+    if not p.is_absolute(): return False
+    if p.is_symlink():
+        try: target = p.resolve(strict=True)
+        except OSError: return False
+        home = Path(owner_home).resolve()
+        try:
+            target.relative_to(home)
+            return True
+        except ValueError:
+            return False
+    return True
+```
+
+Applied in `bob/checks/ssh.py` to `authorized_keys`, `~/.ssh/config`, and `known_hosts`. The existing `_is_safe_config_path` (rejects any symlink, no home-bounded exemption) is kept for system paths like `/etc/cron.d/`, `/etc/sudoers.d/`, and `/var/spool/cron/crontabs/` where any symlink is suspect.
+
+**M4 refactor — `_parse_ufw_covered_ports`.** The v0.4.3 fix for the `_is_covered_by_ufw` false-positive (where a port number found inside a source IP like `192.168.1.22` falsely "covered" port 22) was correct but architecturally fragile — it compiled a fresh regex for every port checked against the same UFW rules text, and any future tweak risks reintroducing the false-positive. The refactor in `bob/checks/ports.py` parses the rules string **once** at the start of `check_ports()` into a `set[tuple[int, str | None]]` of covered (port, proto) tuples, then lookups become O(1) set membership. The module-level `_UFW_RULE_RE` is anchored on the start of the "To" column — the false-positive class is now impossible by construction. Both the snapshot-based and string-based forms of `_is_covered_by_ufw` are accepted for backward compatibility with any external caller.
+
+**I2 wave 2 — `key=` on remaining findings.** v0.4.3 covered the 4 most-affected files (`docker.py`, `firewall_stack.py`, `network_context.py`, `ports.py`). Re-running the audit on the remaining checks revealed that `disk.py`, `docker_audit.py`, `desktop_apps.py`, `memory.py`, `suid_audit.py` were already at 100% key coverage. Only `services.py` (10 sites) and `virtualization.py` (2 sites) needed work — both completed here. The codebase now has every `result.alert/warn/info/ok/add_deduction` call wired with a stable `key=` for `--ignore`, audit profiles, JSON consumers, and `--explain` lookups.
+
+**i18n locale coverage test.** v0.4.3 had a near-miss — when the M6 refactor removed `logs.attempts` from both locale files, 7 call sites in `bob/display.py` still referenced it. The `_t("logs.attempts")` calls returned the bare key as a fallback, producing `[logs.attempts]` sentinel output that only the terrain test caught (post-v0.4.3 push). New `tests/test_locale_coverage.py` runs every commit:
+
+- Scans all `bob/**/*.py` for `t("KEY")` and `_t("KEY")` calls via regex, collects the literal keys.
+- Asserts each key resolves in **both** `en.json` and `fr.json`.
+- Asserts EN/FR structural parity (same set of leaf keys).
+- Asserts known dynamic-prefix sections (`explain.*`, `services.exposure.*`, `services.state.*`) have their parent dicts in both locales.
+- Includes a sanity baseline (key corpus size ≥ 200) so a broken regex doesn't silently make all the other tests trivially pass.
+
+Two false positives in docstring examples (`bob/i18n.py` documents `t("samba.open_world")` and `t("log.blocked_attempts", count=42)` as illustrative examples) are listed in `_KEY_EXCLUSIONS`. Any future false-positive can be added the same way.
+
+### Skipped from the v0.4.3 audit report
+
+- **M3** — `os.path` → `pathlib` in 4 files (`manage_logs.py`, `suid_audit.py:142,176,180,188`, `secure_boot.py:92`, `ssh.py:1000`). Pure cosmetics. Will be folded into an eventual "consistency pass" release (imports, type hints, etc.).
+- **M7** — Lazy `_PLUGIN_DIR` resolution. Re-confirmed permanently rejected. The "gotcha" (SUDO_USER changes mid-process) doesn't occur in BOB's one-shot execution model, and the attempted fix in v0.4.3 broke 20 tests that `patch("bob.registry._PLUGIN_DIR", ...)`.
+
+### Tests
+
+4489/4489 — +21 vs v0.4.3:
+- `tests/test_updates.py` (+10): two new test classes covering the new `UpdatesSnapshot` fields. `TestAptCacheStale` (5 tests) exercises the cache-stale WARN under fresh/stale/missing/boundary conditions. `TestDistUpgradeInconsistency` (5 tests) exercises the cross-check WARN — the precise v0.4.3 bug scenario is now a regression test (dist-upgrade returns 0, apt list reports N → WARN).
+- `tests/test_mac_policy.py` (+2): `TestAppArmorNoEnforce::test_no_profiles_desktop_is_info` and `::test_no_profiles_server_deducts_one`, exercising the new `apparmor_no_profiles` key on both profile paths. The existing `test_active_with_zero_profiles_at_all` was rewritten to assert the new key (it previously expected the old confusing `apparmor_no_enforce` output).
+- `tests/test_locale_coverage.py` (+9): full corpus scan, EN locale resolution, FR locale resolution, EN/FR parity, dynamic-prefix coverage. The corpus contains 200+ static keys (the sanity baseline confirms our regex finds enough call sites to be meaningful). Plus, in response to a ChatGPT review of the file: tightened the regex negative lookbehind to also reject `obj._t(...)` (which previously matched as a false positive); added `TestExplainNamespaceCoverage` (3 tests) that generates expected paths from the frozen `EXPLAIN_KEYS` list and asserts each `explain.<key>.{title,why,how}` exists in both locales **as a non-empty string** (this closes a blind spot — the previous `("explain.", "explain")` dynamic prefix was a bypass that silently masked any missing leaf); added `TestPlaceholderParity` (1 test) that asserts the set of `{name}`-style placeholders is identical between en.json and fr.json for every common string key (guards against the `{count}` vs `{cnt}` runtime KeyError class).
+
+### Real-world validation
+
+The v0.4.3 fixes confirmed working across **5 different live systems**:
+- **Linux Mint 22.3 dev box**: full feature audit with UFW active, DDNS scenario, Docker installed, Samba, all checks rendered cleanly with no sentinels.
+- **Linux Mint 22.3 test VM**: same engine, different host state — confirmed the `logs.attempts` sentinel regression had been fixed by the final v0.4.3 patch.
+- **Debian 13**: minimal install, smoke test of the cross-distro path through `mac_policy`, journald-only UFW log path.
+- **Kali Rolling**: 15 unexpected SUID binaries (kismet_cap_*) correctly flagged as Kali-specific tooling that legitimately needs SUID; NOPASSWD:ALL in sudoers detected with the right severity; AppArmor "0 profiles loaded" surfaced the confusing-message bug fixed here; COMPOUND risk correlation (sudo NOPASSWD + unexpected SUID) fired.
+- **Ubuntu 26.04 LTS**: UFW inactive → `firewall.inactive` ALERT fired with the v0.4.2-added `key=`, the v0.4.3-added EXPLAIN_KEYS entry, CIS reference, and the `bob --explain firewall.inactive` link. The complete chain (key → ignore-able + profile-overridable + JSON-matchable + explain-resolvable) is now production-validated on a brand new distro family.
+
+### Deferred to a later release
+
+- Phase 2 Option A — systematic `Finding.template_vars` migration on the ~37 non-pilot checks. Still on track for v0.5.0+. `tests/test_template_vars_migration.py` continues to make the debt visible.
+- Multi-distro CI matrix (Debian/Ubuntu/Mint/Kali in containers) and AUR PKGBUILD — community-contribution-welcome, not blocking.
+- M3 cosmetic cleanup (os.path → pathlib).
+
+---
+
 ## [v0.4.3] — 2026-05-15
 
 **Doc catch-up release that grew into a hardening pass.** This release started as a closing of two pieces of debt explicitly deferred by v0.4.2 (4 `EXPLAIN_KEYS` entries, short CHANGELOG sync). On the way, a fresh agent audit over the entire v0.4.2 codebase surfaced **1 critical + 5 important + 8 minor + 6 suggestion** issues. All were fixed in the same release.

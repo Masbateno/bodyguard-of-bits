@@ -187,6 +187,10 @@ def check_ports(
     reported_alert_ports:  set[str] = set()  # deduplicate alert ports
     reported_local_ports:  set[str] = set()  # deduplicate local/loopback ports (multi-address)
 
+    # Parse UFW rules once instead of re-scanning the rules string for every
+    # listening port (was O(N×M); now O(M) parse + O(N) lookups).
+    covered_ports = _parse_ufw_covered_ports(snapshot.ufw_rules)
+
     for lport in snapshot.ports:
         pp = lport.port_proto
 
@@ -194,7 +198,7 @@ def check_ports(
         if pp in audited_ports:
             continue
 
-        category = _categorize_port(lport, snapshot.ufw_rules)
+        category = _categorize_port(lport, covered_ports)
 
         if category == PortCategory.EPHEMERAL:
             continue  # silently ignored — kernel-assigned, no security relevance
@@ -303,8 +307,16 @@ def check_ports(
 # Classification helpers
 # ---------------------------------------------------------------------------
 
-def _categorize_port(lport: ListeningPort, ufw_rules: str) -> PortCategory:
-    """Classify a single listening port."""
+def _categorize_port(
+    lport: ListeningPort,
+    ufw_rules: str | set[tuple[int, str | None]],
+) -> PortCategory:
+    """Classify a single listening port.
+
+    ``ufw_rules`` may be the raw ``ufw status`` text (back-compat) or a
+    pre-parsed set from :func:`_parse_ufw_covered_ports` (preferred for loops
+    over many ports against the same ruleset).
+    """
 
     # Ephemeral — only applies to UDP; TCP sockets in ss -l are always LISTEN (server sockets)
     if lport.proto == "udp" and lport.port > EPHEMERAL_THRESHOLD:
@@ -333,22 +345,55 @@ def _categorize_port(lport: ListeningPort, ufw_rules: str) -> PortCategory:
     return PortCategory.UNCOVERED_LOCAL
 
 
-def _is_covered_by_ufw(port: int, proto: str, ufw_rules: str) -> bool:
+# Compiled once at module load time — matches "[ N] PORT[/PROTO]" at the
+# start of the "To" column in ``ufw status numbered`` output. The IGNORECASE
+# flag is for the optional proto (UFW is consistent but tolerant).
+_UFW_RULE_RE = re.compile(
+    r"^\s*\[\s*\d+\]\s+(\d+)(?:/(tcp|udp))?\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_ufw_covered_ports(ufw_rules: str) -> set[tuple[int, str | None]]:
+    """Parse ``ufw status numbered`` once into a set of (port, proto) tuples.
+
+    The returned set is queried via :func:`_is_covered_by_ufw` for O(1)
+    coverage checks. ``proto=None`` means the rule covers any protocol
+    (UFW rule entered without ``/tcp`` or ``/udp``).
+
+    Anchored on the start of the "To" column to avoid matching port numbers
+    appearing later on the line (e.g. inside source IPs like ``192.168.1.22``).
+    """
+    covered: set[tuple[int, str | None]] = set()
+    for line in ufw_rules.splitlines():
+        m = _UFW_RULE_RE.match(line)
+        if not m:
+            continue
+        port = int(m.group(1))
+        proto = m.group(2).lower() if m.group(2) else None
+        covered.add((port, proto))
+    return covered
+
+
+def _is_covered_by_ufw(
+    port: int,
+    proto: str,
+    ufw_rules: str | set[tuple[int, str | None]],
+) -> bool:
     """Return True if a UFW rule covers this port/proto.
 
-    Anchored on the "To" column (right after ``[ N]``) to avoid matching the
-    port number anywhere else on the line — e.g. inside an IP source like
-    ``192.168.1.22`` which would otherwise falsely "cover" port 22.
+    Accepts either the raw ``ufw status`` text (for backward compatibility)
+    or a pre-parsed set from :func:`_parse_ufw_covered_ports` for callers
+    that need to query many ports against the same ruleset (O(1) lookup
+    instead of O(N) regex match per port).
     """
-    pattern = re.compile(
-        r"\[\s*\d+\]\s+" + re.escape(str(port)) +
-        r"(?:/" + re.escape(proto) + r")?\b",
-        re.IGNORECASE,
-    )
-    for line in ufw_rules.splitlines():
-        if pattern.match(line.lstrip()):
-            return True
-    return False
+    if isinstance(ufw_rules, str):
+        covered = _parse_ufw_covered_ports(ufw_rules)
+    else:
+        covered = ufw_rules
+    # A rule with explicit proto covers only that proto; a rule without proto
+    # covers any proto.
+    return (port, proto.lower()) in covered or (port, None) in covered
 
 
 def _system_port_name(port: int, proto: str) -> str:

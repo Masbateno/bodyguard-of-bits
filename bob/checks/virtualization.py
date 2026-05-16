@@ -133,7 +133,7 @@ def check_virtualization(snapshot: VirtSnapshot, t: TranslationFunc | None = Non
     result = CheckResult()
 
     if not snapshot.technologies and not snapshot.snap_net:
-        result.ok(t("virt.none_detected"))
+        result.ok(t("virt.none_detected"), key="virt.none_detected")
         return result
 
     for tech in snapshot.technologies:
@@ -151,6 +151,7 @@ def check_virtualization(snapshot: VirtSnapshot, t: TranslationFunc | None = Non
     for snap_pkg in snapshot.snap_net:
         result.warn(
             t("virt.snap_network", pkg=snap_pkg),
+            key="virt.snap_network",
         )
 
     return result
