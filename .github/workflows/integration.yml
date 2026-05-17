@@ -1,0 +1,127 @@
+name: Integration (multi-distro)
+
+# Runs BOB inside containers of multiple Linux distributions to catch
+# regressions that unit tests can't reach: locale fallback sentinels,
+# distro-specific subprocess assumptions, missing-tool handling on
+# non-Debian families.
+#
+# Scope: smoke + offline audit run. Does NOT verify scoring correctness
+# (containers have no firewall / no real services), only that BOB exits
+# cleanly without sentinels or Python tracebacks.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  smoke:
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian:12
+            family: debian
+          - distro: debian:13
+            family: debian
+          - distro: ubuntu:22.04
+            family: debian
+          - distro: ubuntu:24.04
+            family: debian
+          - distro: ubuntu:25.04
+            family: debian
+          - distro: kalilinux/kali-rolling
+            family: debian
+          - distro: fedora:41
+            family: fedora
+
+    container:
+      image: ${{ matrix.distro }}
+
+    steps:
+      - name: Install system deps (Debian/Ubuntu/Kali)
+        if: matrix.family == 'debian'
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            python3 python3-pip python3-venv git ca-certificates
+
+      - name: Install system deps (Fedora)
+        if: matrix.family == 'fedora'
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            python3 python3-pip git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Install BOB from source
+        run: |
+          python3 -m pip install --break-system-packages --upgrade pip
+          python3 -m pip install --break-system-packages -e .
+
+      - name: Smoke — bob --version
+        run: bob --version
+
+      - name: Smoke — bob --help
+        run: bob --help > /dev/null
+
+      - name: Smoke — bob --explain known key
+        run: bob --explain firewall.inactive > /dev/null
+
+      - name: Run offline audit
+        id: audit
+        run: |
+          set +e
+          bob --offline -v > audit.txt 2>&1
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          echo "BOB exit code: $rc"
+          echo "--- audit.txt (last 80 lines) ---"
+          tail -n 80 audit.txt
+          echo "--- end ---"
+
+      - name: Assert exit code ≤ 3 (4 = critical config/runtime error)
+        run: |
+          rc="${{ steps.audit.outputs.exit_code }}"
+          if [ "$rc" -gt 3 ]; then
+            echo "FAIL: BOB exit code $rc (expected 0–3 for legitimate findings)"
+            echo "--- full audit.txt ---"
+            cat audit.txt
+            exit 1
+          fi
+
+      - name: Assert no locale sentinel keys in output
+        run: |
+          # BOB's i18n fallback emits "[namespace.key]" when a translation
+          # key is missing. Regression test: this exact pattern in output
+          # means a locale key was removed without updating its call sites.
+          if grep -nE '\[[a-z_]+(\.[a-z_]+)+\]' audit.txt; then
+            echo "FAIL: locale sentinel keys found in output"
+            exit 1
+          fi
+
+      - name: Assert no Python traceback
+        run: |
+          if grep -qE '^Traceback \(most recent call last\)' audit.txt; then
+            echo "FAIL: Python traceback found in BOB output"
+            grep -A 40 -nE '^Traceback' audit.txt | head -n 60
+            exit 1
+          fi
+
+      - name: Upload audit log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ strategy.job-index }}-${{ matrix.family }}
+          path: audit.txt
+          retention-days: 7
