@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.4.6](#v046) | 17-05-2026 | Correctifs passe terrain v0.4.5 — **Bug 1** `kernel_modules.py` dpkg-query ne filtrait pas l'état `ii` (installé), donc les noyaux retirés par `apt remove` / `autoremove` (passés en état `rc` config-files) restaient listés comme "installés". Reproduit Mint test VM + so6desktop production. Utilise maintenant `${db:Status-Abbrev}` et ne garde que les lignes dont le 2e caractère est `i` (couvre `ii`, `hi`). **Bug 2** inversion de score : après qu'`apt upgrade` ait résolu un WARN `updates.security_pending`, seul `updates.ok` subsistait → `active_domains_from_engine` retirait le domaine → score global *baissait* (dénominateur réduit). Reproduit Debian 13 VM (7/10 → 6/10 après remédiation). `_actionable` élargi de `(WARN, ALERT)` à `(OK, WARN, ALERT)` ; les domaines INFO-only restent cachés par design. 4500/4500 tests (+11) |
 | [v0.4.5](#v045) | 16-05-2026 | Hardening de l'infrastructure de tests — `tests/test_locale_coverage.py` passe de scan regex à **parsing AST** (`ast.walk` + `ast.Call` + `ast.Name` checks) · élimine trois classes de faux positifs que le regex pouvait produire (matches dans docstrings, mauvais parse de call sites multilignes, appels d'attributs `obj._t(...)`) · allowlist `_KEY_EXCLUSIONS` complètement supprimée · mêmes 9 tests, même contrat externe, fondation plus robuste · 4489/4489 tests (inchangé) |
 | [v0.4.4](#v044) | 15-05-2026 | Hardening terrain cross-distro — **bug critique `updates.py`** (4/4 VMs Debian-family : 21 mises à jour de sécurité Ubuntu LTS non détectées) : `apt-get -s upgrade` → `dist-upgrade` · détection du cache APT obsolète · cross-check vs `apt list --upgradable` · "Surface d'attaque" propage `updates_unknown` au lieu du faux "à jour" · AppArmor "0 profil chargé" clé dédiée · SMART skippé si tous les disques sont virtuels · ports DDNS inline dans le WARN · S4 redesign `_is_safe_user_path` home-bounded · M4 refactor `_parse_ufw_covered_ports` (1 parse + lookup O(1)) · I2 vague 2 `key=` sur services/virtualization · nouveau test de couverture locale (attrape les régressions `[xxx.yyy]`) · 4489/4489 tests (+21) |
 | [v0.4.3](#v043) | 15-05-2026 | Rattrapage doc + passe de hardening post-audit — 4 clés firewall ajoutées à `EXPLAIN_KEYS` · fix crash `--json --json-full` (5 attributs HardeningSnapshot morts) · `strptime("%b…")` rendu indépendant de la locale (ssl_certs + logs) · faux positif `_is_covered_by_ufw` éliminé · liens markdown email plus échappés · validateur cron rejette les ranges hors-bornes · `key=` sur ~30 findings (docker, firewall_stack, network_context, ports) · 7 clés locales mortes retirées · anti-pattern concat i18n résolu (ddns, logs) · refs CIS ajoutées · CHANGELOG court corrigé pour v0.4.2 · 4468/4468 tests (+4 régression) |
@@ -23,6 +24,49 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.4.6] — 17-05-2026
+
+La passe de tests terrain v0.4.5 a produit deux bugs reproductibles sur 13 audits couvrant 6 systèmes distincts (5 VMs + 1 workstation de production). v0.4.6 corrige les deux — hotfix strictement ciblé, aucun changement de comportement en dehors des deux scénarios rapportés.
+
+### Bug 1 — Le listing noyaux incluait les paquets supprimés (état `rc`)
+
+**Reproduit sur** : VM Mint test après `apt dist-upgrade` + `apt autoremove` ; workstation production Linux Mint 22.3 après le même workflow. Confirme que ce n'est pas un cas-limite VM — c'est le résultat standard de tout utilisateur exécutant `apt remove` (ou sa forme transitive `apt dist-upgrade`) sur une image noyau obsolète.
+
+**Ce qui s'est passé** : `bob/checks/kernel_modules.py` listait les noyaux installés via `dpkg-query -W -f='${Package}\n' linux-image-[0-9]*`. `dpkg-query` retourne tout paquet matchant le pattern *quel que soit son état d'installation*, y compris ceux en état `rc` (supprimé mais fichiers de config dans `/etc` encore présents). `apt remove` (sans `--purge`) laisse un paquet en `rc` — le binaire noyau dans `/boot` est parti, mais le nom du paquet apparaît encore dans le listing de BOB. Résultat : "Installés : …, 6.17.0-20-generic, …" pour un noyau déjà désinstallé.
+
+**Correctif** : le format dpkg-query est maintenant `${db:Status-Abbrev}|${Package}\n`. `${db:Status-Abbrev}` est un code 2-caractères décrivant l'action désirée + l'état actuel (`ii` = installé, `rc` = remove-configfiles, `pn` = purge-not-installed, `iU` = install-unpacked, etc.). `_parse_installed_kernels` ne garde que les lignes dont le 2e caractère est `i` (état actuel = installé), ce qui couvre `ii` et `hi` (held-installed) tout en excluant `rc`, `pn`, `un`, `iU`, et les états transitoires où les binaires peuvent ou non exister. Rétro-compatibilité préservée : le parser accepte toujours les lignes plain `linux-image-…` (sans préfixe, sans `|`) pour les fixtures de tests et tout appelant qui ne pré-préfixe pas.
+
+**Sévérité** : cosmétique côté sortie BOB — pas d'impact scoring — mais portée élevée (tout utilisateur Debian-family qui a déjà nettoyé un vieux noyau).
+
+### Bug 2 — Le score baissait après remédiation (le domaine disparaissait du set actif)
+
+**Reproduit sur** : VM Debian 13. Pré-`apt upgrade` : WARN `updates.security_pending` présent → score 7/10. Post-`apt upgrade` : seul `updates.ok` émis → score *baissait* à 6/10. Effet utilisateur : rendre le système plus sécurisé produisait un score plus bas, l'exact inverse de l'intuition.
+
+**Pourquoi** : `bob/domain_scores.py::active_domains_from_engine()` sélectionnait les domaines contribuant à la moyenne globale. Le filtre de sélection était `(WARN, ALERT)` uniquement — les domaines où chaque finding était OK ou INFO étaient exclus. Quand `apt upgrade` résolvait le WARN, le domaine `updates` passait à émettre uniquement `updates.ok`, sortait de `active_domains`, et la moyenne globale était recalculée sur un set plus petit :
+
+```
+Avant remédiation : avg(updates=8, hardening=4, …) / N      = 7
+Après remédiation : avg(            hardening=4, …) / (N-1) = 6   ← BUG
+Avec correctif    : avg(updates=10, hardening=4, …) / N     = ~7+ ← CORRECT
+```
+
+**Correctif** : `_actionable` élargi de `(WARN, ALERT)` à `(OK, WARN, ALERT)`. Un domaine devient actif dès qu'un check émet un signal reconnaissable (OK clean ou WARN/ALERT actionnable). Les findings INFO restent exclus de la promotion — la terrain Mint test confirme que c'est la bonne ligne (les domaines INFO-only restent intentionnellement cachés, aucune transition observée là-bas).
+
+Cet élargissement cascade proprement : les domaines avec uniquement des findings OK apparaissent maintenant à 10/10 dans la moyenne globale, donc les aspects bien sécurisés du système sont visibles dans le score au lieu d'être implicites.
+
+### Ajouts de tests
+
+- `tests/test_kernel_modules.py` : 5 nouveaux tests couvrant `ii` keep, `rc` exclude, mixed `ii`+`rc`+`pn`+`un`+`iU` filtering, `hi` (hold) keep, et legacy/prefixed format mixed parsing.
+- `tests/test_domain_scores.py` : 6 nouveaux tests sous `TestActiveDomainsIncludesOK`, dont le scénario exact de remédiation Debian 13 qui asserte que le global passe de 8 à 9 quand le domaine résolu reste visible.
+
+### Vérification
+
+- 4500/4500 tests (+11 vs v0.4.5). Aucune régression sur le reste de la suite.
+- Bug 1 reproduit et corrigé sur Mint test VM (listing post-autoremove précis) et so6desktop (linux-image-6.17.0-20-generic n'apparaît plus après `apt remove`).
+- Bug 2 reproduit et corrigé sur Debian 13 VM (le score monte maintenant après `apt upgrade`).
 
 ---
 

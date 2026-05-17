@@ -127,10 +127,26 @@ def active_domains_from_engine(engine: "ScoreEngine") -> frozenset[str]:
     """
     Return the set of domain names that have at least one finding or deduction.
 
-    Used to hide domains whose service is not installed (e.g. Samba absent →
-    no samba.* findings → domain excluded from the score display).
+    A domain is "active" when any check from that domain emitted an
+    actionable signal: OK (service installed and clean), WARN, or ALERT.
+    Pure-INFO findings (advisory observations) do not promote a domain
+    on their own — they're explicitly excluded so domains with only
+    informational notices stay hidden from the global average.
+
+    OK is included because terrain v0.4.5 surfaced a scoring inversion:
+    after remediation of a WARN/ALERT (e.g. ``apt upgrade`` resolves
+    ``updates.security_pending``), the check switches to emitting only
+    ``updates.ok``. Without OK in the active set, the domain dropped
+    out of ``active_domains_from_engine`` and the user-observed score
+    *decreased* even though the system was strictly more secure than
+    before. Including OK keeps the now-clean domain at 10/10 in the
+    global average instead.
+
+    Used to hide domains whose service is not installed (e.g. Samba
+    absent → no samba.* findings at all → domain excluded from the
+    score display).
     """
-    _actionable = (FindingLevel.WARN, FindingLevel.ALERT)
+    _actionable = (FindingLevel.OK, FindingLevel.WARN, FindingLevel.ALERT)
     active: set[str] = set()
     for finding in engine.findings:
         if finding.level not in _actionable:

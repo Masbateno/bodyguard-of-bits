@@ -429,6 +429,75 @@ class TestComputeGlobalFromDomains:
 
 
 # ---------------------------------------------------------------------------
+# active_domains_from_engine — Bug 2 (v0.4.6): OK findings must keep a
+# domain active so post-remediation scores don't drop. Terrain Debian 13
+# (2026-05-17): `apt upgrade` resolved `updates.security_pending`, the
+# `updates` domain emitted only `updates.ok`, and the global score
+# decreased from 7/10 to 6/10 because the domain disappeared from the
+# active set (denominator shrank).
+# ---------------------------------------------------------------------------
+
+class TestActiveDomainsIncludesOK:
+    def _engine_with_finding(self, key: str, level: str) -> ScoreEngine:
+        engine = ScoreEngine()
+        result = CheckResult()
+        emit = getattr(result, level)
+        emit(message=f"Finding for {key}", key=key)
+        engine.apply(result)
+        engine.finalize()
+        return engine
+
+    def test_ok_finding_makes_domain_active(self):
+        engine = self._engine_with_finding("updates.ok", "ok")
+        active = active_domains_from_engine(engine)
+        assert "updates" in active
+
+    def test_warn_finding_makes_domain_active(self):
+        engine = self._engine_with_finding("updates.security_pending", "warn")
+        active = active_domains_from_engine(engine)
+        assert "updates" in active
+
+    def test_alert_finding_makes_domain_active(self):
+        engine = self._engine_with_finding("ssh.empty_password", "alert")
+        active = active_domains_from_engine(engine)
+        assert "ssh" in active
+
+    def test_info_only_finding_does_not_promote_domain(self):
+        # INFO is advisory — domain stays hidden unless something stronger
+        # also fires. Preserves terrain Mint test v0.4.5 behavior.
+        engine = self._engine_with_finding("updates.regular_pending", "info")
+        active = active_domains_from_engine(engine)
+        assert "updates" not in active
+
+    def test_no_findings_no_active_domains(self):
+        engine = ScoreEngine()
+        engine.finalize()
+        assert active_domains_from_engine(engine) == frozenset()
+
+    def test_remediation_keeps_domain_at_max_score(self):
+        # Reproduces the Debian 13 scoring inversion: ssh has a WARN (8/10),
+        # updates remediated to OK only. Without Bug 2 fix, updates would
+        # drop from the active set and global = ssh alone = 8.
+        # With the fix, updates stays at 10/10 and global = (8+10)/2 = 9.
+        engine = ScoreEngine()
+        result = CheckResult()
+        result.warn(message="ssh issue", key="ssh.x11_forwarding")
+        result.add_deduction(reason="ssh.x11_forwarding", points=2,
+                             key="ssh.x11_forwarding")
+        result.ok(message="updates clean", key="updates.ok")
+        engine.apply(result)
+        engine.finalize()
+
+        scores, _ = compute_domain_scores(engine)
+        active = active_domains_from_engine(engine)
+
+        assert "updates" in active
+        assert "ssh" in active
+        assert scores["updates"]["score"] == MAX_SCORE  # 10/10 clean
+        assert compute_global_from_domains(scores, active) == round((10 + 8) / 2)
+
+
+# ---------------------------------------------------------------------------
 # apply_domain_score_override — integration
 # ---------------------------------------------------------------------------
 

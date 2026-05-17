@@ -6,6 +6,146 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.4.6] — 2026-05-17
+
+**Terrain test pass v0.4.5 surfaced two reproducible bugs.** Both are now fixed. Scope is strictly limited — narrow hotfix, no behavior change outside the two reported scenarios.
+
+### Validation context: the v0.4.5 terrain pass
+
+Before opening v0.4.6, 13 audits were run across 6 distinct systems using the v0.4.5 release published to PyPI:
+
+| System | Audits | Outcome |
+|---|---|---|
+| Mint dev (host) | 1 | clean |
+| Debian 13 VM | 3 (pre + `apt upgrade` + `dist-upgrade`) | Bug 2 manifested after remediation |
+| Kali Rolling VM | 1 | clean |
+| Mint test VM | 3 (pre + `apt upgrade` + `dist-upgrade` + `autoremove`) | Bug 1 manifested after autoremove |
+| Ubuntu 26.04 LTS VM | 1 | clean |
+| so6desktop production (Linux Mint 22.3) | 2 (pre + post `dist-upgrade` + `autoremove`) | Bug 1 manifested in production |
+
+Two bugs reproduced. Bug 1 manifested on production hardware — confirms it is not a VM artefact but the routine outcome of any user cleaning an obsolete kernel image. Bug 2 was bound to a specific transition (`WARN/ALERT → OK only` within a domain) — narrower scope than initially expected, but a real ergonomics regression on the remediation path.
+
+### Bug 1 — Kernel listing did not filter on `ii` (installed) state
+
+**Trigger**: `apt remove linux-image-X` (or its transitive form via `apt dist-upgrade` / `autoremove`) leaves the package in `rc` state. `rc` means "removed, config-files remaining": the kernel binary in `/boot` is gone (`/etc/kernel/postrm.d/initramfs-tools` runs and deletes `initrd.img-X`), but the package row stays in the dpkg database with config files in `/etc`. The package only fully disappears when `apt purge` is used or when `dpkg --remove --purge` is run.
+
+**What BOB used to do**: in `bob/checks/kernel_modules.py`, snapshot construction called
+
+```python
+dpkg_out = _run("dpkg-query", "-f", "${Package}\n", "-W", "linux-image-[0-9]*", timeout=10)
+```
+
+This format prints the package name regardless of state. `_parse_installed_kernels` then assumed every returned line was an installed kernel and listed them all.
+
+**What the user saw**: BOB output listed kernels that `apt` had already removed. Concrete example on so6desktop after `apt dist-upgrade` (which removed `linux-image-6.17.0-20-generic`) + `apt autoremove` (which removed `linux-hwe-6.17-headers-6.17.0-20`):
+
+```
+→ Installés  : 6.17.0-19-generic, 6.17.0-20-generic, 6.17.0-22-generic, 6.17.0-23-generic (*)
+→ Obsolètes  : 6.17.0-19-generic
+→ sudo apt purge linux-image-6.17.0-19-generic
+```
+
+`6.17.0-20-generic` was already gone — its row in dpkg was `rc`, not `ii`. The "Obsolètes" counter was undercounted as a knock-on effect (only 1 listed instead of 2). The purge suggestion was for the right kernel, but the rest of the listing was wrong.
+
+**Fix**: dpkg-query is now invoked with the status abbreviation included.
+
+```python
+dpkg_out = _run(
+    "dpkg-query", "-f", "${db:Status-Abbrev}|${Package}\n",
+    "-W", "linux-image-[0-9]*",
+    timeout=10,
+)
+```
+
+`${db:Status-Abbrev}` is a 2-character abbreviation of `desired action + current status`:
+
+| Code | Desired | Current | Means | BOB action |
+|------|---------|---------|-------|------------|
+| `ii` | install | installed | normal installed package | keep |
+| `hi` | hold | installed | installed but on apt-mark hold | keep |
+| `rc` | remove | config-files | removed by `apt remove`, /boot binaries gone | **exclude** |
+| `pn` | purge | not-installed | scheduled for purge, never reinstalled | exclude |
+| `un` | unknown | not-installed | dpkg knows the name but nothing else | exclude |
+| `iU` | install | unpacked | mid-install, binaries may not be runnable | exclude |
+| `iF` | install | half-configured | mid-install transient | exclude |
+| `iW` | install | triggers-awaited | transient | exclude |
+
+`_parse_installed_kernels` now keeps only lines whose 2nd character is `i` — the second char encodes current status (n=not-installed, c=config-files, H=half-installed, U=unpacked, F=half-configured, W=triggers-awaited, i=installed). Any line where the binaries are *guaranteed* to be present passes; anything transient or removed is filtered.
+
+**Backward compatibility**: the parser still accepts plain `linux-image-…` lines without a `|` prefix. This is preserved for two reasons: (1) unit-test fixtures across `TestParseInstalledKernels` use the legacy format; (2) any code path or future caller that produces just the package name (e.g. a fallback if `${db:Status-Abbrev}` is somehow unavailable) continues to work.
+
+### Bug 2 — Score dropped after remediation
+
+**Trigger**: a single domain transitions from "has at least one WARN/ALERT" to "emits only OK findings". The reference scenario is `updates`: pre-remediation a `updates.security_pending` WARN exists, the user runs `apt upgrade`, the next BOB run only sees `updates.ok`.
+
+**What BOB used to do**: `bob/domain_scores.py::active_domains_from_engine()` collected domains for inclusion in the global score average. It applied a filter `_actionable = (FindingLevel.WARN, FindingLevel.ALERT)` — a domain made it into the active set only if it had at least one WARN or ALERT finding (or a deduction with a key, which is implied by WARN/ALERT in practice).
+
+**What the user saw**: on Debian 13 VM with a security update pending:
+
+- **Audit before `apt upgrade`** — `updates.security_pending` WARN active → `updates` domain in the active set at 8/10. Other active domains: `ssh`, `hardening`, etc. Global = average ≈ 7/10.
+- **`apt upgrade`** resolves the security update.
+- **Audit after `apt upgrade`** — `updates` check now emits `updates.ok` and nothing else. Filter rejects `updates` from the active set. `ssh`, `hardening`, etc. still present. Global average now over `N-1` domains. Math: removing a domain that had 8/10 from an average where many remaining domains are below 8/10 → average *increases*. But removing a domain that had 8/10 when several remaining domains are at 4–6/10 makes the new average drop. On Debian 13 the new average dropped from 7 to 6.
+
+The user-observable effect: doing the right thing (applying security updates) caused the score to decrease. Anti-incentive on a hardening tool.
+
+**Why the filter existed**: presumably to hide domains where no service is installed (e.g. Samba not installed → no `samba.*` findings → domain absent from display). This goal is legitimate. The implementation conflated "no actionable finding" with "no signal at all" and produced the wrong behavior at the WARN→OK transition.
+
+**Fix**: the filter is now `_actionable = (FindingLevel.OK, FindingLevel.WARN, FindingLevel.ALERT)`. A domain is considered active when *any* check from it emits a recognisable health signal. INFO-only domains remain hidden — terrain Mint test (only `updates.regular_pending` INFO present, no WARN, no OK) confirmed the bug doesn't manifest there, so the conservative line is to exclude INFO from promotion.
+
+The semantic now matches what the docstring already claimed ("Used to hide domains whose service is not installed") — service not installed means no findings emitted, which still keeps the domain absent.
+
+**Score behavior with the fix**:
+
+```
+Before remediation: avg(updates=8, hardening=4, …) / N            = 7
+After remediation : avg(updates=10, hardening=4, …) / N           = ~7+    ← CORRECT
+```
+
+Domains with only OK findings now contribute their clean 10/10 score to the global average, which is mathematically the right outcome: a domain that audits clean should pull the average up, not be silently removed.
+
+**Cascade effects** to be aware of:
+
+- Domains where the relevant check always emits an OK (because the service is universally present and clean on the system) will now always be in the active set. On Ubuntu 26.04 LTS, where many checks emit pure OK, the denominator of the global average grows. This is intended — those domains were always "audited" but invisible to the score.
+- Display of domain scores: `render_domain_scores` filters by `active_domains`, so previously hidden 10/10 domains may now appear. The breakdown becomes more honest about which domains contributed.
+
+### Tests
+
+**`tests/test_kernel_modules.py`** — new tests in `TestParseInstalledKernels`:
+
+- `test_status_prefixed_ii_kept` — basic `ii ` rows produce the version list.
+- `test_status_prefixed_rc_excluded` — direct reproduction of Bug 1: an `rc ` row for `6.8.0-52` is dropped while a sibling `ii ` row for `6.8.0-55` is kept.
+- `test_status_prefixed_excludes_all_non_installed_states` — `ii`, `rc`, `pn`, `un`, `iU` cohabit; only `ii` survives.
+- `test_status_prefixed_hi_kept` — held packages stay in the list (the binaries are still on disk).
+- `test_mixed_legacy_and_status_prefixed_format` — backward compatibility: a single dpkg output mixing prefixed and non-prefixed lines parses correctly.
+
+**`tests/test_domain_scores.py`** — new `TestActiveDomainsIncludesOK` class:
+
+- `test_ok_finding_makes_domain_active` — direct assertion of the new filter behavior.
+- `test_warn_finding_makes_domain_active` — old behavior preserved.
+- `test_alert_finding_makes_domain_active` — old behavior preserved.
+- `test_info_only_finding_does_not_promote_domain` — guards the INFO exclusion; if this fails, INFO-only domains have started leaking into the active set.
+- `test_no_findings_no_active_domains` — empty engine still returns empty active set; baseline regression guard.
+- `test_remediation_keeps_domain_at_max_score` — direct Debian 13 reproduction in test form: ssh has a WARN (8/10), updates remediated to OK only. Asserts `compute_global_from_domains` returns `(8+10)/2 = 9` instead of `8`.
+
+### Test count
+
+4500 passed (+11 vs v0.4.5). No regression in the rest of the suite.
+
+### What does NOT change
+
+- JSON schema version stays at 1. No new fields, no removed fields, no renamed fields.
+- `EXPLAIN_KEYS` unchanged.
+- No new locale keys; no removed locale keys.
+- Public Python API of `bob.domain_scores` unchanged (signature of `active_domains_from_engine`, return type, no new arguments).
+- Public Python API of `bob.checks.kernel_modules` unchanged (signature of `_parse_installed_kernels`, return type — it always took a string and returned `List[str]`, and the meaning of the string is upward-compatible).
+- No new dependencies (still 0 runtime deps outside stdlib).
+
+### Out of scope (deferred)
+
+- **Comprehensive hardening audit by sub-agent**: requested concurrently with v0.4.6, deferred because the previous attempt hit the org's monthly usage cap before producing a report. See `[[audit-hardening-en-attente-v0-4-5]]` in agent memory — to be relaunched next session once quota resets.
+
+---
+
 ## [v0.4.5] — 2026-05-16
 
 **Test infrastructure hardening release.** v0.4.4 added `tests/test_locale_coverage.py` to catch the `logs.attempts` class of regression — keys removed from locale files while still referenced in code. The implementation worked and was already extended in v0.4.4 with three ChatGPT-review fixes (tighter regex lookbehind, exhaustive `explain.*` coverage, placeholder parity). But the underlying machinery still rested on a regex scan of source files, with documented limits: docstring false positives, multi-line call site fragility, attribute-call edge cases. v0.4.5 replaces the regex pipeline with proper AST parsing.

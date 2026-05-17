@@ -460,6 +460,52 @@ class TestParseInstalledKernels:
         assert "6.8.0-52-generic" in result
         assert "6.12.74+deb13+1-amd64" in result
 
+    def test_status_prefixed_ii_kept(self):
+        output = (
+            "ii |linux-image-6.8.0-52-generic\n"
+            "ii |linux-image-6.8.0-55-generic\n"
+        )
+        assert _parse_installed_kernels(output) == [
+            "6.8.0-52-generic",
+            "6.8.0-55-generic",
+        ]
+
+    def test_status_prefixed_rc_excluded(self):
+        # `rc` = removed by `apt remove` (without --purge): config files in /etc
+        # remain but kernel binaries in /boot are gone. Must NOT be listed.
+        output = (
+            "ii |linux-image-6.8.0-55-generic\n"
+            "rc |linux-image-6.8.0-52-generic\n"
+        )
+        assert _parse_installed_kernels(output) == ["6.8.0-55-generic"]
+
+    def test_status_prefixed_excludes_all_non_installed_states(self):
+        output = (
+            "ii |linux-image-6.8.0-58-generic\n"
+            "rc |linux-image-6.8.0-52-generic\n"
+            "pn |linux-image-6.8.0-50-generic\n"
+            "un |linux-image-6.8.0-48-generic\n"
+            "iU |linux-image-6.8.0-46-generic\n"
+        )
+        assert _parse_installed_kernels(output) == ["6.8.0-58-generic"]
+
+    def test_status_prefixed_hi_kept(self):
+        # `hi` = on hold (apt-mark hold), but still installed. Keep.
+        output = "hi |linux-image-6.8.0-52-generic\n"
+        assert _parse_installed_kernels(output) == ["6.8.0-52-generic"]
+
+    def test_mixed_legacy_and_status_prefixed_format(self):
+        # Legacy (no |) and new (with |) lines must both parse correctly.
+        output = (
+            "linux-image-6.8.0-50-generic\n"
+            "ii |linux-image-6.8.0-55-generic\n"
+            "rc |linux-image-6.8.0-52-generic\n"
+        )
+        assert _parse_installed_kernels(output) == [
+            "6.8.0-50-generic",
+            "6.8.0-55-generic",
+        ]
+
 
 # ---------------------------------------------------------------------------
 # _purge_cmd

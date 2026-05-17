@@ -6,6 +6,146 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.4.6] — 17-05-2026
+
+**La passe terrain v0.4.5 a fait remonter deux bugs reproductibles.** Les deux sont maintenant corrigés. Périmètre strictement limité — hotfix ciblé, aucun changement de comportement en dehors des deux scénarios rapportés.
+
+### Contexte de validation : la passe terrain v0.4.5
+
+Avant d'ouvrir v0.4.6, 13 audits ont été exécutés sur 6 systèmes distincts en utilisant la release v0.4.5 publiée sur PyPI :
+
+| Système | Audits | Verdict |
+|---|---|---|
+| Mint dev (host) | 1 | propre |
+| Debian 13 VM | 3 (pré + `apt upgrade` + `dist-upgrade`) | Bug 2 manifesté après remédiation |
+| Kali Rolling VM | 1 | propre |
+| Mint test VM | 3 (pré + `apt upgrade` + `dist-upgrade` + `autoremove`) | Bug 1 manifesté après autoremove |
+| Ubuntu 26.04 LTS VM | 1 | propre |
+| so6desktop production (Linux Mint 22.3) | 2 (pré + post `dist-upgrade` + `autoremove`) | Bug 1 manifesté en production |
+
+Deux bugs reproduits. Le Bug 1 s'est manifesté sur du matériel de production — confirme que ce n'est pas un artefact VM mais le résultat routinier de tout utilisateur nettoyant une image noyau obsolète. Le Bug 2 était lié à une transition spécifique (`WARN/ALERT → OK only` dans un domaine) — périmètre plus étroit qu'initialement supposé, mais une vraie régression d'ergonomie sur le chemin de remédiation.
+
+### Bug 1 — Le listing noyaux ne filtrait pas sur l'état `ii` (installé)
+
+**Déclencheur** : `apt remove linux-image-X` (ou sa forme transitive via `apt dist-upgrade` / `autoremove`) laisse le paquet en état `rc`. `rc` signifie "supprimé, config-files restants" : le binaire noyau dans `/boot` a disparu (`/etc/kernel/postrm.d/initramfs-tools` s'exécute et supprime `initrd.img-X`), mais l'entrée du paquet reste dans la base dpkg avec ses fichiers de config dans `/etc`. Le paquet ne disparaît complètement que si `apt purge` est utilisé ou `dpkg --remove --purge` est exécuté.
+
+**Ce que BOB faisait** : dans `bob/checks/kernel_modules.py`, la construction du snapshot appelait
+
+```python
+dpkg_out = _run("dpkg-query", "-f", "${Package}\n", "-W", "linux-image-[0-9]*", timeout=10)
+```
+
+Ce format imprime le nom du paquet sans considération d'état. `_parse_installed_kernels` supposait ensuite que chaque ligne retournée était un noyau installé et les listait toutes.
+
+**Ce que l'utilisateur voyait** : la sortie BOB listait des noyaux qu'`apt` avait déjà supprimés. Exemple concret sur so6desktop après `apt dist-upgrade` (qui a supprimé `linux-image-6.17.0-20-generic`) + `apt autoremove` (qui a supprimé `linux-hwe-6.17-headers-6.17.0-20`) :
+
+```
+→ Installés  : 6.17.0-19-generic, 6.17.0-20-generic, 6.17.0-22-generic, 6.17.0-23-generic (*)
+→ Obsolètes  : 6.17.0-19-generic
+→ sudo apt purge linux-image-6.17.0-19-generic
+```
+
+`6.17.0-20-generic` avait déjà disparu — son entrée dpkg était `rc`, pas `ii`. Le compteur "Obsolètes" était sous-évalué par effet de bord (1 listé au lieu de 2). La suggestion de purge ciblait le bon noyau, mais le reste du listing était faux.
+
+**Correctif** : dpkg-query est maintenant invoqué avec l'abréviation de statut incluse.
+
+```python
+dpkg_out = _run(
+    "dpkg-query", "-f", "${db:Status-Abbrev}|${Package}\n",
+    "-W", "linux-image-[0-9]*",
+    timeout=10,
+)
+```
+
+`${db:Status-Abbrev}` est une abréviation 2-caractères de `action désirée + état actuel` :
+
+| Code | Désiré | Actuel | Signifie | Action BOB |
+|------|--------|--------|----------|------------|
+| `ii` | install | installé | paquet installé normal | garde |
+| `hi` | hold | installé | installé mais sur apt-mark hold | garde |
+| `rc` | remove | config-files | supprimé par `apt remove`, binaires /boot partis | **exclut** |
+| `pn` | purge | non-installé | programmé pour purge, jamais réinstallé | exclut |
+| `un` | unknown | non-installé | dpkg connaît le nom mais rien d'autre | exclut |
+| `iU` | install | unpacked | en cours d'installation, binaires peut-être pas exécutables | exclut |
+| `iF` | install | half-configured | transitoire en cours d'installation | exclut |
+| `iW` | install | triggers-awaited | transitoire | exclut |
+
+`_parse_installed_kernels` ne garde maintenant que les lignes dont le 2e caractère est `i` — le 2e char encode l'état actuel (n=non-installé, c=config-files, H=half-installed, U=unpacked, F=half-configured, W=triggers-awaited, i=installé). Toute ligne où les binaires sont *garantis* présents passe ; tout ce qui est transitoire ou supprimé est filtré.
+
+**Rétro-compatibilité** : le parser accepte toujours les lignes plain `linux-image-…` sans préfixe `|`. C'est préservé pour deux raisons : (1) les fixtures de tests dans `TestParseInstalledKernels` utilisent le format legacy ; (2) tout chemin de code ou futur appelant qui produit juste le nom du paquet (ex. un fallback si `${db:Status-Abbrev}` est indisponible) continue de fonctionner.
+
+### Bug 2 — Le score baissait après remédiation
+
+**Déclencheur** : un domaine transite de "a au moins un WARN/ALERT" à "émet uniquement des findings OK". Le scénario de référence est `updates` : pré-remédiation un WARN `updates.security_pending` existe, l'utilisateur exécute `apt upgrade`, le run BOB suivant ne voit plus que `updates.ok`.
+
+**Ce que BOB faisait** : `bob/domain_scores.py::active_domains_from_engine()` collectait les domaines pour inclusion dans la moyenne de score globale. Il appliquait un filtre `_actionable = (FindingLevel.WARN, FindingLevel.ALERT)` — un domaine entrait dans le set actif uniquement s'il avait au moins un finding WARN ou ALERT (ou une déduction avec une clé, ce qui est impliqué par WARN/ALERT en pratique).
+
+**Ce que l'utilisateur voyait** : sur Debian 13 VM avec une mise à jour de sécurité en attente :
+
+- **Audit avant `apt upgrade`** — WARN `updates.security_pending` actif → domaine `updates` dans le set actif à 8/10. Autres domaines actifs : `ssh`, `hardening`, etc. Global = moyenne ≈ 7/10.
+- **`apt upgrade`** résout la mise à jour de sécurité.
+- **Audit après `apt upgrade`** — le check `updates` émet maintenant `updates.ok` et rien d'autre. Le filtre rejette `updates` du set actif. `ssh`, `hardening`, etc. encore présents. La moyenne globale est maintenant sur `N-1` domaines. Maths : retirer un domaine qui avait 8/10 d'une moyenne où plusieurs domaines restants sont en-dessous de 8/10 → moyenne *augmente*. Mais retirer un domaine qui avait 8/10 quand plusieurs domaines restants sont à 4–6/10 fait baisser la nouvelle moyenne. Sur Debian 13 la nouvelle moyenne a baissé de 7 à 6.
+
+L'effet observable utilisateur : faire la bonne chose (appliquer les patches de sécurité) faisait baisser le score. Anti-incitatif sur un outil de hardening.
+
+**Pourquoi le filtre existait** : probablement pour cacher les domaines où aucun service n'est installé (ex. Samba non installé → pas de findings `samba.*` → domaine absent de l'affichage). Cet objectif est légitime. L'implémentation confondait "pas de finding actionnable" avec "pas de signal du tout" et produisait le mauvais comportement à la transition WARN→OK.
+
+**Correctif** : le filtre est maintenant `_actionable = (FindingLevel.OK, FindingLevel.WARN, FindingLevel.ALERT)`. Un domaine est considéré actif quand *n'importe quel* check de ce domaine émet un signal de santé reconnaissable. Les domaines INFO-only restent cachés — la terrain Mint test (seul `updates.regular_pending` INFO présent, pas de WARN, pas de OK) a confirmé que le bug ne s'y manifeste pas, donc la ligne conservatrice est d'exclure INFO de la promotion.
+
+La sémantique correspond maintenant à ce que le docstring affirmait déjà ("Used to hide domains whose service is not installed") — service non installé signifie pas de findings émis, ce qui garde le domaine absent.
+
+**Comportement de score avec le correctif** :
+
+```
+Avant remédiation : avg(updates=8, hardening=4, …) / N          = 7
+Après remédiation : avg(updates=10, hardening=4, …) / N         = ~7+    ← CORRECT
+```
+
+Les domaines avec uniquement des findings OK contribuent maintenant leur score 10/10 propre à la moyenne globale, ce qui est mathématiquement le bon résultat : un domaine qui audite propre devrait tirer la moyenne vers le haut, pas être silencieusement retiré.
+
+**Effets en cascade** à connaître :
+
+- Les domaines où le check pertinent émet toujours un OK (parce que le service est universellement présent et clean sur le système) seront désormais toujours dans le set actif. Sur Ubuntu 26.04 LTS, où beaucoup de checks émettent du pur OK, le dénominateur de la moyenne globale grossit. C'est intentionnel — ces domaines étaient toujours "audités" mais invisibles au score.
+- Affichage des scores par domaine : `render_domain_scores` filtre par `active_domains`, donc des domaines 10/10 précédemment cachés peuvent maintenant apparaître. Le breakdown devient plus honnête sur quels domaines ont contribué.
+
+### Tests
+
+**`tests/test_kernel_modules.py`** — nouveaux tests dans `TestParseInstalledKernels` :
+
+- `test_status_prefixed_ii_kept` — les lignes `ii ` basiques produisent la liste de versions.
+- `test_status_prefixed_rc_excluded` — reproduction directe du Bug 1 : une ligne `rc ` pour `6.8.0-52` est exclue tandis qu'une ligne sœur `ii ` pour `6.8.0-55` est gardée.
+- `test_status_prefixed_excludes_all_non_installed_states` — `ii`, `rc`, `pn`, `un`, `iU` cohabitent ; seul `ii` survit.
+- `test_status_prefixed_hi_kept` — les paquets en hold restent dans la liste (les binaires sont encore sur disque).
+- `test_mixed_legacy_and_status_prefixed_format` — rétro-compatibilité : une sortie dpkg unique mélangeant lignes préfixées et non-préfixées parse correctement.
+
+**`tests/test_domain_scores.py`** — nouvelle classe `TestActiveDomainsIncludesOK` :
+
+- `test_ok_finding_makes_domain_active` — assertion directe du nouveau comportement de filtre.
+- `test_warn_finding_makes_domain_active` — ancien comportement préservé.
+- `test_alert_finding_makes_domain_active` — ancien comportement préservé.
+- `test_info_only_finding_does_not_promote_domain` — garde-fou de l'exclusion INFO ; si ce test échoue, les domaines INFO-only ont commencé à fuiter dans le set actif.
+- `test_no_findings_no_active_domains` — moteur vide retourne toujours un set actif vide ; baseline regression guard.
+- `test_remediation_keeps_domain_at_max_score` — reproduction directe Debian 13 sous forme de test : ssh a un WARN (8/10), updates remédié à OK seulement. Asserte que `compute_global_from_domains` retourne `(8+10)/2 = 9` au lieu de `8`.
+
+### Compte de tests
+
+4500 passés (+11 vs v0.4.5). Aucune régression sur le reste de la suite.
+
+### Ce qui NE change PAS
+
+- Le JSON schema reste version 1. Aucun nouveau champ, aucun champ supprimé, aucun champ renommé.
+- `EXPLAIN_KEYS` inchangé.
+- Aucune nouvelle clé de locale ; aucune clé supprimée.
+- API Python publique de `bob.domain_scores` inchangée (signature de `active_domains_from_engine`, type de retour, aucun nouvel argument).
+- API Python publique de `bob.checks.kernel_modules` inchangée (signature de `_parse_installed_kernels`, type de retour — elle a toujours pris une string et retourné `List[str]`, et le sens de la string est upward-compatible).
+- Aucune nouvelle dépendance (toujours 0 dépendance runtime hors stdlib).
+
+### Hors périmètre (différé)
+
+- **Audit hardening complet par sub-agent** : demandé en parallèle de v0.4.6, différé car la tentative précédente a hit le cap mensuel d'usage de l'org avant de produire un rapport. Voir `[[audit-hardening-en-attente-v0-4-5]]` dans la mémoire agent — à relancer en prochaine session une fois le quota reset.
+
+---
+
 ## [v0.4.5] — 16-05-2026
 
 **Release de hardening de l'infrastructure de tests.** v0.4.4 a ajouté `tests/test_locale_coverage.py` pour attraper la classe de régression `logs.attempts` — clés retirées des fichiers de locale alors qu'elles sont encore référencées dans le code. L'implémentation fonctionnait et avait déjà été étendue en v0.4.4 avec trois fixes issus d'une review ChatGPT (negative lookbehind resserré, couverture exhaustive `explain.*`, parité des placeholders). Mais la machinerie sous-jacente reposait encore sur un scan regex des fichiers source, avec des limites documentées : faux positifs dans docstrings, fragilité des call sites multilignes, edge cases d'appels d'attributs. v0.4.5 remplace le pipeline regex par un vrai parsing AST.

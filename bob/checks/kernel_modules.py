@@ -132,8 +132,14 @@ class KernelModulesSnapshot:
         # --- Installed kernel packages (dpkg-query) -------------------------
         if _command_exists("dpkg-query"):
             snap.dpkg_available = True
+            # Prefix with status abbrev so we can filter out "rc" (config-files
+            # remaining after apt remove without --purge). Without this filter,
+            # BOB listed kernels that were already removed — terrain v0.4.5
+            # confirmed reproducible on Mint dist-upgrade + autoremove and on
+            # production workstations.
             dpkg_out = _run(
-                "dpkg-query", "-f", "${Package}\\n", "-W", "linux-image-[0-9]*",
+                "dpkg-query", "-f", "${db:Status-Abbrev}|${Package}\\n",
+                "-W", "linux-image-[0-9]*",
                 timeout=10,
             )
             if dpkg_out:
@@ -315,12 +321,35 @@ def _parse_installed_kernels(dpkg_output: str) -> List[str]:
     """
     Extract version strings from ``dpkg-query`` output.
 
-    Input lines are package names like "linux-image-6.8.0-52-generic".
-    Returns a list of bare version strings: ["6.8.0-52-generic", …].
+    Accepts two formats:
+      - Plain package name: ``linux-image-6.8.0-52-generic``
+      - Status-prefixed:    ``ii |linux-image-6.8.0-52-generic`` (db:Status-Abbrev)
+
+    When a status prefix is present, only ``ii*`` (installed) lines are kept;
+    ``rc`` (removed, config-files remaining), ``un`` (not-installed), and
+    other transient states are excluded. This guards against listing kernels
+    that were uninstalled by ``apt remove`` without ``--purge`` — terrain
+    v0.4.5 confirmed on Linux Mint after ``apt dist-upgrade`` + ``autoremove``.
+
+    Returns a list of bare version strings: ``["6.8.0-52-generic", …]``.
     """
     versions: list[str] = []
     for line in dpkg_output.splitlines():
-        pkg = line.strip()
+        raw = line.strip()
+        if not raw:
+            continue
+        if "|" in raw:
+            status, _, pkg = raw.partition("|")
+            # Status-Abbrev format: 2 chars — desired action + current status.
+            # The 2nd char ('i' = installed) is what gates kernel binaries
+            # being present on disk: "ii" / "hi" → keep, "rc" / "pn" / "un" /
+            # "iU" (unpacked, mid-install) → skip.
+            s = status.strip()
+            if len(s) < 2 or s[1] != "i":
+                continue
+            pkg = pkg.strip()
+        else:
+            pkg = raw
         if pkg.startswith("linux-image-"):
             version = pkg[len("linux-image-"):]
             if _KVER_RE.match(version):   # only numeric kernel versions
