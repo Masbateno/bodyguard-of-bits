@@ -6,6 +6,70 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.4.5] — 16-05-2026
+
+**Release de hardening de l'infrastructure de tests.** v0.4.4 a ajouté `tests/test_locale_coverage.py` pour attraper la classe de régression `logs.attempts` — clés retirées des fichiers de locale alors qu'elles sont encore référencées dans le code. L'implémentation fonctionnait et avait déjà été étendue en v0.4.4 avec trois fixes issus d'une review ChatGPT (negative lookbehind resserré, couverture exhaustive `explain.*`, parité des placeholders). Mais la machinerie sous-jacente reposait encore sur un scan regex des fichiers source, avec des limites documentées : faux positifs dans docstrings, fragilité des call sites multilignes, edge cases d'appels d'attributs. v0.4.5 remplace le pipeline regex par un vrai parsing AST.
+
+### Pourquoi ça compte
+
+Le test attrape une vraie classe récurrente de bug — fallbacks silencieux de locale qui n'apparaissent qu'au test terrain (la sentinelle v0.4.3 `[logs.attempts]` a été découverte post-tag, pas par la CI). Tout l'intérêt d'automatiser ça est pour que la CI attrape la régression avant le tag. Si l'automation elle-même a des angles morts cachés, le filet de sécurité fuit.
+
+Trois problèmes structurels avec le scan regex du code source Python :
+
+1. **Les matches dans docstrings sont des faux positifs qui ressemblent à des vrais.** `bob/i18n.py` documente l'API `t()` avec des exemples comme `t("samba.open_world")` et `t("log.blocked_attempts", count=42)`. Le regex matchait ces exemples comme s'ils étaient de vrais sites d'appel, forçant v0.4.4 à maintenir une allowlist `_KEY_EXCLUSIONS` avec deux entrées. Chaque futur exemple de doc d'API aurait fait grossir cette liste — c'est l'anti-pattern classique "l'allowlist mange les bugs".
+2. **Les call sites multilignes sont dépendants du formatage.** Un appel écrit `_t(\n    "foo.bar",\n    x=1,\n)` est sémantiquement identique à `_t("foo.bar", x=1)` mais le regex nécessite que la parenthèse ouvrante et le guillemet ouvrant soient proches. Le regex v0.4.4 gérait la plupart des layouts mais le contrat était implicite et fragile.
+3. **Les appels d'attribut passent à travers certains lookbehinds.** v0.4.4 a resserré le negative lookbehind de `[A-Za-z0-9_]` à `[A-Za-z0-9_.]` pour rejeter `obj._t(...)`. Ça couvrait le cas commun, mais la règle était rétroactive — chaque nouvel edge case (identifiants unicode, backslashes de continuation) demanderait un autre tweak du lookbehind.
+
+### Comment l'AST règle les trois
+
+```python
+def _is_translation_call(node: ast.Call) -> bool:
+    return (
+        isinstance(node.func, ast.Name)
+        and node.func.id in _TRANSLATION_FUNC_NAMES
+    )
+```
+
+`ast.parse(source)` retourne l'arbre syntaxique Python. Trois propriétés structurelles résolvent les trois problèmes :
+
+- **Les docstrings sont inertes.** Elles apparaissent comme `ast.Constant(str)` directement dans un body de fonction/classe/module — pas dans un `ast.Call`. Le walker ne les voit jamais.
+- **Le whitespace est transparent.** Le même node `ast.Call` représente chaque variante de formatage. Multilignes, single-line, virgule trainante — tous identiques.
+- **L'accès attribut est un type de node différent.** `obj._t(...)` produit `ast.Call(func=ast.Attribute(...))`. Le check `isinstance(node.func, ast.Name)` l'élimine par construction. Pas de tweaks de lookbehind, pas de maintenance de liste négative.
+
+L'allowlist `_KEY_EXCLUSIONS` est complètement supprimée. Il n'y a pas de chemin futur où elle grossit.
+
+### Ce qui est préservé
+
+Le contrat externe des tests est identique. Les mêmes 9 tests dans trois classes :
+
+- `TestLocaleCoverage` (5 tests) : scan corpus, résolution EN, résolution FR, parité EN/FR, baseline sanity.
+- `TestExplainNamespaceCoverage` (3 tests) : couverture exhaustive `explain.<clé>.{title,why,how}` générée depuis `EXPLAIN_KEYS` figée.
+- `TestPlaceholderParity` (1 test) : les placeholders `{nom}` matchent entre en.json et fr.json.
+
+Mêmes fixtures (`en_data`, `fr_data`, `static_keys`, `explain_leaves`), mêmes assertions. Seuls `_all_t_keys()` et deux petites fonctions helper (`_is_translation_call`, `_literal_key_arg`) ont changé.
+
+### Performance
+
+Le parsing AST est plus lent que le regex : 0,32 s vs 0,06 s pour ce fichier de test (~5× plus lent). En absolu négligeable — la suite de tests complète termine toujours en 6,5 s. Aucune optimisation nécessaire.
+
+### Ce que cette release ne change pas
+
+Cette release modifie **uniquement** `tests/test_locale_coverage.py`. Aucun fichier source dans `bob/` n'est touché. Aucun comportement runtime n'est altéré. Le compteur de tests reste à 4489. La forme regex v0.4.4 et la forme AST v0.4.5 retournent le même ensemble de clés sur le codebase actuel — vérifié en lançant les deux contre `bob/`. Le refactor est préventif, pas correctif.
+
+### Tests
+
+4489/4489 — inchangé vs v0.4.4. Les 9 tests dans `tests/test_locale_coverage.py` passent tous sur la nouvelle implémentation AST sans aucune modification de leurs assertions.
+
+### Reporté à une release ultérieure
+
+Cette release ne change pas les items existants de la roadmap :
+
+- Phase 2 Option A — migration systématique `Finding.template_vars` sur les ~37 checks non-pilotes. Toujours en piste pour v0.5.0+. `tests/test_template_vars_migration.py` continue à exposer la dette.
+- Matrice CI multi-distros (Debian/Ubuntu/Mint/Kali en conteneurs) et PKGBUILD AUR — contribution communautaire bienvenue.
+- Cleanup cosmétique M3 (`os.path` → `pathlib` dans 4 fichiers).
+
+---
+
 ## [v0.4.4] — 15-05-2026
 
 **Release de hardening terrain cross-distro.** Quatre nouveaux tests sur VM (Debian 13, Kali Rolling, Linux Mint 22.3, Ubuntu 26.04 LTS — toutes installées depuis PyPI via `pipx upgrade bodyguard-of-bits`) ont fait remonter un bug critique, trois régressions cosmétiques mineures, et confirmé en production que les fixes v0.4.3 fonctionnent. Tous les résultats plus les items reportés de la passe d'audit v0.4.3 (S4 redesign symlink, M4 refactor ports, I2 vague 2 `key=`, test couverture locale) sont groupés dans cette release.

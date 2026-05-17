@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.4.5](#v045) | 16-05-2026 | Hardening de l'infrastructure de tests — `tests/test_locale_coverage.py` passe de scan regex à **parsing AST** (`ast.walk` + `ast.Call` + `ast.Name` checks) · élimine trois classes de faux positifs que le regex pouvait produire (matches dans docstrings, mauvais parse de call sites multilignes, appels d'attributs `obj._t(...)`) · allowlist `_KEY_EXCLUSIONS` complètement supprimée · mêmes 9 tests, même contrat externe, fondation plus robuste · 4489/4489 tests (inchangé) |
 | [v0.4.4](#v044) | 15-05-2026 | Hardening terrain cross-distro — **bug critique `updates.py`** (4/4 VMs Debian-family : 21 mises à jour de sécurité Ubuntu LTS non détectées) : `apt-get -s upgrade` → `dist-upgrade` · détection du cache APT obsolète · cross-check vs `apt list --upgradable` · "Surface d'attaque" propage `updates_unknown` au lieu du faux "à jour" · AppArmor "0 profil chargé" clé dédiée · SMART skippé si tous les disques sont virtuels · ports DDNS inline dans le WARN · S4 redesign `_is_safe_user_path` home-bounded · M4 refactor `_parse_ufw_covered_ports` (1 parse + lookup O(1)) · I2 vague 2 `key=` sur services/virtualization · nouveau test de couverture locale (attrape les régressions `[xxx.yyy]`) · 4489/4489 tests (+21) |
 | [v0.4.3](#v043) | 15-05-2026 | Rattrapage doc + passe de hardening post-audit — 4 clés firewall ajoutées à `EXPLAIN_KEYS` · fix crash `--json --json-full` (5 attributs HardeningSnapshot morts) · `strptime("%b…")` rendu indépendant de la locale (ssl_certs + logs) · faux positif `_is_covered_by_ufw` éliminé · liens markdown email plus échappés · validateur cron rejette les ranges hors-bornes · `key=` sur ~30 findings (docker, firewall_stack, network_context, ports) · 7 clés locales mortes retirées · anti-pattern concat i18n résolu (ddns, logs) · refs CIS ajoutées · CHANGELOG court corrigé pour v0.4.2 · 4468/4468 tests (+4 régression) |
 | [v0.4.1](#v041) | 14-05-2026 | Phase 2 distro-ready (découplage architectural) — `bob/tui/` extrait (curses optionnel) · champs additifs `Finding.template_vars` / `Deduction.template_vars` pour reconstruction indépendante de la locale · nouveau module `bob.formatter` + passe de hardening post-revue (`lang=` retiré, `i18n.try_t()`, `except KeyError` resserré) · 3 checks pilotes migrés (ssh, hardening, firewall) · template_vars exposé dans la sortie JSON · mode `--offline` vérifié + tests d'intégration · 4449/4449 tests (+19) |
@@ -22,6 +23,42 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.4.5] — 16-05-2026
+
+Release de hardening de l'infrastructure de tests. Le nouveau test de couverture locale introduit en v0.4.4 fonctionnait correctement mais reposait sur un scan regex du code source, ce qui a des limites structurelles connues. v0.4.5 remplace le pipeline regex par un vrai parsing AST, éliminant trois classes de faux positif d'un coup et retirant l'allowlist `_KEY_EXCLUSIONS` qui était le symptôme de la limitation sous-jacente.
+
+### Ce qui change
+
+`tests/test_locale_coverage.py` ne lit plus les fichiers source comme du texte. Il utilise `ast.parse` par `bob/**/*.py`, parcourt l'arbre, et traite uniquement les nodes matchant `ast.Call(func=ast.Name(id="t" | "_t"), args=[ast.Constant(str), ...])` comme des sites d'appel de traduction. Le premier argument positionnel est la clé littérale.
+
+### Ce que ça corrige (vs la forme regex)
+
+- **Matches dans docstrings.** Le regex matchait n'importe quel littéral `t("...")` dans le texte source, y compris les exemples de documentation. v0.4.4 a dû allowlister `samba.open_world` et `log.blocked_attempts` parce qu'ils apparaissent comme exemples dans les docstrings de `bob/i18n.py`. Avec le parsing AST, les docstrings sont des constantes string inertes sans site d'appel — elles ne peuvent pas produire de faux positif. L'allowlist a disparu.
+- **Mauvais parse de call sites multilignes.** Le regex exigeait que la parenthèse ouvrante et le guillemet ouvrant soient proches sur la même fenêtre matchée. Les appels splitté sur plusieurs lignes ou enroulés sur `,` pouvaient occasionnellement faire trébucher le pattern. L'AST est whitespace-independent — le même `ast.Call` est reconnu quel que soit le formatage.
+- **Faux positifs sur appels d'attributs.** `obj._t("foo.bar")` matchait le regex (le negative lookbehind ajouté en v0.4.4 sur `.` couvrait la majorité mais pas tous les edge cases). Avec l'AST, `obj._t` résout en `ast.Attribute`, pas `ast.Name` — le type check le rejette proprement.
+
+### Ce qui est préservé
+
+Le contrat externe des tests est identique : mêmes 9 tests (`TestLocaleCoverage` + `TestExplainNamespaceCoverage` + `TestPlaceholderParity`), mêmes fixtures, mêmes assertions. Seuls `_all_t_keys()` et ses helpers ont été refactorés. Le compteur reste à 4489.
+
+### Note de performance
+
+Le parsing AST est ~5× plus lent que le regex sur ce codebase (300 ms vs 60 ms pour `tests/test_locale_coverage.py`). Négligeable en absolu — la suite de tests complète tourne toujours en ~6.5 s.
+
+### Tests
+
+4489/4489 — inchangé vs v0.4.4. Cette release est un refactor pur d'un fichier de test existant. Aucun code source dans `bob/` n'a été modifié.
+
+### Reporté à une release ultérieure
+
+Les items qui étaient déjà dans la roadmap y restent :
+
+- Phase 2 Option A — migration `Finding.template_vars` sur les ~37 checks non-pilotes (toujours tracée pour v0.5.0+).
+- Cleanup cosmétique M3 (`os.path` → `pathlib`).
+- Matrice CI multi-distros et PKGBUILD AUR.
 
 ---
 

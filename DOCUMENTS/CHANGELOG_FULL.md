@@ -6,6 +6,70 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.4.5] — 2026-05-16
+
+**Test infrastructure hardening release.** v0.4.4 added `tests/test_locale_coverage.py` to catch the `logs.attempts` class of regression — keys removed from locale files while still referenced in code. The implementation worked and was already extended in v0.4.4 with three ChatGPT-review fixes (tighter regex lookbehind, exhaustive `explain.*` coverage, placeholder parity). But the underlying machinery still rested on a regex scan of source files, with documented limits: docstring false positives, multi-line call site fragility, attribute-call edge cases. v0.4.5 replaces the regex pipeline with proper AST parsing.
+
+### Why this matters
+
+The test catches a real, recurring class of bug — silent locale fallbacks that only show up at terrain test (the v0.4.3 `[logs.attempts]` sentinel was discovered post-tag, not by CI). The whole point of automating it is for CI to catch the regression before tag. If the automation itself has hidden blind spots, the safety net leaks.
+
+Three structural issues with regex scanning of Python source:
+
+1. **Docstring matches are false positives that look real.** `bob/i18n.py` documents the `t()` API with examples like `t("samba.open_world")` and `t("log.blocked_attempts", count=42)`. The regex matched these as if they were real call sites, forcing v0.4.4 to maintain a `_KEY_EXCLUSIONS` allowlist with two entries. Every future API doc example would have grown that list — it was the textbook "the allowlist eats bugs" anti-pattern.
+2. **Multi-line call sites are formatting-dependent.** A call written as `_t(\n    "foo.bar",\n    x=1,\n)` is semantically identical to `_t("foo.bar", x=1)` but the regex needs the opening paren and the opening quote close together. v0.4.4's regex coped with most layouts but the contract was implicit and fragile.
+3. **Attribute calls slip through some lookbehinds.** v0.4.4 tightened the negative lookbehind from `[A-Za-z0-9_]` to `[A-Za-z0-9_.]` to reject `obj._t(...)`. That covered the common case, but the rule was retroactive — every new edge case (unicode identifiers, line-continuation backslashes) would require another lookbehind tweak.
+
+### How AST fixes all three
+
+```python
+def _is_translation_call(node: ast.Call) -> bool:
+    return (
+        isinstance(node.func, ast.Name)
+        and node.func.id in _TRANSLATION_FUNC_NAMES
+    )
+```
+
+`ast.parse(source)` returns the Python syntax tree. Three structural properties solve the three issues:
+
+- **Docstrings are inert.** They appear as `ast.Constant(str)` directly inside a function/class/module body — not inside an `ast.Call`. The walker never sees them.
+- **Whitespace is transparent.** The same `ast.Call` node represents every formatting variant. Multi-line, single-line, trailing comma — all identical.
+- **Attribute access is a different node type.** `obj._t(...)` produces `ast.Call(func=ast.Attribute(...))`. The `isinstance(node.func, ast.Name)` check eliminates it by construction. No lookbehind tweaks needed, no negative-list maintenance.
+
+The `_KEY_EXCLUSIONS` allowlist is deleted entirely. There is no migration path forward where it grows.
+
+### What's preserved
+
+The external test contract is identical. The same 9 tests in three classes:
+
+- `TestLocaleCoverage` (5 tests): corpus scan, EN resolution, FR resolution, EN/FR parity, sanity baseline.
+- `TestExplainNamespaceCoverage` (3 tests): exhaustive `explain.<key>.{title,why,how}` coverage generated from frozen `EXPLAIN_KEYS`.
+- `TestPlaceholderParity` (1 test): `{name}` placeholders match between en.json and fr.json.
+
+Same fixtures (`en_data`, `fr_data`, `static_keys`, `explain_leaves`), same assertions. Only `_all_t_keys()` and two small helper functions (`_is_translation_call`, `_literal_key_arg`) changed.
+
+### Performance
+
+AST parsing is slower than regex: 0.32 s vs 0.06 s for this one test file (~5× slower). In absolute terms negligible — the whole test suite still finishes in 6.5 s. No optimisation needed.
+
+### What this does not change
+
+This release modifies **only** `tests/test_locale_coverage.py`. No source file in `bob/` is touched. No runtime behavior is altered. Test count stays at 4489. The regex-based v0.4.4 form and the AST-based v0.4.5 form return the same set of keys on the current codebase — verified by running both against `bob/`. The refactor is preventive, not corrective.
+
+### Tests
+
+4489/4489 — unchanged from v0.4.4. The 9 tests in `tests/test_locale_coverage.py` all pass on the new AST-based implementation without any modification to their assertions.
+
+### Deferred to a later release
+
+This release does not change the existing roadmap items:
+
+- Phase 2 Option A — systematic `Finding.template_vars` migration on the ~37 non-pilot checks. Still tracked for v0.5.0+. `tests/test_template_vars_migration.py` continues to surface the debt.
+- Multi-distro CI matrix (Debian/Ubuntu/Mint/Kali in containers) and AUR PKGBUILD — community-contribution-welcome.
+- M3 cosmetic cleanup (`os.path` → `pathlib` in 4 files).
+
+---
+
 ## [v0.4.4] — 2026-05-15
 
 **Cross-distro terrain hardening release.** Four fresh VM tests (Debian 13, Kali Rolling, Linux Mint 22.3, Ubuntu 26.04 LTS — all installed from PyPI via `pipx upgrade bodyguard-of-bits`) surfaced one critical bug, three minor cosmetic regressions, and confirmed the v0.4.3 fixes work in the wild. All findings plus the items deferred from the v0.4.3 audit pass (S4 symlink redesign, M4 ports refactor, I2 wave-2 `key=`, locale coverage test) are bundled in this release.

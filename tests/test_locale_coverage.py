@@ -3,19 +3,27 @@ Locale key coverage — guard against the v0.4.3 regression where `logs.attempts
 was removed from both locale files but still referenced by 7 call sites in
 display.py. The terrain test caught it as `[logs.attempts]` sentinel output.
 
-This test scans every ``.py`` file in ``bob/`` for ``t("KEY")`` and ``_t("KEY")``
-calls, collects the keys, and asserts each one resolves in both en.json AND
-fr.json. Locale parity prevents the "translated to English on French system"
-silent fallback.
+This test parses every ``.py`` file in ``bob/`` with the Python AST and
+collects every ``t("KEY")`` / ``_t("KEY")`` call. It then asserts each key
+resolves in both en.json AND fr.json, and that placeholders are consistent
+between locales.
 
-Allowlist mechanism: keys constructed dynamically (e.g.
-``_t(f"services.exposure.{exposure.value}")``) are detected as patterns and
-expanded via ``_DYNAMIC_PATTERNS`` below — extend the list when you add a new
-dynamic call site.
+v0.4.5: switched from regex scanning to AST parsing (ChatGPT review #1/#11).
+The regex form had three angles dead:
+- it matched inside docstrings (forcing a manual ``_KEY_EXCLUSIONS``);
+- it could miss / misparse multi-line ``_t(\\n    "...",\\n    x=1,\\n)``;
+- ``obj._t("...")`` matched in some edge cases.
+
+AST eliminates all three:
+- ``ast.parse`` ignores docstrings (they're just constants, not call sites);
+- node structure is whitespace-independent;
+- ``ast.Call.func`` is an ``ast.Name`` for bare ``t``/``_t`` — attribute
+  accesses (``obj._t``) become ``ast.Attribute`` and are rejected by type.
 """
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -26,29 +34,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _BOB_DIR   = _REPO_ROOT / "bob"
 _LOCALES   = _BOB_DIR / "locales"
 
-# t("foo.bar") or _t("foo.bar") or _t('foo.bar').
-# The negative lookbehind excludes [A-Za-z0-9_.] before the (optional) leading
-# underscore — the dot stops `obj._t(...)` matching, while still accepting
-# bare ``t(...)`` and ``_t(...)`` at start-of-line or after whitespace.
-_T_CALL_RE = re.compile(
-    r"""(?<![A-Za-z0-9_.])
-        _?t                       # t( or _t(
-        \(\s*
-        (?:["']                   # opening quote
-           ([A-Za-z_][A-Za-z0-9_.]*)   # the key
-        ["'])
-    """,
-    re.VERBOSE,
-)
-
-# Keys we exclude because they're either passed dynamically through an alias
-# table, built at runtime, or appear only as docstring examples in i18n.py.
-_KEY_EXCLUSIONS: frozenset[str] = frozenset({
-    # Docstring example in bob/i18n.py demonstrating t() usage.
-    "samba.open_world",
-    # Docstring example in bob/i18n.py demonstrating t() with placeholders.
-    "log.blocked_attempts",
-})
+# Function names BOB uses for translation. Both forms exist in the codebase:
+# ``t(...)`` is the public name from ``bob.i18n``; ``_t(...)`` is the local
+# alias each check module binds (often as a fallback to ``_identity_t``).
+_TRANSLATION_FUNC_NAMES: frozenset[str] = frozenset({"t", "_t"})
 
 # Dynamic key prefixes: every key starting with one of these is presumed to
 # have its values declared as a nested dict (e.g. ``services.exposure.*``) and
@@ -68,20 +57,59 @@ _DYNAMIC_PREFIXES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _is_translation_call(node: ast.Call) -> bool:
+    """True if ``node`` is a direct call to ``t(...)`` or ``_t(...)``.
+
+    Accepts only ``ast.Name`` callees (bare function names). This rejects:
+    - ``obj._t("...")``       — ``func`` is ``ast.Attribute``
+    - ``module.t("...")``     — same
+    - ``getattr(o, "_t")(x)`` — ``func`` is ``ast.Call``
+    """
+    return (
+        isinstance(node.func, ast.Name)
+        and node.func.id in _TRANSLATION_FUNC_NAMES
+    )
+
+
+def _literal_key_arg(node: ast.Call) -> str | None:
+    """Return the first positional arg if it's a string literal, else None.
+
+    f-strings (``ast.JoinedStr``), variables, concatenations are all
+    deliberately ignored — those are dynamic call sites, covered by other
+    test classes via the ``EXPLAIN_KEYS`` and ``_DYNAMIC_PREFIXES`` paths.
+    """
+    if not node.args:
+        return None
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value
+    return None
+
+
 def _all_t_keys() -> set[str]:
-    """Collect every static literal key used in t()/_t() across bob/."""
+    """Collect every static literal key used in t()/_t() across bob/.
+
+    Uses AST parsing — docstrings, comments, and attribute calls cannot
+    produce false positives. No allowlist needed.
+    """
     keys: set[str] = set()
     for py in _BOB_DIR.rglob("*.py"):
         if py.name.startswith("_test") or "tests" in py.parts:
             continue
         try:
-            text = py.read_text(encoding="utf-8")
+            source = py.read_text(encoding="utf-8")
         except OSError:
             continue
-        for m in _T_CALL_RE.finditer(text):
-            key = m.group(1)
-            if key and "." in key and key not in _KEY_EXCLUSIONS:
-                keys.add(key)
+        try:
+            tree = ast.parse(source, filename=str(py))
+        except SyntaxError:
+            # We don't enforce Python validity here — that's the runtime's job.
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _is_translation_call(node):
+                key = _literal_key_arg(node)
+                if key and "." in key:
+                    keys.add(key)
     return keys
 
 
