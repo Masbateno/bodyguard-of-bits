@@ -63,12 +63,16 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: Install BOB from source
-        # Do NOT upgrade pip itself — on Debian 13 / Ubuntu 24+ / Kali rolling
-        # the apt-installed pip lacks a RECORD file, so `pip install --upgrade
-        # pip` aborts with "Cannot uninstall pip ... no RECORD file was found".
-        # The system pip is recent enough to install an editable package.
-        run: python3 -m pip install --break-system-packages -e .
+      - name: Install BOB from source (in venv)
+        # Use a venv to sidestep PEP 668 / --break-system-packages:
+        #   - Ubuntu 22.04 ships pip 22.x which doesn't know that flag.
+        #   - Debian 13 / Ubuntu 24+ / Kali require it (apt-installed pip
+        #     has no RECORD file → pip refuses uninstall on upgrade).
+        # A venv is a clean, distro-independent install location.
+        run: |
+          python3 -m venv /opt/bobenv
+          /opt/bobenv/bin/pip install -e .
+          echo "/opt/bobenv/bin" >> "$GITHUB_PATH"
 
       - name: Smoke — bob --version
         run: bob --version
