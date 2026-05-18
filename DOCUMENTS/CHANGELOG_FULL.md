@@ -405,7 +405,7 @@ Until v0.4.2, the security posture of BOB was implicit. A distro packager readin
 `SECURITY.md` (~150 lines) covers:
 
 - **Supported versions table** with EOL policy: only the current minor receives security patches; breaking changes bump the minor.
-- **Reporting channel**: `cedricclauzel30@gmail.com` with `[BOB security]` subject prefix. 7-day acknowledgement, 30-day fix window for high-severity issues. Lower-severity issues are handled on the public tracker after acknowledgement.
+- **Reporting channel**: `cedricclauzel@mailo.com` with `[BOB security]` subject prefix. 7-day acknowledgement, 30-day fix window for high-severity issues. Lower-severity issues are handled on the public tracker after acknowledgement.
 - **Threat model section** spelling out what BOB is (audit-only tool invoked by a privileged user) and what BOB is NOT (no daemon, no remote agent, no active defense, no chain-of-custody forensics).
 - **Adversary model**: three assumptions BOB makes about its operating environment (trusted invoking user, sane filesystem layout, intact package manager). BOB is a post-compromise audit tool, not pre-compromise detection.
 - **Trust boundaries** table: user-controlled config (JSON Schema + ANSI sanitization + size limits + identifier check), system file content (bounded reads with `errors='replace'`, max-line caps, `_C_LOCALE_ENV` for subprocess), subprocess output (timeouts everywhere, no `shell=True` outside `--fix`, never eval'd).

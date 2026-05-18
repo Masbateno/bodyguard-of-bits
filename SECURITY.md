@@ -22,7 +22,7 @@ Patches release as `0.4.x+1`. A breaking change bumps the minor (`0.5.0`).
 Report security issues by email to:
 
 ```
-cedricclauzel30@gmail.com
+cedricclauzel@mailo.com
 ```
 
 with the subject prefix `[BOB security]`. Include:

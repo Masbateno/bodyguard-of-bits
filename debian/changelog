@@ -18,7 +18,7 @@ bodyguard-of-bits (0.4.6-1) UNRELEASED; urgency=medium
     BOB inside containers of Debian 12/13, Ubuntu 22.04/24.04/25.04,
     Kali Rolling, Fedora 41 on every push/PR to main.
 
- -- Cédric Clauzel <cedricclauzel30@gmail.com>  Sun, 17 May 2026 17:45:45 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 17 May 2026 17:45:45 +0200
 
 bodyguard-of-bits (0.4.5-1) UNRELEASED; urgency=low
 
@@ -33,7 +33,7 @@ bodyguard-of-bits (0.4.5-1) UNRELEASED; urgency=low
     TestExplainNamespaceCoverage + TestPlaceholderParity.
   * 4489 tests (unchanged total vs v0.4.4).
 
- -- Cédric Clauzel <cedricclauzel30@gmail.com>  Sun, 17 May 2026 09:00:39 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 17 May 2026 09:00:39 +0200
 
 bodyguard-of-bits (0.4.4-1) UNRELEASED; urgency=high
 
@@ -58,7 +58,7 @@ bodyguard-of-bits (0.4.4-1) UNRELEASED; urgency=high
     services and virtualization, locale-coverage test).
   * 4489 tests (+21 vs v0.4.3).
 
- -- Cédric Clauzel <cedricclauzel30@gmail.com>  Sat, 16 May 2026 07:50:21 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 16 May 2026 07:50:21 +0200
 
 bodyguard-of-bits (0.4.3-1) UNRELEASED; urgency=medium
 
@@ -81,7 +81,7 @@ bodyguard-of-bits (0.4.3-1) UNRELEASED; urgency=medium
     anti-pattern resolved in ddns and logs.
   * 4468 tests (+16).
 
- -- Cédric Clauzel <cedricclauzel30@gmail.com>  Fri, 15 May 2026 16:25:28 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 15 May 2026 16:25:28 +0200
 
 bodyguard-of-bits (0.4.2-1) UNRELEASED; urgency=medium
 
@@ -91,4 +91,4 @@ bodyguard-of-bits (0.4.2-1) UNRELEASED; urgency=medium
   * Ships man pages bob(1), bob.conf(5), bob-profile(5).
   * Ships SECURITY.md threat model.
 
- -- Cédric Clauzel <cedricclauzel30@gmail.com>  Thu, 14 May 2026 17:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 14 May 2026 17:00:00 +0200

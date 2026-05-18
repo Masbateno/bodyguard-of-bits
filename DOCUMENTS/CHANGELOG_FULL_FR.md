@@ -405,7 +405,7 @@ Jusqu'à v0.4.2, la posture sécurité de BOB était implicite. Un packager dist
 `SECURITY.md` (~150 lignes) couvre :
 
 - **Tableau des versions supportées** avec politique EOL : seul le minor courant reçoit des patches sécurité.
-- **Canal de signalement** : `cedricclauzel30@gmail.com` avec préfixe `[BOB security]`. Acquittement 7 jours, fenêtre fix 30 jours pour les issues haute-sévérité.
+- **Canal de signalement** : `cedricclauzel@mailo.com` avec préfixe `[BOB security]`. Acquittement 7 jours, fenêtre fix 30 jours pour les issues haute-sévérité.
 - **Threat model** : ce qu'est BOB (outil audit-only invoqué par utilisateur privilégié) vs ce qu'il n'est PAS (pas de daemon, pas d'agent remote, pas de défense active).
 - **Modèle d'adversaire** : trois hypothèses (utilisateur invoquant trusted, layout filesystem sain, package manager intact). BOB est post-compromission, pas pré-.
 - **Tableau frontières de confiance** : config user-contrôlée (JSON Schema + ANSI sanitization + size limits), contenu fichiers système (bounded reads, `_C_LOCALE_ENV`), sortie subprocess (timeouts partout, pas de `shell=True` hors `--fix`).

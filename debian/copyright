@@ -1,16 +1,16 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: bodyguard-of-bits
-Upstream-Contact: Cédric Clauzel <cedricclauzel30@gmail.com>
+Upstream-Contact: Cédric Clauzel <cedricclauzel@mailo.com>
 Source: https://github.com/Masbateno/bodyguard-of-bits
 
 Files: *
-Copyright: 2026 Cédric Clauzel <cedricclauzel30@gmail.com>
+Copyright: 2026 Cédric Clauzel <cedricclauzel@mailo.com>
 License: MIT
 
 Files: bob/data/services.json
        bob/data/profiles/*
        bob/data/cis_refs.json
-Copyright: 2026 Cédric Clauzel <cedricclauzel30@gmail.com>
+Copyright: 2026 Cédric Clauzel <cedricclauzel@mailo.com>
 License: MIT
 Comment:
  BOB ships curated reference data (service definitions, audit profiles,
@@ -19,15 +19,15 @@ Comment:
  itself, which remains the property of the Center for Internet Security.
 
 Files: bob/locales/*.json
-Copyright: 2026 Cédric Clauzel <cedricclauzel30@gmail.com>
+Copyright: 2026 Cédric Clauzel <cedricclauzel@mailo.com>
 License: MIT
 
 Files: bob/data/schemas/*.json
-Copyright: 2026 Cédric Clauzel <cedricclauzel30@gmail.com>
+Copyright: 2026 Cédric Clauzel <cedricclauzel@mailo.com>
 License: MIT
 
 Files: debian/*
-Copyright: 2026 Cédric Clauzel <cedricclauzel30@gmail.com>
+Copyright: 2026 Cédric Clauzel <cedricclauzel@mailo.com>
 License: MIT
 
 License: MIT

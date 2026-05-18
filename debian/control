@@ -1,7 +1,7 @@
 Source: bodyguard-of-bits
 Section: admin
 Priority: optional
-Maintainer: Cédric Clauzel <cedricclauzel30@gmail.com>
+Maintainer: Cédric Clauzel <cedricclauzel@mailo.com>
 Build-Depends:
  debhelper-compat (= 13),
  dh-python,
