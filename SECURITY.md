@@ -1,6 +1,6 @@
 # BOB — Security Policy
 
-*[Lire en français](SECURITY_FR.md) (TBD)*
+*[Lire en français](SECURITY_FR.md)*
 
 ## Supported versions
 
