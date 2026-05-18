@@ -54,8 +54,8 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 112-key canonical list in 26 groups, profile variants (17 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
-| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (133 entries: 99 formal CIS, 34 best-practice, 4 Docker) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 116-key canonical list in 29 groups, profile variants (17 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
+| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (137 entries: 99 formal CIS, 34 best-practice, 4 Docker) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 7-domain attribution (`backup` → `disk`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
 | `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 5 built-in compound-risk rules |
@@ -173,12 +173,12 @@ bob/
 ├── exposure.py          # Port exposure grouping — interface scope + risk level
 ├── recurrence.py        # Recurring finding tracker — consecutive-audit counters
 ├── plugin_checks.py     # PluginCheck + load_plugin_checks()
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 112 keys in 26 groups
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 116 keys in 29 groups
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→disk
 ├── webhook.py           # build_generic_payload(), build_slack_payload(), send_webhook()
 ├── data/
 │   ├── services.json            # Declarative registry of the 32 services
-│   ├── cis_refs.json            # CIS benchmark references — 133 entries {ref, code}
+│   ├── cis_refs.json            # CIS benchmark references — 137 entries {ref, code}
 │   └── bob.bash-completion  # Bash completion script
 └── locales/
     ├── en.json          # English translation keys
