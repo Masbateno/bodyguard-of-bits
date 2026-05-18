@@ -67,7 +67,6 @@ Depends:
  bob-core (= ${binary:Version}),
  ${python3:Depends},
  ${misc:Depends},
- python3-curses-pyx:any | python3:any,
 Description: Linux hardening auditor (CIS benchmark mapping) — curses TUI
  Optional curses-based interactive wizards for BOB: --install-cron,
  --manage-cron, --manage-logs, the interactive --explain picker, and

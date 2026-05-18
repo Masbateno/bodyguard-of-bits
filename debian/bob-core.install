@@ -34,6 +34,10 @@ usr/lib/python3*/dist-packages/bob/webhook.py
 usr/lib/python3*/dist-packages/bob/breakdown.py
 usr/lib/python3*/dist-packages/bob/completion.py
 usr/lib/python3*/dist-packages/bob/cis_refs.py
+usr/lib/python3*/dist-packages/bob/csv_output.py
+usr/lib/python3*/dist-packages/bob/html_output.py
+usr/lib/python3*/dist-packages/bob/markdown_output.py
+usr/lib/python3*/dist-packages/bob/_tty.py
 usr/lib/python3*/dist-packages/bob/checks
 usr/lib/python3*/dist-packages/bob/data
 usr/lib/python3*/dist-packages/bob/locales
