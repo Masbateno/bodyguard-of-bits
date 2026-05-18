@@ -30,6 +30,8 @@ Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre 
 
 ## Installation
 
+> **Sécurité d'exécution** : BOB est en lecture seule. Il n'exécute que des commandes inoffensives (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) et n'écrit qu'à `~/.config/bob` et son répertoire de logs. Le mode optionnel `--fix --apply` demande confirmation avant chaque correction ; rien d'autre ne modifie l'état du système. Un audit typique se termine en moins de 5 secondes.
+
 ```
 pipx install bodyguard-of-bits
 sudo bob
@@ -56,6 +58,42 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 
 ---
 
+## Aperçu de la sortie
+
+```
+$ sudo bob -d
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            — Bodyguard Of Bits —                             ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  BOB v0.4.6  │  Auditeur de durcissement Linux                               ║
+║  Système       : Linux Mint 22.3                                             ║
+║  Noyau         : 6.17.0-23-generic                                           ║
+║  UFW           : v0.36.2                                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━ DURCISSEMENT SYSTÈME ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✔ [OK]   Protection SYN flood active (tcp_syncookies=1)
+✔ [OK]   ASLR entièrement activé (randomize_va_space=2)
+⚠ [WARN] Le système envoie des redirections ICMP — exploitable pour du MITM
+   → sudo sysctl -w net.ipv4.conf.all.send_redirects=0
+   [CIS:3.3.2]
+   ? bob --explain hardening.send_redirects
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  Score de sécurité : 8/10  ↑ +1                                              ║
+║  Niveau de risque  : ✔ FAIBLE                                                ║
+║  Pare-feu & Services  10/10  ██████████                                      ║
+║  SSH                   7/10  ███████░░░                                      ║
+║  Durcissement          4/10  ████░░░░░░                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande de remédiation à copier-coller, et un indicateur `--explain` qui pointe vers l'explication détaillée.
+
+---
+
 ## Vérifications de sécurité — 43 vérifications, 9 domaines
 
 | Domaine | Ce qu'il couvre |
@@ -66,7 +104,8 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 | **Services** | 32 services connus avec classification du risque ; détection du contournement pare-feu Docker |
 | **Permissions fichiers** | Audit SUID/SGID, fichiers sensibles, sudoers |
 | **Comptes utilisateurs** | Comptes expirés, politique de mots de passe, login.defs, PAM |
-| **Système** | Mises à jour apt, rotation des logs, analyse auth.log, NTP, Fail2ban, auditd, ClamAV, AppArmor/SELinux, SMART, expiration certificats TLS, timers systemd, Samba, tâches cron |
+| **Mises à jour & détection** | Mises à jour apt, règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
+| **Opérations** | Rotation des logs, analyse auth.log, synchro NTP, expiration certificats TLS, timers systemd, Samba, tâches cron |
 | **Réseau** | Contexte IP publique, détection du type de réseau (serveur/LAN/VPN), GeoIP optionnel |
 | **Docker** | Durcissement du daemon, conteneurs privilégiés, montages sensibles |
 
@@ -197,18 +236,29 @@ Les patterns sont appliqués sur le basename du binaire via `fnmatch`. Les binai
 | `1` | Score 4–6 — avertissements présents |
 | `2` | Score 1–3 — alertes présentes |
 | `3` | Score 0 — problèmes critiques |
-| `4` | Score sous le seuil `--target N` |
+| `4` | Score sous le seuil `--target N` (gate personnalisable, ex : `bob --target 8` échoue en CI si le score < 8) |
 
 ---
 
 ## Prérequis
 
-- Linux — utilisé au quotidien sur Linux Mint 22.3 + Debian 13.4.0 ; validé en CI sur Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - Python 3.10+
 - Root (`sudo`)
-- `ss`, `systemctl` — standards sur la plupart des systèmes Debian-based
+- `ss`, `systemctl` — standards sur la plupart des systèmes Linux
 
 Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits geoip2`)
+
+---
+
+## Compatibilité par distribution
+
+| Niveau | Distros | État |
+|--------|---------|------|
+| **Tier 1** (production quotidienne) | Linux Mint 22.x, Debian 13 | Fonctionnalités complètes, validé sur matériel de production |
+| **Tier 2** (validé par la CI) | Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 | Smoke + audit hors ligne sur chaque PR ; pas de sentinelles locale, pas de traceback Python |
+| **Tier 3** (fonctionne mais non testé) | Autres Debian / RHEL / SUSE / Arch-family | Best-effort ; les vérifications dégradent proprement |
+
+Sur les distributions non-apt (Fedora, RHEL, openSUSE, Arch), les checks reposant sur `apt` (ex : mises à jour de sécurité en attente) émettent INFO au lieu de WARN — BOB ne consomme pas encore les métadonnées `dnf`/`zypper`/`pacman`. Les références CIS Ubuntu 22.04 restent émises tant que le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de la distribution.
 
 ---
 
@@ -218,3 +268,15 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 - [Journal des modifications](CHANGELOG_FR.md)
 - [Guide développeur](DOCUMENTS/README_DEV_FR.md)
 - [Guide d'automatisation](DOCUMENTS/AUTOMATION_FR.md)
+
+---
+
+## Licence
+
+MIT — voir [LICENSE](LICENSE).
+
+---
+
+## Contribuer
+
+Les issues et pull requests sont les bienvenues sur [github.com/Masbateno/bodyguard-of-bits](https://github.com/Masbateno/bodyguard-of-bits/issues). Pour les fonctionnalités significatives, ouvrir une issue d'abord pour discuter du périmètre est apprécié.

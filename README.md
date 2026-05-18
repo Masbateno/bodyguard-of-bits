@@ -30,6 +30,8 @@ If you already run Lynis, BOB is not a replacement — it's a different lens, on
 
 ## Install
 
+> **Safety**: BOB is audit-only. It executes only read-only commands (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) and never writes outside `~/.config/bob` and its log directory. The optional `--fix --apply` mode prompts before each remediation; nothing else modifies system state. A typical audit completes in under 5 seconds.
+
 ```
 pipx install bodyguard-of-bits
 sudo bob
@@ -56,6 +58,42 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 
 ---
 
+## Sample output
+
+```
+$ sudo bob
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            — Bodyguard Of Bits —                             ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  BOB v0.4.6  │  Linux hardening auditor                                      ║
+║  System        : Linux Mint 22.3                                             ║
+║  Kernel        : 6.17.0-23-generic                                           ║
+║  UFW           : v0.36.2                                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━ SYSTEM HARDENING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✔ [OK]    SYN flood protection active (tcp_syncookies=1)
+✔ [OK]    ASLR fully enabled (randomize_va_space=2)
+⚠ [WARN]  System sends ICMP redirects — exploitable for MITM on a non-router
+   → sudo sysctl -w net.ipv4.conf.all.send_redirects=0
+   [CIS:3.3.2]
+   ? bob --explain hardening.send_redirects
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  Security score   : 8/10  ↑ +1                                               ║
+║  Risk level       : ✔ LOW                                                    ║
+║  Firewall & Services  10/10  ██████████                                      ║
+║  SSH                   7/10  ███████░░░                                      ║
+║  System Hardening      4/10  ████░░░░░░                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediation command, and an `--explain` hint linking to the longer rationale.
+
+---
+
 ## Security checks — 43 checks, 9 domains
 
 | Domain | What it covers |
@@ -66,7 +104,8 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 | **Services** | 32 known services with risk classification; Docker firewall bypass detection |
 | **File permissions** | SUID/SGID audit, sensitive files, sudoers |
 | **User accounts** | Expired accounts, password policy, login.defs, PAM |
-| **System** | apt updates, log rotation, auth.log analysis, NTP, Fail2ban, auditd, ClamAV, AppArmor/SELinux, SMART, TLS cert expiry, systemd timers, Samba, cron jobs |
+| **System updates & detection** | apt updates, auditd rules, Fail2ban, ClamAV, AppArmor/SELinux, AIDE/Tripwire integrity, rkhunter, SMART, firmware/microcode |
+| **Operations** | Log rotation, auth.log analysis, NTP sync, TLS cert expiry, systemd timers, Samba, cron jobs |
 | **Network** | Public IP context, network type detection (server/LAN/VPN), GeoIP optional |
 | **Docker** | Daemon hardening, privileged containers, sensitive mounts |
 
@@ -197,18 +236,29 @@ Patterns are matched against the binary basename using `fnmatch`. Suppressed bin
 | `1` | Score 4–6 — warnings present |
 | `2` | Score 1–3 — alerts present |
 | `3` | Score 0 — critical issues |
-| `4` | Score below `--target N` threshold |
+| `4` | Score below `--target N` threshold (custom gate, e.g. `bob --target 8` fails CI if score < 8) |
 
 ---
 
 ## Requirements
 
-- Linux — daily-driven on Linux Mint 22.3 + Debian 13.4.0; CI-validated on Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - Python 3.10+
 - Root (`sudo`)
-- `ss`, `systemctl` — standard on most Debian-based systems
+- `ss`, `systemctl` — standard on most Linux systems
 
 Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
+
+---
+
+## Distribution support
+
+| Tier | Distros | Status |
+|------|---------|--------|
+| **Tier 1** (daily-driven) | Linux Mint 22.x, Debian 13 | Full feature set, validated on production hardware |
+| **Tier 2** (CI-validated) | Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 | Smoke + offline audit run on every PR; no locale sentinels, no Python tracebacks |
+| **Tier 3** (works but untested) | Other Debian/RHEL/SUSE/Arch-family Linux | Best-effort; checks degrade gracefully |
+
+On non-apt distributions (Fedora, RHEL, openSUSE, Arch), checks that rely on `apt` (e.g. pending security updates) emit INFO instead of WARN — BOB does not currently consume `dnf`/`zypper`/`pacman` metadata. CIS Ubuntu 22.04 references are still emitted when the underlying control (sysctl flags, SSH config, file permissions) is OS-agnostic.
 
 ---
 
@@ -218,3 +268,15 @@ Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
 - [Changelog](CHANGELOG.md)
 - [Developer guide](DOCUMENTS/README_DEV.md)
 - [Automation guide](DOCUMENTS/AUTOMATION.md)
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome at [github.com/Masbateno/bodyguard-of-bits](https://github.com/Masbateno/bodyguard-of-bits/issues). For substantial features, opening an issue first to discuss scope is appreciated.
