@@ -6,10 +6,10 @@
 ![Release](https://img.shields.io/badge/version-v0.4.6-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
-![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
 
-BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 46 vérifications sur 9 domaines, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
+BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 43 vérifications sur 9 domaines, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
 ---
 
@@ -23,7 +23,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Score contextuel** — détection du contexte réseau (IP publique directe vs NAT) ; pénalités doublées sur les machines exposées sur internet ; pare-feu inactif plafonne le score à 3/10
 - **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; findings répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
 - **Profils d'audit** — `server` (défaut), `desktop`, `container` ; alias `workstation` conservé ; profil actif affiché dans la boîte de synthèse
-- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 133 entrées (99 CIS formels, 34 best-practice, 4 Docker)
+- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 137 entrées (99 CIS formels, 34 best-practice, 4 Docker)
 - **5 en-têtes de groupes thématiques** — sortie organisée en : FIREWALL & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / DÉTECTION & SANTÉ
 - **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible (intégration CI)
 
@@ -142,7 +142,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ## Prérequis
 
-- Linux — testé sur Linux Mint 22.3, Debian 13.4.0
+- Linux — utilisé au quotidien sur Linux Mint 22.3 + Debian 13.4.0 ; validé en CI sur Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - Python 3.10+
 - `ss` recommandé (paquet `iproute2`) — disponible par défaut sur les systèmes modernes
 - `python3-geoip2` + base GeoLite2 recommandés pour la géolocalisation IP (optionnel) : `sudo apt install python3-geoip2 geoip-database`
@@ -154,7 +154,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Prérequis
 
-- Linux — testé sur Linux Mint 22.3, Debian 13.4.0
+- Linux — utilisé au quotidien sur Linux Mint 22.3 + Debian 13.4.0 ; validé en CI sur Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - pipx *(installateur d'applications Python isolées)* :
 
 ```bash

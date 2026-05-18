@@ -4,7 +4,7 @@
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 46 vérifications sur 9 domaines, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
+BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 43 vérifications sur 9 domaines, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -56,7 +56,7 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 
 ---
 
-## Vérifications de sécurité — 46 checks, 9 domaines
+## Vérifications de sécurité — 43 vérifications, 9 domaines
 
 | Domaine | Ce qu'il couvre |
 |---------|----------------|
@@ -74,7 +74,7 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 
 ## Mapping des benchmarks CIS
 
-133 entrées : **99 CIS Ubuntu 22.04 · 4 CIS Docker · 34 bonnes pratiques**.
+137 entrées : **99 CIS Ubuntu 22.04 · 4 CIS Docker · 34 bonnes pratiques**.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
@@ -203,7 +203,7 @@ Les patterns sont appliqués sur le basename du binaire via `fnmatch`. Les binai
 
 ## Prérequis
 
-- Linux — testé sur Linux Mint 22.3, Debian 13.4.0
+- Linux — utilisé au quotidien sur Linux Mint 22.3 + Debian 13.4.0 ; validé en CI sur Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - Python 3.10+
 - Root (`sudo`)
 - `ss`, `systemctl` — standards sur la plupart des systèmes Debian-based

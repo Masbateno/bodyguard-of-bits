@@ -1,3 +1,88 @@
+bodyguard-of-bits (0.4.6-1) UNRELEASED; urgency=medium
+
+  * Terrain test pass v0.4.5 fixes (2 reproducible bugs across 14 audits
+    on 6 distinct systems, including production hardware).
+  * Bug 1: bob/checks/kernel_modules.py — dpkg-query did not filter on
+    'ii' state, so kernels left in 'rc' state after `apt remove` (without
+    --purge) were still listed as installed. Now uses
+    ${db:Status-Abbrev}|${Package} and keeps only lines whose 2nd char
+    is 'i' (covers 'ii' and 'hi'; excludes 'rc', 'pn', 'un', 'iU').
+  * Bug 2: bob/domain_scores.py::active_domains_from_engine() — scoring
+    inversion after remediation. The actionable filter widened from
+    (WARN, ALERT) to (OK, WARN, ALERT), so a domain that goes clean
+    (only `updates.ok` left) stays at 10/10 in the global average
+    instead of disappearing from the denominator. INFO-only domains
+    remain hidden by design.
+  * 4500 tests (+11 vs v0.4.5).
+  * Multi-distro integration CI (additive): GitHub Actions matrix runs
+    BOB inside containers of Debian 12/13, Ubuntu 22.04/24.04/25.04,
+    Kali Rolling, Fedora 41 on every push/PR to main.
+
+ -- Cédric Clauzel <cedricclauzel30@gmail.com>  Sun, 17 May 2026 17:45:45 +0200
+
+bodyguard-of-bits (0.4.5-1) UNRELEASED; urgency=low
+
+  * Test infrastructure hardening release (pure refactor of
+    tests/test_locale_coverage.py — no source file in bob/ modified).
+  * Switched the locale-coverage scanner from regex over Python source
+    to ast.parse + ast.walk. Eliminates three classes of regex false
+    positive: docstring matches, multi-line call site fragility, and
+    obj._t(...) attribute calls. The _KEY_EXCLUSIONS allowlist that
+    was the symptom of the regex limitation is deleted.
+  * Same external contract: 9 tests in TestLocaleCoverage +
+    TestExplainNamespaceCoverage + TestPlaceholderParity.
+  * 4489 tests (unchanged total vs v0.4.4).
+
+ -- Cédric Clauzel <cedricclauzel30@gmail.com>  Sun, 17 May 2026 09:00:39 +0200
+
+bodyguard-of-bits (0.4.4-1) UNRELEASED; urgency=high
+
+  * Cross-distro terrain hardening release. One critical bug + three
+    minor presentation fixes surfaced by terrain testing on Debian 13,
+    Kali Rolling, Mint test, Ubuntu 26.04 LTS.
+  * Critical: bob/checks/updates.py reported "system up to date" on
+    100% of vierge Debian-family VMs (Debian 13 with 59 packages
+    pending, Kali Rolling with 868, Mint with 33, Ubuntu LTS with 23
+    of which 21 were security updates) because (a) `apt-get -s upgrade`
+    is conservative and back-holds anything pulling a new package
+    (typical kernel), (b) stale apt cache silently returned 0 packages.
+    Now uses `apt-get -s dist-upgrade`, detects stale cache (mtime >
+    7 days), cross-checks via `apt list --upgradable`, and propagates
+    `updates_unknown` to the "Surface d'attaque" section instead of
+    the false "up to date".
+  * Minor: AppArmor "0 profiles loaded" dedicated key (was confusing
+    on Kali); SMART check skipped when all disks are virtual; DDNS
+    ports inlined in the WARN message.
+  * Picked up the v0.4.3 audit-deferred items (S4 home-bounded
+    symlink, M4 _parse_ufw_covered_ports refactor, I2 wave-2 key= on
+    services and virtualization, locale-coverage test).
+  * 4489 tests (+21 vs v0.4.3).
+
+ -- Cédric Clauzel <cedricclauzel30@gmail.com>  Sat, 16 May 2026 07:50:21 +0200
+
+bodyguard-of-bits (0.4.3-1) UNRELEASED; urgency=medium
+
+  * Doc catch-up + post-audit hardening pass.
+  * 4 firewall explanation keys promoted to EXPLAIN_KEYS (frozen API
+    contract). Short CHANGELOG corrected for v0.4.2.
+  * Critical: --json --json-full crashed on HardeningSnapshot because
+    of 5 dead attribute references (kernel.unprivileged_bpf_disabled,
+    kernel.unprivileged_userns_clone, fs.protected_fifos,
+    fs.protected_regular, kernel.modules_disabled).
+  * Important: strptime("%b ...") made locale-independent (broke when
+    LANG=fr_FR set the C library to French month names) in ssl_certs
+    and logs.
+  * Important: _is_covered_by_ufw IP false-positive killed
+    (192.168.1.22 matched as covering port 22).
+  * Important: cron range validator now rejects out-of-bounds values.
+  * Important: email body Markdown links no longer escaped to HTML.
+  * key= attribute added to ~30 findings (docker, firewall_stack,
+    network_context, ports). 7 dead locale keys removed. i18n concat
+    anti-pattern resolved in ddns and logs.
+  * 4468 tests (+16).
+
+ -- Cédric Clauzel <cedricclauzel30@gmail.com>  Fri, 15 May 2026 16:25:28 +0200
+
 bodyguard-of-bits (0.4.2-1) UNRELEASED; urgency=medium
 
   * Initial Debian packaging. (Phase 3 of the distro-ready roadmap.)

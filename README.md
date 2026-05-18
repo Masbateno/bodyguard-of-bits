@@ -4,7 +4,7 @@
 
 **Linux hardening auditor for sysadmins who read the output.**
 
-BOB is a CLI security audit and hardening tool for Linux systems. It runs 46 checks across 9 domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
+BOB is a CLI security audit and hardening tool for Linux systems. It runs 43 checks across 9 domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
 
 ---
 
@@ -56,7 +56,7 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 
 ---
 
-## Security checks — 46 checks, 9 domains
+## Security checks — 43 checks, 9 domains
 
 | Domain | What it covers |
 |--------|----------------|
@@ -74,7 +74,7 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 
 ## CIS benchmark mapping
 
-133 entries: **99 CIS Ubuntu 22.04 · 4 CIS Docker · 34 best-practice**.
+137 entries: **99 CIS Ubuntu 22.04 · 4 CIS Docker · 34 best-practice**.
 
 Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
 Full reference text is shown in `--verbose` mode.  
@@ -203,7 +203,7 @@ Patterns are matched against the binary basename using `fnmatch`. Suppressed bin
 
 ## Requirements
 
-- Linux — tested on Linux Mint 22.3, Debian 13.4.0
+- Linux — daily-driven on Linux Mint 22.3 + Debian 13.4.0; CI-validated on Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - Python 3.10+
 - Root (`sudo`)
 - `ss`, `systemctl` — standard on most Debian-based systems

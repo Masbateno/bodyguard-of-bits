@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.4.2
+Version:        0.4.6
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,45 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun May 17 2026 Cédric Clauzel <cedricclauzel30@gmail.com> - 0.4.6-1
+- Terrain test pass v0.4.5 fixes:
+  * Bug 1: dpkg-query in kernel_modules.py now filters on 'ii' state
+    so kernels left in 'rc' state by `apt remove` are no longer
+    reported as installed.
+  * Bug 2: active_domains_from_engine now includes OK findings so
+    a domain that goes clean after remediation stays at 10/10 in
+    the global average instead of disappearing.
+- 4500 tests (+11).
+- Adds multi-distro integration CI workflow (validates BOB on
+  Debian 12/13, Ubuntu 22/24/25, Kali Rolling, Fedora 41).
+
+* Sun May 17 2026 Cédric Clauzel <cedricclauzel30@gmail.com> - 0.4.5-1
+- Test infrastructure hardening: tests/test_locale_coverage.py
+  switched from regex scanning to AST parsing (ast.walk + ast.Call
+  + ast.Name). Eliminates docstring false positives, multi-line
+  call site fragility, and obj._t(...) attribute call edge cases.
+- 4489 tests (unchanged).
+
+* Sat May 16 2026 Cédric Clauzel <cedricclauzel30@gmail.com> - 0.4.4-1
+- Cross-distro terrain hardening: critical updates.py bug fixed
+  (reported "up to date" on 100% of vierge Debian-family VMs with
+  pending updates including 21 Ubuntu LTS security patches).
+  Now uses `apt-get -s dist-upgrade`, detects stale apt cache,
+  cross-checks via `apt list --upgradable`.
+- AppArmor 0-profile dedicated key; SMART skip on all-virtual disks;
+  DDNS ports inlined in WARN message.
+- 4489 tests (+21).
+
+* Fri May 15 2026 Cédric Clauzel <cedricclauzel30@gmail.com> - 0.4.3-1
+- Doc catch-up + post-audit hardening pass.
+- 4 firewall explanation keys promoted to EXPLAIN_KEYS.
+- Critical: --json-full crash on HardeningSnapshot fixed (5 dead
+  attribute references removed).
+- Important fixes: strptime locale independence (ssl_certs, logs),
+  _is_covered_by_ufw IP false-positive killed, cron range validator
+  rejects out-of-bounds values, email markdown not escaped to HTML.
+- 4468 tests (+16).
+
 * Thu May 14 2026 Cédric Clauzel <cedricclauzel30@gmail.com> - 0.4.2-1
 - Initial Fedora packaging (Phase 3 of the distro-ready roadmap).
 - Ships man pages bob(1), bob.conf(5), bob-profile(5).

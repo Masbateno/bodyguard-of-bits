@@ -6,10 +6,10 @@
 ![Release](https://img.shields.io/badge/version-v0.4.6-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
-![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint-informational)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
 
-BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 checks across 9 domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
+BOB is a Linux hardening auditor for sysadmins and power users. It runs 43 checks across 9 domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
 
 ---
 
@@ -23,7 +23,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 check
 - **Contextual scoring** — network context detection (direct public IP vs NAT); penalties doubled on internet-exposed machines; firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `container`; `workstation` alias kept; active profile shown in the summary box
-- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 133 entries (99 formal CIS, 34 best-practice, 4 Docker)
+- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 137 entries (99 formal CIS, 34 best-practice, 4 Docker)
 - **5 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / DETECTION & HEALTH
 - **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target (CI-ready)
 
@@ -142,7 +142,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 check
 
 ## Requirements
 
-- Linux — tested on Linux Mint 22.3, Debian 13.4.0
+- Linux — daily-driven on Linux Mint 22.3 + Debian 13.4.0; CI-validated on Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - Python 3.10+
 - `ss` recommended (`iproute2` package) — available by default on modern systems
 - `python3-geoip2` + GeoLite2 database recommended for IP geolocation (optional): `sudo apt install python3-geoip2 geoip-database`
@@ -154,7 +154,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 46 check
 
 ### Prerequisites
 
-- Linux — tested on Linux Mint 22.3, Debian 13.4.0
+- Linux — daily-driven on Linux Mint 22.3 + Debian 13.4.0; CI-validated on Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
 - pipx *(isolated Python app installer)*:
 
 ```bash
