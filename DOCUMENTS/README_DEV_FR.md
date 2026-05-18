@@ -731,3 +731,7 @@ else:
 | `SUDO_USER` | Utilisateur réel sous sudo — utilisé pour le chemin de config et le rapport |
 | `NO_COLOR` | Désactive les couleurs ANSI (standard) |
 
+
+---
+
+© 2026 Cédric Clauzel

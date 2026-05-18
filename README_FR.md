@@ -280,3 +280,7 @@ MIT — voir [LICENSE](LICENSE).
 ## Contribuer
 
 Les issues et pull requests sont les bienvenues sur [github.com/Masbateno/bodyguard-of-bits](https://github.com/Masbateno/bodyguard-of-bits/issues). Pour les fonctionnalités significatives, ouvrir une issue d'abord pour discuter du périmètre est apprécié.
+
+---
+
+© 2026 Cédric Clauzel

@@ -372,3 +372,7 @@ Pour Gmail, assurez-vous d'utiliser un **App Password** et non votre mot de pass
 - Le script généré exporte automatiquement `PYTHONPATH` pour les imports Python
 - L'enveloppe SMTP utilise `sendmail -t -f` pour contrôler l'adresse d'expéditeur
 - Pas de dépendances externes (HTML généré en pur Python)
+
+---
+
+© 2026 Cédric Clauzel

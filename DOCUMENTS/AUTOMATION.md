@@ -372,3 +372,7 @@ For Gmail, make sure you are using an **App Password**, not your regular Google 
 - The generated script automatically exports `PYTHONPATH` for Python imports
 - SMTP envelope uses `sendmail -t -f` for sender address control
 - No external dependencies (HTML generated in pure Python)
+
+---
+
+© 2026 Cédric Clauzel

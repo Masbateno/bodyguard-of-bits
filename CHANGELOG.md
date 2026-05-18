@@ -953,3 +953,7 @@ English and French (`--french` / `-d`).
 pipx install bodyguard-of-bits
 sudo bob
 ```
+
+---
+
+© 2026 Cédric Clauzel

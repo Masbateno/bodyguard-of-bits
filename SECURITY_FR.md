@@ -123,3 +123,7 @@ Si BOB est packagé pour une distro qui supporte le MAC (AppArmor sur Ubuntu/Deb
 Les chercheurs en cryptographie ou sécurité qui ont signalé des vulnérabilités à BOB seront listés ici.
 
 *(aucun pour l'instant — soyez le premier)*
+
+---
+
+© 2026 Cédric Clauzel

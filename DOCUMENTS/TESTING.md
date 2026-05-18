@@ -1280,3 +1280,7 @@ sudo ufw reload
 ```
 
 Not yet tested — low practical priority since UFW CLI prevents this.
+
+---
+
+© 2026 Cédric Clauzel

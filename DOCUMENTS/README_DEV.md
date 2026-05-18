@@ -730,3 +730,7 @@ else:
 | `UFW_AUDIT_SHARE` | Shared data directory (locales, services.json) — overrides in-package path when set; not used by pipx installs |
 | `SUDO_USER` | Real user under sudo — used for config path and report |
 | `NO_COLOR` | Disables ANSI colours (standard) |
+
+---
+
+© 2026 Cédric Clauzel

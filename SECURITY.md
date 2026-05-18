@@ -183,3 +183,7 @@ Cryptography or security researchers who have reported vulnerabilities to
 BOB will be listed here.
 
 *(none yet — be the first)*
+
+---
+
+© 2026 Cédric Clauzel

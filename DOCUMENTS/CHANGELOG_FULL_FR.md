@@ -3573,3 +3573,7 @@ Version initiale de BOB — Bodyguard Of Bits.
 | `test_cli.py` · `test_exit_codes.py` | CLI + codes de sortie |
 | `tests/helpers.py` | Utilitaires de test partagés |
 | *(+ 50 fichiers de tests supplémentaires)* | Couverture complète de tous les modules |
+
+---
+
+© 2026 Cédric Clauzel

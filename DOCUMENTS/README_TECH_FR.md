@@ -636,3 +636,7 @@ MIT License — © 2026 Cédric Clauzel. Voir `LICENSE` pour les détails.
 ## Auteur
 
 Cédric Clauzel
+
+---
+
+© 2026 Cédric Clauzel
