@@ -57,6 +57,20 @@ exits with code
 .B EXIT CODES
 below). Useful in CI.
 .TP
+.B \-\-log\-days=\fIN\fR
+Analyse UFW logs over the past
+.I N
+days (default 7). Affects blocked-attempts statistics, top source IPs, and
+bruteforce detection windows.
+.TP
+.B \-\-output\-dir=\fIPATH\fR
+Override the detailed report save directory for this run. Does not persist
+to
+.IR ~/.config/bob/config.conf
+(use
+.B \-\-reconfigure
+to change the default permanently).
+.TP
 .BR \-q ", " \-\-quiet
 Suppress all terminal output. Use the exit code to detect issues.
 Implies neither
@@ -139,6 +153,12 @@ Show only the delta vs the previous audit (new findings, resolved findings,
 score change). The baseline lives at
 .IR ~/.config/bob/last_baseline.json .
 .TP
+.B \-\-reset\-baseline
+Wipe the comparison baseline file
+.RI ( ~/.config/bob/last_baseline.json )
+and exit. The next audit run will become the new baseline. Use this after
+a major system change to avoid noisy "new findings" lists.
+.TP
 .B \-\-history
 Display a sparkline of the last 50 audit scores from
 .IR ~/.config/bob/history.jsonl .
@@ -166,6 +186,15 @@ for every prompt. Use with extreme caution; intended for unattended fix runs
 where the user has reviewed
 .BR \-\-explain
 beforehand.
+.TP
+.BR \-y ", " \-\-yes
+Auto-confirm every interactive prompt (equivalent to piping
+.RI \(dq y \(dq
+to stdin). Typically combined with
+.B \-\-fix
+for non-interactive remediation, but applies to any other confirmation prompt
+.B bob
+emits.
 .TP
 .B \-\-explain=\fIKEY\fR
 Display a structured explanation for a single finding key. Pass
@@ -230,6 +259,14 @@ always run.
 Inverse of
 .BR \-\-check .
 .TP
+.B \-\-min\-level=\fILEVEL\fR
+Hide findings below the given severity. Accepted values:
+.BR info " (show everything), "
+.BR warn " (hide INFO), "
+.BR alert " (hide INFO and WARN). "
+Affects the terminal output only; JSON output and the detailed log file
+remain complete.
+.TP
 .B \-\-list\-checks
 Print all available section names.
 .
@@ -254,6 +291,11 @@ Persistently ignore finding
 .I KEY
 across all future audits. Stored in
 .IR ~/.config/bob/ignore.yml .
+.TP
+.B \-\-show\-ignored
+List the persistently-ignored finding keys (contents of
+.IR ~/.config/bob/ignore.yml )
+and exit. Useful to audit what has been muted before a security review.
 .
 .SH EXIT CODES
 Stable public API. These codes do not change within a major version; new

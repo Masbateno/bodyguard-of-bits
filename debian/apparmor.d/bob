@@ -24,9 +24,11 @@
 #   - network outbound (HTTPS) for the public IP lookup and webhook,
 #     unless --offline is in effect
 #
-# Lock-down opportunities (out of scope for v0.4.2):
+# Lock-down opportunities (still pending — deferred to a future hardening pass):
 #   - confine to read-only on /etc /proc /sys (BOB never writes there)
 #   - deny exec of anything not on the whitelist
+#   - tighter network egress (currently allow all outbound; could restrict
+#     to the 3 public-IP-lookup hosts + the configured webhook URL)
 
 /usr/bin/bob /usr/local/bin/bob /usr/lib/python3/dist-packages/bob/__main__.py {
   #include <abstractions/base>
