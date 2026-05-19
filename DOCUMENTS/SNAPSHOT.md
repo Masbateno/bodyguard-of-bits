@@ -100,7 +100,7 @@ bodyguard-of-bits/
 │   ├── explain.py             ← --explain TUI, EXPLAIN_KEYS (116), 736 L
 │   ├── cis_refs.py            ← lookup get_cis_ref() / get_cis_code()
 │   ├── compare.py             ← AuditBaseline + AuditDelta + diff
-│   ├── correlation.py         ← 5 compound-risk rules
+│   ├── correlation.py         ← 6 compound-risk rules
 │   ├── recurrence.py          ← consecutive-audit finding tracker
 │   ├── history.py             ← --history sparkline, rotates at 1000 entries
 │   ├── ignore.py              ← persistent ignore list
@@ -157,7 +157,7 @@ bodyguard-of-bits/
 | `formatter.py` | — | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
 | `i18n.py` | — | `t(key, **vars)`, locale auto-detect (POSIX), 1401 keys EN/FR |
 | `compare.py` | — | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()` |
-| `correlation.py` | — | 5 compound-risk rules (`CorrelationRule` with frozensets) |
+| `correlation.py` | — | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | — | Recurring finding tracker: consecutive-audit counters |
 | `history.py` | — | `--history` sparkline, JSONL append at `~/.config/bob/history.jsonl`, rotate@1000 |
 | `ignore.py` | — | Persistent ignore list `~/.config/bob/ignore.yml` |
@@ -166,7 +166,7 @@ bodyguard-of-bits/
 | `tui/cron.py` | 952 | Curses TUI for `--install-cron` / `--manage-cron` |
 | `manage_logs.py` | 999 | `--manage-logs` curses TUI with score history chart |
 | `completion.py` | — | `--install-completion` → writes `/etc/bash_completion.d/bob` |
-| `webhook.py` | — | Generic JSON / Slack payload + send (5s timeout) |
+| `webhook.py` | — | Generic JSON / Slack payload + send (10s timeout) |
 | `watch.py` | — | `--watch=N` live monitoring loop |
 | `plugin_checks.py` | — | `PluginCheck`, size-limited + ANSI-sanitized user plugin loader |
 | `registry.py` | — | `ServiceRegistry.load()`: bundle services.json + ~/.config/bob/services.d/ |
@@ -253,8 +253,8 @@ These are the **integration points**. They're the entry/orchestration layer.
 
 | Out-degree | Module | Why fan-out |
 |---:|---|---|
-| 53 | `runner.py` | Imports every check + scoring + display |
-| 28 | `__main__.py` | Orchestrator wires runner + cli + report + i18n + sysinfo |
+| 54 | `runner.py` | Imports every check + scoring + display |
+| 29 | `__main__.py` | Orchestrator wires runner + cli + report + i18n + sysinfo |
 | 9 | `display.py` | Renders findings from many sub-modules |
 | 9 | `json_output.py` | Builds full payload from many snapshots |
 | 9 | `watch.py` | Wraps the full audit loop |
@@ -262,7 +262,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 ### Refactoring implication
 
 - **scoring.py** and **checks/_run.py** are bedrock — touching them = risk of broad regression. Cover with extra tests before changing.
-- **runner.py** has 53 outgoing imports → if you change a check's signature (e.g. `Finding.template_vars` migration), the impact lands here first.
+- **runner.py** has 54 outgoing imports → if you change a check's signature (e.g. `Finding.template_vars` migration), the impact lands here first.
 - The orchestration layer (`__main__.py` + `runner.py`) is the **only place with heavy fan-out**. Everything else is a focused module → safe to refactor in isolation.
 
 ---
@@ -542,7 +542,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 | `test_locale_coverage.py` | All `t()`/`_t()` keys exist in both `en.json` and `fr.json` (AST-based since v0.4.5) |
 | `test_template_vars_migration.py` | Phase 2 migration debt visibility (v0.4.2) |
 | `test_compare.py` | Baseline + delta logic |
-| `test_correlation.py` | 5 compound-risk rules |
+| `test_correlation.py` | 6 compound-risk rules |
 | `test_recurrence.py` | Consecutive-audit counter |
 | `test_exit_codes.py` | Exit code public API |
 | `test_explain.py` | EXPLAIN_KEYS, alias map, freeze policy |
