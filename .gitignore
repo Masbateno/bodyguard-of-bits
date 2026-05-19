@@ -1,30 +1,50 @@
-# UFW-audit log reports
+# BOB audit log reports
 *.log
 
-# Python
+# Python — bytecode and caches
 __pycache__/
 *.py[cod]
 *.pyo
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.cover
 
 # Distribution / packaging
 *.egg-info/
 dist/
 build/
+*.whl
+*.tar.gz
 
 # Virtual environments
 .venv/
 venv/
 env/
 
-# Editor temporary files
+# Editor / IDE
 *~
 *.swp
+*.swo
+.vscode/
+.idea/
+*.iml
+
+# OS noise
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# VSCode
-.vscode/
-
-# MyPy
-.mypy_cache/
+# Backup / patch files
+*.bak
+*.orig
+*.rej
+*.tmp
