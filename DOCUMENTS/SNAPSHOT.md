@@ -202,7 +202,7 @@ bodyguard-of-bits/
 | `docker_audit.py` | — | firewall | daemon.json hardening, privileged containers, sensitive mounts |
 | `virtualization.py` | — | firewall | KVM/VirtualBox/VMware/LXC + Snap network packages |
 | `samba.py` | — | samba | SMBv1, signing, map-to-guest, bind interfaces |
-| `smtp.py` | — | hardening | MTA exposure (Postfix/Exim/Sendmail) |
+| `smtp.py` | — | firewall (catch-all) | MTA exposure (Postfix/Exim/Sendmail) — prefix `smtp` not in `_PREFIX_TO_DOMAIN` |
 | `hardening.py` | — | hardening | sysctl net.* / fs.* (rp_filter, send_redirects, syncookies…) |
 | `kernel_hardening.py` | — | hardening | sysctl kernel.* (ASLR, ptrace_scope, kptr_restrict…) |
 | `kernel_modules.py` | 501 | hardening | risky modules + apt kernel updates + installed listing (dpkg `ii` filter since v0.4.6) |
@@ -218,11 +218,11 @@ bodyguard-of-bits/
 | `disk.py` | — | disk | SMART (skip all-virtual since v0.4.4), partition usage, NVMe |
 | `backup.py` | — | disk | borgmatic / restic / timeshift / duplicati / rclone |
 | `memory.py` | — | hardening | SSD wear, unjustified swap, swappiness |
-| `desktop_apps.py` | — | hardening | GUI app process detection (Brave, VSCode, ExpressVPN…) |
+| `desktop_apps.py` | — | firewall (catch-all) | GUI app process detection (Brave, VSCode, ExpressVPN…) — prefix `desktop_apps` not in `_PREFIX_TO_DOMAIN` |
 | `ntp.py` | — | hardening | systemd-timesyncd/chronyd/ntpd active + synced |
 | `auditd.py` | — | hardening | Linux Audit Framework, loaded rules, sensitive file watches |
 | `secure_boot.py` | — | hardening | UEFI state via mokutil/efivars/bootctl |
-| `fail2ban.py` | — | hardening | Service state, jails, SSH jail detection |
+| `fail2ban.py` | — | firewall (catch-all) | Service state, jails, SSH jail detection — prefix `fail2ban` not in `_PREFIX_TO_DOMAIN` |
 | `clamav.py` | — | hardening | DB freshness via mtime, last scan, daemon status |
 | `file_integrity.py` | — | hardening | AIDE/Tripwire installation, DB existence, last check |
 | `rootkit.py` | — | hardening | rkhunter / chkrootkit, DB age, scan age |
