@@ -164,7 +164,7 @@ La notification est envoyée **uniquement si l'audit détecte des alertes ou des
 Chaque fichier cron inclut des métadonnées en commentaires pour l'identification. Les emails multiples sont stockés séparés par des virgules :
 
 ```
-# BOB cron — generated 2026-03-24 by bob --install-cron
+# BOB cron — généré par bob --install-cron
 # name: nightly
 # email: admin@exemple.com,securite@exemple.com
 SHELL=/bin/bash
@@ -172,6 +172,155 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 0 3 * * *  root  /usr/local/bin/bob-nightly
 ```
+
+---
+
+## Webhooks
+
+En complément (ou à la place) des notifications email, BOB peut POSTer le résumé d'audit vers une URL webhook. Deux formats supportés : payload compatible Slack et enveloppe JSON générique.
+
+```bash
+sudo bob --webhook https://hooks.slack.com/services/T00.../B00.../XX...
+sudo bob --webhook https://mon-endpoint-interne.exemple.com/audit
+```
+
+### Détection automatique du format
+
+BOB inspecte l'URL pour choisir le format de payload :
+
+| Pattern d'URL | Format de payload |
+|---------------|-------------------|
+| `hooks.slack.com/services/...` | Slack (attachment riche avec blocs color-coded) |
+| autre | Enveloppe JSON générique |
+
+Forcer un format spécifique avec `--webhook-format` :
+
+```bash
+sudo bob --webhook URL --webhook-format=slack    # force format Slack
+sudo bob --webhook URL --webhook-format=generic  # force JSON générique
+```
+
+### Payload Slack
+
+Le message Slack inclut :
+
+- Une ligne d'en-tête avec l'hôte, le score et le niveau de risque
+- Les sous-scores par domaine
+- La liste des findings ALERT et WARN (tronquée à 10 au-delà)
+- Des attachments color-coded (rouge / orange / vert selon le score)
+
+### Enveloppe JSON générique
+
+Le payload générique est volontairement minimal et stable :
+
+```json
+{
+  "schema_version": "1",
+  "host": "example.local",
+  "timestamp": "2026-05-17T18:42:01+02:00",
+  "score": 8,
+  "risk": "LOW",
+  "alerts": [
+    {"key": "ssh.permit_root_login", "message": "..."}
+  ],
+  "warnings": [
+    {"key": "hardening.send_redirects", "message": "..."}
+  ]
+}
+```
+
+C'est le même contrat que `bob --json` (clés top-level). À consommer avec des services qui reçoivent du `curl`, des intégrations style Zapier, des agrégateurs de logs ou des endpoints internes custom.
+
+### Comportement
+
+- Le webhook est POSTé **uniquement si des alertes ou avertissements sont présents** (même seuil que les notifications email). Un audit clean ne produit aucune notification.
+- `--offline` (ou `-o`) désactive complètement la livraison webhook. À utiliser pour les sandboxes de build distro et environnements air-gapped.
+- Un POST webhook échoué **n'affecte pas** le code de sortie de l'audit — c'est une notification best-effort, pas un gate. Les erreurs sont écrites sur stderr.
+- Chaque URL webhook est appelée avec un timeout de 5 secondes.
+
+### Combinaison avec cron
+
+Le script wrapper cron généré par `--install-cron` n'inclut actuellement pas de flag `--webhook`. Pour lancer un audit planifié avec livraison webhook, éditer le wrapper généré à `/usr/local/bin/bob-{name}` et ajouter le flag à l'invocation `bob` :
+
+```bash
+sudo nano /usr/local/bin/bob-nightly
+# remplacer :  /usr/local/bin/bob ... -d
+# par :        /usr/local/bin/bob ... -d --webhook https://hooks.slack.com/...
+```
+
+---
+
+## Surveillance et suivi
+
+Au-delà des audits planifiés, BOB propose une poignée de flags qui aident les opérateurs à observer l'état du système dans le temps. Ce ne sont pas des "automatisations" au sens cron, mais elles s'intègrent dans la même boîte à outils opérationnelle.
+
+### `--watch=N` — mode surveillance en direct
+
+Relance l'audit toutes les `N` secondes jusqu'à interruption avec `Ctrl-C` :
+
+```bash
+sudo bob --watch=60
+```
+
+Chaque passe redessine le terminal sur place. Les deltas de score (vs la passe précédente) sont mis en évidence pour que les changements soient faciles à repérer. Cas d'usage :
+
+- Observer un changement de durcissement prendre effet (`sudo sysctl -w ...` → la passe suivante voit le WARN disparaître)
+- Démontrer l'audit en live en réunion
+- Vérifier un changement fail2ban / pare-feu sans relancer manuellement
+
+`--watch` est incompatible avec `--json`, `--output=csv`, `--output=markdown` et `--html` (utilise la sortie terminal interactive).
+
+### `--diff` — afficher uniquement ce qui a changé
+
+Compare l'audit courant au précédent et n'affiche que le delta :
+
+```bash
+sudo bob --diff
+```
+
+Forme de la sortie :
+
+```
+✔  Résolus depuis le dernier audit (2) :
+   - hardening.send_redirects
+   - ssh.x11_forwarding
+✖  Nouveaux findings depuis le dernier audit (1) :
+   - clamav.scan_old
+```
+
+Le fichier baseline vit à `~/.config/bob/last_baseline.json` (mode `0600`) et est réécrit à la fin de chaque audit complet. Pour effacer la baseline et repartir à zéro :
+
+```bash
+sudo bob --reset-baseline
+```
+
+### `--history` — tendance du score dans le temps
+
+Affiche un sparkline des 50 derniers scores d'audit depuis `~/.config/bob/history.jsonl` :
+
+```bash
+bob --history
+```
+
+```
+Historique des scores (50 derniers audits) :
+  ▃▃▅▆▇▇▇▇▆▇▇▇▇█████████  courant : 8/10
+  ┴─────────────────────┴
+  2026-05-10           2026-05-17
+```
+
+Le fichier d'historique append une ligne par audit (timestamp + score + niveau) et rotate à 1000 entrées. Pas de sudo requis pour `--history` seul.
+
+### `--breakdown` (`-B`) — transparence du calcul de score
+
+Affiche le calcul complet du score après le résumé d'audit : chaque déduction, chaque plafond, et les scores bruts par domaine avant moyennage.
+
+```bash
+sudo bob --breakdown
+sudo bob -B                       # forme courte
+```
+
+À utiliser quand le score affiché ne correspond pas à votre intuition et que vous voulez savoir *quelles* déductions s'y sont additionnées. La sortie est lisible mais assez verbeuse — typiquement utilisé une fois après un changement de config plutôt qu'en audit de routine.
 
 ---
 
@@ -241,7 +390,7 @@ Déplacer 28 rapport(s) vers le nouvel emplacement ? [y/N]
 Si vous avez changé l'emplacement sans déplacer les rapports, tous les répertoires connus sont affichés ensemble dans une liste unifiée :
 
 ```
-  Rapports dans : /home/user/ufwauditlogs  [actuel]
+  Rapports dans : /var/log/bob-audits  [actuel]
 
   ℹ Aucun rapport trouvé
 
