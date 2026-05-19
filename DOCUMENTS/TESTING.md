@@ -1,9 +1,11 @@
 *[Lire en français](TESTING_FR.md)*
 
-# BOB — Test plan: dangerous UFW rules
+# BOB — Test plan and version test history
 
-Manual regression tests using deliberately dangerous UFW rules.
-Each test verifies that BOB correctly detects (and fixes) a specific misconfiguration.
+Two complementary parts:
+
+- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.4.6 (4500 tests).
+- **Manual UFW regression plan** (Categories A–E at the bottom) — deliberately dangerous UFW rules and the expected BOB behaviour for each. Used to validate detection + remediation on real systems.
 
 ---
 
@@ -32,6 +34,177 @@ Each test verifies that BOB correctly detects (and fixes) a specific misconfigur
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.4.6 — 4500/4500 (2026-05-17)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4500 passed in 5.94s
+```
+
+**Net: +11 (no removals).** Terrain test pass v0.4.5 surfaced two reproducible bugs across 13 audits on 6 systems (5 VMs + production Linux Mint workstation). Both fixed and covered.
+
+#### `tests/test_kernel_modules.py` — `TestParseInstalledKernels` (+5)
+
+Direct coverage of **Bug 1** (`dpkg-query` did not filter on `ii` state, listed kernels in `rc` state after `apt remove` / `autoremove`):
+
+| Test | Coverage |
+|---|---|
+| `test_status_prefixed_ii_kept` | `ii ` rows produce the version list (basic happy path) |
+| `test_status_prefixed_rc_excluded` | `rc ` row dropped while sibling `ii ` row kept (direct Bug 1 reproduction) |
+| `test_status_prefixed_excludes_all_non_installed_states` | `ii`/`rc`/`pn`/`un`/`iU` cohabit; only `ii` survives |
+| `test_status_prefixed_hi_kept` | `hi` (apt-mark hold) packages stay in the list |
+| `test_mixed_legacy_and_status_prefixed_format` | Backward compat — legacy (no `|` prefix) and new (`ii |...`) lines mix correctly |
+
+#### `tests/test_domain_scores.py` — `TestActiveDomainsIncludesOK` (+6)
+
+Direct coverage of **Bug 2** (`active_domains_from_engine` excluded `OK`-only domains → score dropped after remediation):
+
+| Test | Coverage |
+|---|---|
+| `test_ok_finding_makes_domain_active` | `OK` finding promotes a domain (the fix) |
+| `test_warn_finding_makes_domain_active` | Backward compat: `WARN` still promotes |
+| `test_alert_finding_makes_domain_active` | Backward compat: `ALERT` still promotes |
+| `test_info_only_finding_does_not_promote_domain` | `INFO`-only domains stay hidden (preserved by design) |
+| `test_no_findings_no_active_domains` | Empty engine → empty active set (baseline regression guard) |
+| `test_remediation_keeps_domain_at_max_score` | Direct Debian 13 reproduction: ssh has WARN (8/10) + updates remediated to OK only → global = `(8+10)/2 = 9` instead of `8` |
+
+#### Multi-distro integration CI (additive — not unit tests)
+
+A new GitHub Actions workflow `.github/workflows/integration.yml` runs BOB inside containers of Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 on every push/PR to `main`. Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]` in output, no Python tracebacks. Catches the regression class that unit tests can't reach (distro-specific subprocess assumptions, locale fallback, non-Debian families). 7/7 distros green at v0.4.6 release.
+
+Terrain validation post-release: 14 audits on 5 systems confirm 7 `rc` kernels correctly filtered (3 + 2 + 1 + 0 + 1) and score deltas positive on the 3 systems with remediated state (Debian 13 +3, Mint test +1, Ubuntu 26.04 LTS +2).
+
+---
+
+### v0.4.5 — 4489/4489 (2026-05-17)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4489 passed in 5.81s
+```
+
+**Net: 0 (pure refactor of `tests/test_locale_coverage.py` — no source file in `bob/` modified).**
+
+The locale-coverage scanner switched from regex-over-source-text to AST parsing (`ast.parse` + `ast.walk` + `ast.Call` + `ast.Name` checks). Same 9 tests in `TestLocaleCoverage` + `TestExplainNamespaceCoverage` + `TestPlaceholderParity`, same external contract.
+
+#### What changed inside the test file
+
+| Aspect | Before (regex) | After (AST) |
+|---|---|---|
+| Source reading | `re.finditer` on file text | `ast.parse(...)`, walk the tree |
+| Translation call detection | Pattern `t\([\'"]([\w.]+)[\'"]` with negative lookbehind | `ast.Call(func=ast.Name(id in {"t","_t"}))` |
+| First arg extraction | Regex group | `_literal_key_arg(call)` — checks `ast.Constant(str)` |
+| `_KEY_EXCLUSIONS` allowlist | 2 entries (`samba.open_world`, `log.blocked_attempts` from docstring matches) | **Deleted** — docstrings are inert string constants, AST cannot mistake them for call sites |
+
+#### What this fixes (vs the regex form)
+
+- **Docstring matches.** With AST, examples like `t("samba.open_world")` inside a docstring of `bob/i18n.py` are leaf string constants without a calling site — they cannot produce a false positive.
+- **Multi-line call sites.** AST is whitespace-independent — calls split across lines (`t(\n    "foo.bar",\n    x=1,\n)`) match identically.
+- **Attribute calls.** `obj._t("foo")` resolves to `ast.Attribute`, not `ast.Name` — the type check rejects it cleanly without ad-hoc lookbehind tightening.
+
+#### Performance note
+
+AST parsing is ~5× slower than regex on this codebase (300 ms vs 60 ms for `tests/test_locale_coverage.py`). Negligible in absolute terms — the whole test suite still runs in ~6 s.
+
+---
+
+### v0.4.4 — 4489/4489 (2026-05-16)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4489 passed in 5.66s
+```
+
+**Net: +21 (no removals).** Cross-distro terrain hardening. One critical bug + three minor presentation fixes surfaced by terrain testing on Debian 13, Kali Rolling, Mint test, Ubuntu 26.04 LTS. v0.4.3 audit-deferred items also landed (S4 home-bounded symlink, M4 `_parse_ufw_covered_ports` refactor, I2 wave-2 `key=` on services/virtualization).
+
+#### `tests/test_updates.py` (+9) — critical `updates.py` bug coverage
+
+`updates.py` reported "system up to date" on 100% of vierge Debian-family VMs (Debian 13 with 59 packages pending, Kali Rolling with 868, Mint with 33, Ubuntu LTS with 23 of which 21 were security updates). Two root causes: `apt-get -s upgrade` is conservative and back-holds anything pulling a new package (typical kernel), and a stale apt cache silently returned 0 packages.
+
+| Test theme | Coverage |
+|---|---|
+| `-s dist-upgrade` parsing | Replaces `-s upgrade`, parses the new line format (`Inst foo (...)`/`Conf foo (...)`) |
+| Stale apt cache detection | `Path("/var/cache/apt/pkgcache.bin")` mtime > 7 days → `result.warn("updates.apt_cache_stale", days=N)` |
+| Cross-check vs `apt list --upgradable` | If `dist-upgrade -s` returns 0 but `apt list` returns > 0 → incoherence note |
+| "Surface d'attaque" cascade | When updates state is `unknown`, the surface section no longer says "à jour"; propagates `updates_unknown` instead |
+
+#### `tests/test_mac_policy.py` (+2) — AppArmor 0-profile dedicated key
+
+Kali had AppArmor active with 0 enforce + 0 complain profiles. v0.4.3 emitted a contradictory message ("aucun profil en mode enforce (0 en plainte)"). New 3-case logic:
+
+| Case | Message |
+|---|---|
+| `enforce > 0` + `complain > 0` | "X enforce, Y complain — passer enforce" (Mint default) |
+| `enforce > 0` + `complain == 0` | "tous les profils en enforce — bon état" |
+| `enforce == 0` + `complain == 0` | New: "AppArmor activé mais aucun profil chargé — installer apparmor-profiles-extra" |
+
+#### `tests/test_disk.py` (+3) — SMART skip when all-virtual
+
+On Kali VM `/dev/vda` (libvirt), v0.4.3 emitted `ℹ /dev/vda — SMART non applicable` then `✔ Tous les disques ont passé le contrôle SMART`. Second line is misleading — no SMART actually ran. Fix: if all disks are SMART-non-applicable, skip the OK summary; emit a single INFO "SMART non-applicable — environnement virtualisé/conteneur".
+
+#### `tests/test_ddns.py` (+2) — DDNS ports inline in WARN
+
+On Mint test VM, DDNS WARN was emitted with port list as separate `→ 22/tcp` / `→ 80/tcp` action lines, looking like remediation commands. Ports now inlined in the WARN message itself: `DDNS actif avec port(s) ouverts sans restriction (22/tcp, 80/tcp) — vérifiez…`.
+
+#### `tests/test_locale_coverage.py` (new, +9) — locale fallback regression guard
+
+After the v0.4.3 `[logs.attempts]` sentinel incident (locale key removed without updating its call sites in `display.py`), this file scans all `bob/**/*.py` for `t("xxx.yyy")` / `_t("xxx.yyy")` calls (initial regex form, later refactored to AST in v0.4.5) and asserts that every key exists in both `en.json` and `fr.json`. Catches the entire class of sentinel regressions in CI.
+
+Three test classes: `TestLocaleCoverage` (key existence), `TestExplainNamespaceCoverage` (every `EXPLAIN_KEYS` entry has full `title`/`why`/`how`/`cis_ref` quartet in both locales), `TestPlaceholderParity` (every `{var}` placeholder in EN matches FR).
+
+#### `tests/test_ssh.py` (+1) — home-bounded symlink (S4 redesign)
+
+New helper `_is_safe_user_path(path, owner_home)` in `bob/checks/_run.py`: accepts symlinks pointing inside the owner's home, rejects ones pointing elsewhere. Applied in `ssh.py` (authorized_keys / ssh/config parsing) — preserves dotfiles-via-git use cases without losing the symlink-attack guard. `_is_safe_config_path` retained for `/etc/cron.d/`.
+
+---
+
+### v0.4.3 — 4468/4468 (2026-05-15)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4468 passed in 5.41s
+```
+
+**Net: +16 (incl. +4 regression coverage, no removals).** Doc catch-up + post-audit hardening pass. One critical (`--json-full` crash) + five important fixes + eight minor + five suggestions surfaced by agent code review.
+
+#### `tests/test_hardening.py` (+5) — `--json-full` HardeningSnapshot dead-attr regression
+
+`bob --json --json-full` crashed because `bob/json_output.py` referenced 5 attributes that had been removed from `HardeningSnapshot` (`kernel.unprivileged_bpf_disabled`, `kernel.unprivileged_userns_clone`, `fs.protected_fifos`, `fs.protected_regular`, `kernel.modules_disabled`). Tests now exercise `build_json_data` with realistic `HardeningSnapshot` fixtures across both `--json` (short) and `--json --json-full` (extended) modes.
+
+#### `tests/test_explain.py` (+4) — 4 firewall keys promoted to `EXPLAIN_KEYS`
+
+`prerequisites.ufw_missing`, `firewall.inactive`, `firewall.policy_open`, `firewall.policy_routed_open` were promoted from "documented but unfrozen" to canonical `EXPLAIN_KEYS` entries. Each needed: full `title`/`why`/`how`/`cis_ref` in `en.json` + `fr.json`, group label change from "Firewall Logging" → "Firewall", and a regression test that `bob --explain firewall.inactive` returns content (not "not found").
+
+#### `tests/test_ssl_certs.py` + `tests/test_logs.py` (+2) — `strptime("%b ...")` locale-independent
+
+`strptime("%b ...")` broke when `LANG=fr_FR.UTF-8` set the C library to French month names ("janv", "févr"). `bob/checks/ssl_certs.py` and `bob/checks/logs.py` now wrap the call with a `_C_LOCALE_ENV` context manager to force English month parsing regardless of host locale.
+
+#### `tests/test_ports.py` (+1) — `_is_covered_by_ufw` IP false-positive
+
+A UFW rule `from 192.168.1.22 to any` was being matched as "covers port 22" because the regex captured `22` from the source IP. Anchored the port-extraction regex to the `port/proto` field only.
+
+#### `tests/test_cron_audit.py` (+1) — range validator out-of-bounds
+
+Cron expressions like `60 * * * *` (minute = 60 is invalid) were accepted. Validator now rejects out-of-bounds values per field (`0-59` for minute, `0-23` for hour, etc.).
+
+#### `tests/test_email.py` + `tests/test_html_output.py` (+3) — markdown links not HTML-escaped
+
+Email body HTML rendering was escaping `[label](url)` markdown to literal `&lt;a&gt;` tags. Order of operations in `_inline_format()` reversed so markdown-to-HTML conversion happens before generic escaping.
+
+#### Other items in pass
+
+`key=` attribute added to ~30 findings in `docker`/`firewall_stack`/`network_context`/`ports`. 7 dead locale keys removed (e.g. `samba.dangerous_macro`). i18n concat anti-pattern resolved in `ddns` and `logs` (single composed string instead of `t(key1) + " " + t(key2)`). CIS references added to 8 findings. Short CHANGELOG corrected for v0.4.2.
 
 ---
 
@@ -685,7 +858,7 @@ pytest tests/ -q
 | File | Tests | Domain |
 |------|-------|--------|
 | `test_cis_refs.py` | 39 | CIS benchmark mapping |
-| `test_iptables_nftables.py` | 51 | Firewall stack (CHECK 46) |
+| `test_iptables_nftables.py` | 51 | Firewall stack (iptables/nftables) |
 | `test_firewall.py` | — | UFW rules audit |
 | `test_ssh.py` | — | SSH configuration |
 | `test_hardening.py` | — | Kernel hardening sysctl |
