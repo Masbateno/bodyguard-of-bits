@@ -157,7 +157,7 @@ Tous flaggés par l'audit agent sur v0.4.2 et explicitement reportés. Tous appl
 
 ### Tests
 
-4485/4485 — +17 vs v0.4.3 :
+4489/4489 — +21 vs v0.4.3 :
 - +10 dans [`tests/test_updates.py`](tests/test_updates.py) — 5 cas cache-stale, 5 cas dist-upgrade-inconsistency.
 - +2 dans [`tests/test_mac_policy.py`](tests/test_mac_policy.py) — chemins desktop INFO et server WARN pour la nouvelle clé `apparmor_no_profiles`.
 - +9 dans [`tests/test_locale_coverage.py`](tests/test_locale_coverage.py) — scan corpus complet, résolution locales EN+FR, parité, couverture des prefixes dynamiques, baseline sanity (5 tests) ; plus couverture exhaustive `explain.*` générée depuis `EXPLAIN_KEYS` + check non-empty-string (3 tests, ferme la zone aveugle laissée par le bypass précédent) et parité des placeholders entre EN/FR (1 test, protège contre la classe de crash runtime `{count}` vs `{cnt}`).
@@ -392,7 +392,7 @@ Quand le score était inchangé vs l'audit précédent, la boîte récap afficha
 
 ### Tests
 
-4405/4405 (+57) : 16 nouveaux dans `test_i18n.py` (12 `detect_system_lang` + 4 intégration CLI), 15 dans le nouveau `test_json_schema.py` (invariants top-level, types de champs, exposition des clés stables), 6 dans `test_explain.py` (alias map + politique freeze), 20 dans le nouveau `test_services_schema.py` (schéma valide, services bundled conformes, échantillons valides/invalides, parité Python ↔ Schema).
+4430/4430 (+82) : 16 nouveaux dans `test_i18n.py` (12 `detect_system_lang` + 4 intégration CLI), 17 dans le nouveau `test_json_schema.py` (invariants top-level, types de champs, exposition des clés stables, strict-set + defense-in-depth contre dérive des constantes issus de la passe post-revue #2), 6 dans `test_explain.py` (alias map + politique freeze), 43 dans le nouveau `test_services_schema.py` (schéma valide, services bundled conformes, échantillons valides/invalides, parité Python ↔ Schema, plus factorisation `$defs` / regex port stricte 1–65535 / contraintes métier `if/then` / wrapper plugin-file `schema_version` / `minItems: 1` issus des passes post-revue #1+#2).
 
 ### Validation terrain
 

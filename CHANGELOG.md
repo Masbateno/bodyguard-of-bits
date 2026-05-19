@@ -157,7 +157,7 @@ These were flagged by the agent audit on v0.4.2 and explicitly deferred. All app
 
 ### Tests
 
-4485/4485 — +17 vs v0.4.3:
+4489/4489 — +21 vs v0.4.3:
 - +10 in [`tests/test_updates.py`](tests/test_updates.py) — 5 cache-stale cases, 5 dist-upgrade-inconsistency cases.
 - +2 in [`tests/test_mac_policy.py`](tests/test_mac_policy.py) — desktop INFO and server WARN paths for the new `apparmor_no_profiles` key.
 - +9 in [`tests/test_locale_coverage.py`](tests/test_locale_coverage.py) — full corpus scan, EN+FR locale resolution, parity, dynamic-prefix coverage, sanity baseline (5 tests); plus exhaustive `explain.*` coverage generated from `EXPLAIN_KEYS` + non-empty-string check (3 tests, closes a blind spot the previous bypass had) and placeholder parity between EN/FR (1 test, guards against the `{count}` vs `{cnt}` runtime crash class).
@@ -392,7 +392,7 @@ When the score was unchanged vs the previous audit, the summary box showed `Secu
 
 ### Tests
 
-4405/4405 (+57): 16 new in `test_i18n.py` (12 `detect_system_lang` + 4 CLI integration), 15 in new `test_json_schema.py` (top-level invariants, field types, stable-key exposure), 6 in `test_explain.py` (alias map + freeze policy), 20 in new `test_services_schema.py` (schema valid, bundled services match, sample valid/invalid plugins, Python ↔ Schema parity).
+4430/4430 (+82): 16 new in `test_i18n.py` (12 `detect_system_lang` + 4 CLI integration), 17 in new `test_json_schema.py` (top-level invariants, field types, stable-key exposure, strict-set + constants-drift defense-in-depth from post-review pass #2), 6 in `test_explain.py` (alias map + freeze policy), 43 in new `test_services_schema.py` (schema valid, bundled services match, sample valid/invalid plugins, Python ↔ Schema parity, plus `$defs` factorization / strict 1–65535 port regex / business `if/then` constraints / plugin-file `schema_version` wrapper / `minItems: 1` from post-review passes #1+#2).
 
 ### Field validation
 
