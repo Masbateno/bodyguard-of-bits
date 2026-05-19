@@ -83,7 +83,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 
 %files -n %{name} -f %{pyproject_files}
 %license LICENSE
-%doc README.md README_FR.md SECURITY.md
+%doc README.md README_FR.md SECURITY.md SECURITY_FR.md
 %doc DOCUMENTS/README_TECH.md DOCUMENTS/README_TECH_FR.md
 %{_bindir}/bob
 %{_mandir}/man1/bob.1*
