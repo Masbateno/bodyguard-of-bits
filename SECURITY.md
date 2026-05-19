@@ -160,11 +160,21 @@ SELinux on RHEL/Fedora):
   - Ship the optional AppArmor profile (`debian/apparmor.d/bob` once
     packaged) in `complain` mode by default; offer `enforce` as an opt-in
     so adventurous users help shake out false positives.
-  - The profile MUST allow read on `/etc/`, `/proc/`, `/sys/`, `/var/log/`
-    and exec of `/usr/sbin/ufw`, `/usr/bin/ss`, `/usr/sbin/iptables`,
-    `/usr/bin/systemctl`, `/usr/bin/journalctl`, `/usr/bin/openssl`,
-    `/usr/bin/smartctl`, `/usr/bin/fwupdmgr`, `/usr/bin/aa-status`,
-    `/usr/bin/apt-cache`, `/usr/bin/dpkg`.
+  - The profile MUST allow read on `/etc/`, `/proc/`, `/sys/`, `/var/log/`,
+    `~/.config/bob/`, `~/.ssh/`, and exec on the system tools BOB invokes
+    (~58 binaries spanning firewall, systemd/journal, audit framework, MAC
+    policy, kernel hardening, antivirus, rootkit scanning, NTP, Secure Boot,
+    package manager). The **canonical and exhaustive list** is the bundled
+    `debian/apparmor.d/bob` profile — adapt paths for the distro layout.
+    A representative sample: `ufw`, `ss`, `iptables`, `ip6tables`, `nft`,
+    `systemctl`, `journalctl`, `openssl`, `smartctl`, `fwupdmgr`,
+    `aa-status`, `sestatus`, `mokutil`, `bootctl`, `sysctl`, `ip`,
+    `swapon`, `timedatectl`, `chronyc`, `rkhunter`, `chkrootkit`,
+    `clamscan`, `freshclam`, `aide`, `auditctl`, `fail2ban-client`,
+    `postconf`, `snap`, `dpkg`, `apt-cache`.
+  - Network outbound (HTTPS) must be allowed for the public IP lookup
+    and webhook delivery, unless deployments rely exclusively on
+    `--offline` mode.
   - Recommend installing BOB with `pipx` (default upstream install path) so
     it lives in `~/.local/pipx/venvs/bodyguard-of-bits/` rather than a
     shared system Python environment.
