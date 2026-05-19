@@ -3439,7 +3439,7 @@ La colonne utilise `Exposure.OPEN_WORLD` pour déterminer l'indicateur — elle 
 
 ---
 
-## [v0.1.0] — 2026-04-26
+## [v0.1.0] — 26-04-2026
 
 Version initiale de BOB — Bodyguard Of Bits.
 

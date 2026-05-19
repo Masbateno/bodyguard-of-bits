@@ -3637,7 +3637,7 @@ The column uses `Exposure.OPEN_WORLD` to determine the indicator — it reflects
 
 ---
 
-## [v0.1.0] — 26-04-2026
+## [v0.1.0] — 2026-04-26
 
 Initial release of BOB — Bodyguard Of Bits.
 

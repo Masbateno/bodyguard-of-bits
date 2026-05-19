@@ -1,6 +1,6 @@
 bodyguard-of-bits (0.4.6-1) UNRELEASED; urgency=medium
 
-  * Terrain test pass v0.4.5 fixes (2 reproducible bugs across 14 audits
+  * Terrain test pass v0.4.5 fixes (2 reproducible bugs across 13 audits
     on 6 distinct systems, including production hardware).
   * Bug 1: bob/checks/kernel_modules.py — dpkg-query did not filter on
     'ii' state, so kernels left in 'rc' state after `apt remove` (without
