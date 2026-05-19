@@ -136,7 +136,7 @@ bodyguard-of-bits/
 
 ---
 
-## Module index — bob/ root (38 modules)
+## Module index — bob/ root (38 modules) + bob/tui/cron.py
 
 | Module | LoC | Role |
 |---|---:|---|
@@ -146,7 +146,7 @@ bodyguard-of-bits/
 | `config.py` | — | `UserConfig` + `EmailStore` + suid_whitelist + log_dir prompts |
 | `profiles.py` | — | Profile loader: server/desktop/container + ~/.config/bob/profiles/*.conf |
 | `scoring.py` | — | `ScoreEngine`, `Finding`, `Deduction`, `FindingLevel`, `ScoreCap` |
-| `domain_scores.py` | 327 | `compute_domain_scores()`, `active_domains_from_engine()`, `apply_domain_score_override()` — 7 domains |
+| `domain_scores.py` | 343 | `compute_domain_scores()`, `active_domains_from_engine()`, `apply_domain_score_override()` — 7 domains |
 | `explain.py` | 736 | `--explain` TUI + `EXPLAIN_KEYS` (116 keys, 29 groups) + alias map |
 | `cis_refs.py` | — | CIS lookup with `lru_cache(maxsize=1)`, reads `data/cis_refs.json` (137 entries) |
 | `display.py` | 792 | Terminal output: section boxes, finding emission, summary box, score bar |
@@ -306,8 +306,8 @@ These are the **integration points**. They're the entry/orchestration layer.
 | `checks/ssh.py` | 1392 | 1022 | 0.73× | Tight coverage; SSH is critical so tested heavily |
 | `checks/services.py` | 614 | 875 | 1.42× | Over-tested? Or service registry is genuinely complex |
 | `checks/kernel_modules.py` | 501 | 920 | 1.84× | Heavily tested — Bug 1 fix (v0.4.6) added 5 tests on top |
-| `domain_scores.py` | 327 | 855 | 2.61× | Scoring engine — critical, very tested |
-| `cron.py` | 1201 | 326 (test_cron) + 145 (test_cron_audit) | 0.39× | **Under-tested for its size** — refactor candidate? |
+| `domain_scores.py` | 343 | 855 | 2.49× | Scoring engine — critical, very tested |
+| `cron.py` | 1201 | 382 (test_cron) + 344 (test_cron_audit) | 0.60× | **Under-tested for its size** — refactor candidate? |
 | `manage_logs.py` | 999 | 882 | 0.88× | Curses UI — hard to test, decent coverage |
 | `tui/cron.py` | 952 | (covered by test_cron) | low | **Under-tested** — same caveat as cron.py |
 
@@ -398,7 +398,7 @@ level = engine.level        # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
 
 ### 1. JSON schema version `"1"`
 
-`build_json_data(full=False)` and `build_json_data(full=True)` emit the contract documented in [`README_TECH.md` § JSON output schema](DOCUMENTS/README_TECH.md). Within `schema_version="1"`:
+`build_json_data(full=False)` and `build_json_data(full=True)` emit the contract documented in [`README_TECH.md` § JSON output schema](README_TECH.md). Within `schema_version="1"`:
 
 - Top-level keys cannot disappear, be renamed, or change semantics
 - New top-level keys MAY be added (clients ignore unknowns)
@@ -457,7 +457,7 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 | `--explain=KEY`, `-e` | Inspection | Structured per-finding explanation; `--explain list` for all |
 | `--fix`, `-f` | Remediation | Interactive fix mode with [y/N] prompts |
 | `--format=FMT` | Output | `text` (default) / `json` / `json-full` / `csv` / `markdown` / `html` |
-| `--french`, `-d`(*) | i18n | Force French; auto-detected from `$LANG` otherwise |
+| `--french` | i18n | Force French; auto-detected from `$LANG` otherwise (shortcut for `--lang=fr`) |
 | `--help`, `-h` | Misc | Print help and exit (no sudo required) |
 | `--history` | Comparison | Sparkline of last scores |
 | `--html` | Output | Standalone HTML export |
@@ -467,8 +467,7 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 | `--json`, `-j` | Output | JSON short form (alias for `--format=json`) |
 | `--json-full`, `-J` | Output | JSON full form (alias for `--format=json-full`) |
 | `--lang=CODE` | i18n | Force language (`en` / `fr`); else POSIX auto-detect |
-| `--list-checks` | Inspection | Print all 34 filterable section names |
-| `--log-days=N` | Audit | UFW log analysis window (default 7) |
+| `--log-days=N`, `-l N` | Audit | UFW log analysis window (default 7) |
 | `--manage-cron` | Automation | TUI to edit/delete cron jobs + email book |
 | `--manage-logs` | Automation | TUI to list/preview/delete reports |
 | `--min-level=LEVEL` | Filters | Hide findings below severity (`info`/`warn`/`alert`) |
@@ -489,7 +488,7 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 | `--webhook-format=FMT` | Network | Force webhook format (`auto`/`slack`/`generic`) |
 | `--yes`, `-y` | Remediation | Auto-confirm all prompts |
 
-(*) `-d` is `--detailed` not `--french` — see `man bob(1)` for full short-option table.
+> Note on `--check=list`: BOB has no separate `--list-checks` flag — pass `list` as the value of `--check` (`bob --check=list`) to print the 34 filterable section names. See `man bob(1)` for the full short-option table.
 
 ---
 
@@ -605,7 +604,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 
 ## Quick references
 
-- **Add a service**: edit `bob/data/services.json` (32 entries, schema in `bob/data/schemas/`). No Python code change. See [DOCUMENTS/README_DEV.md § Adding a service](DOCUMENTS/README_DEV.md).
+- **Add a service**: edit `bob/data/services.json` (32 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
 - **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate values, add `--lang=de` to cli.py.
 - **Add a check**: create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)`. Wire in `bob/runner.py` via `_sec("foo", foo_snapshot, check_foo)`. Add test `tests/test_foo.py`. Optional: add prefix `"foo"` to `bob/domain_scores.py::_PREFIX_TO_DOMAIN`.
 - **Add an explain key**: append to `EXPLAIN_KEYS` in `bob/explain.py` + write title/why/how/CIS in both `en.json` and `fr.json`. `test_locale_coverage.py::TestExplainNamespaceCoverage` enforces parity.
