@@ -76,15 +76,15 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 43 check
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` or `--lang=en`
 - **No-colour mode** — `--no-color` for clean output in pipes and log files
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail
-- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 112 explainable keys in 26 groups; 17 keys show profile-specific sections; interactive TUI; no root required; `--explain list` shows all keys
-- **Domain scores** — per-domain 0–10 sub-scores (SSH / Samba / Files & Access / Updates / Hardening / Disk Health / Firewall & Services); global score = mean of active domain scores (WARN/ALERT findings only — INFO-only domains excluded from the average); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
+- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 116 explainable keys in 29 groups; 17 keys show profile-specific sections; interactive TUI; no root required; `--explain list` shows all keys
+- **Domain scores** — per-domain 0–10 sub-scores (SSH / Samba / Files & Access / Updates / Hardening / Disk Health / Firewall & Services); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases
-- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 31 filterable section names
+- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 34 filterable section names
 - **`--output-dir PATH`** — override report save directory for the current run; no persist
 - **Comparative report** — baseline saved after each audit (`~/.config/bob/last_baseline.json`); next run shows score delta, alert/warn changes, new/closed ports, started/stopped services; new and resolved ALERT+WARN finding keys tracked separately
-- **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 90-entry rotation
+- **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 1000-entry rotation
 - **Ignore list** — `--ignore KEY` adds a finding key to `ignore.yml`; `--show-ignored` lists active exceptions; silences matching findings without scoring
 - **`--diff` mode** — runs audit silently and displays only the baseline delta (score, alerts, warnings, info)
 - **`--breakdown` / `-B`** — runs audit silently and displays the full score computation path: all deductions (key · domain · points · context), tool caps, engine cap, raw score, per-domain scores with progress bars, domain-average override, final score color-coded by severity
@@ -282,13 +282,13 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.3.3  │  Linux hardening auditor                                      ║
+║  BOB v0.4.6  │  Linux hardening auditor                                      ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
 ║  UFW           : v0.36.2                                                     ║
 ║  User          : alice                                                       ║
-║  Date          : 27/03/2026 10:00                                            ║
+║  Date          : 17/05/2026 10:00                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -386,7 +386,7 @@ Example (trimmed for readability):
 With `-d`, a timestamped report is created in a configurable directory (prompted on first use, saved to `config.conf`):
 
 ```
-bob_20260323_100000.log
+bob_20260517_100000.log
 ```
 
 The report opens with a 62-char ASCII art header and contains: system information, all timestamped findings, complete listening port list, detailed log analysis (top IPs with geolocation, top ports, bruteforce, hits on installed service ports), risk context for critical/high services, score summary.
@@ -556,13 +556,17 @@ The `key` field is a **stable dotted i18n key** (`<domain>.<finding>`) — match
 
 ```json
 {
-  "firewall_services": { "score": 10, "label": "Firewall & Services" },
-  "ssh":               { "score": 7,  "label": "SSH" },
-  "hardening":         { "score": 6,  "label": "System hardening" }
+  "ssh":        { "score": 7,  "label": "SSH" },
+  "samba":      { "score": 10, "label": "Samba Security" },
+  "file_perms": { "score": 10, "label": "Files & Access" },
+  "updates":    { "score": 10, "label": "Updates" },
+  "hardening":  { "score": 6,  "label": "Hardening" },
+  "disk":       { "score": 9,  "label": "Disk Health" },
+  "firewall":   { "score": 10, "label": "Firewall & Services" }
 }
 ```
 
-Domain keys are stable (`firewall_services`, `ssh`, `hardening`, `detection`, `disk`, `auth`, `cron`).
+Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 total — defined in `bob.domain_scores.DOMAINS`). Each entry has `score` (int 0–10), `label` (English display name), and `deductions` (total points deducted in this domain).
 
 ### Full mode (`--json-full`) additional keys
 
@@ -590,7 +594,7 @@ The `findings[*].key` and `deductions[*].key` are part of the `--explain` key se
 
 > **Stable public commitment** — these rules govern when BOB drops support for an older Python.
 
-BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.4.2:
+BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.4.6:
 
 | Python | Status |
 |---|---|

@@ -76,15 +76,15 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` ou `--lang=en`
 - **Mode sans couleur** — `--no-color` pour une sortie propre dans les pipes et fichiers log
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit
-- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 112 clés dans 26 groupes ; 17 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
-- **Scores par domaine** — sous-scores 0–10 (SSH / Samba / Fichiers & Accès / Mises à jour / Durcissement / Santé Disque / Pare-feu & Services) ; score global = moyenne des scores de domaine actifs (findings WARN/ALERT uniquement — domaines INFO-only exclus de la moyenne) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
+- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 116 clés dans 29 groupes ; 17 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
+- **Scores par domaine** — sous-scores 0–10 (SSH / Samba / Fichiers & Accès / Mises à jour / Durcissement / Santé Disque / Pare-feu & Services) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
 - **`--format=FORMAT`** — flag unifié : `json | json-full | csv | markdown | html` ; anciens flags conservés comme aliases
-- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 31 noms de sections
+- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 34 noms de sections
 - **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante ; sans persistance
 - **Rapport comparatif** — baseline enregistrée après chaque audit ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément
-- **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 90 entrées
+- **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 1000 entrées
 - **Liste d'exceptions** — `--ignore KEY` ajoute une clé dans `ignore.yml` ; `--show-ignored` liste les exceptions actives ; les findings correspondants sont masqués sans être scorés
 - **Mode `--diff`** — lance l'audit silencieusement et affiche uniquement le delta (score, alertes, avertissements, INFO)
 - **`--breakdown` / `-B`** — lance l'audit silencieusement et affiche le chemin complet de calcul du score : toutes les déductions (clé · domaine · points · contexte), plafonds par outil, plafond moteur, score brut, scores par domaine avec barres de progression, surcharge de moyenne, score final coloré
@@ -282,13 +282,13 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.3.3  │  Auditeur de durcissement Linux                               ║
+║  BOB v0.4.6  │  Auditeur de durcissement Linux                               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
 ║  UFW           : v0.36.2                                                     ║
 ║  User          : alice                                                       ║
-║  Date          : 27/03/2026 10:00                                            ║
+║  Date          : 17/05/2026 10:00                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -386,7 +386,7 @@ Exemple (tronqué pour la lisibilité) :
 Avec `-d`, un rapport horodaté est créé dans un répertoire configurable (demandé au premier lancement, sauvegardé dans `config.conf`) :
 
 ```
-bob_20260323_100000.log
+bob_20260517_100000.log
 ```
 
 Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : informations système, tous les findings horodatés, liste complète des ports en écoute, analyse détaillée des logs (top IPs avec géolocalisation, top ports, bruteforce, tentatives sur les ports de services installés), contexte de risque pour les services critiques et élevés, résumé du score.
@@ -556,13 +556,17 @@ Le champ `key` est une **clé i18n stable en notation pointée** (`<domaine>.<fi
 
 ```json
 {
-  "firewall_services": { "score": 10, "label": "Pare-feu & Services" },
-  "ssh":               { "score": 7,  "label": "SSH" },
-  "hardening":         { "score": 6,  "label": "Durcissement système" }
+  "ssh":        { "score": 7,  "label": "SSH" },
+  "samba":      { "score": 10, "label": "Samba Security" },
+  "file_perms": { "score": 10, "label": "Files & Access" },
+  "updates":    { "score": 10, "label": "Updates" },
+  "hardening":  { "score": 6,  "label": "Hardening" },
+  "disk":       { "score": 9,  "label": "Disk Health" },
+  "firewall":   { "score": 10, "label": "Firewall & Services" }
 }
 ```
 
-Les clés de domaines sont stables (`firewall_services`, `ssh`, `hardening`, `detection`, `disk`, `auth`, `cron`).
+Les clés de domaines sont stables : `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 au total — définies dans `bob.domain_scores.DOMAINS`). Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), et `deductions` (total des points déduits dans ce domaine).
 
 ### Clés additionnelles en mode complet (`--json-full`)
 
@@ -590,7 +594,7 @@ Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--expl
 
 > **Engagement public stable** — ces règles régissent quand BOB abandonne le support d'un ancien Python.
 
-BOB supporte les versions Python **N et N-2**, où **N** est la stable upstream actuelle. À partir de v0.4.2 :
+BOB supporte les versions Python **N et N-2**, où **N** est la stable upstream actuelle. À partir de v0.4.6 :
 
 | Python | Statut |
 |---|---|
