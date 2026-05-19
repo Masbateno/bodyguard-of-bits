@@ -75,38 +75,48 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | Module | Ce qu'il vérifie |
 |---|---|
 | `firewall.py` | Statut UFW, politique par défaut, cohérence IPv6 ; `check_rules()` pour la détection doublons/wildcards |
+| `firewall_stack.py` | Contournement iptables brut, règles nftables parallèles, détection ip_forward |
+| `iptables_nftables.py` | Audit iptables/nftables quand UFW inactif — politique INPUT/FORWARD, conntrack, détection backend (iptables-legacy vs nftables) |
+| `ipv6.py` | Cohérence ports IPv6 / règles UFW v6 ; champ `has_global_ipv6` ; link-local/ULA uniquement → INFO (pas WARN) |
+| `network_context.py` | Tableau d'interfaces réseau, connexions TCP établies, ports sensibles distants |
 | `services.py` | Services réseau installés, état systemd, exposition UFW |
+| `services_state.py` | État des services : services de sécurité activés au boot mais inactifs |
 | `ports.py` | Ports en écoute via `ss`, classification, déduplication |
 | `logs.py` | Logs UFW — tentatives bloquées, bruteforce, top IPs/ports |
-| `ddns.py` | Clients DDNS actifs, domaine configuré, ports ouverts croisés |
-| `docker.py` | Contournement iptables, ports exposés par les containers |
+| `log_rotation.py` | Rotation des logs : présence config logrotate, persistance journald, SystemMaxUse, rsyslog distant |
+| `auth_log.py` | Analyse log de connexions SSH : connexions réussies, IPs sources, anomalies dans auth.log/journald |
+| `ddns.py` | Clients DDNS actifs (ddclient), domaine configuré, ports ouverts croisés |
+| `docker.py` | Détection install Docker, contournement iptables via chaîne DOCKER, exposition ports conteneurs |
+| `docker_audit.py` | Durcissement daemon.json : conteneurs privilégiés, host network/pid/ipc, montages volume sensibles, no-new-privileges |
 | `virtualization.py` | Hyperviseurs actifs (libvirt/KVM, VirtualBox, VMware, LXD/LXC) et paquets Snap réseau |
-| `firewall_stack.py` | Contournement iptables brut, règles nftables parallèles, détection ip_forward |
-| `network_context.py` | Tableau d'interfaces réseau, connexions TCP établies, ports sensibles distants |
-| `hardening.py` | Durcissement : mises à jour auto, AppArmor, rp_filter, redirections ICMP, log_martians, broadcast |
-| `ipv6.py` | Cohérence ports IPv6 actifs / règles UFW v6 |
-| `updates.py` | État des mises à jour système : paquets apt en attente (sécurité/réguliers), détection `unattended-upgrades` |
-| `ssh.py` | Audit sécurité SSH : directives sshd_config, clés privées, authorized_keys, known_hosts |
+| `samba.py` | Audit sécurité Samba : SMBv1 désactivé, rejet null-password, signing serveur, `map to guest`, `bind interfaces only` |
+| `smtp.py` | Exposition serveur SMTP : détection MTA (postfix/exim/sendmail), liaison localhost-only, risque open-relay |
+| `hardening.py` | Durcissement système (sysctl) : rp_filter, send_redirects, accept_redirects, syncookies, accept_source_route, log_martians, protection hardlink/symlink |
+| `kernel_hardening.py` | Durcissement noyau (sysctl) : ASLR, ptrace_scope, kptr_restrict, dmesg_restrict, suid_dumpable |
+| `kernel_modules.py` | Modules noyau risqués (cramfs, hfs, dccp, sctp, rds, tipc, usb_storage) + disponibilité mise à jour noyau apt + listing noyaux installés (filtré sur état dpkg `ii` depuis v0.4.6) |
+| `mac_policy.py` | Politique MAC (AppArmor / SELinux) : état framework, comptes de profils (enforce/complain/loaded), détection 0-profile |
+| `updates.py` | État des mises à jour système : paquets apt sécurité/réguliers en attente (via `apt-get -s dist-upgrade`), détection cache obsolète, cross-check `apt list --upgradable`, détection unattended-upgrades |
+| `ssh.py` | Audit sécurité SSH : directives sshd_config, qualité clés hôte, permissions clés user, authorized_keys, known_hosts |
 | `file_perms.py` | Permissions fichiers sensibles : /etc/passwd, /etc/shadow, sudoers, clés hôte SSH |
+| `suid_audit.py` | Audit binaires SUID/SGID avec whitelist (`config.conf`), scan targeted-roots pour la performance |
 | `user_accounts.py` | Audit comptes utilisateurs : UID 0 non-root, mots de passe vides, comptes expirés |
-| `password_policy.py` | Politique mots de passe : module PAM qualité, minlen, PASS_MAX_DAYS |
-| `kernel_modules.py` | Modules noyau risqués : cramfs, hfs, dccp, sctp, rds, tipc, usb_storage ; disponibilité mise à jour noyau apt (apt-cache policy / apt list --upgradable) |
-| `cron_audit.py` | Sécurité cron : pipe-to-shell, scripts world-writable |
-| `services_state.py` | État des services : services de sécurité activés au boot mais inactifs |
-| `disk.py` | Santé disques : SMART (smartctl), attributs critiques, utilisation partitions ; support NVMe |
-| `memory.py` | Mémoire & swap : détection usure SSD, swap injustifié, swappiness |
-| `desktop_apps.py` | Détection applications de bureau : applis GUI connues en cours d'exécution (Steam, Discord, Zoom…) |
+| `password_policy.py` | Politique mots de passe : module PAM pam_pwquality / pam_cracklib, PASS_MAX_DAYS, login.defs |
+| `umask.py` | Umask système : /etc/profile, /etc/bash.bashrc, /etc/login.defs, /etc/pam.d/common-session |
+| `cron_audit.py` | Sécurité cron : pipe-to-shell, scripts world-writable, validateur de range |
+| `disk.py` | Santé disques : SMART (smartctl), attributs critiques, utilisation partitions ; support NVMe ; skip si tous les disques sont virtuels |
+| `backup.py` | Détection solution de sauvegarde : borgmatic / borg / restic / timeshift / duplicati / rclone, actif vs installé-seulement |
+| `memory.py` | Mémoire & swap : détection usure SSD, swap injustifié (swap > 0 alors que RAM libre), swappiness |
+| `desktop_apps.py` | Détection applications de bureau : applis GUI connues en cours d'exécution (Brave, kDrive, VSCode, ExpressVPN…) |
 | `ntp.py` | Synchronisation NTP : systemd-timesyncd/chronyd/ntpd actif et synchronisé |
-| `fail2ban.py` | Prévention intrusion Fail2ban : état service, jails actifs, détection jail SSH |
-| `rootkit.py` | Scan rootkit & intégrité : installation rkhunter/chkrootkit, fraîcheur BDD, date dernier scan |
 | `auditd.py` | Linux Audit Framework : installation, état service, règles chargées, surveillance fichiers sensibles |
 | `secure_boot.py` | Secure Boot : état UEFI via mokutil/efivars/bootctl ; scoring adapté au profil |
+| `fail2ban.py` | Prévention intrusion Fail2ban : état service, jails actifs, détection jail SSH |
+| `clamav.py` | Antivirus ClamAV : installation, ancienneté BDD freshclam, date dernier scan |
 | `file_integrity.py` | Intégrité des fichiers : installation AIDE/Tripwire, existence BDD, récence du dernier check |
+| `rootkit.py` | Scan rootkit & intégrité : installation rkhunter/chkrootkit, fraîcheur BDD, date dernier scan |
 | `ssl_certs.py` | Expiration certificats TLS/SSL : Let's Encrypt, `/etc/ssl/private` (snakeoil filtré), configs nginx/apache2/postfix |
 | `systemd_timers.py` | Sécurité timers systemd : pipe-to-shell dans ExecStart, scripts world-writable, timers root utilisateur |
 | `firmware.py` | Firmware & microcode : mises à jour fwupdmgr, paquet microcode CPU via dpkg |
-| `iptables_nftables.py` | CHECK 46 : audit iptables/nftables quand UFW inactif — politique INPUT/FORWARD, conntrack, détection backend (iptables-legacy vs nftables) |
-| `ipv6.py` | Cohérence ports IPv6 / règles UFW v6 ; champ `has_global_ipv6` ; link-local/ULA uniquement → INFO (pas WARN) |
 
 ---
 
@@ -115,67 +125,93 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 ```
 bob/
 ├── __init__.py
-├── __main__.py          # Orchestrateur (~400 lignes — coordination pure)
+├── __main__.py          # Orchestrateur (~410 lignes — coordination pure)
 ├── _paths.py            # Résolution des chemins de données
+├── _tty.py              # read_line() — lecteur de ligne mode raw avec Esc-pour-annuler, repli input()
+├── breakdown.py         # Moteur de décomposition de score — trace per-deduction complète pour --breakdown / -B
+├── cis_refs.py          # Lookup référence CIS — get_cis_ref(), get_cis_code() avec lru_cache
 ├── cli.py               # AuditConfig + parse_args()
+├── compare.py           # AuditBaseline (finding_keys) + AuditDelta (new/resolved keys) + rapport comparatif
+├── completion.py        # Installeur d'autocomplétion bash — `bob --install-completion`
 ├── config.py            # UserConfig, EmailStore
+├── correlation.py       # CorrelationRule + run_correlations() — 5 règles de risque composé
 ├── cron.py              # CronEntry, logique wizard planification, build_script_content()
-├── tui/
-│   ├── __init__.py      # bob.tui — sous-package curses optionnel (v0.4.1)
-│   └── cron.py          # TUI curses pour --install-cron / --manage-cron (était bob/cron_ui.py avant v0.4.1)
+├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
+├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→disk
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 116 clés dans 29 groupes
+├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
 ├── fixes.py             # Interface mode fix (interactif + auto-fix)
+├── formatter.py         # bob.formatter — rendu indépendant de la locale via Finding.template_vars (v0.4.1)
+├── history.py           # Suivi historique de score — affichage sparkline pour --history
+├── html_output.py       # build_html_output() — export HTML autonome (--html)
 ├── i18n.py              # t(key) avec notation pointée
+├── ignore.py            # Liste d'ignore persistante par finding-key (~/.config/bob/ignore.yml)
+├── json_output.py       # Formatter sortie JSON (--json / --json-full) avec schema_version=1
 ├── manage_logs.py       # Interface --manage-logs, get_or_prompt_log_dir()
+├── markdown_output.py   # Formatter sortie Markdown (--format markdown)
 ├── output.py            # Primitives terminal bas niveau
 ├── panorama.py          # build_panorama_rows()
+├── plugin_checks.py     # PluginCheck + load_plugin_checks()
+├── profiles.py          # Chargeur de profil d'audit (server/workstation/desktop/docker + profils utilisateur)
+├── recurrence.py        # Suivi findings récurrents — compteurs consécutifs
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, email HTML
+├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (29 sections)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
+├── watch.py             # Mode --watch=N — relance l'audit toutes les N secondes
+├── webhook.py           # build_generic_payload(), build_slack_payload(), send_webhook()
+├── tui/
+│   ├── __init__.py      # bob.tui — sous-package curses optionnel (v0.4.1)
+│   └── cron.py          # TUI curses pour --install-cron / --manage-cron
 ├── checks/
 │   ├── __init__.py
-│   ├── _run.py          # Helper subprocess _run() partagé + env locale C
-│   ├── firewall.py      # FirewallStatus + check_firewall() + check_rules()
-│   ├── services.py      # ServiceSnapshot + check_services()
-│   ├── ports.py         # PortsSnapshot + check_ports()
-│   ├── logs.py          # LogsSnapshot + check_logs()
-│   ├── ddns.py          # DdnsSnapshot + check_ddns()
-│   ├── docker.py        # DockerSnapshot + check_docker()
-│   ├── virtualization.py # VirtSnapshot + check_virtualization()
-│   ├── firewall_stack.py # FirewallStackSnapshot + check_firewall_stack()
-│   ├── network_context.py # NetworkContextSnapshot + check_network_context()
-│   ├── hardening.py     # HardeningSnapshot + check_hardening()
-│   ├── ipv6.py          # IPv6Snapshot + check_ipv6()
-│   ├── updates.py       # UpdatesSnapshot + check_updates()
-│   ├── ssh.py           # SshSnapshot + check_ssh()
-│   ├── file_perms.py    # FilePermsSnapshot + check_file_perms()
-│   ├── user_accounts.py # UserAccountsSnapshot + check_user_accounts()
-│   ├── password_policy.py # PasswordPolicySnapshot + check_password_policy()
-│   ├── kernel_modules.py # KernelModulesSnapshot + check_kernel_modules() — modules risqués + mise à jour noyau apt
-│   ├── cron_audit.py    # CronAuditSnapshot + check_cron_audit()
-│   ├── services_state.py # ServicesStateSnapshot + check_services_state()
-│   ├── disk.py          # DiskSnapshot + check_disk() — SMART, partitions, NVMe
-│   ├── memory.py        # MemorySnapshot + check_memory() — usure SSD, swappiness
-│   ├── desktop_apps.py  # DesktopAppsSnapshot + check_desktop_apps() — détection applis GUI
-│   ├── ntp.py           # NtpSnapshot + check_ntp() — état synchronisation NTP
-│   ├── fail2ban.py      # Fail2banSnapshot + check_fail2ban() — service, jails, jail SSH
-│   ├── rootkit.py       # RootkitSnapshot + check_rootkit() — rkhunter/chkrootkit
-│   ├── ssl_certs.py     # SslCertsSnapshot + check_ssl_certs() — expiration certs (CHECK 43)
-│   ├── systemd_timers.py # SystemdTimersSnapshot + check_systemd_timers() — sécurité timers (CHECK 44)
-│   ├── firmware.py      # FirmwareSnapshot + check_firmware() — fwupd + microcode (CHECK 45)
-│   └── iptables_nftables.py # IptablesNftablesSnapshot + check_iptables_nftables() — audit pare-feu brut (CHECK 46)
-├── _tty.py              # read_line() — lecteur de ligne mode raw avec Esc-pour-annuler, repli input()
-├── html_output.py       # build_html_output() — export HTML autonome (--html)
-├── compare.py           # AuditBaseline (finding_keys) + AuditDelta (new/resolved keys) + rapport comparatif
-├── correlation.py       # CorrelationRule + run_correlations() — 5 règles de risque composé
-├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
-├── recurrence.py        # Suivi findings récurrents — compteurs consécutifs
-├── plugin_checks.py     # PluginCheck + load_plugin_checks()
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 116 clés dans 29 groupes
-├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→disk
-├── webhook.py           # build_generic_payload(), build_slack_payload(), send_webhook()
+│   ├── _run.py             # Helper subprocess _run() partagé + env locale C
+│   ├── firewall.py         # FirewallStatus + check_firewall() + check_rules()
+│   ├── firewall_stack.py   # FirewallStackSnapshot + check_firewall_stack()
+│   ├── iptables_nftables.py # IptablesNftablesSnapshot + check_iptables_nftables() — audit pare-feu brut
+│   ├── ipv6.py             # IPv6Snapshot + check_ipv6()
+│   ├── network_context.py  # NetworkContextSnapshot + check_network_context()
+│   ├── services.py         # ServiceSnapshot + check_services()
+│   ├── services_state.py   # ServicesStateSnapshot + check_services_state()
+│   ├── ports.py            # PortsSnapshot + check_ports()
+│   ├── logs.py             # LogsSnapshot + check_logs()
+│   ├── log_rotation.py     # LogRotationSnapshot + check_log_rotation()
+│   ├── auth_log.py         # AuthLogSnapshot + check_auth_log() — analyse log de connexions SSH
+│   ├── ddns.py             # DdnsSnapshot + check_ddns()
+│   ├── docker.py           # DockerSnapshot + check_docker()
+│   ├── docker_audit.py     # DockerAuditSnapshot + check_docker_audit() — durcissement daemon + conteneurs
+│   ├── virtualization.py   # VirtSnapshot + check_virtualization()
+│   ├── samba.py            # SambaSnapshot + check_samba() — SMBv1, signing, map-to-guest
+│   ├── smtp.py             # SmtpSnapshot + check_smtp() — exposition MTA
+│   ├── hardening.py        # HardeningSnapshot + check_hardening() — sysctl net.* / fs.*
+│   ├── kernel_hardening.py # KernelHardeningSnapshot + check_kernel_hardening() — sysctl kernel.*
+│   ├── kernel_modules.py   # KernelModulesSnapshot + check_kernel_modules() — modules risqués + mise à jour noyau apt
+│   ├── mac_policy.py       # MacPolicySnapshot + check_mac_policy() — AppArmor / SELinux
+│   ├── updates.py          # UpdatesSnapshot + check_updates() — sémantique dist-upgrade + cache obsolète
+│   ├── ssh.py              # SshSnapshot + check_ssh()
+│   ├── file_perms.py       # FilePermsSnapshot + check_file_perms()
+│   ├── suid_audit.py       # SuidSnapshot + check_suid_audit() — SUID/SGID avec whitelist
+│   ├── user_accounts.py    # UserAccountsSnapshot + check_user_accounts()
+│   ├── password_policy.py  # PasswordPolicySnapshot + check_password_policy()
+│   ├── umask.py            # UmaskSnapshot + check_umask() — login.defs, common-session
+│   ├── cron_audit.py       # CronAuditSnapshot + check_cron_audit()
+│   ├── disk.py             # DiskSnapshot + check_disk() — SMART, partitions, NVMe
+│   ├── backup.py           # BackupSnapshot + check_backup() — détection borgmatic/restic/timeshift
+│   ├── memory.py           # MemorySnapshot + check_memory() — usure SSD, swappiness
+│   ├── desktop_apps.py     # DesktopAppsSnapshot + check_desktop_apps() — détection applis GUI
+│   ├── ntp.py              # NtpSnapshot + check_ntp() — état synchronisation NTP
+│   ├── auditd.py           # AuditdSnapshot + check_auditd() — Linux Audit Framework
+│   ├── secure_boot.py      # SecureBootSnapshot + check_secure_boot() — état UEFI
+│   ├── fail2ban.py         # Fail2banSnapshot + check_fail2ban() — service, jails, jail SSH
+│   ├── clamav.py           # ClamAVSnapshot + check_clamav() — fraîcheur BDD, dernier scan
+│   ├── file_integrity.py   # FileIntegritySnapshot + check_file_integrity() — AIDE/Tripwire
+│   ├── rootkit.py          # RootkitSnapshot + check_rootkit() — rkhunter/chkrootkit
+│   ├── ssl_certs.py        # SslCertsSnapshot + check_ssl_certs() — expiration certs
+│   ├── systemd_timers.py   # SystemdTimersSnapshot + check_systemd_timers() — sécurité timers
+│   └── firmware.py         # FirmwareSnapshot + check_firmware() — fwupd + microcode
 ├── data/
 │   ├── services.json            # Registre déclaratif des 32 services
 │   ├── cis_refs.json            # Références CIS — 137 entrées {ref, code}
@@ -252,7 +288,7 @@ AUTOMATION.md / AUTOMATION_FR.md   # Guide d'automatisation (EN/FR)
 ### Prérequis
 
 ```bash
-python3 --version   # 3.9+ requis
+python3 --version   # 3.10+ requis
 ```
 
 Aucune dépendance PyPI — stdlib uniquement.
@@ -282,7 +318,7 @@ python3 -m unittest tests/test_firewall.py
 ### Résultats attendus
 
 ```
-4200 passed in X.XXs
+4500 passed in X.XXs
 ```
 
 Les tests n'effectuent aucun appel système — tous les snapshots sont construits directement dans les tests. Ils peuvent être lancés sans `sudo` et sans UFW installé.
@@ -413,8 +449,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 1527
-FR keys: 1527
+EN keys: 1401
+FR keys: 1401
 Missing in FR: none
 ```
 
@@ -661,9 +697,9 @@ raw   = engine._raw_score    # score brut pré-override (débogage uniquement)
 
 **Contrat orchestrateur :** `apply_domain_score_override(engine)` depuis `bob.domain_scores` doit être appelé après `engine.finalize()`. Avant cet appel, `engine.score` retourne le score brut basé sur les déductions. Ne pas appeler `engine.set_global_score()` directement.
 
-**Ensemble des domaines actifs :** seuls les domaines avec au moins un finding WARN ou ALERT comptent comme « actifs » pour la moyenne globale. Les domaines avec uniquement des findings INFO (service installé, rien d'actionnable) sont exclus. Note : une déduction avec une clé active toujours le domaine, quelle que soit le niveau du finding associé.
+**Ensemble des domaines actifs :** un domaine compte comme « actif » dans la moyenne globale dès qu'un check de ce domaine émet un finding `OK`, `WARN` ou `ALERT` (ou une déduction avec une clé). Les findings `INFO` seuls (observations purement consultatives) ne promeuvent pas un domaine à eux seuls — ils sont explicitement exclus pour que les domaines avec uniquement des notices informatives restent cachés. L'inclusion du `OK` est le fix v0.4.6 (Bug 2) : avant lui, un domaine qui passait clean après remédiation (seul `updates.ok` subsistant après `apt upgrade`) sortait du set actif et le score global *baissait* malgré un système strictement plus sécurisé.
 
-**Pondération égale des domaines :** tous les domaines actifs contribuent également à la moyenne globale — il n'y a pas de pondération par domaine. Une machine où seul SSH est dégradé et tous les autres domaines sont à 10/10 bénéficie de la dilution ; une machine avec les sept domaines actifs accorde le même poids au pare-feu qu'à la santé du disque. C'est la principale question architecturale pour la v0.3.0.
+**Pondération égale des domaines :** tous les domaines actifs contribuent également à la moyenne globale — il n'y a pas de pondération par domaine. Une machine où seul SSH est dégradé et tous les autres domaines sont à 10/10 bénéficie de la dilution ; une machine avec les sept domaines actifs accorde le même poids au pare-feu qu'à la santé du disque. C'est un choix de conception intentionnel maintenu à travers la v0.4.x.
 
 **`ScoreCap.key` :** les plafonds portent un champ `key` propagé à leur déduction synthétique de breakdown, permettant l'attribution au domaine pour les déductions déclenchées par un plafond.
 
