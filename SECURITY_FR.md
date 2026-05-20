@@ -35,9 +35,9 @@ Vous recevrez un acquittement sous **7 jours**. Un correctif ou plan de remédia
 
 C'est un projet maintenu en solo. Merci d'être patient ; une assignation CVE n'est pas garantie pour chaque rapport.
 
-## Threat model
+## Modèle de menace
 
-Cette section est la source faisant autorité pour "ce contre quoi BOB défend et ce contre quoi il ne défend pas". À lire avant d'intégrer BOB à une pipeline de sécurité.
+Cette section est la source faisant autorité pour « ce contre quoi BOB défend et ce contre quoi il ne défend pas ». À lire avant d'intégrer BOB à une pipeline de sécurité.
 
 ### Ce qu'est BOB
 
