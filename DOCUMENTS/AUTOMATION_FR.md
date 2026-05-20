@@ -216,27 +216,34 @@ Le payload générique est volontairement minimal et stable :
 ```json
 {
   "schema_version": "1",
+  "version": "0.4.6",
   "host": "example.local",
-  "timestamp": "2026-05-17T18:42:01+02:00",
+  "timestamp": "2026-05-17T18:42:01+00:00",
   "score": 8,
-  "risk": "LOW",
-  "alerts": [
-    {"key": "ssh.permit_root_login", "message": "..."}
+  "score_max": 10,
+  "risk": "low",
+  "network_context": "private",
+  "public_ip": "203.0.113.42",
+  "alerts": 1,
+  "warnings": 2,
+  "deductions": [
+    {"reason": "Connexion root autorisée via SSH", "points": 2, "key": "ssh.permit_root_login", "template_vars": {}}
   ],
-  "warnings": [
-    {"key": "hardening.send_redirects", "message": "..."}
-  ]
+  "domain_scores": {
+    "ssh": {"score": 8, "deductions": 2, "label": "SSH"},
+    "firewall": {"score": 10, "deductions": 0, "label": "Firewall & Services"}
+  }
 }
 ```
 
-C'est le même contrat que `bob --json` (clés top-level). À consommer avec des services qui reçoivent du `curl`, des intégrations style Zapier, des agrégateurs de logs ou des endpoints internes custom.
+C'est le même contrat que `bob --json` (clés top-level). `alerts` et `warnings` sont des **compteurs (entiers)**, pas des tableaux — pour énumérer les findings, utiliser `--json-full` qui ajoute un tableau `findings` top-level. `risk` est en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"` — valeurs de `bob.scoring.RiskLevel`).
 
 ### Comportement
 
-- Le webhook est POSTé **uniquement si des alertes ou avertissements sont présents** (même seuil que les notifications email). Un audit clean ne produit aucune notification.
+- Le webhook est POSTé **à chaque exécution dès qu'une URL webhook est configurée** (flag CLI ou `webhook_url` dans la config). Ce n'est *pas* conditionnel à la présence d'alertes/avertissements — voir `bob/__main__.py` `if _webhook_url and not config.offline:`. Un audit clean déclenche toujours une livraison ; filtrer côté récepteur en inspectant `alerts`/`warnings`/`score`.
 - `--offline` (ou `-o`) désactive complètement la livraison webhook. À utiliser pour les sandboxes de build distro et environnements air-gapped.
 - Un POST webhook échoué **n'affecte pas** le code de sortie de l'audit — c'est une notification best-effort, pas un gate. Les erreurs sont écrites sur stderr.
-- Chaque URL webhook est appelée avec un timeout de 5 secondes.
+- Chaque URL webhook est appelée avec un **timeout de 10 secondes** (`bob.webhook._TIMEOUT_SECONDS = 10`).
 
 ### Combinaison avec cron
 

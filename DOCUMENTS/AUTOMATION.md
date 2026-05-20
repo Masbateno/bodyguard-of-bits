@@ -216,27 +216,34 @@ The generic payload is intentionally minimal and stable:
 ```json
 {
   "schema_version": "1",
+  "version": "0.4.6",
   "host": "example.local",
-  "timestamp": "2026-05-17T18:42:01+02:00",
+  "timestamp": "2026-05-17T18:42:01+00:00",
   "score": 8,
-  "risk": "LOW",
-  "alerts": [
-    {"key": "ssh.permit_root_login", "message": "..."}
+  "score_max": 10,
+  "risk": "low",
+  "network_context": "private",
+  "public_ip": "203.0.113.42",
+  "alerts": 1,
+  "warnings": 2,
+  "deductions": [
+    {"reason": "Root login allowed via SSH", "points": 2, "key": "ssh.permit_root_login", "template_vars": {}}
   ],
-  "warnings": [
-    {"key": "hardening.send_redirects", "message": "..."}
-  ]
+  "domain_scores": {
+    "ssh": {"score": 8, "deductions": 2, "label": "SSH"},
+    "firewall": {"score": 10, "deductions": 0, "label": "Firewall & Services"}
+  }
 }
 ```
 
-This is the same contract as `bob --json` (top-level keys). Consume it with `curl`-receiving services, Zapier-style integrations, log aggregators, or custom internal endpoints.
+This is the same contract as `bob --json` (top-level keys). `alerts` and `warnings` are **counts (integers)**, not arrays — to enumerate the findings, use `--json-full` which adds a top-level `findings` array. `risk` is lowercase (`"low"` / `"medium"` / `"high"` / `"critical"` — values from `bob.scoring.RiskLevel`).
 
 ### Behaviour
 
-- The webhook is POSTed **only if alerts or warnings are present** (same threshold as email notifications). A clean audit produces no notification.
+- The webhook is POSTed **every time a webhook URL is configured** (CLI flag or `webhook_url` in config). It is *not* conditional on alerts/warnings being present — see `bob/__main__.py` `if _webhook_url and not config.offline:`. A clean audit still triggers a delivery; you can filter on the receiving side by inspecting `alerts`/`warnings`/`score`.
 - `--offline` (or `-o`) disables webhook delivery entirely. Use it for distro build sandboxes and air-gapped environments.
 - A failed webhook POST does **not** affect the audit exit code — it's a best-effort notification, not a gate. Errors are written to stderr.
-- Each webhook URL is hit with a 5-second timeout.
+- Each webhook URL is hit with a **10-second timeout** (`bob.webhook._TIMEOUT_SECONDS = 10`).
 
 ### Combining with cron
 

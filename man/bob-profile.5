@@ -13,6 +13,9 @@ Built-in profiles (shipped with the package):
 .IR bob/data/profiles/desktop.conf
 .PP
 .IR bob/data/profiles/container.conf
+.PP
+.IR bob/data/profiles/workstation.conf
+" (alias \(em " \fB--profile=workstation\fR " loads " \fIdesktop\fR )
 .RE
 .PP
 Selection: invoke
@@ -49,13 +52,18 @@ Profile identifier (e.g.
 Defaults to the file's basename without extension.
 .TP
 .B description
-Free-text description shown by
-.BR \-\-list-profiles .
+Free-text description (no CLI surface; visible in the file and in audit
+profile-loading log messages).
 .TP
 .B extends
 .RB ( optional )
-Name of a parent profile to inherit from. Up to 5 levels of inheritance are
-allowed; cycles are detected and rejected at load time.
+Name of a parent profile to inherit from. Up to 8 levels of inheritance are
+allowed (see
+.B _MAX_EXTENDS_DEPTH
+in
+.BR bob/profiles.py );
+cycles are detected and rejected at load time with a
+.B RecursionError .
 .SS [overrides]
 One line per override:
 .PP
@@ -131,9 +139,21 @@ Relaxed: tolerant of X11 forwarding, ports bound to localhost only,
 not enforced.
 .TP
 .B container
-Minimal scope: ignores SSH (containers usually don't run sshd), tolerates
-.BR send_redirects ,
-no MAC policy enforcement.
+Extends
+.B desktop
+and skips host-level checks (kernel modules, kernel hardening, secure boot,
+auditd, suid_audit, docker_audit, file integrity, rootkit) — meant for
+container images and CI environments where filesystem and kernel state
+are not auditable.
+.TP
+.B workstation
+Backward-compat alias. Selecting it loads
+.B desktop
+(see
+.B bob/profiles.py::load_profile );
+the file
+.B workstation.conf
+is shipped but not consumed by the loader.
 .
 .SH SEE ALSO
 .BR bob (1),
