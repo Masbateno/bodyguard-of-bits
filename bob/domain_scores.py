@@ -285,9 +285,7 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
 # Text rendering
 # ---------------------------------------------------------------------------
 
-_BAR_WIDTH  = 10   # total bar characters
-_BAR_FILLED = "█"
-_BAR_EMPTY  = "░"
+_BAR_WIDTH  = 10   # total bar characters (colours delegated to bob.output.score_bar)
 
 
 def render_domain_scores(
@@ -330,12 +328,11 @@ def render_domain_scores(
             continue
         if active_domains is not None and domain not in active_domains:
             continue
-        info   = scores[domain]
-        score  = info["score"]
-        label  = labels[domain]
-        filled = int(score * _BAR_WIDTH / MAX_SCORE)
-        empty  = _BAR_WIDTH - filled
-        bar    = _BAR_FILLED * filled + _BAR_EMPTY * empty
+        info  = scores[domain]
+        score = info["score"]
+        label = labels[domain]
+        from bob.output import score_bar
+        bar   = score_bar(int(score * _BAR_WIDTH / MAX_SCORE))
         lines.append(
             f"  {label:<{label_width}}  {score:>2}/10  {bar}"
         )

@@ -65,9 +65,9 @@ def _render_score_chart(history: "list[tuple[str, int]]", t) -> "list[str]":
     label = t("manage_logs.history_title", count=count)
     sep = "─" * 50
     lines = [f"  {label}", f"  {sep}"]
+    from bob.output import score_bar
     for date_str, score in shown:
-        bar = "█" * score + "░" * (10 - score)
-        lines.append(f"  {date_str}  [{score:2}/10]  {bar}")
+        lines.append(f"  {date_str}  [{score:2}/10]  {score_bar(score)}")
     lines.append(f"  {sep}")
     return lines
 

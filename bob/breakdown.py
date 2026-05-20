@@ -31,13 +31,17 @@ from bob.domain_scores import (
 from bob.scoring import MAX_SCORE
 
 _BAR_WIDTH  = 10
-_BAR_FILLED = "█"
-_BAR_EMPTY  = "░"
 
 
 def _bar(score: int) -> str:
-    filled = min(_BAR_WIDTH, max(0, round(score * _BAR_WIDTH / MAX_SCORE)))
-    return _BAR_FILLED * filled + _BAR_EMPTY * (_BAR_WIDTH - filled)
+    """Render the breakdown bar via the shared `output.score_bar` helper
+    (colours: green >=8, yellow 5–7, red 0–4).
+    """
+    from bob.output import score_bar
+    # Map raw score (which may exceed MAX_SCORE on intermediate computations)
+    # to the 0-10 range expected by score_bar.
+    clamped = min(_BAR_WIDTH, max(0, round(score * _BAR_WIDTH / MAX_SCORE)))
+    return score_bar(clamped)
 
 
 def _domain_label(domain_id: str, t) -> str:

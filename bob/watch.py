@@ -128,7 +128,11 @@ def run_watch(
 
 
 def _score_bar(score: int) -> str:
-    """Return a 10-character visual bar for a score 0–10.
+    """Return a 10-character coloured visual bar for a score 0–10.
+
+    Delegates to `bob.output.score_bar` which applies high=good thresholds:
+    green (>=8), yellow (5–7), red (0–4). Same colour scheme as the disk
+    partition bars in display.py.
 
     Args:
         score: Integer score in range 0–10. Values outside the range are
@@ -136,5 +140,5 @@ def _score_bar(score: int) -> str:
     """
     if not isinstance(score, int):
         raise TypeError(f"_score_bar requires int, got {type(score).__name__}")
-    filled = max(0, min(10, score))
-    return "█" * filled + "░" * (10 - filled)
+    from bob.output import score_bar
+    return score_bar(score)

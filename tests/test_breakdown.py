@@ -57,14 +57,23 @@ def _collect_output(engine: ScoreEngine) -> list[str]:
 # ---------------------------------------------------------------------------
 
 class TestBar:
+    # _bar() now delegates to bob.output.score_bar which returns an ANSI-coloured
+    # string. Strip escape sequences before asserting visible content / length.
+    import re as _re
+    _ANSI_RE = _re.compile(r"\x1b\[[0-9;]*m")
+
+    @classmethod
+    def _plain(cls, s: str) -> str:
+        return cls._ANSI_RE.sub("", s)
+
     def test_full_score_all_filled(self):
-        assert _bar(10) == "██████████"
+        assert self._plain(_bar(10)) == "██████████"
 
     def test_zero_score_all_empty(self):
-        assert _bar(0) == "░░░░░░░░░░"
+        assert self._plain(_bar(0)) == "░░░░░░░░░░"
 
     def test_five_half_filled(self):
-        bar = _bar(5)
+        bar = self._plain(_bar(5))
         assert "█" in bar
         assert "░" in bar
         assert len(bar) == 10

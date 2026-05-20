@@ -111,6 +111,39 @@ def _passes_threshold(level: str) -> bool:
     return _LEVEL_RANK.get(level, 0) >= _min_level_threshold
 
 
+# ---------------------------------------------------------------------------
+# Score bar — shared gauge rendering for score 0–10
+# ---------------------------------------------------------------------------
+
+_SCORE_BAR_WIDTH = 10
+
+
+def score_bar(score: int) -> str:
+    """Return a 10-char block progress bar coloured by score level.
+
+    Mirrors the visual style of `display._disk_bar` but with inverted
+    thresholds since for scores HIGH = good:
+      - score >= 8 : green  (healthy)
+      - score 5–7  : yellow (moderate)
+      - score 0–4  : red    (critical)
+
+    Returns an ANSI-coloured string ready to print, terminated by
+    `_c.reset`. When colours are disabled (``--no-color``), the ANSI
+    codes are empty strings — the visual bar still renders, just
+    monochrome.
+    """
+    score = max(0, min(_SCORE_BAR_WIDTH, int(score)))
+    filled = score
+    empty  = _SCORE_BAR_WIDTH - filled
+    if score >= 8:
+        color = _c.green
+    elif score >= 5:
+        color = _c.yellow
+    else:
+        color = _c.red
+    return f"{color}{'█' * filled}{'░' * empty}{_c.reset}"
+
+
 def init(no_color: bool = False, quiet: bool = False, min_level: str = "") -> None:
     """
     Initialise the output module.
