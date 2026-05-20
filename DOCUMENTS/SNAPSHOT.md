@@ -214,7 +214,7 @@ bodyguard-of-bits/
 | `user_accounts.py` | — | file_perms | UID 0 non-root, empty passwords, expired accounts |
 | `password_policy.py` | — | hardening | PAM pam_pwquality/pam_cracklib, PASS_MAX_DAYS, login.defs |
 | `umask.py` | — | hardening | login.defs, common-session, profile, current process |
-| `cron_audit.py` | — | hardening | Pipe-to-shell, world-writable, range validator |
+| `cron_audit.py` | — | hardening | Pipe-to-shell (`curl/wget \| sh`), world-writable scripts, unexpected users with root crontabs. The cron *range* validator (`_validate_custom_cron`) lives in `bob/cron.py`, not here. |
 | `disk.py` | — | disk | SMART (skip all-virtual since v0.4.4), partition usage, NVMe |
 | `backup.py` | — | disk | borgmatic / restic / timeshift / duplicati / rclone |
 | `memory.py` | — | hardening | SSD wear, unjustified swap, swappiness |
@@ -449,7 +449,7 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 
 ---
 
-## CLI surface — 35 options (alphabetical)
+## CLI surface — ~40 options (alphabetical)
 
 | Option | Section | Purpose |
 |---|---|---|
@@ -457,28 +457,29 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 | `--breakdown`, `-B` | Display | Show full score computation path |
 | `--check=A,B,...` | Filters | Run only named sections |
 | `--detailed`, `-d` | Audit | Write full report file (`~/.local/share/bob/logs/bob_*.log`) |
-| `--diff` | Comparison | Show only baseline delta |
+| `--diff`, `-D` | Comparison | Show only baseline delta |
 | `--explain=KEY`, `-e` | Inspection | Structured per-finding explanation; `--explain list` for all |
 | `--fix`, `-f` | Remediation | Interactive fix mode with [y/N] prompts |
-| `--format=FMT` | Output | `text` (default) / `json` / `json-full` / `csv` / `markdown` / `html` |
+| `--format=FMT` | Output | One of `json`/`json-full`/`csv`/`markdown`/`html`. Text is the default output when no format flag is set — it is not a valid value of `--format=`. |
 | `--french` | i18n | Force French; auto-detected from `$LANG` otherwise (shortcut for `--lang=fr`) |
 | `--help`, `-h` | Misc | Print help and exit (no sudo required) |
 | `--history` | Comparison | Sparkline of last scores |
 | `--html` | Output | Standalone HTML export |
 | `--ignore=KEY` | Filters | Persistently ignore a finding key |
 | `--install-completion` | Setup | Install bash completion + sudo symlink |
-| `--install-cron` | Automation | Cron wizard (curses TUI + plain fallback) |
+| `--install-cron`, `-c` | Automation | Cron wizard (curses TUI + plain fallback) |
 | `--json`, `-j` | Output | JSON short form (alias for `--format=json`) |
 | `--json-full`, `-J` | Output | JSON full form (alias for `--format=json-full`) |
 | `--lang=CODE` | i18n | Force language (`en` / `fr`); else POSIX auto-detect |
 | `--log-days=N`, `-l N` | Audit | UFW log analysis window (default 7) |
-| `--manage-cron` | Automation | TUI to edit/delete cron jobs + email book |
-| `--manage-logs` | Automation | TUI to list/preview/delete reports |
-| `--min-level=LEVEL` | Filters | Hide findings below severity (`info`/`warn`/`alert`) |
-| `--no-color`, `-n` | Output | Disable ANSI escapes |
+| `--manage-cron`, `-C` | Automation | TUI to edit/delete cron jobs + email book |
+| `--manage-logs`, `-m` | Automation | TUI to list/preview/delete reports |
+| `--min-level=LEVEL` | Filters | Hide findings below severity. Valid values: `warn` or `alert` only (NOT `info` — `info` is the implicit floor). |
+| `--no-color`, `-n` (alias `--no-colour`) | Output | Disable ANSI escapes |
 | `--offline`, `-o` | Network | No outbound HTTP (public IP lookup + webhook off) |
+| `--output=FMT` | Output | Alias for `--format=` accepting `csv`/`json`/`markdown` only (no html, no json-full) |
 | `--output-dir=PATH` | Audit | Override log dir for this run (non-persistent) |
-| `--profile=NAME` | Audit | Apply profile (`server`/`desktop`/`container` + user) |
+| `--profile=NAME`, `-p NAME` | Audit | Apply profile (`server`/`desktop`/`container` + user) |
 | `--quiet`, `-q` | Output | Suppress all output, use exit code |
 | `--reconfigure`, `-r` | Setup | Re-run first-launch config wizard |
 | `--reset-baseline` | Comparison | Wipe `last_baseline.json` |
@@ -641,7 +642,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Score domains | 7 | `bob.domain_scores.DOMAINS` |
 | Filterable sections (`--check` / `--skip`) | 34 | `bob --check=list` |
 | Audit profiles | 4 built-in (server / desktop / container + workstation alias) + user | `bob/data/profiles/` |
-| CLI options | ~35 | `bob.cli.parse_args` |
+| CLI options | ~40 long-form + ~17 short | `bob.cli.parse_args` |
 | Doc files | 16 public markdown + 3 man pages | `DOCUMENTS/` + `man/` |
 | Public version | v0.4.6 | `pyproject.toml::version` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
