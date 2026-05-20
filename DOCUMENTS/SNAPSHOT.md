@@ -483,7 +483,7 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 | `--quiet`, `-q` | Output | Suppress all output, use exit code |
 | `--reconfigure`, `-r` | Setup | Re-run first-launch config wizard |
 | `--reset-baseline` | Comparison | Wipe `last_baseline.json` |
-| `--show-ignored` | Filters | List persistent ignore-list entries |
+| `--show-ignored` | Display | Show previously-ignored findings as dimmed lines during the audit (doesn't list `ignore.yml` entries — for that, read the file directly) |
 | `--skip=A,B,...` | Filters | Inverse of `--check` |
 | `--target=N` | Audit | Score gate; exit code 4 if score < N |
 | `--verbose`, `-v` | Output | Show detailed port exposure per service |
@@ -612,7 +612,13 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 
 - **Add a service**: edit `bob/data/services.json` (32 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
 - **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 1401 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` itself does not whitelist languages — `--lang=` accepts any value and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
-- **Add a check**: create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)`. Wire in `bob/runner.py` via `_sec("foo", foo_snapshot, check_foo)`. Add test `tests/test_foo.py`. Optional: add prefix `"foo"` to `bob/domain_scores.py::_PREFIX_TO_DOMAIN`.
+- **Add a check** (full checklist):
+  1. Create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)` (follow the pattern of an existing simple check, e.g. `ntp.py`).
+  2. Wire in `bob/runner.py`: add the import at the top, add the section name `"foo"` to `_ALL_SECTIONS` tuple (line ~74), and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
+  3. Add locale keys to `bob/locales/{en,fr}.json`: at minimum a `sections.foo` title plus any `t("foo.xxx")` keys your check emits (validated by `test_locale_coverage.py`).
+  4. Add the test file `tests/test_foo.py` (the suite will auto-discover it).
+  5. Optional: add the prefix `"foo"` to `bob/domain_scores.py::_PREFIX_TO_DOMAIN` for scoring (else the check's findings fall into the `firewall` catch-all).
+  6. Optional: add EXPLAIN_KEYS entries in `bob/explain.py` if you want `--explain foo.xxx` support.
 - **Add an explain key**: append to `EXPLAIN_KEYS` in `bob/explain.py` + write title/why/how/CIS in both `en.json` and `fr.json`. `test_locale_coverage.py::TestExplainNamespaceCoverage` enforces parity.
 - **Bump a version** — files to touch (verified `grep -l "0.4.6"`):
   - **Source/build** : `bob/__init__.py::__version__` · `pyproject.toml::version` · 3 schema `$id` URLs in `bob/data/schemas/*.schema.json`
