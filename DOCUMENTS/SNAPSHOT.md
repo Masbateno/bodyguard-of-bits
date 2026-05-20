@@ -8,7 +8,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob v0.4.6     ~18 kLoC Python · 0 runtime deps outside stdlib         │
+│  bob v0.4.6     ~28 kLoC Python · 0 runtime deps outside stdlib         │
 │                 4500 unit tests · 16 doc files · 7 distros CI-validated │
 └─────────────────────────────────────────────────────────────────────────┘
 
