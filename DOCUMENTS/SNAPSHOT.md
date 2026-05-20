@@ -23,7 +23,12 @@ LAYER (top→bottom = imports flow down)
         │                              (called AFTER run_checks via
         │                               apply_domain_score_override)
         ├──► bob/sysinfo.py         ← collect_system_info, network ctx
-        └──► bob/report.py + display + i18n + ... (output layer)
+        └──► bob/{display,i18n,output,history,...}  (direct output-layer
+                                                     imports — see grep
+                                                     `^from bob\.` for
+                                                     the full ~17 deps)
+             (bob/report.py is *not* a direct import of __main__ —
+              accessed via runner.init_report's return value)
 
     bob/runner.py
         │
@@ -472,7 +477,7 @@ The `--explain KEY` interactive TUI shows: **title**, **WHY** it matters, **HOW*
 | `--help`, `-h` | Misc | Print help and exit (no sudo required) |
 | `--history` | Comparison | Sparkline of last scores |
 | `--html` | Output | Standalone HTML export |
-| `--ignore=KEY` | Filters | Persistently ignore a finding key |
+| `--ignore=KEY` | Setup | Add a finding key to `~/.config/bob/ignore.yml` and exit (does not run the audit) |
 | `--install-completion` | Setup | Install bash completion + sudo symlink |
 | `--install-cron`, `-c` | Automation | Cron wizard (curses TUI + plain fallback) |
 | `--json`, `-j` | Output | JSON short form (alias for `--format=json`) |
@@ -549,7 +554,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 | `test_scoring.py` | `bob/scoring.py` (engine, Finding, Deduction, FindingLevel) |
 | `test_domain_scores.py` | `bob/domain_scores.py` + active set + TestActiveDomainsIncludesOK (v0.4.6) |
 | `test_breakdown.py` | `bob/breakdown.py` (score transparency display) |
-| `test_golden_scenarios.py` | End-to-end scoring scenarios (32 fixtures from v0.3.0) |
+| `test_golden_scenarios.py` | End-to-end scoring scenarios — 32 tests across 9 classes (clean, hardened, desktop, poorly configured, firewall inactive, Debian minimal, tool caps, stability, multi-domain), introduced v0.3.0 |
 | `test_json_schema.py` | JSON output contract — frozen + drift detection |
 | `test_services_schema.py` | Plugin services JSON Schema (Draft 2020-12) |
 | `test_locale_coverage.py` | All `t()`/`_t()` keys exist in both `en.json` and `fr.json` (AST-based since v0.4.5) |
