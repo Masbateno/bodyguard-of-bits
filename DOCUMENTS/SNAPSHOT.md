@@ -143,7 +143,7 @@ bodyguard-of-bits/
 | `__main__.py` | 411 | Orchestrator: argv → AuditConfig → snapshots → run_checks() → display |
 | `runner.py` | 657 | Audit engine: `run_checks()`, `_sec` closure factory (29 sections), `_section_enabled()` |
 | `cli.py` | 662 | `parse_args()`, `AuditConfig` dataclass, `--help` text, CLIError |
-| `config.py` | — | `UserConfig` + `EmailStore` + suid_whitelist + log_dir prompts |
+| `config.py` | — | `UserConfig` (key/value config store) + `EmailStore` (email book) + `get_suid_whitelist()` accessor. Interactive prompts live in `manage_logs.py`, not here. |
 | `profiles.py` | — | Profile loader: server/desktop/container + ~/.config/bob/profiles/*.conf |
 | `scoring.py` | — | `ScoreEngine`, `Finding`, `Deduction`, `FindingLevel`, `ScoreCap` |
 | `domain_scores.py` | 343 | `compute_domain_scores()`, `active_domains_from_engine()`, `apply_domain_score_override()` — 7 domains |
@@ -383,15 +383,16 @@ A domain enters the global score average as soon as any check emits `OK`, `WARN`
 
 ```python
 engine = ScoreEngine()
-engine.apply(check_result_1)
+engine.apply(check_result_1)   # CheckResult may carry ScoreCap(s) via result.set_cap(...)
 engine.apply(check_result_2)
-engine.cap(maximum=3, key="firewall.inactive")  # optional per-domain cap
-engine.finalize()                                # must come first
-apply_domain_score_override(engine)              # then override global with domain average
+engine.finalize()              # processes any caps registered, must come first
+apply_domain_score_override(engine)  # then override global with domain average
 
-score = engine.score        # int 0–10
-level = engine.level        # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
+score = engine.score           # int 0–10
+level = engine.level           # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
 ```
+
+> Caps are global ceilings (not per-domain) and are typically attached to a `CheckResult` from inside the check via `result.set_cap(maximum=N, reason=..., key="...")` — see `bob/checks/firewall.py:173` where firewall-inactive caps the global score at 3. `engine.cap(...)` exists too but is discouraged in orchestrators because it scatters cap logic away from the check.
 
 **Critical ordering**: `finalize()` must run before `apply_domain_score_override()`. `engine.set_global_score()` should never be called directly — use the override helper.
 
