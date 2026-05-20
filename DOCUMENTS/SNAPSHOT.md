@@ -411,7 +411,7 @@ level = engine.level           # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
 
 Top-level always-present keys: `schema_version`, `version`, `host`, `timestamp`, `score`, `score_max`, `risk`, `network_context`, `public_ip`, `alerts`, `warnings`, `deductions`, `domain_scores`.
 
-`--json-full` additionally emits: `findings`, `services`, `open_ports`, `firewall_stack`, `hardening`, `ipv6`.
+`--json-full` additionally emits: `findings`, `services`, `open_ports`, `firewall_stack`, `hardening`, `ipv6`. **Caveat**: in `--json-full`, `network_context` changes type from a string (`"public"` / `"private"`) to a richer dict containing `interfaces` (list of interface objects). Clients that read `network_context` from `--json` and `--json-full` interchangeably need to type-check first.
 
 ### 2. Exit codes (stable public API)
 
@@ -527,8 +527,9 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 | `UFW_AUDIT_SHARE` | Legacy alias, pre-v0.4.2 — kept for compat. `BOB_SHARE` takes precedence if both set |
 | `SUDO_USER` | Auto-detected — controls config path resolution and chown-back |
 | `LC_ALL` / `LC_MESSAGES` / `LANG` | POSIX locale detection (`fr_*` → French, else English fallback) |
-| `LC_TIME` | Subprocess locale via `_C_LOCALE_ENV` to avoid `strptime` regressions (v0.4.3 fix) |
-| `NO_COLOR` | Honors the [NO_COLOR](https://no-color.org/) standard |
+| `LC_TIME` | Not read directly, but forced to C through `LC_ALL=C` in `_C_LOCALE_ENV` for subprocesses — avoids `strptime("%b ...")` regressions under `LC_TIME=fr_FR.UTF-8` (v0.4.3 fix) |
+
+> **NOT honored**: `NO_COLOR` env var. BOB currently respects only the `--no-color`/`-n` CLI flag. Honoring `NO_COLOR` would require reading it in `bob/output.py::init()` — open improvement.
 
 ---
 
