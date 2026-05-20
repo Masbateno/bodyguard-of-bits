@@ -182,7 +182,7 @@ bodyguard-of-bits/
 
 ## Module index — bob/checks/ (43 checks)
 
-> All follow the same shape: `XxxSnapshot.from_system()` collects raw data (only place with subprocess calls); `check_xxx(snapshot, t)` is pure logic, testable without mocks. The active domain for each check is decided by `domain_scores._PREFIX_TO_DOMAIN`.
+> All but one follow the same shape: `XxxSnapshot.from_system()` collects raw data (only place with subprocess calls); `check_xxx(snapshot, t)` is pure logic, testable without mocks. **Exception: `services.py`** — `ServiceSnapshot` uses `.collect(registry, ufw_rules=..., ...)` / `.collect_all(registry, ...)` instead of `from_system()`, because it builds one snapshot *per service* from a registry rather than one snapshot of system-wide state. The active domain for each check is decided by `domain_scores._PREFIX_TO_DOMAIN`.
 
 | Check | LoC | Domain (scoring) | Notes |
 |---|---:|---|---|
@@ -315,7 +315,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 
 ## Patterns & conventions (snapshot of "how the code is shaped")
 
-### 1. Snapshot + check_xxx separation (every check follows this)
+### 1. Snapshot + check_xxx separation (every check follows this — except `services.py`, see notes in the check index)
 
 ```python
 @dataclass
