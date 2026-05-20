@@ -16,16 +16,23 @@ LAYER (top→bottom = imports flow down)
 
     bob/__main__.py  ← orchestrator (411 L)
         │
-        ▼
-    bob/runner.py  ← audit engine, run_checks() + _sec (657 L)
+        ├──► bob/cli.py             ← AuditConfig + parse_args() (662 L)
+        ├──► bob/runner.py          ← run_checks(), _sec closure (657 L)
+        ├──► bob/scoring.py         ← ScoreEngine + Finding + Deduction
+        ├──► bob/domain_scores.py   ← per-domain averaging, 7 domains
+        │                              (called AFTER run_checks via
+        │                               apply_domain_score_override)
+        ├──► bob/sysinfo.py         ← collect_system_info, network ctx
+        └──► bob/report.py + display + i18n + ... (output layer)
+
+    bob/runner.py
         │
-        ├──► bob/cli.py            ← AuditConfig + parse_args() (662 L)
-        ├──► bob/config.py         ← UserConfig + EmailStore
-        ├──► bob/profiles.py       ← server/desktop/container + user
-        ├──► bob/scoring.py        ← ScoreEngine + Finding + Deduction
-        ├──► bob/domain_scores.py  ← per-domain averaging, 7 domains
-        │
-        ▼
+        ├──► bob/cli.py        (AuditConfig type hint)
+        ├──► bob/config.py     (UserConfig)
+        ├──► bob/profiles.py   (server/desktop/container + user)
+        ├──► bob/scoring.py    (ScoreEngine)
+        └──► bob/checks/*.py   (43 check modules)
+
     bob/checks/*.py  ← 43 check modules · Snapshot+check_xxx pattern
         │  ├ firewall/ports/services/logs/ddns  (network)
         │  ├ docker / docker_audit              (containers)
