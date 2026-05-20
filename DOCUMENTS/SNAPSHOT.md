@@ -423,7 +423,7 @@ level = engine.level           # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
 
 Top-level always-present keys: `schema_version`, `version`, `host`, `timestamp`, `score`, `score_max`, `risk`, `network_context`, `public_ip`, `alerts`, `warnings`, `deductions`, `domain_scores`.
 
-`--json-full` additionally emits: `findings`, `services`, `open_ports`, `firewall_stack`, `hardening`, `ipv6`. **Caveat**: in `--json-full`, `network_context` changes type from a string (`"public"` / `"private"`) to a richer dict containing `interfaces` (list of interface objects). Clients that read `network_context` from `--json` and `--json-full` interchangeably need to type-check first.
+`--json-full` additionally emits: `findings`, `services`, `open_ports`, `firewall_stack` (always when full=True), plus `hardening` and `ipv6` (only when the respective `hardening_snapshot` / `ipv6_snapshot` parameters are passed to `build_json_data` — in practice via the normal audit path, both are present, but unit-test callers may pass `None`). **Caveat**: in `--json-full`, `network_context` changes type from a string (`"public"` / `"private"`) to a richer dict containing `interfaces` (list of interface objects). Clients that read `network_context` from `--json` and `--json-full` interchangeably need to type-check first.
 
 ### 2. Exit codes (stable public API)
 
