@@ -39,14 +39,15 @@ LAYER (top→bottom = imports flow down)
         └──► bob/checks/*.py   (43 check modules)
 
     bob/checks/*.py  ← 43 check modules · Snapshot+check_xxx pattern
-        │  ├ firewall/ports/services/logs/ddns  (network)
-        │  ├ docker / docker_audit              (containers)
-        │  ├ ssh / file_perms / suid_audit / user_accounts / password_policy / umask  (access)
-        │  ├ hardening / kernel_hardening / kernel_modules / mac_policy / secure_boot  (kernel)
-        │  ├ updates / firmware / cron_audit / services_state             (system)
-        │  ├ disk / memory / backup                                       (hardware)
-        │  ├ auditd / file_integrity / rootkit / clamav / fail2ban / auth_log  (security tools)
-        │  └ ssl_certs / systemd_timers / ntp / desktop_apps / virtualization / samba / smtp / iptables_nftables / ipv6 / log_rotation
+        │  ├ firewall/firewall_stack/network_context/ports/services/logs/ddns  (network — 7)
+        │  ├ docker / docker_audit              (containers — 2)
+        │  ├ ssh / file_perms / suid_audit / user_accounts / password_policy / umask  (access — 6)
+        │  ├ hardening / kernel_hardening / kernel_modules / mac_policy / secure_boot  (kernel — 5)
+        │  ├ updates / firmware / cron_audit / services_state             (system — 4)
+        │  ├ disk / memory / backup                                       (hardware — 3)
+        │  ├ auditd / file_integrity / rootkit / clamav / fail2ban / auth_log  (security tools — 6)
+        │  └ ssl_certs / systemd_timers / ntp / desktop_apps / virtualization / samba / smtp / iptables_nftables / ipv6 / log_rotation  (misc — 10)
+        │  Total: 7+2+6+5+4+3+6+10 = 43 ✓
         │
         ▼
     bob/display.py + bob/output.py + bob/panorama.py + bob/breakdown.py
