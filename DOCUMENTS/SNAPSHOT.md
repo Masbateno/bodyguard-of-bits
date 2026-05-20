@@ -4,7 +4,7 @@
 
 ---
 
-## Vue 1-écran
+## One-screen view
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -578,7 +578,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 ### Kept
 
 - **Audit-only by default** (no auto-fix without explicit `--fix --apply`). Foundational security stance.
-- **Zero runtime deps outside stdlib**. Atout énorme for distro packaging; preserve at all costs.
+- **Zero runtime deps outside stdlib**. Major asset for distro packaging; preserve at all costs.
 - **Snapshot + check_xxx separation**. Enables 4500 tests with no mocks.
 - **Equal-domain weighting** in global score. All active domains contribute equally — intentional, retained through v0.4.x. The "main architectural question for v0.3.0" was answered: keep equal weighting.
 - **JSON schema_version="1"** frozen since v0.4.0. Any breaking change = `"2"` + major bump.
@@ -587,7 +587,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 
 ### Discarded (do not re-attempt)
 
-- **M7 — Lazy `_PLUGIN_DIR` resolution.** Attempted in v0.4.3, broke 20 tests that patch `bob.registry._PLUGIN_DIR`. The "SUDO_USER changes mid-process" scenario doesn't happen in practice (BOB is one-shot per audit). Decision **permanent** (figée 2026-05-15).
+- **M7 — Lazy `_PLUGIN_DIR` resolution.** Attempted in v0.4.3, broke 20 tests that patch `bob.registry._PLUGIN_DIR`. The "SUDO_USER changes mid-process" scenario doesn't happen in practice (BOB is one-shot per audit). Decision **permanent** (frozen 2026-05-15).
 
 ### Deferred to v0.5.0+
 
@@ -596,7 +596,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 - **AUR PKGBUILD** — community contribution welcome.
 - **Tighter AppArmor lock-down** — read-only on /etc/, /proc/, /sys/; deny exec of non-whitelisted; restrict network egress to known endpoints. Deferred to a future hardening pass.
 
-### Known dette
+### Known debt
 
 - `bob/cron.py` (1201 LoC) is the biggest non-check file with the lowest tests/source ratio. Refactor candidate but works.
 - `bob/checks/ssh.py` (1392 LoC) is the biggest check — handles many sshd_config directives. Possible split by concern (sshd_config vs key audit vs known_hosts).
