@@ -436,7 +436,7 @@ Codes only added, never removed/renamed within a major. Exposed in `bob.__main__
 
 `bob.explain.EXPLAIN_KEYS` is a frozen canonical list. Adding a new key = additive (no breaking change). Renaming a key = breaking, must go through the alias map (`EXPLAIN_KEY_ALIASES`). Removing a key = major bump.
 
-The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CIS reference. Every key has all 4 in **both** `en.json` and `fr.json` (validated by `test_locale_coverage.py::TestExplainNamespaceCoverage`).
+The `--explain KEY` interactive TUI shows: **title**, **WHY** it matters, **HOW** to fix, and a **CIS reference**. The first three (title/why/how) live in `en.json` and `fr.json` under `explain.{key}.{title,why,how}` and are validated for cross-locale parity by `test_locale_coverage.py::TestExplainNamespaceCoverage`. The CIS reference is sourced separately from `bob/data/cis_refs.json` (137 entries) via `bob/cis_refs.py::get_cis_ref(key)` — not stored in the locale files.
 
 ### 4. 7 domain keys
 
