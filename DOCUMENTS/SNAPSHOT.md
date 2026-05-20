@@ -85,7 +85,7 @@ bodyguard-of-bits/
 │   ├── output.py              ← low-level terminal primitives, 574 L
 │   ├── panorama.py            ← services panorama table builder
 │   ├── breakdown.py           ← --breakdown score computation transparency
-│   ├── exposure.py            ← port exposure grouping
+│   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
 │   ├── i18n.py                ← t(key, **vars), 1401 keys per locale
 │   ├── locales/
@@ -153,7 +153,7 @@ bodyguard-of-bits/
 | `output.py` | 574 | Low-level primitives: `print_ok/warn/alert/info/section/banner` |
 | `panorama.py` | — | Services panorama table builder (after-audit summary) |
 | `breakdown.py` | — | `--breakdown` / `-B` score computation transparency display |
-| `exposure.py` | — | Port exposure grouping (interface scope + risk level) |
+| `exposure.py` | — | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | — | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
 | `i18n.py` | — | `t(key, **vars)`, locale auto-detect (POSIX), 1401 keys EN/FR |
 | `compare.py` | — | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()` |
