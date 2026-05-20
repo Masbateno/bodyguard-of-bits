@@ -1,10 +1,24 @@
 # bash completion for bob
 # Installed to /etc/bash_completion.d/bob by --install-completion
 
-_ufw_audit() {
-    local cur prev
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
+_bob() {
+    # Use bash-completion's positional-argument convention:
+    #   $1 = command name ("bob")
+    #   $2 = current word being completed (already stripped of '=' word-break
+    #        prefix — e.g. after `--check=`, $2 is "" or the typed value, never "=")
+    #   $3 = previous word (e.g. "--check" when bash split on '=')
+    #
+    # Reading $2/$3 instead of ${COMP_WORDS[COMP_CWORD]} avoids the
+    # COMP_WORDBREAKS-includes-'=' edge case where COMP_WORDS[CWORD] is "="
+    # but the user actually wants to complete an option value.
+    local cur="$2"
+    local prev="$3"
+
+    # Authoritative list of filterable sections — keep in sync with
+    # bob/runner.py::_ALL_SECTIONS (34 entries; matches `bob --check=list`).
+    # Core checks (firewall, ports, services, logs) always run and are
+    # intentionally absent from this list.
+    local _SECTIONS="auditd auth_log backup clamav cron_audit desktop_apps disk docker_audit fail2ban file_integrity file_perms firmware hardening iptables_nft ipv6 kernel_hardening kernel_modules log_rotation mac_policy memory ntp password_policy rootkit samba secure_boot services_state smtp ssh ssl_certs suid_audit systemd_timers umask updates user_accounts"
 
     # Handle -l N (--log-days short form) — suggest common values
     if [[ "${prev}" == "-l" ]]; then
@@ -19,42 +33,65 @@ _ufw_audit() {
     fi
 
     # Handle -p NAME / --profile=NAME — suggest known profiles
-    if [[ "${prev}" == "-p" ]]; then
-        COMPREPLY=( $(compgen -W "server desktop container" -- "${cur}") )
+    # (workstation is a backward-compat alias loading desktop; container
+    #  exists as a real profile)
+    if [[ "${prev}" == "-p" ]] || [[ "${prev}" == "--profile" ]]; then
+        COMPREPLY=( $(compgen -W "server desktop container workstation" -- "${cur}") )
         return 0
     fi
-    if [[ "${cur}" == --profile* ]]; then
-        COMPREPLY=( "--profile=server" "--profile=desktop" "--profile=container" )
+    if [[ "${cur}" == --profile=* ]]; then
+        COMPREPLY=( $(compgen -W "server desktop container workstation" -- "${cur#--profile=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--profile=}" )
         return 0
     fi
 
     # Handle --lang=CODE — suggest known languages
-    if [[ "${cur}" == --lang* ]]; then
-        COMPREPLY=( "--lang=en" "--lang=fr" )
+    if [[ "${cur}" == --lang=* ]]; then
+        COMPREPLY=( $(compgen -W "en fr" -- "${cur#--lang=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--lang=}" )
+        return 0
+    fi
+    if [[ "${prev}" == "--lang" ]]; then
+        COMPREPLY=( $(compgen -W "en fr" -- "${cur}") )
         return 0
     fi
 
-    # Handle --check= — suggest 'list' plus known section names
-    if [[ "${cur}" == --check* ]]; then
-        local check_vals="list ssh firewall ipv6 hardening kernel_hardening kernel_modules suid_audit docker_audit log_rotation mac_policy cron_audit services_state updates umask memory disk backup auditd secure_boot fail2ban clamav file_integrity rootkit ntp systemd_timers ssl_certs firmware smtp auth_log user_accounts password_policy file_perms"
-        COMPREPLY=( $(compgen -W "${check_vals}" -- "${cur#--check=}") )
+    # Handle --check=SECTION — suggest 'list' plus known section names
+    if [[ "${cur}" == --check=* ]]; then
+        COMPREPLY=( $(compgen -W "list ${_SECTIONS}" -- "${cur#--check=}") )
         COMPREPLY=( "${COMPREPLY[@]/#/--check=}" )
         return 0
     fi
     if [[ "${prev}" == "--check" ]]; then
-        COMPREPLY=( $(compgen -W "list ssh firewall ipv6 hardening kernel_hardening kernel_modules suid_audit docker_audit log_rotation mac_policy cron_audit services_state updates umask memory disk backup auditd secure_boot fail2ban clamav file_integrity rootkit ntp systemd_timers ssl_certs firmware smtp auth_log user_accounts password_policy file_perms" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "list ${_SECTIONS}" -- "${cur}") )
+        return 0
+    fi
+
+    # Handle --skip=SECTION — same section list (no 'list' here)
+    if [[ "${cur}" == --skip=* ]]; then
+        COMPREPLY=( $(compgen -W "${_SECTIONS}" -- "${cur#--skip=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--skip=}" )
+        return 0
+    fi
+    if [[ "${prev}" == "--skip" ]]; then
+        COMPREPLY=( $(compgen -W "${_SECTIONS}" -- "${cur}") )
         return 0
     fi
 
     # Handle --webhook-format=F — suggest known formats
-    if [[ "${cur}" == --webhook-format* ]]; then
+    if [[ "${cur}" == --webhook-format=* ]]; then
         COMPREPLY=( "--webhook-format=auto" "--webhook-format=generic" "--webhook-format=slack" )
+        return 0
+    fi
+    if [[ "${prev}" == "--webhook-format" ]]; then
+        COMPREPLY=( $(compgen -W "auto generic slack" -- "${cur}") )
         return 0
     fi
 
     # Handle --format=FORMAT — suggest output formats
-    if [[ "${cur}" == --format* ]]; then
-        COMPREPLY=( "--format=json" "--format=json-full" "--format=csv" "--format=markdown" "--format=html" )
+    if [[ "${cur}" == --format=* ]]; then
+        COMPREPLY=( $(compgen -W "json json-full csv markdown html" -- "${cur#--format=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--format=}" )
         return 0
     fi
     if [[ "${prev}" == "--format" ]]; then
@@ -62,26 +99,45 @@ _ufw_audit() {
         return 0
     fi
 
-    # Handle --target=N — suggest common score targets
-    if [[ "${cur}" == --target* ]]; then
-        COMPREPLY=( "--target=6" "--target=7" "--target=8" "--target=9" "--target=10" )
+    # Handle --output=FMT — alias for --format= (csv/json/markdown only)
+    if [[ "${cur}" == --output=* ]]; then
+        COMPREPLY=( $(compgen -W "csv json markdown" -- "${cur#--output=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--output=}" )
+        return 0
+    fi
+    if [[ "${prev}" == "--output" ]]; then
+        COMPREPLY=( $(compgen -W "csv json markdown" -- "${cur}") )
         return 0
     fi
 
-    # All short options
-    local short_opts="-v -d -q -f -y -r -n -j -J -l -m -c -C -o -p -e -D -w -V -h"
-
-    # All long options (single line — avoids multiline parsing issues on some bash versions)
-    local long_opts="--verbose --detailed --quiet --fix --apply --yes --reconfigure --no-color --format= --json --json-full --output= --min-level= --log-days= --manage-logs --install-cron --manage-cron --install-completion --french --lang= --offline --profile= --reset-baseline --ignore= --show-ignored --history --explain --diff --watch= --webhook= --webhook-format= --target= --html --version --help"
-    # Value completions for --output and --min-level
-    if [[ "${prev}" == "--output" ]]; then
-        COMPREPLY=( $(compgen -W "csv json markdown" -- "${cur}") )
+    # Handle --min-level=LEVEL — only 'warn' or 'alert' are accepted
+    # (info is rejected at CLI parse time; it would be a no-op anyway)
+    if [[ "${cur}" == --min-level=* ]]; then
+        COMPREPLY=( $(compgen -W "warn alert" -- "${cur#--min-level=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--min-level=}" )
         return 0
     fi
     if [[ "${prev}" == "--min-level" ]]; then
         COMPREPLY=( $(compgen -W "warn alert" -- "${cur}") )
         return 0
     fi
+
+    # Handle --target=N — suggest common score targets
+    if [[ "${cur}" == --target=* ]]; then
+        COMPREPLY=( $(compgen -W "6 7 8 9 10" -- "${cur#--target=}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--target=}" )
+        return 0
+    fi
+    if [[ "${prev}" == "--target" ]]; then
+        COMPREPLY=( $(compgen -W "6 7 8 9 10" -- "${cur}") )
+        return 0
+    fi
+
+    # All short options (mirrors `arg in ("-X", "--xxx")` blocks in bob/cli.py)
+    local short_opts="-v -d -q -f -y -r -n -j -J -l -m -c -C -o -p -e -D -w -V -h -B"
+
+    # All long options (single line — avoids multiline parsing issues on some bash versions)
+    local long_opts="--verbose --detailed --quiet --fix --apply --yes --reconfigure --no-color --no-colour --format= --json --json-full --output= --output-dir= --min-level= --log-days= --manage-logs --install-cron --manage-cron --install-completion --french --lang= --offline --profile= --reset-baseline --ignore= --show-ignored --history --explain --diff --watch= --webhook= --webhook-format= --target= --html --check= --skip= --breakdown --version --help"
 
     if [[ "${cur}" == --* ]]; then
         COMPREPLY=( $(compgen -W "${long_opts}" -- "${cur}") )
@@ -97,14 +153,4 @@ _ufw_audit() {
     return 0
 }
 
-complete -F _ufw_audit bob
-
-# bash completion for install.sh (bob installer)
-_ufw_audit_install() {
-    local cur="${COMP_WORDS[COMP_CWORD]}"
-    local opts="--dry-run --uninstall --help"
-    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-    return 0
-}
-
-complete -F _ufw_audit_install install.sh
+complete -F _bob bob
