@@ -99,10 +99,15 @@ but includes per-finding, per-service, per-port detail (large payload).
 .B \-\-format=\fIFMT\fR
 Where
 .I FMT
-is
-.BR text " (default), "
-.BR json ", or "
-.BR markdown .
+is one of
+.BR json ", "
+.BR json\-full ", "
+.BR csv ", "
+.BR markdown ", or "
+.BR html .
+Text is the default output when no format flag is set;
+.B \-\-format=text
+is not accepted (rejected at CLI parse time).
 .
 .SS Configuration and i18n
 .TP
@@ -261,14 +266,15 @@ Inverse of
 .TP
 .B \-\-min\-level=\fILEVEL\fR
 Hide findings below the given severity. Accepted values:
-.BR info " (show everything), "
 .BR warn " (hide INFO), "
 .BR alert " (hide INFO and WARN). "
+There is no \fIinfo\fR value (it would be a no-op since INFO is already the floor);
+attempting \fB\-\-min\-level=info\fR is rejected at CLI parse time.
 Affects the terminal output only; JSON output and the detailed log file
 remain complete.
 .TP
-.B \-\-list\-checks
-Print all available section names.
+.B \-\-check=list
+Print all available section names (use as the value of \fB\-\-check\fR; there is no separate \fB\-\-list\-checks\fR flag).
 .
 .SS Misc
 .TP
