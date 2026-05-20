@@ -329,7 +329,7 @@ class XxxSnapshot:
         return cls(field_a=..., field_b=...)
 
 
-def check_xxx(snapshot: XxxSnapshot, *, t: TranslationFunc | None = None) -> CheckResult:
+def check_xxx(snapshot: XxxSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     # Pure logic — no system calls, fully testable
     _t = t if t is not None else _identity_t
     result = CheckResult()
@@ -338,6 +338,8 @@ def check_xxx(snapshot: XxxSnapshot, *, t: TranslationFunc | None = None) -> Che
         result.add_deduction(reason=_t("xxx.bad_a"), points=1, key="xxx.bad_a")
     return result
 ```
+
+> Note: 37 of 43 checks use positional `, t` as above. The 6 newer checks (`cron_audit`, `disk`, `file_perms`, `password_policy`, `services_state`, `user_accounts`) use keyword-only `, *, t`. Both forms are valid — the codebase is mid-convergence, no decision yet on which becomes canonical.
 
 **Why it matters**: pulls the I/O side effects to a single function (`from_system`), making `check_xxx` deterministic for unit tests. **Do not break this contract during refactoring** — it's the foundation for the 4500-test suite running with no mocks.
 
@@ -358,10 +360,11 @@ Every `add_deduction` and (where appropriate) every `warn/alert` carries a stabl
 ### 4. i18n via `t(key, **template_vars)`
 
 ```python
+# Real example from bob/checks/ssh.py (a pilot since v0.4.1)
 result.warn(
-    message=_t("services.exposed_port", port=22, proto="tcp"),
-    key="services.exposed_port",
-    template_vars={"port": 22, "proto": "tcp"},   # since v0.4.1 (additive)
+    message=_t("ssh.host_key_rsa_short", name=name, bits=hk.rsa_bits),
+    key="ssh.host_key_rsa_short",
+    template_vars={"name": name, "bits": hk.rsa_bits},   # pilot v0.4.1
 )
 ```
 
@@ -605,10 +608,18 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 ## Quick references
 
 - **Add a service**: edit `bob/data/services.json` (32 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
-- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate values, add `--lang=de` to cli.py.
+- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 1401 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` itself does not whitelist languages — `--lang=` accepts any value and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
 - **Add a check**: create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)`. Wire in `bob/runner.py` via `_sec("foo", foo_snapshot, check_foo)`. Add test `tests/test_foo.py`. Optional: add prefix `"foo"` to `bob/domain_scores.py::_PREFIX_TO_DOMAIN`.
 - **Add an explain key**: append to `EXPLAIN_KEYS` in `bob/explain.py` + write title/why/how/CIS in both `en.json` and `fr.json`. `test_locale_coverage.py::TestExplainNamespaceCoverage` enforces parity.
-- **Bump a version**: edit `bob/__init__.py::__version__` + `pyproject.toml::version` + 3 schema `$id` URLs + 2 README badges + write CHANGELOG entries (short + full, EN + FR) + bump `man/*.{1,5}` `.TH` lines + update `debian/changelog` and `packaging/rpm/bob.spec`. Then `git tag vX.Y.Z && git push --tags` triggers PyPI publish.
+- **Bump a version** — files to touch (verified `grep -l "0.4.6"`):
+  - **Source/build** : `bob/__init__.py::__version__` · `pyproject.toml::version` · 3 schema `$id` URLs in `bob/data/schemas/*.schema.json`
+  - **READMEs (ASCII banners)** : `README.md` · `README_FR.md` · `DOCUMENTS/README_TECH.md` · `DOCUMENTS/README_TECH_FR.md`
+  - **shields.io badges** : `DOCUMENTS/README_TECH.md` and `DOCUMENTS/README_TECH_FR.md` (`![Release](https://img.shields.io/badge/version-vX.Y.Z-...`)
+  - **Changelogs (short + full, EN + FR — 4 files)** : `CHANGELOG.md` · `CHANGELOG_FR.md` · `DOCUMENTS/CHANGELOG_FULL.md` · `DOCUMENTS/CHANGELOG_FULL_FR.md`
+  - **Test journal** : `DOCUMENTS/TESTING.md` and `DOCUMENTS/TESTING_FR.md` (new release row + section)
+  - **Man pages `.TH` lines (3 files)** : `man/bob.1` · `man/bob.conf.5` · `man/bob-profile.5`
+  - **Distro packaging** : `debian/changelog` · `packaging/rpm/bob.spec` (`Version:` field)
+  - Then `git tag vX.Y.Z && git push --tags` triggers PyPI publish via OIDC.
 
 ---
 
