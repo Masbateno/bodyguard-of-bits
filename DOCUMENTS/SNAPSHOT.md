@@ -526,8 +526,8 @@ The `--explain KEY` interactive TUI shows: **title**, **WHY** it matters, **HOW*
 | `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` | `0600` | Detailed audit report (`-d`) — `os.open(..., 0o600)` | One per `-d` run; managed via `--manage-logs` |
 | `/usr/local/bin/bob` | exec | Sudo PATH symlink to pipx venv binary | Created by `--install-completion` |
 | `/etc/bash_completion.d/bob` | r | Bash completion script | Created by `--install-completion` |
-| `/usr/local/bin/bob-{name}` | exec | Cron wrapper script | Created by `--install-cron` |
-| `/etc/cron.d/bob-{name}` | r | Cron entry (system) | Created by `--install-cron`; managed by `--manage-cron` |
+| `/usr/local/bin/bob-{slug}` | exec | Cron wrapper script. `{slug}` is the slugified user-entered name via `bob/cron.py::make_slug(name)` — lowercased, non-alphanum → `-`, stripped | Created by `--install-cron` |
+| `/etc/cron.d/bob-{slug}` | r | Cron entry (system) — same `{slug}` rule | Created by `--install-cron`; managed by `--manage-cron` |
 
 > When BOB runs under `sudo`, all writes to `~/.config/bob/` are auto-`chown`-ed back to `$SUDO_USER` (since v0.3.6).
 
