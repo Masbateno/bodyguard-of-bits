@@ -368,7 +368,7 @@ result.warn(
 )
 ```
 
-`template_vars` is **additive** since v0.4.1 — three pilot checks (ssh, hardening, firewall) populate it. The remaining ~37 checks ship without it and rely on `message` being pre-rendered. **Phase 2 Option A** is to migrate all checks to set `template_vars`, enabling fully locale-independent JSON output. Deferred to v0.5.0+.
+`template_vars` is **additive** since v0.4.1 — three pilot checks (ssh, hardening, firewall) populate it. The remaining 40 checks ship without it and rely on `message` being pre-rendered. **Phase 2 Option A** is to migrate all checks to set `template_vars`, enabling fully locale-independent JSON output. Deferred to v0.5.0+.
 
 ### 5. The active domain set (v0.4.6 fix)
 
@@ -576,7 +576,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 
 ### Deferred to v0.5.0+
 
-- **Phase 2 Option A — full `Finding.template_vars` migration** on the ~37 non-pilot checks. Currently `template_vars` is additive on 3 pilots (ssh, hardening, firewall). Full migration would allow `Finding.message` to be derived from `(key, template_vars)` entirely, enabling locale-independent JSON output. **Largest single chunk of refactor work pending.**
+- **Phase 2 Option A — full `Finding.template_vars` migration** on the 40 non-pilot checks. Currently `template_vars` is additive on 3 pilots (ssh, hardening, firewall). Full migration would allow `Finding.message` to be derived from `(key, template_vars)` entirely, enabling locale-independent JSON output. **Largest single chunk of refactor work pending.**
 - **M3 cosmetic** — `os.path` → `pathlib` in 4 files (`manage_logs.py`, `suid_audit.py`, `secure_boot.py`, `ssh.py`). Pure cosmetic.
 - **AUR PKGBUILD** — community contribution welcome.
 - **Tighter AppArmor lock-down** — read-only on /etc/, /proc/, /sys/; deny exec of non-whitelisted; restrict network egress to known endpoints. Deferred to a future hardening pass.
