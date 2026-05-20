@@ -1,6 +1,8 @@
-name: Publish to PyPI
+name: Publish to PyPI + GitHub Release
 
-# Triggers on version tags pushed to main (e.g. v1.17.0)
+# Triggers on version tags pushed to main (e.g. v0.4.6).
+# Pipeline: tests → build (sdist + wheel) → PyPI publish (OIDC) → GitHub Release.
+# If PyPI publish fails, the GitHub release is not created.
 on:
   push:
     tags:
@@ -76,3 +78,71 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  # Create a GitHub Release with notes extracted from DOCUMENTS/CHANGELOG_FULL.md
+  # and the built sdist + wheel attached as assets.
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: publish
+    permissions:
+      contents: write   # required to create the release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract release title and notes
+        id: extract
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"   # e.g. v0.4.6
+
+          # --- Body: section between "## [vX.Y.Z]" and the next "## [v" header
+          #           in DOCUMENTS/CHANGELOG_FULL.md (the header line itself is skipped)
+          awk -v marker="$VERSION" '
+            $0 ~ "^## \\[" marker "\\]" { flag=1; next }
+            flag && /^## \[v/ { exit }
+            flag { print }
+          ' DOCUMENTS/CHANGELOG_FULL.md > /tmp/notes.md
+
+          if [ ! -s /tmp/notes.md ]; then
+            echo "::error::No release notes extracted for $VERSION."
+            echo "DOCUMENTS/CHANGELOG_FULL.md must contain a section starting with:"
+            echo "  ## [$VERSION] — YYYY-MM-DD"
+            exit 1
+          fi
+
+          # --- Title: "vX.Y.Z — <headline>" where <headline> is the text in the
+          #            CHANGELOG.md table row before the first " — " separator.
+          HEADLINE=$(awk -F'|' -v ver="$VERSION" '
+            $2 ~ "\\[" ver "\\]" { print $4; exit }
+          ' CHANGELOG.md)
+          # Trim whitespace and cut at first " — "
+          HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/ — .*$//')
+
+          if [ -z "$HEADLINE" ]; then
+            TITLE="$VERSION"
+          else
+            TITLE="$VERSION — $HEADLINE"
+          fi
+
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          echo "Title: $TITLE"
+          echo "Notes (first 15 lines):"
+          head -15 /tmp/notes.md
+          echo "..."
+          echo "Total lines: $(wc -l </tmp/notes.md)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.extract.outputs.title }}
+          body_path: /tmp/notes.md
+          files: dist/*
+          fail_on_unmatched_files: true
+          make_latest: true
