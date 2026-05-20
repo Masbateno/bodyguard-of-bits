@@ -502,11 +502,11 @@ The `--explain KEY` interactive TUI shows: title, WHY it matters, HOW to fix, CI
 | `~/.config/bob/services.d/*.json` | r | User plugin services (extends `services.json`) | Created manually by user |
 | `~/.config/bob/checks.d/*.py` | r | User plugin checks (Python files) | Created manually; NOT sandboxed (runs as root) |
 | `~/.config/bob/profiles/*.conf` | r | User audit profiles | Created manually |
-| `~/.config/bob/ignore.yml` | `0600` | Persistent ignore list | Built with `--ignore=KEY` |
+| `~/.config/bob/ignore.yml` | umask | Persistent ignore list — `path.write_text()` uses default mode (typically `0644`) | Built with `--ignore=KEY` |
 | `~/.config/bob/last_baseline.json` | `0600` | Baseline for `--diff` | Auto-rewritten after each audit; `--reset-baseline` clears |
 | `~/.config/bob/history.jsonl` | `0600` | Score history (rotates at 1000) | Append-only after each audit |
-| `~/.config/bob/recurrence.json` | `0600` | Consecutive-audit finding counter | Updated each audit |
-| `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` | `0644` | Detailed audit report (`-d`) | One per `-d` run; managed via `--manage-logs` |
+| `~/.config/bob/recurrence.json` | umask | Consecutive-audit finding counter — `tmp.open("w")` uses default mode (typically `0644`) | Updated each audit |
+| `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` | `0600` | Detailed audit report (`-d`) — `os.open(..., 0o600)` | One per `-d` run; managed via `--manage-logs` |
 | `/usr/local/bin/bob` | exec | Sudo PATH symlink to pipx venv binary | Created by `--install-completion` |
 | `/etc/bash_completion.d/bob` | r | Bash completion script | Created by `--install-completion` |
 | `/usr/local/bin/bob-{name}` | exec | Cron wrapper script | Created by `--install-cron` |
