@@ -26,8 +26,8 @@ from tests.helpers import _levels, _t
 # ---------------------------------------------------------------------------
 
 
-def make_snap(state: str = _STATE_ENABLED, method: str = "mokutil") -> SecureBootSnapshot:
-    return SecureBootSnapshot(state=state, method=method)
+def make_snap(state: str = _STATE_ENABLED) -> SecureBootSnapshot:
+    return SecureBootSnapshot(state=state)
 
 
 def has_level(result, level: str) -> bool:
@@ -195,6 +195,3 @@ class TestSnapshotDefaults:
         snap = SecureBootSnapshot()
         assert snap.state == _STATE_UNKNOWN
 
-    def test_default_method_is_none(self):
-        snap = SecureBootSnapshot()
-        assert snap.method == "none"

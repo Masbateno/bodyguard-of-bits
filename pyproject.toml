@@ -1,18 +1,26 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+# setuptools>=77 required for PEP 639 native support (license SPDX + license-files).
+# `wheel` is auto-resolved by setuptools.build_meta since setuptools ~70 — no need to list it.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bodyguard-of-bits"
-version = "0.4.7"
+version = "0.4.8"
 description = "BOB — Bodyguard Of Bits: Linux hardening auditor with CIS benchmark mapping"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
+authors = [
+    {name = "Cédric Clauzel", email = "cedricclauzel@mailo.com"},
+]
+maintainers = [
+    {name = "Cédric Clauzel", email = "cedricclauzel@mailo.com"},
+]
 keywords = ["security", "audit", "linux", "firewall", "hardening", "cis"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: System Administrators",
     "Operating System :: POSIX :: Linux",
@@ -27,13 +35,27 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 
+# Zero runtime deps outside stdlib — foundational architectural decision (see
+# DOCUMENTS/SNAPSHOT.md "Kept" section). Preserve at all costs.
+dependencies = []
+
+[project.optional-dependencies]
+# IP geolocation in `bob/checks/logs.py` brute-force detection. Conditional
+# `try: import geoip2.database` with silent fallback if absent — installing
+# the extra simply unlocks the country/city annotations in UFW log analysis.
+#   pipx install "bodyguard-of-bits[geoip]"
+#   pipx inject bodyguard-of-bits geoip2     # equivalent if already installed
+geoip = ["geoip2>=4.0"]
+
 [project.scripts]
 bob = "bob.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/Masbateno/bodyguard-of-bits"
-Issues = "https://github.com/Masbateno/bodyguard-of-bits/issues"
-Changelog = "https://github.com/Masbateno/bodyguard-of-bits/blob/main/CHANGELOG.md"
+Homepage      = "https://github.com/Masbateno/bodyguard-of-bits"
+Source        = "https://github.com/Masbateno/bodyguard-of-bits"
+Documentation = "https://github.com/Masbateno/bodyguard-of-bits/blob/main/DOCUMENTS/README_TECH.md"
+Issues        = "https://github.com/Masbateno/bodyguard-of-bits/issues"
+Changelog     = "https://github.com/Masbateno/bodyguard-of-bits/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -41,7 +63,9 @@ addopts = "-q"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["bob*"]
+# Explicit package list (locks down what gets shipped — guards against an
+# accidental top-level `bob_*` directory leaking into the wheel).
+include = ["bob", "bob.checks", "bob.tui"]
 
 [tool.setuptools.package-data]
 bob = [

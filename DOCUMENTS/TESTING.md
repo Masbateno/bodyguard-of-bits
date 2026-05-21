@@ -4,7 +4,7 @@
 
 Two complementary parts:
 
-- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.4.7 (4500 tests, unchanged from v0.4.6).
+- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.4.8 (4499 tests, −1 from v0.4.7 after dead-field cleanup).
 - **Manual UFW regression plan** (Categories A–E at the bottom) — deliberately dangerous UFW rules and the expected BOB behaviour for each. Used to validate detection + remediation on real systems.
 
 ---
@@ -13,6 +13,7 @@ Two complementary parts:
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.8 | 4499 | Hardening release — sub-agent code-review pass 4 (4 important + 5 minor + 3 suggestion findings) + pyproject.toml deep audit (6 fixes). **−1 test (4500 → 4499):** removed `test_default_method_is_none` in `test_secure_boot.py` after dropping the dead `method: str` field from `SecureBootSnapshot`. Other dead-field removals (`ssh.config_source_files`, `firewall.ipv4_rules_count`/`ipv6_rules_count`, `samba.min_protocol`, `clamav.db_path`/`last_scan_log_path`) had their associated tests updated to drop the now-invalid kwargs. No new behaviour, contract-preserving cleanup. |
 | v0.4.7 | 4500 | Maintenance release — cross-doc audit (24 corrections / 8 files) + UI gauges harmonization + bash completion overhaul (critical `--xxx=<TAB>` value completion fix via positional-arg convention) + GitHub Release CI automation. No new tests; 3 tests in `test_breakdown.py::TestBar` adapted to strip ANSI codes before comparing visible content (bars are now coloured strings, no longer plain `█░░░░░░░░░`). |
 | v0.4.6 | 4500 | Terrain test pass v0.4.5 fixes (+11): `TestParseInstalledKernels` (+5 — `ii`/`rc`/`pn`/`un`/`iU` status filtering, `hi` hold kept, mixed legacy+prefixed format) · `TestActiveDomainsIncludesOK` (+6 in test_domain_scores — OK promotes, INFO doesn't, full Debian 13 remediation scenario asserted at global=9 instead of 8). Multi-distro integration CI added (purely additive, not counted as unit tests). |
 | v0.4.5 | 4489 | Test infrastructure hardening (0 new tests, pure refactor of `tests/test_locale_coverage.py`): regex scanning → AST parsing (`ast.walk` + `ast.Call` + `ast.Name`). Eliminates docstring false positives, multi-line call site fragility, and `obj._t(...)` attribute call edge cases. `_KEY_EXCLUSIONS` allowlist deleted. Same 9 tests, same external contract. |
@@ -35,6 +36,46 @@ Two complementary parts:
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.4.8 — 4499/4499 (2026-05-21)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4499 passed in 6.29s
+```
+
+**Net: −1 (no new tests, 1 removal).** v0.4.8 is a code-hardening release: a sub-agent code-review pass surfaced 4 important + 5 minor + 3 suggestion findings, all addressed. The pyproject.toml was deeply audited and 6 packaging hardening fixes were applied. No new behaviour, no contract change — the audit pipeline, the JSON `schema_version="1"`, the 7 score domains, the 116 EXPLAIN_KEYS, and the 34 filterable sections are all unchanged.
+
+**Why −1 test:** `test_default_method_is_none` in `tests/test_secure_boot.py` asserted that a `SecureBootSnapshot` constructed without `method=` defaults to `None`. That field was discovered to be dead — nothing reads it, the value is never propagated to the report — so the field itself was removed from the dataclass. The test that pinned its default value became meaningless and was deleted with the field.
+
+#### Dead-field cleanup — kwargs removed from existing tests
+
+| File | Field removed | Tests updated |
+|---|---|---|
+| `tests/test_firewall.py`, `test_degraded.py`, `test_ufw_logging.py` | `ipv4_rules_count`, `ipv6_rules_count` | Constructor kwargs dropped (~6 sites) |
+| `tests/test_samba.py` | `min_protocol=""` | Constructor kwarg dropped (1 site) |
+| `tests/test_clamav.py` | `db_path`, `last_scan_log_path` | Constructor kwargs dropped + 1 assertion at line 471 removed |
+| `tests/test_secure_boot.py` | `method=` | `make_snap()` helper updated + 1 test removed (`test_default_method_is_none`) |
+
+No semantic change to the assertions that remained — these fields were never read by production code, so the tests pinning them were structural noise.
+
+#### What's covered (no new tests, but the existing suite catches the work)
+
+| Audit finding | Existing test coverage that validates the fix |
+|---|---|
+| I4 — `chown_to_sudo_user()` on report/log creation | Manual smoke test (sudo + non-root user); the existing `test_logs.py` and `test_report.py` exercise the surrounding paths |
+| M1 — `_C_LOCALE_ENV` consistency | Already covered by `test_locale_coverage.py` AST scanner (no new sites required) |
+| M3 — `log_rotation._service_active` refactor | Covered by existing `test_log_rotation.py` |
+| M2/S2 — cron helper extraction | Covered by existing `test_cron.py` (~150 tests) + `test_tui_cron.py` |
+| S1 — `auth_log` 90-day window docstring | Docs change only, no behaviour delta |
+| S3 — `SCORE_BAR_WIDTH` exported | Import sites updated, covered by existing `test_breakdown.py` + `test_domain_scores.py` |
+| pyproject.toml hardening | Validated via `python -m build --wheel` + `twine check dist/*` in CI |
+
+All 4499 tests pass in 6.29s on the local development workstation.
 
 ---
 

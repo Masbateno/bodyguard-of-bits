@@ -26,8 +26,6 @@ def make_status(**overrides) -> FirewallStatus:
         incoming_policy="deny",
         ufw_output="Status: active\nDefault: deny (incoming)",
         numbered_output="",
-        ipv4_rules_count=2,
-        ipv6_rules_count=2,
         ipv6_ufw_enabled=True,
     )
     defaults.update(overrides)
@@ -123,11 +121,7 @@ class TestIncomingPolicy:
         assert has_level(result, "warn")
 
     def test_no_deduction_when_deny(self):
-        result = check_firewall(make_status(
-            incoming_policy="deny",
-            ipv4_rules_count=2,
-            ipv6_rules_count=2,
-        ))
+        result = check_firewall(make_status(incoming_policy="deny"))
         assert total_deductions(result) == 0
 
 
@@ -189,8 +183,6 @@ class TestCombinedScenarios:
         result = check_firewall(make_status(
             installed=True, active=True,
             incoming_policy="deny",
-            ipv4_rules_count=3,
-            ipv6_rules_count=3,
         ))
         assert total_deductions(result) == 0
         assert not has_level(result, "alert")

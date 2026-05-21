@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.4.7
+Version:        0.4.8
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,42 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.4.8-1
+- Code-hardening release — sub-agent code-review pass 4 (4 important
+  + 5 minor + 3 suggestion findings) plus deep pyproject.toml audit
+  (6 packaging hardening fixes). No audit pipeline behaviour change.
+- I4 (important): bob.report.Reporter + bob.manage_logs call
+  chown_to_sudo_user() on file/directory creation. When bob is run
+  via sudo, report file and log directory tree are now owned by the
+  invoking user instead of root.
+- I1-I3 + M4-M5 (important + minor): dead dataclass fields removed
+  (ssh.config_source_files, firewall.ipv4_rules_count and
+  ipv6_rules_count, samba.min_protocol, clamav.db_path and
+  last_scan_log_path, secure_boot.method). Constructor args + parser
+  intermediates dropped accordingly.
+- M1 (minor): _C_LOCALE_ENV added to 3 remaining subprocess.check_output
+  sites in checks/desktop_apps.py and checks/smtp.py for codebase
+  consistency.
+- M3 (minor): log_rotation._service_active replaced with shared
+  _run() helper. 12 lines -> 1 line, same behaviour.
+- M2 + S2 (minor + suggestion): cron-entry mutation logic extracted
+  to public bob.cron.apply_cron_schedule() and apply_cron_email();
+  TUI cron uses them instead of duplicating logic. Legacy
+  NOTIFY_EMAILS regex preserved.
+- S1 (suggestion): docstring on checks/auth_log.py explaining the
+  90-day window vs --log-days flag.
+- S3 (suggestion): bob.output.SCORE_BAR_WIDTH promoted to public
+  constant; bob.breakdown + bob.domain_scores import it instead of
+  duplicating the literal 10.
+- pyproject.toml hardening: setuptools>=77 minimum (PEP 639), wheel
+  dropped from build-system.requires, authors/maintainers
+  canonicalised, Production/Stable classifier, explicit empty
+  dependencies = [], geoip2 moved to optional-dependencies,
+  packages.find restricted to bob/bob.checks/bob.tui.
+- 4499 tests (was 4500): one test removed
+  (test_secure_boot::test_default_method_is_none) after the dead
+  method field was deleted.
+
 * Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.4.7-1
 - Maintenance release — documentation audit + UI cosmetic + bash
   completion overhaul + CI release automation. No audit pipeline

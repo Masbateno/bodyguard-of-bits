@@ -86,10 +86,8 @@ class ClamAVSnapshot:
     installed:            bool           = False  # clamscan or clamdscan found
     freshclam_installed:  bool           = False  # freshclam found
     clamd_active:         bool           = False  # clamav-daemon service running
-    db_path:              str            = ""     # path to the DB file found
     db_age_days:          Optional[int]  = None   # None = no DB file found
     last_scan_date:       Optional[str]  = None   # ISO date string or None
-    last_scan_log_path:   str            = ""     # log file where date was found
     install_cmd:          str            = "sudo apt install clamav clamav-daemon"
 
     @classmethod
@@ -125,7 +123,6 @@ class ClamAVSnapshot:
         # --- virus database freshness ---
         for db_path in _DB_CANDIDATES:
             if db_path.exists():
-                snap.db_path = str(db_path)
                 try:
                     mtime_dt = datetime.fromtimestamp(
                         db_path.stat().st_mtime, tz=timezone.utc
@@ -138,7 +135,7 @@ class ClamAVSnapshot:
                 break
 
         # --- last scan date from logs ---
-        snap.last_scan_date, snap.last_scan_log_path = _find_last_scan_date()
+        snap.last_scan_date = _find_last_scan_date()
 
         return snap
 
@@ -287,15 +284,15 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _find_last_scan_date() -> tuple[Optional[str], str]:
+def _find_last_scan_date() -> Optional[str]:
     """
     Search standard ClamAV log paths for the most recent scan 'End Date:'.
 
     Returns:
-        (iso_date_str, log_path_str) if found, or (None, "") if no scan log.
+        ISO date string (YYYY-MM-DD) of the most recent scan found across
+        all candidate log paths, or None if no scan log line was found.
     """
-    latest_dt:   Optional[datetime] = None
-    latest_path: str                = ""
+    latest_dt: Optional[datetime] = None
 
     for log_path in _SCAN_LOG_CANDIDATES:
         if not log_path.exists():
@@ -318,12 +315,11 @@ def _find_last_scan_date() -> tuple[Optional[str], str]:
             except ValueError:
                 continue
             if latest_dt is None or dt > latest_dt:
-                latest_dt   = dt
-                latest_path = str(log_path)
+                latest_dt = dt
 
     if latest_dt is None:
-        return None, ""
-    return latest_dt.strftime("%Y-%m-%d"), latest_path
+        return None
+    return latest_dt.strftime("%Y-%m-%d")
 
 
 def _tail_lines(path: Path, n: int) -> list[str]:

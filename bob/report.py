@@ -104,6 +104,13 @@ class AuditReport:
         self.enabled: bool = True
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         self._fh = os.fdopen(fd, "w", encoding="utf-8")
+        # When invoked under sudo, the report file is owned by root by default
+        # and cannot be read/deleted afterwards by the real user. Chown it back
+        # so `sudo bob -d` reports land in the user's account, not root's. Same
+        # pattern as bob.config / bob.history / bob.ignore / bob.compare /
+        # bob.recurrence — see SECURITY.md and v0.3.6 entry for context.
+        from bob.sysinfo import chown_to_sudo_user
+        chown_to_sudo_user(path)
 
     # ------------------------------------------------------------------
     # Factory

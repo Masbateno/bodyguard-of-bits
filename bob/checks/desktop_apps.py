@@ -18,7 +18,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -113,6 +113,7 @@ class DesktopAppsSnapshot:
                 stderr=subprocess.DEVNULL,
                 text=True,
                 timeout=10,
+                env=_C_LOCALE_ENV,
             )
         except (OSError, subprocess.SubprocessError):
             return snap

@@ -46,14 +46,17 @@ class SecureBootSnapshot:
 
     Args:
         state:      One of "enabled", "disabled", "no_uefi", "unknown".
-        method:     Detection method used ("mokutil", "efivars", "bootctl", "none").
     """
-    state:  str = _STATE_UNKNOWN
-    method: str = "none"
+    state: str = _STATE_UNKNOWN
 
     @classmethod
     def from_system(cls) -> "SecureBootSnapshot":
-        """Detect Secure Boot state from the live system. Never raises."""
+        """Detect Secure Boot state from the live system. Never raises.
+
+        Detection strategy (in order): mokutil → EFI variable byte → bootctl.
+        The chosen method is not surfaced — only the resulting `state` matters
+        downstream.
+        """
         snap = cls()
 
         # 1. mokutil (most reliable)
@@ -62,18 +65,15 @@ class SecureBootSnapshot:
             if "secureboot enabled" in out:
                 # Setup Mode = SB technically on but no Platform Key enrolled → not secure
                 if "setup mode" in out:
-                    snap.state  = _STATE_SETUP_MODE
+                    snap.state = _STATE_SETUP_MODE
                 else:
-                    snap.state  = _STATE_ENABLED
-                snap.method = "mokutil"
+                    snap.state = _STATE_ENABLED
                 return snap
             if "secureboot disabled" in out:
-                snap.state  = _STATE_DISABLED
-                snap.method = "mokutil"
+                snap.state = _STATE_DISABLED
                 return snap
             if "efi variables are not supported" in out or "not supported" in out:
-                snap.state  = _STATE_NO_UEFI
-                snap.method = "mokutil"
+                snap.state = _STATE_NO_UEFI
                 return snap
 
         # 2. EFI variable fallback — byte index 4 of the SecureBoot variable
@@ -84,27 +84,23 @@ class SecureBootSnapshot:
                     data = fh.read()
                 # Format: 4-byte attributes + 1-byte value (0=disabled, 1=enabled)
                 if len(data) >= 5 and data[4] in (0, 1):
-                    snap.state  = _STATE_ENABLED if data[4] == 1 else _STATE_DISABLED
-                    snap.method = "efivars"
+                    snap.state = _STATE_ENABLED if data[4] == 1 else _STATE_DISABLED
                     return snap
             except OSError:
                 pass
         elif not os.path.isdir("/sys/firmware/efi"):
             # No EFI directory at all → legacy BIOS
-            snap.state  = _STATE_NO_UEFI
-            snap.method = "efivars"
+            snap.state = _STATE_NO_UEFI
             return snap
 
         # 3. bootctl fallback
         if _command_exists("bootctl"):
             out = (_run("bootctl", "status") or "").lower()
             if "secure boot: enabled" in out:
-                snap.state  = _STATE_ENABLED
-                snap.method = "bootctl"
+                snap.state = _STATE_ENABLED
                 return snap
             if "secure boot: disabled" in out:
-                snap.state  = _STATE_DISABLED
-                snap.method = "bootctl"
+                snap.state = _STATE_DISABLED
                 return snap
 
         return snap  # state = "unknown"

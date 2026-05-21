@@ -39,15 +39,13 @@ def total_deductions(result):
 
 
 def make_fw(installed=True, active=True, incoming_policy="deny",
-            ufw_output="", numbered_output="", ipv4_rules_count=0, ipv6_rules_count=0):
+            ufw_output="", numbered_output=""):
     return FirewallStatus(
         installed=installed,
         active=active,
         incoming_policy=incoming_policy,
         ufw_output=ufw_output,
         numbered_output=numbered_output,
-        ipv4_rules_count=ipv4_rules_count,
-        ipv6_rules_count=ipv6_rules_count,
     )
 
 

@@ -30,7 +30,7 @@ from bob.domain_scores import (
 )
 from bob.scoring import MAX_SCORE
 
-_BAR_WIDTH  = 10
+from bob.output import SCORE_BAR_WIDTH as _BAR_WIDTH  # single source of truth, see bob.output
 
 
 def _bar(score: int) -> str:

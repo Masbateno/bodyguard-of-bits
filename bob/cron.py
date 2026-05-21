@@ -834,6 +834,80 @@ def build_script_content(notify_email: str, log_dir: "Path | str") -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# File-patching helpers — shared between the plain-text wizard
+# (edit_cron_schedule / edit_cron_email below) and the curses TUI
+# (bob/tui/cron.py imports these). Centralising avoids drift between the
+# two branches — see v0.4.8 cleanup pass.
+# ---------------------------------------------------------------------------
+
+def apply_cron_schedule(entry, schedule_expr: str) -> str:
+    """Patch *entry.cron_path* in place with *schedule_expr*.
+
+    Replaces the unique `MIN HOUR DOM MONTH DOW root <script>` line of the
+    cron file. Returns an empty string on success, or the OSError string on
+    read/write failure (caller renders it to the user).
+    """
+    try:
+        text = entry.cron_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return str(exc)
+    new_line = f"{schedule_expr}  root  {entry.script_path}"
+    new_text = re.sub(
+        r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
+        lambda _: new_line,
+        text,
+        flags=re.MULTILINE,
+    )
+    try:
+        fd = _os.open(str(entry.cron_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o640)
+        with _os.fdopen(fd, "w") as fh:
+            fh.write(new_text)
+    except OSError as exc:
+        return str(exc)
+    return ""
+
+
+def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
+    """Patch *entry.cron_path* and the associated wrapper script with *new_email*.
+
+    Accepts the legacy `NOTIFY_EMAIL=` form (no S) in the script for
+    backward-compat with pre-v0.3 generated wrappers.
+
+    Returns:
+        (error_string, script_subst_count)
+        - error_string is "" on success, otherwise the OSError message.
+        - script_subst_count is the number of replacements done in the
+          wrapper script. 0 indicates the NOTIFY_EMAILS= line was missing
+          (the caller may want to warn the user).
+    """
+    try:
+        lines = entry.cron_path.read_text(encoding="utf-8").splitlines()
+        updated = [
+            f"# email: {new_email}" if ln.startswith("# email:") else ln
+            for ln in lines
+        ]
+        _atomic_write(entry.cron_path, "\n".join(updated) + "\n")
+    except OSError as exc:
+        return (str(exc), 0)
+
+    subst_count = 0
+    if entry.script_path.exists():
+        try:
+            text = entry.script_path.read_text(encoding="utf-8")
+            # Match both NOTIFY_EMAILS= (current) and NOTIFY_EMAIL= (legacy)
+            text, subst_count = re.subn(
+                r"^NOTIFY_EMAILS?=.*$",
+                lambda _: f"NOTIFY_EMAILS={shlex.quote(new_email)}",
+                text,
+                flags=re.MULTILINE,
+            )
+            _atomic_write(entry.script_path, text)
+        except OSError as exc:
+            return (str(exc), subst_count)
+    return ("", subst_count)
+
+
 def edit_cron_email(entry, t) -> None:
     """Change the notification email of an existing cron entry.
 
@@ -849,35 +923,12 @@ def edit_cron_email(entry, t) -> None:
 
     new_email = ",".join(new_emails)
 
-    try:
-        lines = entry.cron_path.read_text(encoding="utf-8").splitlines()
-        updated = []
-        for line in lines:
-            if line.startswith("# email:"):
-                updated.append(f"# email: {new_email}")
-            else:
-                updated.append(line)
-        _atomic_write(entry.cron_path, "\n".join(updated) + "\n")
-    except OSError as exc:
-        print(f"  ✖ Cannot update cron file: {exc}")
+    err, subst = apply_cron_email(entry, new_email)
+    if err:
+        print(f"  ✖ Cannot update: {err}")
         return
-
-    if entry.script_path.exists():
-        try:
-            text = entry.script_path.read_text(encoding="utf-8")
-            # Match both NOTIFY_EMAILS= (current) and NOTIFY_EMAIL= (legacy) for backward compat
-            text, n = re.subn(
-                r"^NOTIFY_EMAILS?=.*$",
-                lambda _: f"NOTIFY_EMAILS={shlex.quote(new_email)}",
-                text,
-                flags=re.MULTILINE,
-            )
-            if n == 0:
-                print(f"  ⚠ {t('manage_cron.email_not_found_in_script')}")
-            _atomic_write(entry.script_path, text)
-        except OSError as exc:
-            print(f"  ✖ Cannot update script: {exc}")
-            return
+    if entry.script_path.exists() and subst == 0:
+        print(f"  ⚠ {t('manage_cron.email_not_found_in_script')}")
 
     label = new_email if new_email else t("manage_cron.no_email")
     print(f"  ✔ {t('manage_cron.email_updated', name=entry.name, email=label)}")
@@ -980,26 +1031,9 @@ def edit_cron_schedule(entry, config, t) -> None:
     if ans != "y":
         return
 
-    try:
-        text = entry.cron_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"  ✖ Cannot read {entry.cron_path}: {exc}")
-        return
-
-    new_line = f"{schedule_expr}  root  {entry.script_path}"
-    new_text = re.sub(
-        r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
-        lambda _: new_line,
-        text,
-        flags=re.MULTILINE,
-    )
-
-    try:
-        fd = _os.open(str(entry.cron_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o640)
-        with _os.fdopen(fd, "w") as fh:
-            fh.write(new_text)
-    except OSError as exc:
-        print(f"  ✖ Cannot write {entry.cron_path}: {exc}")
+    err = apply_cron_schedule(entry, schedule_expr)
+    if err:
+        print(f"  ✖ Cannot update {entry.cron_path}: {err}")
         return
 
     print(f"  ✔ {t('manage_cron.updated', name=entry.name, schedule=human)}")

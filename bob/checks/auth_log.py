@@ -66,6 +66,11 @@ def _read_auth_from_journald(max_days: int = 90) -> str:
     logging). Uses --output=short to produce syslog-format lines compatible with
     the existing _ACCEPTED_RE / _FAILED_RE regexes.
 
+    The 90-day default is intentional and **independent of `--log-days`** (which
+    controls UFW log analysis in `bob/checks/logs.py`). UFW logs are noisy and a
+    narrow 7-day default avoids burying the report; SSH brute-force attempts can
+    be slow and sporadic over months, so we need a wider window to catch them.
+
     Returns:
         Raw log content, or empty string if journald is unavailable.
     """

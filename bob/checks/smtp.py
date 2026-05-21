@@ -19,7 +19,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
 from bob.scoring import CheckResult
 
 # MTA binary names (process detection)
@@ -60,6 +60,7 @@ class SmtpSnapshot:
                 stderr=subprocess.DEVNULL,
                 text=True,
                 timeout=10,
+                env=_C_LOCALE_ENV,
             )
             for line in ps_out.splitlines():
                 proc = line.strip().lower()
@@ -101,6 +102,7 @@ def _check_port_25() -> tuple[bool, str]:
         try:
             out = subprocess.check_output(
                 cmd, stderr=subprocess.DEVNULL, text=True, timeout=10,
+                env=_C_LOCALE_ENV,
             )
             binds: list[str] = []
             for line in out.splitlines():

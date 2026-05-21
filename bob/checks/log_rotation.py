@@ -14,11 +14,10 @@ Split:
 from __future__ import annotations
 
 import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 
@@ -267,15 +266,7 @@ def _count_logrotate_rules() -> int:
 
 def _service_active(name: str) -> bool:
     """Return True if the systemd unit is in the 'active' state."""
-    try:
-        proc = subprocess.run(
-            ["systemctl", "is-active", name],
-            capture_output=True, text=True,
-            timeout=5, env=_C_LOCALE_ENV,
-        )
-        return proc.stdout.strip() == "active"
-    except (subprocess.TimeoutExpired, OSError):
-        return False
+    return _run("systemctl", "is-active", name, timeout=5).strip() == "active"
 
 
 def _read_journald_conf() -> tuple[str, str, str]:

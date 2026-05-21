@@ -1,3 +1,55 @@
+bodyguard-of-bits (0.4.8-1) UNRELEASED; urgency=low
+
+  * Code-hardening release — sub-agent code-review pass 4 (4 important
+    + 5 minor + 3 suggestion findings) plus deep pyproject.toml audit
+    (6 packaging hardening fixes). No behaviour change in the audit
+    pipeline; the JSON schema_version="1" contract, the 7 score
+    domains, the 116 EXPLAIN_KEYS, and the 34 filterable sections are
+    all preserved.
+  * I4 (important): bob.report.Reporter and bob.manage_logs now call
+    chown_to_sudo_user() on file/directory creation. When bob is
+    invoked via sudo, the report file and the log directory tree are
+    now owned by the invoking user instead of root — fixes a
+    real-world ergonomic regression where users could not delete or
+    edit their own audit artefacts without re-elevating.
+  * I1-I3 + M4-M5 (important + minor): removed dead dataclass fields
+    that were assigned but never read. Affected fields:
+    ssh.config_source_files, firewall.ipv4_rules_count and
+    firewall.ipv6_rules_count, samba.min_protocol, clamav.db_path,
+    clamav.last_scan_log_path, secure_boot.method. Constructor
+    arguments and intermediate parsing dropped accordingly.
+  * M1 (minor): added _C_LOCALE_ENV (LC_ALL=C, LANG=C, LANGUAGE="")
+    to 3 remaining subprocess.check_output sites in checks/desktop_apps.py
+    and checks/smtp.py for consistency with the rest of the codebase.
+  * M3 (minor): replaced the 12-line subprocess.run-based
+    log_rotation._service_active helper with a 1-line call to the
+    shared _run() helper (bob.checks._run). Same behaviour, less code.
+  * M2 + S2 (minor + suggestion): extracted cron-entry mutation logic
+    (schedule string + NOTIFY_EMAIL variable) into public helpers
+    apply_cron_schedule() and apply_cron_email() in bob.cron. The TUI
+    cron module now imports those helpers instead of duplicating the
+    parsing logic. Preserves the legacy NOTIFY_EMAILS regex for
+    backward parity.
+  * S1 (suggestion): added a clarifying docstring to
+    checks/auth_log.py explaining why the 90-day window is hardcoded
+    and how it relates to the --log-days CLI flag.
+  * S3 (suggestion): promoted bob.output._SCORE_BAR_WIDTH to a public
+    SCORE_BAR_WIDTH constant; bob.breakdown and bob.domain_scores now
+    import it instead of duplicating the literal value 10.
+  * pyproject.toml hardening (v0.4.8): setuptools>=77 minimum
+    (PEP 639 compliance + license metadata), wheel removed from
+    build-system.requires (auto-resolved), authors and maintainers
+    canonicalised to cedricclauzel@mailo.com, Development Status ::
+    5 - Production/Stable classifier, explicit empty dependencies = []
+    list, optional [project.optional-dependencies] for geoip2,
+    [tool.setuptools.packages.find] restricted to bob/bob.checks/bob.tui.
+  * 4499 tests (was 4500). The single removed test
+    (tests/test_secure_boot.py::test_default_method_is_none) asserted
+    a default value for the now-deleted method field, making it
+    structurally meaningless. All other tests pass unchanged.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 21 May 2026 14:00:00 +0200
+
 bodyguard-of-bits (0.4.7-1) UNRELEASED; urgency=low
 
   * Maintenance release — documentation audit, UI cosmetic harmonization,

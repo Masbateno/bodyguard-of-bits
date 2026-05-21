@@ -37,7 +37,6 @@ def make_snap(**kwargs) -> SambaSnapshot:
         daemon_installed=True,
         conf_readable=True,
         smb1_enabled=False,
-        min_protocol="",
         null_passwords=False,
         server_signing="",
         map_to_guest="",

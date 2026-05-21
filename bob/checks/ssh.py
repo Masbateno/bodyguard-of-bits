@@ -144,7 +144,6 @@ class SSHSnapshot:
     sshd_installed:          bool = False
     sshd_active:             bool = False
     sshd_config:             dict = field(default_factory=dict)
-    config_source_files:     List[str] = field(default_factory=list)
 
     host_keys:               List[HostKeyInfo] = field(default_factory=list)
 
@@ -193,10 +192,8 @@ class SSHSnapshot:
         if _SSHD_CONFIG_PATH.exists():
             seen: set[str] = set()
             config: dict[str, str] = {}
-            sources: list[str] = []
-            _parse_config_file(_SSHD_CONFIG_PATH, config, seen, sources)
+            _parse_config_file(_SSHD_CONFIG_PATH, config, seen)
             snap.sshd_config = config
-            snap.config_source_files = sources
 
         # --- resolve the real user behind sudo ---
         sudo_user = os.environ.get("SUDO_USER", "")
@@ -973,7 +970,6 @@ def _parse_config_file(
     path: Path,
     config: dict[str, str],
     seen: set[str],
-    sources: list[str],
 ) -> None:
     """
     Parse an sshd_config file (or drop-in) into config dict.
@@ -985,7 +981,6 @@ def _parse_config_file(
     if canonical in seen:
         return
     seen.add(canonical)
-    sources.append(str(path))
 
     try:
         lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -1008,7 +1003,7 @@ def _parse_config_file(
             if not os.path.isabs(pattern):
                 pattern = str(path.parent / pattern)
             for inc in sorted(_glob.glob(pattern)):
-                _parse_config_file(Path(inc), config, seen, sources)
+                _parse_config_file(Path(inc), config, seen)
             continue
 
         # Key Value  (space or = separator; value may be quoted)

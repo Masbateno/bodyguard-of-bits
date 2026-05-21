@@ -285,7 +285,7 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
 # Text rendering
 # ---------------------------------------------------------------------------
 
-_BAR_WIDTH  = 10   # total bar characters (colours delegated to bob.output.score_bar)
+from bob.output import SCORE_BAR_WIDTH as _BAR_WIDTH  # single source of truth, see bob.output
 
 
 def render_domain_scores(

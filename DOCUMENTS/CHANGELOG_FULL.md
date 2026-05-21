@@ -6,6 +6,162 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.4.8] — 2026-05-21
+
+**Code-quality audit pass 4** — performed by a `general-purpose` sub-agent dispatched after the org's monthly quota reset, briefed with `DOCUMENTS/SNAPSHOT.md` as primary cartography. The agent ran 4 distinct bug-pattern hunts (dead dataclass fields, reinvented helpers, timeout inconsistencies, dead code from refactors) and returned **4 IMPORTANT + 5 MINOR + 3 SUGGESTION findings**. All addressed in this release, bundled with 6 pyproject.toml improvements queued from v0.4.7. 4499/4499 tests passing.
+
+### I4 — `sudo bob -d` log files were root-owned (the only externally-observable bug)
+
+**Reproduced**: any `sudo bob -d` run on Linux. The detailed audit report at `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` was created at mode `0o600` (correct — confidential output) but with `root:root` ownership because the `open()` syscall happens inside the sudo context. The invoking real user could neither read nor delete their own audit reports afterwards. Same applies to the parent `logs/` directory on its first `mkdir(parents=True)`.
+
+**Why this survived 4 audits**: BOB has a well-established chown-back pattern via `bob.sysinfo::chown_to_sudo_user(path)` — a thin wrapper around `os.chown(path, pw_uid, pw_gid)` resolved from `$SUDO_USER`, with a silent no-op fallback when not running under sudo. The pattern was correctly applied to **7 modules** writing to `~/.config/bob/` (`config.py`, `history.py`, `ignore.py`, `compare.py`, `recurrence.py`, `profiles.py`, `registry.py`) — but never wired up for the two modules writing to `~/.local/share/bob/logs/`. The omission only manifests at runtime via "permission denied" when the user tries to `cat`/`rm` their report.
+
+**Fix**:
+
+```python
+# bob/report.py — AuditReport.__init__
+fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+self._fh = os.fdopen(fd, "w", encoding="utf-8")
+# When invoked under sudo, the report file is owned by root by default
+# and cannot be read/deleted afterwards by the real user. Chown it back
+# so `sudo bob -d` reports land in the user's account, not root's.
+from bob.sysinfo import chown_to_sudo_user
+chown_to_sudo_user(path)
+```
+
+```python
+# bob/manage_logs.py — get_or_prompt_log_dir
+from bob.sysinfo import chown_to_sudo_user, get_user_home
+
+# (4 branches: --output-dir / saved config / non-interactive / interactive)
+d.mkdir(parents=True, exist_ok=True)
+chown_to_sudo_user(d)
+```
+
+The four mkdir branches in `get_or_prompt_log_dir` (`--output-dir` path, saved config path, non-interactive default, interactive prompt) each now call `chown_to_sudo_user(d)` after a successful mkdir.
+
+The fix is non-invasive: zero impact when not under sudo (no `SUDO_USER` → early return).
+
+### I1-I3 + M4-M5 — Dead dataclass fields purged
+
+Eight dataclass fields populated by `from_system()` (i.e. doing real I/O work on every audit) but never read by any consumer. Same bug class as the v0.4.3 C1 fix that removed 5 dead attrs from `HardeningSnapshot` causing `--json-full` crashes.
+
+#### I1 — `SSHSnapshot.config_source_files`
+
+```python
+@dataclass
+class SSHSnapshot:
+    ...
+    sshd_config:             dict = field(default_factory=dict)
+    config_source_files:     List[str] = field(default_factory=list)  # ← removed
+    ...
+```
+
+Populated by `_parse_config_file()` while recursively resolving `Include` directives in sshd_config. The intent was to surface the list of contributing source files for diagnostic. Never consumed — not by `check_ssh`, not by `display`, not by `json_output`, not by any test. The companion `sources` parameter on `_parse_config_file()` was also unused, so the parameter is dropped too (function signature simplifies from `(path, config, seen, sources)` to `(path, config, seen)`).
+
+#### I2 — `FirewallStatus.ipv4_rules_count` + `ipv6_rules_count`
+
+Two integer counters computed via two `sum(1 for ln in ... if "(v6)" not in ln)` / `... if "(v6)" in ln` passes over the UFW `numbered_output` on every audit. Used nowhere — tests merely pass values to satisfy the dataclass constructor. Removed; the 4 test files (`test_firewall.py`, `test_degraded.py`, `test_ufw_logging.py`) updated to stop passing them. If a future consumer ever needs the counts, they're derivable from `numbered_output.count("(v6)")` on demand.
+
+#### I3 — `SambaSnapshot.min_protocol`
+
+Captured from `smb.conf`'s `min protocol` directive. Only consumed by the local `min_proto` variable used to compute `smb1_enabled` — the dataclass field is redundant. Removed.
+
+#### M4 — `ClamAVSnapshot.last_scan_log_path`
+
+`_find_last_scan_date()` returned `(date, log_path)` tuple but only `date` was consumed. The `log_path` value (which file the date came from) could be useful diagnostic info but wasn't surfaced anywhere. Field dropped; function simplified to return `Optional[str]` (just the date).
+
+#### M5 — `ClamAVSnapshot.db_path` + `SecureBootSnapshot.method`
+
+Both populated, both never consumed by their `check_*` function or any downstream display. Tests asserted only that the fields existed and held a particular value — the most fragile kind of test (silent if the field stops being set). Fields dropped; `tests/test_clamav.py:481` and `tests/test_secure_boot.py:200` cleaned up. The secure_boot detection method ("mokutil" / "efivars" / "bootctl") is now purely internal — only `state` matters downstream.
+
+### M1 — `_C_LOCALE_ENV` consistency
+
+Three subprocess sites bypassed the `env=_C_LOCALE_ENV` convention:
+
+| File | Line | Command |
+|---|---|---|
+| `bob/checks/desktop_apps.py` | 111 | `ps -eo comm` |
+| `bob/checks/smtp.py` | 58 | `ps -eo comm` |
+| `bob/checks/smtp.py` | 102 | `ss -tlnp` / `netstat -tlnp` |
+
+Today the outputs of `ps`, `ss`, `netstat` happen to be locale-independent on all distros BOB targets, so the bypass is benign. But the convention exists for a reason — any future `ss` localising the "LISTEN" keyword or `ps` localising column headers would silently break detection in these checks while every other check in BOB would continue working. Same v0.4.3 strptime lesson, applied preemptively. Fixed via `env=_C_LOCALE_ENV` on all three sites (with appropriate import added).
+
+### M3 — `log_rotation._service_active` inlined via `_run`
+
+The function was 12 lines of `subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5, env=_C_LOCALE_ENV)` + exception handling + `.stdout.strip() == "active"`. The same pattern was already implemented as a one-liner via `_run()` in `clamav.py`, `fail2ban.py`, `auditd.py`, `ssh.py`. Replaced with `return _run("systemctl", "is-active", name, timeout=5).strip() == "active"`. The local `import subprocess` and `_C_LOCALE_ENV` imports were no longer needed after the cleanup — also removed.
+
+### M2 + S2 — Cron management de-duplication (with NOTIFY_EMAIL legacy parity)
+
+`bob/cron.py::edit_cron_schedule` (plain-text wizard, invoked by `--manage-cron` in non-TTY contexts) and `bob/tui/cron.py::_apply_cron_schedule` (curses TUI for the same operation) duplicated the same atomic file-patching logic:
+
+```python
+new_line = f"{schedule_expr}  root  {entry.script_path}"
+new_text = re.sub(
+    r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
+    lambda _: new_line, text, flags=re.MULTILINE,
+)
+fd = os.open(str(entry.cron_path), os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o640)
+with os.fdopen(fd, "w") as fh:
+    fh.write(new_text)
+```
+
+Same pattern for `edit_cron_email` (plain) vs `_apply_cron_email_str` (curses). The curses branch used `r"^NOTIFY_EMAILS=.*$"` (forces the modern S-suffixed form), while the plain branch used `r"^NOTIFY_EMAILS?=.*$"` (the `?` makes the S optional, supporting pre-v0.3 BOB cron files that wrote `NOTIFY_EMAIL=` without the S). Net result: users upgrading from a pre-v0.3 cron entry could edit their notification email via the plain wizard but not via the curses TUI — silent UX inconsistency.
+
+**Fix**: promoted `apply_cron_schedule(entry, schedule_expr) -> str` and `apply_cron_email(entry, new_email) -> tuple[str, int]` to public helpers in `bob/cron.py`. `bob/tui/cron.py` now imports them and exposes thin wrappers under the original `_apply_*` names for the existing call sites (single-line delegation each). The legacy `NOTIFY_EMAILS?=` regex is now the single source of truth for both branches. `bob/tui/cron.py` also loses its now-unused `import re`, `import shlex`, `_atomic_write` references.
+
+### S1 — auth_log 90-day window documented as intentional
+
+`bob/checks/auth_log.py::_read_auth_from_journald` hardcodes `max_days: int = 90` for SSH authentication history retrieval via `journalctl -t sshd --since=...`. The audit flagged the asymmetry with the `--log-days` CLI flag (default 7) which controls UFW log analysis in `bob/checks/logs.py`. Investigation: this is **intentional** and the two windows have different semantics.
+
+UFW logs are noisy at every connection attempt — a 7-day window keeps the top-IPs / brute-force table readable and avoids burying real signals. SSH brute-force attempts, by contrast, can be slow and sporadic over weeks or months (especially against a hardened SSH that auto-bans after N tries — the attacker rotates IPs). A 90-day window catches that long-tail signal. Documented in the function docstring so future audits don't re-flag it as inconsistency:
+
+```python
+def _read_auth_from_journald(max_days: int = 90) -> str:
+    """...
+    The 90-day default is intentional and **independent of `--log-days`**
+    (which controls UFW log analysis in `bob/checks/logs.py`). UFW logs are
+    noisy and a narrow 7-day default avoids burying the report; SSH brute-
+    force attempts can be slow and sporadic over months, so we need a wider
+    window to catch them.
+    """
+```
+
+### S3 — `SCORE_BAR_WIDTH` exported from `bob.output`
+
+`_BAR_WIDTH = 10` was duplicated as a module-level constant in `bob/breakdown.py`, `bob/domain_scores.py`, and `bob/display.py`. The first two are score-bar widths (units: score, range 0-10); the third is the disk-percent-bar width (units: percentage, range 0-100) and is independent.
+
+**Fix**: promoted `SCORE_BAR_WIDTH = 10` from the private `_SCORE_BAR_WIDTH` already used by `output.score_bar()` (introduced in v0.4.7's gauge harmonization). `breakdown.py` and `domain_scores.py` now `from bob.output import SCORE_BAR_WIDTH as _BAR_WIDTH`. `display.py::_BAR_WIDTH` left alone — same numeric value, different semantic unit, accidentally-coincident.
+
+### pyproject.toml hardening (queued from v0.4.7, applied here)
+
+During v0.4.7 prep an exhaustive pyproject.toml audit identified 6 improvements that were deferred to avoid mixing release plumbing with structural changes. All applied in v0.4.8 along with one bonus:
+
+1. **`Development Status :: 4 - Beta` → `5 - Production/Stable`**. The project has 4499 tests, 7 distros CI, production hardware audits, 17+ PyPI releases since v0.1.0, frozen contracts (`schema_version="1"`, exit codes, EXPLAIN_KEYS, domain keys). "Beta" suggested "may have breaking changes within minor versions" which hasn't been true since v0.4.0.
+
+2. **`authors` + `maintainers` fields added**. PyPI was displaying "Author: UNKNOWN" because PEP 621 metadata had no author info — only `debian/control` / `bob.spec` had Cédric Clauzel's name. Now `pyproject.toml` carries the canonical attribution.
+
+3. **`[project.optional-dependencies] geoip = ["geoip2>=4.0"]`**. The IP geolocation feature in `bob/checks/logs.py` (brute-force detection enrichment) does `try: import geoip2.database` with silent fallback. The dependency was previously installed via `pipx inject bodyguard-of-bits geoip2` per the doc — clunky. Now users can `pipx install "bodyguard-of-bits[geoip]"` in a single step.
+
+4. **`wheel` removed from `build-system.requires`**. Since setuptools 70, `setuptools.build_meta` auto-resolves wheel — listing it explicitly is redundant and slightly slows down build env preparation in PEP 517 isolated builds. Cleaned up.
+
+5. **`Source` + `Documentation` URLs added** to `[project.urls]`. PyPI displays special icons for these specific URL labels. `Source` points to the GitHub repo (same as Homepage but PyPI renders it differently); `Documentation` points to `DOCUMENTS/README_TECH.md` (the main technical reference).
+
+6. **Explicit `dependencies = []`** with a comment "Zero runtime deps outside stdlib — foundational architectural decision (see DOCUMENTS/SNAPSHOT.md "Kept" section). Preserve at all costs." PEP 621 makes `dependencies` implicit if missing, but spelling it out gives weight to the policy.
+
+**Bonus**: `[tool.setuptools.packages.find]::include = ["bob", "bob.checks", "bob.tui"]` (explicit list) replaces the previous `["bob*"]` glob. The glob form would include any future top-level `bob_*` directory in the wheel (e.g. an accidental `bob_tmp/` from a debugging session). Explicit is more defensive.
+
+### Tests
+
+4499/4499 passing — net -1 vs v0.4.7's 4500. The removed test is `tests/test_secure_boot.py::TestSecureBootSnapshot::test_default_method_is_none` which asserted only the existence of the `SecureBootSnapshot.method` field (which is now gone). No test depended on the other removed dataclass fields beyond fixture kwargs — those were cleaned up to remove the now-invalid keyword arguments.
+
+```
+$ pytest tests/ -q
+4499 passed in 5.66s
+```
+
+---
+
 ## [v0.4.7] — 2026-05-21
 
 **Maintenance release** — cross-documentation audit pass, UI cosmetic harmonization, bash completion overhaul, and release automation. No behavior change in the audit pipeline; 4500/4500 tests unchanged.

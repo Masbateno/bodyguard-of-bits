@@ -12,13 +12,11 @@ Plain-text flows and core data types live in bob.cron.
 from __future__ import annotations
 
 import re
-import shlex
 from typing import NamedTuple
 
 from bob.cron import (
     _EMAIL_RE,
     _CronQuit,
-    _atomic_write,
     CRON_DIR,
     SCRIPT_DIR,
     list_installed_crons,
@@ -127,56 +125,26 @@ def _init_colors_cron() -> None:
 
 
 # ---------------------------------------------------------------------------
-# File-patching helpers (used by curses edit sub-screens)
+# File-patching helpers — delegated to bob.cron (single source of truth, see
+# v0.4.8 cleanup pass that merged the duplicated implementations).
 # ---------------------------------------------------------------------------
 
+from bob.cron import apply_cron_schedule, apply_cron_email
+
+
 def _apply_cron_schedule(entry, schedule_expr: str) -> str:
-    """Patch the cron file with *schedule_expr*. Returns error string or ''."""
-    import os as _os
-    try:
-        text = entry.cron_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return str(exc)
-    new_line = f"{schedule_expr}  root  {entry.script_path}"
-    new_text = re.sub(
-        r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
-        lambda _: new_line,
-        text,
-        flags=re.MULTILINE,
-    )
-    try:
-        fd = _os.open(str(entry.cron_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o640)
-        with _os.fdopen(fd, "w") as fh:
-            fh.write(new_text)
-    except OSError as exc:
-        return str(exc)
-    return ""
+    """Thin wrapper kept for the existing curses call site (line ~601)."""
+    return apply_cron_schedule(entry, schedule_expr)
 
 
 def _apply_cron_email_str(entry, new_email: str) -> str:
-    """Patch cron + script files with *new_email*. Returns error string or ''."""
-    try:
-        lines = entry.cron_path.read_text(encoding="utf-8").splitlines()
-        updated = [
-            f"# email: {new_email}" if ln.startswith("# email:") else ln
-            for ln in lines
-        ]
-        _atomic_write(entry.cron_path, "\n".join(updated) + "\n")
-    except OSError as exc:
-        return str(exc)
-    if entry.script_path.exists():
-        try:
-            text = entry.script_path.read_text(encoding="utf-8")
-            text = re.sub(
-                r"^NOTIFY_EMAILS=.*$",
-                lambda _: f"NOTIFY_EMAILS={shlex.quote(new_email)}",
-                text,
-                flags=re.MULTILINE,
-            )
-            _atomic_write(entry.script_path, text)
-        except OSError as exc:
-            return str(exc)
-    return ""
+    """Thin wrapper kept for the existing curses call site (line ~607).
+
+    Drops the substitution count returned by the underlying helper —
+    the curses TUI displays a generic "updated" toast regardless.
+    """
+    err, _ = apply_cron_email(entry, new_email)
+    return err
 
 
 # ---------------------------------------------------------------------------

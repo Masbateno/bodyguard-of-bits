@@ -76,7 +76,6 @@ class SambaSnapshot:
 
     # [global] settings
     smb1_enabled:         bool = False
-    min_protocol:         str  = ""    # raw value from smb.conf, e.g. "NT1"
     null_passwords:       bool = False
     server_signing:       str  = ""    # "disabled" | "auto" | "mandatory" | ""
     map_to_guest:         str  = ""    # "bad user" | "never" | "bad password" | ""
@@ -112,7 +111,6 @@ class SambaSnapshot:
         # SMB protocol version
         min_proto = _section_get(glb, "min protocol").lower()
         max_proto = _section_get(glb, "max protocol").lower()
-        snap.min_protocol = min_proto
         # SMB1 if max_protocol is an SMB1 value, or if min_protocol is SMB1
         # and max_protocol is not set (defaults to NT1 on many systems)
         if max_proto in _SMB1_PROTOCOLS:

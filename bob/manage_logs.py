@@ -133,11 +133,14 @@ def get_or_prompt_log_dir(user_config, config, t) -> Path:
     In non-interactive contexts (cron, pipes) the default path is used
     silently so that the process never hangs waiting for input.
     """
+    from bob.sysinfo import chown_to_sudo_user, get_user_home
+
     # --output-dir takes highest priority — no prompt, no save
     if getattr(config, "output_dir", ""):
         d = Path(config.output_dir)
         try:
             d.mkdir(parents=True, exist_ok=True)
+            chown_to_sudo_user(d)
         except OSError as exc:
             print(f"  ✖ Cannot create directory {d}: {exc} — falling back to cwd")
             d = Path.cwd()
@@ -148,17 +151,18 @@ def get_or_prompt_log_dir(user_config, config, t) -> Path:
         d = Path(saved)
         try:
             d.mkdir(parents=True, exist_ok=True)
+            chown_to_sudo_user(d)
         except OSError:
             pass
         return d
 
-    from bob.sysinfo import get_user_home
     home = get_user_home()
     default_dir = home / ".local" / "share" / "bob" / "logs"
 
     # Non-interactive context (cron, piped stdin) — skip the prompt
     if not sys.stdin.isatty():
         default_dir.mkdir(parents=True, exist_ok=True)
+        chown_to_sudo_user(default_dir)
         user_config.set("log_dir", str(default_dir))
         return default_dir
 
@@ -166,6 +170,7 @@ def get_or_prompt_log_dir(user_config, config, t) -> Path:
 
     try:
         chosen.mkdir(parents=True, exist_ok=True)
+        chown_to_sudo_user(chosen)
     except OSError as exc:
         print(f"  ✖ Cannot create directory {chosen}: {exc} — falling back to cwd")
         chosen = Path.cwd()

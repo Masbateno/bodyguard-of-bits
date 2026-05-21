@@ -115,7 +115,8 @@ def _passes_threshold(level: str) -> bool:
 # Score bar — shared gauge rendering for score 0–10
 # ---------------------------------------------------------------------------
 
-_SCORE_BAR_WIDTH = 10
+SCORE_BAR_WIDTH = 10
+_SCORE_BAR_WIDTH = SCORE_BAR_WIDTH  # backward-compat alias for internal use
 
 
 def score_bar(score: int) -> str:

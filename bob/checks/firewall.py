@@ -54,8 +54,6 @@ class FirewallStatus:
                           One of: "deny", "allow", "reject", "unknown".
         ufw_output:       Full output of `ufw status verbose` for the report.
         numbered_output:  Full output of `ufw status numbered` (rules list).
-        ipv4_rules_count: Number of non-IPv6 UFW rules found.
-        ipv6_rules_count: Number of IPv6 UFW rules found (lines with (v6)).
         ipv6_ufw_enabled: True if IPV6=yes (or absent) in /etc/default/ufw.
                           Used to suppress false-positive IPv6 coverage warnings.
     """
@@ -64,8 +62,6 @@ class FirewallStatus:
     incoming_policy:  str
     ufw_output:       str
     numbered_output:  str
-    ipv4_rules_count: int
-    ipv6_rules_count: int
     ipv6_ufw_enabled: bool = True
     logging_level:    str  = "unknown"
 
@@ -85,7 +81,6 @@ class FirewallStatus:
                 installed=False, active=False,
                 incoming_policy="unknown", ufw_output="",
                 numbered_output="",
-                ipv4_rules_count=0, ipv6_rules_count=0,
             )
 
         # Get full status output (verbose for policy, numbered for rules)
@@ -101,14 +96,6 @@ class FirewallStatus:
         if match:
             incoming_policy = match.group(1).lower()
 
-        # Count IPv4 vs IPv6 rules
-        rule_lines = [
-            line for line in numbered_output.splitlines()
-            if re.match(r"\s*\[\s*\d+\]", line)
-        ]
-        ipv4_rules_count = sum(1 for ln in rule_lines if "(v6)" not in ln)
-        ipv6_rules_count = sum(1 for ln in rule_lines if "(v6)" in ln)
-
         # Read IPv6 config from /etc/default/ufw (default: enabled)
         ipv6_ufw_enabled = _read_ipv6_config()
 
@@ -120,8 +107,6 @@ class FirewallStatus:
             incoming_policy=incoming_policy,
             ufw_output=ufw_output,
             numbered_output=numbered_output,
-            ipv4_rules_count=ipv4_rules_count,
-            ipv6_rules_count=ipv6_rules_count,
             ipv6_ufw_enabled=ipv6_ufw_enabled,
             logging_level=logging_level,
         )

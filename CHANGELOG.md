@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.4.8](#v048) | 2026-05-21 | Code-quality audit pass 4 (sub-agent) — **I4 real bug** `sudo bob -d` log files were `root:root 0600` and unreadable to the invoking user afterwards (now chowned back via `chown_to_sudo_user` in `bob/report.py` + `bob/manage_logs.py::get_or_prompt_log_dir`, same pattern as the 7 already-chowned config modules) · **dead-field cleanup** 8 dataclass fields removed across 5 checks (`SSHSnapshot.config_source_files`, `FirewallStatus.ipv4_rules_count`+`ipv6_rules_count`, `SambaSnapshot.min_protocol`, `ClamAVSnapshot.last_scan_log_path`+`db_path`, `SecureBootSnapshot.method`) all populated but never read — same bug class as v0.4.3 C1 · `_C_LOCALE_ENV` added to 3 stray `subprocess.check_output` sites (`desktop_apps.py::ps`, `smtp.py::ps`, `smtp.py::ss/netstat`) for locale-consistency · `log_rotation._service_active` inlined to `_run("systemctl", "is-active", ...)` (was an 11-line reinvention) · `apply_cron_schedule()` + `apply_cron_email()` promoted from private helpers to `bob.cron` public API, `bob/tui/cron.py` now imports them — fixes the asymmetric `NOTIFY_EMAIL=` legacy support that was plain-only · `SCORE_BAR_WIDTH = 10` exported from `bob.output` (de-duplicates the `_BAR_WIDTH` constant across `breakdown.py` + `domain_scores.py`) · auth_log 90-day `max_days` documented as intentional (independent of `--log-days` which is for UFW logs) · **pyproject.toml hardening**: `Development Status :: 4 - Beta` → `5 - Production/Stable`, `authors` + `maintainers` added (PyPI was showing UNKNOWN), `[project.optional-dependencies] geoip = ["geoip2>=4.0"]` for `pipx install "bodyguard-of-bits[geoip]"`, `wheel` dropped from build-system requires (auto-resolved since setuptools 70), Source + Documentation URLs added, explicit `dependencies = []` and `include = ["bob", "bob.checks", "bob.tui"]` · 4499/4499 tests (-1: removed `test_default_method_is_none` from test_secure_boot since `method` field is gone) |
 | [v0.4.7](#v047) | 2026-05-21 | Doc audit pass + cosmetic gauges + release automation — exhaustive cross-doc audit (24 corrections across 8 files: README/FR · README_TECH/FR · README_DEV/FR · SECURITY_FR · `man/bob.1` · `man/bob-profile.5` · AUTOMATION/FR) · `DOCUMENTS/SNAPSHOT.md` added (~640L internal cartography, 20 correction passes) · gauge bars harmonized via `bob.output.score_bar()` (green ≥8, yellow 5–7, red 0–4 — same colour logic as the disk partition bars) · bash completion comprehensive overhaul (function rename, dead code removed, **critical fix** to `--check=`/`--skip=`/`--format=`/etc. value completion that was silently failing due to `COMP_WORDBREAKS` `=` split) · `publish.yml` auto-creates GitHub Release from `CHANGELOG_FULL.md` on tag push · 4500/4500 tests (unchanged) |
 | [v0.4.6](#v046) | 2026-05-17 | Terrain test pass v0.4.5 fixes — **Bug 1** `kernel_modules.py` dpkg-query did not filter on `ii` (installed) state, so kernels removed by `apt remove` / `autoremove` (left in `rc` config-files state) were still listed as "installé". Reproduced on Mint test VM + so6desktop production. Now uses `${db:Status-Abbrev}` and keeps only lines whose 2nd char is `i` (covers `ii`, `hi`). **Bug 2** scoring inversion: after `apt upgrade` resolved a `updates.security_pending` WARN, the only finding left was `updates.ok` → `active_domains_from_engine` dropped the domain → global score *decreased* (denominator shrank). Reproduced on Debian 13 VM (7/10 → 6/10 after remediation). `_actionable` widened from `(WARN, ALERT)` to `(OK, WARN, ALERT)`; INFO-only domains stay hidden by design. 4500/4500 tests (+11) |
 | [v0.4.5](#v045) | 2026-05-16 | Test infrastructure hardening — `tests/test_locale_coverage.py` switched from regex scanning to **AST parsing** (`ast.walk` + `ast.Call` + `ast.Name` checks) · eliminates three classes of false positive that the regex form could produce (docstring matches, multi-line call site misparses, `obj._t(...)` attribute calls) · `_KEY_EXCLUSIONS` allowlist deleted entirely · same 9 tests, same external contract, more robust foundation · 4489/4489 tests (unchanged) |
@@ -26,6 +27,76 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.4.8] — 2026-05-21
+
+Code-quality audit pass 4 — performed by a `general-purpose` sub-agent briefed with `DOCUMENTS/SNAPSHOT.md` as primary cartography. The pass focused on four bug patterns from previous audits: dead dataclass fields, reinvented helpers, timeout inconsistencies, and dead code from refactors. **4 IMPORTANT + 5 MINOR + 3 SUGGESTION findings** — all addressed in this release. 4499/4499 tests passing.
+
+### Real bug fixed (I4) — `sudo bob -d` log files were root-owned
+
+**Reproduced**: running `sudo bob -d` on any Linux box creates the detailed audit report at `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` with mode `0o600` (already correct — confidential audit output) but owned by `root:root` because the `open()` happens inside the sudo context. The invoking user can neither `cat` nor `rm` their own audit reports afterwards. Same applies to the `logs/` directory itself when first created via `mkdir(parents=True)`.
+
+**Why it survived**: the chown-back pattern (`bob.sysinfo.chown_to_sudo_user(path)`) was already established in 7 modules covering `~/.config/bob/` (`bob/config.py`, `bob/history.py`, `bob/ignore.py`, `bob/compare.py`, `bob/recurrence.py`, `bob/profiles.py`, `bob/registry.py`) — but the report file and log directory in `~/.local/share/bob/logs/` were never wired up. The user impact only becomes visible after the audit finishes and the user tries to read their own report.
+
+**Fix**: 
+- `bob/report.py::AuditReport.__init__` calls `chown_to_sudo_user(path)` right after `os.open(..., 0o600)`.
+- `bob/manage_logs.py::get_or_prompt_log_dir` calls `chown_to_sudo_user(d)` after each of the 4 `d.mkdir(parents=True, exist_ok=True)` branches.
+
+When BOB is not running under sudo, `chown_to_sudo_user` is a silent no-op (`os.environ.get("SUDO_USER", "")` returns `""`) — zero behavior change in non-sudo contexts.
+
+### Dead dataclass fields removed (I1-I3 + M4-M5)
+
+Eight dataclass fields populated by `from_system()` but never read by any consumer — same bug class as the v0.4.3 C1 fix (5 dead `HardeningSnapshot` attrs that crashed `--json-full`).
+
+| Check / dataclass | Removed field(s) | Detection |
+|---|---|---|
+| `bob/checks/ssh.py::SSHSnapshot` | `config_source_files: List[str]` | Set by `_parse_config_file` recursive Include-chain walker; never read by `check_ssh`, `display`, `json_output`, or any test |
+| `bob/checks/firewall.py::FirewallStatus` | `ipv4_rules_count: int` + `ipv6_rules_count: int` | Computed via `sum(1 for ln in ...)` regex passes on every audit; only consumers were test fixtures setting them to satisfy the dataclass constructor |
+| `bob/checks/samba.py::SambaSnapshot` | `min_protocol: str` | Captured from `min protocol` smb.conf directive; `check_samba` consumes only the derived `smb1_enabled` bool |
+| `bob/checks/clamav.py::ClamAVSnapshot` | `last_scan_log_path: str` + `db_path: str` | `_find_last_scan_date()` returned `(date, log_path)` tuple but only `date` was used; `db_path` set in the DB-existence loop but unused |
+| `bob/checks/secure_boot.py::SecureBootSnapshot` | `method: str` | "mokutil" / "efivars" / "bootctl" / "none" — detection method internal to `from_system`; only `state` is consumed |
+
+`_find_last_scan_date()` simplified to return `Optional[str]` instead of `(Optional[str], str)`. `_parse_config_file()` in ssh.py loses its now-unused `sources` parameter.
+
+Tests updated to stop passing the removed kwargs. `tests/test_secure_boot.py::test_default_method_is_none` removed (it tested only that the field exists). Net: -1 test (4500 → 4499).
+
+### Reinvented helpers consolidated (M1 + M3)
+
+**M1 — `_C_LOCALE_ENV` consistency**. Three subprocess sites in `bob/checks/desktop_apps.py` (line 111: `ps -eo comm`) and `bob/checks/smtp.py` (line 58: `ps -eo comm`; line 102: `ss -tlnp` / `netstat -tlnp`) called `subprocess.check_output` without passing `env=_C_LOCALE_ENV`. Today this is benign because the output happens to be locale-independent on tested systems, but a future `ss` localising "LISTEN" or `ps` localising column headers would silently break detection. Every other subprocess site in BOB passes `env=_C_LOCALE_ENV` — fixed for consistency.
+
+**M3 — `log_rotation._service_active` was a 12-line reinvention** of `_run("systemctl", "is-active", name)`. The other checks (clamav, fail2ban, auditd, ssh) use the one-liner form. Replaced; the local `subprocess` and now-unused `_C_LOCALE_ENV` imports also cleaned up.
+
+### Cron management de-duplication (M2 + S2)
+
+`bob/cron.py::edit_cron_schedule` (plain-text wizard) and `bob/tui/cron.py::_apply_cron_schedule` (curses TUI) duplicated the same regex `r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$"` + atomic-write pattern `os.open(..., O_WRONLY|O_CREAT|O_TRUNC, 0o640)`. Same for `edit_cron_email` vs `_apply_cron_email_str`, with the additional asymmetry that the plain branch accepted the legacy `NOTIFY_EMAIL=` (no S) regex while the curses branch required `NOTIFY_EMAILS=` only — meaning users upgrading from pre-v0.3 BOB cron files could edit their email via the plain wizard but not via the curses TUI.
+
+**Fix**: `apply_cron_schedule(entry, schedule_expr) -> str` and `apply_cron_email(entry, new_email) -> tuple[str, int]` promoted to public helpers in `bob/cron.py`. `bob/tui/cron.py` now imports them and exposes thin wrappers under the original private names for the existing call sites. The legacy `NOTIFY_EMAILS?=` regex is now shared — both branches handle pre-v0.3 cron files identically.
+
+### Other minor changes (S1 + S3)
+
+**S1**: `bob/checks/auth_log.py::_read_auth_from_journald` hardcodes `max_days=90` for SSH brute-force history. The audit flagged the asymmetry with `--log-days` (default 7, for UFW logs). This is **intentional** — SSH brute-force attempts can be slow and sporadic over months, while UFW logs are noisy and a narrow 7-day window avoids burying the report. Documented in the function docstring so future audits don't re-flag it.
+
+**S3**: `_BAR_WIDTH = 10` was duplicated as a module-level constant in 3 places (`bob/breakdown.py`, `bob/domain_scores.py`, `bob/display.py`). Promoted `SCORE_BAR_WIDTH = 10` in `bob/output.py` (public; private alias kept for backward-compat). `breakdown.py` and `domain_scores.py` now import it. `display.py::_BAR_WIDTH` is left alone — it's for the disk percent-bar (different semantic unit) and happens to also be 10 by coincidence.
+
+### pyproject.toml hardening (queued from v0.4.7 analysis, applied here)
+
+A deep pyproject.toml audit done during v0.4.7 prep had identified 6 improvements that were deferred. All 6 applied + 1 bonus:
+
+| # | Fix |
+|---|---|
+| 1 | `Development Status :: 4 - Beta` → `5 - Production/Stable` (4500 tests + 7 distros CI + production hardware audited — not Beta anymore) |
+| 2 | `authors` + `maintainers` fields added (PyPI was displaying "Author: UNKNOWN") |
+| 3 | `[project.optional-dependencies] geoip = ["geoip2>=4.0"]` added — enables `pipx install "bodyguard-of-bits[geoip]"` for the GeoIP IP geolocation in UFW log analysis |
+| 4 | `wheel` removed from `build-system.requires` (setuptools.build_meta auto-resolves wheel since setuptools 70) |
+| 5 | `Source` + `Documentation` URLs added (PyPI displays icons for these) |
+| 6 | Explicit `dependencies = []` with a "zero runtime deps — preserve at all costs" comment |
+| bonus | `include = ["bob", "bob.checks", "bob.tui"]` explicit package list (replaces the `bob*` glob — guards against accidental top-level `bob_*` directories leaking into the wheel) |
+
+### Tests
+
+4499 passing (net -1 vs v0.4.7's 4500). The removed test is `tests/test_secure_boot.py::TestSecureBootSnapshot::test_default_method_is_none` — it asserted only that the `method` field defaults to `"none"`, and `method` is gone. No test depended on the removed dataclass fields beyond fixture kwargs (cleaned up).
 
 ---
 

@@ -12,7 +12,6 @@ def _status(logging_level: str = "low", active: bool = True) -> FirewallStatus:
         installed=True, active=active,
         incoming_policy="deny",
         ufw_output="", numbered_output="",
-        ipv4_rules_count=1, ipv6_rules_count=1,
         logging_level=logging_level,
     )
 

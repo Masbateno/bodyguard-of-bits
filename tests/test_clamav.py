@@ -40,10 +40,8 @@ def make_snap(**kwargs) -> ClamAVSnapshot:
         installed=True,
         freshclam_installed=True,
         clamd_active=True,
-        db_path="/var/lib/clamav/daily.cld",
         db_age_days=1,
         last_scan_date=days_ago_iso(1),
-        last_scan_log_path="/var/log/clamav/clamscan.log",
         install_cmd="sudo apt install clamav clamav-daemon",
     )
     defaults.update(kwargs)
@@ -145,13 +143,13 @@ class TestFreshclamMissing:
 
 class TestDatabaseAge:
     def test_db_not_found_is_warn(self):
-        snap = make_snap(db_age_days=None, db_path="")
+        snap = make_snap(db_age_days=None)
         result = check_clamav(snap, t=_t)
         findings = [f for f in result.findings if f.key == "clamav.db_not_found"]
         assert findings and findings[0].level == FindingLevel.WARN
 
     def test_db_not_found_deducts_1(self):
-        snap = make_snap(db_age_days=None, db_path="")
+        snap = make_snap(db_age_days=None)
         result = check_clamav(snap, t=_t)
         pts = sum(d.points for d in result.deductions if d.key == "clamav.db_not_found")
         assert pts == 1
@@ -244,13 +242,13 @@ class TestClamdDaemon:
 
 class TestLastScan:
     def test_no_scan_log_is_info(self):
-        snap = make_snap(last_scan_date=None, last_scan_log_path="")
+        snap = make_snap(last_scan_date=None)
         result = check_clamav(snap, t=_t)
         findings = [f for f in result.findings if f.key == "clamav.no_scan_log"]
         assert findings and findings[0].level == FindingLevel.INFO
 
     def test_no_scan_log_no_deduction(self):
-        snap = make_snap(last_scan_date=None, last_scan_log_path="")
+        snap = make_snap(last_scan_date=None)
         result = check_clamav(snap, t=_t)
         pts = sum(d.points for d in result.deductions if d.key == "clamav.no_scan_log")
         assert pts == 0
@@ -389,18 +387,14 @@ class TestFindLastScanDate:
         log = tmp_path / "clamscan.log"
         self._write_scan_log(log, "2026:04:10 15:30:06")
         monkeypatch.setattr(clamav_mod, "_SCAN_LOG_CANDIDATES", [log])
-        date, path = _find_last_scan_date()
-        assert date == "2026-04-10"
-        assert path == str(log)
+        assert _find_last_scan_date() == "2026-04-10"
 
     def test_no_logs_returns_none(self, tmp_path, monkeypatch):
         import bob.checks.clamav as clamav_mod
         monkeypatch.setattr(clamav_mod, "_SCAN_LOG_CANDIDATES", [
             tmp_path / "nonexistent.log"
         ])
-        date, path = _find_last_scan_date()
-        assert date is None
-        assert path == ""
+        assert _find_last_scan_date() is None
 
     def test_picks_most_recent_across_logs(self, tmp_path, monkeypatch):
         import bob.checks.clamav as clamav_mod
@@ -409,9 +403,7 @@ class TestFindLastScanDate:
         self._write_scan_log(log1, "2026:03:01 10:00:00")
         self._write_scan_log(log2, "2026:04:10 15:30:06")
         monkeypatch.setattr(clamav_mod, "_SCAN_LOG_CANDIDATES", [log1, log2])
-        date, path = _find_last_scan_date()
-        assert date == "2026-04-10"
-        assert path == str(log2)
+        assert _find_last_scan_date() == "2026-04-10"
 
     def test_multiple_summaries_picks_latest(self, tmp_path, monkeypatch):
         import bob.checks.clamav as clamav_mod
@@ -425,16 +417,14 @@ class TestFindLastScanDate:
             """)
         log.write_text(content, encoding="utf-8")
         monkeypatch.setattr(clamav_mod, "_SCAN_LOG_CANDIDATES", [log])
-        date, _ = _find_last_scan_date()
-        assert date == "2026-04-10"
+        assert _find_last_scan_date() == "2026-04-10"
 
     def test_log_without_scan_summary(self, tmp_path, monkeypatch):
         import bob.checks.clamav as clamav_mod
         log = tmp_path / "clamav.log"
         log.write_text("freshclam update completed\n", encoding="utf-8")
         monkeypatch.setattr(clamav_mod, "_SCAN_LOG_CANDIDATES", [log])
-        date, _ = _find_last_scan_date()
-        assert date is None
+        assert _find_last_scan_date() is None
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +468,6 @@ class TestFromSystemNotInstalled:
         monkeypatch.setattr(clamav_mod, "_run", lambda *a, **k: "")
         snap = ClamAVSnapshot.from_system()
         assert snap.db_age_days == 5
-        assert snap.db_path == str(db)
 
     def test_freshclam_only_marks_installed(self, monkeypatch):
         """freshclam present without clamscan/clamdscan still marks installed=True."""
