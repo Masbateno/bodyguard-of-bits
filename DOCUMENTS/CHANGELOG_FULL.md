@@ -6,6 +6,364 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.5.0] — 2026-05-21
+
+**Refactor v0.5.x — Phase 1 of 5.** This release opens the **v0.5.x branch**. It's the first instalment of a 5-phase refactor mapped from a sub-agent audit (general-purpose, dispatched 2026-05-21 with `DOCUMENTS/SNAPSHOT.md` as primary briefing). The audit returned **15 refactor findings**, ranked by value/effort, with explicit risk classification.
+
+The bottom-up principle for this whole 5-phase refactor: **the audit pipeline behaviour does not change**. JSON `schema_version="1"`, the 7 score domains, the 116 EXPLAIN_KEYS, the 34 filterable sections, the `--explain` aliases, the CLI flags, the profile inheritance, the locale keys — all stable. Phase 1 cherry-picks the additive, low-risk findings that don't require any contract-touching surgery.
+
+### Phase plan (mapped 2026-05-21)
+
+| Phase | Version | Theme | Findings | Risk |
+|---|---|---|---|---|
+| 1 | **v0.5.0** (this release) | Quick wins + cron coverage | #7, #2, #10, #11, #15a + cron tests | low |
+| 2 | v0.5.1 | The big LoC win | #1 `warn_with_deduction` ~130 sites | low |
+| 3 | v0.5.2 | SSH directive table + `_sec` extension | #4, #3 | medium |
+| 4 | v0.5.3 | Display refactor + log_data escape hatch | #5, #12, #8 | medium |
+| 5 | v0.5.4 | Cron wizards + UFW_AUDIT_SHARE sunset | #6, #9, possibly #13/#14/#15b | medium |
+
+Findings #13 (ssh.py split) and #14 (cron.py split) are **contingent**: re-evaluated at the end of Phase 5 once #1+#4 and #6 have shrunk those files. Finding #15b (re-attributing `smtp`/`fail2ban`/`desktop_apps`/`virt` away from the firewall catch-all) is medium-risk because it changes scoring outputs — explicitly deferred from #15a.
+
+---
+
+### #7 — `is_unit_active()` / `is_unit_enabled()` centralized
+
+**Problem.** Across 9 check modules, the same idiom recurred:
+```python
+out = (_run("systemctl", "is-active", X) or "").strip()
+if out == "active":
+    snap.service_active = True
+```
+Different formulations across `auditd.py`, `fail2ban.py`, `clamav.py`, `ntp.py`, `ddns.py`, `updates.py`, `ssh.py`, `backup.py`, `log_rotation.py` (the last with explicit `timeout=5` from a v0.4.8 cleanup). `backup.py` additionally did `out.lower() == "active"` as a defensive guard.
+
+**Fix.** Two new public helpers in `bob/checks/_run.py`:
+
+```python
+def is_unit_active(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
+    return _run("systemctl", "is-active", name, timeout=timeout).strip().lower() == "active"
+
+def is_unit_enabled(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
+    return _run("systemctl", "is-enabled", name, timeout=timeout).strip().lower() == "enabled"
+```
+
+The defensive `.lower()` was promoted from `backup.py` to the helper — applies to all 9 callers. Cost: one method call per check. Benefit: closes the entire class of "distro fork emits `Active\n` and we miss it" potential bug. **User explicitly validated the safety margin** — restored after a brief discussion where the migration initially dropped it.
+
+9 sites migrated:
+
+| File | Before | After |
+|---|---|---|
+| `auditd.py` | `out = (_run(...) or "").strip(); snap.service_active = out == "active"` | `snap.service_active = is_unit_active("auditd")` |
+| `fail2ban.py` | same pattern, `"fail2ban"` | `is_unit_active("fail2ban")` |
+| `clamav.py` | loop over 3 unit names with break-on-match | loop over 3 unit names, `if is_unit_active(unit)` |
+| `ntp.py` | loop over `_NTP_SERVICES` | loop, `if is_unit_active(svc): return svc` |
+| `ddns.py` | loop over `client_def.services` | `if is_unit_active(svc): return True` |
+| `updates.py` | `timer_out = _run(...); enabled = (timer_out or "").strip() == "active"; return True, enabled` | `enabled = is_unit_active("apt-daily-upgrade.timer"); return True, enabled` (intermediate var restored after review) |
+| `ssh.py` | loop over `("ssh", "sshd")` | loop, `if is_unit_active(unit): snap.sshd_active = True; break` |
+| `backup.py` | `out.lower() == "active"` (defensive) | `is_unit_active(service)` (defensive moved to helper) |
+| `log_rotation.py` | `_run("systemctl", "is-active", name, timeout=5).strip() == "active"` | `is_unit_active(name, timeout=5)` |
+
+`services.py::_detect_single_unit_state` (which handles template-service variants `foo@instance`, `is-active` + `is-enabled` state combinations, and unit-listing fallbacks) is **NOT migrated** per the audit recommendation — it has richer semantics than a boolean and is mature.
+
+Tests updated: `test_fail2ban.py` and `test_ntp.py` switched from patching `bob.checks.X._run` (which no longer intercepts the systemctl call now that it goes through `is_unit_active` from `_run.py`'s namespace) to additionally patching `bob.checks.X.is_unit_active`. The stub `_make_run_stub` lost its `service_active` parameter (handled separately).
+
+**Monitoring**: `is_unit_enabled` has no consumer yet (services.py keeps its own logic). Added for API symmetry. Tracked in `feedback_release_monitoring.md` — to be reviewed at each v0.5.x release.
+
+---
+
+### #2 — `bob.output.print_titled_box()` extracted (+ `--no-color` leak fixed)
+
+**Problem.** A 3-line ASCII titled-box header pattern was open-coded 4 times:
+
+| Site | What it draws |
+|---|---|
+| `cron.py:461` (install wizard) | "Installation cron BOB" title box |
+| `cron.py:686` (email store sub-menu) | "Email store" title box |
+| `cron.py:1056` (manage wizard) | "Manage cron" title box |
+| `manage_logs.py:252` (plain-text fallback) | "Manage logs" title box |
+
+Each site computed `W=62`, `pad = W - 6 - len(title)` and printed three lines with **inline ANSI escapes**:
+```python
+print(f"\033[1;34m╔{'═'*(W-2)}╗\033[0m")
+print(f"\033[1;34m║\033[0m  \033[1m{title}\033[0m{' '*max(0,pad)}  \033[1;34m║\033[0m")
+print(f"\033[1;34m╚{'═'*(W-2)}╝\033[0m")
+```
+
+The inline `\033[1;34m` bypassed `bob.output._c` (the palette that respects `--no-color`). Result: even with `--no-color`, these boxes printed in coloured terminal escapes. **Latent UX bug** for users routing the output to pipes/logs.
+
+**Fix.** New `bob.output.print_titled_box(title: str, width: int = 62) -> None`. Routes through `_c.blue_bold`, `_c.bold`, `_c.reset` — `--no-color` now correctly strips the colours from these 4 sites.
+
+The function uses `_visual_width(title)` instead of `len(title)` for padding — more robust against multi-byte characters in i18n titles (in practice no current title has them, but cheap correctness).
+
+`bob/fixes.py:38` was **not migrated**: its box is `╔ ║ ╠` (streaming continuation, content follows inside) — different shape, and that site already correctly routes through `_c.blue_bold`. Migrating it would require a separate streaming helper — out of scope for Phase 1.
+
+**Monitoring**: the `width` parameter is exposed but never overridden at any call site (all 4 use the default 62). Kept for flexibility (i18n titles could grow). Tracked in `feedback_release_monitoring.md`.
+
+---
+
+### #10 — `bob.report.Report` Protocol (PEP 544)
+
+**Problem.** Three report classes (`AuditReport`, `NullReport`, `MarkdownReport`) share an external write-method contract but no formal type:
+- `AuditReport` (plain-text, `bob/report.py:87`) and `NullReport` (no-op subclass, `bob/report.py:357`) are in the same module — `NullReport(AuditReport)` is structural inheritance.
+- `MarkdownReport` (`bob/report_markdown.py:43`) is independent — no inheritance, just method-name parity, duck-typed.
+
+`runner.run_checks(report: AuditReport, ...)` accepted any of them at runtime but the annotation was inaccurate for `MarkdownReport`.
+
+**Fix.** New `Report` Protocol (`bob/report.py:39-94`):
+
+```python
+class Report(Protocol):
+    path: Optional[Path]
+    enabled: bool
+
+    def write_header(self, info: "SystemInfo") -> None: ...
+    def write_group(self, title: str) -> None: ...
+    def write_section(self, title: str) -> None: ...
+    def write_finding(self, level: str, message: str, detail: str = "") -> None: ...
+    def write_raw(self, text: str) -> None: ...
+    def write_indented(self, text: str, indent: int = 4) -> None: ...
+    def write_separator(self, thin: bool = False) -> None: ...
+    def write_summary(self, score, risk_level, network_context, public_ip,
+                      ok_count, warn_count, alert_count, breakdown, labels) -> None: ...
+    def write_risk_context_section(self, section_title: str, entries: list[dict]) -> None: ...
+    def write_next_steps(self, steps: list[str]) -> None: ...
+    def close(self) -> None: ...
+```
+
+`runner.run_checks(report: Report, ...)` now annotates the abstract Protocol. `init_report` keeps its `-> AuditReport` return type (it only ever returns `AuditReport` or `NullReport`, never `MarkdownReport`).
+
+**Design notes:**
+- **No `@runtime_checkable`**: pure static typing. `isinstance(x, Report)` raises `TypeError` — confirmed via smoke test. If a runtime check is ever needed, adding the decorator is a 1-line change.
+- **`__enter__`/`__exit__` excluded**: grep confirmed no caller uses `with report: ...`.
+- **`write_services_panorama` excluded**: unique to `MarkdownReport`, not a shared contract.
+- **`open()` / `null()` classmethods excluded**: instantiation concerns, not runtime contract.
+- **Forward reference `"SystemInfo"` (string)**: `SystemInfo` class is defined below the Protocol in the same file.
+
+---
+
+### #11 — `emit_section()` + `emit_group()` closures in `runner.py`
+
+**Problem.** The motif
+
+```python
+if not config.quiet:
+    print_section(t("sections.firewall"))
+report.write_section(t("sections.firewall"))
+```
+
+repeated 20 times in `run_checks()` (and similarly for `print_group` / `write_group` at 5 sites). The `if not config.quiet` guard had to be re-checked manually each time, and the translation key was repeated in both calls — a drift surface (if a future change wanted to wrap section emission with something else, 20 sites need editing).
+
+**Fix.** Two closures defined at the top of `run_checks()`:
+
+```python
+def emit_section(section_key: str) -> None:
+    """Print and write a section header (respects --quiet)."""
+    title = t(f"sections.{section_key}")
+    if not config.quiet:
+        print_section(title)
+    report.write_section(title)
+
+def emit_group(group_key: str) -> None:
+    """Print and write a group header (respects --quiet)."""
+    title = t(f"groups.{group_key}")
+    if not config.quiet:
+        print_group(title)
+    report.write_group(title)
+```
+
+Closures (not free functions) because they reference `t`, `config`, `report` from the enclosing scope — same pattern as `_sec()` already established.
+
+`_sec()` itself now uses `emit_section(section)` internally (dogfooding).
+
+20 migrated sites:
+
+| Type | Keys |
+|---|---|
+| `emit_group` (5) | firewall_network, exposure_services, access_control, system_hardening, detection_health |
+| `emit_section` (15) | firewall, rules, ufw_logging, iptables_nft, firewall_stack, network_context, services, ports_analysis, ddns, docker, virtualization, samba, docker_audit, disk, desktop_apps |
+
+**Sites NOT migrated** (intentional):
+- Line 373 — `print_section(t("sections.logs"))` is orphan: no matching `report.write_section` call. Pre-existing anomaly (the report log section header is plausibly emitted by `display_log_results`). Out of scope for Phase 1.
+- Line 648 (plugin loop) — `print_section(plugin.name)` passes a raw title, not a translation key.
+
+**Net diff for `runner.py`:** −65 / +37 = **−28 lines**. Reading top-to-bottom of `run_checks()` is now substantially clearer.
+
+---
+
+### #15a — `tests/test_domain_scores_mapping_complete.py`
+
+**Problem.** `bob/domain_scores.py::_PREFIX_TO_DOMAIN` is a dict mapping finding-key prefixes (e.g. `"ssh"`) to domains (e.g. `"ssh"`). Any prefix not in the dict falls into the `"firewall"` catch-all, silently. SNAPSHOT documented this as a footgun for future check authors.
+
+The audit gave two options:
+- **(a)** A test that forces every prefix to be explicitly handled (low risk, this release).
+- **(b)** Re-attribute the silent fallbacks to more semantic domains (medium risk — changes per-domain score outputs; deferred to Phase 5).
+
+**Fix (option a):** New test file using the AST-scanning approach pioneered by `test_locale_coverage.py` (v0.4.5).
+
+The test walks `bob/checks/*.py`, finds every `ast.Call` where `func.attr` is one of `add_deduction`, `warn`, `alert`, `info`, `ok`, and extracts the literal `key="X.Y"` kwarg if it's a constant string. The first dot-segment is the prefix. The test asserts each prefix is either:
+
+1. Explicitly mapped in `_PREFIX_TO_DOMAIN`, OR
+2. Listed in `_CATCH_ALL_BY_DESIGN` with a non-empty justification string.
+
+The whitelist captures the v0.4.x state-of-the-art:
+
+```python
+_CATCH_ALL_BY_DESIGN: dict[str, str] = {
+    # Legitimate firewall-domain prefixes
+    "firewall":        "Self-mapping: the catch-all IS firewall",
+    "rules":           "UFW rules analysis is part of firewall scoring",
+    "ports":           "Port exposure is part of firewall surface",
+    "services":        "Service exposure is part of firewall surface",
+    "iptables_nft":    "iptables/nftables fallback is firewall stack",
+    "firewall_stack":  "Firewall stack consistency analysis",
+    "network_context": "Network interfaces / connections inventory",
+    "ipv6":            "IPv6 consistency relative to UFW",
+    "docker":          "Docker network exposure (port mappings)",
+    "ddns":            "DDNS external exposure surface",
+
+    # v0.4.x silent fallbacks — review in Phase 5 (#15b)
+    "smtp":            "v0.4.x catch-all: local SMTP exposure → review in v0.5.4",
+    "fail2ban":        "v0.4.x catch-all: anti-bruteforce → candidate for 'ssh' domain in v0.5.4",
+    "desktop_apps":    "v0.4.x catch-all: desktop process detection → review in v0.5.4",
+    "virt":            "v0.4.x catch-all: virtualization bypass risk → candidate for 'hardening' in v0.5.4",
+    "docker_audit":    "v0.4.x catch-all: container hardening → candidate for 'hardening' in v0.5.4",
+    "prerequisites":   "Prerequisites check (UFW installed) — INFO-only, no scoring impact",
+}
+```
+
+Two additional tests catch stale entries (warnings, not failures): `_CATCH_ALL_BY_DESIGN` keys with no current emitter, and `_PREFIX_TO_DOMAIN` keys with no current static emitter (the latter may legitimately use dynamic keys — comment threshold). And one test asserts every catch-all entry has a non-empty justification.
+
+**+4 tests total.** Output:
+```
+tests/test_domain_scores_mapping_complete.py::TestDomainMappingCompleteness::test_every_emitted_prefix_is_mapped_or_whitelisted PASSED
+tests/test_domain_scores_mapping_complete.py::TestDomainMappingCompleteness::test_no_stale_catchall_entries PASSED
+tests/test_domain_scores_mapping_complete.py::TestDomainMappingCompleteness::test_no_stale_prefix_to_domain_entries PASSED
+tests/test_domain_scores_mapping_complete.py::TestCatchAllJustifications::test_all_entries_have_justifications PASSED
+```
+
+A future contributor adding a new check that emits `key="weird_thing.X"` will get an immediate test failure with a clear actionable message:
+```
+AssertionError: Finding-key prefixes emitted by bob/checks/*.py but neither
+mapped in _PREFIX_TO_DOMAIN nor whitelisted in _CATCH_ALL_BY_DESIGN:
+['weird_thing']
+Either map the prefix to a domain in bob/domain_scores.py, or add it to
+_CATCH_ALL_BY_DESIGN with a justification.
+```
+
+---
+
+### Cron coverage pass (preliminary for Phase 5)
+
+cron.py has the **worst test ratio** of the codebase per SNAPSHOT (0.60×). Phase 5 will refactor the three plain-text wizards (#6: extract a `_prompt(t, key, validator)` helper + dedupe). Adding coverage *before* the refactor is the safety net.
+
+**+35 tests** in 5 new classes in `tests/test_cron.py`:
+
+#### `TestValidateCronField` (13 tests)
+Pure validation of one cron field. All branches:
+
+| Test | What it pins |
+|---|---|
+| `test_wildcard_is_valid` | `*` |
+| `test_plain_integer_in_range` | `30` in `[0,59]` |
+| `test_plain_integer_out_of_range_returns_error` | `70` rejected |
+| `test_range_valid` | `0-30` |
+| `test_range_out_of_bounds_rejected` | `0-1000` — **v0.4.3 regression class** |
+| `test_range_reversed_rejected` | `30-10` |
+| `test_step_valid` | `*/5` |
+| `test_step_zero_rejected` | `*/0` |
+| `test_step_non_numeric_rejected` | `*/abc` |
+| `test_list_all_valid` | `0,15,30,45` |
+| `test_list_one_out_of_range_rejected` | `0,15,99` |
+| `test_empty_entry_rejected` | `0,,30` |
+| `test_garbage_rejected` | `xyz` |
+
+#### `TestValidateCustomCron` (7 tests)
+Full 5-field cron expression: `0 3 * * *`, `0 3 * * 0`, `*/15 * * * *`, 4-field rejection, 6-field rejection, hour 25 rejection, minute 70 rejection.
+
+#### `TestBuildScriptContent` (7 tests)
+Bash script generation: shebang, `shlex.quote()` behaviour for `NOTIFY_EMAILS` (simple + with space), `LOG_DIR` (simple + with space), `--quiet --detailed` invocation, `AUDIT_EMAIL` / `AUDIT_LOG` exports.
+
+#### `TestApplyCronSchedule` (3 tests)
+File-mutation helper: schedule replacement preserves the email comment, missing file returns OSError string. **Surfaced a latent bug — see below.**
+
+#### `TestApplyCronEmail` (5 tests)
+Email comment + script `NOTIFY_EMAILS=` line update, **legacy `NOTIFY_EMAIL=` (no S) regex parity** (pre-v0.3 wrapper compatibility), missing script tolerance, `shlex.quote()` quoting.
+
+---
+
+### Latent bug fixed — `_os.open` in `apply_cron_schedule` (discovered by the new tests)
+
+**Reproduced** by `TestApplyCronSchedule::test_replaces_schedule`:
+```
+E   NameError: name '_os' is not defined
+bob/cron.py:855: NameError
+```
+
+**Cause.** The v0.4.8 cron deduplication promoted `apply_cron_schedule()` from a curses-TUI private helper to a public `bob.cron` API. The extraction copy-pasted the helper body but missed renaming `_os.open(...)` to `os.open(...)`. The `_os` alias is local to three *other* functions in `cron.py`:
+
+```
+bob/cron.py:649:    import os as _os
+bob/cron.py:931:    import os as _os
+bob/cron.py:1215:   import os as _os
+```
+
+Each of those imports is scoped to its function. At the module level, only `os` is imported. The helper had been silently dead since v0.4.8 ship — the public API was wired to `bob/tui/cron.py` (curses TUI) which isn't exercised by automated tests, so the `NameError` only occurred at runtime when a user attempted to edit a cron schedule from the curses menu.
+
+**Fix.** 3 references on 2 lines in `apply_cron_schedule`:
+```python
+- fd = _os.open(str(entry.cron_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o640)
+- with _os.fdopen(fd, "w") as fh:
++ fd = os.open(str(entry.cron_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
++ with os.fdopen(fd, "w") as fh:
+```
+
+`apply_cron_email()` (just below) was already correct — it uses the local `_atomic_write()` helper.
+
+**Test that pins the fix:** `TestApplyCronSchedule::test_replaces_schedule`, `test_preserves_email_comment`, `test_missing_file_returns_error`.
+
+---
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in 7.77s
+```
+
+`4499 → 4538` (+39): +4 from `test_domain_scores_mapping_complete.py`, +35 from new cron classes.
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, all 116 EXPLAIN_KEYS, all 34 filterable sections — **unchanged**.
+- **CLI surface**: no flag added, no flag removed.
+- **Per-domain score breakdown**: unchanged (no `_PREFIX_TO_DOMAIN` modifications — #15b deferred).
+- **Config files** (`config.conf`, `services.json`, profiles): unchanged.
+- **Locale keys**: unchanged.
+- **Plugin contract**: unchanged.
+
+### Files changed
+
+- `bob/__init__.py` — version bump 0.4.8 → 0.5.0
+- `bob/checks/_run.py` — +30 lines (helpers)
+- `bob/checks/auditd.py`, `bob/checks/backup.py`, `bob/checks/clamav.py`, `bob/checks/ddns.py`, `bob/checks/fail2ban.py`, `bob/checks/log_rotation.py`, `bob/checks/ntp.py`, `bob/checks/ssh.py`, `bob/checks/updates.py` — `is_unit_active` migration
+- `bob/output.py` — +22 lines (`print_titled_box`)
+- `bob/cron.py` — `print_titled_box` migration (3 sites) + `_os` → `os` bug fix
+- `bob/manage_logs.py` — `print_titled_box` migration (1 site)
+- `bob/report.py` — +65 lines (`Report` Protocol)
+- `bob/runner.py` — `emit_section`/`emit_group` closures + 20 migrations + `Report` type hint (net −26 lines)
+- `tests/test_cron.py` — +35 tests
+- `tests/test_fail2ban.py`, `tests/test_ntp.py` — patch sites updated for new helper layer
+- `tests/test_domain_scores_mapping_complete.py` — **new file**, +4 tests
+- `pyproject.toml` — version bump
+- `bob/data/schemas/{service,services-list,plugin-file}.schema.json` — `$id` URL bump
+- `README.md` + `README_FR.md` — banner version
+- `DOCUMENTS/README_TECH.md` + `DOCUMENTS/README_TECH_FR.md` — banner + badge + "As of vX.Y.Z" references
+- `man/bob.1`, `man/bob.conf.5`, `man/bob-profile.5` — `.TH` version
+- `CHANGELOG.md`, `CHANGELOG_FR.md`, `DOCUMENTS/CHANGELOG_FULL.md`, `DOCUMENTS/CHANGELOG_FULL_FR.md` — this entry
+- `DOCUMENTS/TESTING.md` + `DOCUMENTS/TESTING_FR.md` — v0.5.0 row + section
+- `debian/changelog`, `packaging/rpm/bob.spec` — packaging stanzas
+
+---
+
 ## [v0.4.8] — 2026-05-21
 
 **Code-quality audit pass 4** — performed by a `general-purpose` sub-agent dispatched after the org's monthly quota reset, briefed with `DOCUMENTS/SNAPSHOT.md` as primary cartography. The agent ran 4 distinct bug-pattern hunts (dead dataclass fields, reinvented helpers, timeout inconsistencies, dead code from refactors) and returned **4 IMPORTANT + 5 MINOR + 3 SUGGESTION findings**. All addressed in this release, bundled with 6 pyproject.toml improvements queued from v0.4.7. 4499/4499 tests passing.

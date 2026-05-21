@@ -18,7 +18,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 # Known NTP service unit names (checked in order)
@@ -81,8 +81,7 @@ def _detect_active_service() -> str:
     if not _command_exists("systemctl"):
         return ""
     for svc in _NTP_SERVICES:
-        out = _run("systemctl", "is-active", svc)
-        if out.strip() == "active":
+        if is_unit_active(svc):
             return svc
     return ""
 

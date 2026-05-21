@@ -4,7 +4,7 @@
 
 Two complementary parts:
 
-- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.4.8 (4499 tests, −1 from v0.4.7 after dead-field cleanup).
+- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.5.0 (4538 tests, +39 from v0.4.8 with the Phase-1 refactor coverage pass).
 - **Manual UFW regression plan** (Categories A–E at the bottom) — deliberately dangerous UFW rules and the expected BOB behaviour for each. Used to validate detection + remediation on real systems.
 
 ---
@@ -13,6 +13,7 @@ Two complementary parts:
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.0 | 4538 | Refactor v0.5.x Phase 1 (+39 tests) — **+4** in new `tests/test_domain_scores_mapping_complete.py` (AST scan of `bob/checks/*.py` for unmapped key prefixes, guards the `_PREFIX_TO_DOMAIN` catch-all from silent drift). **+35** in `tests/test_cron.py` covering 5 previously-untested pure helpers: `TestValidateCronField` (13 — wildcard, integer, range, step, list, out-of-bounds, reversed range, empty entry, garbage), `TestValidateCustomCron` (7 — full 5-field), `TestBuildScriptContent` (7 — shlex.quote, shebang, exports), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5 — incl. legacy `NOTIFY_EMAIL=` parity). **Latent bug fixed**: `apply_cron_schedule()` referenced `_os.open` (undefined at module scope) — v0.4.8 cron-deduplication extraction missed the rename; the new tests surfaced the NameError on first run. Tests in `test_fail2ban.py` and `test_ntp.py` updated to patch `is_unit_active` alongside `_run` (refactor #7). |
 | v0.4.8 | 4499 | Hardening release — sub-agent code-review pass 4 (4 important + 5 minor + 3 suggestion findings) + pyproject.toml deep audit (6 fixes). **−1 test (4500 → 4499):** removed `test_default_method_is_none` in `test_secure_boot.py` after dropping the dead `method: str` field from `SecureBootSnapshot`. Other dead-field removals (`ssh.config_source_files`, `firewall.ipv4_rules_count`/`ipv6_rules_count`, `samba.min_protocol`, `clamav.db_path`/`last_scan_log_path`) had their associated tests updated to drop the now-invalid kwargs. No new behaviour, contract-preserving cleanup. |
 | v0.4.7 | 4500 | Maintenance release — cross-doc audit (24 corrections / 8 files) + UI gauges harmonization + bash completion overhaul (critical `--xxx=<TAB>` value completion fix via positional-arg convention) + GitHub Release CI automation. No new tests; 3 tests in `test_breakdown.py::TestBar` adapted to strip ANSI codes before comparing visible content (bars are now coloured strings, no longer plain `█░░░░░░░░░`). |
 | v0.4.6 | 4500 | Terrain test pass v0.4.5 fixes (+11): `TestParseInstalledKernels` (+5 — `ii`/`rc`/`pn`/`un`/`iU` status filtering, `hi` hold kept, mixed legacy+prefixed format) · `TestActiveDomainsIncludesOK` (+6 in test_domain_scores — OK promotes, INFO doesn't, full Debian 13 remediation scenario asserted at global=9 instead of 8). Multi-distro integration CI added (purely additive, not counted as unit tests). |
@@ -36,6 +37,57 @@ Two complementary parts:
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.5.0 — 4538/4538 (2026-05-21)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in 7.77s
+```
+
+**Net: +39 (zero removals, no contract change).** v0.5.0 opens the v0.5.x refactor branch with 6 audit findings + 1 latent bug surfaced by the new tests. **The audit pipeline behaviour is unchanged** — JSON `schema_version="1"`, the 7 score domains, the 116 EXPLAIN_KEYS, the 34 filterable sections all preserved.
+
+#### `tests/test_domain_scores_mapping_complete.py` (+4 — new file)
+
+AST-based scan of `bob/checks/*.py` for every literal `key="X.Y"` argument to emitting methods (`add_deduction`, `warn`, `alert`, `info`, `ok`). Extracts unique prefixes and asserts each is either explicit in `_PREFIX_TO_DOMAIN` (`bob/domain_scores.py`) or whitelisted in `_CATCH_ALL_BY_DESIGN` with a justification:
+
+| Test | Coverage |
+|---|---|
+| `test_every_emitted_prefix_is_mapped_or_whitelisted` | Hard-fail on any new unmapped prefix (the future-drift guard) |
+| `test_no_stale_catchall_entries` | Warn (not fail) on whitelist entries with no current emitter |
+| `test_no_stale_prefix_to_domain_entries` | Warn on `_PREFIX_TO_DOMAIN` entries unused by static call sites |
+| `test_all_entries_have_justifications` | Every whitelist entry must have a non-empty reason |
+
+#### `tests/test_cron.py` — 5 new classes (+35)
+
+Phase 5 preliminary coverage — cron.py was the codebase's worst-tested module (0.60× per SNAPSHOT).
+
+| Class | Tests | What it pins |
+|---|---|---|
+| `TestValidateCronField` | 13 | All branches: `*`, `N`, `N-M`, `*/K`, `N-M/K`, `,`-lists, out-of-bounds (v0.4.3 regression class), reversed range, empty entry, garbage |
+| `TestValidateCustomCron` | 7 | Full 5-field discipline, per-field bounds (minute 0-59, hour 0-23, etc.), 4-field rejection, 6-field rejection |
+| `TestBuildScriptContent` | 7 | Shebang, `shlex.quote()` behaviour (simple email + space-containing edge case), `LOG_DIR` quoting, `--quiet --detailed` invocation, `AUDIT_EMAIL`/`AUDIT_LOG` exports |
+| `TestApplyCronSchedule` | 3 | Schedule replacement preserves email comment, missing-file OSError surfacing |
+| `TestApplyCronEmail` | 5 | Email comment + `NOTIFY_EMAILS=` script line update + **legacy `NOTIFY_EMAIL=` (no S) regex parity** + missing-script tolerance + `shlex.quote()` quoting |
+
+#### Latent bug fixed (discovered by `TestApplyCronSchedule`)
+
+The new `TestApplyCronSchedule::test_replaces_schedule` failed on first run with `NameError: name '_os' is not defined` at `bob/cron.py:855`. Root cause: v0.4.8 cron-deduplication extracted `apply_cron_schedule()` from `bob/tui/cron.py` to public `bob.cron` API but missed renaming `_os.open(...)` to `os.open(...)`. The `_os` alias is local to three *other* functions in `cron.py` (`import os as _os` scoped per-function). At module level only `os` is imported. The helper had been silently dead since v0.4.8 ship — the curses TUI wired it but isn't exercised by automated tests, so the bug only manifested at interactive runtime. Fix: 3 references on 2 lines.
+
+#### Test adaptations (refactor #7 ripple)
+
+| File | Change | Why |
+|---|---|---|
+| `tests/test_fail2ban.py` | `_make_run_stub` no longer handles `systemctl is-active` (lost the `service_active` parameter); each test adds `patch("bob.checks.fail2ban.is_unit_active", return_value=...)` | The migration to `is_unit_active()` means the systemctl call no longer goes through the patched `_run`; it goes through `is_unit_active` from `_run.py`'s namespace |
+| `tests/test_ntp.py` | `_make_run_side_effect` reduced to timedatectl-only; new `_make_is_active_stub` helper; each test patches both `_run` (for timedatectl) and `is_unit_active` (for service detection) | Same reason |
+
+No assertion changed semantically — the contract these tests pin (NTP/Fail2ban snapshot fields, service-active inference) is preserved.
+
+All 4538 tests pass in 7.77s on Python 3.12 / Linux Mint 22.3 / `so6desktop`.
 
 ---
 

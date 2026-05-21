@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -272,5 +272,4 @@ def _service_active(service: str) -> bool:
     """Return True if the given systemd service is active. Never raises."""
     if not _command_exists("systemctl"):
         return False
-    out = (_run("systemctl", "is-active", service) or "").strip()
-    return out.lower() == "active"
+    return is_unit_active(service)

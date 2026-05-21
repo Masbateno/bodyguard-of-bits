@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 
@@ -197,8 +197,7 @@ def _check_unattended() -> tuple[bool, bool]:
             pass
 
     # Step 3 — fallback: systemd timer active
-    timer_out = _run("systemctl", "is-active", "apt-daily-upgrade.timer")
-    enabled = (timer_out or "").strip() == "active"
+    enabled = is_unit_active("apt-daily-upgrade.timer")
     return True, enabled
 
 

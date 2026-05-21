@@ -39,6 +39,7 @@ from bob.checks._run import (
     _identity_t,
     _is_safe_user_path,
     _run,
+    is_unit_active,
 )
 from bob.scoring import CheckResult, FindingLevel
 
@@ -180,8 +181,7 @@ class SSHSnapshot:
         )
         if snap.sshd_installed and _command_exists("systemctl"):
             for unit in ("ssh", "sshd"):
-                out = (_run("systemctl", "is-active", unit) or "").strip()
-                if out == "active":
+                if is_unit_active(unit):
                     snap.sshd_active = True
                     break
 

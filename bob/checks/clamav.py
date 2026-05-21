@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -108,8 +108,7 @@ class ClamAVSnapshot:
         # --- clamd service status ---
         if _command_exists("systemctl"):
             for unit in ("clamav-daemon", "clamd", "clamd@scan"):
-                out = (_run("systemctl", "is-active", unit) or "").strip()
-                if out == "active":
+                if is_unit_active(unit):
                     snap.clamd_active = True
                     break
         # Fallback: check for the clamd Unix socket (present when daemon is running

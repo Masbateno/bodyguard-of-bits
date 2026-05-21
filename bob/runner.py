@@ -23,7 +23,7 @@ from bob.display import (
 )
 from bob.output import print_group, print_info, print_section, print_service_header
 from bob.registry import ServiceRegistry
-from bob.report import AuditReport
+from bob.report import AuditReport, Report
 from bob.scoring import ScoreEngine
 from bob.checks.ddns import DdnsSnapshot, check_ddns, ddns_effective_context
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
@@ -158,7 +158,7 @@ def run_checks(
     config: AuditConfig,
     t,
     engine: ScoreEngine,
-    report: AuditReport,
+    report: Report,
     registry: ServiceRegistry,
     network_context: str,
     profile: AuditProfile | None = None,
@@ -169,12 +169,24 @@ def run_checks(
     _pr: dict[str, int] = prev_recurrence or {}
     _pname = profile.name if profile is not None else "server"
 
+    def emit_section(section_key: str) -> None:
+        """Print and write a section header (respects ``--quiet``)."""
+        title = t(f"sections.{section_key}")
+        if not config.quiet:
+            print_section(title)
+        report.write_section(title)
+
+    def emit_group(group_key: str) -> None:
+        """Print and write a group header (respects ``--quiet``)."""
+        title = t(f"groups.{group_key}")
+        if not config.quiet:
+            print_group(title)
+        report.write_group(title)
+
     def _sec(section: str, snapshot, check_fn, **check_kwargs) -> None:
         if not _section_enabled(section, config, profile):
             return
-        if not config.quiet:
-            print_section(t(f"sections.{section}"))
-        report.write_section(t(f"sections.{section}"))
+        emit_section(section)
         result = check_fn(snapshot, t=t, **check_kwargs)
         if profile is not None:
             apply_profile(result, profile)
@@ -186,14 +198,10 @@ def run_checks(
     # =========================================================================
     # GROUP 1 — FIREWALL & RÉSEAU
     # =========================================================================
-    if not config.quiet:
-        print_group(t("groups.firewall_network"))
-    report.write_group(t("groups.firewall_network"))
+    emit_group("firewall_network")
 
     # ---- CHECK 1 — Firewall status ----
-    if not config.quiet:
-        print_section(t("sections.firewall"))
-    report.write_section(t("sections.firewall"))
+    emit_section("firewall")
 
     fw_status  = FirewallStatus.from_system()
     fw_result  = check_firewall(fw_status, t=t)
@@ -214,9 +222,7 @@ def run_checks(
     active_external_ports = ports_snapshot.active_external_ports
     all_listening_ports   = loopback_only_ports | active_external_ports
 
-    if not config.quiet:
-        print_section(t("sections.rules"))
-    report.write_section(t("sections.rules"))
+    emit_section("rules")
 
     rules_result = check_rules(
         ufw_verbose, ufw_numbered, t, fw_status.ipv6_ufw_enabled,
@@ -232,9 +238,7 @@ def run_checks(
 
     # ---- CHECK 40 — UFW logging level (skipped when UFW inactive — covered by check_firewall) ----
     if fw_status.active:
-        if not config.quiet:
-            print_section(t("sections.ufw_logging"))
-        report.write_section(t("sections.ufw_logging"))
+        emit_section("ufw_logging")
 
         ufw_logging_result = check_ufw_logging(fw_status, t=t)
         engine.apply(ufw_logging_result)
@@ -242,9 +246,7 @@ def run_checks(
 
     # ---- CHECK 46 — iptables / nftables (UFW inactive only) ----
     if not fw_status.active and _section_enabled("iptables_nft", config, profile):
-        if not config.quiet:
-            print_section(t("sections.iptables_nft"))
-        report.write_section(t("sections.iptables_nft"))
+        emit_section("iptables_nft")
         ipt_snapshot  = IptablesNftSnapshot.from_system()
         ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, t=t)
         engine.apply(ipt_result)
@@ -253,9 +255,7 @@ def run_checks(
             print()
 
     # ---- CHECK 2b — Firewall stack analysis ----
-    if not config.quiet:
-        print_section(t("sections.firewall_stack"))
-    report.write_section(t("sections.firewall_stack"))
+    emit_section("firewall_stack")
 
     stack_snapshot = FirewallStackSnapshot.from_system()
     stack_result   = check_firewall_stack(stack_snapshot, t=t)
@@ -265,9 +265,7 @@ def run_checks(
         print()
 
     # ---- CHECK 2c — Network context (interfaces + connections) ----
-    if not config.quiet:
-        print_section(t("sections.network_context"))
-    report.write_section(t("sections.network_context"))
+    emit_section("network_context")
 
     net_snapshot = NetworkContextSnapshot.from_system()
     net_result   = check_network_context(net_snapshot, t=t)
@@ -283,9 +281,7 @@ def run_checks(
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES
     # =========================================================================
-    if not config.quiet:
-        print_group(t("groups.exposure_services"))
-    report.write_group(t("groups.exposure_services"))
+    emit_group("exposure_services")
 
     # ---- CHECK 3 — Network services ----
     # Upgrade network_context to "ddns" when DDNS is active with open ports
@@ -303,9 +299,7 @@ def run_checks(
         or fw_status.incoming_policy not in ("deny", "reject")
     )
 
-    if not config.quiet:
-        print_section(t("sections.services"))
-    report.write_section(t("sections.services"))
+    emit_section("services")
 
     snapshots     = ServiceSnapshot.collect(
         registry, ufw_rules=ufw_numbered, loopback_ports=loopback_only_ports,
@@ -360,9 +354,7 @@ def run_checks(
                                    all_listening_ports, config, t)
 
     # ---- CHECK 4 — Listening ports ----
-    if not config.quiet:
-        print_section(t("sections.ports_analysis"))
-    report.write_section(t("sections.ports_analysis"))
+    emit_section("ports_analysis")
 
     ports_result = check_ports(
         ports_snapshot,
@@ -387,9 +379,7 @@ def run_checks(
     display_log_results(logs_result, logs_snapshot, config, t, report)
 
     # ---- CHECK 6 — DDNS / external exposure ----
-    if not config.quiet:
-        print_section(t("sections.ddns"))
-    report.write_section(t("sections.ddns"))
+    emit_section("ddns")
 
     ddns_result   = check_ddns(
         ddns_snapshot, ufw_rules=ufw_numbered, t=t,
@@ -402,9 +392,7 @@ def run_checks(
     # (see ddns.py); we no longer print "→ 22/tcp" sub-items here.
 
     # ---- CHECK 7 — Docker ----
-    if not config.quiet:
-        print_section(t("sections.docker"))
-    report.write_section(t("sections.docker"))
+    emit_section("docker")
 
     docker_snapshot = DockerSnapshot.from_system()
     docker_result   = check_docker(docker_snapshot, network_context=network_context, t=t)
@@ -423,9 +411,7 @@ def run_checks(
         print()
 
     # ---- CHECK 8 — Virtualisation ----
-    if not config.quiet:
-        print_section(t("sections.virtualization"))
-    report.write_section(t("sections.virtualization"))
+    emit_section("virtualization")
 
     virt_snapshot = VirtSnapshot.from_system()
     virt_result   = check_virtualization(virt_snapshot, t=t)
@@ -438,9 +424,7 @@ def run_checks(
     if _section_enabled("samba", config, profile):
         samba_snapshot = SambaSnapshot.from_system()
         if samba_snapshot.installed:
-            if not config.quiet:
-                print_section(t("sections.samba"))
-            report.write_section(t("sections.samba"))
+            emit_section("samba")
             samba_result = check_samba(samba_snapshot, t=t)
             if profile is not None:
                 apply_profile(samba_result, profile)
@@ -456,9 +440,7 @@ def run_checks(
     # =========================================================================
     # GROUP 3 — CONTRÔLE D'ACCÈS
     # =========================================================================
-    if not config.quiet:
-        print_group(t("groups.access_control"))
-    report.write_group(t("groups.access_control"))
+    emit_group("access_control")
 
     # ---- CHECK 11 — SSH security ----
     ssh_snapshot = SSHSnapshot.from_system()
@@ -483,9 +465,7 @@ def run_checks(
     # =========================================================================
     # GROUP 4 — DURCISSEMENT SYSTÈME
     # =========================================================================
-    if not config.quiet:
-        print_group(t("groups.system_hardening"))
-    report.write_group(t("groups.system_hardening"))
+    emit_group("system_hardening")
 
     # ---- CHECK 9 — System hardening ----
     hardening_snapshot = HardeningSnapshot.from_system()
@@ -505,9 +485,7 @@ def run_checks(
     docker_audit_snapshot = DockerAuditSnapshot.from_system()
     if docker_audit_snapshot.docker_installed:
         if _section_enabled("docker_audit", config, profile):
-            if not config.quiet:
-                print_section(t("sections.docker_audit"))
-            report.write_section(t("sections.docker_audit"))
+            emit_section("docker_audit")
             docker_audit_result = check_docker_audit(docker_audit_snapshot, t=t)
             if profile is not None:
                 apply_profile(docker_audit_result, profile)
@@ -551,9 +529,7 @@ def run_checks(
     # ---- CHECK 22 — Disk health (SMART + partition usage) ----
     disk_snapshot = DiskSnapshot.from_system()
     if _section_enabled("disk", config, profile):
-        if not config.quiet:
-            print_section(t("sections.disk"))
-        report.write_section(t("sections.disk"))
+        emit_section("disk")
         disk_result = check_disk(disk_snapshot, t=t)
         if profile is not None:
             apply_profile(disk_result, profile)
@@ -566,9 +542,7 @@ def run_checks(
     # =========================================================================
     # GROUP 5 — DÉTECTION & SANTÉ
     # =========================================================================
-    if not config.quiet:
-        print_group(t("groups.detection_health"))
-    report.write_group(t("groups.detection_health"))
+    emit_group("detection_health")
 
     # ---- CHECK 35 — Backup solution ----
     backup_snapshot = BackupSnapshot.from_system()
@@ -606,9 +580,7 @@ def run_checks(
     if _section_enabled("desktop_apps", config, profile):
         desktop_snapshot = DesktopAppsSnapshot.from_system()
         if desktop_snapshot.detected:
-            if not config.quiet:
-                print_section(t("sections.desktop_apps"))
-            report.write_section(t("sections.desktop_apps"))
+            emit_section("desktop_apps")
             desktop_result = check_desktop_apps(desktop_snapshot, t=t)
             if profile is not None:
                 apply_profile(desktop_result, profile)

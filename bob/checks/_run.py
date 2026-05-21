@@ -74,6 +74,34 @@ def _command_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
 
+def is_unit_active(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
+    """Return True if the systemd unit is in the 'active' state.
+
+    Wraps ``systemctl is-active <name>``. Returns False if systemctl is
+    missing, if the unit does not exist, or if the command times out. The
+    timeout defaults to the shared ``_CMD_TIMEOUT`` (10s) — fast enough for
+    is-active which never legitimately exceeds 1s.
+
+    The output is lower-cased before comparison: upstream systemd always
+    emits lowercase ``active\\n``, but defensive matching guards against
+    distros or downstream forks that ship a customised systemctl output.
+
+    For richer state detection (template services, active/enabled
+    combinations) see ``bob.checks.services._detect_single_unit_state``.
+    """
+    return _run("systemctl", "is-active", name, timeout=timeout).strip().lower() == "active"
+
+
+def is_unit_enabled(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
+    """Return True if the systemd unit is enabled (will start at boot).
+
+    Wraps ``systemctl is-enabled <name>``. Returns False on missing
+    systemctl, missing unit, or timeout. See ``is_unit_active`` for the
+    parallel active-state check and the defensive lower-case rationale.
+    """
+    return _run("systemctl", "is-enabled", name, timeout=timeout).strip().lower() == "enabled"
+
+
 def _identity_t(key: str, **kwargs) -> str:
     """Fallback translation function — returns the key itself.
 

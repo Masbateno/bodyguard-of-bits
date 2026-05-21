@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.4.8 (4499 tests, −1 depuis v0.4.7 après nettoyage de champs morts).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.0 (4538 tests, +39 depuis v0.4.8 avec la passe de couverture refactor Phase 1).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.0 | 4538 | Refactor v0.5.x Phase 1 (+39 tests) — **+4** dans le nouveau `tests/test_domain_scores_mapping_complete.py` (scan AST de `bob/checks/*.py` pour les préfixes de clés non-mappés, protège le catch-all `_PREFIX_TO_DOMAIN` du drift silencieux). **+35** dans `tests/test_cron.py` couvrant 5 helpers purs jusque-là non testés : `TestValidateCronField` (13), `TestValidateCustomCron` (7), `TestBuildScriptContent` (7), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5 — incl. parité legacy `NOTIFY_EMAIL=`). **Bug latent corrigé** : `apply_cron_schedule()` référençait `_os.open` (non défini au niveau module) — l'extraction de déduplication v0.4.8 avait raté le renommage ; les nouveaux tests ont remonté le NameError au premier run. Tests dans `test_fail2ban.py` et `test_ntp.py` adaptés pour patcher `is_unit_active` en parallèle de `_run` (refactor #7). |
 | v0.4.8 | 4499 | Release de hardening — passe sub-agent code-review n°4 (4 important + 5 mineur + 3 suggestion findings) + audit approfondi pyproject.toml (6 fixes). **−1 test (4500 → 4499) :** suppression de `test_default_method_is_none` dans `test_secure_boot.py` après retrait du champ mort `method: str` de `SecureBootSnapshot`. Les autres retraits de champs morts (`ssh.config_source_files`, `firewall.ipv4_rules_count`/`ipv6_rules_count`, `samba.min_protocol`, `clamav.db_path`/`last_scan_log_path`) ont vu leurs tests associés mis à jour pour retirer les kwargs devenus invalides. Aucun nouveau comportement, nettoyage contract-preserving. |
 | v0.4.7 | 4500 | Release de maintenance — audit cross-doc (24 corrections / 8 fichiers) + harmonisation jauges UI + refonte bash completion (fix critique de la complétion de valeurs `--xxx=<TAB>` via convention args positionnels) + automatisation CI de la Release GitHub. Aucun nouveau test ; 3 tests dans `test_breakdown.py::TestBar` adaptés pour stripper les codes ANSI avant comparaison (les barres sont maintenant des strings colorés, plus juste `█░░░░░░░░░` brut). |
 | v0.4.6 | 4500 | Correctifs passe terrain v0.4.5 (+11) : `TestParseInstalledKernels` (+5 — filtrage statuts `ii`/`rc`/`pn`/`un`/`iU`, `hi` hold gardé, format legacy+préfixé mixte) · `TestActiveDomainsIncludesOK` (+6 dans test_domain_scores — OK promeut, INFO non, scénario remédiation Debian 13 complet attendu à global=9 au lieu de 8). CI multi-distro ajoutée (purement additive, non comptée comme tests unitaires). |
@@ -36,6 +37,57 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.0 — 4538/4538 (21-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in 7.77s
+```
+
+**Net : +39 (aucune suppression, aucun changement de contrat).** v0.5.0 ouvre la branche refactor v0.5.x avec 6 findings d'audit + 1 bug latent remonté par les nouveaux tests. **Le comportement du pipeline d'audit est inchangé** — JSON `schema_version="1"`, les 7 domaines de score, les 116 EXPLAIN_KEYS, les 34 sections filtrables tous préservés.
+
+#### `tests/test_domain_scores_mapping_complete.py` (+4 — nouveau fichier)
+
+Scan AST de `bob/checks/*.py` pour chaque argument `key="X.Y"` littéral des méthodes émettrices (`add_deduction`, `warn`, `alert`, `info`, `ok`). Extrait les préfixes uniques et atteste que chaque préfixe est soit explicite dans `_PREFIX_TO_DOMAIN` soit whitelisté dans `_CATCH_ALL_BY_DESIGN` avec une justification.
+
+| Test | Couverture |
+|---|---|
+| `test_every_emitted_prefix_is_mapped_or_whitelisted` | Hard-fail sur tout nouveau préfixe non-mappé (la garde anti-drift future) |
+| `test_no_stale_catchall_entries` | Warn (pas fail) sur les entrées whitelist sans émetteur actuel |
+| `test_no_stale_prefix_to_domain_entries` | Warn sur les entrées `_PREFIX_TO_DOMAIN` non utilisées par les call sites statiques |
+| `test_all_entries_have_justifications` | Chaque entrée whitelist doit avoir une raison non-vide |
+
+#### `tests/test_cron.py` — 5 nouvelles classes (+35)
+
+Couverture préalable Phase 5 — cron.py était le pire-testé du codebase (0.60× selon SNAPSHOT).
+
+| Classe | Tests | Ce qu'elle pinne |
+|---|---|---|
+| `TestValidateCronField` | 13 | Toutes les branches : `*`, `N`, `N-M`, `*/K`, `N-M/K`, listes `,`, out-of-bounds (classe de régression v0.4.3), range inversé, entry vide, garbage |
+| `TestValidateCustomCron` | 7 | Discipline 5-fields complète, bornes par field, rejet 4-fields, rejet 6-fields |
+| `TestBuildScriptContent` | 7 | Shebang, comportement `shlex.quote()` (email simple + cas avec espace), quoting `LOG_DIR`, invocation `--quiet --detailed`, exports `AUDIT_EMAIL`/`AUDIT_LOG` |
+| `TestApplyCronSchedule` | 3 | Replacement de schedule préserve le commentaire email, remontée OSError fichier manquant |
+| `TestApplyCronEmail` | 5 | Commentaire email + ligne script `NOTIFY_EMAILS=` + **parité regex legacy `NOTIFY_EMAIL=` (sans S)** + tolérance script manquant + quoting `shlex.quote()` |
+
+#### Bug latent corrigé (découvert par `TestApplyCronSchedule`)
+
+Le nouveau `TestApplyCronSchedule::test_replaces_schedule` a échoué au premier run avec `NameError: name '_os' is not defined` à `bob/cron.py:855`. Cause racine : la déduplication cron v0.4.8 a extrait `apply_cron_schedule()` de `bob/tui/cron.py` vers l'API publique `bob.cron` mais a raté le renommage de `_os.open(...)` en `os.open(...)`. L'alias `_os` est local à trois *autres* fonctions dans `cron.py` (`import os as _os` scopé à la fonction). Au niveau module, seul `os` est importé. Le helper était silencieusement mort depuis le ship v0.4.8 — la TUI curses le câblait mais n'est pas exercée par les tests automatisés, donc le bug ne se manifestait qu'à l'exécution interactive. Fix : 3 références sur 2 lignes.
+
+#### Adaptations de tests (rebond du refactor #7)
+
+| Fichier | Changement | Pourquoi |
+|---|---|---|
+| `tests/test_fail2ban.py` | `_make_run_stub` ne gère plus `systemctl is-active` (a perdu le paramètre `service_active`) ; chaque test ajoute `patch("bob.checks.fail2ban.is_unit_active", return_value=...)` | La migration vers `is_unit_active()` fait que l'appel systemctl ne passe plus par le `_run` patché ; il passe par `is_unit_active` du namespace de `_run.py` |
+| `tests/test_ntp.py` | `_make_run_side_effect` réduit à timedatectl-only ; nouveau helper `_make_is_active_stub` ; chaque test patche `_run` (pour timedatectl) ET `is_unit_active` (pour la détection de service) | Même raison |
+
+Aucune assertion changée sémantiquement — le contrat que ces tests pinnent (champs snapshot NTP/Fail2ban, inférence service-active) est préservé.
+
+Les 4538 tests passent en 7.77s sur Python 3.12 / Linux Mint 22.3 / `so6desktop`.
 
 ---
 

@@ -1,3 +1,61 @@
+bodyguard-of-bits (0.5.0-1) UNRELEASED; urgency=low
+
+  * Refactor v0.5.x Phase 1 (opens the v0.5.x branch) — first
+    instalment of a 5-phase refactor mapped from a sub-agent audit
+    against DOCUMENTS/SNAPSHOT.md. Audit pipeline behaviour
+    unchanged: JSON schema_version="1", 7 score domains, 116
+    EXPLAIN_KEYS, 34 filterable sections all preserved.
+  * #7 — new is_unit_active() / is_unit_enabled() helpers in
+    bob.checks._run; migrates the repeated
+    `_run("systemctl", "is-active", X).strip() == "active"` idiom
+    at 9 sites (auditd, fail2ban, clamav, ntp, ddns, updates, ssh,
+    backup, log_rotation). Defensive .lower() added centrally to
+    guard against non-canonical distro output.
+    services._detect_single_unit_state keeps its richer state machine
+    per audit recommendation.
+  * #2 — new bob.output.print_titled_box(title, width=62); migrates
+    4 sites (3x cron.py, 1x manage_logs.py). Closes a --no-color
+    leak: those 4 sites previously bypassed _c by inlining
+    \\033[1;34m literals, so --no-color did not strip the box
+    colours.
+  * #10 — new bob.report.Report typing.Protocol (PEP 544). Captures
+    the shared write-method contract between AuditReport, NullReport,
+    and MarkdownReport. runner.run_checks now type-hints
+    `report: Report`. No @runtime_checkable — static typing only,
+    zero overhead.
+  * #11 — new emit_section() + emit_group() closures in
+    runner.run_checks. Collapses the 3-line
+    `if not config.quiet: print_section(t(...)); report.write_section(t(...))`
+    motif into 1-line calls at 20 sites (5 group + 15 section
+    headers). _sec() itself uses emit_section internally. Net
+    runner.py: -28 lines.
+  * #15a — new tests/test_domain_scores_mapping_complete.py (+4
+    tests). AST-scan of bob/checks/*.py for every literal key="X.Y";
+    asserts each prefix is either mapped in _PREFIX_TO_DOMAIN or
+    whitelisted in _CATCH_ALL_BY_DESIGN with a justification. Guards
+    the firewall catch-all from silent future drift.
+  * Cron coverage pass (preliminary for Phase 5): +35 tests across
+    5 new classes covering pure helpers
+    (_validate_cron_field, _validate_custom_cron, build_script_content,
+    apply_cron_schedule, apply_cron_email). Includes legacy
+    NOTIFY_EMAIL= (no S) regex-parity coverage.
+  * Latent bug fixed (surfaced by the new cron tests):
+    apply_cron_schedule() referenced _os.open / _os.fdopen /
+    _os.O_* — but _os is only locally aliased in three OTHER
+    functions in cron.py, never at module level. The v0.4.8
+    cron-deduplication extraction missed the rename. The helper had
+    been silently dead since v0.4.8 ship — only the curses TUI wired
+    it, and that path is not exercised by automated tests. Fix:
+    `_os` -> `os` on 3 references / 2 lines.
+  * Monitoring list (release-watch): two APIs added without immediate
+    consumers — is_unit_enabled() (mirror of is_unit_active),
+    print_titled_box() width parameter (never overridden at any call
+    site). Tracked for review in v0.5.1-v0.5.4.
+  * 4499 -> 4538 tests (+39: +4 mapping, +35 cron). Full suite
+    passes in 7.77s on Python 3.12 / Linux Mint 22.3.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 21 May 2026 16:00:00 +0200
+
 bodyguard-of-bits (0.4.8-1) UNRELEASED; urgency=low
 
   * Code-hardening release — sub-agent code-review pass 4 (4 important

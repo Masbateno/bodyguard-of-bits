@@ -28,12 +28,67 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Protocol
 
 logger = logging.getLogger(__name__)
 
 _SEPARATOR = "=" * 62
 _THIN_SEP  = "-" * 62
+
+
+# ---------------------------------------------------------------------------
+# Report — structural type (PEP 544 Protocol)
+# ---------------------------------------------------------------------------
+
+class Report(Protocol):
+    """Structural type for audit report writers.
+
+    Both :class:`AuditReport` (plain-text) and
+    :class:`bob.report_markdown.MarkdownReport` satisfy this Protocol
+    without inheriting from it, as does :class:`NullReport`. Use this
+    type for parameters that accept any report kind — e.g.
+    ``def run_checks(report: Report, ...)``.
+
+    Concrete report classes may expose additional methods beyond this
+    Protocol (e.g. ``MarkdownReport.write_services_panorama``); the
+    Protocol describes the shared minimum contract that
+    :mod:`bob.runner` and :mod:`bob.__main__` rely on.
+
+    Why a Protocol and not an ABC: ``MarkdownReport`` was written
+    independently and does not inherit from ``AuditReport``. Forcing
+    inheritance now would couple the two implementations; a Protocol
+    captures the contract structurally with zero runtime overhead.
+    """
+
+    path: Optional[Path]
+    enabled: bool
+
+    def write_header(self, info: "SystemInfo") -> None: ...
+    def write_group(self, title: str) -> None: ...
+    def write_section(self, title: str) -> None: ...
+    def write_finding(self, level: str, message: str, detail: str = "") -> None: ...
+    def write_raw(self, text: str) -> None: ...
+    def write_indented(self, text: str, indent: int = 4) -> None: ...
+    def write_separator(self, thin: bool = False) -> None: ...
+    def write_summary(
+        self,
+        score: int,
+        risk_level: str,
+        network_context: str,
+        public_ip: str,
+        ok_count: int,
+        warn_count: int,
+        alert_count: int,
+        breakdown: list,
+        labels: dict[str, str],
+    ) -> None: ...
+    def write_risk_context_section(
+        self,
+        section_title: str,
+        entries: list[dict],
+    ) -> None: ...
+    def write_next_steps(self, steps: list[str]) -> None: ...
+    def close(self) -> None: ...
 
 
 # ---------------------------------------------------------------------------

@@ -366,6 +366,28 @@ def print_risk_context(
 # Summary box
 # ---------------------------------------------------------------------------
 
+def print_titled_box(title: str, width: int = 62) -> None:
+    """Print a single-titled box header (3 lines) for plain-text wizards.
+
+    Used by ``cron.py`` and ``manage_logs.py`` to draw the blue-bold box
+    around interactive menu titles. Honours ``--no-color`` via the shared
+    ``_c`` palette — callers that inline ``\\033[1;34m`` literals bypass
+    ``no_color`` and stay coloured even when the user passed ``--no-color``;
+    routing through this helper closes that leak.
+
+    Output is 3 lines, all 62 chars wide by default::
+
+        ╔════════════════════════════════════════════════════════════╗
+        ║  Title                                                     ║
+        ╚════════════════════════════════════════════════════════════╝
+    """
+    inner = width - 2
+    pad = max(0, width - 6 - _visual_width(title))
+    print(f"{_c.blue_bold}╔{'═' * inner}╗{_c.reset}")
+    print(f"{_c.blue_bold}║{_c.reset}  {_c.bold}{title}{_c.reset}{' ' * pad}  {_c.blue_bold}║{_c.reset}")
+    print(f"{_c.blue_bold}╚{'═' * inner}╝{_c.reset}")
+
+
 def print_summary_box(lines: list[tuple[str, str]]) -> None:
     """Print the audit summary box.
 

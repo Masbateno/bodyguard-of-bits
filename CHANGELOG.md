@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.5.0](#v050) | 2026-05-21 | Refactor v0.5.x Phase 1 (opens the v0.5.x branch) — **6 audit findings from refactor pass + 1 latent bug found via new test coverage**. **#7** new `is_unit_active()`/`is_unit_enabled()` helpers in `bob.checks._run` migrate 9 sites (`auditd`, `fail2ban`, `clamav`, `ntp`, `ddns`, `updates`, `ssh`, `backup`, `log_rotation`) replacing the repeated `_run("systemctl", "is-active", ...).strip() == "active"` idiom; defensive `.lower()` added centrally to guard against non-canonical distro output. **#2** new `bob.output.print_titled_box(title, width=62)` migrates 4 sites (3× `cron.py` + 1× `manage_logs.py`) and **closes the `--no-color` leak** where those sites bypassed `_c` and printed raw `\033[1;34m` literals. **#10** new `bob.report.Report` `typing.Protocol` (PEP 544 structural type) captures the shared write-method contract between `AuditReport`, `NullReport`, and `MarkdownReport` (which were two duck-typed implementations); `runner.run_checks` now type-hints `report: Report`. **#11** new `emit_section()` + `emit_group()` closures in `runner.py` collapse the `if not config.quiet: print_section(t(...)); report.write_section(t(...))` 3-line idiom into 1-line calls at 20 sites (5 group headers + 15 section headers); `_sec()` itself dogfoods the helper. **#15a** new `tests/test_domain_scores_mapping_complete.py` (+4 tests) AST-scans `bob/checks/*.py` for every literal `key="X.Y"` and asserts each prefix is either explicit in `_PREFIX_TO_DOMAIN` or whitelisted in `_CATCH_ALL_BY_DESIGN` with a justification (the v0.4.x state — `smtp`/`fail2ban`/`desktop_apps`/`virt`/`docker_audit`/`ddns` etc. still fall to the firewall catch-all, deferred to Phase 5 #15b). **Cron coverage pass** (+35 tests) covering the 5 pure helpers untouched by previous test sweeps: `_validate_cron_field` (out-of-range, reversed range, steps, list, empty entry), `_validate_custom_cron` (full 5-field with bounds per field), `build_script_content` (shebang, shlex quoting), `apply_cron_schedule`, `apply_cron_email` (legacy `NOTIFY_EMAIL=` parity). **Latent bug fixed (found by the new cron tests):** `apply_cron_schedule()` called `_os.open(...)` — but `_os` is only locally aliased in 3 *other* functions, never at module level. The v0.4.8 cron-deduplication extraction missed renaming this. The helper had been silently dead since v0.4.8 ship. Fix: `_os` → `os`. 4499 → **4538 tests** (+39: +4 mapping / +35 cron). |
 | [v0.4.8](#v048) | 2026-05-21 | Code-quality audit pass 4 (sub-agent) — **I4 real bug** `sudo bob -d` log files were `root:root 0600` and unreadable to the invoking user afterwards (now chowned back via `chown_to_sudo_user` in `bob/report.py` + `bob/manage_logs.py::get_or_prompt_log_dir`, same pattern as the 7 already-chowned config modules) · **dead-field cleanup** 8 dataclass fields removed across 5 checks (`SSHSnapshot.config_source_files`, `FirewallStatus.ipv4_rules_count`+`ipv6_rules_count`, `SambaSnapshot.min_protocol`, `ClamAVSnapshot.last_scan_log_path`+`db_path`, `SecureBootSnapshot.method`) all populated but never read — same bug class as v0.4.3 C1 · `_C_LOCALE_ENV` added to 3 stray `subprocess.check_output` sites (`desktop_apps.py::ps`, `smtp.py::ps`, `smtp.py::ss/netstat`) for locale-consistency · `log_rotation._service_active` inlined to `_run("systemctl", "is-active", ...)` (was an 11-line reinvention) · `apply_cron_schedule()` + `apply_cron_email()` promoted from private helpers to `bob.cron` public API, `bob/tui/cron.py` now imports them — fixes the asymmetric `NOTIFY_EMAIL=` legacy support that was plain-only · `SCORE_BAR_WIDTH = 10` exported from `bob.output` (de-duplicates the `_BAR_WIDTH` constant across `breakdown.py` + `domain_scores.py`) · auth_log 90-day `max_days` documented as intentional (independent of `--log-days` which is for UFW logs) · **pyproject.toml hardening**: `Development Status :: 4 - Beta` → `5 - Production/Stable`, `authors` + `maintainers` added (PyPI was showing UNKNOWN), `[project.optional-dependencies] geoip = ["geoip2>=4.0"]` for `pipx install "bodyguard-of-bits[geoip]"`, `wheel` dropped from build-system requires (auto-resolved since setuptools 70), Source + Documentation URLs added, explicit `dependencies = []` and `include = ["bob", "bob.checks", "bob.tui"]` · 4499/4499 tests (-1: removed `test_default_method_is_none` from test_secure_boot since `method` field is gone) |
 | [v0.4.7](#v047) | 2026-05-21 | Doc audit pass + cosmetic gauges + release automation — exhaustive cross-doc audit (24 corrections across 8 files: README/FR · README_TECH/FR · README_DEV/FR · SECURITY_FR · `man/bob.1` · `man/bob-profile.5` · AUTOMATION/FR) · `DOCUMENTS/SNAPSHOT.md` added (~640L internal cartography, 20 correction passes) · gauge bars harmonized via `bob.output.score_bar()` (green ≥8, yellow 5–7, red 0–4 — same colour logic as the disk partition bars) · bash completion comprehensive overhaul (function rename, dead code removed, **critical fix** to `--check=`/`--skip=`/`--format=`/etc. value completion that was silently failing due to `COMP_WORDBREAKS` `=` split) · `publish.yml` auto-creates GitHub Release from `CHANGELOG_FULL.md` on tag push · 4500/4500 tests (unchanged) |
 | [v0.4.6](#v046) | 2026-05-17 | Terrain test pass v0.4.5 fixes — **Bug 1** `kernel_modules.py` dpkg-query did not filter on `ii` (installed) state, so kernels removed by `apt remove` / `autoremove` (left in `rc` config-files state) were still listed as "installé". Reproduced on Mint test VM + so6desktop production. Now uses `${db:Status-Abbrev}` and keeps only lines whose 2nd char is `i` (covers `ii`, `hi`). **Bug 2** scoring inversion: after `apt upgrade` resolved a `updates.security_pending` WARN, the only finding left was `updates.ok` → `active_domains_from_engine` dropped the domain → global score *decreased* (denominator shrank). Reproduced on Debian 13 VM (7/10 → 6/10 after remediation). `_actionable` widened from `(WARN, ALERT)` to `(OK, WARN, ALERT)`; INFO-only domains stay hidden by design. 4500/4500 tests (+11) |
@@ -27,6 +28,61 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.5.0] — 2026-05-21
+
+**Refactor v0.5.x — Phase 1 of 5.** This release opens the v0.5.x branch with 6 low-risk, additive refactor findings from a sub-agent audit (general-purpose) briefed with `DOCUMENTS/SNAPSHOT.md`. **Zero behaviour change in the audit pipeline:** JSON `schema_version="1"` contract preserved, 7 score domains unchanged, 116 EXPLAIN_KEYS frozen, 34 filterable sections intact.
+
+The remaining 4 phases (v0.5.1–v0.5.4) will tackle the bigger LoC wins (`warn_with_deduction` helper across ~130 sites), the SSH directive table, the display refactor, the cron wizard refactor, and the `UFW_AUDIT_SHARE` sunset.
+
+### Audit findings addressed
+
+**#7 — `is_unit_active()` / `is_unit_enabled()` centralized.** Added to `bob/checks/_run.py`. Migrates the 9 sites that repeated `out = (_run("systemctl", "is-active", X) or "").strip(); if out == "active"`: `auditd.py`, `clamav.py`, `fail2ban.py`, `ntp.py`, `ddns.py`, `updates.py`, `ssh.py`, `backup.py`, `log_rotation.py` (the last one keeps its explicit `timeout=5`). `services.py::_detect_single_unit_state` keeps its richer enum return per the audit recommendation. Defensive `.lower()` added to the helper (canonical systemd output is always `"active\n"` but a downstream fork could theoretically emit `"Active\n"` — restored after review).
+
+**#2 — `bob.output.print_titled_box()` extracted.** A 3-line ASCII box header was open-coded 4 times across `cron.py` (install wizard, manage wizard, email store sub-menu) and `manage_logs.py` (plain-text fallback). All 4 sites bypassed `_c` (the colour palette respecting `--no-color`) by inlining `\033[1;34m` literals — **this leak is now closed**. `fixes.py` was *not* migrated: its box is a streaming `╔ ║ ╠` continuation, different shape, and already routes through `_c`.
+
+**#10 — `bob.report.Report` Protocol.** PEP 544 structural type with 12 method/attribute members. Captures the shared contract between `AuditReport` (plain-text), `NullReport` (no-op), and `MarkdownReport` (separately implemented, not in the inheritance tree). `runner.run_checks(report: Report, ...)` now type-hints the abstract Protocol; concrete classes still expose richer methods (`MarkdownReport.write_services_panorama` is unique to Markdown). No `@runtime_checkable` — static type-checking only, no runtime overhead.
+
+**#11 — `emit_section()` + `emit_group()` closures in `runner.py`.** The 3-line `if not config.quiet: print_section(t(...)); report.write_section(t(...))` motif collapses to 1 line at 20 sites: 5 group headers (firewall_network, exposure_services, access_control, system_hardening, detection_health) + 15 section headers. `_sec()` itself is refactored to use `emit_section` internally. Net: runner.py shrinks 65 lines / +37 lines = **−28 lines**, single source of truth for section emission. Two sites intentionally NOT migrated: `print_section(t("sections.logs"))` at line 373 (no matching `report.write_section` — pre-existing anomaly out of scope) and the plugin loop at line 648 (`plugin.name` is not a translation key).
+
+**#15a — `tests/test_domain_scores_mapping_complete.py`.** AST-scans `bob/checks/*.py` for every literal `key="X.Y"` argument to emitting methods (`add_deduction`, `warn`, `alert`, `info`, `ok`). Extracts unique prefixes and asserts each is either explicit in `_PREFIX_TO_DOMAIN` (bob/domain_scores.py) or whitelisted in `_CATCH_ALL_BY_DESIGN` with a one-line justification. The whitelist captures the v0.4.x state: `smtp`, `fail2ban`, `desktop_apps`, `virt`, `docker_audit`, `ddns`, and the legitimate firewall-domain prefixes (`firewall`, `rules`, `ports`, `services`, `ipv6`, `iptables_nft`, `firewall_stack`, `network_context`, `docker`). Re-attribution to more semantic domains is deferred to Phase 5 #15b (medium risk: changes scoring outputs). +4 tests. The test will fail on any new check that adds a prefix without explicit handling — closes the silent miscategorization class noted by the audit.
+
+### Cron coverage pass (preliminary for Phase 5)
+
+cron.py had the worst test ratio of the codebase per SNAPSHOT (0.60×). Phase 5 will refactor the wizards (#6: extract `_prompt` helper, dedupe 3 wizards) — adding coverage *before* the refactor is the safety net. **+35 tests** across 5 new classes:
+
+- `TestValidateCronField` (13 tests) — wildcard, integer, range, step, list, out-of-range, reversed range, empty entry, garbage
+- `TestValidateCustomCron` (7 tests) — 5-field discipline, per-field bounds (minute 0-59, hour 0-23, etc.)
+- `TestBuildScriptContent` (7 tests) — shebang, `shlex.quote()` behaviour for email + log_dir, `--quiet --detailed` invocation
+- `TestApplyCronSchedule` (3 tests) — schedule replacement + email-comment preservation + OSError surfacing
+- `TestApplyCronEmail` (5 tests) — email comment + `NOTIFY_EMAILS=` script line + **legacy `NOTIFY_EMAIL=` (no S) regex parity** + missing-script tolerance + `shlex.quote()` quoting
+
+### Latent bug fixed — `_os.open` in `apply_cron_schedule` (discovered by the new tests)
+
+The v0.4.8 cron deduplication promoted `apply_cron_schedule()` from a curses-TUI private helper to a public `bob.cron` API. The extraction missed renaming `_os.open(...)` to `os.open(...)`. `_os` is a local alias used only inside three *other* functions in `cron.py` (line 649, 931, 1215 — each does `import os as _os`); at the module level, only `os` is imported. The bug was masked because the public helper was wired to the curses TUI which was not exercised by automated tests. **The new `TestApplyCronSchedule` tests surfaced the `NameError: name '_os' is not defined` immediately.** Fix: `_os.open` / `_os.fdopen` / `_os.O_*` → `os.*` (3 references on 2 lines).
+
+### Monitoring list (release-watch)
+
+Two APIs were added without immediate consumers — kept for symmetry / future flexibility, monitored at each release:
+
+- `bob.checks._run.is_unit_enabled(name, timeout)` — mirror of `is_unit_active`. `services.py::_detect_single_unit_state` keeps its own `_run` call for the active/enabled state machine and is not migrated.
+- `bob.output.print_titled_box(title, width=62)` — `width` parameter not exercised at any call site (all 4 sites pass the default 62).
+
+If neither is consumed by v0.5.4, remove them.
+
+### Tests
+
+`4499 → 4538` (+39). Full suite passes in 7.77s on Python 3.12 / Linux Mint 22.3 / `so6desktop`.
+
+### Compatibility notes
+
+- **JSON contract:** `schema_version="1"`, all 116 EXPLAIN_KEYS, all 34 filterable sections — **unchanged**.
+- **CLI surface:** no new flags, no flag removals.
+- **Per-domain score breakdown:** unchanged (no `_PREFIX_TO_DOMAIN` modifications in this release — see #15b deferred to Phase 5).
+- **Config files (`config.conf`, `services.json`, profiles):** unchanged.
+- **Locale keys:** unchanged.
 
 ---
 

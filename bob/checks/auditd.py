@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Set
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 # Files we consider essential to watch
@@ -63,8 +63,7 @@ class AuditdSnapshot:
 
         # Service status via systemctl
         if _command_exists("systemctl"):
-            out = (_run("systemctl", "is-active", "auditd") or "").strip()
-            snap.service_active = out == "active"
+            snap.service_active = is_unit_active("auditd")
         else:
             # Fallback: auditctl -s shows "enabled 1" when auditd is running
             status = _run("auditctl", "-s") or ""

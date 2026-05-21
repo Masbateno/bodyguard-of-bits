@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 
@@ -266,7 +266,7 @@ def _count_logrotate_rules() -> int:
 
 def _service_active(name: str) -> bool:
     """Return True if the systemd unit is in the 'active' state."""
-    return _run("systemctl", "is-active", name, timeout=5).strip() == "active"
+    return is_unit_active(name, timeout=5)
 
 
 def _read_journald_conf() -> tuple[str, str, str]:

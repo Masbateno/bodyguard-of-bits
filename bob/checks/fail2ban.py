@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 # Jail names that protect SSH (checked via substring match)
@@ -55,8 +55,7 @@ class Fail2banSnapshot:
 
         # Service status via systemctl
         if _command_exists("systemctl"):
-            out = (_run("systemctl", "is-active", "fail2ban") or "").strip()
-            snap.service_active = out == "active"
+            snap.service_active = is_unit_active("fail2ban")
         else:
             # Fallback: try fail2ban-client ping (exit 0 when running)
             ping = _run("fail2ban-client", "ping") or ""

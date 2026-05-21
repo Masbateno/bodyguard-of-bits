@@ -54,21 +54,31 @@ _TIMEDATECTL_DISABLED = (
 )
 
 
-def _make_run_side_effect(timedatectl_out: str, active_service: str = "systemd-timesyncd"):
-    """Return a side_effect for _run that simulates timedatectl + systemctl."""
+def _make_run_side_effect(timedatectl_out: str):
+    """Return a side_effect for _run that simulates timedatectl output only.
+
+    Service-active state is controlled separately via the is_unit_active patch
+    (see _make_is_active_stub below).
+    """
     def _run_stub(*args):
         if args[0] == "timedatectl":
             return timedatectl_out
-        if args[0] == "systemctl" and args[1] == "is-active":
-            return "active\n" if args[2] == active_service else "inactive\n"
         return ""
     return _run_stub
+
+
+def _make_is_active_stub(active_service: str = "systemd-timesyncd"):
+    """Return a stub for is_unit_active matching only the given service name."""
+    def _stub(name, timeout=10):
+        return name == active_service
+    return _stub
 
 
 class TestNtpFromSystemTimedatectl:
     def test_synced(self):
         with patch("bob.checks.ntp._command_exists", return_value=True), \
-             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_SYNCED)):
+             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_SYNCED)), \
+             patch("bob.checks.ntp.is_unit_active", side_effect=_make_is_active_stub()):
             snap = NtpSnapshot.from_system()
         assert snap.ntp_enabled
         assert snap.ntp_synchronized
@@ -76,35 +86,38 @@ class TestNtpFromSystemTimedatectl:
 
     def test_enabled_not_synced(self):
         with patch("bob.checks.ntp._command_exists", return_value=True), \
-             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_ENABLED_NOT_SYNCED)):
+             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_ENABLED_NOT_SYNCED)), \
+             patch("bob.checks.ntp.is_unit_active", side_effect=_make_is_active_stub()):
             snap = NtpSnapshot.from_system()
         assert snap.ntp_enabled
         assert not snap.ntp_synchronized
 
     def test_disabled(self):
         with patch("bob.checks.ntp._command_exists", return_value=True), \
-             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_DISABLED)):
+             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_DISABLED)), \
+             patch("bob.checks.ntp.is_unit_active", side_effect=_make_is_active_stub()):
             snap = NtpSnapshot.from_system()
         assert not snap.ntp_enabled
         assert not snap.ntp_synchronized
 
     def test_service_detected_when_enabled(self):
         with patch("bob.checks.ntp._command_exists", return_value=True), \
-             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(
-                 _TIMEDATECTL_SYNCED, active_service="systemd-timesyncd")):
+             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_SYNCED)), \
+             patch("bob.checks.ntp.is_unit_active", side_effect=_make_is_active_stub("systemd-timesyncd")):
             snap = NtpSnapshot.from_system()
         assert snap.ntp_service == "systemd-timesyncd"
 
     def test_service_detected_chronyd(self):
         with patch("bob.checks.ntp._command_exists", return_value=True), \
-             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(
-                 _TIMEDATECTL_SYNCED, active_service="chronyd")):
+             patch("bob.checks.ntp._run", side_effect=_make_run_side_effect(_TIMEDATECTL_SYNCED)), \
+             patch("bob.checks.ntp.is_unit_active", side_effect=_make_is_active_stub("chronyd")):
             snap = NtpSnapshot.from_system()
         assert snap.ntp_service == "chronyd"
 
     def test_timedatectl_empty_output(self):
         with patch("bob.checks.ntp._command_exists", return_value=True), \
-             patch("bob.checks.ntp._run", return_value=""):
+             patch("bob.checks.ntp._run", return_value=""), \
+             patch("bob.checks.ntp.is_unit_active", return_value=False):
             snap = NtpSnapshot.from_system()
         assert not snap.timedatectl_ok
         assert not snap.ntp_enabled
@@ -125,13 +138,9 @@ class TestNtpFromSystemFallback:
         def _cmd_exists(name):
             return name == "systemctl"
 
-        def _run_stub(*args):
-            if args[0] == "systemctl" and args[1] == "is-active" and args[2] == "chronyd":
-                return "active\n"
-            return "inactive\n"
-
         with patch("bob.checks.ntp._command_exists", side_effect=_cmd_exists), \
-             patch("bob.checks.ntp._run", side_effect=_run_stub):
+             patch("bob.checks.ntp._run", return_value=""), \
+             patch("bob.checks.ntp.is_unit_active", side_effect=_make_is_active_stub("chronyd")):
             snap = NtpSnapshot.from_system()
         assert snap.ntp_enabled
         assert snap.ntp_service == "chronyd"

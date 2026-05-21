@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from bob.checks._run import _identity_t, _is_safe_config_path, _run
+from bob.checks._run import _identity_t, _is_safe_config_path, _run, is_unit_active
 from bob.scoring import CheckResult
 
 
@@ -302,8 +302,7 @@ def _is_installed(client_def: DdnsClientDef) -> bool:
 def _is_active(client_def: DdnsClientDef) -> bool:
     """Return True if the DDNS service is currently active."""
     for svc in client_def.services:
-        output = _run("systemctl", "is-active", svc).strip()
-        if output == "active":
+        if is_unit_active(svc):
             return True
 
     # DuckDNS: check cron entry

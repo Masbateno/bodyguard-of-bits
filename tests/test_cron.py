@@ -9,7 +9,10 @@ from pathlib import Path
 from unittest.mock import patch
 from bob.cron import (
     CronEntry,
+    apply_cron_email,
+    apply_cron_schedule,
     build_schedule_expr,
+    build_script_content,
     cron_to_human,
     make_slug,
     parse_cron_file,
@@ -18,7 +21,10 @@ from bob.cron import (
     _ordinal,
     _parse_day_names,
     _parse_dom,
+    _validate_cron_field,
+    _validate_custom_cron,
 )
+
 
 
 # ---------------------------------------------------------------------------
@@ -380,3 +386,261 @@ class TestDetectMta:
             ok, name = _detect_mta()
         assert ok is True
         assert name == ""
+
+
+# ---------------------------------------------------------------------------
+# _validate_cron_field — pure validation for one cron field
+# ---------------------------------------------------------------------------
+
+class TestValidateCronField:
+    """Pre-Phase-5 coverage for the pure cron-field validator.
+
+    Targets all branches: wildcard, plain integer, range, step, list,
+    out-of-bounds rejection (the v0.4.3 regression that the function
+    was originally written to close).
+    """
+
+    def test_wildcard_is_valid(self):
+        assert _validate_cron_field("*", "minute", 0, 59) == ""
+
+    def test_plain_integer_in_range(self):
+        assert _validate_cron_field("30", "minute", 0, 59) == ""
+
+    def test_plain_integer_out_of_range_returns_error(self):
+        err = _validate_cron_field("70", "minute", 0, 59)
+        assert err
+        assert "out of range" in err
+
+    def test_range_valid(self):
+        assert _validate_cron_field("0-30", "minute", 0, 59) == ""
+
+    def test_range_out_of_bounds_rejected(self):
+        # v0.4.3 regression: 0-1000 used to pass the original isdigit check.
+        err = _validate_cron_field("0-1000", "minute", 0, 59)
+        assert err
+        assert "out of bounds" in err
+
+    def test_range_reversed_rejected(self):
+        err = _validate_cron_field("30-10", "minute", 0, 59)
+        assert err
+        assert "reversed" in err
+
+    def test_step_valid(self):
+        assert _validate_cron_field("*/5", "minute", 0, 59) == ""
+
+    def test_step_zero_rejected(self):
+        err = _validate_cron_field("*/0", "minute", 0, 59)
+        assert err
+        assert "positive integer" in err
+
+    def test_step_non_numeric_rejected(self):
+        err = _validate_cron_field("*/abc", "minute", 0, 59)
+        assert err
+
+    def test_list_all_valid(self):
+        assert _validate_cron_field("0,15,30,45", "minute", 0, 59) == ""
+
+    def test_list_one_out_of_range_rejected(self):
+        err = _validate_cron_field("0,15,99", "minute", 0, 59)
+        assert err
+
+    def test_empty_entry_rejected(self):
+        err = _validate_cron_field("0,,30", "minute", 0, 59)
+        assert err
+        assert "empty entry" in err
+
+    def test_garbage_rejected(self):
+        err = _validate_cron_field("xyz", "minute", 0, 59)
+        assert err
+        assert "not understood" in err
+
+
+# ---------------------------------------------------------------------------
+# _validate_custom_cron — full 5-field cron expression
+# ---------------------------------------------------------------------------
+
+class TestValidateCustomCron:
+    def test_valid_daily_3am(self):
+        assert _validate_custom_cron("0 3 * * *") == ""
+
+    def test_valid_weekly(self):
+        assert _validate_custom_cron("0 3 * * 0") == ""
+
+    def test_valid_with_steps(self):
+        assert _validate_custom_cron("*/15 * * * *") == ""
+
+    def test_four_fields_rejected(self):
+        err = _validate_custom_cron("0 3 * *")
+        assert err
+        assert "5 fields" in err
+
+    def test_six_fields_rejected(self):
+        err = _validate_custom_cron("0 3 * * * *")
+        assert err
+        assert "5 fields" in err
+
+    def test_hour_out_of_range_rejected(self):
+        err = _validate_custom_cron("0 25 * * *")
+        assert err
+        assert "hour" in err.lower()
+
+    def test_minute_out_of_range_rejected(self):
+        err = _validate_custom_cron("70 3 * * *")
+        assert err
+        assert "minute" in err.lower()
+
+
+# ---------------------------------------------------------------------------
+# build_script_content — pure bash-script generator
+# ---------------------------------------------------------------------------
+
+class TestBuildScriptContent:
+    def test_starts_with_shebang(self):
+        script = build_script_content("admin@example.com", "/var/log/bob")
+        assert script.startswith("#!/bin/bash\n")
+
+    def test_quotes_email(self):
+        # shlex.quote should wrap simple addresses without modification.
+        script = build_script_content("admin@example.com", "/var/log/bob")
+        assert "NOTIFY_EMAILS=admin@example.com" in script
+
+    def test_quotes_email_with_special_chars(self):
+        # An address with a space would never be legal, but shlex should
+        # nevertheless guarantee the assignment stays single-line.
+        script = build_script_content("a b", "/var/log/bob")
+        assert "NOTIFY_EMAILS='a b'" in script
+
+    def test_includes_log_dir(self):
+        script = build_script_content("admin@example.com", "/custom/path")
+        assert "LOG_DIR=/custom/path" in script
+
+    def test_quotes_log_dir_with_space(self):
+        script = build_script_content("a@b.c", "/path with space")
+        assert "LOG_DIR='/path with space'" in script
+
+    def test_runs_bob_quiet_detailed(self):
+        script = build_script_content("a@b.c", "/var/log/bob")
+        assert "--quiet --detailed" in script
+
+    def test_exports_audit_email_and_log(self):
+        script = build_script_content("a@b.c", "/var/log/bob")
+        assert 'export AUDIT_EMAIL=' in script
+        assert 'export AUDIT_LOG=' in script
+
+
+# ---------------------------------------------------------------------------
+# apply_cron_schedule — patches the cron file in place
+# ---------------------------------------------------------------------------
+
+class TestApplyCronSchedule:
+    """Pre-Phase-5 coverage for the file-mutation helper extracted in v0.4.8.
+
+    The wizard refactor (#6, Phase 5) will reuse these helpers; these
+    tests pin the contract.
+    """
+
+    @staticmethod
+    def _make_entry(tmp_path: Path) -> CronEntry:
+        cron_path = tmp_path / "bob-test"
+        script_path = tmp_path / "bob-test.sh"
+        cron_path.write_text(
+            "# email: admin@example.com\n"
+            "0 3 * * *  root  /usr/local/bin/bob-test.sh\n",
+            encoding="utf-8",
+        )
+        script_path.write_text(
+            "#!/bin/bash\n"
+            "NOTIFY_EMAILS=admin@example.com\n"
+            "echo hello\n",
+            encoding="utf-8",
+        )
+        return CronEntry(
+            name="test", schedule_expr="0 3 * * *", hour=3, minute=0,
+            script_path=script_path, cron_path=cron_path,
+        )
+
+    def test_replaces_schedule(self, tmp_path):
+        entry = self._make_entry(tmp_path)
+        err = apply_cron_schedule(entry, "30 14 * * 1")
+        assert err == ""
+        content = entry.cron_path.read_text(encoding="utf-8")
+        assert "30 14 * * 1  root  " in content
+
+    def test_preserves_email_comment(self, tmp_path):
+        entry = self._make_entry(tmp_path)
+        apply_cron_schedule(entry, "0 4 * * *")
+        content = entry.cron_path.read_text(encoding="utf-8")
+        assert "# email: admin@example.com" in content
+
+    def test_missing_file_returns_error(self, tmp_path):
+        bogus = CronEntry(
+            name="x", schedule_expr="* * * * *", hour=0, minute=0,
+            script_path=tmp_path / "missing.sh",
+            cron_path=tmp_path / "missing",
+        )
+        err = apply_cron_schedule(bogus, "0 3 * * *")
+        assert err  # OSError string surfaced to caller
+
+
+# ---------------------------------------------------------------------------
+# apply_cron_email — patches cron file + wrapper script
+# ---------------------------------------------------------------------------
+
+class TestApplyCronEmail:
+    @staticmethod
+    def _make_entry(tmp_path: Path, *, legacy_var: bool = False) -> CronEntry:
+        cron_path = tmp_path / "bob-test"
+        script_path = tmp_path / "bob-test.sh"
+        cron_path.write_text(
+            "# email: old@example.com\n"
+            "0 3 * * *  root  /usr/local/bin/bob-test.sh\n",
+            encoding="utf-8",
+        )
+        var_name = "NOTIFY_EMAIL" if legacy_var else "NOTIFY_EMAILS"
+        script_path.write_text(
+            "#!/bin/bash\n"
+            f"{var_name}=old@example.com\n"
+            "echo hello\n",
+            encoding="utf-8",
+        )
+        return CronEntry(
+            name="test", schedule_expr="0 3 * * *", hour=3, minute=0,
+            script_path=script_path, cron_path=cron_path,
+        )
+
+    def test_updates_email_comment(self, tmp_path):
+        entry = self._make_entry(tmp_path)
+        err, count = apply_cron_email(entry, "new@example.com")
+        assert err == ""
+        assert count == 1
+        assert "# email: new@example.com" in entry.cron_path.read_text(encoding="utf-8")
+
+    def test_updates_script_notify_emails(self, tmp_path):
+        entry = self._make_entry(tmp_path)
+        err, count = apply_cron_email(entry, "new@example.com")
+        assert err == ""
+        assert count == 1
+        assert "NOTIFY_EMAILS=new@example.com" in entry.script_path.read_text(encoding="utf-8")
+
+    def test_legacy_notify_email_var_still_matched(self, tmp_path):
+        """Legacy NOTIFY_EMAIL= (no S) form must also be replaced — pre-v0.3 parity."""
+        entry = self._make_entry(tmp_path, legacy_var=True)
+        err, count = apply_cron_email(entry, "new@example.com")
+        assert err == ""
+        assert count == 1
+        # Replacement always writes the new NOTIFY_EMAILS form (plural).
+        assert "NOTIFY_EMAILS=new@example.com" in entry.script_path.read_text(encoding="utf-8")
+
+    def test_missing_script_returns_zero_substs(self, tmp_path):
+        entry = self._make_entry(tmp_path)
+        entry.script_path.unlink()
+        err, count = apply_cron_email(entry, "new@example.com")
+        assert err == ""
+        assert count == 0
+
+    def test_special_chars_quoted_via_shlex(self, tmp_path):
+        entry = self._make_entry(tmp_path)
+        err, count = apply_cron_email(entry, "a b@c")  # never legal, but shlex-safe
+        assert err == ""
+        # shlex.quote wraps with single quotes when needed
+        assert "NOTIFY_EMAILS='a b@c'" in entry.script_path.read_text(encoding="utf-8")

@@ -455,12 +455,7 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     from bob import output
     output.init(no_color=config.no_color)
 
-    W = 62
-    title = t("install_cron.title")
-    pad = W - 6 - len(title)
-    print(f"\033[1;34m╔{'═'*(W-2)}╗\033[0m")
-    print(f"\033[1;34m║\033[0m  \033[1m{title}\033[0m{' '*max(0,pad)}  \033[1;34m║\033[0m")
-    print(f"\033[1;34m╚{'═'*(W-2)}╝\033[0m")
+    output.print_titled_box(t("install_cron.title"))
     print()
 
     log_dir_str = user_config.get("log_dir")
@@ -672,20 +667,17 @@ def _manage_email_store(t) -> None:
     Loops until the user explicitly quits with Enter or 'q'.
     The list is refreshed from disk before each iteration.
     """
+    from bob import output
     from bob.config import EmailStore
 
-    W = 62
     title = t("manage_cron.email_store_title")
-    pad = W - 6 - len(title)
 
     while True:
         store = EmailStore.load()
         emails = store.all()
 
         print()
-        print(f"\033[1;34m╔{'═'*(W-2)}╗\033[0m")
-        print(f"\033[1;34m║\033[0m  \033[1m{title}\033[0m{' '*max(0,pad)}  \033[1;34m║\033[0m")
-        print(f"\033[1;34m╚{'═'*(W-2)}╝\033[0m")
+        output.print_titled_box(title)
         print()
 
         if not emails:
@@ -860,8 +852,8 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
         flags=re.MULTILINE,
     )
     try:
-        fd = _os.open(str(entry.cron_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o640)
-        with _os.fdopen(fd, "w") as fh:
+        fd = os.open(str(entry.cron_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+        with os.fdopen(fd, "w") as fh:
             fh.write(new_text)
     except OSError as exc:
         return str(exc)
@@ -1048,14 +1040,10 @@ def _run_manage_cron_plain(config, t) -> int:
     from bob import output
     output.init(no_color=config.no_color)
 
-    W = 62
     title = t("manage_cron.title")
-    pad = W - 6 - len(title)
 
     while True:
-        print(f"\033[1;34m╔{'═'*(W-2)}╗\033[0m")
-        print(f"\033[1;34m║\033[0m  \033[1m{title}\033[0m{' '*max(0,pad)}  \033[1;34m║\033[0m")
-        print(f"\033[1;34m╚{'═'*(W-2)}╝\033[0m")
+        output.print_titled_box(title)
         print()
 
         crons = list_installed_crons()

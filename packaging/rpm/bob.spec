@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.4.8
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,37 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.0-1
+- Refactor v0.5.x Phase 1 (opens v0.5.x branch) — 6 audit findings
+  + cron coverage pass + 1 latent bug surfaced by the new tests.
+  Audit pipeline behaviour unchanged: schema_version="1", 7 score
+  domains, 116 EXPLAIN_KEYS, 34 filterable sections preserved.
+- #7: new is_unit_active() / is_unit_enabled() helpers in
+  bob.checks._run; migrates the repeated
+  `_run("systemctl", "is-active", X)` idiom at 9 sites. Defensive
+  .lower() promoted centrally.
+- #2: new bob.output.print_titled_box() — 4 sites migrated
+  (cron.py x3, manage_logs.py x1). Closes --no-color leak.
+- #10: new bob.report.Report typing.Protocol (PEP 544) capturing
+  AuditReport/NullReport/MarkdownReport shared contract.
+- #11: new emit_section() + emit_group() closures in runner.py;
+  20 sites migrated (5 group + 15 section headers). Net -28 lines.
+- #15a: new tests/test_domain_scores_mapping_complete.py (+4 tests).
+  AST scan asserts every emitted key prefix is mapped or whitelisted
+  with justification — guards _PREFIX_TO_DOMAIN catch-all from
+  silent drift.
+- Cron coverage pass (Phase 5 preliminary): +35 tests across 5 new
+  classes (TestValidateCronField, TestValidateCustomCron,
+  TestBuildScriptContent, TestApplyCronSchedule, TestApplyCronEmail
+  — incl. legacy NOTIFY_EMAIL= regex parity).
+- Latent bug fixed (surfaced by new cron tests):
+  apply_cron_schedule() referenced _os.open / _os.fdopen / _os.O_*
+  — _os is only locally aliased in three OTHER functions in cron.py,
+  never at module level. The v0.4.8 cron-dedup extraction missed
+  the rename. The helper had been silently dead since v0.4.8 ship.
+  Fix: _os -> os.
+- 4499 -> 4538 tests (+39: +4 mapping, +35 cron).
+
 * Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.4.8-1
 - Code-hardening release — sub-agent code-review pass 4 (4 important
   + 5 minor + 3 suggestion findings) plus deep pyproject.toml audit

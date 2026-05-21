@@ -6,6 +6,122 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.0] — 21-05-2026
+
+**Refactor v0.5.x — Phase 1 sur 5.** Cette release ouvre la **branche v0.5.x**. C'est le premier épisode d'un refactor en 5 phases mappé depuis un audit sub-agent (general-purpose, dispatché 2026-05-21 avec `DOCUMENTS/SNAPSHOT.md` en briefing principal). L'audit a retourné **15 findings refactor**, classés par value/effort, avec classification de risque explicite.
+
+Principe bottom-up pour les 5 phases : **le comportement du pipeline d'audit ne change pas**. JSON `schema_version="1"`, les 7 domaines de score, les 116 EXPLAIN_KEYS, les 34 sections filtrables, les alias `--explain`, les flags CLI, l'héritage de profils, les clés de locale — tout est stable. Phase 1 fait le tri des findings additifs et low-risk.
+
+### Plan des phases (figé 2026-05-21)
+
+| Phase | Version | Thème | Findings | Risque |
+|---|---|---|---|---|
+| 1 | **v0.5.0** (cette release) | Quick wins + couverture cron | #7, #2, #10, #11, #15a + tests cron | low |
+| 2 | v0.5.1 | Le gros gain LoC | #1 `warn_with_deduction` ~130 sites | low |
+| 3 | v0.5.2 | Table directive SSH + extension `_sec` | #4, #3 | medium |
+| 4 | v0.5.3 | Refactor display + escape hatch log_data | #5, #12, #8 | medium |
+| 5 | v0.5.4 | Wizards cron + sunset UFW_AUDIT_SHARE | #6, #9, possiblement #13/#14/#15b | medium |
+
+#13 et #14 (splits ssh.py / cron.py) sont **conditionnels** — réévalués fin Phase 5. #15b (ré-attribution des fallbacks silencieux) est medium-risk car il change les sorties de scoring — explicitement reporté.
+
+---
+
+### #7 — `is_unit_active()` / `is_unit_enabled()` centralisés
+
+**Problème.** Dans 9 modules check, l'idiom `out = (_run("systemctl", "is-active", X) or "").strip(); if out == "active"` se répétait : `auditd.py`, `fail2ban.py`, `clamav.py`, `ntp.py`, `ddns.py`, `updates.py`, `ssh.py`, `backup.py`, `log_rotation.py`. `backup.py` ajoutait `.lower()` défensif.
+
+**Fix.** Deux helpers publics dans `bob/checks/_run.py` (cf. version EN pour le code). Le `.lower()` défensif est promu au helper — bénéficie aux 9 appelants. **Validé explicitement par l'utilisateur** lors de la review : "peut-être paranoïaque, mais dans le cas peu probable mais existant qu'une distro outpute 'Active\n' ce serait embêtant, et le coût est nul".
+
+`services.py::_detect_single_unit_state` n'est **PAS migré** selon la recommandation de l'audit — sémantique plus riche (templates, state machine active/enabled).
+
+Tests adaptés : `test_fail2ban.py` et `test_ntp.py` patchent maintenant aussi `bob.checks.X.is_unit_active`.
+
+**Monitoring** : `is_unit_enabled` sans consommateur immédiat — gardé pour symétrie d'API, tracé dans `feedback_release_monitoring.md`.
+
+---
+
+### #2 — `bob.output.print_titled_box()` extrait (+ leak `--no-color` corrigé)
+
+**Problème.** Pattern 3-lignes open-coded à 4 sites (cron.py x3, manage_logs.py x1) avec ANSI escapes inline `\033[1;34m` contournant `_c` — **bug UX latent** : `--no-color` n'affectait pas ces 4 boîtes.
+
+**Fix.** Nouveau `print_titled_box(title, width=62)` dans `bob.output`. Passe par `_c.blue_bold/.bold/.reset` — `--no-color` fonctionne désormais. Utilise `_visual_width(title)` au lieu de `len(title)` (plus robuste i18n).
+
+`bob/fixes.py` non migré : forme différente (streaming `╔ ║ ╠`), déjà via `_c`.
+
+**Monitoring** : paramètre `width` exposé mais jamais surchargé — tracé.
+
+---
+
+### #10 — Protocol `bob.report.Report` (PEP 544)
+
+**Problème.** `AuditReport`, `NullReport`, `MarkdownReport` partagent un contrat de méthodes write sans type formel. `MarkdownReport` est duck-typed (pas d'héritage). Annotation `runner.run_checks(report: AuditReport)` imprécise.
+
+**Fix.** Protocol `Report` dans `bob/report.py` avec 12 membres. `runner.run_checks(report: Report)` annote l'abstrait. Pas de `@runtime_checkable` (statique only, zéro overhead). `__enter__/__exit__` exclus (personne n'utilise `with report:`). `write_services_panorama` exclu (unique à Markdown).
+
+---
+
+### #11 — Closures `emit_section()` + `emit_group()` dans `runner.py`
+
+**Problème.** Motif `if not config.quiet: print_section(t(...)); report.write_section(t(...))` répété 20 fois dans `run_checks()`. Surface de drift.
+
+**Fix.** Deux closures en tête de `run_checks()` (pattern identique à `_sec()` existant). 5 `emit_group` (groupes) + 15 `emit_section` (sections) migrés. `_sec()` lui-même dogfoode `emit_section`. **Net runner.py : −28 lignes.**
+
+Sites NON migrés : ligne 373 (`print_section(t("sections.logs"))` orphelin, pas de `report.write_section` matchant — anomalie préexistante, hors scope) et boucle plugin ligne 648 (`plugin.name` brut, pas une clé traduite).
+
+---
+
+### #15a — `tests/test_domain_scores_mapping_complete.py`
+
+**Problème.** Tout préfixe de clé absent de `_PREFIX_TO_DOMAIN` tombe silencieusement dans le catch-all `"firewall"`.
+
+**Fix.** Test AST scan sur `bob/checks/*.py` qui exige chaque préfixe soit dans `_PREFIX_TO_DOMAIN` OU dans `_CATCH_ALL_BY_DESIGN` avec une justification une-ligne. Le whitelist capture l'état v0.4.x (préfixes domaine-firewall légitimes + fallbacks silencieux à revoir Phase 5 #15b : `smtp`, `fail2ban`, `desktop_apps`, `virt`, `docker_audit`, `ddns`, `prerequisites`).
+
+**+4 tests.** Tout nouveau check ajoutant un préfixe sans handling explicite verra le test échouer avec un message actionnable.
+
+---
+
+### Passe de couverture cron (préalable Phase 5)
+
+cron.py a le pire ratio de tests du codebase (SNAPSHOT : 0.60×). Phase 5 refactorera les 3 wizards plain-text (#6) — couverture *avant* refactor = filet de sécurité.
+
+**+35 tests** dans 5 nouvelles classes : `TestValidateCronField` (13), `TestValidateCustomCron` (7), `TestBuildScriptContent` (7), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5).
+
+Les tests `TestApplyCronEmail` couvrent notamment la **parité regex legacy `NOTIFY_EMAIL=` (sans S)** pour compatibilité wrappers pré-v0.3.
+
+---
+
+### Bug latent corrigé — `_os.open` dans `apply_cron_schedule` (découvert par les nouveaux tests)
+
+`TestApplyCronSchedule::test_replaces_schedule` a remonté immédiatement :
+```
+E   NameError: name '_os' is not defined
+bob/cron.py:855: NameError
+```
+
+**Cause.** Extraction v0.4.8 incomplète : `apply_cron_schedule()` appelait `_os.open(...)`, mais `_os` est aliasé localement dans 3 *autres* fonctions de `cron.py` (lignes 649, 931, 1215 — `import os as _os` scopé à la fonction). Au niveau module, seul `os`. Le helper était silencieusement mort depuis v0.4.8 — l'API publique câblée à la TUI curses (non testée automatiquement) ne le révélait qu'à l'exécution interactive.
+
+**Fix.** 3 références sur 2 lignes : `_os` → `os`.
+
+---
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in 7.77s
+```
+
+`4499 → 4538` (+39) : +4 depuis `test_domain_scores_mapping_complete.py`, +35 depuis les nouvelles classes cron.
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
+- **Surface CLI** : aucun flag ajouté/retiré.
+- **Score par domaine** : inchangé (aucune modif `_PREFIX_TO_DOMAIN` — #15b reporté).
+- **Fichiers de config** : inchangés. **Clés de locale** : inchangées. **Contrat plugin** : inchangé.
+
+---
+
 ## [v0.4.8] — 21-05-2026
 
 **Passe d'audit code-quality 4** — réalisée par un sub-agent `general-purpose` dispatché après le reset du quota mensuel org, briefé avec `DOCUMENTS/SNAPSHOT.md` comme cartographie primaire. L'agent a lancé 4 chasses de patterns de bugs distincts (champs dataclass morts, helpers réinventés, timeouts incohérents, code mort post-refactor) et a retourné **4 IMPORTANT + 5 MINOR + 3 SUGGESTION findings**. Tous corrigés dans cette release, bundlés avec 6 améliorations pyproject.toml queueées depuis v0.4.7. 4499/4499 tests passent.
