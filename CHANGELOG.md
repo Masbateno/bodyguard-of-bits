@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.4.7](#v047) | 2026-05-21 | Doc audit pass + cosmetic gauges + release automation — exhaustive cross-doc audit (24 corrections across 8 files: README/FR · README_TECH/FR · README_DEV/FR · SECURITY_FR · `man/bob.1` · `man/bob-profile.5` · AUTOMATION/FR) · `DOCUMENTS/SNAPSHOT.md` added (~640L internal cartography, 20 correction passes) · gauge bars harmonized via `bob.output.score_bar()` (green ≥8, yellow 5–7, red 0–4 — same colour logic as the disk partition bars) · bash completion comprehensive overhaul (function rename, dead code removed, **critical fix** to `--check=`/`--skip=`/`--format=`/etc. value completion that was silently failing due to `COMP_WORDBREAKS` `=` split) · `publish.yml` auto-creates GitHub Release from `CHANGELOG_FULL.md` on tag push · 4500/4500 tests (unchanged) |
 | [v0.4.6](#v046) | 2026-05-17 | Terrain test pass v0.4.5 fixes — **Bug 1** `kernel_modules.py` dpkg-query did not filter on `ii` (installed) state, so kernels removed by `apt remove` / `autoremove` (left in `rc` config-files state) were still listed as "installé". Reproduced on Mint test VM + so6desktop production. Now uses `${db:Status-Abbrev}` and keeps only lines whose 2nd char is `i` (covers `ii`, `hi`). **Bug 2** scoring inversion: after `apt upgrade` resolved a `updates.security_pending` WARN, the only finding left was `updates.ok` → `active_domains_from_engine` dropped the domain → global score *decreased* (denominator shrank). Reproduced on Debian 13 VM (7/10 → 6/10 after remediation). `_actionable` widened from `(WARN, ALERT)` to `(OK, WARN, ALERT)`; INFO-only domains stay hidden by design. 4500/4500 tests (+11) |
 | [v0.4.5](#v045) | 2026-05-16 | Test infrastructure hardening — `tests/test_locale_coverage.py` switched from regex scanning to **AST parsing** (`ast.walk` + `ast.Call` + `ast.Name` checks) · eliminates three classes of false positive that the regex form could produce (docstring matches, multi-line call site misparses, `obj._t(...)` attribute calls) · `_KEY_EXCLUSIONS` allowlist deleted entirely · same 9 tests, same external contract, more robust foundation · 4489/4489 tests (unchanged) |
 | [v0.4.4](#v044) | 2026-05-15 | Cross-distro terrain hardening — **critical `updates.py` bug** (4/4 Debian-family VMs: 21 Ubuntu LTS security updates undetected): `apt-get -s upgrade` → `dist-upgrade` · stale APT cache detection · cross-check vs `apt list --upgradable` · "Surface d'attaque" propagates `updates_unknown` instead of false "à jour" · AppArmor "0 profil chargé" dedicated key · SMART skip on all-virtual disks · DDNS ports inline in WARN · S4 redesign `_is_safe_user_path` home-bounded · M4 refactor `_parse_ufw_covered_ports` (1 parse + O(1) lookup) · I2 wave-2 `key=` on services/virtualization · new locale-coverage test (catches `[xxx.yyy]` sentinel regressions) · 4489/4489 tests (+21) |
@@ -25,6 +26,83 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.4.7] — 2026-05-21
+
+Maintenance release — cross-documentation audit, UI cosmetic harmonization, bash completion overhaul, and release automation. No behavior change in the audit pipeline; 4500/4500 tests unchanged.
+
+### Cross-documentation audit (24 corrections across 8 files)
+
+Exhaustive audit catching stale claims that drifted between code state and user-facing docs since v0.4.6:
+
+- **`README.md` / `README_FR.md`** — "9 domains" → "7 score domains" (the 9-domain count was historical from v0.1.0 and stale since v0.2.x); profile table corrected: `docker` profile listed but doesn't exist (the real profile is `container`), and `workstation` is a backward-compat alias loading `desktop` (not a separate profile).
+- **`DOCUMENTS/README_TECH.md` + FR** — same "9 domains" drift; "17 profile-specific explain keys" → 19 (verified by walking `en.json::explain.{key}.server.why`).
+- **`DOCUMENTS/README_DEV.md` + FR** — same "17 keys × 3 profiles" → 19; "~1500 locale keys" → exactly 1401 (verified by Python flatten with strict EN ↔ FR parity).
+- **`man/bob.1`** — `--list-checks` flag documented but **doesn't exist** (real form is `--check=list`); `--min-level=info` listed as valid but the CLI parser rejects `info` (only `warn`/`alert` accepted; `info` would be a no-op since INFO is the implicit floor); `--format=text` listed but `text` is the implicit default, not a valid value of `--format=` (rejected at CLI parse).
+- **`man/bob-profile.5`** — `--list-profiles` flag references removed (doesn't exist); "Up to 5 levels of inheritance" → 8 (`_MAX_EXTENDS_DEPTH = 8` in `bob/profiles.py`); SHIPPED PROFILES section gained the `workstation` entry with explicit alias status note.
+- **`DOCUMENTS/AUTOMATION.md` + FR** — JSON webhook sample was completely wrong: `alerts`/`warnings` shown as arrays of `{key, message}` objects, but the real JSON top-level has them as integer counts (`engine.alert_count` / `engine.warn_count`). `risk` field shown as `"LOW"` uppercase but `engine.level.value` returns `"low"` lowercase. Sample was missing the fields `version`, `score_max`, `network_context`, `public_ip`, `deductions`, `domain_scores` that the real payload includes. Behavior claim also wrong: "POSTed only if alerts/warnings present" → actually POSTed on every audit when a URL is configured (no count threshold; filter on the receiving side). Timeout "5 seconds" → 10 seconds (`_TIMEOUT_SECONDS = 10` in `bob/webhook.py`).
+- **`SECURITY_FR.md`** — untranslated `## Threat model` header → `## Modèle de menace`.
+
+### `DOCUMENTS/SNAPSHOT.md` — new internal cartography
+
+New ~640-line internal document providing a single-page bird's-eye view of the codebase: ASCII architecture diagram, module index for `bob/` root + `bob/checks/` with LoC and roles, dependency graph (centrality, fan-out), hotspots, patterns/conventions, 7 frozen contracts (JSON schema, exit codes, EXPLAIN_KEYS, domains, sections, plugin schema, CIS refs), CLI surface, file paths & env vars, tests-to-source mapping, architectural decisions (kept / discarded / deferred), CI matrix, numbers at a glance.
+
+Designed to be loaded once before a refactor pass or audit so the structure does not need to be re-discovered module-by-module. Underwent 20 correction passes against the actual code state. 100% English (internal doc, not user-facing — not shipped in `debian/bob-core.docs` or `bob.spec %doc`).
+
+### Gauge bars cosmetic harmonization (`bob/output.py::score_bar`)
+
+All score-based progress bars (the `--watch` live display, `--breakdown` score path, per-domain scores in the audit summary, history sparkline in `--manage-logs`) now use a shared `bob.output.score_bar(score)` helper with the same colour logic as `display._disk_bar`, inverted for "high score = good":
+
+- score ≥ 8 → **green** (healthy)
+- score 5–7 → **yellow** (moderate)
+- score 0–4 → **red** (critical)
+
+Previously these bars rendered as plain monochrome `█░░░░░░░░░`. The disk partition bars (already coloured by usage threshold) are unchanged — the new helper just brings the rest of the UI into line.
+
+Affected renderers (one-line delegation each): `bob/watch.py::_score_bar`, `bob/breakdown.py::_bar`, `bob/domain_scores.py::render_domain_scores`, `bob/manage_logs.py::display_history`. The `--no-color` flag still neutralises colours (empty ANSI strings).
+
+### Bash completion comprehensive overhaul (`bob/data/bob.bash-completion`)
+
+**Critical fix — value completion was silently failing**: `bob --check=<TAB>` (and all other `--xxx=<TAB>` value completions: `--skip=`, `--min-level=`, `--format=`, `--profile=`, `--lang=`, `--target=`, `--webhook-format=`, `--output=`) returned no suggestions. The completion function read `${COMP_WORDS[COMP_CWORD]}` for the current word, but with the default `COMP_WORDBREAKS` containing `=`, bash splits `--check=` into words `[--check, =]` with `COMP_WORDS[CWORD]="="`. `compgen` filtered with `"="` matched nothing. **Fix**: use the bash-completion positional-argument convention — `$2` is the "clean" current word stripped of any `=` word-break prefix, `$3` is the previous word. The handlers `[[ "${prev}" == "--check" ]]` then match correctly.
+
+Diagnosed via `set -x` tracing of the completion function in the user's interactive session (Bash 5.2.21 on Linux Mint 22.3).
+
+**Other fixes bundled:**
+
+- Function renamed `_ufw_audit` → `_bob` (legacy name from before the project rename; binding updated).
+- Dead code removed: `_ufw_audit_install()` + `complete -F _ufw_audit_install install.sh` registered completion for an installer script (`install.sh`) that no longer exists in the repo.
+- Section list factored to `_SECTIONS` variable matching `bob --check=list` output exactly (34 entries from `bob/runner.py::_ALL_SECTIONS`). The old list had `firewall` (a core check that always runs — not filterable, misleading suggestion) and was missing `iptables_nft`, `samba`, `desktop_apps`.
+- Long-options list now matches `cli.py` exactly (parity verified by diff): added `--check=`, `--skip=`, `--output-dir=`, `--breakdown`, `--no-colour`. Short-options list adds `-B` (`--breakdown`). Total: 21 short, ~40 long options — full parity with `cli.py::parse_args`.
+- New `--skip=` value handler (mirror of `--check=` minus the `list` special value).
+- All value handlers now support both forms: `--xxx=value<TAB>` (equals split) and `--xxx value<TAB>` (space split).
+
+### CI — automatic GitHub Release on tag push (`.github/workflows/publish.yml`)
+
+Adds a fourth job `github-release` after PyPI publish. Pipeline becomes:
+
+```
+git push --tags
+  → test (Python 3.10/3.11/3.12/3.13)
+  → build (sdist + wheel)
+  → publish (PyPI via OIDC Trusted Publishing)
+  → github-release  ← NEW
+       • Extract title from CHANGELOG.md table row (text before " — ")
+       • Extract body from DOCUMENTS/CHANGELOG_FULL.md section
+         between "## [vX.Y.Z]" and next "## [v"
+       • Create release via softprops/action-gh-release@v2
+       • Attach wheel + sdist as release assets
+       • Mark as latest
+```
+
+If PyPI publish fails, the GitHub release is not created (`needs: publish` dependency). If `CHANGELOG_FULL.md` lacks the matching section, the workflow fails explicitly. Permission: `contents: write` only.
+
+Previously the GitHub release was created manually with `gh release create` after each PyPI publish.
+
+### Tests
+
+No new tests. 3 tests in `tests/test_breakdown.py::TestBar` adapted to strip ANSI escape sequences before asserting visible bar content (the bars are now ANSI-coloured strings rather than plain `█░░░░░░░░░`). 4500/4500 tests still passing.
 
 ---
 

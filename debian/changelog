@@ -1,3 +1,58 @@
+bodyguard-of-bits (0.4.7-1) UNRELEASED; urgency=low
+
+  * Maintenance release — documentation audit, UI cosmetic harmonization,
+    bash completion overhaul, and CI release automation. No behavior
+    change in the audit pipeline.
+  * Cross-documentation audit: 24 corrections across 8 files (README,
+    README_FR, README_TECH + FR, README_DEV + FR, SECURITY_FR,
+    man/bob.1, man/bob-profile.5, AUTOMATION + FR). Stale claims
+    rectified: "9 domains" -> 7, profile table corrected (the docker
+    profile listed but never existed; workstation is an alias to
+    desktop; container is the real third profile), --list-checks /
+    --list-profiles / --min-level=info / --format=text doc-only flags
+    removed (they don't exist in cli.py), webhook JSON sample
+    structure corrected (alerts/warnings are integer counts not
+    arrays of objects), webhook timeout 5s -> 10s, max profile
+    extends depth 5 -> 8 levels.
+  * New internal cartography: DOCUMENTS/SNAPSHOT.md (~640 lines)
+    providing a single-doc bird's-eye view of the codebase for
+    refactor preparation and sub-agent briefing. Internal doc,
+    not shipped in bob-core.docs.
+  * UI cosmetic: gauge bars in --watch, --breakdown, per-domain
+    scores, and --manage-logs history now share a single coloured
+    rendering via bob.output.score_bar() — green (score >= 8),
+    yellow (5-7), red (0-4). Matches the existing disk partition
+    bars in display._disk_bar. Affects display only; --no-color
+    continues to neutralise the colours.
+  * Bash completion (bob/data/bob.bash-completion) comprehensive
+    overhaul. Critical fix: --check=, --skip=, --min-level=,
+    --format=, --profile=, --lang=, --target=, --webhook-format=,
+    --output= TAB-completions of values were all silently failing
+    because the function read ${COMP_WORDS[COMP_CWORD]} which
+    returns "=" when bash splits on the default COMP_WORDBREAKS.
+    Fix: use the bash-completion positional-argument convention
+    ($2 / $3) which provides the clean current word stripped of
+    the '=' word-break prefix. Also: function renamed _ufw_audit
+    -> _bob (legacy name from before the project rename); dead
+    code removed (_ufw_audit_install for install.sh which no
+    longer exists); section list factored and made to match
+    `bob --check=list` exactly (was missing iptables_nft, samba,
+    desktop_apps); long-options list now matches cli.py exactly
+    (added --check=, --skip=, --output-dir=, --breakdown,
+    --no-colour); short-options gained -B (--breakdown).
+  * CI: .github/workflows/publish.yml gains a 4th job
+    "github-release" that runs after PyPI publish succeeds. It
+    extracts the release title from CHANGELOG.md table row, body
+    from DOCUMENTS/CHANGELOG_FULL.md section, creates the GitHub
+    release via softprops/action-gh-release@v2 with the wheel and
+    sdist as attached assets, marks as latest. Removes the
+    manual `gh release create` step.
+  * 4500 tests (unchanged from v0.4.6). 3 tests in
+    tests/test_breakdown.py::TestBar adapted to strip ANSI escape
+    sequences before asserting visible bar content.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 21 May 2026 09:00:00 +0200
+
 bodyguard-of-bits (0.4.6-1) UNRELEASED; urgency=medium
 
   * Terrain test pass v0.4.5 fixes (2 reproducible bugs across 13 audits

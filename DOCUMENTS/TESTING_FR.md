@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.4.6 (4500 tests).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.4.7 (4500 tests, inchangé depuis v0.4.6).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.7 | 4500 | Release de maintenance — audit cross-doc (24 corrections / 8 fichiers) + harmonisation jauges UI + refonte bash completion (fix critique de la complétion de valeurs `--xxx=<TAB>` via convention args positionnels) + automatisation CI de la Release GitHub. Aucun nouveau test ; 3 tests dans `test_breakdown.py::TestBar` adaptés pour stripper les codes ANSI avant comparaison (les barres sont maintenant des strings colorés, plus juste `█░░░░░░░░░` brut). |
 | v0.4.6 | 4500 | Correctifs passe terrain v0.4.5 (+11) : `TestParseInstalledKernels` (+5 — filtrage statuts `ii`/`rc`/`pn`/`un`/`iU`, `hi` hold gardé, format legacy+préfixé mixte) · `TestActiveDomainsIncludesOK` (+6 dans test_domain_scores — OK promeut, INFO non, scénario remédiation Debian 13 complet attendu à global=9 au lieu de 8). CI multi-distro ajoutée (purement additive, non comptée comme tests unitaires). |
 | v0.4.5 | 4489 | Hardening de l'infrastructure de tests (0 nouveau test, pur refactor de `tests/test_locale_coverage.py`) : scan regex → parsing AST (`ast.walk` + `ast.Call` + `ast.Name`). Élimine les faux positifs sur docstrings, la fragilité multi-lignes des call sites, et les edge cases d'appels d'attribut `obj._t(...)`. Allowlist `_KEY_EXCLUSIONS` supprimée. Mêmes 9 tests, même contrat externe. |
 | v0.4.4 | 4489 | Hardening terrain cross-distro (+21) : couverture du bug critique `updates.py` (sémantique `-s dist-upgrade`, détection cache obsolète, cross-check vs `apt list --upgradable`) ; clé AppArmor 0-profil ; skip SMART all-virtuel ; ports DDNS inline ; nouveau `test_locale_coverage.py` en forme regex initiale (attrape la classe de régression `[xxx.yyy]`). |
@@ -34,6 +35,31 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.4.7 — 4500/4500 (21-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4500 passed in 5.55s
+```
+
+**Net : 0 (aucun nouveau test, aucune suppression).** v0.4.7 est une release de maintenance : audit documentaire, harmonisation cosmétique UI (jauges), refonte de la bash completion, et automatisation CI de la création de Release GitHub. Aucun de ces changements ne modifie le comportement du pipeline d'audit ni le contrat de scoring, donc aucune couverture de test n'a été ajoutée.
+
+3 tests dans `tests/test_breakdown.py::TestBar` ont été adaptés (pas de nouveaux tests, juste des assertions ajustées) pour gérer la nouvelle sortie de barre ANSI-colorée de `bob.output.score_bar()` :
+
+| Test | Avant | Après |
+|---|---|---|
+| `test_full_score_all_filled` | `assert _bar(10) == "██████████"` (chaîne brute 10 chars) | Strip `re.compile(r"\x1b\[[0-9;]*m")` de `_bar(10)` avant comparaison à `"██████████"` |
+| `test_zero_score_all_empty` | `assert _bar(0) == "░░░░░░░░░░"` | Idem : strip ANSI puis compare |
+| `test_five_half_filled` | `assert len(bar) == 10` | Strip ANSI puis assert contenu visible (5 `█`, 5 `░`) et longueur |
+
+La chaîne de barre est passée de 10 caractères à ~19 caractères avec les séquences ANSI entourant le contenu visible. Le contenu visible (les caractères `█` / `░` eux-mêmes) est inchangé — seuls les codes de couleur autour ont été ajoutés.
+
+Tous les autres tests passent inchangés, incluant toute la suite de tests `bob/checks/` (~3000 tests), le scoring par domaines, le contrat JSON, la couverture des locales, l'héritage de profils, les scénarios golden scoring, et les tests du parser CLI.
 
 ---
 

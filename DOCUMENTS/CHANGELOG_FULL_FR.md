@@ -6,6 +6,150 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.4.7] — 21-05-2026
+
+**Release de maintenance** — passe d'audit cross-documentation, harmonisation cosmétique UI, refonte de la bash completion et automatisation de la création de release. Aucun changement de comportement dans le pipeline d'audit ; 4500/4500 tests inchangés.
+
+### Audit cross-documentation (24 corrections sur 8 fichiers)
+
+Entre v0.4.6 et v0.4.7 un audit exhaustif a rattrapé les claims qui avaient dérivé entre l'état réel du code et les docs user-facing. Aucun n'est un bug de *code* — ce sont des bugs documentaires qui auraient induit les utilisateurs en erreur en lisant les docs pour anticiper le comportement de l'outil.
+
+#### `README.md` + `README_FR.md` (2 × 2 = 4 fixes)
+
+**1. "9 domaines" → "7 domaines de score"** (lignes 7 et 97). Le "9 domaines" était le compte initial v0.1.0 (CHANGELOG mentionne "46 vérifications · 9 domaines" pour v0.1.0). Le moteur de scoring a été refactorisé en v0.2.x pour consolider en 7 domaines de score (`ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall`), mais les bannières README et le heading section disaient toujours "9 domaines" jusqu'à v0.4.6 — une dérive doc sur 4 versions mineures.
+
+**2. Tableau de profils réécrit**. L'ancien tableau listait un profil `docker` qui **n'existe pas** (le vrai profil est `container` ; un utilisateur tapant `bob --profile=docker` obtiendrait un warning "Profile 'docker' not found — using default (server)") et inversait la relation `desktop` / `workstation`. En réalité, `desktop.conf` est le profil substantif (étend `server`, 11 overrides) et `workstation` est un alias de rétrocompatibilité que le loader réécrit en `desktop` (`bob/profiles.py::load_profile` fait `if name == "workstation": name = "desktop"`). Le fichier `workstation.conf` est shipped en package-data mais n'atteint jamais le loader. Tableau corrigé avec 4 lignes (`server`, `desktop`, `workstation` comme alias, `container`) et relations exactes.
+
+#### `DOCUMENTS/README_TECH.md` + FR (2 × 2 = 4 fixes)
+
+Même dérive "9 domaines" (ligne 12) → "7 domaines de score". Plus une seconde dérive ligne 79 : "17 clés avec sections par profil" → "19 clés". Vérifié en parcourant `bob/locales/en.json::explain.{key}.server.why`. Aussi "À partir de v0.4.6" → "À partir de v0.4.7" dans la section sur le support Python.
+
+#### `DOCUMENTS/README_DEV.md` + FR (2 × 2 = 4 fixes)
+
+Même "17 clés × 3 profils" → "19 clés × 3 profils" (ligne 57). "Le fichier contient ~1500 clés" → "exactement 1401 clés" (ligne 469). Le "~1500" était une approximation vague qui dérivait ; le compte réel est précis et testable : `en.json` et `fr.json` ont tous deux 1401 clés avec parité stricte (enforced par `tests/test_locale_coverage.py::TestLocaleCoverage`).
+
+#### `man/bob.1` (3 fixes)
+
+**1. Références au flag `--list-checks` supprimées** (ligne 270). Le flag est documenté dans le man mais **n'existe pas** dans `bob/cli.py`. Le vrai format pour lister les sections est `bob --check=list`. Un user tapant `bob --list-checks` obtient `Error: Unknown option: '--list-checks'`.
+
+**2. Claim sur `--min-level=info` valeur valide retirée** (ligne 262). Le man listait trois valeurs valides : `info / warn / alert`. Mais `cli.py:388,396` rejette explicitement `info` (seulement `warn` ou `alert` acceptés ; `info` serait un no-op puisque INFO est le plancher implicite).
+
+**3. Liste des valeurs `--format=FMT` complétée** (ligne 99). Le man listait `text / json / markdown`. Le vrai tuple `_VALID_FORMATS` dans `cli.py:458` est `("json", "json-full", "csv", "markdown", "html")` — manquent `json-full`, `csv`, `html`, et `text` n'est **pas** une valeur valide de `--format=` (c'est le mode de sortie par défaut implicite ; `bob --format=text` est rejeté au parse).
+
+#### `man/bob-profile.5` (3 fixes)
+
+**1. Références au flag `--list-profiles` supprimées** (ligne 53). Même classe de bug que `--list-checks` : le man documentait un flag qui n'existe pas.
+
+**2. "Jusqu'à 5 niveaux d'héritage" → "Jusqu'à 8 niveaux"** (ligne 57). La vraie constante est `_MAX_EXTENDS_DEPTH = 8` dans `bob/profiles.py:56`, levant `RecursionError` quand dépassée.
+
+**3. SHIPPED PROFILES enrichi avec l'entrée alias `workstation`**. La section listait 3 profils (`server`, `desktop`, `container`) mais `bob/data/profiles/` contient 4 fichiers. Le man documente maintenant `workstation` comme alias de rétrocompatibilité. La description de `container` a aussi été réécrite pour matcher le vrai `container.conf::[skip_sections]`.
+
+#### `DOCUMENTS/AUTOMATION.md` + FR (4 × 2 = 8 fixes)
+
+La doc webhook contenait quatre erreurs significatives qui auraient conduit les intégrateurs à écrire des receivers cassés.
+
+**1. Structure du sample JSON fausse**. La doc montrait `alerts` et `warnings` comme tableaux d'objets `{key, message}`. Le vrai payload JSON les expose en **entiers (compteurs)** (`engine.alert_count`, `engine.warn_count`). Un receiver implémentant `for alert in payload["alerts"]:` crasherait avec `TypeError: 'int' object is not iterable`. Pour énumérer les findings, le receiver doit appeler BOB avec `--json-full` qui ajoute un tableau `findings` top-level. Le sample corrigé inclut les vrais champs (`version`, `score_max`, `network_context`, `public_ip`, `deductions`, `domain_scores`).
+
+**2. Casse du champ `risk` fausse**. Sample montrait `"risk": "LOW"` (uppercase). Le vrai JSON sérialise `engine.level.value` qui est en lowercase (`"low"` / `"medium"` / `"high"` / `"critical"` — voir `bob/scoring.py:45-50`).
+
+**3. Claim sur la condition de webhook fausse**. La doc disait "Le webhook est POSTé **uniquement si des alertes ou avertissements sont présents**". Le vrai code (`bob/__main__.py`) n'a aucun seuil de count — le webhook est POSTé à chaque audit dès qu'une URL est configurée et que `--offline` n'est pas activé, y compris pour les audits clean. La doc corrigée précise "filtrer côté récepteur en inspectant `alerts`/`warnings`/`score`".
+
+**4. Timeout webhook faux**. Doc disait "timeout de 5 secondes" ; la vraie constante est `_TIMEOUT_SECONDS = 10` dans `bob/webhook.py:39`. La même dérive était présente dans `DOCUMENTS/SNAPSHOT.md` et avait été corrigée là pendant les passes d'audit SNAPSHOT — mais la copie dans AUTOMATION.md n'avait pas été propagée. Exemple type de pourquoi les faits dupliqués dans la doc dérivent.
+
+#### `SECURITY_FR.md` (1 fix)
+
+Le header `## Threat model` était resté en anglais quand le fichier a été forké en français. Le contenu du body était déjà traduit ; seul le heading avait été oublié. Corrigé en `## Modèle de menace`.
+
+### `DOCUMENTS/SNAPSHOT.md` — nouvelle cartographie interne
+
+Un nouveau document interne de ~640 lignes a été créé dans `DOCUMENTS/` pour fournir une vue d'ensemble single-page du codebase. Le but est double :
+
+1. **Préparation de refactor** : avant une refactorisation non-triviale, le maintainer n'a plus besoin de re-découvrir la structure, le graphe de dépendances et les contracts gelés module par module.
+
+2. **Briefing sub-agent** : quand on délègue une tâche d'audit profond ou de refactor à un sub-agent, passer SNAPSHOT.md comme premier item de contexte réduit drastiquement l'exploration que l'agent doit faire.
+
+**Contenu** : diagramme ASCII d'architecture · arbre annoté · index des modules `bob/` racine (38 modules) et `bob/checks/` (43 checks) avec LoC et rôles · graphe de dépendances (centralité in/out-degree) · hotspots et ratios tests-to-code · 6 patterns/conventions avec exemples · 7 contracts gelés · surface CLI (~40 long + 21 short) · paths fichiers & env vars · mapping tests-to-source · décisions architecturales · matrice CI · "Chiffres clés".
+
+**Validation** : le document a subi **20 passes successives de correction** contre l'état réel du code, produisant 46 corrections au total. Bugs notables rattrapés : `~18 kLoC` headline → `~28 kLoC` (auto-incohérence entre header et footer qui a survécu 19 passes précédentes) ; le diagramme ASCII montrait `runner.py → domain_scores.py` mais `runner.py` n'importe pas `domain_scores` (vérifié par scan AST) ; description `--show-ignored` fausse ; `--ignore=KEY` listé en Filter alors qu'il s'agit d'une opération Setup qui exit immédiatement ; env var `NO_COLOR` listé comme honoré alors qu'aucun chemin de code ne le lit ; type du champ `network_context` change entre `--json` et `--json-full` ; exemple ScoreEngine manquait le paramètre requis `reason` ; paths cron utilisaient `{name}` mais les vrais paths utilisent `{slug}` dérivé via `make_slug()` ; "5s timeout" → 10s (même correction que AUTOMATION.md) ; "5 compound-risk rules" → 6 ; signature de pattern ne matchait pas le style majoritaire ; claim sur le storage des références CIS était trompeur.
+
+Le document est 100% anglais (une passe Franglais a rattrapé 4 expressions françaises résiduelles). Il est interne (pas shipped dans `debian/bob-core.docs` ni `bob.spec %doc`) parce que l'audience est le maintainer et les sub-agents, pas les utilisateurs finaux.
+
+### Harmonisation cosmétique des jauges
+
+Toutes les barres de progression basées sur le score dans l'UI terminale partagent maintenant un schéma de couleur unique via un nouveau helper `bob.output.score_bar(score: int) -> str`. La logique de couleur miroite `display._disk_bar` mais avec des seuils inversés — pour les scores, **haut = bon** :
+
+| Plage de score | Couleur | Sémantique |
+|---|---|---|
+| ≥ 8 / 10 | vert | sain |
+| 5 – 7 / 10 | jaune | modéré |
+| 0 – 4 / 10 | rouge | critique |
+
+Avant ce changement, quatre emplacements rendaient les barres en `█ * filled + ░ * empty` brut monochrome — visuellement plat, sans information de gravité conveyée par la couleur. Les barres des partitions disques dans `display.py::_disk_bar` étaient déjà colorées (avec les mêmes seuils appliqués au *pourcentage d'utilisation*, où haut = mauvais — d'où la sémantique inversée). Le nouveau helper aligne le reste de l'UI sur ce style établi.
+
+Renderers affectés (délégation d'une ligne chacun) :
+
+- `bob/watch.py::_score_bar` — l'affichage live du mode `--watch`.
+- `bob/breakdown.py::_bar` — le chemin de calcul du score `--breakdown`.
+- `bob/domain_scores.py::render_domain_scores` — les barres de sous-scores par domaine dans le résumé d'audit.
+- `bob/manage_logs.py` (rendu d'historique à la ligne 69) — la sparkline des scores passés dans le TUI `--manage-logs`.
+
+Le flag `--no-color` / `-n` continue de neutraliser les couleurs.
+
+### Refonte complète de la bash completion (`bob/data/bob.bash-completion`)
+
+#### Bug critique : complétion de valeur `--xxx=<TAB>` échouait silencieusement
+
+L'amélioration la plus visible pour l'utilisateur est la correction d'un échec silencieux long-standing dans la complétion de valeurs. Taper `bob --check=<TAB>` (ou n'importe lequel de `--skip=`, `--min-level=`, `--format=`, `--profile=`, `--lang=`, `--target=`, `--webhook-format=`, `--output=`) ne montrait aucune suggestion.
+
+La cause racine est la façon dont bash split la ligne de commande en mots pour la completion. Avec `COMP_WORDBREAKS` par défaut contenant `=`, taper `bob --check=` et appuyer TAB fait que bash split la ligne en `["bob", "--check", "="]` avec `COMP_CWORD=2` pointant sur le `=` lui-même. La fonction de completion lisait `${COMP_WORDS[COMP_CWORD]}` pour le mot courant — retournant `"="` au lieu de la chaîne vide. Le `compgen -W "${section_list}" -- "="` subséquent ne matchait rien.
+
+Le fix est d'utiliser la convention par arguments positionnels de la lib bash-completion : quand bash invoque une fonction de completion, il passe trois arguments positionnels — `$1` est le nom de la commande, `$2` est le mot courant **propre** stripé de tout préfixe de word-break `=`, et `$3` est le mot précédent. Lire `$2`/`$3` au lieu de `${COMP_WORDS[COMP_CWORD]}`/`${COMP_WORDS[COMP_CWORD-1]}` évite complètement le cas du split `=`.
+
+Le bug a été diagnostiqué en ajoutant un wrapper de debug autour de la fonction dans la session bash interactive de l'utilisateur (Bash 5.2.21), traçant la sortie `set -x` pour chaque pression TAB. Le diagnostic a révélé `words=[bob --check =] cword=2 cur=[=]` après avoir tapé `bob --check=<TAB>` — confirmant l'exposition COMP_WORDS du split brut contre le `$2=""` propre passé via les args positionnels.
+
+Ce bug était présent depuis la release initiale v0.1.0 et a survécu à tous les audits subséquents parce que l'approche de test manuel (mettant `COMP_WORDS=(bob "--check" "=" "")` avec `COMP_CWORD=3`) produisait une forme de word-array différente du vrai bash interactif.
+
+#### Autres corrections
+
+- **Renommage de fonction** : `_ufw_audit` → `_bob`. Le nom de fonction legacy datait d'avant le rename du projet en "Bodyguard Of Bits".
+- **Code mort supprimé** : `_ufw_audit_install()` + `complete -F install.sh` enregistraient une completion pour un script `install.sh` qui n'existe plus.
+- **Liste des sections factorisée dans `_SECTIONS`**, matchant `bob --check=list` exactement. Suppression de `firewall` (check core, non filtrable). Ajout de `iptables_nft`, `samba`, `desktop_apps` (ajoutés à `_ALL_SECTIONS` entre v0.3.x et v0.4.x mais jamais propagés à la liste de completion).
+- **Parité des long-options avec `cli.py`** : ajout de `--check=`, `--skip=`, `--output-dir=`, `--breakdown`, `--no-colour`. Short-options gagne `-B`. Total : 21 short, ~40 long options.
+- **Nouveau handler de valeur `--skip=`** (symétrique avec `--check=` minus la valeur spéciale `list`).
+- **Tous les handlers de valeur supportent les deux formes** `--xxx=value<TAB>` et `--xxx value<TAB>`.
+
+### CI — release GitHub automatique au push de tag (`.github/workflows/publish.yml`)
+
+Le workflow de publish gagne un 4e job `github-release` qui tourne après le succès du publish PyPI. Le pipeline complet est maintenant :
+
+```
+git push --tags
+  ↓
+test       (matrice Python 3.10/3.11/3.12/3.13)
+  ↓
+build      (sdist + wheel, uploadés en artifact)
+  ↓
+publish    (PyPI via Trusted Publishing OIDC)
+  ↓
+github-release  ← NOUVEAU
+  • Extrait le titre depuis la ligne table de CHANGELOG.md
+  • Extrait le body depuis la section DOCUMENTS/CHANGELOG_FULL.md
+    entre "## [vX.Y.Z]" et le prochain header "## [v" (via awk)
+  • Crée la release via softprops/action-gh-release@v2
+  • Attache wheel + sdist comme assets de release
+  • Marque comme latest
+```
+
+Sécurités : `needs: publish` (release uniquement si PyPI réussit), check explicite que la section CHANGELOG_FULL existe (échoue avec `::error::` sinon), permission limitée à `contents: write`.
+
+Avant cette automatisation, les releases GitHub étaient créées manuellement après chaque publish PyPI.
+
+### Tests
+
+Aucun nouveau test ajouté. 3 tests dans `tests/test_breakdown.py::TestBar` adaptés pour stripper les séquences d'échappement ANSI avant d'asserter le contenu visible de la barre (les barres sont maintenant des strings ANSI-colorés au lieu de `█░░░░░░░░░` brut). 4500/4500 tests passent toujours.
+
+---
+
 ## [v0.4.6] — 17-05-2026
 
 **La passe terrain v0.4.5 a fait remonter deux bugs reproductibles.** Les deux sont maintenant corrigés. Périmètre strictement limité — hotfix ciblé, aucun changement de comportement en dehors des deux scénarios rapportés.

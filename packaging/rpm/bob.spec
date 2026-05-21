@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.4.6
+Version:        0.4.7
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,41 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.4.7-1
+- Maintenance release — documentation audit + UI cosmetic + bash
+  completion overhaul + CI release automation. No audit pipeline
+  behavior change.
+- Cross-doc audit: 24 corrections across 8 files (README, README_FR,
+  README_TECH + FR, README_DEV + FR, SECURITY_FR, man/bob.1,
+  man/bob-profile.5, AUTOMATION + FR). Rectifies stale "9 domains"
+  (now 7 score domains), fictional "docker" profile (real is
+  "container"), --list-checks / --list-profiles / --min-level=info /
+  --format=text flags documented but rejected at CLI, webhook
+  payload structure / timeout / send condition wrong.
+- DOCUMENTS/SNAPSHOT.md added (~640 lines, internal cartography
+  for refactor prep and sub-agent briefing; 20 correction passes
+  against the actual code state; not shipped in %doc).
+- UI: gauge bars in --watch, --breakdown, per-domain scores, and
+  --manage-logs history now share a coloured rendering via
+  bob.output.score_bar() — green (>=8), yellow (5-7), red (0-4),
+  matching the existing display._disk_bar style. --no-color
+  continues to neutralise the colours.
+- bob/data/bob.bash-completion comprehensive overhaul. Critical fix
+  for --check=/--skip=/--format=/etc. value completion silently
+  failing due to COMP_WORDBREAKS '=' split (now uses bash-completion
+  positional-arg convention $2/$3). Function renamed _ufw_audit ->
+  _bob, dead code removed (install.sh completion), section list
+  matches `bob --check=list` exactly, long-options list achieves
+  parity with cli.py (added --check=, --skip=, --output-dir=,
+  --breakdown, --no-colour; short -B added).
+- CI: publish.yml gains 4th job that auto-creates the GitHub
+  Release after PyPI publish succeeds (extracts title from
+  CHANGELOG.md, body from DOCUMENTS/CHANGELOG_FULL.md, attaches
+  wheel + sdist as assets). Removes manual `gh release create`
+  step.
+- 4500 tests (unchanged). 3 tests in test_breakdown adapted to
+  strip ANSI codes before comparing visible bar content.
+
 * Sun May 17 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.4.6-1
 - Terrain test pass v0.4.5 fixes:
   * Bug 1: dpkg-query in kernel_modules.py now filters on 'ii' state

@@ -4,7 +4,7 @@
 
 Two complementary parts:
 
-- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.4.6 (4500 tests).
+- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.4.7 (4500 tests, unchanged from v0.4.6).
 - **Manual UFW regression plan** (Categories A–E at the bottom) — deliberately dangerous UFW rules and the expected BOB behaviour for each. Used to validate detection + remediation on real systems.
 
 ---
@@ -13,6 +13,7 @@ Two complementary parts:
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.4.7 | 4500 | Maintenance release — cross-doc audit (24 corrections / 8 files) + UI gauges harmonization + bash completion overhaul (critical `--xxx=<TAB>` value completion fix via positional-arg convention) + GitHub Release CI automation. No new tests; 3 tests in `test_breakdown.py::TestBar` adapted to strip ANSI codes before comparing visible content (bars are now coloured strings, no longer plain `█░░░░░░░░░`). |
 | v0.4.6 | 4500 | Terrain test pass v0.4.5 fixes (+11): `TestParseInstalledKernels` (+5 — `ii`/`rc`/`pn`/`un`/`iU` status filtering, `hi` hold kept, mixed legacy+prefixed format) · `TestActiveDomainsIncludesOK` (+6 in test_domain_scores — OK promotes, INFO doesn't, full Debian 13 remediation scenario asserted at global=9 instead of 8). Multi-distro integration CI added (purely additive, not counted as unit tests). |
 | v0.4.5 | 4489 | Test infrastructure hardening (0 new tests, pure refactor of `tests/test_locale_coverage.py`): regex scanning → AST parsing (`ast.walk` + `ast.Call` + `ast.Name`). Eliminates docstring false positives, multi-line call site fragility, and `obj._t(...)` attribute call edge cases. `_KEY_EXCLUSIONS` allowlist deleted. Same 9 tests, same external contract. |
 | v0.4.4 | 4489 | Cross-distro terrain hardening (+21): coverage for `updates.py` critical bug (`-s dist-upgrade` semantics, stale cache detection, cross-check vs `apt list --upgradable`); AppArmor 0-profile key; all-virtual SMART skip; DDNS ports inline; new `test_locale_coverage.py` in initial regex form (catches `[xxx.yyy]` sentinel regressions class). |
@@ -34,6 +35,31 @@ Two complementary parts:
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.4.7 — 4500/4500 (2026-05-21)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4500 passed in 5.55s
+```
+
+**Net: 0 (no new tests, no removals).** v0.4.7 is a maintenance release: documentation audit, cosmetic UI harmonization (gauge bars), bash completion overhaul, and CI automation for GitHub Release creation. None of these changes the audit pipeline behaviour or the scoring contract, so no test coverage was added.
+
+3 tests in `tests/test_breakdown.py::TestBar` were adapted (not new tests, just adjusted assertions) to handle the new ANSI-coloured bar output from `bob.output.score_bar()`:
+
+| Test | Before | After |
+|---|---|---|
+| `test_full_score_all_filled` | `assert _bar(10) == "██████████"` (10-char plain string) | Strips `re.compile(r"\x1b\[[0-9;]*m")` from `_bar(10)` before comparing to `"██████████"` |
+| `test_zero_score_all_empty` | `assert _bar(0) == "░░░░░░░░░░"` | Same: strip ANSI then compare |
+| `test_five_half_filled` | `assert len(bar) == 10` | Strip ANSI then assert visible content (5 `█`, 5 `░`) and length |
+
+The bar string went from 10 characters to ~19 characters with ANSI escape sequences wrapping the visible content. The visible content (the actual `█` / `░` characters) is unchanged — only the colour codes around them were added.
+
+All other tests pass unchanged, including the entire `bob/checks/` test suite (~3000 tests), domain scoring, JSON contract, locale coverage, profile inheritance, golden scoring scenarios, and the CLI parser tests.
 
 ---
 
