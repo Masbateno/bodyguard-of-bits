@@ -68,6 +68,138 @@ _WEAK_KEX: frozenset[str] = frozenset({
     "diffie-hellman-group-exchange-sha1",
 })
 
+# ---------------------------------------------------------------------------
+# sshd_config bad-directive table (declarative, v0.5.2)
+# ---------------------------------------------------------------------------
+#
+# Each row encodes "this directive has a value that should trigger a finding +
+# deduction." The shape is uniform enough across ~9 sshd directives to express
+# them as data rather than 9 near-identical if-blocks.
+#
+# Two predicate styles:
+#   - ``bad_values`` (tuple): the directive is bad when its lower-cased value
+#     IS in this set. E.g. PermitEmptyPasswords is bad when set to "yes".
+#   - ``safe_values`` (tuple): the directive is bad when its lower-cased value
+#     is NOT in this set. E.g. AllowTcpForwarding is bad except when "no" or
+#     "local". Use this when "anything other than these is bad" is more
+#     concise than enumerating bad values.
+#
+# Exactly one of ``bad_values`` or ``safe_values`` must be set; using both or
+# neither is a programming error caught by ``__post_init__``.
+#
+# Directives that don't fit this shape stay imperative in ``_check_sshd_config``:
+#   - PermitRootLogin (4-way branch with OK sub-states)
+#   - PasswordAuthentication (depends on ssh_exposed orchestration flag)
+#   - MaxAuthTries (integer threshold, not enum)
+#   - LoginGraceTime, AllowUsers/AllowGroups, _match_block (INFO-only paths)
+#   - Weak ciphers/macs/kex (handled by _check_weak_algo with intersection logic)
+
+
+@dataclass(frozen=True)
+class _BadDirective:
+    """Declarative rule for one sshd_config directive."""
+    name: str            # lowercase directive key in cfg dict
+    default: str         # value returned by cfg.get() when directive is missing
+    level: str           # "warn" or "alert"
+    key: str             # i18n key for finding message + deduction reason
+    points: int          # deduction amount
+    bad_values: tuple[str, ...] = ()    # values that trigger the finding
+    safe_values: tuple[str, ...] = ()   # alternative: anything not in this set is bad
+    nature: str = ""     # "" → defaults to "improvement" for warn, "action" for alert
+    detail_key: str = "" # optional separate i18n key for `detail=`
+
+    def __post_init__(self) -> None:
+        if bool(self.bad_values) == bool(self.safe_values):
+            raise ValueError(
+                f"_BadDirective({self.name!r}): exactly one of bad_values "
+                f"or safe_values must be set"
+            )
+        if self.level not in ("warn", "alert"):
+            raise ValueError(f"_BadDirective({self.name!r}): level must be 'warn' or 'alert'")
+
+    def is_bad(self, value: str) -> bool:
+        v = value.lower()
+        if self.bad_values:
+            return v in self.bad_values
+        return v not in self.safe_values
+
+
+_BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
+    _BadDirective(
+        name="permitemptypasswords", default="no",
+        bad_values=("yes",),
+        level="alert", key="ssh.permit_empty_passwords",
+        points=5, nature="improvement",
+    ),
+    _BadDirective(
+        name="x11forwarding", default="no",
+        bad_values=("yes",),
+        level="warn", key="ssh.x11_forwarding",
+        points=1,
+    ),
+    _BadDirective(
+        name="ignorerhosts", default="yes",
+        bad_values=("no",),
+        level="warn", key="ssh.ignore_rhosts_disabled",
+        points=2,
+    ),
+    _BadDirective(
+        name="hostbasedauthentication", default="no",
+        bad_values=("yes",),
+        level="alert", key="ssh.host_based_auth",
+        points=3, nature="improvement",
+    ),
+    _BadDirective(
+        name="permituserenvironment", default="no",
+        bad_values=("yes",),
+        level="warn", key="ssh.permit_user_env",
+        points=1,
+    ),
+    _BadDirective(
+        name="strictmodes", default="yes",
+        bad_values=("no",),
+        level="warn", key="ssh.strict_modes_disabled",
+        points=2,
+    ),
+    _BadDirective(
+        # "local" is acceptable (more restrictive than "yes", documented in
+        # remediation) — safe_values rather than bad_values
+        name="allowtcpforwarding", default="yes",
+        safe_values=("no", "local"),
+        level="warn", key="ssh.allow_tcp_forwarding",
+        points=1, detail_key="ssh.allow_tcp_forwarding_detail",
+    ),
+    _BadDirective(
+        name="pubkeyauthentication", default="yes",
+        bad_values=("no",),
+        level="alert", key="ssh.pubkey_auth_disabled",
+        points=3, nature="improvement",
+        detail_key="ssh.pubkey_auth_disabled_detail",
+    ),
+)
+
+
+def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t) -> bool:
+    """Apply a single ``_BadDirective`` rule. Returns True if a finding was emitted."""
+    value = cfg.get(rule.name, rule.default).lower()
+    if not rule.is_bad(value):
+        return False
+    kwargs = {
+        "key": rule.key,
+        "message": _t(rule.key),
+        "points": rule.points,
+    }
+    if rule.detail_key:
+        kwargs["detail"] = _t(rule.detail_key)
+    if rule.nature:
+        kwargs["nature"] = rule.nature
+    if rule.level == "alert":
+        result.alert_with_deduction(**kwargs)
+    else:
+        result.warn_with_deduction(**kwargs)
+    return True
+
+
 _SSHD_CONFIG_PATH = Path("/etc/ssh/sshd_config")
 
 # Files in ~/.ssh/ that are never private keys
@@ -419,18 +551,15 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
                 key="ssh.password_auth",
             )
 
-    # PermitEmptyPasswords
-    pep = cfg.get("permitemptypasswords", "no").lower()
-    if pep == "yes":
-        result.alert_with_deduction(
-            key="ssh.permit_empty_passwords",
-            message=_t("ssh.permit_empty_passwords"),
-            points=5,
-            nature="improvement",
-        )
-        found_issue = True
+    # Uniform "directive value is bad" rules — driven by the _BAD_DIRECTIVES
+    # table. Covers PermitEmptyPasswords, X11Forwarding, IgnoreRhosts,
+    # HostbasedAuthentication, PermitUserEnvironment, StrictModes,
+    # AllowTcpForwarding, PubkeyAuthentication.
+    for rule in _BAD_DIRECTIVES:
+        if _apply_bad_directive(rule, cfg, result, _t):
+            found_issue = True
 
-    # MaxAuthTries
+    # MaxAuthTries — integer threshold (doesn't fit the enum-style table).
     try:
         max_tries = int(cfg.get("maxauthtries", "6"))
     except ValueError:
@@ -443,7 +572,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
         )
         found_issue = True
 
-    # LoginGraceTime
+    # LoginGraceTime — INFO only, no deduction.
     raw_grace = cfg.get("logingracetime", "120")
     grace_secs = _parse_time_seconds(raw_grace)
     if grace_secs > 60:
@@ -452,84 +581,11 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             key="ssh.login_grace_time",
         )
 
-    # X11Forwarding
-    x11 = cfg.get("x11forwarding", "no").lower()
-    if x11 == "yes":
-        result.warn_with_deduction(
-            key="ssh.x11_forwarding",
-            message=_t("ssh.x11_forwarding"),
-            points=1,
-        )
-        found_issue = True
-
-    # IgnoreRhosts
-    ignore_rhosts = cfg.get("ignorerhosts", "yes").lower()
-    if ignore_rhosts == "no":
-        result.warn_with_deduction(
-            key="ssh.ignore_rhosts_disabled",
-            message=_t("ssh.ignore_rhosts_disabled"),
-            points=2,
-        )
-        found_issue = True
-
-    # HostbasedAuthentication
-    hba = cfg.get("hostbasedauthentication", "no").lower()
-    if hba == "yes":
-        result.alert_with_deduction(
-            key="ssh.host_based_auth",
-            message=_t("ssh.host_based_auth"),
-            points=3,
-            nature="improvement",
-        )
-        found_issue = True
-
-    # PermitUserEnvironment
-    pue = cfg.get("permituserenvironment", "no").lower()
-    if pue == "yes":
-        result.warn_with_deduction(
-            key="ssh.permit_user_env",
-            message=_t("ssh.permit_user_env"),
-            points=1,
-        )
-        found_issue = True
-
-    # StrictModes
-    strict = cfg.get("strictmodes", "yes").lower()
-    if strict == "no":
-        result.warn_with_deduction(
-            key="ssh.strict_modes_disabled",
-            message=_t("ssh.strict_modes_disabled"),
-            points=2,
-        )
-        found_issue = True
-
-    # Weak Ciphers / MACs / KexAlgorithms
+    # Weak Ciphers / MACs / KexAlgorithms — set-intersection logic, handled by
+    # the _check_weak_algo helper (different shape than _BAD_DIRECTIVES rules).
     found_issue |= _check_weak_algo(cfg, result, _t, "ciphers",      _WEAK_CIPHERS, "ssh.weak_ciphers", "ciphers", 2)
     found_issue |= _check_weak_algo(cfg, result, _t, "macs",         _WEAK_MACS,    "ssh.weak_macs",    "macs",    1)
     found_issue |= _check_weak_algo(cfg, result, _t, "kexalgorithms", _WEAK_KEX,    "ssh.weak_kex",     "kex",     1)
-
-    # AllowTcpForwarding — "local" is acceptable (more restrictive than "yes", documented in remediation)
-    atf = cfg.get("allowtcpforwarding", "yes").lower()
-    if atf not in ("no", "local"):
-        result.warn_with_deduction(
-            key="ssh.allow_tcp_forwarding",
-            message=_t("ssh.allow_tcp_forwarding"),
-            points=1,
-            detail=_t("ssh.allow_tcp_forwarding_detail"),
-        )
-        found_issue = True
-
-    # PubkeyAuthentication
-    pka = cfg.get("pubkeyauthentication", "yes").lower()
-    if pka == "no":
-        result.alert_with_deduction(
-            key="ssh.pubkey_auth_disabled",
-            message=_t("ssh.pubkey_auth_disabled"),
-            points=3,
-            nature="improvement",
-            detail=_t("ssh.pubkey_auth_disabled_detail"),
-        )
-        found_issue = True
 
     # AllowUsers / AllowGroups (informational only)
     has_restriction = any(k in cfg for k in ("allowusers", "allowgroups",

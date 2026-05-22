@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.1
+Version:        0.5.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,30 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.2-1
+- Refactor v0.5.x Phase 3 (audit findings #4 + #3).
+- #4: new _BadDirective dataclass + _BAD_DIRECTIVES table + helper
+  in bob/checks/ssh.py. Migrates 8 uniform sshd_config directives
+  (PermitEmptyPasswords, X11Forwarding, IgnoreRhosts,
+  HostbasedAuthentication, PermitUserEnvironment, StrictModes,
+  AllowTcpForwarding, PubkeyAuthentication) from a cascade of
+  if-blocks to a declarative table + loop. _check_sshd_config
+  body: ~180 → ~50 LoC.
+- Two predicate styles: bad_values tuple (most) and safe_values
+  tuple (AllowTcpForwarding). __post_init__ catches malformed
+  entries at module load.
+- Sites kept imperative (don't fit): PermitRootLogin (4-way),
+  PasswordAuthentication (ssh_exposed), MaxAuthTries (integer),
+  LoginGraceTime, AllowUsers/AllowGroups, Match block, weak
+  ciphers/macs/kex.
+- #3: runner._sec() extended with keyword-only callbacks
+  skip_if= and post_display=. 4 inline blocks migrated (samba,
+  docker_audit, desktop_apps, disk). Net runner.py: -29 LoC.
+- #13 (ssh.py split) deferred to Phase 5 — ssh.py stays at 1324
+  LoC (target <1000 not met).
+- Zero behaviour change. 4538/4538 tests unchanged. Wire output
+  bit-identical to v0.5.1. JSON contract preserved.
+
 * Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.1-1
 - Refactor v0.5.x Phase 2 — big LoC win (audit finding #1).
 - New CheckResult.warn_with_deduction() + .alert_with_deduction()

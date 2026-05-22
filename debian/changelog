@@ -1,3 +1,42 @@
+bodyguard-of-bits (0.5.2-1) UNRELEASED; urgency=low
+
+  * Refactor v0.5.x Phase 3 (audit findings #4 + #3). Two pure
+    structural refactors; zero behaviour change; 4538/4538 tests
+    unchanged.
+  * #4 — new _BadDirective frozen dataclass + _BAD_DIRECTIVES table
+    + _apply_bad_directive() helper in bob/checks/ssh.py. Migrates
+    8 uniform sshd_config directives (PermitEmptyPasswords,
+    X11Forwarding, IgnoreRhosts, HostbasedAuthentication,
+    PermitUserEnvironment, StrictModes, AllowTcpForwarding,
+    PubkeyAuthentication) from a cascade of if-blocks to a
+    declarative table + loop. _check_sshd_config body shrinks
+    ~180 → ~50 LoC. Two predicate styles: bad_values tuple (most
+    directives) and safe_values tuple (AllowTcpForwarding only,
+    where "local" is acceptable). __post_init__ catches malformed
+    entries at module load.
+  * Sites kept imperative (don't fit the table): PermitRootLogin
+    (4-way branch), PasswordAuthentication (depends on ssh_exposed),
+    MaxAuthTries (integer threshold), LoginGraceTime (INFO-only),
+    AllowUsers/AllowGroups, Match block, weak ciphers/macs/kex
+    (separate _check_weak_algo helper).
+  * #3 — runner._sec() extended with two keyword-only callbacks:
+    skip_if=Callable[[snapshot], bool] (snapshot-conditional gating)
+    and post_display=Callable[[snapshot, result], None] (post-check
+    display calls). 4 inline blocks migrated: samba (skip_if),
+    docker_audit (skip_if), desktop_apps (skip_if), disk
+    (post_display=display_disk_partitions). Net runner.py: -29 LoC.
+  * #13 (ssh.py split) deferred to Phase 5 — audit estimate (-150
+    LoC for #4) was overly optimistic, ssh.py stays at 1324 LoC
+    (target was <1000). Decision delayed alongside #14 (cron.py
+    split) and #15b (_PREFIX_TO_DOMAIN re-attribution).
+  * Net diff: 2 files changed, +185 / -130 = +55 lines (mainly
+    table declaration overhead, offset by inline-block removals).
+  * JSON contract (schema_version="1"), 116 EXPLAIN_KEYS, 34
+    filterable sections, CLI surface, locale keys, plugin contract,
+    wire output — all unchanged.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 22 May 2026 06:00:00 +0200
+
 bodyguard-of-bits (0.5.1-1) UNRELEASED; urgency=low
 
   * Refactor v0.5.x Phase 2 — the big LoC win (audit finding #1).

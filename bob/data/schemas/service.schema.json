@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/Masbateno/bodyguard-of-bits/v0.5.1/bob/data/schemas/service.schema.json",
+  "$id": "https://raw.githubusercontent.com/Masbateno/bodyguard-of-bits/v0.5.2/bob/data/schemas/service.schema.json",
   "title": "BOB service definition",
   "description": "Schema for a single service entry inside services.json or a *.json file dropped into ~/.config/bob/services.d/.\n\nSCOPE: This schema validates the structural and syntactic shape of a service entry. It does NOT enforce all runtime constraints. The following invariants are validated by bob.registry.Service.from_dict() at load time and CANNOT be expressed in pure JSON Schema:\n  * cross-service uniqueness of `id` across all loaded services (a single document can pass schema validation but fail at runtime when its IDs clash with another file)\n  * `config_key` must not be a Python reserved keyword (the regex permits any valid identifier; the keyword check is runtime-only)\n\nA document that validates against this schema is structurally well-formed; whether it loads successfully into BOB also depends on the runtime checks above. Schema major version: 1 (additive changes only within v1; breaking changes bump to v2 and gate via the optional `schema_version` field on plugin file wrappers — see plugin-file.schema.json).",
   "type": "object",

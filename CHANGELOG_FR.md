@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.5.2](#v052) | 22-05-2026 | Refactor v0.5.x Phase 3 — **#4 + #3**. **#4 Table directive SSH** : nouvelle dataclass `_BadDirective` + table `_BAD_DIRECTIVES` (8 entrées) + helper `_apply_bad_directive()` dans `bob/checks/ssh.py`. Migre les 8 directives `sshd_config` uniformes (PermitEmptyPasswords, X11Forwarding, IgnoreRhosts, HostbasedAuthentication, PermitUserEnvironment, StrictModes, AllowTcpForwarding, PubkeyAuthentication) d'une cascade de blocs `if value == "yes"`/`"no"` vers une boucle `for rule in _BAD_DIRECTIVES`. Helper avec deux styles de prédicats (`bad_values` ou `safe_values`) — `safe_values` couvre AllowTcpForwarding où `"local"` est acceptable en plus de `"no"`. Cas spéciaux préservés en impératif : PermitRootLogin (4-way branch), PasswordAuthentication (dépend de `ssh_exposed`), MaxAuthTries (seuil entier), LoginGraceTime (INFO-only), AllowUsers/AllowGroups (info-only), Match block, weak ciphers/macs/kex (helper séparé). Net `_check_sshd_config` : ~180 → ~50 LoC, ssh.py total +56 (coût dataclass + 8 entrées). **#3 extension runner._sec** avec params keyword-only `skip_if=Callable[[snapshot], bool]` et `post_display=Callable[[snapshot, result], None]`. Permet de remplacer 4 blocs inline par des appels `_sec` 1-liner : samba (skip_if not installed), docker_audit (skip_if not docker_installed), desktop_apps (skip_if not detected), disk (post_display=display_disk_partitions). Net runner.py : −29 lignes. **#13 (split ssh.py) déféré à Phase 5** — estimation audit (-150 LoC pour #4) trop optimiste, ssh.py reste à 1324 LoC. Tests 4538/4538 inchangés — comportement bit-identique à v0.5.1. |
 | [v0.5.1](#v051) | 21-05-2026 | Refactor v0.5.x Phase 2 — **le gros gain LoC** (audit finding #1). Nouveaux helpers `CheckResult.warn_with_deduction(key, *, message, points, reason=None, ...)` et `.alert_with_deduction(...)` dans `bob/scoring.py` qui collapsent l'idiom paired `result.warn(...) + result.add_deduction(...)` qui se répétait sur ~130 sites dans `bob/checks/*.py`. **120 sites migrés** dans 27 fichiers : firewall (4), fail2ban (2), clamav (5), ntp (2), ddns (1), updates (2), ssh (24 — le gros morceau), backup (1), log_rotation (3), auditd (3), file_integrity (3), kernel_hardening (3), rootkit (3), hardening (8), samba (6), mac_policy (6), disk (5), iptables_nftables (5), firewall_stack (4), file_perms (1), suid_audit (1), smtp (1), memory (1), network_context (1), cron_audit (2), docker_audit (2), kernel_modules (2), umask (2), user_accounts (2), password_policy (2), secure_boot (2), systemd_timers (2), logs (1), firmware (2), ipv6 (1), ports (1). **13 sites volontairement non migrés** — patterns où la déduction est conditionnelle sur un prédicat différent du finding (caps via compteur local : `services_state`, `ssl_certs` x3, `file_perms` x3, `ipv6.port_no_v6_rule`), ou où le niveau du finding branche `warn`/`alert` sur une condition séparée de la déduction (`docker` x2, `services.exposure`, `ports.uncovered_public`). L'override `reason=` gère les cas où la déduction utilise une clé i18n suffixée `_reason` distincte du message du finding (ex `ssh.host_key_dsa_reason` ≠ `ssh.host_key_dsa`). **Diff net : 37 fichiers modifiés, +483 / −1002 = −519 lignes.** Tests inchangés : 4538/4538 passent (les helpers sont additifs, zéro changement de comportement). JSON `schema_version="1"`, les 7 domaines de score, les 116 EXPLAIN_KEYS, et les 34 sections filtrables tous préservés. |
 | [v0.5.0](#v050) | 21-05-2026 | Refactor v0.5.x Phase 1 (ouvre la branche v0.5.x) — **6 findings de l'audit refactor + 1 bug latent trouvé par la nouvelle couverture de tests**. **#7** nouveaux helpers `is_unit_active()`/`is_unit_enabled()` dans `bob.checks._run` migrent 9 sites (`auditd`, `fail2ban`, `clamav`, `ntp`, `ddns`, `updates`, `ssh`, `backup`, `log_rotation`) en remplaçant l'idiom répété `_run("systemctl", "is-active", ...).strip() == "active"` ; `.lower()` défensif ajouté de manière centrale pour se protéger d'une sortie distro non-canonique. **#2** nouveau `bob.output.print_titled_box(title, width=62)` migre 4 sites (3× `cron.py` + 1× `manage_logs.py`) et **ferme le leak `--no-color`** où ces sites contournaient `_c` en imprimant des `\033[1;34m` littéraux. **#10** nouveau `bob.report.Report` `typing.Protocol` (type structurel PEP 544) capture le contrat partagé entre `AuditReport`, `NullReport` et `MarkdownReport` (qui étaient deux implémentations duck-typed) ; `runner.run_checks` annote maintenant `report: Report`. **#11** nouveaux closures `emit_section()` + `emit_group()` dans `runner.py` collapsent l'idiom 3-lignes `if not config.quiet: print_section(t(...)); report.write_section(t(...))` en 1 ligne à 20 sites (5 group headers + 15 section headers) ; `_sec()` lui-même dogfoode le helper. **#15a** nouveau `tests/test_domain_scores_mapping_complete.py` (+4 tests) scanne en AST `bob/checks/*.py` pour chaque `key="X.Y"` littéral et atteste que chaque préfixe est soit explicite dans `_PREFIX_TO_DOMAIN` soit whitelisté dans `_CATCH_ALL_BY_DESIGN` avec une justification (l'état v0.4.x — `smtp`/`fail2ban`/`desktop_apps`/`virt`/`docker_audit`/`ddns` etc. tombent encore dans le catch-all firewall, reporté à Phase 5 #15b). **Passe de couverture cron** (+35 tests) couvrant les 5 helpers purs non testés par les passes précédentes : `_validate_cron_field`, `_validate_custom_cron`, `build_script_content`, `apply_cron_schedule`, `apply_cron_email` (avec parité legacy `NOTIFY_EMAIL=`). **Bug latent corrigé (trouvé par les nouveaux tests cron) :** `apply_cron_schedule()` appelait `_os.open(...)` — mais `_os` n'est aliasé localement que dans 3 *autres* fonctions, jamais au niveau module. L'extraction de déduplication cron v0.4.8 avait raté ce renommage. Le helper était silencieusement mort depuis v0.4.8. Fix : `_os` → `os`. 4499 → **4538 tests** (+39 : +4 mapping / +35 cron). |
 | [v0.4.8](#v048) | 21-05-2026 | Passe d'audit code-quality 4 (sub-agent) — **bug réel I4** les fichiers de log de `sudo bob -d` étaient `root:root 0600` et inaccessibles à l'utilisateur après coup (maintenant chowned-back via `chown_to_sudo_user` dans `bob/report.py` + `bob/manage_logs.py::get_or_prompt_log_dir`, même pattern que les 7 modules de config déjà chowned) · **nettoyage de fields morts** 8 champs dataclass retirés sur 5 checks (`SSHSnapshot.config_source_files`, `FirewallStatus.ipv4_rules_count`+`ipv6_rules_count`, `SambaSnapshot.min_protocol`, `ClamAVSnapshot.last_scan_log_path`+`db_path`, `SecureBootSnapshot.method`) tous populés mais jamais lus — même classe de bug que v0.4.3 C1 · `_C_LOCALE_ENV` ajouté sur 3 sites `subprocess.check_output` (desktop_apps/smtp ps + ss/netstat) pour cohérence de locale · `log_rotation._service_active` inliné via `_run("systemctl", "is-active", ...)` (était 11 lignes de réinvention) · `apply_cron_schedule()` + `apply_cron_email()` promus de helpers privés à l'API publique de `bob.cron`, `bob/tui/cron.py` les importe — corrige l'asymétrie de support legacy `NOTIFY_EMAIL=` qui n'existait que côté plain · `SCORE_BAR_WIDTH = 10` exporté depuis `bob.output` (dédoublonne la constante `_BAR_WIDTH` entre `breakdown.py` + `domain_scores.py`) · auth_log 90 jours documenté comme intentionnel (indépendant de `--log-days` qui est pour les logs UFW) · **pyproject.toml** : `Development Status :: 4 - Beta` → `5 - Production/Stable`, `authors` + `maintainers` ajoutés (PyPI affichait UNKNOWN), `[project.optional-dependencies] geoip = ["geoip2>=4.0"]` pour `pipx install "bodyguard-of-bits[geoip]"`, `wheel` retiré des build-requires, Source + Documentation URLs ajoutées, `dependencies = []` explicite et `include = ["bob", "bob.checks", "bob.tui"]` · 4499/4499 tests (-1 : `test_default_method_is_none` retiré car le champ `method` n'existe plus) |
@@ -29,6 +30,96 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.5.2] — 22-05-2026
+
+**Refactor v0.5.x — Phase 3 sur 5.** Deux findings d'audit (#4 table directive SSH + #3 callbacks `runner._sec`). Aucun changement de comportement — 4538/4538 tests inchangés, sortie wire bit-identique à v0.5.1.
+
+### #4 — Table `_BAD_DIRECTIVES` pour `sshd_config`
+
+`_check_sshd_config` avait ~9 blocs `if` quasi-identiques : lecture directive depuis `cfg.get()`, comparaison contre une enum "mauvaise", émission finding + déduction avec points/clé/nature fixes. Maintenant collapsé en table déclarative.
+
+Nouveau dans `bob/checks/ssh.py` :
+
+```python
+@dataclass(frozen=True)
+class _BadDirective:
+    name: str          # clé cfg (lowercase)
+    default: str       # valeur par défaut si absent
+    level: str         # "warn" ou "alert"
+    key: str           # clé i18n
+    points: int
+    bad_values: tuple[str, ...] = ()    # valeurs qui déclenchent le finding
+    safe_values: tuple[str, ...] = ()   # alternative : tout ce qui n'est pas dans ce set est mauvais
+    nature: str = ""
+    detail_key: str = ""
+```
+
+`bad_values` et `safe_values` sont mutuellement exclusifs — le style `safe_values` couvre les cas comme `AllowTcpForwarding` où plusieurs valeurs (`"no"`, `"local"`) sont acceptables. Combinaisons invalides attrapées à l'instanciation par `__post_init__`.
+
+Directives migrées (8) : `PermitEmptyPasswords`, `X11Forwarding`, `IgnoreRhosts`, `HostbasedAuthentication`, `PermitUserEnvironment`, `StrictModes`, `AllowTcpForwarding`, `PubkeyAuthentication`.
+
+Sites gardés impératifs (5+ patterns qui ne fittent pas) :
+- **`PermitRootLogin`** — branchement 4-way avec sous-états OK
+- **`PasswordAuthentication`** — dépend du flag `ssh_exposed` (warn vs info)
+- **`MaxAuthTries`** — seuil entier (`>3`), pas une enum
+- **`LoginGraceTime`**, **`AllowUsers/AllowGroups`**, **Match block** — INFO uniquement
+- **Weak Ciphers/MACs/KexAlgorithms** — logique d'intersection de set via `_check_weak_algo`
+
+`_check_sshd_config` corps : ~180 → ~50 LoC. La dataclass + table + helper ajoutent ~130 LoC, donc ssh.py net +56. L'estimation de l'audit (-150 LoC) était trop optimiste — la verbosité des dataclass Python compense le gain de dédoublonnage. Le bénéfice est structurel (déclaratif > cascade impérative), pas LoC.
+
+### #3 — Extension `runner._sec` avec callbacks `skip_if=` et `post_display=`
+
+`_sec` ne savait pas gérer deux cas orthogonaux :
+- **Gating conditionnel snapshot** — `if samba_snapshot.installed`, `if docker_audit.docker_installed`, `if desktop_snapshot.detected`. Forçait des blocs inline dupliquant le corps de `_sec`.
+- **Appels d'affichage post-check** — `display_disk_partitions(snapshot, ...)`, etc.
+
+Maintenant `_sec` accepte deux callbacks keyword-only :
+
+```python
+def _sec(
+    section: str,
+    snapshot,
+    check_fn,
+    *,
+    skip_if=None,           # Callable[[snapshot], bool] — skip sans émettre l'en-tête
+    post_display=None,      # Callable[[snapshot, result], None] — après display_result
+    **check_kwargs,
+) -> None: ...
+```
+
+4 blocs inline migrés :
+
+| Section | Pattern inline | Après |
+|---|---|---|
+| `samba` | `if samba_snapshot.installed:` + 8 lignes | `_sec("samba", ..., skip_if=lambda s: not s.installed)` |
+| `docker_audit` | `if docker_audit_snapshot.docker_installed:` + 8 lignes | `_sec("docker_audit", ..., skip_if=lambda s: not s.docker_installed)` |
+| `desktop_apps` | `if desktop_snapshot.detected:` + 8 lignes | `_sec("desktop_apps", ..., skip_if=lambda s: not s.detected)` |
+| `disk` | bloc `_sec`-shape + appel `display_disk_partitions` après | `_sec("disk", ..., post_display=lambda snap, _r: display_disk_partitions(snap, t, output))` |
+
+Net runner.py : −29 LoC.
+
+### #13 (split ssh.py) — déféré à Phase 5
+
+La prédiction de l'audit (#4 économise ~150 LoC → ssh.py descend sous 1000 LoC → #13 inutile) ne tient pas. Phase 2 (#1) a économisé 119 LoC sur ssh.py ; Phase 3 (#4) en ajoute 56 net. ssh.py est à 1324 LoC, bien au-dessus du seuil 1000. Selon le principe [conservative-refactor](memory), splitter ssh.py est une chirurgie medium-risk — décision Phase 5 avec #14 (split cron.py) une fois l'état final connu.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+4538 passed in ~6s
+```
+
+`4538 → 4538` (inchangé). #4 et #3 sont des refactors purement structurels. La suite complète `test_ssh.py` (122 tests) a passé avant, pendant et après la migration `_BAD_DIRECTIVES` — la table produit des entrées `Finding` et `Deduction` bit-identiques aux if-blocks précédents.
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, 116 EXPLAIN_KEYS, 34 sections filtrables — **inchangés**.
+- **Sortie wire** : bit-identique à v0.5.1.
+- **Score par domaine** : inchangé.
+- **API externe** : aucun breaking change. `_BadDirective` et `_BAD_DIRECTIVES` sont module-private ; le changement de signature `_sec` est keyword-only (call sites existants inaffectés).
 
 ---
 

@@ -183,8 +183,37 @@ def run_checks(
             print_group(title)
         report.write_group(title)
 
-    def _sec(section: str, snapshot, check_fn, **check_kwargs) -> None:
+    def _sec(
+        section: str,
+        snapshot,
+        check_fn,
+        *,
+        skip_if=None,
+        post_display=None,
+        **check_kwargs,
+    ) -> None:
+        """Run one audit section.
+
+        Args:
+            section: section key (drives header text + `_section_enabled` gate
+                via profile / `--check`).
+            snapshot: pre-collected snapshot object (passed positionally to
+                ``check_fn``).
+            check_fn: pure check function returning a ``CheckResult``.
+            skip_if: optional ``Callable[[snapshot], bool]`` — when truthy,
+                the section is skipped without emitting the header (used for
+                "if installed" / "if detected" gates that depend on the
+                snapshot rather than the profile).
+            post_display: optional ``Callable[[snapshot, result], None]``
+                invoked after ``display_result`` (still inside the ``if not
+                config.quiet`` block conceptually). Used by checks that need
+                an extra display call — e.g. partition bars for ``disk``, port
+                tables for ``ports_analysis``.
+            **check_kwargs: forwarded to ``check_fn`` after ``snapshot`` and ``t``.
+        """
         if not _section_enabled(section, config, profile):
+            return
+        if skip_if is not None and skip_if(snapshot):
             return
         emit_section(section)
         result = check_fn(snapshot, t=t, **check_kwargs)
@@ -192,6 +221,8 @@ def run_checks(
             apply_profile(result, profile)
         engine.apply(result)
         display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+        if post_display is not None and not config.quiet:
+            post_display(snapshot, result)
         if not config.quiet:
             print()
 
@@ -421,17 +452,9 @@ def run_checks(
         print()
 
     # ---- CHECK 24 — Samba security audit ----
-    if _section_enabled("samba", config, profile):
-        samba_snapshot = SambaSnapshot.from_system()
-        if samba_snapshot.installed:
-            emit_section("samba")
-            samba_result = check_samba(samba_snapshot, t=t)
-            if profile is not None:
-                apply_profile(samba_result, profile)
-            engine.apply(samba_result)
-            display_result(samba_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-            if not config.quiet:
-                print()
+    samba_snapshot = SambaSnapshot.from_system()
+    _sec("samba", samba_snapshot, check_samba,
+         skip_if=lambda s: not s.installed)
 
     # ---- CHECK 26 — SMTP local exposure ----
     smtp_snapshot = SmtpSnapshot.from_system()
@@ -483,16 +506,8 @@ def run_checks(
 
     # ---- CHECK 38 — Docker container security audit ----
     docker_audit_snapshot = DockerAuditSnapshot.from_system()
-    if docker_audit_snapshot.docker_installed:
-        if _section_enabled("docker_audit", config, profile):
-            emit_section("docker_audit")
-            docker_audit_result = check_docker_audit(docker_audit_snapshot, t=t)
-            if profile is not None:
-                apply_profile(docker_audit_result, profile)
-            engine.apply(docker_audit_result)
-            display_result(docker_audit_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-            if not config.quiet:
-                print()
+    _sec("docker_audit", docker_audit_snapshot, check_docker_audit,
+         skip_if=lambda s: not s.docker_installed)
 
     # ---- CHECK 39 — Log rotation & system journaling ----
     log_rotation_snapshot = LogRotationSnapshot.from_system()
@@ -528,16 +543,8 @@ def run_checks(
 
     # ---- CHECK 22 — Disk health (SMART + partition usage) ----
     disk_snapshot = DiskSnapshot.from_system()
-    if _section_enabled("disk", config, profile):
-        emit_section("disk")
-        disk_result = check_disk(disk_snapshot, t=t)
-        if profile is not None:
-            apply_profile(disk_result, profile)
-        engine.apply(disk_result)
-        display_result(disk_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if not config.quiet:
-            display_disk_partitions(disk_snapshot, t, output)
-            print()
+    _sec("disk", disk_snapshot, check_disk,
+         post_display=lambda snap, _r: display_disk_partitions(snap, t, output))
 
     # =========================================================================
     # GROUP 5 — DÉTECTION & SANTÉ
@@ -577,17 +584,9 @@ def run_checks(
     _sec("ntp", ntp_snapshot, check_ntp)
 
     # ---- CHECK 19 — Desktop application audit ----
-    if _section_enabled("desktop_apps", config, profile):
-        desktop_snapshot = DesktopAppsSnapshot.from_system()
-        if desktop_snapshot.detected:
-            emit_section("desktop_apps")
-            desktop_result = check_desktop_apps(desktop_snapshot, t=t)
-            if profile is not None:
-                apply_profile(desktop_result, profile)
-            engine.apply(desktop_result)
-            display_result(desktop_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-            if not config.quiet:
-                print()
+    desktop_snapshot = DesktopAppsSnapshot.from_system()
+    _sec("desktop_apps", desktop_snapshot, check_desktop_apps,
+         skip_if=lambda s: not s.detected)
 
     # ---- CHECK 45 — Firmware & microcode audit ----
     firmware_snapshot = FirmwareSnapshot.from_system()

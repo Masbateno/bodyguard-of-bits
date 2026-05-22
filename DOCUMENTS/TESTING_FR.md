@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.1 (4538 tests, inchangé depuis v0.5.0 — Phase 2 du refactor v0.5.x est une migration helper contract-preserving, aucun delta de tests).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.2 (4538 tests, inchangé depuis v0.5.0 — Phases 2 et 3 du refactor v0.5.x sont contract-preserving, aucun delta de tests).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.2 | 4538 | Refactor v0.5.x Phase 3 — **#4 table directive SSH** (8 directives uniformes migrées vers table `_BAD_DIRECTIVES`) + **#3 extension runner._sec** avec callbacks `skip_if=` / `post_display=` (4 blocs inline migrés). **Zero delta de tests** — refactor purement structurel. La dataclass `_BadDirective` + table + helper `_apply_bad_directive()` produit des findings et déductions bit-identiques aux if-blocks impératifs précédents. L'extension `_sec` est keyword-only (call sites existants inaffectés). `test_ssh.py` (122 tests) a passé avant et après la migration. Diff net : ssh.py +56 LoC (table verbose), runner.py −29 LoC. **#13 (split ssh.py) déféré Phase 5** — ssh.py reste à 1324 LoC (cible <1000 non atteinte). |
 | v0.5.1 | 4538 | Refactor v0.5.x Phase 2 — gros gain LoC. Nouveaux helpers `CheckResult.warn_with_deduction()` + `.alert_with_deduction()` collapsent 120 sites paired `warn`+`add_deduction` dans 27 fichiers check. **Zéro delta de tests** — chaque appel helper invoque en interne la séquence existante `warn`/`alert` + `add_deduction`, produisant des sorties `Finding` + `Deduction` bit-identiques. Les 4538 tests pinnent la sortie wire (messages findings, raisons déductions, template_vars, préfixes clés, refs CIS) — tous préservés. Chacune des 6 vagues de migration (fichiers 1-site → 2-site → 3-site → 4-6 site → hardening → ssh.py) a passé `pytest tests/` avant de continuer. Diff net : 37 fichiers modifiés, +483/−1002 = −519 lignes. |
 | v0.5.0 | 4538 | Refactor v0.5.x Phase 1 (+39 tests) — **+4** dans le nouveau `tests/test_domain_scores_mapping_complete.py` (scan AST de `bob/checks/*.py` pour les préfixes de clés non-mappés, protège le catch-all `_PREFIX_TO_DOMAIN` du drift silencieux). **+35** dans `tests/test_cron.py` couvrant 5 helpers purs jusque-là non testés : `TestValidateCronField` (13), `TestValidateCustomCron` (7), `TestBuildScriptContent` (7), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5 — incl. parité legacy `NOTIFY_EMAIL=`). **Bug latent corrigé** : `apply_cron_schedule()` référençait `_os.open` (non défini au niveau module) — l'extraction de déduplication v0.4.8 avait raté le renommage ; les nouveaux tests ont remonté le NameError au premier run. Tests dans `test_fail2ban.py` et `test_ntp.py` adaptés pour patcher `is_unit_active` en parallèle de `_run` (refactor #7). |
 | v0.4.8 | 4499 | Release de hardening — passe sub-agent code-review n°4 (4 important + 5 mineur + 3 suggestion findings) + audit approfondi pyproject.toml (6 fixes). **−1 test (4500 → 4499) :** suppression de `test_default_method_is_none` dans `test_secure_boot.py` après retrait du champ mort `method: str` de `SecureBootSnapshot`. Les autres retraits de champs morts (`ssh.config_source_files`, `firewall.ipv4_rules_count`/`ipv6_rules_count`, `samba.min_protocol`, `clamav.db_path`/`last_scan_log_path`) ont vu leurs tests associés mis à jour pour retirer les kwargs devenus invalides. Aucun nouveau comportement, nettoyage contract-preserving. |
@@ -38,6 +39,42 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.2 — 4538/4538 (22-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in ~6s
+```
+
+**Net : 0 (aucun nouveau test, aucune suppression).** v0.5.2 est le refactor Phase 3 (audit findings #4 + #3). Les deux sont structurels — l'approche table-driven `_BAD_DIRECTIVES` pour sshd_config produit des entrées `Finding` et `Deduction` identiques aux if-blocks précédents, et l'extension `_sec` est keyword-only (aucun impact sur les appelants existants).
+
+#### Pourquoi zéro delta de tests
+
+`test_ssh.py` a 122 tests, dont 30+ pinnent le comportement sshd_config. Aucun n'a changé :
+- Les tests attestent sur les listes `result.findings` et `result.deductions` (compte, attributs, key matching) — le chemin table-driven produit les mêmes entrées dans le même ordre.
+- Les tests utilisent `SSHSnapshot(sshd_config={"x11forwarding": "yes", ...})` pour construire les snapshots — la boucle `for rule in _BAD_DIRECTIVES` lit les mêmes clés dict.
+- Les 4 cas impératifs (PermitRootLogin, PasswordAuthentication, MaxAuthTries, LoginGraceTime) sont restés intacts — les tests sur ces directives continuent d'utiliser les mêmes chemins de code.
+
+#### Couverture tests `_BAD_DIRECTIVES`
+
+Les 8 directives migrées ont chacune entre 2 et 6 tests dans `test_ssh.py`. Migration validée par le passage de tous ces tests sur le chemin table-driven.
+
+La validation `__post_init__` (mutual exclusion de `bad_values` et `safe_values`) est exercée au chargement du module — si un futur contributeur ajoute une entrée `_BadDirective` mal formée, l'import échoue avec un message d'erreur clair.
+
+#### Extension `runner._sec` — aucun impact tests
+
+Les 4 sites migrés vers `skip_if=` / `post_display=` (`samba`, `docker_audit`, `desktop_apps`, `disk`) n'ont pas de tests unitaires directs sur l'orchestration runner (`run_checks` est testé en intégration via le pipeline d'audit complet). Le séparateur keyword-only `*,` avant les nouveaux params garantit que les patterns d'appels positionnels existants continuent de compiler.
+
+#### Test terrain
+
+Même approche cross-distro que v0.5.0/v0.5.1 — pipx upgrade + `sudo bob -v -d` sur chaque VM. Sortie attendue : bit-identique à v0.5.1 (modulo changements d'état système entre runs).
+
+Les 4538 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 

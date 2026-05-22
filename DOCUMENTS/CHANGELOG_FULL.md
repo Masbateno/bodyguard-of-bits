@@ -6,6 +6,243 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.5.2] — 2026-05-22
+
+**Refactor v0.5.x — Phase 3 of 5.** Two audit findings: **#4 SSH directive table** and **#3 `runner._sec` callbacks extension**. Zero behaviour change — 4538/4538 tests unchanged, wire output bit-identical to v0.5.1.
+
+### #4 — Declarative `_BAD_DIRECTIVES` table for sshd_config
+
+**Problem.** `_check_sshd_config` had ~9 near-identical if-blocks: read directive from `cfg.get()`, check value against a "bad" enum, emit finding + matching deduction with fixed points/i18n-key/level. The Phase 2 helper `warn_with_deduction` already collapsed each pair to a single call, but the *cascade of 9 directives* was still 9 separate imperative blocks.
+
+**Fix.** New declarative table + frozen dataclass + helper function in `bob/checks/ssh.py`:
+
+```python
+@dataclass(frozen=True)
+class _BadDirective:
+    """Declarative rule for one sshd_config directive."""
+    name: str            # lowercase directive key in cfg dict
+    default: str         # value returned by cfg.get() when directive is missing
+    level: str           # "warn" or "alert"
+    key: str             # i18n key for finding message + deduction reason
+    points: int          # deduction amount
+    bad_values: tuple[str, ...] = ()    # values that trigger the finding
+    safe_values: tuple[str, ...] = ()   # alternative: anything not in this set is bad
+    nature: str = ""     # "" → defaults via warn/alert level
+    detail_key: str = "" # optional separate i18n key for detail=
+
+    def __post_init__(self) -> None:
+        if bool(self.bad_values) == bool(self.safe_values):
+            raise ValueError(
+                f"_BadDirective({self.name!r}): exactly one of bad_values "
+                f"or safe_values must be set"
+            )
+        if self.level not in ("warn", "alert"):
+            raise ValueError(f"_BadDirective({self.name!r}): level must be 'warn' or 'alert'")
+
+    def is_bad(self, value: str) -> bool:
+        v = value.lower()
+        if self.bad_values:
+            return v in self.bad_values
+        return v not in self.safe_values
+```
+
+The mutual-exclusion check in `__post_init__` catches programming errors at class instantiation (frozen `dataclass` is created once at module load — any malformed entry crashes startup, not first audit).
+
+`_apply_bad_directive(rule, cfg, result, _t) -> bool` reads the directive value via `cfg.get(rule.name, rule.default)`, invokes `rule.is_bad(value)`, and emits the finding+deduction via the appropriate `warn_with_deduction` / `alert_with_deduction` helper (Phase 2 API).
+
+**Migrated directives (8)** — table entries:
+
+| Directive | `bad_values` / `safe_values` | Level | Points | Notes |
+|---|---|---|---|---|
+| `PermitEmptyPasswords` | bad: `("yes",)` | alert | 5 | nature="improvement" |
+| `X11Forwarding` | bad: `("yes",)` | warn | 1 | |
+| `IgnoreRhosts` | bad: `("no",)` | warn | 2 | |
+| `HostbasedAuthentication` | bad: `("yes",)` | alert | 3 | nature="improvement" |
+| `PermitUserEnvironment` | bad: `("yes",)` | warn | 1 | |
+| `StrictModes` | bad: `("no",)` | warn | 2 | |
+| `AllowTcpForwarding` | safe: `("no", "local")` | warn | 1 | `"local"` is acceptable (more restrictive than `"yes"`) — uses `safe_values` style |
+| `PubkeyAuthentication` | bad: `("no",)` | alert | 3 | nature="improvement", detail_key |
+
+`AllowTcpForwarding` is the only entry using `safe_values` — the alternative would be enumerating all bad values (`"yes"`, etc.) but `"no"` and `"local"` are the explicit acceptable values per the OpenSSH docs.
+
+**Sites kept imperative (5+ patterns)** — these don't fit the enum-style table:
+
+- **`PermitRootLogin`**: 4-way branch. `"yes"` → ALERT (-3pts), `"no"` → OK (with specific message), `"prohibit-password"` or `"forced-commands-only"` → OK (different message with `value=` template var), anything else → INFO.
+- **`PasswordAuthentication`**: depends on the orchestrator-level `ssh_exposed` flag. When SSH is exposed (public network or `allow` policy), WARN + deduction. When SSH is LAN-only, downgrade to INFO with a context-aware message.
+- **`MaxAuthTries`**: integer threshold (`>3`). Not enum-style; the message template var (`value=N`) is the observed integer.
+- **`LoginGraceTime`**: integer threshold (`>60s`) but INFO-only — no deduction.
+- **`AllowUsers/AllowGroups`**: detects *absence* of any restriction directive. INFO-only.
+- **Match block**: INFO when the parser detected sub-config blocks (their content is policy-dependent and out of scope).
+- **Weak Ciphers/MACs/KexAlgorithms**: handled by `_check_weak_algo(cfg, result, _t, name, weak_set, t_key, param, points)`. The "bad value" is a *set intersection* between the configured algorithm list and the weak-algorithms set — different shape than `_BadDirective`.
+
+**Result.** `_check_sshd_config` body shrinks from ~180 LoC to ~50 LoC (~70% reduction in function size). The table + dataclass + helper add ~130 LoC at the top of the file. Net `ssh.py`: +56 LoC.
+
+**Audit-vs-reality.** The original audit estimated #4 would save -150 LoC. The reality is +56 net. The discrepancy is from:
+- Python dataclass verbosity (14 LoC for `_BadDirective` + 16 LoC of docstring/comments)
+- 8 table entries × ~7 LoC each = 56 LoC for the table
+- `_apply_bad_directive` helper: 18 LoC
+- `__post_init__` validation: 8 LoC
+- Total table infrastructure: ~130 LoC
+
+The *win is structural*, not LoC-economical: adding a new "bad sshd directive" check now requires adding 1 entry to `_BAD_DIRECTIVES`, not duplicating an if-block. The drift class (forgetting `nature=` on a deduction, or copy-pasting a `key=` mismatch between finding and deduction) is now structurally impossible — the dataclass holds those values once.
+
+---
+
+### #3 — `runner._sec` extension with `skip_if=` and `post_display=` callbacks
+
+**Problem.** The `_sec(section, snapshot, check_fn, **check_kwargs)` closure introduced in Phase 1 (v0.5.0) handled the canonical pattern: `print_section + write_section + check + apply_profile + engine.apply + display_result + print`. But 4 sections couldn't use it because they needed orthogonal extensions:
+
+- **Snapshot-conditional gating**: `samba`, `docker_audit`, `desktop_apps` need to skip the entire section (no header printed, no check run) when the snapshot reports the underlying service is not installed/detected. The check is fast (just reads the snapshot), but emitting an empty section header is ugly.
+- **Post-check display calls**: `disk` needs an additional `display_disk_partitions(snapshot, t, output)` call after the standard display. (Same shape applies to `ports_analysis`'s `display_ports_overview` but that block has additional cross-check dependencies and stays inline.)
+
+Pre-v0.5.2, these 4 blocks were open-coded inline, each ~8 LoC duplicating the `_sec` body.
+
+**Fix.** Two keyword-only callback parameters added to `_sec`:
+
+```python
+def _sec(
+    section: str,
+    snapshot,
+    check_fn,
+    *,
+    skip_if=None,                # Callable[[snapshot], bool]
+    post_display=None,           # Callable[[snapshot, result], None]
+    **check_kwargs,
+) -> None:
+    """Run one audit section.
+    ...
+    Args:
+        section: section key (drives header text + `_section_enabled` gate
+            via profile / `--check`).
+        snapshot: pre-collected snapshot object (passed positionally to
+            ``check_fn``).
+        check_fn: pure check function returning a ``CheckResult``.
+        skip_if: optional ``Callable[[snapshot], bool]`` — when truthy,
+            the section is skipped without emitting the header (used for
+            "if installed" / "if detected" gates that depend on the
+            snapshot rather than the profile).
+        post_display: optional ``Callable[[snapshot, result], None]``
+            invoked after ``display_result`` (still inside the ``if not
+            config.quiet`` block conceptually).
+        **check_kwargs: forwarded to ``check_fn`` after ``snapshot`` and ``t``.
+    """
+    if not _section_enabled(section, config, profile):
+        return
+    if skip_if is not None and skip_if(snapshot):
+        return
+    emit_section(section)
+    result = check_fn(snapshot, t=t, **check_kwargs)
+    if profile is not None:
+        apply_profile(result, profile)
+    engine.apply(result)
+    display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    if post_display is not None and not config.quiet:
+        post_display(snapshot, result)
+    if not config.quiet:
+        print()
+```
+
+The `*,` separator forces both callbacks to be passed as kwargs — prevents positional-arg confusion at call sites. The existing 16+ `_sec(...)` call sites are unaffected (none used positional args after the 3rd).
+
+**Migrated sites (4)**:
+
+```python
+# Before (8 lines):
+if _section_enabled("samba", config, profile):
+    samba_snapshot = SambaSnapshot.from_system()
+    if samba_snapshot.installed:
+        emit_section("samba")
+        samba_result = check_samba(samba_snapshot, t=t)
+        if profile is not None:
+            apply_profile(samba_result, profile)
+        engine.apply(samba_result)
+        display_result(samba_result, report, config.verbose, ...)
+        if not config.quiet:
+            print()
+
+# After (3 lines):
+samba_snapshot = SambaSnapshot.from_system()
+_sec("samba", samba_snapshot, check_samba,
+     skip_if=lambda s: not s.installed)
+```
+
+```python
+# disk before (with post-display call):
+disk_snapshot = DiskSnapshot.from_system()
+if _section_enabled("disk", config, profile):
+    emit_section("disk")
+    disk_result = check_disk(disk_snapshot, t=t)
+    if profile is not None:
+        apply_profile(disk_result, profile)
+    engine.apply(disk_result)
+    display_result(disk_result, report, config.verbose, ...)
+    if not config.quiet:
+        display_disk_partitions(disk_snapshot, t, output)
+        print()
+
+# disk after:
+disk_snapshot = DiskSnapshot.from_system()
+_sec("disk", disk_snapshot, check_disk,
+     post_display=lambda snap, _r: display_disk_partitions(snap, t, output))
+```
+
+All 4 sites: `samba`, `docker_audit`, `desktop_apps`, `disk`. Net `runner.py`: **−29 LoC**.
+
+**Sites NOT migrated** (legitimately complex):
+- `services` block — needs cross-check dependencies (`audited_ports` flows out, `network_context` flows in), inline stays.
+- `firewall` block — first check, sets up snapshot variables consumed by 5+ later checks.
+- `rules` block — needs `ufw_numbered`, `ufw_verbose` cross-references.
+- `ports_analysis` — receives `audited_ports` from the services block; has its own `display_ports_overview` post-call. Could be migrated with both callbacks but the cross-check coupling is tighter — kept inline.
+
+---
+
+### #13 (ssh.py split) — deferred to Phase 5
+
+The audit prediction:
+> Combined with #1, ssh.py descends below 1000 LoC → #13 (ssh.py split) becomes unnecessary.
+
+Reality table:
+
+| Stage | ssh.py LoC | Delta |
+|---|---|---|
+| v0.4.8 (before refactor v0.5.x) | 1387 | — |
+| v0.5.0 (Phase 1) | 1387 | 0 (no SSH changes) |
+| v0.5.1 (Phase 2 — #1) | 1268 | −119 |
+| v0.5.2 (Phase 3 — #4) | 1324 | +56 |
+
+ssh.py is still 1324 LoC, 32% above the 1000-LoC target. Per [conservative-refactor](memory), ssh.py split is medium-risk surgery (must preserve `from bob.checks.ssh import SSHSnapshot` imports across 122 tests, propagate `_check_*` sub-function visibility for tests). Decision deferred to **Phase 5 (v0.5.4)** alongside #14 (cron.py split) once final state is known. Both splits will be revisited together with #15b (`_PREFIX_TO_DOMAIN` re-attribution).
+
+---
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in ~6s
+```
+
+**4538 → 4538 (unchanged).** Both #4 and #3 are pure structural refactors. The full `test_ssh.py` suite (122 tests) passed before, during, and after the `_BAD_DIRECTIVES` migration — the table produces bit-identical `Finding` and `Deduction` entries to the previous if-blocks.
+
+### Field testing
+
+Cross-distro coverage from v0.5.0/v0.5.1 (5 distros: Mint x2, Debian 13, Kali, Ubuntu 26.04 LTS) applies. v0.5.2 preserves wire output exactly — the recommended field test is `pipx upgrade bodyguard-of-bits && sudo bob -v -d` and verify the score, breakdown, and per-domain bars are bit-identical to v0.5.1 (modulo system state changes).
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, all 116 EXPLAIN_KEYS, all 34 filterable sections — **unchanged**.
+- **CLI surface**: no flag added, no flag removed.
+- **Per-domain score breakdown**: unchanged (same `_PREFIX_TO_DOMAIN`, same domain mapping for every emitted key).
+- **Wire output**: bit-identical to v0.5.1.
+- **External API**: no breaking change. `_BadDirective` and `_BAD_DIRECTIVES` are module-private; `_sec` signature extension is keyword-only (all existing call sites unaffected).
+- **i18n**: zero locale key changes.
+
+### Next phases
+
+- **v0.5.3 (Phase 4)**: #5 (`display_result` LEVEL_DISPATCH table) + #12 (`print_audit_summary` extracted helpers) + #8 (remove `CheckResult.log_data` escape hatch). Medium-risk: observable layout changes.
+- **v0.5.4 (Phase 5)**: #6 (cron wizard `_prompt` helper) + #9 (`UFW_AUDIT_SHARE` sunset) + final decisions on #13 (ssh.py split), #14 (cron.py split), #15b (`_PREFIX_TO_DOMAIN` re-attribution).
+
+---
+
 ## [v0.5.1] — 2026-05-21
 
 **Refactor v0.5.x — Phase 2 of 5.** The big LoC win. This release tackles **audit finding #1**: the paired `result.warn(...) + result.add_deduction(...)` idiom recurring ~130 times across `bob/checks/*.py`. After Phase 1 (v0.5.0) shipped low-risk additive findings + the cron coverage pass, Phase 2 collapses the dominant boilerplate pattern.

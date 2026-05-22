@@ -6,6 +6,109 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.2] — 22-05-2026
+
+**Refactor v0.5.x — Phase 3 sur 5.** Deux findings d'audit : **#4 table directive SSH** et **#3 extension callbacks `runner._sec`**. Aucun changement de comportement — 4538/4538 tests inchangés, sortie wire bit-identique à v0.5.1.
+
+### #4 — Table déclarative `_BAD_DIRECTIVES` pour sshd_config
+
+**Problème.** `_check_sshd_config` avait ~9 blocs `if` quasi-identiques : lecture directive depuis `cfg.get()`, comparaison contre une enum "mauvaise", émission finding + déduction associée avec points/clé-i18n/level fixes. Le helper Phase 2 `warn_with_deduction` collapsait déjà chaque paire en un seul appel, mais la *cascade de 9 directives* restait 9 blocs impératifs séparés.
+
+**Fix.** Nouvelle table déclarative + dataclass frozen + helper dans `bob/checks/ssh.py` (cf. version EN pour le code source de `_BadDirective`).
+
+Le check de mutual-exclusion dans `__post_init__` attrape les erreurs de programmation à l'instanciation de la classe (le `dataclass` frozen est créé une fois au chargement du module — toute entrée mal formée fait crasher le démarrage, pas le premier audit).
+
+`_apply_bad_directive(rule, cfg, result, _t) -> bool` lit la valeur de la directive via `cfg.get(rule.name, rule.default)`, invoque `rule.is_bad(value)`, et émet le finding+déduction via le helper approprié `warn_with_deduction` / `alert_with_deduction` (API Phase 2).
+
+**Directives migrées (8)** — entrées de la table :
+
+| Directive | `bad_values` / `safe_values` | Level | Points | Notes |
+|---|---|---|---|---|
+| `PermitEmptyPasswords` | bad: `("yes",)` | alert | 5 | nature="improvement" |
+| `X11Forwarding` | bad: `("yes",)` | warn | 1 | |
+| `IgnoreRhosts` | bad: `("no",)` | warn | 2 | |
+| `HostbasedAuthentication` | bad: `("yes",)` | alert | 3 | nature="improvement" |
+| `PermitUserEnvironment` | bad: `("yes",)` | warn | 1 | |
+| `StrictModes` | bad: `("no",)` | warn | 2 | |
+| `AllowTcpForwarding` | safe: `("no", "local")` | warn | 1 | `"local"` acceptable — utilise le style `safe_values` |
+| `PubkeyAuthentication` | bad: `("no",)` | alert | 3 | nature="improvement", detail_key |
+
+`AllowTcpForwarding` est la seule entrée utilisant `safe_values` — l'alternative serait d'énumérer toutes les bad values mais `"no"` et `"local"` sont les valeurs explicitement acceptables selon la doc OpenSSH.
+
+**Sites gardés impératifs (5+ patterns)** — ne fittent pas le style enum :
+
+- **`PermitRootLogin`** : branchement 4-way. `"yes"` → ALERT (-3pts), `"no"` → OK (message spécifique), `"prohibit-password"` ou `"forced-commands-only"` → OK (message différent avec template var `value=`), autre → INFO.
+- **`PasswordAuthentication`** : dépend du flag orchestrator-level `ssh_exposed`. Quand SSH est exposé (réseau public ou policy `allow`), WARN + déduction. Quand SSH est LAN-only, downgrade en INFO avec message context-aware.
+- **`MaxAuthTries`** : seuil entier (`>3`). Pas un enum ; la template var (`value=N`) est l'entier observé.
+- **`LoginGraceTime`** : seuil entier (`>60s`) mais INFO uniquement — pas de déduction.
+- **`AllowUsers/AllowGroups`** : détecte l'*absence* de directive de restriction. INFO uniquement.
+- **Match block** : INFO quand le parser a détecté des sous-blocs (leur contenu est policy-dépendant et hors scope).
+- **Weak Ciphers/MACs/KexAlgorithms** : géré par `_check_weak_algo`. La "mauvaise valeur" est une *intersection de set* entre la liste d'algorithmes configurée et le set d'algorithmes faibles — forme différente que `_BadDirective`.
+
+**Résultat.** Le corps de `_check_sshd_config` passe de ~180 LoC à ~50 LoC (réduction ~70% de la taille de fonction). La table + dataclass + helper ajoutent ~130 LoC en tête de fichier. Net `ssh.py` : +56 LoC.
+
+**Audit-vs-réalité.** L'audit original estimait que #4 économiserait -150 LoC. La réalité est +56 net. L'écart vient de la verbosité Python dataclass.
+
+Le *bénéfice est structurel*, pas LoC-économique : ajouter un nouveau "bad sshd directive" nécessite maintenant d'ajouter 1 entrée à `_BAD_DIRECTIVES`, pas dupliquer un if-bloc. La classe de drift (oublier `nature=` sur une déduction, ou copier-coller un mismatch de `key=` entre finding et déduction) est maintenant structurellement impossible.
+
+---
+
+### #3 — Extension `runner._sec` avec callbacks `skip_if=` et `post_display=`
+
+**Problème.** La closure `_sec(section, snapshot, check_fn, **check_kwargs)` introduite en Phase 1 (v0.5.0) gérait le pattern canonique. Mais 4 sections ne pouvaient pas l'utiliser car elles nécessitaient des extensions orthogonales :
+
+- **Gating conditionnel sur snapshot** : `samba`, `docker_audit`, `desktop_apps` doivent skipper toute la section (pas d'en-tête, pas de check) quand le snapshot reporte que le service sous-jacent n'est pas installé/détecté.
+- **Appels d'affichage post-check** : `disk` nécessite un appel `display_disk_partitions(snapshot, t, output)` additionnel après le display standard.
+
+Pre-v0.5.2, ces 4 blocs étaient open-coded inline, chacun ~8 LoC dupliquant le corps de `_sec`.
+
+**Fix.** Deux paramètres callback keyword-only ajoutés à `_sec` (cf. version EN pour la signature détaillée).
+
+Le séparateur `*,` force les deux callbacks à être passés en kwargs — empêche la confusion d'args positionnels aux call sites. Les 16+ call sites `_sec(...)` existants ne sont pas affectés (aucun n'utilisait d'args positionnels après le 3ème).
+
+**Sites migrés (4)** : `samba`, `docker_audit`, `desktop_apps`, `disk`. Net `runner.py` : **−29 LoC**.
+
+**Sites NON migrés** (légitimement complexes) : `services`, `firewall`, `rules`, `ports_analysis` — couplages cross-check, snapshot variables consommées par plusieurs checks suivants.
+
+---
+
+### #13 (split ssh.py) — déféré à Phase 5
+
+La prédiction de l'audit :
+> Combiné avec #1, ssh.py descend sous 1000 LoC → #13 (ssh.py split) devient inutile.
+
+Réalité (table) :
+
+| Étape | ssh.py LoC | Delta |
+|---|---|---|
+| v0.4.8 (avant refactor v0.5.x) | 1387 | — |
+| v0.5.0 (Phase 1) | 1387 | 0 |
+| v0.5.1 (Phase 2 — #1) | 1268 | −119 |
+| v0.5.2 (Phase 3 — #4) | 1324 | +56 |
+
+ssh.py reste à 1324 LoC, 32% au-dessus de la cible 1000. Selon [conservative-refactor](memory), split de ssh.py est une chirurgie medium-risk. Décision déférée à **Phase 5 (v0.5.4)** avec #14 (split cron.py) et #15b (ré-attribution `_PREFIX_TO_DOMAIN`).
+
+---
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in ~6s
+```
+
+**4538 → 4538 (inchangé).** #4 et #3 sont des refactors purement structurels.
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
+- **Sortie wire** : bit-identique à v0.5.1.
+- **Score par domaine** : inchangé.
+- **API externe** : aucun breaking change. `_BadDirective` et `_BAD_DIRECTIVES` sont module-private ; l'extension de signature `_sec` est keyword-only.
+- **i18n** : aucun changement de clé locale.
+
+---
+
 ## [v0.5.1] — 21-05-2026
 
 **Refactor v0.5.x — Phase 2 sur 5.** Le gros gain LoC. Cette release attaque **l'audit finding #1** : l'idiom paired `result.warn(...) + result.add_deduction(...)` se répétant ~130 fois dans `bob/checks/*.py`. Après que Phase 1 (v0.5.0) ait shippé les findings low-risk additifs + la passe couverture cron, Phase 2 collapse le pattern boilerplate dominant.
