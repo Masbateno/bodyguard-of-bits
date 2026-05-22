@@ -1,3 +1,53 @@
+bodyguard-of-bits (0.5.3-1) UNRELEASED; urgency=low
+
+  * Refactor v0.5.x Phase 4 (audit findings #5 + #12 + #8). Three
+    pure structural refactors; zero behaviour change; 4538/4538
+    tests unchanged; wire output bit-identical to v0.5.2.
+  * #5 — new _LevelTraits frozen dataclass + 4-row dispatch dict
+    in bob/display.py collapse the 4-branch OK/WARN/ALERT/INFO
+    cascade in display_result() to a single declarative loop.
+    Each row captures (report_label, threshold_key, print_fn,
+    has_recurrence, has_body, detail_unconditional, show_note,
+    show_cis). The ALERT-only path that prints detail without
+    --verbose is now `detail_unconditional=True` instead of an
+    imperative branch. New _emit_finding_body() module-level
+    helper consumes the traits.
+  * #12 — print_audit_summary() split: 142-line function broken
+    into 3 module-level helpers (_summary_header_lines,
+    _summary_findings_lines, _summary_breakdown_lines) plus
+    _add_finding_lines promoted from inner closure to module
+    level. The orchestrator becomes a 3-line lines.extend()
+    assembler, then print_summary_box(), then the footer
+    (verdict + implicit_svcs + scope + report.write_summary).
+  * #8 — CheckResult.log_data escape hatch removed. The typed
+    dict|None field on bob/scoring.py:CheckResult is replaced by
+    a tuple return from check_logs(...) -> (CheckResult,
+    LogReportData | None). New frozen LogReportData dataclass in
+    bob/checks/logs.py (log_days, days_available, total,
+    brute_hits, top_ips, top_ports, svc_hits). runner.py:408
+    unpacks the tuple; display_log_results() takes the report
+    as explicit positional arg.
+  * Tests: 3 renamed (test_log_data_* -> test_report_data_*)
+    and rewritten for dataclass field access; ~20 other test
+    sites use `result, _ = check_logs(...)` tuple unpack.
+  * Net diff: 5 files changed, +109 / -69 = +40 lines.
+    display.py +23 (explicit helper signatures),
+    logs.py +19 (LogReportData), runner.py 0 (1-line migration),
+    scoring.py -1 (log_data field removed),
+    tests +3 (tuple unpack + 3 renamed).
+  * SECURITY.md / SECURITY_FR.md updated: 0.5.x line now marked
+    "current", 0.4.x line marked "end of life". Patches release
+    as 0.5.x+1 going forward; next breaking change bumps to
+    0.6.0.
+  * #13 (ssh.py split) / #14 (cron.py split) / #15b
+    (_PREFIX_TO_DOMAIN re-attribution) still deferred to Phase 5
+    (v0.5.4). ssh.py stays at 1324 LoC at v0.5.3 entry.
+  * JSON contract (schema_version="1"), 116 EXPLAIN_KEYS, 34
+    filterable sections, CLI surface, locale keys, plugin
+    contract, wire output — all unchanged.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 22 May 2026 20:00:00 +0200
+
 bodyguard-of-bits (0.5.2-1) UNRELEASED; urgency=low
 
   * Refactor v0.5.x Phase 3 (audit findings #4 + #3). Two pure

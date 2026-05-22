@@ -9,11 +9,12 @@ are not backported.
 
 | Version   | Supported          |
 |-----------|--------------------|
-| 0.4.x     | ✅ current          |
+| 0.5.x     | ✅ current          |
+| 0.4.x     | ❌ end of life      |
 | 0.3.x     | ❌ end of life      |
 | < 0.3.0   | ❌ end of life      |
 
-Patches release as `0.4.x+1`. A breaking change bumps the minor (`0.5.0`).
+Patches release as `0.5.x+1`. A breaking change bumps the minor (`0.6.0`).
 
 ## Reporting a vulnerability
 
@@ -116,7 +117,7 @@ privileges as BOB itself (typically root). Trust your plugin sources as you
 would any other code you `sudo`-execute.
 
 A future major version may introduce a restricted-mode plugin runner (no
-filesystem write, no subprocess), but it is out of scope for the 0.4.x line.
+filesystem write, no subprocess), but it is out of scope for the 0.5.x line.
 
 ## Network surface
 

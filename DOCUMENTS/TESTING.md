@@ -4,7 +4,7 @@
 
 Two complementary parts:
 
-- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.5.2 (4538 tests, unchanged from v0.5.0 — Phases 2 and 3 of v0.5.x refactor are contract-preserving, no test deltas).
+- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.5.3 (4538 tests, unchanged from v0.5.0 — Phases 2, 3 and 4 of v0.5.x refactor are contract-preserving, no test deltas).
 - **Manual UFW regression plan** (Categories A–E at the bottom) — deliberately dangerous UFW rules and the expected BOB behaviour for each. Used to validate detection + remediation on real systems.
 
 ---
@@ -13,6 +13,7 @@ Two complementary parts:
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.3 | 4538 | Refactor v0.5.x Phase 4 — **#5 `_LEVEL_DISPATCH` dispatch table** in `display_result` (4-branch OK/WARN/ALERT/INFO cascade → declarative loop driven by `_LevelTraits` dataclass) + **#12 `print_audit_summary` split** into 3 module-level helpers (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) + `_add_finding_lines` promoted from inner closure to module level + **#8 `CheckResult.log_data` removal** (dict escape hatch → tuple return `check_logs(...) -> (CheckResult, LogReportData | None)` with frozen `LogReportData` dataclass). **Zero test deltas** — pure structural refactor, wire output bit-identical to v0.5.2. 3 tests renamed (`test_log_data_*` → `test_report_data_*`) and rewritten for dataclass field access instead of dict-key access; ~20 test sites use `result, _ = check_logs(...)` tuple unpack. Side-fix during #12: `report.write_summary(score=score, risk_level=level_str, network_context=ctx_str, ...)` referenced locals that became dead after header extraction; replaced with direct expressions on `engine.score` / `t(f"scoring.level.{engine.level.value}")` — caught by `TestScoreTrend` (8 failures → 0 after fix). Net diff: display.py +23 LoC, logs.py +19 LoC, runner.py 0, scoring.py −1, tests +3 = **+40 LoC total**. |
 | v0.5.2 | 4538 | Refactor v0.5.x Phase 3 — **#4 SSH directive table** (8 directives uniformes migrées vers `_BAD_DIRECTIVES` table) + **#3 runner._sec extension** avec callbacks `skip_if=` / `post_display=` (4 blocs inline migrés). **Zero test deltas** — refactor structurel pur. Le `_BadDirective` dataclass + table + helper `_apply_bad_directive()` produit des findings et déductions bit-identiques aux if-blocks impératifs précédents. `_sec` extension is keyword-only (call sites existants inaffectés). `test_ssh.py` (122 tests) a passé avant et après la migration `_BAD_DIRECTIVES`. Net diff : ssh.py +56 LoC (table verbose), runner.py −29 LoC. **#13 (ssh.py split) déféré Phase 5** — ssh.py reste à 1324 LoC (cible <1000 non atteinte). |
 | v0.5.1 | 4538 | Refactor v0.5.x Phase 2 — big LoC win. New `CheckResult.warn_with_deduction()` + `.alert_with_deduction()` helpers collapse 120 paired `warn`+`add_deduction` sites across 27 check files. **Zero test deltas** — each helper call internally invokes the existing `warn`/`alert` + `add_deduction` sequence, producing bit-identical `Finding` + `Deduction` outputs. The 4538 tests pin the wire output (finding messages, deduction reasons, template_vars, key prefixes, CIS refs) — all preserved. Each of the 6 migration waves (1-site files → 2-site → 3-site → 4-6 site → hardening → ssh.py) passed `pytest tests/` before moving on. Net diff: 37 files changed, +483/−1002 = −519 lines. |
 | v0.5.0 | 4538 | Refactor v0.5.x Phase 1 (+39 tests) — **+4** in new `tests/test_domain_scores_mapping_complete.py` (AST scan of `bob/checks/*.py` for unmapped key prefixes, guards the `_PREFIX_TO_DOMAIN` catch-all from silent drift). **+35** in `tests/test_cron.py` covering 5 previously-untested pure helpers: `TestValidateCronField` (13 — wildcard, integer, range, step, list, out-of-bounds, reversed range, empty entry, garbage), `TestValidateCustomCron` (7 — full 5-field), `TestBuildScriptContent` (7 — shlex.quote, shebang, exports), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5 — incl. legacy `NOTIFY_EMAIL=` parity). **Latent bug fixed**: `apply_cron_schedule()` referenced `_os.open` (undefined at module scope) — v0.4.8 cron-deduplication extraction missed the rename; the new tests surfaced the NameError on first run. Tests in `test_fail2ban.py` and `test_ntp.py` updated to patch `is_unit_active` alongside `_run` (refactor #7). |
@@ -39,6 +40,66 @@ Two complementary parts:
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.5.3 — 4538/4538 (2026-05-22)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in ~6s
+```
+
+**Net: 0 (no new tests, no removals).** v0.5.3 is the Phase 4 refactor (audit findings #5 + #12 + #8). All three are structural — the `_LEVEL_DISPATCH` table produces the same `print_ok` / `print_warn` / `print_alert` / `print_info` calls in the same order as the imperative cascade, the 3 `_summary_*_lines` helpers return the same `(content, val)` tuples as the previous inline sections, and the tuple return `(CheckResult, LogReportData)` doesn't change orchestrator semantics (`runner.py` unpacks the tuple and passes the report explicitly to `display_log_results`).
+
+#### Renamed tests (#8)
+
+3 tests in `test_logs.py` were directly dependent on the `log_data` field:
+
+| Before (v0.5.2) | After (v0.5.3) | Change |
+|---|---|---|
+| `test_log_data_attached` | `test_report_data_attached` | `result.log_data is not None` → `report_data is not None`; `result.log_data["total"] == 1` → `report_data.total == 1` |
+| `test_top_ips_in_log_data` | `test_top_ips_in_report_data` | `result.log_data["top_ips"]` → `report_data.top_ips` |
+| `test_service_hits_in_log_data` | `test_service_hits_in_report_data` | `result.log_data["svc_hits"].get(...)` → `report_data.svc_hits.get(...)` |
+
+#### `result, _ = check_logs(...)` test sites
+
+~20 sites in `test_logs.py` (14) and `test_degraded.py` (8) now use tuple unpack. The tests only consult `result.findings` / `result.deductions` (scoring logic, levels), so the second tuple element is ignored via `_`. Purely mechanical migration pattern via `replace_all` Edit; no test-logic change.
+
+#### Side-fix caught by existing tests
+
+During the `print_audit_summary` split (#12), 8 tests failed on first run with `NameError: name 'score' is not defined`:
+
+- `TestScoreTrend::test_no_prev_score_no_arrow`
+- `TestScoreTrend::test_improved_shows_up_arrow`
+- `TestScoreTrend::test_degraded_shows_down_arrow`
+- `TestScoreTrend::test_stable_shows_no_annotation`
+- `TestScoreTrend::test_improved_by_two`
+- `TestScoreTrend::test_degraded_by_three`
+- `TestExplainHintAbsent::test_explainable_alongside_non_explainable`
+- `TestDuplicateFindings::test_two_identical_findings_produce_two_hints`
+
+Root cause: `score`, `level_str`, `ctx_str` were computed at the top of the function, used in the header (extracted into `_summary_header_lines`), then re-used in `report.write_summary(...)` at the end of the function. After the extraction, the locals were no longer in scope.
+
+Fix: replace with direct expressions:
+```python
+report.write_summary(
+    score=engine.score,
+    risk_level=t(f"scoring.level.{engine.level.value}"),
+    network_context=t(f"scoring.context.{network_context}"),
+    ...
+)
+```
+
+All 8 tests passed after this fix. Good illustration of why having e2e coverage on display functions matters — a "purely cosmetic" refactor can break data paths through implicit references.
+
+#### Field testing
+
+Same cross-distro coverage approach as v0.5.0/v0.5.1/v0.5.2 — pipx upgrade + `sudo bob -v -d` on each VM. Expected output: bit-identical to v0.5.2 (modulo system state changes between runs).
+
+All 4538 tests pass in ~6s on Python 3.12 / Linux Mint 22.3.
 
 ---
 

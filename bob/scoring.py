@@ -175,7 +175,6 @@ class CheckResult:
     findings:    List[Finding]   = field(default_factory=list)
     open_ports:  List[str]       = field(default_factory=list)
     caps:        List[ScoreCap]  = field(default_factory=list)
-    log_data:    "dict | None"   = field(default=None)
 
     def add_deduction(
         self,

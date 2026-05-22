@@ -402,23 +402,23 @@ class TestServiceHits:
 class TestCheckLogs:
     def test_no_logfile_info(self):
         snap = make_snapshot(log_found=False, log_source="none")
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         assert has_level(result, "info")
 
     def test_empty_log_ok(self):
         snap = make_snapshot(entries=[], log_found=True)
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         assert has_level(result, "ok")
 
     def test_journald_source_emits_info(self):
         snap = make_snapshot(entries=[], log_found=True, log_source="journald")
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         messages = [f.message for f in result.findings]
         assert any("logs.source_journald" in m for m in messages)
 
     def test_file_source_no_journald_info(self):
         snap = make_snapshot(entries=[], log_found=True, log_source="file")
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         messages = [f.message for f in result.findings]
         assert not any("source_journald" in m for m in messages)
 
@@ -429,7 +429,7 @@ class TestCheckLogs:
             for i in range(15)
         ]
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         assert has_level(result, "warn")
 
     def test_bruteforce_deduction(self):
@@ -439,28 +439,27 @@ class TestCheckLogs:
             for i in range(15)
         ]
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         assert sum(d.points for d in result.deductions) > 0
 
-    def test_log_data_attached(self):
+    def test_report_data_attached(self):
         entries = [make_entry("1.2.3.4", 22, "TCP")]
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
-        assert result.log_data is not None
-        assert result.log_data["total"] == 1
+        result, report_data = check_logs(snap)
+        assert report_data is not None
+        assert report_data.total == 1
 
-    def test_top_ips_in_log_data(self):
+    def test_top_ips_in_report_data(self):
         entries = [make_entry("1.2.3.4", 22, "TCP")] * 5
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
-        top_ips = result.log_data["top_ips"]
-        assert top_ips[0] == ("1.2.3.4", 5)
+        result, report_data = check_logs(snap)
+        assert report_data.top_ips[0] == ("1.2.3.4", 5)
 
-    def test_service_hits_in_log_data(self):
+    def test_service_hits_in_report_data(self):
         entries = [make_entry("1.2.3.4", 22, "TCP")] * 3
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap, audited_ports={"22/tcp"})
-        assert result.log_data["svc_hits"].get("22/tcp") == 3
+        result, report_data = check_logs(snap, audited_ports={"22/tcp"})
+        assert report_data.svc_hits.get("22/tcp") == 3
 
     def test_translation_used(self):
         def my_t(key, **kwargs): return f"T:{key}"
@@ -470,7 +469,7 @@ class TestCheckLogs:
             for i in range(15)
         ]
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap, t=my_t)
+        result, _ = check_logs(snap, t=my_t)
         assert any("T:" in f.message for f in result.findings)
 
 
@@ -563,21 +562,21 @@ class TestDominantLocalSource:
     def test_check_logs_emits_warn_finding(self):
         entries = self._entries("192.168.1.50", 80, 20)
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         keys = [f.key for f in result.findings if f.key]
         assert "logs.local_dominance" in keys
 
     def test_check_logs_no_finding_when_below_threshold(self):
         entries = self._entries("192.168.1.50", 60, 40)
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         keys = [f.key for f in result.findings if f.key]
         assert "logs.local_dominance" not in keys
 
     def test_finding_is_info_level(self):
         entries = self._entries("192.168.1.50", 80, 20)
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         local_findings = [f for f in result.findings if f.key == "logs.local_dominance"]
         assert local_findings
         assert local_findings[0].level == FindingLevel.INFO
@@ -590,7 +589,7 @@ class TestDominantLocalSource:
             make_entry(f"1.2.3.{i}", 80, "TCP", base) for i in range(20)
         ]
         snap = make_snapshot(entries=entries)
-        result = check_logs(snap)
+        result, _ = check_logs(snap)
         local_deductions = [d for d in result.deductions if "local" in d.reason.lower() or "dominan" in d.reason.lower()]
         assert len(local_deductions) == 0
 

@@ -7,6 +7,9 @@ log analysis, and the final audit summary.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Callable
+
 from bob.cis_refs import get_cis_ref, get_cis_code
 
 
@@ -60,6 +63,48 @@ def _wrap_for_box(prefix: str, text: str, inner: int) -> list[tuple[str, str]]:
 # Check result display
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class _LevelTraits:
+    """Per-finding-level display traits consumed by display_result.
+
+    `detail_unconditional` is the ALERT-only exception: detail lines render
+    even without --verbose. All other levels gate detail/cmd behind verbose.
+    """
+    report_label: str
+    threshold_key: str
+    print_fn: Callable[[str], None]
+    has_recurrence: bool
+    has_body: bool
+    detail_unconditional: bool
+    show_note: bool
+    show_cis: bool
+
+
+def _emit_finding_body(finding, traits: _LevelTraits, verbose: bool) -> None:
+    """Emit detail / cmd / note / CIS lines for a finding, gated by traits and verbose."""
+    if not traits.has_body:
+        return
+    from bob.output import (
+        print_recommendation, print_check_cmd, print_dim, print_info,
+    )
+    detail = finding.detail.splitlines() if finding.detail else []
+    if verbose and finding.cmd:
+        if finding.cmd_type == "check":
+            if detail:
+                print_recommendation(detail)
+            print_check_cmd(finding.cmd.splitlines())
+        else:
+            print_recommendation(detail, finding.cmd.splitlines())
+    elif (verbose or traits.detail_unconditional) and detail:
+        print_recommendation(detail)
+    if traits.show_note and verbose and finding.note:
+        print_info(finding.note)
+    if traits.show_cis and verbose and finding.key:
+        _cis = get_cis_ref(finding.key)
+        if _cis:
+            print_dim(_cis)
+
+
 def display_result(
     result,
     report,
@@ -70,81 +115,30 @@ def display_result(
     """Print all findings from a CheckResult to terminal and report."""
     from bob.scoring import FindingLevel
     from bob.output import (
-        print_ok, print_warn, print_alert, print_info, print_dim, print_recommendation,
-        print_check_cmd, _passes_threshold,
+        print_ok, print_warn, print_alert, print_info, _passes_threshold,
     )
+
+    dispatch = {
+        FindingLevel.OK:    _LevelTraits("OK",    "ok",    print_ok,    False, False, False, False, False),
+        FindingLevel.WARN:  _LevelTraits("WARN",  "warn",  print_warn,  True,  True,  False, False, True),
+        FindingLevel.ALERT: _LevelTraits("ALERT", "alert", print_alert, True,  True,  True,  True,  True),
+        FindingLevel.INFO:  _LevelTraits("INFO",  "info",  print_info,  False, True,  False, False, False),
+    }
 
     for finding in result.findings:
         if quiet:
-            level_str = finding.level.value.upper()
-            report.write_finding(level_str, finding.message)
+            report.write_finding(finding.level.value.upper(), finding.message)
             continue
-        if finding.level == FindingLevel.OK:
-            report.write_finding("OK", finding.message)
-            if not _passes_threshold("ok"):
-                continue
-            print_ok(finding.message)
-        elif finding.level == FindingLevel.WARN:
-            report.write_finding("WARN", finding.message)
-            if not _passes_threshold("warn"):
-                continue
-            print_warn(finding.message)
-            if recurrence and finding.key:
-                _print_recurrence(recurrence.get(finding.key, 0))
-            if verbose:
-                detail = finding.detail.splitlines() if finding.detail else []
-                if finding.cmd:
-                    if finding.cmd_type == "check":
-                        if detail:
-                            print_recommendation(detail)
-                        print_check_cmd(finding.cmd.splitlines())
-                    else:
-                        print_recommendation(detail, finding.cmd.splitlines())
-                elif detail:
-                    print_recommendation(detail)
-                if finding.key:
-                    _cis = get_cis_ref(finding.key)
-                    if _cis:
-                        print_dim(_cis)
-        elif finding.level == FindingLevel.ALERT:
-            report.write_finding("ALERT", finding.message)
-            if not _passes_threshold("alert"):
-                continue
-            print_alert(finding.message)
-            if recurrence and finding.key:
-                _print_recurrence(recurrence.get(finding.key, 0))
-            detail = finding.detail.splitlines() if finding.detail else []
-            if finding.cmd and verbose:
-                if finding.cmd_type == "check":
-                    if detail:
-                        print_recommendation(detail)
-                    print_check_cmd(finding.cmd.splitlines())
-                else:
-                    print_recommendation(detail, finding.cmd.splitlines())
-            elif detail:
-                print_recommendation(detail)
-            if finding.note and verbose:
-                print_info(finding.note)
-            if verbose and finding.key:
-                _cis = get_cis_ref(finding.key)
-                if _cis:
-                    print_dim(_cis)
-        elif finding.level == FindingLevel.INFO:
-            report.write_finding("INFO", finding.message)
-            if not _passes_threshold("info"):
-                continue
-            print_info(finding.message)
-            if verbose:
-                detail = finding.detail.splitlines() if finding.detail else []
-                if finding.cmd:
-                    if finding.cmd_type == "check":
-                        if detail:
-                            print_recommendation(detail)
-                        print_check_cmd(finding.cmd.splitlines())
-                    else:
-                        print_recommendation(detail, finding.cmd.splitlines())
-                elif detail:
-                    print_recommendation(detail)
+        traits = dispatch.get(finding.level)
+        if traits is None:
+            continue
+        report.write_finding(traits.report_label, finding.message)
+        if not _passes_threshold(traits.threshold_key):
+            continue
+        traits.print_fn(finding.message)
+        if traits.has_recurrence and recurrence and finding.key:
+            _print_recurrence(recurrence.get(finding.key, 0))
+        _emit_finding_body(finding, traits, verbose)
 
 
 # ---------------------------------------------------------------------------
@@ -209,44 +203,45 @@ def check_single_service_display(snap, network_context, t, report, verbose,
 # Log results display
 # ---------------------------------------------------------------------------
 
-def display_log_results(logs_result, snapshot, config, t, report) -> None:
-    """Display structured log analysis results."""
+def display_log_results(logs_result, snapshot, log_report, config, t, report) -> None:
+    """Display structured log analysis results.
+
+    ``log_report`` is a ``LogReportData`` or ``None`` (when no log file was
+    found or the log was empty — fall back to generic finding display).
+    """
     from bob.checks.logs import get_ip_geo
     from bob.output import print_ok, print_warn, print_info, print_dim
 
-    if logs_result.log_data is None:
+    if log_report is None:
         display_result(logs_result, report, config.verbose, quiet=config.quiet)
         return
 
-    data = logs_result.log_data
-
     print_dim(
-        f"{t('logs.period')} : {data['log_days']} {t('logs.days_unit')} "
-        f"— {data['days_available']} {t('logs.days_available')}"
+        f"{t('logs.period')} : {log_report.log_days} {t('logs.days_unit')} "
+        f"— {log_report.days_available} {t('logs.days_available')}"
     )
     print()
 
-    total = data["total"]
+    total = log_report.total
     if total == 0:
         print_ok(t("logs.empty"))
         return
 
     # Verdict line — one clear sentence before the details
-    brute_hits = data.get("brute_hits", [])
-    if brute_hits:
-        print_warn(t("logs.verdict_warn", total=total, days=data["log_days"]))
+    if log_report.brute_hits:
+        print_warn(t("logs.verdict_warn", total=total, days=log_report.log_days))
     else:
-        print_ok(t("logs.verdict_ok", total=total, days=data["log_days"]))
+        print_ok(t("logs.verdict_ok", total=total, days=log_report.log_days))
 
     # Bruteforce findings
+    from bob.scoring import FindingLevel
     for finding in logs_result.findings:
-        from bob.scoring import FindingLevel
         if finding.level == FindingLevel.WARN:
             print_warn(finding.message)
 
     # Top IP
-    if data["top_ips"]:
-        top_ip, top_count = data["top_ips"][0]
+    if log_report.top_ips:
+        top_ip, top_count = log_report.top_ips[0]
         geo = get_ip_geo(top_ip, lang=config.lang)
         geo_str = f" ({geo})" if geo else ""
         print_info(
@@ -255,24 +250,23 @@ def display_log_results(logs_result, snapshot, config, t, report) -> None:
         )
 
     # Top port
-    if data["top_ports"]:
-        top_port, top_count = data["top_ports"][0]
+    if log_report.top_ports:
+        top_port, top_count = log_report.top_ports[0]
         print_info(
             f"{t('logs.top_ports')} : {top_port} "
             f"— {top_count} {t('logs.attempts')}"
         )
 
     # local_dominance INFO (local IP generating most blocked traffic)
-    from bob.scoring import FindingLevel
     for finding in logs_result.findings:
         if finding.level == FindingLevel.INFO and getattr(finding, "key", "") == "logs.local_dominance":
             print_info(finding.message)
 
     # Service hits
-    if data["svc_hits"]:
+    if log_report.svc_hits:
         print()
         print_warn(t("logs.svc_hits") + " :")
-        for pp, count in data["svc_hits"].items():
+        for pp, count in log_report.svc_hits.items():
             print_dim(f"  → {pp} — {count} {t('logs.attempts')}")
 
     print()
@@ -281,24 +275,24 @@ def display_log_results(logs_result, snapshot, config, t, report) -> None:
     if config.detailed:
         report.write_section(
             f"{t('sections.logs')} — {t('logs.period')} : "
-            f"{data['log_days']} {t('logs.days_unit')}"
+            f"{log_report.log_days} {t('logs.days_unit')}"
         )
         report.write_raw(f"{t('logs.total_blocks')} : {total}")
-        report.write_raw(f"{t('logs.days_available')}    : {data['days_available']}")
+        report.write_raw(f"{t('logs.days_available')}    : {log_report.days_available}")
         report.write_raw("")
         report.write_raw(f"--- {t('logs.top_ips')} ---")
-        for ip, count in data["top_ips"]:
+        for ip, count in log_report.top_ips:
             geo = get_ip_geo(ip, lang=config.lang)
             geo_str = f" ({geo})" if geo else ""
             report.write_raw(f"  {ip:<20}{geo_str:<30} {count} {t('logs.attempts')}")
         report.write_raw("")
         report.write_raw(f"--- {t('logs.top_ports')} ---")
-        for port, count in data["top_ports"]:
+        for port, count in log_report.top_ports:
             report.write_raw(f"  {port:<12} {count} {t('logs.attempts')}")
         report.write_raw("")
         report.write_raw(f"--- {t('logs.brute_title')} ---")
-        if data["brute_hits"]:
-            for hit in data["brute_hits"]:
+        if log_report.brute_hits:
+            for hit in log_report.brute_hits:
                 geo = get_ip_geo(hit.src_ip, lang=config.lang)
                 geo_str = f" ({geo})" if geo else ""
                 report.write_raw(
@@ -309,8 +303,8 @@ def display_log_results(logs_result, snapshot, config, t, report) -> None:
             report.write_raw(f"  {t('logs.brute_none')}")
         report.write_raw("")
         report.write_raw(f"--- {t('logs.svc_hits')} ---")
-        if data["svc_hits"]:
-            for pp, count in data["svc_hits"].items():
+        if log_report.svc_hits:
+            for pp, count in log_report.svc_hits.items():
                 report.write_raw(f"  {pp} {count} {t('logs.attempts')}")
         else:
             report.write_raw(f"  {t('logs.svc_hits_none')}")
@@ -386,27 +380,19 @@ def display_network_context(snapshot, t, output_mod) -> None:
 # Audit summary
 # ---------------------------------------------------------------------------
 
-def print_audit_summary(engine, network_context, public_ip, config, t,
-                         report, snapshots, profile_name: str = "server",
-                         prev_score: "int | None" = None,
-                         fw_policy: str = "deny") -> None:
-    """Print the audit summary box and write to report."""
-    from bob.output import print_summary_box, _TERM_WIDTH, _c
+def _summary_header_lines(engine, network_context, config, t,
+                           profile_name: str,
+                           prev_score: "int | None") -> list[tuple[str, str]]:
+    """Build the score / risk / network / profile / target header lines."""
+    from bob.output import _c
     from bob.scoring import RiskLevel
-
-    # _TERM_WIDTH - 2 = box inner width; - 2 again for the leading indent
-    # that print_summary_box prepends to every label ("  " + label)
-    inner = _TERM_WIDTH - 4
 
     score = engine.score
     level = engine.level
-
     level_str = t(f"scoring.level.{level.value}")
     ctx_str   = t(f"scoring.context.{network_context}")
-
     icon = "✔" if level == RiskLevel.LOW else "✖"
 
-    # Score trend arrow (only when a previous score is available)
     score_str = f"{score}/10"
     if prev_score is not None:
         delta = score - prev_score
@@ -414,18 +400,16 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             score_str += f"  {_c.green}↑ +{delta}{_c.reset}"
         elif delta < 0:
             score_str += f"  {_c.yellow}↓ {delta}{_c.reset}"
-        # delta == 0: score unchanged, no annotation needed (the score is already shown)
 
-    lines = [
-        (t("scoring.score_label"), score_str),
-        (t("scoring.risk_label"),  f"{icon} {level_str}"),
+    lines: list[tuple[str, str]] = [
+        (t("scoring.score_label"),     score_str),
+        (t("scoring.risk_label"),      f"{icon} {level_str}"),
         (t("scoring.network_context"), ctx_str),
-        (t("scoring.profile_label"), profile_name.capitalize()),
+        (t("scoring.profile_label"),   profile_name.capitalize()),
     ]
 
     target = getattr(config, "target", 0)
     if target:
-        from bob.output import _c
         gap = target - score
         if gap <= 0:
             target_val = f"{_c.green}✔ {t('scoring.target_reached', target=target)}{_c.reset}"
@@ -433,66 +417,105 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             target_val = f"{_c.yellow}▲ {t('scoring.target_gap', target=target, gap=gap)}{_c.reset}"
         lines.append((t("scoring.target_label"), target_val))
 
+    return lines
+
+
+def _add_finding_lines(icon_prefix: str, item, inner: int) -> list[tuple[str, str]]:
+    """Build the lines for one summary item (message + cmd + note + CIS code + explain hint)."""
+    from bob.output import _c as _oc
+    from bob.explain import EXPLAIN_KEYS, normalize_key as _norm_key
+
+    lines: list[tuple[str, str]] = []
+    lines.extend(_wrap_for_box(icon_prefix, item.message, inner))
+    if item.cmd:
+        cmd_prefix  = " " * len(icon_prefix) + ("ℹ " if item.cmd_type == "check" else "→ ")
+        cont_prefix = " " * len(cmd_prefix)
+        for i, cmd_line in enumerate(item.cmd.splitlines()):
+            pfx = cmd_prefix if i == 0 else cont_prefix
+            for content, val in _wrap_for_box(pfx, cmd_line, inner):
+                lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))
+    if item.note:
+        note_prefix = " " * len(icon_prefix) + "ℹ "
+        lines.extend(_wrap_for_box(note_prefix, item.note, inner))
+    if item.key:
+        cis_code = get_cis_code(item.key)
+        if cis_code:
+            code_prefix = " " * len(icon_prefix)
+            lines.append((f"{code_prefix}{_oc.dim}[{cis_code}]{_oc.reset}", ""))
+        norm = _norm_key(item.key)
+        if norm in EXPLAIN_KEYS:
+            hint_prefix = " " * len(icon_prefix) + "? "
+            hint = f"bob --explain {norm}"
+            lines.extend(_wrap_for_box(hint_prefix, hint, inner))
+    return lines
+
+
+def _summary_findings_lines(engine, t, inner: int) -> list[tuple[str, str]]:
+    """Build the action + improvement findings block (with separators and disclaimer)."""
+    from bob.output import _c
+
     action_items      = [f for f in engine.findings if f.nature == "action"]
     improvement_items = [f for f in engine.findings if f.nature == "improvement"]
     structural_items  = [f for f in engine.findings if f.nature == "structural"]
 
-    from bob.explain import EXPLAIN_KEYS, normalize_key as _norm_key
+    if not (action_items or improvement_items or structural_items):
+        return []
 
-    def _add_finding_lines(icon_prefix: str, item) -> None:
-        from bob.output import _c as _oc
-        lines.extend(_wrap_for_box(icon_prefix, item.message, inner))
-        if item.cmd:
-            cmd_prefix = " " * len(icon_prefix) + ("ℹ " if item.cmd_type == "check" else "→ ")
-            cont_prefix = " " * len(cmd_prefix)
-            for i, cmd_line in enumerate(item.cmd.splitlines()):
-                pfx = cmd_prefix if i == 0 else cont_prefix
-                for content, val in _wrap_for_box(pfx, cmd_line, inner):
-                    lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))
-        if item.note:
-            note_prefix = " " * len(icon_prefix) + "ℹ "
-            lines.extend(_wrap_for_box(note_prefix, item.note, inner))
-        if item.key:
-            cis_code = get_cis_code(item.key)
-            if cis_code:
-                code_prefix = " " * len(icon_prefix)
-                lines.append((f"{code_prefix}{_oc.dim}[{cis_code}]{_oc.reset}", ""))
-            norm = _norm_key(item.key)
-            if norm in EXPLAIN_KEYS:
-                hint_prefix = " " * len(icon_prefix) + "? "
-                hint = f"bob --explain {norm}"
-                lines.extend(_wrap_for_box(hint_prefix, hint, inner))
-
-    if action_items or improvement_items or structural_items:
-        if action_items:
-            lines.append(("---", ""))
-            lines.append((f"✖ {t('summary.block_action')}", ""))
-            for item in action_items:
-                _add_finding_lines("  ✖  ", item)
-        if improvement_items:
-            lines.append(("---", ""))
-            lines.append((f"⚠ {t('summary.block_improve')}", ""))
-            for item in improvement_items:
-                _add_finding_lines("  ⚠  ", item)
-            from bob.output import _c
-            for content, val in _wrap_for_box("  ℹ  ", t("summary.block_improve_disclaimer"), inner):
-                lines.append((f"{_c.red}{content}{_c.reset}", val))
-
-    if engine.breakdown or engine.cap_info:
+    lines: list[tuple[str, str]] = []
+    if action_items:
         lines.append(("---", ""))
-        lines.append((t("scoring.breakdown_title"), ""))
-        for ded in engine.breakdown:
-            if ded.points == 0:
-                continue
-            prefix = f"  -{ded.points}  "
-            lines.extend(_wrap_for_box(prefix, ded.reason, inner))
-        if engine.cap_info:
-            cap_note = t("scoring.cap_note", max=engine.cap_info.maximum)
-            lines.extend(_wrap_for_box("  ⚠  ", cap_note, inner))
+        lines.append((f"✖ {t('summary.block_action')}", ""))
+        for item in action_items:
+            lines.extend(_add_finding_lines("  ✖  ", item, inner))
+    if improvement_items:
+        lines.append(("---", ""))
+        lines.append((f"⚠ {t('summary.block_improve')}", ""))
+        for item in improvement_items:
+            lines.extend(_add_finding_lines("  ⚠  ", item, inner))
+        for content, val in _wrap_for_box("  ℹ  ", t("summary.block_improve_disclaimer"), inner):
+            lines.append((f"{_c.red}{content}{_c.reset}", val))
+    return lines
+
+
+def _summary_breakdown_lines(engine, t, inner: int) -> list[tuple[str, str]]:
+    """Build the score breakdown block (deductions + cap note)."""
+    if not (engine.breakdown or engine.cap_info):
+        return []
+    lines: list[tuple[str, str]] = [
+        ("---", ""),
+        (t("scoring.breakdown_title"), ""),
+    ]
+    for ded in engine.breakdown:
+        if ded.points == 0:
+            continue
+        prefix = f"  -{ded.points}  "
+        lines.extend(_wrap_for_box(prefix, ded.reason, inner))
+    if engine.cap_info:
+        cap_note = t("scoring.cap_note", max=engine.cap_info.maximum)
+        lines.extend(_wrap_for_box("  ⚠  ", cap_note, inner))
+    return lines
+
+
+def print_audit_summary(engine, network_context, public_ip, config, t,
+                         report, snapshots, profile_name: str = "server",
+                         prev_score: "int | None" = None,
+                         fw_policy: str = "deny") -> None:
+    """Print the audit summary box and write to report."""
+    from bob.output import print_summary_box, _TERM_WIDTH
+
+    # _TERM_WIDTH - 2 = box inner width; - 2 again for the leading indent
+    # that print_summary_box prepends to every label ("  " + label)
+    inner = _TERM_WIDTH - 4
+
+    lines = _summary_header_lines(engine, network_context, config, t, profile_name, prev_score)
+    lines.extend(_summary_findings_lines(engine, t, inner))
+    lines.extend(_summary_breakdown_lines(engine, t, inner))
 
     print_summary_box(lines)
     print()
 
+    action_items      = [f for f in engine.findings if f.nature == "action"]
+    improvement_items = [f for f in engine.findings if f.nature == "improvement"]
     if not action_items and not improvement_items:
         print(f"  {t('summary.clean')}")
     elif not action_items:
@@ -516,9 +539,9 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
     print(f"  ℹ {t('summary.scope_line2')}")
 
     report.write_summary(
-        score=score,
-        risk_level=level_str,
-        network_context=ctx_str,
+        score=engine.score,
+        risk_level=t(f"scoring.level.{engine.level.value}"),
+        network_context=t(f"scoring.context.{network_context}"),
         public_ip=public_ip or "",
         ok_count=engine.ok_count,
         warn_count=engine.warn_count,

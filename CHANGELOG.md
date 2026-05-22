@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.5.3](#v053) | 2026-05-22 | Refactor v0.5.x Phase 4 — **#5 + #12 + #8**. **#5 `_LEVEL_DISPATCH` table** in `bob/display.py` collapses the 4-branch OK/WARN/ALERT/INFO cascade in `display_result()` to a single dispatch loop driven by a frozen `_LevelTraits(report_label, threshold_key, print_fn, has_recurrence, has_body, detail_unconditional, show_note, show_cis)` dataclass. The 4-row table captures per-level behaviour declaratively; the special-case ALERT path that prints detail unconditionally (even without `--verbose`) is now expressed as `detail_unconditional=True` rather than an imperative branch. **#12 `print_audit_summary` split** — the 142-line function is broken into 3 focused helpers (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) plus `_add_finding_lines` extracted from inner-function to module-level. The orchestrator becomes a 3-line assembler. **#8 `CheckResult.log_data` removed** — the typed-dict escape hatch on `CheckResult` is replaced by a tuple return from `check_logs(...) -> (CheckResult, LogReportData | None)`. New frozen dataclass `LogReportData(log_days, days_available, total, brute_hits, top_ips, top_ports, svc_hits)` in `bob/checks/logs.py`. `runner.py` unpacks the tuple; `display_log_results` takes the report as an explicit arg. **Net diff: 5 files changed, +109 / −69 = +40 lines** (display.py +23 for explicit helper signatures, logs.py +19 for `LogReportData`, scoring.py −1 for removed field). 4538/4538 tests unchanged — 3 tests renamed (`test_log_data_*` → `test_report_data_*`), ~20 test sites use tuple unpack. Wire output bit-identical to v0.5.2. |
 | [v0.5.2](#v052) | 2026-05-22 | Refactor v0.5.x Phase 3 — **#4 + #3**. **#4 SSH directive table** : nouvelles `_BadDirective` dataclass + `_BAD_DIRECTIVES` table (8 entrées) + helper `_apply_bad_directive()` dans `bob/checks/ssh.py`. Migre les 8 directives `sshd_config` uniformes (PermitEmptyPasswords, X11Forwarding, IgnoreRhosts, HostbasedAuthentication, PermitUserEnvironment, StrictModes, AllowTcpForwarding, PubkeyAuthentication) d'une cascade de `if value == "yes"`/`"no"` blocs vers une boucle `for rule in _BAD_DIRECTIVES`. Le helper expose deux styles de prédicats (`bad_values` tuple ou `safe_values` tuple) — `safe_values` couvre le cas AllowTcpForwarding où `"local"` est acceptable en plus de `"no"`. Cas spéciaux préservés en impératif : PermitRootLogin (4-way branch avec sous-états OK), PasswordAuthentication (dépend de `ssh_exposed`), MaxAuthTries (seuil entier), LoginGraceTime (INFO-only), AllowUsers/AllowGroups (info-only), Match block (info-only), weak ciphers/macs/kex (helper `_check_weak_algo` séparé). Net `_check_sshd_config` : ~180 → ~50 LoC, ssh.py total +56 (cost de la dataclass + 8 entrées). **#3 runner._sec extension** avec keyword-only params `skip_if=Callable[[snapshot], bool]` et `post_display=Callable[[snapshot, result], None]`. Permet de remplacer 4 blocs inline par des appels `_sec` 1-liner : `samba` (`skip_if=not s.installed`), `docker_audit` (`skip_if=not s.docker_installed`), `desktop_apps` (`skip_if=not s.detected`), `disk` (`post_display=display_disk_partitions`). Net runner.py : −29 lignes. **#13 (ssh.py split) déféré à Phase 5** — estimation audit (-150 LoC pour #4) trop optimiste, ssh.py reste à 1324 LoC (cible <1000 non atteinte). Tests 4538/4538 inchangés — comportement bit-identique à v0.5.1, c'est purement un re-shape interne. |
 | [v0.5.1](#v051) | 2026-05-21 | Refactor v0.5.x Phase 2 — **the big LoC win** (audit finding #1). New `CheckResult.warn_with_deduction(key, *, message, points, reason=None, ...)` and `.alert_with_deduction(...)` helpers in `bob/scoring.py` collapse the paired `result.warn(...) + result.add_deduction(...)` idiom that recurred across ~130 sites in `bob/checks/*.py`. **120 sites migrated** in 27 files: firewall (4), fail2ban (2), clamav (5), ntp (2), ddns (1), updates (2), ssh (24 — the big one), backup (1), log_rotation (3), auditd (3), file_integrity (3), kernel_hardening (3), rootkit (3), hardening (8), samba (6), mac_policy (6), disk (5), iptables_nftables (5), firewall_stack (4), file_perms (1), suid_audit (1), smtp (1), memory (1), network_context (1), cron_audit (2), docker_audit (2), kernel_modules (2), umask (2), user_accounts (2), password_policy (2), secure_boot (2), systemd_timers (2), logs (1), firmware (2), ipv6 (1), ports (1). **13 sites intentionally not migrated** — patterns where the deduction is conditional on a different predicate than the finding (caps via local counter: `services_state`, `ssl_certs` x3, `file_perms` x3, `ipv6.port_no_v6_rule`), or where finding-level branches `warn`/`alert` on a separate condition than the deduction (`docker` x2, `services.exposure`, `ports.uncovered_public`). The `reason=` override handles cases where the deduction uses a `_reason` suffix translation key distinct from the finding message (e.g. `ssh.host_key_dsa_reason` ≠ `ssh.host_key_dsa`). **Net diff: 37 files changed, +483 / −1002 = −519 lines.** Tests unchanged: 4538/4538 pass (helpers are additive, no behaviour change). JSON `schema_version="1"`, the 7 score domains, the 116 EXPLAIN_KEYS, and the 34 filterable sections are all preserved. |
 | [v0.5.0](#v050) | 2026-05-21 | Refactor v0.5.x Phase 1 (opens the v0.5.x branch) — **6 audit findings from refactor pass + 1 latent bug found via new test coverage**. **#7** new `is_unit_active()`/`is_unit_enabled()` helpers in `bob.checks._run` migrate 9 sites (`auditd`, `fail2ban`, `clamav`, `ntp`, `ddns`, `updates`, `ssh`, `backup`, `log_rotation`) replacing the repeated `_run("systemctl", "is-active", ...).strip() == "active"` idiom; defensive `.lower()` added centrally to guard against non-canonical distro output. **#2** new `bob.output.print_titled_box(title, width=62)` migrates 4 sites (3× `cron.py` + 1× `manage_logs.py`) and **closes the `--no-color` leak** where those sites bypassed `_c` and printed raw `\033[1;34m` literals. **#10** new `bob.report.Report` `typing.Protocol` (PEP 544 structural type) captures the shared write-method contract between `AuditReport`, `NullReport`, and `MarkdownReport` (which were two duck-typed implementations); `runner.run_checks` now type-hints `report: Report`. **#11** new `emit_section()` + `emit_group()` closures in `runner.py` collapse the `if not config.quiet: print_section(t(...)); report.write_section(t(...))` 3-line idiom into 1-line calls at 20 sites (5 group headers + 15 section headers); `_sec()` itself dogfoods the helper. **#15a** new `tests/test_domain_scores_mapping_complete.py` (+4 tests) AST-scans `bob/checks/*.py` for every literal `key="X.Y"` and asserts each prefix is either explicit in `_PREFIX_TO_DOMAIN` or whitelisted in `_CATCH_ALL_BY_DESIGN` with a justification (the v0.4.x state — `smtp`/`fail2ban`/`desktop_apps`/`virt`/`docker_audit`/`ddns` etc. still fall to the firewall catch-all, deferred to Phase 5 #15b). **Cron coverage pass** (+35 tests) covering the 5 pure helpers untouched by previous test sweeps: `_validate_cron_field` (out-of-range, reversed range, steps, list, empty entry), `_validate_custom_cron` (full 5-field with bounds per field), `build_script_content` (shebang, shlex quoting), `apply_cron_schedule`, `apply_cron_email` (legacy `NOTIFY_EMAIL=` parity). **Latent bug fixed (found by the new cron tests):** `apply_cron_schedule()` called `_os.open(...)` — but `_os` is only locally aliased in 3 *other* functions, never at module level. The v0.4.8 cron-deduplication extraction missed renaming this. The helper had been silently dead since v0.4.8 ship. Fix: `_os` → `os`. 4499 → **4538 tests** (+39: +4 mapping / +35 cron). |
@@ -30,6 +31,91 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.5.3] — 2026-05-22
+
+**Refactor v0.5.x — Phase 4 of 5.** Three audit findings: **#5 dispatch table**, **#12 summary helpers**, **#8 `log_data` escape hatch removal**. Zero behaviour change — 4538/4538 tests unchanged, wire output bit-identical to v0.5.2.
+
+### #5 — `_LEVEL_DISPATCH` table for `display_result`
+
+`display_result()` in `bob/display.py` had a 4-branch OK/WARN/ALERT/INFO cascade. Each branch repeated the same pattern (write to report, check threshold, print the message, optionally print recurrence/detail/cmd/note/CIS) with subtle per-level variations that drifted over time.
+
+New `_LevelTraits` frozen dataclass + 4-row dispatch dict expresses each variation as a boolean trait:
+
+```python
+@dataclass(frozen=True)
+class _LevelTraits:
+    report_label:         str
+    threshold_key:        str
+    print_fn:             Callable[[str], None]
+    has_recurrence:       bool
+    has_body:             bool
+    detail_unconditional: bool   # ALERT-only: prints detail without --verbose
+    show_note:            bool   # ALERT only
+    show_cis:             bool   # WARN + ALERT
+```
+
+The single trait that captures the ALERT specialness (detail prints even without `--verbose`) is `detail_unconditional=True`, replacing an opaque `elif detail: print_recommendation(detail)` branch that lived under the `if finding.cmd and verbose:` chain. `_emit_finding_body()` is a new module-level helper that consumes the traits.
+
+### #12 — `print_audit_summary` split into 3 helpers
+
+The 142-line `print_audit_summary()` mixed three responsibilities (header lines, finding block lines, breakdown lines) with an inner `_add_finding_lines()` closure. Now:
+
+- `_summary_header_lines(engine, network_context, config, t, profile_name, prev_score)` — score/level/network/profile/target lines + the score trend arrow.
+- `_summary_findings_lines(engine, t, inner)` — the action + improvement blocks (with the disclaimer line).
+- `_summary_breakdown_lines(engine, t, inner)` — deductions + cap_info.
+- `_add_finding_lines(icon_prefix, item, inner)` — promoted from inner closure to module-level helper, returns a list of `(content, val)` tuples instead of mutating the enclosing `lines` list.
+
+`print_audit_summary` becomes a 3-line `lines.extend(...)` assembler, then `print_summary_box(lines)`, then the footer (verdict line + implicit_svcs + scope lines + `report.write_summary()`).
+
+One side-fix: the original `report.write_summary(score=score, risk_level=level_str, network_context=ctx_str, ...)` referenced local variables that were no longer in scope after the header extraction. Replaced with direct expressions on `engine.score` and re-evaluated `t(f"scoring.level.{engine.level.value}")` / `t(f"scoring.context.{network_context}")`.
+
+### #8 — `CheckResult.log_data` escape hatch removed
+
+`CheckResult` had a `log_data: dict | None = field(default=None)` field used only by `bob/checks/logs.py` to attach structured aggregations (top IPs, top ports, brute hits, svc hits) for the orchestrator to display. Untyped, single-use, and indistinguishable from regular finding output in the dataclass surface.
+
+Replaced by:
+
+- New frozen `LogReportData` dataclass in `bob/checks/logs.py`:
+  ```python
+  @dataclass(frozen=True)
+  class LogReportData:
+      log_days:       int
+      days_available: int
+      total:          int
+      brute_hits:     list[BruteforceHit]
+      top_ips:        list[tuple[str, int]]
+      top_ports:      list[tuple[str, int]]
+      svc_hits:       dict[str, int]
+  ```
+- `check_logs(...)` now returns `tuple[CheckResult, LogReportData | None]`. `None` when no log file was found or the log was empty (the result still carries an info/ok finding).
+- `bob/runner.py:408` unpacks the tuple: `logs_result, logs_report = check_logs(...)`.
+- `display_log_results(logs_result, snapshot, log_report, config, t, report)` — `log_report` is now an explicit positional arg instead of being read from `logs_result.log_data`.
+- `CheckResult.log_data` field deleted from `bob/scoring.py`.
+
+Test churn: 3 tests renamed (`test_log_data_attached` → `test_report_data_attached`, `test_top_ips_in_log_data` → `test_top_ips_in_report_data`, `test_service_hits_in_log_data` → `test_service_hits_in_report_data`) and rewritten to read `report_data.total` / `report_data.top_ips` / `report_data.svc_hits` instead of dict-key access. ~20 other test sites in `tests/test_logs.py` + `tests/test_degraded.py` use `result, _ = check_logs(...)` tuple unpack since they don't care about the report data.
+
+### Net diff
+
+| File | Delta | Notes |
+|---|---|---|
+| `bob/display.py` | +23 | `_LevelTraits` + `_emit_finding_body` + 3 summary helpers + `_add_finding_lines` module-level |
+| `bob/checks/logs.py` | +19 | `LogReportData` dataclass + tuple return |
+| `bob/runner.py` | 0 | 1 line migrated to tuple unpack |
+| `bob/scoring.py` | −1 | `log_data` field removed |
+| `tests/test_logs.py` + `tests/test_degraded.py` | +3 | tuple unpack + 3 renamed tests |
+
+**Net +40 LoC.** Like Phases 2–3, the LoC delta on its own undersells the structural win: the 4-branch display cascade becomes a single declarative loop, the 142-line summary function becomes a 3-line assembler, and the `dict | None` escape hatch is replaced by a typed frozen dataclass.
+
+### #13 / #14 / #15b still deferred to Phase 5
+
+ssh.py reaches 1324 LoC at v0.5.3 entry, unchanged from v0.5.2. cron.py + `_PREFIX_TO_DOMAIN` re-attribution untouched in Phase 4. All three decisions stay queued for v0.5.4 with explicit `wc -l` re-check.
+
+### Garde-fou observable diff
+
+`sudo python3 -m bob -v --french -n` and `sudo python3 -m bob --format=json --french` snapshots captured before Phase 4 implementation, diffed at intermediate (#5 + #12) and final (#5 + #12 + #8) milestones. All deltas confined to state drift (timestamps, UFW block counts, ephemeral VSCode TCP ports, rkhunter age). Zero structural change to the rendered audit, the JSON tree, or the score breakdown.
 
 ---
 

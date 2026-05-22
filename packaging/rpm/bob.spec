@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.2
+Version:        0.5.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,32 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.3-1
+- Refactor v0.5.x Phase 4 (audit findings #5 + #12 + #8). Three
+  pure structural refactors; zero behaviour change.
+- #5: new _LevelTraits frozen dataclass + 4-row dispatch dict in
+  bob/display.py collapse the 4-branch OK/WARN/ALERT/INFO cascade
+  in display_result() to a single declarative loop. The ALERT-only
+  path that prints detail without --verbose is now
+  detail_unconditional=True. New _emit_finding_body() helper
+  consumes the traits.
+- #12: print_audit_summary() split into 3 module-level helpers
+  (_summary_header_lines, _summary_findings_lines,
+  _summary_breakdown_lines) plus _add_finding_lines promoted from
+  inner closure to module level. The orchestrator becomes a
+  3-line assembler.
+- #8: CheckResult.log_data escape hatch removed. The dict|None
+  field is replaced by a tuple return from check_logs(...) ->
+  (CheckResult, LogReportData | None). New frozen LogReportData
+  dataclass in bob/checks/logs.py (log_days, days_available,
+  total, brute_hits, top_ips, top_ports, svc_hits).
+- Net diff: 5 files, +109 / -69 = +40 lines. display.py +23,
+  logs.py +19, runner.py 0, scoring.py -1, tests +3.
+- 4538/4538 tests unchanged. Wire output bit-identical to v0.5.2.
+- SECURITY.md / SECURITY_FR.md: 0.5.x "current", 0.4.x EOL.
+- #13 / #14 / #15b still deferred to Phase 5 (v0.5.4).
+- JSON contract preserved.
+
 * Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.2-1
 - Refactor v0.5.x Phase 3 (audit findings #4 + #3).
 - #4: new _BadDirective dataclass + _BAD_DIRECTIVES table + helper

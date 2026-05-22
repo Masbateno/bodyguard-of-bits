@@ -8,11 +8,12 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version   | Supportée          |
 |-----------|--------------------|
-| 0.4.x     | ✅ courante         |
+| 0.5.x     | ✅ courante         |
+| 0.4.x     | ❌ fin de vie       |
 | 0.3.x     | ❌ fin de vie       |
 | < 0.3.0   | ❌ fin de vie       |
 
-Les correctifs sortent en `0.4.x+1`. Un breaking change bump le minor (`0.5.0`).
+Les correctifs sortent en `0.5.x+1`. Un breaking change bump le minor (`0.6.0`).
 
 ## Signaler une vulnérabilité
 
@@ -82,7 +83,7 @@ Le mode `--fix` affiche les commandes de remédiation et ne les exécute qu'apr�
 
 Les plugins Python custom sont chargés avec **limites de taille et sanitization ANSI** sur leur sortie, mais ils **NE SONT PAS sandboxés** : un plugin tourne avec les mêmes privilèges que BOB lui-même (typiquement root). Faites confiance à vos sources de plugins comme à tout autre code que vous exécuteriez sous `sudo`.
 
-Une future version majeure pourra introduire un runner de plugins en mode restreint (pas d'écriture filesystem, pas de subprocess), mais c'est hors périmètre pour la ligne 0.4.x.
+Une future version majeure pourra introduire un runner de plugins en mode restreint (pas d'écriture filesystem, pas de subprocess), mais c'est hors périmètre pour la ligne 0.5.x.
 
 ## Surface réseau
 

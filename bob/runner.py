@@ -405,9 +405,9 @@ def run_checks(
 
     logs_snapshot = LogsSnapshot.from_system(log_days=config.log_days)
     display_geoip_notice(geoip2_status(), t, output)
-    logs_result = check_logs(logs_snapshot, audited_ports=audited_ports, t=t)
+    logs_result, logs_report = check_logs(logs_snapshot, audited_ports=audited_ports, t=t)
     engine.apply(logs_result)
-    display_log_results(logs_result, logs_snapshot, config, t, report)
+    display_log_results(logs_result, logs_snapshot, logs_report, config, t, report)
 
     # ---- CHECK 6 — DDNS / external exposure ----
     emit_section("ddns")

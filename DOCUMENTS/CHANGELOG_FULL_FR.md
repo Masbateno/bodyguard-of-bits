@@ -6,6 +6,119 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.3] — 22-05-2026
+
+**Refactor v0.5.x — Phase 4 sur 5.** Trois findings d'audit : **#5 table de dispatch**, **#12 helpers summary**, **#8 retrait escape hatch `log_data`**. Aucun changement de comportement — 4538/4538 tests inchangés, sortie wire bit-identique à v0.5.2.
+
+### #5 — Table `_LEVEL_DISPATCH` pour `display_result`
+
+`display_result()` dans `bob/display.py` avait une cascade 4-branches OK/WARN/ALERT/INFO. Chaque branche répétait le même pattern (écrire dans le rapport, vérifier le threshold, imprimer le message, optionnellement imprimer récurrence/détail/cmd/note/CIS) avec des variations subtiles par niveau qui avaient dérivé au fil du temps.
+
+Nouvelle dataclass frozen `_LevelTraits` + table 4-lignes exprime chaque variation comme un trait booléen :
+
+```python
+@dataclass(frozen=True)
+class _LevelTraits:
+    report_label:         str
+    threshold_key:        str
+    print_fn:             Callable[[str], None]
+    has_recurrence:       bool
+    has_body:             bool
+    detail_unconditional: bool   # ALERT uniquement : imprime détail sans --verbose
+    show_note:            bool   # ALERT uniquement
+    show_cis:             bool   # WARN + ALERT
+```
+
+Le trait unique qui capture la spécificité d'ALERT (détail imprimé même sans `--verbose`) est `detail_unconditional=True`, remplaçant un branchement opaque `elif detail: print_recommendation(detail)` qui vivait sous la chaîne `if finding.cmd and verbose:`. `_emit_finding_body()` est un nouveau helper module-level qui consomme les traits.
+
+La table de dispatch est construite à l'intérieur de `display_result()` plutôt qu'au niveau module — `print_ok` / `print_warn` / `print_alert` / `print_info` sont des imports différés (le pattern existant pour éviter la dépendance circulaire `bob.output ↔ bob.display`). La construire par appel a un coût trivial (4 entrées) et préserve la discipline lazy-import.
+
+### #12 — Split `print_audit_summary` en 3 helpers
+
+La fonction `print_audit_summary()` de 142 lignes mélangeait trois responsabilités (lignes header, lignes finding blocks, lignes breakdown) avec une closure interne `_add_finding_lines()`. Désormais :
+
+- `_summary_header_lines(engine, network_context, config, t, profile_name, prev_score)` — lignes score/niveau/réseau/profil/target + la flèche de tendance de score.
+- `_summary_findings_lines(engine, t, inner)` — blocs action + improvement (avec la ligne de disclaimer).
+- `_summary_breakdown_lines(engine, t, inner)` — déductions + cap_info.
+- `_add_finding_lines(icon_prefix, item, inner)` — promu d'inner closure à helper module-level, retourne une liste de tuples `(content, val)` au lieu de muter la liste `lines` englobante.
+
+`print_audit_summary` devient un assembleur 3 lignes `lines.extend(...)`, puis `print_summary_box(lines)`, puis le footer (ligne verdict + implicit_svcs + scope lines + `report.write_summary()`).
+
+Side-fix : le `report.write_summary(score=score, risk_level=level_str, network_context=ctx_str, ...)` original référençait des variables locales qui n'étaient plus dans la portée après l'extraction du header. Remplacé par des expressions directes sur `engine.score` et re-évaluation `t(f"scoring.level.{engine.level.value}")` / `t(f"scoring.context.{network_context}")`. Attrapé par `TestScoreTrend` + `TestDuplicateFindings` + `TestExplainHintAbsent` qui exercent `print_audit_summary` end-to-end (8 failures → 0 après le fix).
+
+### #8 — Escape hatch `CheckResult.log_data` supprimé
+
+`CheckResult` avait un champ `log_data: dict | None = field(default=None)` utilisé uniquement par `bob/checks/logs.py` pour attacher des agrégations structurées (top IPs, top ports, brute hits, svc hits) à afficher par l'orchestrateur. Non typé, mono-usage, et indistinguable du flux normal des findings dans la surface dataclass.
+
+Remplacé par :
+
+- Nouvelle dataclass frozen `LogReportData` dans `bob/checks/logs.py` :
+  ```python
+  @dataclass(frozen=True)
+  class LogReportData:
+      log_days:       int
+      days_available: int
+      total:          int
+      brute_hits:     list[BruteforceHit]
+      top_ips:        list[tuple[str, int]]
+      top_ports:      list[tuple[str, int]]
+      svc_hits:       dict[str, int]
+  ```
+- `check_logs(...)` retourne maintenant `tuple[CheckResult, LogReportData | None]`. `None` quand aucun log file trouvé ou log vide (le result porte toujours un finding info/ok).
+- `bob/runner.py:408` unpacke le tuple : `logs_result, logs_report = check_logs(...)`.
+- `display_log_results(logs_result, snapshot, log_report, config, t, report)` — `log_report` est maintenant un arg positionnel explicite au lieu d'être lu depuis `logs_result.log_data`.
+- Champ `CheckResult.log_data` supprimé de `bob/scoring.py`.
+
+Test churn : 3 tests renommés (`test_log_data_attached` → `test_report_data_attached`, `test_top_ips_in_log_data` → `test_top_ips_in_report_data`, `test_service_hits_in_log_data` → `test_service_hits_in_report_data`) et réécrits pour lire `report_data.total` / `report_data.top_ips` / `report_data.svc_hits` au lieu d'un accès clé-dict. ~20 autres sites de tests dans `tests/test_logs.py` + `tests/test_degraded.py` utilisent `result, _ = check_logs(...)` puisqu'ils ne consultent pas le report data.
+
+Le chemin d'early-exit `if log_report is None: display_result(...)` dans `display_log_results()` préserve le comportement v0.5.2 où un result log vide/manquant fallback sur l'affichage générique des findings — sortie wire inchangée quand aucun log file n'existe.
+
+### Diff net
+
+| Fichier | Delta | Notes |
+|---|---|---|
+| `bob/display.py` | +23 | `_LevelTraits` + `_emit_finding_body` + 3 helpers summary + `_add_finding_lines` module-level |
+| `bob/checks/logs.py` | +19 | dataclass `LogReportData` + retour tuple + update docstring |
+| `bob/runner.py` | 0 | 1 ligne migrée à l'unpack tuple |
+| `bob/scoring.py` | −1 | champ `log_data` retiré |
+| `tests/test_logs.py` + `tests/test_degraded.py` | +3 | unpack tuple + 3 tests renommés |
+
+**Net +40 LoC.** Comme les Phases 2–3, le delta LoC seul sous-vend le gain structurel : la cascade 4-branches du display devient une boucle déclarative unique, la fonction summary de 142 lignes devient un assembleur 3 lignes, et l'escape hatch `dict | None` est remplacé par une dataclass typée frozen.
+
+### #13 / #14 / #15b toujours déférés à Phase 5
+
+ssh.py atteint 1324 LoC à l'entrée v0.5.3, inchangé depuis v0.5.2. cron.py + ré-attribution `_PREFIX_TO_DOMAIN` non touchés en Phase 4. Les trois décisions restent dans la queue pour v0.5.4 avec re-check `wc -l` explicite.
+
+### Garde-fou diff observable
+
+Snapshots `sudo python3 -m bob -v --french -n > /tmp/bob_baseline_v052_stdout.txt` et `sudo python3 -m bob --format=json --french > /tmp/bob_baseline_v052.json` capturés avant l'implémentation Phase 4. Deux diffs intermédiaires effectués : après #5 + #12 puis après #8.
+
+| Diff | Deltas stdout | Deltas JSON |
+|---|---|---|
+| Post-#5+#12 vs baseline | timestamp (+8 min) + compteurs récurrence (+2 audits) + totaux blocks UFW (+14 sur fenêtre 7 jours) | timestamp uniquement |
+| Post-#8 vs baseline | timestamp (+4 h) + ports TCP éphémères VSCode (redémarrage PID entre runs) + totaux blocks UFW (+452) + récurrence (+4) | timestamp + âge rkhunter (39j → 40j) |
+
+Tous les deltas confinés à la dérive d'état (timestamps, accumulation logs, artefacts redémarrage processus, compteurs d'âge). **Zéro changement structurel sur l'audit rendu, l'arbre JSON, ou le breakdown du score.** Score sur le host dev : 8/10 en v0.5.2 et v0.5.3, breakdown identique (-1 pwquality, -1 virt.bypass_risk, -1 ssh.x11_forwarding, -1 ssh.allow_tcp_forwarding, etc.).
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in ~6s
+```
+
+**4538 → 4538 (inchangé).** Phase 4 est un refactor purement structurel.
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
+- **Sortie wire** : bit-identique à v0.5.2.
+- **Score par domaine** : inchangé.
+- **API externe** : aucun breaking change. `LogReportData` est un nouveau symbole semi-public sur `bob.checks.logs` mais le seul consommateur est `bob.runner` → `bob.display`. Les auteurs de plugins écrivant des checks custom n'étaient jamais censés setter `CheckResult.log_data` — ce champ était de l'espace scratch interne aux logs UFW.
+- **i18n** : aucun changement de clé locale.
+
+---
+
 ## [v0.5.2] — 22-05-2026
 
 **Refactor v0.5.x — Phase 3 sur 5.** Deux findings d'audit : **#4 table directive SSH** et **#3 extension callbacks `runner._sec`**. Aucun changement de comportement — 4538/4538 tests inchangés, sortie wire bit-identique à v0.5.1.

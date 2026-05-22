@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.2 (4538 tests, inchangé depuis v0.5.0 — Phases 2 et 3 du refactor v0.5.x sont contract-preserving, aucun delta de tests).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.3 (4538 tests, inchangé depuis v0.5.0 — Phases 2, 3 et 4 du refactor v0.5.x sont contract-preserving, aucun delta de tests).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.3 | 4538 | Refactor v0.5.x Phase 4 — **#5 table dispatch `_LEVEL_DISPATCH`** dans `display_result` (cascade 4-branches OK/WARN/ALERT/INFO → boucle déclarative pilotée par dataclass `_LevelTraits`) + **#12 split `print_audit_summary`** en 3 helpers module-level (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) + `_add_finding_lines` remonté d'inner closure à module-level + **#8 retrait `CheckResult.log_data`** (dict escape hatch → tuple return `check_logs(...) -> (CheckResult, LogReportData | None)` avec dataclass frozen `LogReportData`). **Zero delta de tests** — refactor purement structurel, sortie wire bit-identique à v0.5.2. 3 tests renommés (`test_log_data_*` → `test_report_data_*`) et réécrits pour accès attribut dataclass au lieu d'accès dict-clé ; ~20 sites tests utilisent `result, _ = check_logs(...)` tuple unpack. Side-fix lors de #12 : `report.write_summary(score=score, risk_level=level_str, network_context=ctx_str, ...)` référait des locals devenues dead après l'extraction du header ; remplacées par expressions directes sur `engine.score` / `t(f"scoring.level.{engine.level.value}")` — attrapé par les tests `TestScoreTrend` (8 failures → 0 après fix). Diff net : display.py +23 LoC, logs.py +19 LoC, runner.py 0, scoring.py −1, tests +3 = **+40 LoC total**. |
 | v0.5.2 | 4538 | Refactor v0.5.x Phase 3 — **#4 table directive SSH** (8 directives uniformes migrées vers table `_BAD_DIRECTIVES`) + **#3 extension runner._sec** avec callbacks `skip_if=` / `post_display=` (4 blocs inline migrés). **Zero delta de tests** — refactor purement structurel. La dataclass `_BadDirective` + table + helper `_apply_bad_directive()` produit des findings et déductions bit-identiques aux if-blocks impératifs précédents. L'extension `_sec` est keyword-only (call sites existants inaffectés). `test_ssh.py` (122 tests) a passé avant et après la migration. Diff net : ssh.py +56 LoC (table verbose), runner.py −29 LoC. **#13 (split ssh.py) déféré Phase 5** — ssh.py reste à 1324 LoC (cible <1000 non atteinte). |
 | v0.5.1 | 4538 | Refactor v0.5.x Phase 2 — gros gain LoC. Nouveaux helpers `CheckResult.warn_with_deduction()` + `.alert_with_deduction()` collapsent 120 sites paired `warn`+`add_deduction` dans 27 fichiers check. **Zéro delta de tests** — chaque appel helper invoque en interne la séquence existante `warn`/`alert` + `add_deduction`, produisant des sorties `Finding` + `Deduction` bit-identiques. Les 4538 tests pinnent la sortie wire (messages findings, raisons déductions, template_vars, préfixes clés, refs CIS) — tous préservés. Chacune des 6 vagues de migration (fichiers 1-site → 2-site → 3-site → 4-6 site → hardening → ssh.py) a passé `pytest tests/` avant de continuer. Diff net : 37 fichiers modifiés, +483/−1002 = −519 lignes. |
 | v0.5.0 | 4538 | Refactor v0.5.x Phase 1 (+39 tests) — **+4** dans le nouveau `tests/test_domain_scores_mapping_complete.py` (scan AST de `bob/checks/*.py` pour les préfixes de clés non-mappés, protège le catch-all `_PREFIX_TO_DOMAIN` du drift silencieux). **+35** dans `tests/test_cron.py` couvrant 5 helpers purs jusque-là non testés : `TestValidateCronField` (13), `TestValidateCustomCron` (7), `TestBuildScriptContent` (7), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5 — incl. parité legacy `NOTIFY_EMAIL=`). **Bug latent corrigé** : `apply_cron_schedule()` référençait `_os.open` (non défini au niveau module) — l'extraction de déduplication v0.4.8 avait raté le renommage ; les nouveaux tests ont remonté le NameError au premier run. Tests dans `test_fail2ban.py` et `test_ntp.py` adaptés pour patcher `is_unit_active` en parallèle de `_run` (refactor #7). |
@@ -39,6 +40,66 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.3 — 4538/4538 (22-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in ~6s
+```
+
+**Net : 0 (aucun nouveau test, aucune suppression).** v0.5.3 est le refactor Phase 4 (audit findings #5 + #12 + #8). Les trois sont structurels — la table `_LEVEL_DISPATCH` produit les mêmes appels `print_ok`/`print_warn`/`print_alert`/`print_info` dans le même ordre que la cascade impérative, les 3 helpers `_summary_*_lines` retournent les mêmes tuples `(content, val)` que les sections inline précédentes, et le tuple return `(CheckResult, LogReportData)` ne change pas la sémantique de l'orchestrateur (`runner.py` unpacke le tuple et passe le report explicitement à `display_log_results`).
+
+#### Tests renommés (#8)
+
+3 tests dans `test_logs.py` directement dépendants du champ `log_data` :
+
+| Avant (v0.5.2) | Après (v0.5.3) | Changement |
+|---|---|---|
+| `test_log_data_attached` | `test_report_data_attached` | `result.log_data is not None` → `report_data is not None` ; `result.log_data["total"] == 1` → `report_data.total == 1` |
+| `test_top_ips_in_log_data` | `test_top_ips_in_report_data` | `result.log_data["top_ips"]` → `report_data.top_ips` |
+| `test_service_hits_in_log_data` | `test_service_hits_in_report_data` | `result.log_data["svc_hits"].get(...)` → `report_data.svc_hits.get(...)` |
+
+#### Sites tests `result, _ = check_logs(...)`
+
+~20 sites dans `test_logs.py` (14) et `test_degraded.py` (8) utilisent maintenant l'unpack tuple. Les tests ne consultent que `result.findings` / `result.deductions` (logique de scoring, levels), donc le 2e élément du tuple est ignoré via `_`. Pattern de migration purement mécanique via `replace_all` Edit ; aucun changement de logique de test.
+
+#### Side-fix attrapé par les tests existants
+
+Lors du split de `print_audit_summary` (#12), 8 tests ont fail au premier run avec `NameError: name 'score' is not defined` :
+
+- `TestScoreTrend::test_no_prev_score_no_arrow`
+- `TestScoreTrend::test_improved_shows_up_arrow`
+- `TestScoreTrend::test_degraded_shows_down_arrow`
+- `TestScoreTrend::test_stable_shows_no_annotation`
+- `TestScoreTrend::test_improved_by_two`
+- `TestScoreTrend::test_degraded_by_three`
+- `TestExplainHintAbsent::test_explainable_alongside_non_explainable`
+- `TestDuplicateFindings::test_two_identical_findings_produce_two_hints`
+
+Cause : `score`, `level_str`, `ctx_str` étaient calculés au début de la fonction, utilisés dans le header (extrait dans `_summary_header_lines`), puis re-utilisés dans `report.write_summary(...)` à la fin de la fonction. Après l'extraction, les locales n'étaient plus dans la portée.
+
+Fix : remplacer par expressions directes :
+```python
+report.write_summary(
+    score=engine.score,
+    risk_level=t(f"scoring.level.{engine.level.value}"),
+    network_context=t(f"scoring.context.{network_context}"),
+    ...
+)
+```
+
+Les 8 tests ont passé après ce fix. Bonne illustration de l'intérêt d'avoir une couverture e2e sur les fonctions de display — un refactor "purement cosmétique" peut casser des chemins data via des références implicites.
+
+#### Test terrain
+
+Approche cross-distro identique à v0.5.0/v0.5.1/v0.5.2 — pipx upgrade + `sudo bob -v -d` sur chaque VM. Sortie attendue : bit-identique à v0.5.2 (modulo changements d'état système entre runs).
+
+Les 4538 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 

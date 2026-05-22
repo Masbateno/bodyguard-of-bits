@@ -7,13 +7,14 @@ detection, and attempts on known installed service ports.
 
 Split into two parts:
   1. LogsSnapshot.from_system(log_days) — parses the log file.
-  2. check_logs(snapshot, t)            — pure analysis, returns CheckResult.
+  2. check_logs(snapshot, t)            — pure analysis, returns
+                                          (CheckResult, LogReportData | None).
 
 Usage:
     from bob.checks.logs import LogsSnapshot, check_logs
 
     snapshot = LogsSnapshot.from_system(log_days=7)
-    result = check_logs(snapshot, audited_ports={"22/tcp"}, t=t)
+    result, report_data = check_logs(snapshot, audited_ports={"22/tcp"}, t=t)
 """
 
 from __future__ import annotations
@@ -103,6 +104,22 @@ class BruteforceHit:
     @property
     def port_proto(self) -> str:
         return f"{self.dst_port}/{self.proto.lower()}"
+
+
+@dataclass(frozen=True)
+class LogReportData:
+    """Structured log analysis data passed from check_logs to display_log_results.
+
+    Kept separate from CheckResult so the latter stays focused on findings and
+    scoring; the display module reads these aggregations directly.
+    """
+    log_days:       int
+    days_available: int
+    total:          int
+    brute_hits:     list[BruteforceHit]
+    top_ips:        list[tuple[str, int]]
+    top_ports:      list[tuple[str, int]]
+    svc_hits:       dict[str, int]
 
 
 @dataclass
@@ -196,7 +213,7 @@ def check_logs(
     snapshot: LogsSnapshot,
     audited_ports: set[str] | None = None,
     t: TranslationFunc | None = None,
-) -> CheckResult:
+) -> "tuple[CheckResult, LogReportData | None]":
     """
     Analyse log snapshot and return findings.
 
@@ -207,21 +224,24 @@ def check_logs(
         t:             Translation function.
 
     Returns:
-        CheckResult with log analysis findings.
+        ``(result, report_data)``. ``report_data`` is ``None`` when no log file
+        was found or the log is empty (the result still carries an info/ok
+        finding); otherwise it carries the aggregations consumed by
+        ``display_log_results``.
     """
     _t = t if t is not None else _identity_t
     result = CheckResult()
 
     if not snapshot.log_found:
         result.info(message=_t("logs.no_logfile"))
-        return result
+        return result, None
 
     if snapshot.log_source == "journald":
         result.info(message=_t("logs.source_journald"))
 
     if snapshot.total == 0:
         result.ok(message=_t("logs.empty"))
-        return result
+        return result, None
 
     # Top IPs and ports
     top_ips   = _top_sources(snapshot.entries, TOP_N)
@@ -239,16 +259,15 @@ def check_logs(
     if audited_ports:
         svc_hits = _service_hits(snapshot.entries, audited_ports)
 
-    # Store structured data on result for the orchestrator to display
-    result.log_data = {
-        "total":          snapshot.total,
-        "days_available": snapshot.days_available,
-        "log_days":       snapshot.log_days,
-        "top_ips":        top_ips,
-        "top_ports":      top_ports,
-        "brute_hits":     brute_hits,
-        "svc_hits":       svc_hits,
-    }
+    report_data = LogReportData(
+        log_days=snapshot.log_days,
+        days_available=snapshot.days_available,
+        total=snapshot.total,
+        brute_hits=brute_hits,
+        top_ips=top_ips,
+        top_ports=top_ports,
+        svc_hits=svc_hits,
+    )
 
     # Findings — bruteforce gets a WARN
     for hit in brute_hits:
@@ -280,7 +299,7 @@ def check_logs(
             key="logs.local_dominance",
         )
 
-    return result
+    return result, report_data
 
 
 # ---------------------------------------------------------------------------
