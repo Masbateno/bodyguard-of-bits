@@ -154,24 +154,16 @@ def check_network_context(snapshot: NetworkContextSnapshot, t: TranslationFunc |
     # Flag established connections to external IPs on sensitive ports
     for conn in external:
         if conn.remote_port in _SENSITIVE_REMOTE_PORTS:
-            result.warn(
-                message=_t(
-                    "network_context.sensitive_remote",
-                    addr=conn.remote_addr,
-                    port=conn.remote_port,
-                ),
-                nature="action",
+            result.warn_with_deduction(
                 key="network_context.sensitive_remote",
-            )
-            result.add_deduction(
-                reason=_t(
+                message=_t(
                     "network_context.sensitive_remote",
                     addr=conn.remote_addr,
                     port=conn.remote_port,
                 ),
                 points=2,
                 context="public",
-                key="network_context.sensitive_remote",
+                nature="action",
             )
 
     return result

@@ -183,18 +183,13 @@ def check_mac_policy(
                 key="mac_policy.apparmor_no_profiles",
             )
         else:
-            result.warn(
-                message=_t("mac_policy.apparmor_no_profiles"),
-                detail=_t("mac_policy.apparmor_no_profiles_detail"),
-                cmd="sudo apt install apparmor-profiles apparmor-profiles-extra",
-                nature="improvement",
+            result.warn_with_deduction(
                 key="mac_policy.apparmor_no_profiles",
-            )
-            result.add_deduction(
+                message=_t("mac_policy.apparmor_no_profiles"),
                 reason=_t("mac_policy.apparmor_no_profiles_reason"),
                 points=1,
-                context="local",
-                key="mac_policy.apparmor_no_profiles",
+                detail=_t("mac_policy.apparmor_no_profiles_detail"),
+                cmd="sudo apt install apparmor-profiles apparmor-profiles-extra",
             )
         return result
 
@@ -211,38 +206,28 @@ def check_mac_policy(
                 key="mac_policy.apparmor_no_enforce",
             )
         else:
-            result.warn(
+            result.warn_with_deduction(
+                key="mac_policy.apparmor_no_enforce",
                 message=_t(
                     "mac_policy.apparmor_no_enforce",
                     complain=snapshot.apparmor_complain,
                 ),
-                detail=_t("mac_policy.apparmor_no_enforce_detail"),
-                cmd="sudo aa-enforce /etc/apparmor.d/*",
-                nature="improvement",
-                key="mac_policy.apparmor_no_enforce",
-            )
-            result.add_deduction(
                 reason=_t("mac_policy.apparmor_no_enforce_reason"),
                 points=1,
-                context="local",
-                key="mac_policy.apparmor_no_enforce",
+                detail=_t("mac_policy.apparmor_no_enforce_detail"),
+                cmd="sudo aa-enforce /etc/apparmor.d/*",
             )
         return result
 
     # --- AppArmor installed but service not responding ----------------------
     if snapshot.apparmor_installed and not snapshot.apparmor_active:
-        result.warn(
-            message=_t("mac_policy.apparmor_inactive"),
-            detail=_t("mac_policy.apparmor_inactive_detail"),
-            cmd="sudo systemctl enable --now apparmor",
-            nature="improvement",
+        result.warn_with_deduction(
             key="mac_policy.apparmor_inactive",
-        )
-        result.add_deduction(
+            message=_t("mac_policy.apparmor_inactive"),
             reason=_t("mac_policy.apparmor_inactive_reason"),
             points=1,
-            context="local",
-            key="mac_policy.apparmor_inactive",
+            detail=_t("mac_policy.apparmor_inactive_detail"),
+            cmd="sudo systemctl enable --now apparmor",
         )
         return result
 
@@ -253,51 +238,36 @@ def check_mac_policy(
             detail=_t("mac_policy.selinux_permissive_detail"),
             key="mac_policy.selinux_permissive",
         )
-        result.warn(
-            message=_t("mac_policy.no_enforce"),
-            detail=_t("mac_policy.no_enforce_detail"),
-            cmd="sudo setenforce 1",
-            nature="improvement",
+        result.warn_with_deduction(
             key="mac_policy.no_enforce",
-        )
-        result.add_deduction(
+            message=_t("mac_policy.no_enforce"),
             reason=_t("mac_policy.no_enforce_reason"),
             points=1,
-            context="local",
-            key="mac_policy.no_enforce",
+            detail=_t("mac_policy.no_enforce_detail"),
+            cmd="sudo setenforce 1",
         )
         return result
 
     # --- SELinux installed but explicitly disabled ---------------------------
     if snapshot.selinux_installed and se_mode == "disabled":
-        result.warn(
-            message=_t("mac_policy.selinux_disabled"),
-            detail=_t("mac_policy.selinux_disabled_detail"),
-            cmd="sudo setenforce 1",
-            nature="improvement",
+        result.warn_with_deduction(
             key="mac_policy.selinux_disabled",
-        )
-        result.add_deduction(
+            message=_t("mac_policy.selinux_disabled"),
             reason=_t("mac_policy.selinux_disabled_reason"),
             points=1,
-            context="local",
-            key="mac_policy.selinux_disabled",
+            detail=_t("mac_policy.selinux_disabled_detail"),
+            cmd="sudo setenforce 1",
         )
         return result
 
     # --- No MAC framework found ---------------------------------------------
-    result.warn(
-        message=_t("mac_policy.no_mac"),
-        detail=_t("mac_policy.no_mac_detail"),
-        cmd="sudo apt install apparmor apparmor-utils && sudo systemctl enable --now apparmor",
-        nature="improvement",
+    result.warn_with_deduction(
         key="mac_policy.no_mac",
-    )
-    result.add_deduction(
+        message=_t("mac_policy.no_mac"),
         reason=_t("mac_policy.no_mac_reason"),
         points=1,
-        context="local",
-        key="mac_policy.no_mac",
+        detail=_t("mac_policy.no_mac_detail"),
+        cmd="sudo apt install apparmor apparmor-utils && sudo systemctl enable --now apparmor",
     )
     return result
 

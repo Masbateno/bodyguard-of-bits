@@ -182,52 +182,42 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             if len(snapshot.privileged_containers) > 5 else ""
         )
         first = snapshot.privileged_containers[0]
-        result.warn(
+        result.warn_with_deduction(
+            key="docker_audit.privileged",
             message=_t(
                 "docker_audit.privileged",
                 count=len(snapshot.privileged_containers),
                 containers=names + suffix,
             ),
-            nature="improvement",
-            detail=_t("docker_audit.privileged_detail"),
-            cmd=f"docker inspect --format '{{{{.HostConfig.Privileged}}}}' {first}",
-            cmd_type="check",
-            key="docker_audit.privileged",
-        )
-        result.add_deduction(
             reason=_t(
                 "docker_audit.privileged_reason",
                 count=len(snapshot.privileged_containers),
             ),
             points=1,
-            context="local",
-            key="docker_audit.privileged",
+            detail=_t("docker_audit.privileged_detail"),
+            cmd=f"docker inspect --format '{{{{.HostConfig.Privileged}}}}' {first}",
+            cmd_type="check",
         )
 
     # --- Docker socket mounted ---
     if snapshot.socket_mounted_containers:
         names = ", ".join(snapshot.socket_mounted_containers[:5])
         first = snapshot.socket_mounted_containers[0]
-        result.warn(
+        result.warn_with_deduction(
+            key="docker_audit.socket_mounted",
             message=_t(
                 "docker_audit.socket_mounted",
                 count=len(snapshot.socket_mounted_containers),
                 containers=names,
             ),
-            nature="improvement",
-            detail=_t("docker_audit.socket_mounted_detail"),
-            cmd=f"docker inspect --format '{{{{json .Mounts}}}}' {first}",
-            cmd_type="check",
-            key="docker_audit.socket_mounted",
-        )
-        result.add_deduction(
             reason=_t(
                 "docker_audit.socket_mounted_reason",
                 count=len(snapshot.socket_mounted_containers),
             ),
             points=1,
-            context="local",
-            key="docker_audit.socket_mounted",
+            detail=_t("docker_audit.socket_mounted_detail"),
+            cmd=f"docker inspect --format '{{{{json .Mounts}}}}' {first}",
+            cmd_type="check",
         )
 
     # --- OK if no critical issues ---

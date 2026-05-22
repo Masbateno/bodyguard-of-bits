@@ -116,17 +116,11 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             key="kernel_hardening.aslr_conservative",
         )
     else:
-        result.warn(
+        result.warn_with_deduction(
+            key="kernel_hardening.aslr_disabled",
             message=_t("kernel_hardening.aslr_disabled"),
-            nature="improvement",
-            cmd=_fix_cmd("kernel.randomize_va_space", 2),
-            key="kernel_hardening.aslr_disabled",
-        )
-        result.add_deduction(
-            reason=_t("kernel_hardening.aslr_disabled"),
             points=1,
-            context="local",
-            key="kernel_hardening.aslr_disabled",
+            cmd=_fix_cmd("kernel.randomize_va_space", 2),
         )
 
     # --- ptrace scope ---
@@ -136,17 +130,11 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             key="kernel_hardening.ptrace_ok",
         )
     else:
-        result.warn(
+        result.warn_with_deduction(
+            key="kernel_hardening.ptrace_unrestricted",
             message=_t("kernel_hardening.ptrace_unrestricted"),
-            nature="improvement",
-            cmd=_fix_cmd("kernel.yama.ptrace_scope", 1),
-            key="kernel_hardening.ptrace_unrestricted",
-        )
-        result.add_deduction(
-            reason=_t("kernel_hardening.ptrace_unrestricted"),
             points=1,
-            context="local",
-            key="kernel_hardening.ptrace_unrestricted",
+            cmd=_fix_cmd("kernel.yama.ptrace_scope", 1),
         )
 
     # --- SUID dumpable ---
@@ -163,18 +151,12 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             key="kernel_hardening.suid_dump_root",
         )
     else:
-        result.warn(
+        result.warn_with_deduction(
+            key="kernel_hardening.suid_dump_all",
             message=_t("kernel_hardening.suid_dump_all"),
-            detail=_t("kernel_hardening.suid_dump_all_detail"),
-            nature="improvement",
-            cmd=_fix_cmd("fs.suid_dumpable", 0),
-            key="kernel_hardening.suid_dump_all",
-        )
-        result.add_deduction(
-            reason=_t("kernel_hardening.suid_dump_all"),
             points=1,
-            context="local",
-            key="kernel_hardening.suid_dump_all",
+            detail=_t("kernel_hardening.suid_dump_all_detail"),
+            cmd=_fix_cmd("fs.suid_dumpable", 0),
         )
 
     # --- kptr_restrict (INFO only) ---

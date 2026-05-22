@@ -193,18 +193,13 @@ def check_user_accounts(snapshot: UserAccountsSnapshot, *, t: TranslationFunc | 
     uid_zero = list(dict.fromkeys(snapshot.uid_zero_accounts or []))
     if uid_zero:
         users_str = ", ".join(uid_zero)
-        result.alert(
-            message=_t("user_accounts.uid_zero", users=users_str),
-            detail=_t("user_accounts.uid_zero_detail"),
-            cmd="sudo passwd -l " + " ".join(uid_zero),
-            nature="action",
+        result.alert_with_deduction(
             key="user_accounts.uid_zero",
-        )
-        result.add_deduction(
+            message=_t("user_accounts.uid_zero", users=users_str),
             reason=_t("user_accounts.uid_zero_reason", users=users_str),
             points=_MAX_DEDUCTION_UID_ZERO,
-            context="local",
-            key="user_accounts.uid_zero",
+            detail=_t("user_accounts.uid_zero_detail"),
+            cmd="sudo passwd -l " + " ".join(uid_zero),
         )
         has_finding = True
 
@@ -212,18 +207,13 @@ def check_user_accounts(snapshot: UserAccountsSnapshot, *, t: TranslationFunc | 
     empty_pw = list(dict.fromkeys(snapshot.empty_password_accounts or []))
     if empty_pw:
         users_str = ", ".join(empty_pw)
-        result.alert(
-            message=_t("user_accounts.empty_password", users=users_str),
-            detail=_t("user_accounts.empty_password_detail"),
-            cmd="sudo passwd " + " ".join(empty_pw),
-            nature="action",
+        result.alert_with_deduction(
             key="user_accounts.empty_password",
-        )
-        result.add_deduction(
+            message=_t("user_accounts.empty_password", users=users_str),
             reason=_t("user_accounts.empty_password_reason", users=users_str),
             points=_MAX_DEDUCTION_EMPTY_PASSWORD,
-            context="local",
-            key="user_accounts.empty_password",
+            detail=_t("user_accounts.empty_password_detail"),
+            cmd="sudo passwd " + " ".join(empty_pw),
         )
         has_finding = True
 

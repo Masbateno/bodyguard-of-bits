@@ -231,18 +231,13 @@ def check_backup(
 
     # --- No backup tool found -----------------------------------------------
     if profile_name == "server":
-        result.warn(
-            message=_t("backup.no_backup"),
-            detail=_t("backup.no_backup_detail"),
-            cmd="sudo apt install borgbackup borgmatic",
-            nature="improvement",
+        result.warn_with_deduction(
             key="backup.no_backup",
-        )
-        result.add_deduction(
+            message=_t("backup.no_backup"),
             reason=_t("backup.no_backup_reason"),
             points=1,
-            context="local",
-            key="backup.no_backup",
+            detail=_t("backup.no_backup_detail"),
+            cmd="sudo apt install borgbackup borgmatic",
         )
     else:
         result.info(

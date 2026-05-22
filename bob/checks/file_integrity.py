@@ -172,54 +172,39 @@ def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | N
 
     if not snapshot.db_exists:
         init_cmd = "sudo aideinit" if tool == "aide" else "sudo tripwire --init"
-        result.warn(
-            message=_t("file_integrity.no_db", tool=tool),
-            detail=_t("file_integrity.no_db_detail", tool=tool),
-            cmd=init_cmd,
-            nature="improvement",
+        result.warn_with_deduction(
             key="file_integrity.no_db",
-        )
-        result.add_deduction(
+            message=_t("file_integrity.no_db", tool=tool),
             reason=_t("file_integrity.no_db_reason", tool=tool),
             points=1,
-            context="local",
-            key="file_integrity.no_db",
+            detail=_t("file_integrity.no_db_detail", tool=tool),
+            cmd=init_cmd,
         )
         return result
 
     if snapshot.last_check_date is None:
         check_cmd = "sudo aide --check" if tool == "aide" else "sudo tripwire --check"
-        result.warn(
-            message=_t("file_integrity.no_check", tool=tool),
-            detail=_t("file_integrity.no_check_detail", tool=tool),
-            cmd=check_cmd,
-            nature="improvement",
+        result.warn_with_deduction(
             key="file_integrity.no_check",
-        )
-        result.add_deduction(
+            message=_t("file_integrity.no_check", tool=tool),
             reason=_t("file_integrity.no_check_reason", tool=tool),
             points=1,
-            context="local",
-            key="file_integrity.no_check",
+            detail=_t("file_integrity.no_check_detail", tool=tool),
+            cmd=check_cmd,
         )
         return result
 
     age = _check_age_days(snapshot.last_check_date)
     if age is not None and age >= _CHECK_WARN_DAYS:
         check_cmd = "sudo aide --check" if tool == "aide" else "sudo tripwire --check"
-        result.warn(
+        result.warn_with_deduction(
+            key="file_integrity.check_old",
             message=_t("file_integrity.check_old", tool=tool, days=age,
                        date=snapshot.last_check_date),
-            detail=_t("file_integrity.check_old_detail"),
-            cmd=check_cmd,
-            nature="improvement",
-            key="file_integrity.check_old",
-        )
-        result.add_deduction(
             reason=_t("file_integrity.check_old_reason", tool=tool, days=age),
             points=1,
-            context="local",
-            key="file_integrity.check_old",
+            detail=_t("file_integrity.check_old_detail"),
+            cmd=check_cmd,
         )
         return result
 

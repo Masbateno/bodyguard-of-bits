@@ -1,3 +1,42 @@
+bodyguard-of-bits (0.5.1-1) UNRELEASED; urgency=low
+
+  * Refactor v0.5.x Phase 2 — the big LoC win (audit finding #1).
+    New CheckResult.warn_with_deduction(key, *, message, points,
+    reason=None, ...) and .alert_with_deduction() helpers in
+    bob/scoring.py collapse the paired
+    `result.warn(...) + result.add_deduction(...)` idiom that
+    recurred ~130 times across bob/checks/*.py.
+  * 120 sites migrated across 27 files. Largest single-file gain:
+    bob/checks/ssh.py (24 sites, -146 lines). Other notable:
+    hardening.py (8), samba.py (6), mac_policy.py (6), clamav.py (5),
+    disk.py (5), iptables_nftables.py (5), firewall.py (4),
+    firewall_stack.py (4). All sshd_config directives, all sysctl
+    policy branches, all systemd-service inactive branches converge
+    on a single uniform call shape.
+  * 13 sites intentionally not migrated — patterns where the
+    deduction is conditional on a different predicate than the
+    finding (caps via local counter: services_state, ssl_certs x3,
+    file_perms x2, ipv6.port_no_v6_rule), or where the finding
+    branches warn/alert on a separate condition than the deduction
+    (docker x2, services.exposure, ports.uncovered_public), or where
+    template_vars differ between finding and reason (open_any_found).
+  * The reason= override handles the asymmetry case where the
+    deduction uses a `_reason` suffix translation key distinct from
+    the finding message (e.g. ssh.host_key_dsa_reason differs from
+    ssh.host_key_dsa) — ~85 of the 120 migrated sites use this.
+  * Net diff: 37 files changed, +483 / -1002 = -519 lines.
+  * Zero behaviour change. Tests stay at 4538/4538. The helper
+    internally invokes the existing warn/alert + add_deduction
+    sequence — wire output is bit-identical to v0.5.0.
+  * Migration discipline: 6 waves (1-site files -> 2-site ->
+    3-site -> 4-6 site -> hardening -> ssh.py), full pytest run
+    between each wave.
+  * JSON contract (schema_version="1"), the 7 score domains, the
+    116 EXPLAIN_KEYS, the 34 filterable sections, the CLI surface,
+    config files, locale keys, plugin contract — all unchanged.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 21 May 2026 22:00:00 +0200
+
 bodyguard-of-bits (0.5.0-1) UNRELEASED; urgency=low
 
   * Refactor v0.5.x Phase 1 (opens the v0.5.x branch) — first

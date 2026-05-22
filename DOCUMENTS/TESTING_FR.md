@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.0 (4538 tests, +39 depuis v0.4.8 avec la passe de couverture refactor Phase 1).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.1 (4538 tests, inchangé depuis v0.5.0 — Phase 2 du refactor v0.5.x est une migration helper contract-preserving, aucun delta de tests).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.1 | 4538 | Refactor v0.5.x Phase 2 — gros gain LoC. Nouveaux helpers `CheckResult.warn_with_deduction()` + `.alert_with_deduction()` collapsent 120 sites paired `warn`+`add_deduction` dans 27 fichiers check. **Zéro delta de tests** — chaque appel helper invoque en interne la séquence existante `warn`/`alert` + `add_deduction`, produisant des sorties `Finding` + `Deduction` bit-identiques. Les 4538 tests pinnent la sortie wire (messages findings, raisons déductions, template_vars, préfixes clés, refs CIS) — tous préservés. Chacune des 6 vagues de migration (fichiers 1-site → 2-site → 3-site → 4-6 site → hardening → ssh.py) a passé `pytest tests/` avant de continuer. Diff net : 37 fichiers modifiés, +483/−1002 = −519 lignes. |
 | v0.5.0 | 4538 | Refactor v0.5.x Phase 1 (+39 tests) — **+4** dans le nouveau `tests/test_domain_scores_mapping_complete.py` (scan AST de `bob/checks/*.py` pour les préfixes de clés non-mappés, protège le catch-all `_PREFIX_TO_DOMAIN` du drift silencieux). **+35** dans `tests/test_cron.py` couvrant 5 helpers purs jusque-là non testés : `TestValidateCronField` (13), `TestValidateCustomCron` (7), `TestBuildScriptContent` (7), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5 — incl. parité legacy `NOTIFY_EMAIL=`). **Bug latent corrigé** : `apply_cron_schedule()` référençait `_os.open` (non défini au niveau module) — l'extraction de déduplication v0.4.8 avait raté le renommage ; les nouveaux tests ont remonté le NameError au premier run. Tests dans `test_fail2ban.py` et `test_ntp.py` adaptés pour patcher `is_unit_active` en parallèle de `_run` (refactor #7). |
 | v0.4.8 | 4499 | Release de hardening — passe sub-agent code-review n°4 (4 important + 5 mineur + 3 suggestion findings) + audit approfondi pyproject.toml (6 fixes). **−1 test (4500 → 4499) :** suppression de `test_default_method_is_none` dans `test_secure_boot.py` après retrait du champ mort `method: str` de `SecureBootSnapshot`. Les autres retraits de champs morts (`ssh.config_source_files`, `firewall.ipv4_rules_count`/`ipv6_rules_count`, `samba.min_protocol`, `clamav.db_path`/`last_scan_log_path`) ont vu leurs tests associés mis à jour pour retirer les kwargs devenus invalides. Aucun nouveau comportement, nettoyage contract-preserving. |
 | v0.4.7 | 4500 | Release de maintenance — audit cross-doc (24 corrections / 8 fichiers) + harmonisation jauges UI + refonte bash completion (fix critique de la complétion de valeurs `--xxx=<TAB>` via convention args positionnels) + automatisation CI de la Release GitHub. Aucun nouveau test ; 3 tests dans `test_breakdown.py::TestBar` adaptés pour stripper les codes ANSI avant comparaison (les barres sont maintenant des strings colorés, plus juste `█░░░░░░░░░` brut). |
@@ -37,6 +38,41 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.1 — 4538/4538 (21-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in ~6s
+```
+
+**Net : 0 (aucun nouveau test, aucune suppression).** v0.5.1 est le refactor du gros gain LoC (audit finding #1). La migration est contract-preserving : chacun des 120 sites paired `result.warn(...) + result.add_deduction(...)` collapse en un seul appel `result.warn_with_deduction(...)` (ou `.alert_with_deduction(...)`). Le helper invoque en interne la même séquence `warn`/`alert` + `add_deduction`, produisant des entrées `Finding` et `Deduction` identiques dans `result.findings` et `result.deductions`.
+
+#### Pourquoi zéro delta de tests
+
+Un grep à travers `tests/` a confirmé que tous les tests sur les instances `CheckResult` attestent sur les listes résultantes (`result.findings`, `result.deductions`, accès attribut sur entrées individuelles, comptes par niveau via `result.warn_count`/`result.alert_count`/etc.). **Aucun test** ne patche `CheckResult.warn` ou `CheckResult.add_deduction` pour compter les invocations. Le helper préserve la sortie wire exactement, donc la suite de tests est inaffectée.
+
+#### Discipline de migration — 6 vagues, pytest complet entre chacune
+
+| Vague | Fichiers | Sites | Résultat tests |
+|---|---|---|---|
+| 1 (fichiers 1-site) | backup, ddns, logs, memory, network_context, smtp, suid_audit | 7 | 4538/4538 |
+| 2 (fichiers 2-site) | cron_audit, docker_audit, fail2ban, firmware, ipv6, kernel_modules, ntp, password_policy, ports, secure_boot, systemd_timers, umask, updates, user_accounts | 16 | 4538/4538 |
+| 3 (fichiers 3-site) | auditd, file_integrity, kernel_hardening, log_rotation, rootkit | 15 | 4538/4538 |
+| 4 (fichiers 4-6 sites) | file_perms, firewall_stack, firewall (pilote), disk, iptables_nftables, clamav, mac_policy, samba | 29 | 4538/4538 |
+| 5 (hardening) | hardening | 8 | 4538/4538 |
+| 6 (ssh) | ssh | 24 | 4538/4538 |
+| **Total** | **27 fichiers** | **120 sites** | **4538/4538** |
+
+13 sites ont été volontairement non migrés (déductions cappées, branching de niveau, points conditionnels, template_vars divergents). Voir `CHANGELOG_FR.md` pour le détail.
+
+#### Le test terrain suit le même pattern que v0.5.0
+
+La release Phase 1 v0.5.0 a été testée terrain sur 5 distros (Linux Mint 22.3 production + so6minttest, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) avec `sudo bob -v -d --french`. Le refactor de v0.5.1 préserve la sortie wire exactement, donc la même couverture cross-distro s'applique. Le test terrain recommandé pour v0.5.1 : installer via `pipx upgrade bodyguard-of-bits` et lancer `sudo bob -v -d` — la sortie d'audit, le score breakdown, et les barres par domaine doivent être bit-identiques à v0.5.0 (modulo les changements d'état système entre runs).
 
 ---
 

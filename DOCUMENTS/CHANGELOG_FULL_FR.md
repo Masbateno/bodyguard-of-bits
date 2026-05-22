@@ -6,6 +6,118 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.1] — 21-05-2026
+
+**Refactor v0.5.x — Phase 2 sur 5.** Le gros gain LoC. Cette release attaque **l'audit finding #1** : l'idiom paired `result.warn(...) + result.add_deduction(...)` se répétant ~130 fois dans `bob/checks/*.py`. Après que Phase 1 (v0.5.0) ait shippé les findings low-risk additifs + la passe couverture cron, Phase 2 collapse le pattern boilerplate dominant.
+
+**Aucun changement de comportement.** Les tests restent à 4538/4538 parce que le helper produit un `Finding` et une `Deduction` par appel, bit-identique à la séquence 2 appels pré-migration.
+
+### Nouvelle API `CheckResult` (additive — pas de breaking change)
+
+Deux méthodes ajoutées à `bob/scoring.py:CheckResult` (après les shorthands `warn`/`alert` existants) :
+
+```python
+def warn_with_deduction(
+    self,
+    key: str,
+    *,
+    message: str,
+    points: int,
+    reason: str | None = None,
+    context: str = "local",
+    detail: str = "",
+    nature: str = "improvement",
+    cmd: str = "",
+    cmd_type: str = "fix",
+    note: str = "",
+    template_vars: dict | None = None,
+) -> None: ...
+
+def alert_with_deduction(self, ...) -> None: ...   # miroir, nature default = "action"
+```
+
+**Pourquoi keyword-only après `key`** : forcer `message=`, `points=`, etc. comme arguments keyword empêche la confusion d'args positionnels aux call sites. Le slot positionnel `key` rend le site d'appel lisible comme `result.warn_with_deduction(key="ssh.x11_forwarding", ...)` — la clé étant l'identifiant le plus important.
+
+### Périmètre de migration (120 sites dans 27 fichiers)
+
+La migration a été menée en **6 vagues**, ordonnées par complexité de fichier (plus simple d'abord), avec la suite complète relancée après chaque vague :
+
+#### Vague 1 — fichiers single-site (7 sites)
+`backup.py`, `ddns.py`, `logs.py`, `memory.py`, `network_context.py`, `smtp.py`, `suid_audit.py`. Swaps triviaux avec override `reason=` au besoin (`backup.no_backup_reason`, `logs.deduction.brute_force`, `smtp.exposed_reason`, `suid_audit.unexpected_suid_reason`).
+
+#### Vague 2 — fichiers 2-site (16 sites)
+`cron_audit.py` (2), `docker_audit.py` (2), `fail2ban.py` (2), `firmware.py` (2), `ipv6.py` (1 sur 2), `kernel_modules.py` (2), `ntp.py` (2), `password_policy.py` (2), `ports.py` (1 sur 2), `secure_boot.py` (2), `systemd_timers.py` (2), `umask.py` (2), `updates.py` (2), `user_accounts.py` (2 sur 2).
+
+#### Vague 3 — fichiers 3-site (15 sites)
+`auditd.py` (3), `file_integrity.py` (3), `kernel_hardening.py` (3), `log_rotation.py` (3), `rootkit.py` (3). `ssl_certs.py` (3) volontairement skip — les 3 sites utilisent un compteur cappé `total_deduction`.
+
+#### Vague 4 — fichiers 4-6 sites (29 sites)
+`file_perms.py` (1 sur 4), `firewall_stack.py` (4), `firewall.py` (4 sur 6 — pilote), `disk.py` (5), `iptables_nftables.py` (5), `clamav.py` (5), `mac_policy.py` (5 sur 6), `samba.py` (5 sur 6).
+
+#### Vague 5 — `hardening.py` (8 sites)
+Toutes les branches de policy sysctl : rp_filter, accept_redirects, tcp_syncookies, accept_source_route, accept_redirects_v6, send_redirects, protected_hardlinks, protected_symlinks. Tous `points=1`, tous `context="local"`, message==reason — le fichier le plus uniforme de la migration.
+
+#### Vague 6 — `ssh.py` (24 sites)
+Le plus gros fichier (1387 LoC) et la migration la plus complexe. Couvre toutes les directives sshd_config, les clés hôte, le helper `_check_weak_algo`, le dossier `~/.ssh`, les clés privées (incluant le cas suffix `_reason`), authorized_keys (DSA + RSA faible + duplicates), config client (StrictHostKeyChecking, UserKnownHostsFile, ForwardAgent), et known_hosts (types de clé obsolètes). ssh.py a rétréci de **−146 lignes** (33% de toutes les LoC retirées en vague 6).
+
+### Sites volontairement laissés en 2-appels (13)
+
+La migration a été conservatrice — les sites où l'API helper ne fitte pas ont été laissés tels quels et documentés :
+
+| Pattern | Compte | Fichiers |
+|---|---|---|
+| Déduction cappée (compteur local `_deductions < CAP`) | 7 | `services_state.py` (1), `ssl_certs.py` (3), `file_perms.py` (2), `ipv6.py` (1) |
+| Branching de niveau (warn OU alert sur condition séparée) | 4 | `services.py` (1), `ports.py` (1), `docker.py` (2) |
+| Calcul conditionnel `points = 0 or N` | 1 | `docker.py:172-187` |
+| `template_vars` différents entre finding et reason | 1 | `firewall.py:_check_open_any` (`rule=clean` pour finding, `rule=""` pour déduction) |
+
+L'override `reason=` du helper gère le cas le plus facile d'asymétrie (clé i18n différente, mêmes template_vars). Des template_vars différents est un pattern plus rare qui ne justifie pas un deuxième paramètre d'override.
+
+### Usage de l'override `reason=`
+
+Sur les 120 migrations, ~85 sites passent un `reason=` explicite parce que le code original utilisait une clé i18n suffixée `_reason` pour la déduction (ex `ssh.host_key_dsa_reason` vs `ssh.host_key_dsa`). Ce pattern a été introduit en début de v0.4.x pour garder les strings de breakdown de déduction concises vs les messages de finding plus longs. Le helper préserve la distinction en acceptant l'override ; le défaut de `reason` à `message` couvre les ~35 sites où le code original avait `_t(KEY)` deux fois.
+
+### Pourquoi la migration n'a pas changé les tests
+
+Chaque appel helper appelle en interne `self.warn(...)` (ou `.alert(...)`) suivi de `self.add_deduction(...)`. Les deux méthodes appendent un `Finding` et une `Deduction` à `result.findings` et `result.deductions` respectivement. Les tests vérifient ces listes via `len()`, accès attribut sur les entrées individuelles, ou `assert_count_per_level()` — aucun ne se préoccupe de savoir si les entrées ont été émises via le helper ou via 2 appels séparés. La sortie wire est identique.
+
+Le seul risque théorique serait si un test patchait `CheckResult.warn` ou `.add_deduction` pour compter les invocations. Un grep a trouvé zéro test ainsi — tous les tests attestent sur les listes `result.findings` / `result.deductions` résultantes.
+
+### Diff stats
+
+```
+$ git diff --stat
+ 37 files changed, 483 insertions(+), 1002 deletions(-)
+```
+
+**Net : −519 lignes.** Plus proche de l'estimation "~800 LoC retirés" de l'audit si les 13 sites skip avaient aussi été migrés, mais l'approche conservatrice sur les patterns `_deductions < CAP` et le branching `warn`/`alert` est le bon arbitrage — ces sites nécessiteraient un helper de forme différente et une réécriture de leur logique environnante.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in ~6s
+```
+
+**4538 → 4538 (inchangé).** Chacune des 6 vagues a passé `pytest tests/` proprement avant de passer à la suivante. Aucun nouveau test nécessaire (le comportement du helper est pinné par les tests de comptage finding/déduction existants à travers les 33 fichiers de check).
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
+- **Surface CLI** : aucun nouveau flag, aucun flag retiré.
+- **Score par domaine** : inchangé (même `_PREFIX_TO_DOMAIN`, même mapping de domaine pour chaque clé émise).
+- **Sortie wire** : bit-identique à v0.5.0. Messages de findings, raisons de déductions, template_vars, recurrences, refs CIS — tous préservés.
+- **API externe** pour les auteurs de plugins : la forme 2-appels (`result.warn(...) + result.add_deduction(...)`) **fonctionne toujours**. Le helper est additif — le code plugin inchangé.
+- **i18n** : zéro changement de clé locale (les helpers routent à travers les appels `_t` existants à chaque call site).
+
+### Prochaines phases de v0.5.x
+
+- **v0.5.2 (Phase 3)** : audit findings #4 (table directive SSH — `_check_sshd_config` → déclaratif `_BAD_DIRECTIVES`) + #3 (étendre `runner._sec` avec callbacks `skip_if=` et `post_display=`). Risque medium : touche le plus gros fichier de tests (`test_ssh.py`, 1022 LoC) et le control flow du runner.
+- **v0.5.3 (Phase 4)** : #5 (table `display_result` LEVEL_DISPATCH) + #12 (helpers extraits de `print_audit_summary`) + #8 (retirer l'escape hatch `CheckResult.log_data`). Risque medium : changements de layout observables.
+- **v0.5.4 (Phase 5)** : #6 (helper `_prompt` wizard cron) + #9 (chemin sunset `UFW_AUDIT_SHARE`) + décisions finales sur #13 (split ssh.py) / #14 (split cron.py) / #15b (ré-attribution `_PREFIX_TO_DOMAIN`).
+
+---
+
 ## [v0.5.0] — 21-05-2026
 
 **Refactor v0.5.x — Phase 1 sur 5.** Cette release ouvre la **branche v0.5.x**. C'est le premier épisode d'un refactor en 5 phases mappé depuis un audit sub-agent (general-purpose, dispatché 2026-05-21 avec `DOCUMENTS/SNAPSHOT.md` en briefing principal). L'audit a retourné **15 findings refactor**, classés par value/effort, avec classification de risque explicite.

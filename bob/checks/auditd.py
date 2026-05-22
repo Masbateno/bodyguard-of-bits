@@ -148,18 +148,13 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
         return result
 
     if not snapshot.service_active:
-        result.warn(
-            message=_t("auditd.service_inactive"),
-            detail=_t("auditd.service_inactive_detail"),
-            cmd="sudo systemctl enable --now auditd",
-            nature="improvement",
+        result.warn_with_deduction(
             key="auditd.service_inactive",
-        )
-        result.add_deduction(
+            message=_t("auditd.service_inactive"),
             reason=_t("auditd.service_inactive_reason"),
             points=1,
-            context="local",
-            key="auditd.service_inactive",
+            detail=_t("auditd.service_inactive_detail"),
+            cmd="sudo systemctl enable --now auditd",
         )
         return result
 
@@ -183,19 +178,13 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
                 key="auditd.no_rules",
             )
         else:
-            result.warn(
-                message=_t("auditd.no_rules"),
-                detail=_t("auditd.no_rules_detail"),
-                cmd=_no_rules_cmd,
-                cmd_type="fix",
-                nature="improvement",
+            result.warn_with_deduction(
                 key="auditd.no_rules",
-            )
-            result.add_deduction(
+                message=_t("auditd.no_rules"),
                 reason=_t("auditd.no_rules_reason"),
                 points=1,
-                context="local",
-                key="auditd.no_rules",
+                detail=_t("auditd.no_rules_detail"),
+                cmd=_no_rules_cmd,
             )
         return result
 
@@ -211,18 +200,13 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
                 key="auditd.missing_sensitive_rules",
             )
         else:
-            result.warn(
-                message=_t("auditd.missing_sensitive_rules"),
-                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str),
-                cmd=_suggest_rules_cmd(missing),
-                nature="improvement",
+            result.warn_with_deduction(
                 key="auditd.missing_sensitive_rules",
-            )
-            result.add_deduction(
+                message=_t("auditd.missing_sensitive_rules"),
                 reason=_t("auditd.missing_sensitive_rules_reason", files=missing_str),
                 points=1,
-                context="local",
-                key="auditd.missing_sensitive_rules",
+                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str),
+                cmd=_suggest_rules_cmd(missing),
             )
         return result
 

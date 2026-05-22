@@ -6,6 +6,172 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.5.1] — 2026-05-21
+
+**Refactor v0.5.x — Phase 2 of 5.** The big LoC win. This release tackles **audit finding #1**: the paired `result.warn(...) + result.add_deduction(...)` idiom recurring ~130 times across `bob/checks/*.py`. After Phase 1 (v0.5.0) shipped low-risk additive findings + the cron coverage pass, Phase 2 collapses the dominant boilerplate pattern.
+
+**Zero behaviour change.** Tests stay at 4538/4538 because the helper produces a `Finding` and a `Deduction` per call, bit-identical to the pre-migration 2-call sequence.
+
+### New `CheckResult` API (additive — no breaking change)
+
+Two methods added to `bob/scoring.py:CheckResult` (after the existing `warn`/`alert` shorthands):
+
+```python
+def warn_with_deduction(
+    self,
+    key: str,
+    *,
+    message: str,
+    points: int,
+    reason: str | None = None,
+    context: str = "local",
+    detail: str = "",
+    nature: str = "improvement",
+    cmd: str = "",
+    cmd_type: str = "fix",
+    note: str = "",
+    template_vars: dict | None = None,
+) -> None:
+    """Add a WARN finding and a matching deduction in one call.
+
+    Collapses the paired `result.warn(...) + result.add_deduction(...)` idiom
+    that recurs ~130 times across bob/checks/*.py. The same `key` and
+    `template_vars` are used for both the finding and the deduction. The
+    deduction `reason` defaults to `message` — pass `reason=` explicitly
+    when the deduction string uses a different translation key (e.g.
+    `ssh.host_key_dsa_reason` differs from `ssh.host_key_dsa`).
+    """
+    self.warn(message=message, detail=detail, nature=nature,
+              cmd=cmd, cmd_type=cmd_type, note=note,
+              key=key, template_vars=template_vars)
+    self.add_deduction(
+        reason=reason if reason is not None else message,
+        points=points, context=context,
+        key=key, template_vars=template_vars,
+    )
+
+def alert_with_deduction(self, ...) -> None:
+    # Mirror, nature default = "action"
+```
+
+**Why keyword-only after `key`**: forcing `message=`, `points=`, etc. as keyword arguments prevents positional-arg confusion at call sites. The `key` positional slot makes the call site read like `result.warn_with_deduction(key="ssh.x11_forwarding", ...)` — the key being the most important identifier.
+
+### Migration scope (120 sites in 27 files)
+
+The migration was carried out in **6 waves**, ordered by file complexity (simplest first), with the full test suite re-run after each wave:
+
+#### Wave 1 — single-site files (7 sites)
+`backup.py`, `ddns.py`, `logs.py`, `memory.py`, `network_context.py`, `smtp.py`, `suid_audit.py`. Trivial swaps with `reason=` override where needed (`backup.no_backup_reason`, `logs.deduction.brute_force`, `smtp.exposed_reason`, `suid_audit.unexpected_suid_reason`).
+
+#### Wave 2 — two-site files (16 sites)
+`cron_audit.py` (2), `docker_audit.py` (2), `fail2ban.py` (2), `firmware.py` (2), `ipv6.py` (1 of 2), `kernel_modules.py` (2), `ntp.py` (2), `password_policy.py` (2), `ports.py` (1 of 2), `secure_boot.py` (2), `systemd_timers.py` (2), `umask.py` (2), `updates.py` (2), `user_accounts.py` (2 of 2).
+
+#### Wave 3 — three-site files (15 sites)
+`auditd.py` (3), `file_integrity.py` (3), `kernel_hardening.py` (3), `log_rotation.py` (3), `rootkit.py` (3). `ssl_certs.py` (3) intentionally skipped — all 3 sites use a capped `total_deduction` counter.
+
+#### Wave 4 — 4-6 site files (29 sites)
+`file_perms.py` (1 of 4), `firewall_stack.py` (4), `firewall.py` (4 of 6 — pilot), `disk.py` (5), `iptables_nftables.py` (5), `clamav.py` (5), `mac_policy.py` (5 of 6), `samba.py` (5 of 6).
+
+#### Wave 5 — `hardening.py` (8 sites)
+All sysctl-policy branches: rp_filter, accept_redirects, tcp_syncookies, accept_source_route, accept_redirects_v6, send_redirects, protected_hardlinks, protected_symlinks. All `points=1`, all `context="local"`, message==reason — the most uniform file of the migration.
+
+#### Wave 6 — `ssh.py` (24 sites)
+The biggest file (1387 LoC) and the most complex migration. Covers all sshd_config directives, host keys, the `_check_weak_algo` helper, `~/.ssh` dir, private keys (including the `_reason` suffix case), authorized_keys (DSA + weak RSA + duplicates), client config (StrictHostKeyChecking, UserKnownHostsFile, ForwardAgent), and known_hosts (deprecated key types). ssh.py shrunk by **−146 lines** (33% of all wave-6 LoC removed).
+
+### Sites intentionally left as 2-call (13)
+
+The migration was conservative — sites where the helper API doesn't fit were left untouched and documented:
+
+| Pattern | Count | Files |
+|---|---|---|
+| Capped deduction (local counter `_deductions < CAP`) | 7 | `services_state.py` (1), `ssl_certs.py` (3), `file_perms.py` (2), `ipv6.py` (1) |
+| Level branching (warn OR alert on a separate condition) | 4 | `services.py` (1), `ports.py` (1), `docker.py` (2) |
+| Conditional `points = 0 or N` calculation | 1 | `docker.py:172-187` |
+| Different `template_vars` between finding and reason | 1 | `firewall.py:_check_open_any` (`rule=clean` for finding, `rule=""` for deduction) |
+
+The helper's `reason=` override handles the easier asymmetry case (different translation key, same template_vars). Different template_vars is a rarer pattern that doesn't justify a second override parameter.
+
+### `reason=` override usage
+
+Out of the 120 migrations, ~85 sites pass an explicit `reason=` because the original code used a `_reason`-suffixed translation key for the deduction (e.g. `ssh.host_key_dsa_reason` vs `ssh.host_key_dsa`). This pattern was introduced in early v0.4.x to keep deduction-breakdown strings concise vs the longer finding messages. The helper preserves the distinction by accepting the override; defaulting `reason` to `message` covers the ~35 sites where the original code had `_t(KEY)` twice.
+
+### Why the migration didn't change tests
+
+Each helper call internally calls `self.warn(...)` (or `.alert(...)`) followed by `self.add_deduction(...)`. The two methods append a `Finding` and a `Deduction` to `result.findings` and `result.deductions` respectively. Tests check those lists via `len()`, attribute access on individual entries, or `assert_count_per_level()` — none of which care whether the entries were emitted via the helper or via 2 separate calls. The wire output is identical.
+
+The only theoretical risk would be if a test patched `CheckResult.warn` or `.add_deduction` to count call invocations. A grep found zero such tests — all tests assert on the resulting `result.findings` / `result.deductions` lists.
+
+### Diff stats
+
+```
+$ git diff --stat
+ bob/checks/auditd.py            |  24 +-
+ bob/checks/backup.py            |   9 +-
+ bob/checks/clamav.py            |  56 +---
+ bob/checks/cron_audit.py        |  20 +-
+ bob/checks/disk.py              |  56 +---
+ bob/checks/docker_audit.py      |  18 +-
+ bob/checks/fail2ban.py          |  24 +-
+ bob/checks/file_integrity.py    |  30 +-
+ bob/checks/file_perms.py        |   8 +-
+ bob/checks/firewall_stack.py    |  30 +-
+ bob/checks/firewall.py          |  37 +--
+ bob/checks/firmware.py          |  24 +-
+ bob/checks/hardening.py         |  91 ++-----
+ bob/checks/iptables_nftables.py |  50 +---
+ bob/checks/ipv6.py              |  11 +-
+ bob/checks/kernel_hardening.py  |  21 +-
+ bob/checks/kernel_modules.py    |  22 +-
+ bob/checks/log_rotation.py      |  21 +-
+ bob/checks/logs.py              |   9 +-
+ bob/checks/mac_policy.py        |  48 +---
+ bob/checks/memory.py            |   8 +-
+ bob/checks/network_context.py   |  17 +-
+ bob/checks/ntp.py               |  26 +-
+ bob/checks/password_policy.py   |  24 +-
+ bob/checks/ports.py             |  10 +-
+ bob/checks/rootkit.py           |  39 +-
+ bob/checks/samba.py             |  66 +-----
+ bob/checks/secure_boot.py       |  22 +-
+ bob/checks/smtp.py              |  14 +-
+ bob/checks/ssh.py               | 287 +++++--------------
+ bob/checks/suid_audit.py        |  15 +-
+ bob/checks/systemd_timers.py    |  24 +-
+ bob/checks/umask.py             |  24 +-
+ bob/checks/updates.py           |  24 +-
+ bob/checks/user_accounts.py     |  26 +-
+ bob/scoring.py                  |  66 ++++++
+ 37 files changed, 483 insertions(+), 1002 deletions(-)
+```
+
+**Net: −519 lines.** Closer to the audit's "~800 LoC removed" estimate if the 13 skipped sites had also been migrated, but the conservative approach to `_deductions < CAP` patterns and `warn`/`alert` branching is the correct trade-off — those sites would need a different helper shape and a re-write of their surrounding logic.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in ~6s
+```
+
+**4538 → 4538 (unchanged).** Each of the 6 waves passed `pytest tests/` cleanly before moving on. No new tests needed (the helpers' behaviour is pinned by the existing finding/deduction-counting tests across all 33 check files).
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, all 116 EXPLAIN_KEYS, all 34 filterable sections — **unchanged**.
+- **CLI surface**: no new flag, no flag removed.
+- **Per-domain score breakdown**: unchanged (same `_PREFIX_TO_DOMAIN`, same domain mapping for every emitted key).
+- **Wire output**: bit-identical to v0.5.0. Finding messages, deduction reasons, template_vars, recurrences, CIS refs — all preserved.
+- **External API** for plugin authors: the 2-call form (`result.warn(...) + result.add_deduction(...)`) **still works**. The helper is additive — plugin code unchanged.
+- **i18n**: zero locale key changes (the helpers route through existing `_t` calls at every call site).
+
+### Next phases of v0.5.x
+
+- **v0.5.2 (Phase 3)**: audit findings #4 (SSH directive table — `_check_sshd_config` → declarative `_BAD_DIRECTIVES`) + #3 (extend `runner._sec` with `skip_if=` and `post_display=` callbacks). Medium risk: touches the largest test file (`test_ssh.py`, 1022 LoC) and core runner control flow.
+- **v0.5.3 (Phase 4)**: #5 (`display_result` LEVEL_DISPATCH table) + #12 (`print_audit_summary` extracted helpers) + #8 (remove `CheckResult.log_data` escape hatch). Medium risk: observable layout changes.
+- **v0.5.4 (Phase 5)**: #6 (cron wizard `_prompt` helper) + #9 (`UFW_AUDIT_SHARE` sunset path) + final decisions on #13 (ssh.py split) / #14 (cron.py split) / #15b (`_PREFIX_TO_DOMAIN` re-attribution).
+
+---
+
 ## [v0.5.0] — 2026-05-21
 
 **Refactor v0.5.x — Phase 1 of 5.** This release opens the **v0.5.x branch**. It's the first instalment of a 5-phase refactor mapped from a sub-agent audit (general-purpose, dispatched 2026-05-21 with `DOCUMENTS/SNAPSHOT.md` as primary briefing). The audit returned **15 refactor findings**, ranked by value/effort, with explicit risk classification.

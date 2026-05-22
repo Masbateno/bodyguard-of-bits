@@ -120,19 +120,13 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
     # 1. logrotate                                                         #
     # ------------------------------------------------------------------ #
     if not snapshot.logrotate_installed:
-        result.warn(
-            message=_t("log_rotation.logrotate_missing"),
-            nature="improvement",
-            detail=_t("log_rotation.logrotate_missing_detail"),
-            cmd="sudo apt install logrotate",
-            cmd_type="fix",
+        result.warn_with_deduction(
             key="log_rotation.logrotate_missing",
-        )
-        result.add_deduction(
+            message=_t("log_rotation.logrotate_missing"),
             reason=_t("log_rotation.logrotate_missing_reason"),
             points=1,
-            context="local",
-            key="log_rotation.logrotate_missing",
+            detail=_t("log_rotation.logrotate_missing_detail"),
+            cmd="sudo apt install logrotate",
         )
     else:
         if snapshot.logrotate_rule_count <= 0:
@@ -165,19 +159,13 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
         )
 
         if is_volatile:
-            result.warn(
-                message=_t("log_rotation.journald_volatile", storage=snapshot.journald_storage or "volatile"),
-                nature="improvement",
-                detail=_t("log_rotation.journald_volatile_detail"),
-                cmd='sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles --create --prefix /var/log/journal && sudo systemctl kill --kill-who=main --signal=SIGUSR1 systemd-journald',
-                cmd_type="fix",
+            result.warn_with_deduction(
                 key="log_rotation.journald_volatile",
-            )
-            result.add_deduction(
+                message=_t("log_rotation.journald_volatile", storage=snapshot.journald_storage or "volatile"),
                 reason=_t("log_rotation.journald_volatile_reason"),
                 points=1,
-                context="local",
-                key="log_rotation.journald_volatile",
+                detail=_t("log_rotation.journald_volatile_detail"),
+                cmd='sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles --create --prefix /var/log/journal && sudo systemctl kill --kill-who=main --signal=SIGUSR1 systemd-journald',
             )
         elif is_persistent:
             result.ok(
@@ -186,19 +174,13 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
             )
         else:
             # Unknown storage value — treat as volatile (worst-case assumption)
-            result.warn(
-                message=_t("log_rotation.journald_volatile", storage="none"),
-                nature="improvement",
-                detail=_t("log_rotation.journald_volatile_detail"),
-                cmd='sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles --create --prefix /var/log/journal && sudo systemctl kill --kill-who=main --signal=SIGUSR1 systemd-journald',
-                cmd_type="fix",
+            result.warn_with_deduction(
                 key="log_rotation.journald_volatile",
-            )
-            result.add_deduction(
+                message=_t("log_rotation.journald_volatile", storage="none"),
                 reason=_t("log_rotation.journald_volatile_reason"),
                 points=1,
-                context="local",
-                key="log_rotation.journald_volatile",
+                detail=_t("log_rotation.journald_volatile_detail"),
+                cmd='sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles --create --prefix /var/log/journal && sudo systemctl kill --kill-who=main --signal=SIGUSR1 systemd-journald',
             )
 
         # SystemMaxUse / SystemKeepFree — INFO only

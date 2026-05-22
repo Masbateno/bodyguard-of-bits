@@ -119,20 +119,13 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                 # Real gap: globally-routable IPv6 + listeners + no UFW IPv6 rules.
                 # When UFW is completely inactive, downgrade: main issue is UFW being off.
                 if ufw_active:
-                    result.warn(
+                    result.warn_with_deduction(
+                        key="ipv6.ufw_disabled_listeners_present",
                         message=_t("ipv6.ufw_disabled_listeners_present",
                                    count=len(snapshot.ipv6_listeners)),
-                        detail=_t("ipv6.listeners_list", ports=listeners_str),
-                        nature="improvement",
-                        cmd="sudo nano /etc/default/ufw  # set IPV6=yes, then: sudo ufw reload",
-                        key="ipv6.ufw_disabled_listeners_present",
-                    )
-                    result.add_deduction(
-                        reason=_t("ipv6.ufw_disabled_listeners_present",
-                                  count=len(snapshot.ipv6_listeners)),
                         points=2,
-                        context="local",
-                        key="ipv6.ufw_disabled_listeners_present",
+                        detail=_t("ipv6.listeners_list", ports=listeners_str),
+                        cmd="sudo nano /etc/default/ufw  # set IPV6=yes, then: sudo ufw reload",
                     )
                     found_issue = True
                 else:

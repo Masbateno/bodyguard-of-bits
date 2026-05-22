@@ -163,8 +163,10 @@ def check_memory(
 
     # --- SSD wear: swap on SSD + high swappiness ---
     if snapshot.swap_on_ssd and snapshot.swappiness > _SSD_SWAPPINESS_THRESHOLD:
-        result.warn(
+        result.warn_with_deduction(
+            key="memory.swappiness_ssd_wear",
             message=_t("memory.swappiness_ssd_wear", value=snapshot.swappiness),
+            points=1,
             detail=_t(
                 "memory.swappiness_ssd_detail",
                 recommended=recommended_swappiness,
@@ -174,13 +176,6 @@ def check_memory(
                 f"echo 'vm.swappiness={recommended_swappiness}' | "
                 f"sudo tee /etc/sysctl.d/99-swappiness.conf"
             ),
-            key="memory.swappiness_ssd_wear",
-        )
-        result.add_deduction(
-            reason=_t("memory.swappiness_ssd_wear", value=snapshot.swappiness),
-            points=1,
-            context="local",
-            key="memory.swappiness_ssd_wear",
         )
 
     # --- Unjustified swap: RAM still mostly free AND swappiness is above

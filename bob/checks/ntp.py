@@ -135,33 +135,23 @@ def check_ntp(snapshot: NtpSnapshot, t: TranslationFunc | None = None) -> CheckR
         return result
 
     if snapshot.ntp_enabled and not snapshot.ntp_synchronized:
-        result.warn(
-            message=_t("ntp.not_synchronized"),
-            detail=_t("ntp.not_synchronized_detail"),
-            cmd="sudo timedatectl set-ntp true",
-            nature="improvement",
+        result.warn_with_deduction(
             key="ntp.not_synchronized",
-        )
-        result.add_deduction(
+            message=_t("ntp.not_synchronized"),
             reason=_t("ntp.not_synchronized_reason"),
             points=1,
-            context="local",
-            key="ntp.not_synchronized",
+            detail=_t("ntp.not_synchronized_detail"),
+            cmd="sudo timedatectl set-ntp true",
         )
         return result
 
     # Not enabled
-    result.warn(
-        message=_t("ntp.not_enabled"),
-        detail=_t("ntp.not_enabled_detail"),
-        cmd="sudo systemctl enable --now systemd-timesyncd",
-        nature="improvement",
+    result.warn_with_deduction(
         key="ntp.not_enabled",
-    )
-    result.add_deduction(
+        message=_t("ntp.not_enabled"),
         reason=_t("ntp.not_enabled_reason"),
         points=1,
-        context="local",
-        key="ntp.not_enabled",
+        detail=_t("ntp.not_enabled_detail"),
+        cmd="sudo systemctl enable --now systemd-timesyncd",
     )
     return result

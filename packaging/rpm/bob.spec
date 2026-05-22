@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.0
+Version:        0.5.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,26 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.1-1
+- Refactor v0.5.x Phase 2 — big LoC win (audit finding #1).
+- New CheckResult.warn_with_deduction() + .alert_with_deduction()
+  helpers in bob/scoring.py collapse the paired
+  result.warn() + result.add_deduction() idiom.
+- 120 sites migrated across 27 files. Largest: ssh.py (24 sites,
+  -146 lines), hardening.py (8), samba.py (6), mac_policy.py (6),
+  clamav.py (5), disk.py (5), iptables_nftables.py (5),
+  firewall.py (4), firewall_stack.py (4).
+- 13 sites intentionally not migrated (capped deductions, level
+  branching, conditional points, divergent template_vars).
+- reason= override handles _reason-suffix translation key cases
+  (e.g. ssh.host_key_dsa_reason vs ssh.host_key_dsa).
+- Net diff: 37 files changed, +483 / -1002 = -519 lines.
+- Zero behaviour change. Tests stay at 4538/4538. Wire output
+  bit-identical to v0.5.0.
+- 6 migration waves with full pytest between each.
+- JSON schema_version="1", 7 score domains, 116 EXPLAIN_KEYS,
+  34 filterable sections, CLI surface — all preserved.
+
 * Thu May 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.0-1
 - Refactor v0.5.x Phase 1 (opens v0.5.x branch) — 6 audit findings
   + cron coverage pass + 1 latent bug surfaced by the new tests.

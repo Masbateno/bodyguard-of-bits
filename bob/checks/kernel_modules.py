@@ -200,35 +200,25 @@ def check_kernel_modules(
         risky_fs = sorted(loaded & _RISKY_FS)
         if risky_fs:
             pkgs = ", ".join(risky_fs)
-            result.warn(
-                message=_t("kernel_modules.risky_fs", modules=pkgs),
-                detail=_t("kernel_modules.risky_fs_detail"),
-                cmd=_unload_cmd(risky_fs),
-                nature="improvement",
+            result.warn_with_deduction(
                 key="kernel_modules.risky_fs",
-            )
-            result.add_deduction(
+                message=_t("kernel_modules.risky_fs", modules=pkgs),
                 reason=_t("kernel_modules.risky_fs_reason", modules=pkgs),
                 points=1,
-                context="local",
-                key="kernel_modules.risky_fs",
+                detail=_t("kernel_modules.risky_fs_detail"),
+                cmd=_unload_cmd(risky_fs),
             )
 
         risky_net = sorted(loaded & _RISKY_NET)
         if risky_net:
             pkgs = ", ".join(risky_net)
-            result.warn(
-                message=_t("kernel_modules.risky_net", modules=pkgs),
-                detail=_t("kernel_modules.risky_net_detail"),
-                cmd=_unload_cmd(risky_net),
-                nature="improvement",
+            result.warn_with_deduction(
                 key="kernel_modules.risky_net",
-            )
-            result.add_deduction(
+                message=_t("kernel_modules.risky_net", modules=pkgs),
                 reason=_t("kernel_modules.risky_net_reason", modules=pkgs),
                 points=1,
-                context="local",
-                key="kernel_modules.risky_net",
+                detail=_t("kernel_modules.risky_net_detail"),
+                cmd=_unload_cmd(risky_net),
             )
 
         if not result.findings:

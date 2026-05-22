@@ -339,21 +339,14 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
         name = hk.path.name
 
         if hk.key_type == "dsa":
-            result.warn(
-                message=_t("ssh.host_key_dsa", name=name),
-                nature="improvement",
-                detail=_t("ssh.host_key_dsa_detail"),
-                cmd=f"sudo rm {hk.path} {hk.path}.pub && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && sudo systemctl restart ssh",
-                cmd_type="fix",
+            result.warn_with_deduction(
                 key="ssh.host_key_dsa",
-                template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
-            )
-            result.add_deduction(
+                message=_t("ssh.host_key_dsa", name=name),
                 reason=_t("ssh.host_key_dsa_reason", name=name),
                 points=1,
-                context="local",
-                key="ssh.host_key_dsa",
-                template_vars={"name": name},  # pilot v0.4.1
+                detail=_t("ssh.host_key_dsa_detail"),
+                cmd=f"sudo rm {hk.path} {hk.path}.pub && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && sudo systemctl restart ssh",
+                template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
             )
 
         elif hk.key_type == "rsa" and hk.rsa_bits is not None and hk.rsa_bits < 4096:
@@ -384,16 +377,12 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     # PermitRootLogin
     prl = cfg.get("permitrootlogin", "prohibit-password").lower()
     if prl == "yes":
-        result.alert(
-            message=_t("ssh.permit_root_login", value=prl),
-            detail=_t("ssh.permit_root_login_detail"),
-            nature="improvement",
-            cmd="",
+        result.alert_with_deduction(
             key="ssh.permit_root_login",
-        )
-        result.add_deduction(
-            reason=_t("ssh.permit_root_login", value=prl),
-            points=3, context="local", key="ssh.permit_root_login",
+            message=_t("ssh.permit_root_login", value=prl),
+            points=3,
+            nature="improvement",
+            detail=_t("ssh.permit_root_login_detail"),
         )
         found_issue = True
     elif prl == "no":
@@ -416,16 +405,11 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     pw_auth = cfg.get("passwordauthentication", "yes").lower()
     if pw_auth == "yes":
         if ssh_exposed:
-            result.warn(
-                message=_t("ssh.password_auth"),
-                detail=_t("ssh.password_auth_detail"),
-                nature="improvement",
-                cmd="",
+            result.warn_with_deduction(
                 key="ssh.password_auth",
-            )
-            result.add_deduction(
-                reason=_t("ssh.password_auth"),
-                points=2, context="local", key="ssh.password_auth",
+                message=_t("ssh.password_auth"),
+                points=2,
+                detail=_t("ssh.password_auth_detail"),
             )
             found_issue = True
         else:
@@ -438,15 +422,11 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     # PermitEmptyPasswords
     pep = cfg.get("permitemptypasswords", "no").lower()
     if pep == "yes":
-        result.alert(
-            message=_t("ssh.permit_empty_passwords"),
-            nature="improvement",
-            cmd="",
+        result.alert_with_deduction(
             key="ssh.permit_empty_passwords",
-        )
-        result.add_deduction(
-            reason=_t("ssh.permit_empty_passwords"),
-            points=5, context="local", key="ssh.permit_empty_passwords",
+            message=_t("ssh.permit_empty_passwords"),
+            points=5,
+            nature="improvement",
         )
         found_issue = True
 
@@ -456,15 +436,10 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     except ValueError:
         max_tries = 6
     if max_tries > 3:
-        result.warn(
-            message=_t("ssh.max_auth_tries", value=max_tries),
-            nature="improvement",
-            cmd="",
+        result.warn_with_deduction(
             key="ssh.max_auth_tries",
-        )
-        result.add_deduction(
-            reason=_t("ssh.max_auth_tries", value=max_tries),
-            points=1, context="local", key="ssh.max_auth_tries",
+            message=_t("ssh.max_auth_tries", value=max_tries),
+            points=1,
         )
         found_issue = True
 
@@ -480,75 +455,51 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     # X11Forwarding
     x11 = cfg.get("x11forwarding", "no").lower()
     if x11 == "yes":
-        result.warn(
-            message=_t("ssh.x11_forwarding"),
-            nature="improvement",
-            cmd="",
+        result.warn_with_deduction(
             key="ssh.x11_forwarding",
-        )
-        result.add_deduction(
-            reason=_t("ssh.x11_forwarding"),
-            points=1, context="local", key="ssh.x11_forwarding",
+            message=_t("ssh.x11_forwarding"),
+            points=1,
         )
         found_issue = True
 
     # IgnoreRhosts
     ignore_rhosts = cfg.get("ignorerhosts", "yes").lower()
     if ignore_rhosts == "no":
-        result.warn(
-            message=_t("ssh.ignore_rhosts_disabled"),
-            nature="improvement",
-            cmd="",
+        result.warn_with_deduction(
             key="ssh.ignore_rhosts_disabled",
-        )
-        result.add_deduction(
-            reason=_t("ssh.ignore_rhosts_disabled"),
-            points=2, context="local", key="ssh.ignore_rhosts_disabled",
+            message=_t("ssh.ignore_rhosts_disabled"),
+            points=2,
         )
         found_issue = True
 
     # HostbasedAuthentication
     hba = cfg.get("hostbasedauthentication", "no").lower()
     if hba == "yes":
-        result.alert(
-            message=_t("ssh.host_based_auth"),
-            nature="improvement",
-            cmd="",
+        result.alert_with_deduction(
             key="ssh.host_based_auth",
-        )
-        result.add_deduction(
-            reason=_t("ssh.host_based_auth"),
-            points=3, context="local", key="ssh.host_based_auth",
+            message=_t("ssh.host_based_auth"),
+            points=3,
+            nature="improvement",
         )
         found_issue = True
 
     # PermitUserEnvironment
     pue = cfg.get("permituserenvironment", "no").lower()
     if pue == "yes":
-        result.warn(
-            message=_t("ssh.permit_user_env"),
-            nature="improvement",
-            cmd="",
+        result.warn_with_deduction(
             key="ssh.permit_user_env",
-        )
-        result.add_deduction(
-            reason=_t("ssh.permit_user_env"),
-            points=1, context="local", key="ssh.permit_user_env",
+            message=_t("ssh.permit_user_env"),
+            points=1,
         )
         found_issue = True
 
     # StrictModes
     strict = cfg.get("strictmodes", "yes").lower()
     if strict == "no":
-        result.warn(
-            message=_t("ssh.strict_modes_disabled"),
-            nature="improvement",
-            cmd="",
+        result.warn_with_deduction(
             key="ssh.strict_modes_disabled",
-        )
-        result.add_deduction(
-            reason=_t("ssh.strict_modes_disabled"),
-            points=2, context="local", key="ssh.strict_modes_disabled",
+            message=_t("ssh.strict_modes_disabled"),
+            points=2,
         )
         found_issue = True
 
@@ -560,32 +511,23 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     # AllowTcpForwarding — "local" is acceptable (more restrictive than "yes", documented in remediation)
     atf = cfg.get("allowtcpforwarding", "yes").lower()
     if atf not in ("no", "local"):
-        result.warn(
-            message=_t("ssh.allow_tcp_forwarding"),
-            detail=_t("ssh.allow_tcp_forwarding_detail"),
-            nature="improvement",
-            cmd="",
+        result.warn_with_deduction(
             key="ssh.allow_tcp_forwarding",
-        )
-        result.add_deduction(
-            reason=_t("ssh.allow_tcp_forwarding"),
-            points=1, context="local", key="ssh.allow_tcp_forwarding",
+            message=_t("ssh.allow_tcp_forwarding"),
+            points=1,
+            detail=_t("ssh.allow_tcp_forwarding_detail"),
         )
         found_issue = True
 
     # PubkeyAuthentication
     pka = cfg.get("pubkeyauthentication", "yes").lower()
     if pka == "no":
-        result.alert(
-            message=_t("ssh.pubkey_auth_disabled"),
-            detail=_t("ssh.pubkey_auth_disabled_detail"),
-            nature="improvement",
-            cmd="",
+        result.alert_with_deduction(
             key="ssh.pubkey_auth_disabled",
-        )
-        result.add_deduction(
-            reason=_t("ssh.pubkey_auth_disabled"),
-            points=3, context="local", key="ssh.pubkey_auth_disabled",
+            message=_t("ssh.pubkey_auth_disabled"),
+            points=3,
+            nature="improvement",
+            detail=_t("ssh.pubkey_auth_disabled_detail"),
         )
         found_issue = True
 
@@ -621,13 +563,10 @@ def _check_weak_algo(
     if not weak:
         return False
     joined = ", ".join(weak)
-    result.warn(
+    result.warn_with_deduction(
+        key=t_key,
         message=_t(t_key, **{param: joined}),
-        nature="improvement", cmd="", key=t_key,
-    )
-    result.add_deduction(
-        reason=_t(t_key, **{param: joined}),
-        points=points, context="local", key=t_key,
+        points=points,
     )
     return True
 
@@ -645,15 +584,11 @@ def _check_ssh_dir(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     perms = snapshot.ssh_dir_perms
     if perms is not None and perms != 0o700:
         perms_str = oct(perms)
-        result.alert(
-            message=_t("ssh.dir_perms", perms=perms_str),
-            nature="action",
-            cmd=f"chmod 700 {snapshot.user_home / '.ssh'}",
+        result.alert_with_deduction(
             key="ssh.dir_perms",
-        )
-        result.add_deduction(
-            reason=_t("ssh.dir_perms", perms=perms_str),
-            points=2, context="local", key="ssh.dir_perms",
+            message=_t("ssh.dir_perms", perms=perms_str),
+            points=2,
+            cmd=f"chmod 700 {snapshot.user_home / '.ssh'}",
         )
     else:
         result.ok(message=_t("ssh.dir_perms_ok"), key="ssh.dir_perms_ok")
@@ -675,40 +610,27 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
         # permissions
         if ki.permissions != 0o600:
             perms_str = oct(ki.permissions)
-            result.alert(
-                message=_t("ssh.private_key_perms", name=name, perms=perms_str),
-                nature="action",
-                cmd=f"chmod 600 {ki.path}",
+            result.alert_with_deduction(
                 key="ssh.private_key_perms",
-            )
-            result.add_deduction(
-                reason=_t("ssh.private_key_perms", name=name, perms=perms_str),
-                points=2, context="local", key="ssh.private_key_perms",
+                message=_t("ssh.private_key_perms", name=name, perms=perms_str),
+                points=2,
+                cmd=f"chmod 600 {ki.path}",
             )
 
         # key type
         if ki.key_type == "dsa":
-            result.alert(
-                message=_t("ssh.dsa_key", name=name),
-                detail=_t("ssh.dsa_key_detail"),
-                nature="improvement",
-                cmd="",
+            result.alert_with_deduction(
                 key="ssh.dsa_key",
-            )
-            result.add_deduction(
-                reason=_t("ssh.dsa_key", name=name),
-                points=2, context="local", key="ssh.dsa_key",
+                message=_t("ssh.dsa_key", name=name),
+                points=2,
+                nature="improvement",
+                detail=_t("ssh.dsa_key_detail"),
             )
         elif ki.key_type == "rsa" and ki.rsa_bits is not None and ki.rsa_bits < 2048:
-            result.warn(
-                message=_t("ssh.rsa_weak", name=name, bits=ki.rsa_bits),
-                nature="improvement",
-                cmd="",
+            result.warn_with_deduction(
                 key="ssh.rsa_weak",
-            )
-            result.add_deduction(
-                reason=_t("ssh.rsa_weak", name=name, bits=ki.rsa_bits),
-                points=1, context="local", key="ssh.rsa_weak",
+                message=_t("ssh.rsa_weak", name=name, bits=ki.rsa_bits),
+                points=1,
             )
         elif ki.key_type == "rsa" and ki.rsa_bits is not None:
             result.ok(
@@ -718,15 +640,10 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
 
         # passphrase
         if ki.has_passphrase is False:
-            result.warn(
-                message=_t("ssh.no_passphrase", name=name),
-                nature="improvement",
-                cmd="",
+            result.warn_with_deduction(
                 key="ssh.no_passphrase",
-            )
-            result.add_deduction(
-                reason=_t("ssh.no_passphrase", name=name),
-                points=1, context="local", key="ssh.no_passphrase",
+                message=_t("ssh.no_passphrase", name=name),
+                points=1,
             )
 
         if (ki.permissions == 0o600
@@ -757,15 +674,11 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
     perms = snapshot.authorized_keys_perms
     if perms is not None and perms != 0o600:
         ak_path = (snapshot.user_home or Path("/root")) / ".ssh" / "authorized_keys"
-        result.alert(
-            message=_t("ssh.authorized_keys_perms", perms=oct(perms)),
-            nature="action",
-            cmd=f"chmod 600 {ak_path}",
+        result.alert_with_deduction(
             key="ssh.authorized_keys_perms",
-        )
-        result.add_deduction(
-            reason=_t("ssh.authorized_keys_perms", perms=oct(perms)),
-            points=2, context="local", key="ssh.authorized_keys_perms",
+            message=_t("ssh.authorized_keys_perms", perms=oct(perms)),
+            points=2,
+            cmd=f"chmod 600 {ak_path}",
         )
 
     entries = snapshot.authorized_keys_entries
@@ -777,33 +690,23 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
     # weak key types and sizes
     for entry in entries:
         if entry.key_type == "ssh-dss":
-            result.alert(
-                message=_t("ssh.authorized_keys_dsa", line=entry.line_no),
-                nature="improvement",
-                cmd="",
+            result.alert_with_deduction(
                 key="ssh.authorized_keys_dsa",
-            )
-            result.add_deduction(
-                reason=_t("ssh.authorized_keys_dsa", line=entry.line_no),
-                points=2, context="local", key="ssh.authorized_keys_dsa",
+                message=_t("ssh.authorized_keys_dsa", line=entry.line_no),
+                points=2,
+                nature="improvement",
             )
             ak_found_issue = True
         elif (entry.key_type == "ssh-rsa"
               and entry.rsa_bits is not None
               and entry.rsa_bits < 2048):
-            result.warn(
+            result.warn_with_deduction(
+                key="ssh.authorized_keys_weak_key",
                 message=_t("ssh.authorized_keys_weak_key",
                            line=entry.line_no,
                            type=entry.key_type,
                            bits=entry.rsa_bits),
-                key="ssh.authorized_keys_weak_key",
-            )
-            result.add_deduction(
-                reason=_t("ssh.authorized_keys_weak_key",
-                          line=entry.line_no,
-                          type=entry.key_type,
-                          bits=entry.rsa_bits),
-                points=1, context="local", key="ssh.authorized_keys_weak_key",
+                points=1,
             )
             ak_found_issue = True
 
@@ -811,17 +714,12 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
     seen_blobs: dict[str, int] = {}
     for entry in entries:
         if entry.blob_prefix in seen_blobs:
-            result.warn(
+            result.warn_with_deduction(
+                key="ssh.authorized_keys_duplicate",
                 message=_t("ssh.authorized_keys_duplicate",
                            a=seen_blobs[entry.blob_prefix],
                            b=entry.line_no),
-                key="ssh.authorized_keys_duplicate",
-            )
-            result.add_deduction(
-                reason=_t("ssh.authorized_keys_duplicate",
-                          a=seen_blobs[entry.blob_prefix],
-                          b=entry.line_no),
-                points=1, context="local", key="ssh.authorized_keys_duplicate",
+                points=1,
             )
             ak_found_issue = True
         else:
@@ -862,44 +760,31 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
         k, v = entry.key, entry.value.lower()
 
         if k == "stricthostkeychecking" and v == "no":
-            result.alert(
-                message=_t("ssh.client_strict_host_no"),
-                detail=_t("ssh.client_strict_host_no_detail"),
-                nature="improvement",
-                cmd="",
+            result.alert_with_deduction(
                 key="ssh.client_strict_host_no",
-            )
-            result.add_deduction(
-                reason=_t("ssh.client_strict_host_no"),
-                points=3, context="local", key="ssh.client_strict_host_no",
+                message=_t("ssh.client_strict_host_no"),
+                points=3,
+                nature="improvement",
+                detail=_t("ssh.client_strict_host_no_detail"),
             )
             found_issue = True
 
         elif k == "userknownhostsfile" and "/dev/null" in v:
-            result.alert(
-                message=_t("ssh.client_known_hosts_devnull"),
-                detail=_t("ssh.client_known_hosts_devnull_detail"),
-                nature="improvement",
-                cmd="",
+            result.alert_with_deduction(
                 key="ssh.client_known_hosts_devnull",
-            )
-            result.add_deduction(
-                reason=_t("ssh.client_known_hosts_devnull"),
-                points=3, context="local", key="ssh.client_known_hosts_devnull",
+                message=_t("ssh.client_known_hosts_devnull"),
+                points=3,
+                nature="improvement",
+                detail=_t("ssh.client_known_hosts_devnull_detail"),
             )
             found_issue = True
 
         elif k == "forwardagent" and v == "yes":
-            result.warn(
-                message=_t("ssh.client_forward_agent"),
-                detail=_t("ssh.client_forward_agent_detail"),
-                nature="improvement",
-                cmd="",
+            result.warn_with_deduction(
                 key="ssh.client_forward_agent",
-            )
-            result.add_deduction(
-                reason=_t("ssh.client_forward_agent"),
-                points=1, context="local", key="ssh.client_forward_agent",
+                message=_t("ssh.client_forward_agent"),
+                points=1,
+                detail=_t("ssh.client_forward_agent_detail"),
             )
             found_issue = True
 
@@ -928,15 +813,11 @@ def _check_known_hosts(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     # deprecated key types
     deprecated = [e for e in entries if e.key_type in ("ssh-dss", "ssh-rsa1")]
     for e in deprecated:
-        result.warn(
+        result.warn_with_deduction(
+            key="ssh.known_hosts_deprecated",
             message=_t("ssh.known_hosts_deprecated",
                        line=e.line_no, type=e.key_type),
-            key="ssh.known_hosts_deprecated",
-        )
-        result.add_deduction(
-            reason=_t("ssh.known_hosts_deprecated",
-                      line=e.line_no, type=e.key_type),
-            points=1, context="local", key="ssh.known_hosts_deprecated",
+            points=1,
         )
         found_issue = True
 

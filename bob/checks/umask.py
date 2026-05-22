@@ -184,30 +184,18 @@ def check_umask(snapshot: UmaskSnapshot, t: TranslationFunc | None = None) -> Ch
     cmd    = _fix_cmd(snapshot.source)
 
     if umask == "000":
-        result.alert(
+        result.alert_with_deduction(
+            key="umask.world_writable",
             message=_t("umask.world_writable", umask=umask, source=source),
-            nature="action",
-            cmd=cmd,
-            key="umask.world_writable",
-        )
-        result.add_deduction(
-            reason=_t("umask.world_writable", umask=umask, source=source),
             points=2,
-            context="local",
-            key="umask.world_writable",
+            cmd=cmd,
         )
     elif umask == "002":
-        result.warn(
+        result.warn_with_deduction(
+            key="umask.group_writable",
             message=_t("umask.group_writable", umask=umask, source=source),
-            nature="improvement",
-            cmd=cmd,
-            key="umask.group_writable",
-        )
-        result.add_deduction(
-            reason=_t("umask.group_writable", umask=umask, source=source),
             points=1,
-            context="local",
-            key="umask.group_writable",
+            cmd=cmd,
         )
     elif umask in ("022", "027", "077"):
         result.ok(

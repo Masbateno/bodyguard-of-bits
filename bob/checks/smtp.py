@@ -169,19 +169,15 @@ def check_smtp(snapshot: SmtpSnapshot, t: TranslationFunc | None = None) -> Chec
         else:
             fix_cmd = ""
             fix_note = ""
-        result.warn(
-            message=_t("smtp.exposed", mta=mta, bind=snapshot.bind_address),
-            detail=_t("smtp.exposed_detail"),
-            cmd=fix_cmd,
-            note=fix_note,
-            nature="improvement",
+        result.warn_with_deduction(
             key="smtp.exposed",
-        )
-        result.add_deduction(
+            message=_t("smtp.exposed", mta=mta, bind=snapshot.bind_address),
             reason=_t("smtp.exposed_reason", bind=snapshot.bind_address),
             points=1,
             context="public",
-            key="smtp.exposed",
+            detail=_t("smtp.exposed_detail"),
+            cmd=fix_cmd,
+            note=fix_note,
         )
     else:
         result.info(

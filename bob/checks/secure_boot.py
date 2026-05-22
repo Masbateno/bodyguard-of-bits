@@ -150,33 +150,23 @@ def check_secure_boot(snapshot: SecureBootSnapshot, t: TranslationFunc | None = 
 
     if snapshot.state == _STATE_SETUP_MODE:
         # Setup Mode = no Platform Key enrolled → any bootloader can run → treat as disabled
-        result.warn(
-            message=_t("secure_boot.setup_mode"),
-            detail=_t("secure_boot.setup_mode_detail"),
-            nature="improvement",
+        result.warn_with_deduction(
             key="secure_boot.setup_mode",
-        )
-        result.add_deduction(
+            message=_t("secure_boot.setup_mode"),
             reason=_t("secure_boot.setup_mode_reason"),
             points=1,
-            context="local",
-            key="secure_boot.setup_mode",
+            detail=_t("secure_boot.setup_mode_detail"),
         )
         return result
 
     # Disabled
     if is_desktop:
-        result.warn(
-            message=_t("secure_boot.disabled"),
-            detail=_t("secure_boot.disabled_detail"),
-            nature="improvement",
+        result.warn_with_deduction(
             key="secure_boot.disabled",
-        )
-        result.add_deduction(
+            message=_t("secure_boot.disabled"),
             reason=_t("secure_boot.disabled_reason"),
             points=1,
-            context="local",
-            key="secure_boot.disabled",
+            detail=_t("secure_boot.disabled_detail"),
         )
     else:
         result.info(

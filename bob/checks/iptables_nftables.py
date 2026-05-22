@@ -148,16 +148,12 @@ def check_iptables_nftables(
     result = CheckResult()
 
     if snapshot.backend == "none":
-        result.warn(
+        result.warn_with_deduction(
+            key="iptables_nft.no_backend",
             message=_t("iptables_nft.no_backend"),
+            points=3,
             nature="action",
             cmd="sudo apt install iptables",
-            key="iptables_nft.no_backend",
-        )
-        result.add_deduction(
-            reason=_t("iptables_nft.no_backend"),
-            points=3, context="local",
-            key="iptables_nft.no_backend",
         )
         return result
 
@@ -174,20 +170,15 @@ def check_iptables_nftables(
 
     # --- INPUT default policy ---
     if snapshot.input_policy == "ACCEPT":
-        result.alert(
+        result.alert_with_deduction(
+            key="iptables_nft.input_accept",
             message=_t("iptables_nft.input_accept"),
-            nature="action",
+            points=3,
             cmd=(
                 "sudo iptables -P INPUT DROP"
                 if snapshot.backend == "iptables"
                 else 'sudo nft chain inet filter input \'{ policy drop; }\''
             ),
-            key="iptables_nft.input_accept",
-        )
-        result.add_deduction(
-            reason=_t("iptables_nft.input_accept"),
-            points=3, context="local",
-            key="iptables_nft.input_accept",
         )
     elif snapshot.input_policy in ("DROP", "REJECT"):
         result.ok(
@@ -197,37 +188,27 @@ def check_iptables_nftables(
 
         # Sub-checks only relevant when INPUT is restrictive
         if not snapshot.has_loopback_rule:
-            result.warn(
+            result.warn_with_deduction(
+                key="iptables_nft.no_loopback",
                 message=_t("iptables_nft.no_loopback"),
-                nature="improvement",
+                points=1,
                 cmd=(
                     "sudo iptables -I INPUT 1 -i lo -j ACCEPT"
                     if snapshot.backend == "iptables"
                     else 'sudo nft insert rule inet filter input iif "lo" accept'
                 ),
-                key="iptables_nft.no_loopback",
-            )
-            result.add_deduction(
-                reason=_t("iptables_nft.no_loopback"),
-                points=1, context="local",
-                key="iptables_nft.no_loopback",
             )
 
         if not snapshot.has_conntrack_rule:
-            result.warn(
+            result.warn_with_deduction(
+                key="iptables_nft.no_conntrack",
                 message=_t("iptables_nft.no_conntrack"),
-                nature="improvement",
+                points=1,
                 cmd=(
                     "sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
                     if snapshot.backend == "iptables"
                     else "sudo nft insert rule inet filter input ct state established,related accept"
                 ),
-                key="iptables_nft.no_conntrack",
-            )
-            result.add_deduction(
-                reason=_t("iptables_nft.no_conntrack"),
-                points=1, context="local",
-                key="iptables_nft.no_conntrack",
             )
     else:
         result.info(
@@ -237,20 +218,15 @@ def check_iptables_nftables(
 
     # --- FORWARD default policy ---
     if snapshot.forward_policy == "ACCEPT":
-        result.warn(
+        result.warn_with_deduction(
+            key="iptables_nft.forward_accept",
             message=_t("iptables_nft.forward_accept"),
-            nature="improvement",
+            points=1,
             cmd=(
                 "sudo iptables -P FORWARD DROP"
                 if snapshot.backend == "iptables"
                 else 'sudo nft chain inet filter forward \'{ policy drop; }\''
             ),
-            key="iptables_nft.forward_accept",
-        )
-        result.add_deduction(
-            reason=_t("iptables_nft.forward_accept"),
-            points=1, context="local",
-            key="iptables_nft.forward_accept",
         )
     elif snapshot.forward_policy in ("DROP", "REJECT"):
         result.ok(

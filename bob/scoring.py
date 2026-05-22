@@ -248,6 +248,72 @@ class CheckResult:
         self.add_finding(FindingLevel.ALERT, message, detail, nature, cmd, cmd_type, note,
                          key=key, template_vars=template_vars)
 
+    def warn_with_deduction(
+        self,
+        key: str,
+        *,
+        message: str,
+        points: int,
+        reason: "str | None" = None,
+        context: str = "local",
+        detail: str = "",
+        nature: str = "improvement",
+        cmd: str = "",
+        cmd_type: str = "fix",
+        note: str = "",
+        template_vars: "dict | None" = None,
+    ) -> None:
+        """Add a WARN finding and a matching deduction in one call.
+
+        Collapses the paired ``result.warn(...) + result.add_deduction(...)``
+        idiom that recurs ~130 times across ``bob/checks/*.py``. The same
+        ``key`` and ``template_vars`` are used for both the finding and the
+        deduction. The deduction ``reason`` defaults to ``message`` — pass
+        ``reason=`` explicitly when the deduction string uses a different
+        translation key (e.g. ``ssh.host_key_dsa_reason`` differs from
+        ``ssh.host_key_dsa``).
+        """
+        self.warn(
+            message=message, detail=detail, nature=nature,
+            cmd=cmd, cmd_type=cmd_type, note=note,
+            key=key, template_vars=template_vars,
+        )
+        self.add_deduction(
+            reason=reason if reason is not None else message,
+            points=points, context=context,
+            key=key, template_vars=template_vars,
+        )
+
+    def alert_with_deduction(
+        self,
+        key: str,
+        *,
+        message: str,
+        points: int,
+        reason: "str | None" = None,
+        context: str = "local",
+        detail: str = "",
+        nature: str = "action",
+        cmd: str = "",
+        cmd_type: str = "fix",
+        note: str = "",
+        template_vars: "dict | None" = None,
+    ) -> None:
+        """Add an ALERT finding and a matching deduction in one call.
+
+        See :meth:`warn_with_deduction` for the contract.
+        """
+        self.alert(
+            message=message, detail=detail, nature=nature,
+            cmd=cmd, cmd_type=cmd_type, note=note,
+            key=key, template_vars=template_vars,
+        )
+        self.add_deduction(
+            reason=reason if reason is not None else message,
+            points=points, context=context,
+            key=key, template_vars=template_vars,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Score engine

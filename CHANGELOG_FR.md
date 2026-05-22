@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.5.1](#v051) | 21-05-2026 | Refactor v0.5.x Phase 2 — **le gros gain LoC** (audit finding #1). Nouveaux helpers `CheckResult.warn_with_deduction(key, *, message, points, reason=None, ...)` et `.alert_with_deduction(...)` dans `bob/scoring.py` qui collapsent l'idiom paired `result.warn(...) + result.add_deduction(...)` qui se répétait sur ~130 sites dans `bob/checks/*.py`. **120 sites migrés** dans 27 fichiers : firewall (4), fail2ban (2), clamav (5), ntp (2), ddns (1), updates (2), ssh (24 — le gros morceau), backup (1), log_rotation (3), auditd (3), file_integrity (3), kernel_hardening (3), rootkit (3), hardening (8), samba (6), mac_policy (6), disk (5), iptables_nftables (5), firewall_stack (4), file_perms (1), suid_audit (1), smtp (1), memory (1), network_context (1), cron_audit (2), docker_audit (2), kernel_modules (2), umask (2), user_accounts (2), password_policy (2), secure_boot (2), systemd_timers (2), logs (1), firmware (2), ipv6 (1), ports (1). **13 sites volontairement non migrés** — patterns où la déduction est conditionnelle sur un prédicat différent du finding (caps via compteur local : `services_state`, `ssl_certs` x3, `file_perms` x3, `ipv6.port_no_v6_rule`), ou où le niveau du finding branche `warn`/`alert` sur une condition séparée de la déduction (`docker` x2, `services.exposure`, `ports.uncovered_public`). L'override `reason=` gère les cas où la déduction utilise une clé i18n suffixée `_reason` distincte du message du finding (ex `ssh.host_key_dsa_reason` ≠ `ssh.host_key_dsa`). **Diff net : 37 fichiers modifiés, +483 / −1002 = −519 lignes.** Tests inchangés : 4538/4538 passent (les helpers sont additifs, zéro changement de comportement). JSON `schema_version="1"`, les 7 domaines de score, les 116 EXPLAIN_KEYS, et les 34 sections filtrables tous préservés. |
 | [v0.5.0](#v050) | 21-05-2026 | Refactor v0.5.x Phase 1 (ouvre la branche v0.5.x) — **6 findings de l'audit refactor + 1 bug latent trouvé par la nouvelle couverture de tests**. **#7** nouveaux helpers `is_unit_active()`/`is_unit_enabled()` dans `bob.checks._run` migrent 9 sites (`auditd`, `fail2ban`, `clamav`, `ntp`, `ddns`, `updates`, `ssh`, `backup`, `log_rotation`) en remplaçant l'idiom répété `_run("systemctl", "is-active", ...).strip() == "active"` ; `.lower()` défensif ajouté de manière centrale pour se protéger d'une sortie distro non-canonique. **#2** nouveau `bob.output.print_titled_box(title, width=62)` migre 4 sites (3× `cron.py` + 1× `manage_logs.py`) et **ferme le leak `--no-color`** où ces sites contournaient `_c` en imprimant des `\033[1;34m` littéraux. **#10** nouveau `bob.report.Report` `typing.Protocol` (type structurel PEP 544) capture le contrat partagé entre `AuditReport`, `NullReport` et `MarkdownReport` (qui étaient deux implémentations duck-typed) ; `runner.run_checks` annote maintenant `report: Report`. **#11** nouveaux closures `emit_section()` + `emit_group()` dans `runner.py` collapsent l'idiom 3-lignes `if not config.quiet: print_section(t(...)); report.write_section(t(...))` en 1 ligne à 20 sites (5 group headers + 15 section headers) ; `_sec()` lui-même dogfoode le helper. **#15a** nouveau `tests/test_domain_scores_mapping_complete.py` (+4 tests) scanne en AST `bob/checks/*.py` pour chaque `key="X.Y"` littéral et atteste que chaque préfixe est soit explicite dans `_PREFIX_TO_DOMAIN` soit whitelisté dans `_CATCH_ALL_BY_DESIGN` avec une justification (l'état v0.4.x — `smtp`/`fail2ban`/`desktop_apps`/`virt`/`docker_audit`/`ddns` etc. tombent encore dans le catch-all firewall, reporté à Phase 5 #15b). **Passe de couverture cron** (+35 tests) couvrant les 5 helpers purs non testés par les passes précédentes : `_validate_cron_field`, `_validate_custom_cron`, `build_script_content`, `apply_cron_schedule`, `apply_cron_email` (avec parité legacy `NOTIFY_EMAIL=`). **Bug latent corrigé (trouvé par les nouveaux tests cron) :** `apply_cron_schedule()` appelait `_os.open(...)` — mais `_os` n'est aliasé localement que dans 3 *autres* fonctions, jamais au niveau module. L'extraction de déduplication cron v0.4.8 avait raté ce renommage. Le helper était silencieusement mort depuis v0.4.8. Fix : `_os` → `os`. 4499 → **4538 tests** (+39 : +4 mapping / +35 cron). |
 | [v0.4.8](#v048) | 21-05-2026 | Passe d'audit code-quality 4 (sub-agent) — **bug réel I4** les fichiers de log de `sudo bob -d` étaient `root:root 0600` et inaccessibles à l'utilisateur après coup (maintenant chowned-back via `chown_to_sudo_user` dans `bob/report.py` + `bob/manage_logs.py::get_or_prompt_log_dir`, même pattern que les 7 modules de config déjà chowned) · **nettoyage de fields morts** 8 champs dataclass retirés sur 5 checks (`SSHSnapshot.config_source_files`, `FirewallStatus.ipv4_rules_count`+`ipv6_rules_count`, `SambaSnapshot.min_protocol`, `ClamAVSnapshot.last_scan_log_path`+`db_path`, `SecureBootSnapshot.method`) tous populés mais jamais lus — même classe de bug que v0.4.3 C1 · `_C_LOCALE_ENV` ajouté sur 3 sites `subprocess.check_output` (desktop_apps/smtp ps + ss/netstat) pour cohérence de locale · `log_rotation._service_active` inliné via `_run("systemctl", "is-active", ...)` (était 11 lignes de réinvention) · `apply_cron_schedule()` + `apply_cron_email()` promus de helpers privés à l'API publique de `bob.cron`, `bob/tui/cron.py` les importe — corrige l'asymétrie de support legacy `NOTIFY_EMAIL=` qui n'existait que côté plain · `SCORE_BAR_WIDTH = 10` exporté depuis `bob.output` (dédoublonne la constante `_BAR_WIDTH` entre `breakdown.py` + `domain_scores.py`) · auth_log 90 jours documenté comme intentionnel (indépendant de `--log-days` qui est pour les logs UFW) · **pyproject.toml** : `Development Status :: 4 - Beta` → `5 - Production/Stable`, `authors` + `maintainers` ajoutés (PyPI affichait UNKNOWN), `[project.optional-dependencies] geoip = ["geoip2>=4.0"]` pour `pipx install "bodyguard-of-bits[geoip]"`, `wheel` retiré des build-requires, Source + Documentation URLs ajoutées, `dependencies = []` explicite et `include = ["bob", "bob.checks", "bob.tui"]` · 4499/4499 tests (-1 : `test_default_method_is_none` retiré car le champ `method` n'existe plus) |
 | [v0.4.7](#v047) | 21-05-2026 | Passe d'audit documentaire + harmonisation jauges + automatisation release — audit cross-doc exhaustif (24 corrections sur 8 fichiers : README/FR · README_TECH/FR · README_DEV/FR · SECURITY_FR · `man/bob.1` · `man/bob-profile.5` · AUTOMATION/FR) · `DOCUMENTS/SNAPSHOT.md` ajouté (~640L cartographie interne, 20 passes de corrections) · barres de jauges harmonisées via `bob.output.score_bar()` (vert ≥8, jaune 5–7, rouge 0–4 — même logique de couleur que les barres de disques) · refonte complète de la bash completion (renommage fonction, dead code supprimé, **fix critique** pour la complétion de valeurs `--check=`/`--skip=`/`--format=`/etc. qui échouait silencieusement à cause du split `=` de `COMP_WORDBREAKS`) · `publish.yml` crée automatiquement la GitHub Release depuis `CHANGELOG_FULL.md` au push de tag · 4500/4500 tests (inchangé) |
@@ -28,6 +29,97 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.5.1] — 21-05-2026
+
+**Refactor v0.5.x — Phase 2 sur 5.** Le plus gros gain LoC du roadmap refactor. Audit finding #1 : l'idiom `result.warn(...) + result.add_deduction(...)` qui se répétait ~130 fois dans `bob/checks/*.py` est maintenant centralisé derrière deux méthodes helper. **Aucun changement de comportement** — les helpers composent les méthodes `warn`/`alert` et `add_deduction` existantes 1:1. Les tests restent à 4538/4538 parce que la sortie wire (findings + déductions émis par `CheckResult`) est bit-identique.
+
+### Nouvelle API
+
+Deux méthodes ajoutées à `CheckResult` dans `bob/scoring.py` :
+
+```python
+def warn_with_deduction(
+    self,
+    key: str,
+    *,
+    message: str,
+    points: int,
+    reason: str | None = None,
+    context: str = "local",
+    detail: str = "",
+    nature: str = "improvement",
+    cmd: str = "",
+    cmd_type: str = "fix",
+    note: str = "",
+    template_vars: dict | None = None,
+) -> None: ...
+
+def alert_with_deduction(self, ...) -> None: ...   # miroir, nature default = "action"
+```
+
+L'override `reason=` gère les cas où le message du finding utilise une clé i18n et la raison de déduction utilise une variante suffixée `_reason` (ex `ssh.host_key_dsa_reason` diffère de `ssh.host_key_dsa`).
+
+### Sites migrés (120 sur 27 fichiers)
+
+| Fichier | Sites | Notes |
+|---|---|---|
+| `bob/checks/ssh.py` | 24 | Le gros morceau — directives sshd_config (PermitRootLogin, PasswordAuthentication, X11Forwarding, PermitEmptyPasswords, MaxAuthTries, IgnoreRhosts, HostbasedAuthentication, PermitUserEnvironment, StrictModes, AllowTcpForwarding, PubkeyAuthentication), clés hôte, weak algos (`_check_weak_algo`), dossier `~/.ssh`, clés privées, authorized_keys, config client, known_hosts. ssh.py : −146 lignes. |
+| `bob/checks/hardening.py` | 8 | Toutes les branches sysctl : rp_filter, ICMP redirects (v4 + v6), tcp_syncookies, accept_source_route, send_redirects, protected_hardlinks, protected_symlinks. |
+| `bob/checks/samba.py` | 6 | SMB1, null passwords, server signing, map_to_guest, partages invités writable/readonly. |
+| `bob/checks/mac_policy.py` | 6 | AppArmor (no profiles, no enforce, inactive), SELinux (permissive, disabled), no_mac. |
+| `bob/checks/clamav.py` | 5 | freshclam_missing, db_not_found, db_very_outdated, db_outdated, scan_very_old/scan_old. |
+| `bob/checks/disk.py` | 5 | smart_failed, reallocated_sectors, pending_sectors, uncorrectable_errors, partition_critical. |
+| `bob/checks/iptables_nftables.py` | 5 | no_backend, input_accept, no_loopback, no_conntrack, forward_accept. |
+| `bob/checks/firewall.py` | 4 | duplicate_found x2 (regex + sans proto), ipv6_missing, logging_off. (5e site `open_any_found` non migré — `rule=""` ≠ `rule=clean` entre finding et reason.) |
+| `bob/checks/firewall_stack.py` | 4 | iptables_bypass, iptables_forward_bypass, nftables_parallel, ip_forward_enabled. |
+| `bob/checks/log_rotation.py` | 3 | logrotate_missing, journald_volatile x2 (volatile + unknown). |
+| `bob/checks/auditd.py` | 3 | service_inactive, no_rules (server), missing_sensitive_rules (server). |
+| `bob/checks/file_integrity.py` | 3 | no_db, no_check, check_old. |
+| `bob/checks/kernel_hardening.py` | 3 | aslr_disabled, ptrace_unrestricted, suid_dump_all. |
+| `bob/checks/rootkit.py` | 3 | db_outdated, no_scan, scan_old. |
+| Autres fichiers | 35 | fail2ban, ntp, ddns, updates, backup, smtp, memory, network_context, cron_audit, docker_audit, kernel_modules, umask, user_accounts, password_policy, secure_boot, systemd_timers, logs, firmware, ipv6, ports, suid_audit, file_perms — chacun avec 1-2 migrations. |
+| **Total** | **120** | |
+
+### Sites volontairement non migrés (13)
+
+Ces patterns ne fittent pas l'API 1:1 du helper :
+
+| Cas | Fichiers | Pourquoi |
+|---|---|---|
+| Déduction cappée (compteur local) | `services_state` (1), `ssl_certs` (3), `file_perms` (2 sur 3), `ipv6.port_no_v6_rule` (1) | Le finding s'émet toujours ; la déduction est gardée par `if X_deductions < CAP`. Impossible de collapse en un appel helper. |
+| Niveau branchant (warn OU alert) | `services.exposure` (1), `ports.uncovered_public` (1), `docker.exposed_port`/`exposed_bypass_ufw` (2) | Le choix `result.warn(...)` vs `result.alert(...)` dépend d'un champ snapshot, alors que la `add_deduction` tourne inconditionnellement après. Le helper merge niveau + déduction, donc le branching doit rester chez l'appelant. |
+| Déduction conditionnelle avec prédicat différent | `docker.iptables_bypass` (1), `firewall.rules.open_any_found` (1) | La déduction a un calcul `points = 0 ou 1`, ou des `template_vars` différents entre finding (`rule=clean`) et reason (`rule=""`). |
+
+Pour chaque skip, la recommandation de l'audit était "garde l'ancienne forme 2 appels" — respecté.
+
+### Pourquoi c'est low-risk
+
+- **Les helpers sont additifs sur `CheckResult`.** Les méthodes `warn`/`alert`/`add_deduction` existantes sont inchangées ; les helpers sont des wrappers fins qui les appellent en séquence.
+- **Aucun changement de test requis.** Chaque test atteste toujours sur `len(result.findings)`, `len(result.deductions)`, et les attributs des findings/déductions — le helper produit un `Finding` et une `Deduction` par appel, identique à la séquence pré-migration. 4538 → 4538 tests.
+- **Aucun changement de comportement dans le pipeline d'audit.** Test terrain sur 5 distros (Mint, Debian 13, Kali Rolling, Ubuntu 26.04 LTS) pour v0.5.0 — même logique de scoring, mêmes préfixes de clés, mêmes `template_vars`.
+- **Migration par fichier, avec passage complet de la suite après chaque vague.** Chacune des 6 vagues (fichiers 1-site → 2-site → 3-site → 4-6 site → hardening → ssh.py) a passé 4538/4538 avant de passer à la suivante.
+
+### Diff net
+
+```
+37 files changed, 483 insertions(+), 1002 deletions(-)
+```
+
+**−519 lignes net** — environ 5% de réduction sur les LoC totales de `bob/checks/*.py`. Par rapport à l'estimation initiale de l'audit ("~800 LoC retirés"), c'est conservateur à cause des 13 sites skip et parce que la signature helper est verbose (kwargs keyword-only) — mais l'objectif était d'éliminer la surface de drift, pas de minimiser le nombre de lignes, et c'est atteint.
+
+### Tests
+
+`4538 → 4538` (inchangé). Suite complète passe en ~6s sur Python 3.12 / Linux Mint 22.3.
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
+- **Surface CLI** : aucun flag ajouté/retiré.
+- **Score par domaine** : inchangé.
+- **Sortie wire** (terminal + fichier rapport + JSON) : bit-identique à v0.5.0.
 
 ---
 

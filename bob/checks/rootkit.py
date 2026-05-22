@@ -197,51 +197,36 @@ def check_rootkit(snapshot: RootkitSnapshot, t: TranslationFunc | None = None) -
     # rkhunter: check database freshness
     if snapshot.rkhunter_installed and snapshot.db_age_days is not None:
         if snapshot.db_age_days >= _DB_WARN_DAYS:
-            result.warn(
-                message=_t("rootkit.db_outdated", tool=tool, days=snapshot.db_age_days),
-                detail=_t("rootkit.db_outdated_detail"),
-                cmd="sudo rkhunter --update",
-                nature="improvement",
+            result.warn_with_deduction(
                 key="rootkit.db_outdated",
-            )
-            result.add_deduction(
+                message=_t("rootkit.db_outdated", tool=tool, days=snapshot.db_age_days),
                 reason=_t("rootkit.db_outdated_reason", tool=tool, days=snapshot.db_age_days),
                 points=1,
-                context="local",
-                key="rootkit.db_outdated",
+                detail=_t("rootkit.db_outdated_detail"),
+                cmd="sudo rkhunter --update",
             )
 
     # Last scan check
     if snapshot.last_scan_date is None:
-        result.warn(
-            message=_t("rootkit.no_scan", tool=tool),
-            detail=_t("rootkit.no_scan_detail"),
-            cmd=f"sudo {tool} --checkall" if tool == "rkhunter" else f"sudo {tool}",
-            nature="improvement",
+        result.warn_with_deduction(
             key="rootkit.no_scan",
-        )
-        result.add_deduction(
+            message=_t("rootkit.no_scan", tool=tool),
             reason=_t("rootkit.no_scan_reason", tool=tool),
             points=1,
-            context="local",
-            key="rootkit.no_scan",
+            detail=_t("rootkit.no_scan_detail"),
+            cmd=f"sudo {tool} --checkall" if tool == "rkhunter" else f"sudo {tool}",
         )
         return result
 
     scan_age = _scan_age_days(snapshot.last_scan_date)
     if scan_age is not None and scan_age >= _SCAN_WARN_DAYS:
-        result.warn(
-            message=_t("rootkit.scan_old", tool=tool, days=scan_age, date=snapshot.last_scan_date),
-            detail=_t("rootkit.scan_old_detail"),
-            cmd=f"sudo {tool} --checkall" if tool == "rkhunter" else f"sudo {tool}",
-            nature="improvement",
+        result.warn_with_deduction(
             key="rootkit.scan_old",
-        )
-        result.add_deduction(
+            message=_t("rootkit.scan_old", tool=tool, days=scan_age, date=snapshot.last_scan_date),
             reason=_t("rootkit.scan_old_reason", tool=tool, days=scan_age),
             points=1,
-            context="local",
-            key="rootkit.scan_old",
+            detail=_t("rootkit.scan_old_detail"),
+            cmd=f"sudo {tool} --checkall" if tool == "rkhunter" else f"sudo {tool}",
         )
         return result
 

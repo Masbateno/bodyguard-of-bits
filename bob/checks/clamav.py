@@ -172,54 +172,39 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
 
     # --- freshclam ---
     if not snapshot.freshclam_installed:
-        result.warn(
-            message=_t("clamav.freshclam_missing"),
-            detail=_t("clamav.freshclam_missing_detail"),
-            nature="improvement",
-            cmd="sudo apt install clamav",
+        result.warn_with_deduction(
             key="clamav.freshclam_missing",
-        )
-        result.add_deduction(
-            reason=_t("clamav.freshclam_missing"),
-            points=1, context="local", key="clamav.freshclam_missing",
+            message=_t("clamav.freshclam_missing"),
+            points=1,
+            detail=_t("clamav.freshclam_missing_detail"),
+            cmd="sudo apt install clamav",
         )
 
     # --- Virus database ---
     if snapshot.db_age_days is None:
-        result.warn(
-            message=_t("clamav.db_not_found"),
-            detail=_t("clamav.db_not_found_detail"),
-            nature="improvement",
-            cmd="sudo freshclam",
+        result.warn_with_deduction(
             key="clamav.db_not_found",
-        )
-        result.add_deduction(
-            reason=_t("clamav.db_not_found"),
-            points=1, context="local", key="clamav.db_not_found",
+            message=_t("clamav.db_not_found"),
+            points=1,
+            detail=_t("clamav.db_not_found_detail"),
+            cmd="sudo freshclam",
         )
     elif snapshot.db_age_days >= _DB_ALERT_DAYS:
-        result.alert(
-            message=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
-            detail=_t("clamav.db_very_outdated_detail"),
-            nature="improvement",
-            cmd="sudo freshclam",
+        result.alert_with_deduction(
             key="clamav.db_very_outdated",
-        )
-        result.add_deduction(
-            reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
-            points=1, context="local", key="clamav.db_very_outdated",
+            message=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
+            points=1,
+            nature="improvement",
+            detail=_t("clamav.db_very_outdated_detail"),
+            cmd="sudo freshclam",
         )
     elif snapshot.db_age_days >= _DB_WARN_DAYS:
-        result.warn(
-            message=_t("clamav.db_outdated", days=snapshot.db_age_days),
-            detail=_t("clamav.db_outdated_detail"),
-            nature="improvement",
-            cmd="sudo freshclam",
+        result.warn_with_deduction(
             key="clamav.db_outdated",
-        )
-        result.add_deduction(
-            reason=_t("clamav.db_outdated", days=snapshot.db_age_days),
-            points=1, context="local", key="clamav.db_outdated",
+            message=_t("clamav.db_outdated", days=snapshot.db_age_days),
+            points=1,
+            detail=_t("clamav.db_outdated_detail"),
+            cmd="sudo freshclam",
         )
     else:
         result.ok(
@@ -247,28 +232,20 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
     else:
         scan_age_days = _scan_age_days(snapshot.last_scan_date)
         if scan_age_days is not None and scan_age_days >= _SCAN_ALERT_DAYS:
-            result.warn(
-                message=_t("clamav.scan_very_old", days=scan_age_days, date=snapshot.last_scan_date),
-                detail=_t("clamav.scan_very_old_detail"),
-                nature="improvement",
-                cmd="sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log",
+            result.warn_with_deduction(
                 key="clamav.scan_very_old",
-            )
-            result.add_deduction(
-                reason=_t("clamav.scan_very_old", days=scan_age_days, date=snapshot.last_scan_date),
-                points=1, context="local", key="clamav.scan_very_old",
+                message=_t("clamav.scan_very_old", days=scan_age_days, date=snapshot.last_scan_date),
+                points=1,
+                detail=_t("clamav.scan_very_old_detail"),
+                cmd="sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log",
             )
         elif scan_age_days is not None and scan_age_days >= _SCAN_WARN_DAYS:
-            result.warn(
-                message=_t("clamav.scan_old", days=scan_age_days, date=snapshot.last_scan_date),
-                detail=_t("clamav.scan_old_detail"),
-                nature="improvement",
-                cmd="sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log",
+            result.warn_with_deduction(
                 key="clamav.scan_old",
-            )
-            result.add_deduction(
-                reason=_t("clamav.scan_old", days=scan_age_days, date=snapshot.last_scan_date),
-                points=1, context="local", key="clamav.scan_old",
+                message=_t("clamav.scan_old", days=scan_age_days, date=snapshot.last_scan_date),
+                points=1,
+                detail=_t("clamav.scan_old_detail"),
+                cmd="sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log",
             )
         else:
             result.ok(

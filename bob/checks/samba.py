@@ -213,48 +213,37 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
 
     # --- SMB1 (critical — EternalBlue/WannaCry vector) ---
     if snapshot.smb1_enabled:
-        result.alert(
-            message=_t("samba.smb1_enabled"),
-            detail=_t("samba.smb1_enabled_detail"),
-            nature="improvement",
-            cmd='echo "min protocol = SMB2" | sudo tee -a /etc/samba/smb.conf',
+        result.alert_with_deduction(
             key="samba.smb1_enabled",
-        )
-        result.add_deduction(
-            reason=_t("samba.smb1_enabled"),
-            points=2, context="local", key="samba.smb1_enabled",
+            message=_t("samba.smb1_enabled"),
+            points=2,
+            nature="improvement",
+            detail=_t("samba.smb1_enabled_detail"),
+            cmd='echo "min protocol = SMB2" | sudo tee -a /etc/samba/smb.conf',
         )
     else:
         result.ok(message=_t("samba.smb1_disabled"), key="samba.smb1_disabled")
 
     # --- Null passwords ---
     if snapshot.null_passwords:
-        result.alert(
-            message=_t("samba.null_passwords"),
-            detail=_t("samba.null_passwords_detail"),
-            nature="improvement",
-            cmd="",
+        result.alert_with_deduction(
             key="samba.null_passwords",
-        )
-        result.add_deduction(
-            reason=_t("samba.null_passwords"),
-            points=3, context="local", key="samba.null_passwords",
+            message=_t("samba.null_passwords"),
+            points=3,
+            nature="improvement",
+            detail=_t("samba.null_passwords_detail"),
         )
     else:
         result.ok(message=_t("samba.null_passwords_ok"), key="samba.null_passwords_ok")
 
     # --- Server signing ---
     if snapshot.server_signing == "disabled":
-        result.warn(
-            message=_t("samba.server_signing_disabled"),
-            detail=_t("samba.server_signing_disabled_detail"),
-            nature="improvement",
-            cmd='echo "server signing = mandatory" | sudo tee -a /etc/samba/smb.conf',
+        result.warn_with_deduction(
             key="samba.server_signing_disabled",
-        )
-        result.add_deduction(
-            reason=_t("samba.server_signing_disabled"),
-            points=1, context="local", key="samba.server_signing_disabled",
+            message=_t("samba.server_signing_disabled"),
+            points=1,
+            detail=_t("samba.server_signing_disabled_detail"),
+            cmd='echo "server signing = mandatory" | sudo tee -a /etc/samba/smb.conf',
         )
     elif snapshot.server_signing == "mandatory":
         result.ok(
@@ -270,16 +259,12 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
 
     # --- map to guest ---
     if snapshot.map_to_guest == "bad user":
-        result.warn(
-            message=_t("samba.map_to_guest"),
-            detail=_t("samba.map_to_guest_detail"),
-            nature="improvement",
-            cmd='echo "map to guest = never" | sudo tee -a /etc/samba/smb.conf',
+        result.warn_with_deduction(
             key="samba.map_to_guest",
-        )
-        result.add_deduction(
-            reason=_t("samba.map_to_guest"),
-            points=1, context="local", key="samba.map_to_guest",
+            message=_t("samba.map_to_guest"),
+            points=1,
+            detail=_t("samba.map_to_guest_detail"),
+            cmd='echo "map to guest = never" | sudo tee -a /etc/samba/smb.conf',
         )
 
     # --- Guest shares ---
@@ -287,29 +272,20 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
     readonly_guest = [s for s in snapshot.guest_shares if not s.writable]
 
     for share in writable_guest:
-        result.alert(
-            message=_t("samba.guest_writable", share=share.name),
-            detail=_t("samba.guest_writable_detail", share=share.name, path=share.path),
-            nature="improvement",
-            cmd="",
+        result.alert_with_deduction(
             key="samba.guest_writable",
-        )
-        result.add_deduction(
-            reason=_t("samba.guest_writable", share=share.name),
-            points=2, context="local", key="samba.guest_writable",
+            message=_t("samba.guest_writable", share=share.name),
+            points=2,
+            nature="improvement",
+            detail=_t("samba.guest_writable_detail", share=share.name, path=share.path),
         )
 
     for share in readonly_guest:
-        result.warn(
-            message=_t("samba.guest_readonly", share=share.name),
-            detail=_t("samba.guest_readonly_detail", share=share.name, path=share.path),
-            nature="improvement",
-            cmd="",
+        result.warn_with_deduction(
             key="samba.guest_readonly",
-        )
-        result.add_deduction(
-            reason=_t("samba.guest_readonly", share=share.name),
-            points=1, context="local", key="samba.guest_readonly",
+            message=_t("samba.guest_readonly", share=share.name),
+            points=1,
+            detail=_t("samba.guest_readonly_detail", share=share.name, path=share.path),
         )
 
     # --- Bind interfaces only ---

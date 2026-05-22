@@ -239,24 +239,19 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
     else:
         paths_str = ", ".join(snapshot.unexpected_suid[:10])
         suffix = f" (+{len(snapshot.unexpected_suid) - 10} more)" if len(snapshot.unexpected_suid) > 10 else ""
-        result.warn(
+        result.warn_with_deduction(
+            key="suid_audit.unexpected_suid",
             message=_t(
                 "suid_audit.unexpected_suid",
                 count=len(snapshot.unexpected_suid),
                 paths=paths_str + suffix,
             ),
-            nature="improvement",
-            detail=_t("suid_audit.unexpected_suid_detail"),
-            cmd=" && ".join(f"stat {shlex.quote(p)}" for p in snapshot.unexpected_suid[:5]),
-            cmd_type="check",
-            key="suid_audit.unexpected_suid",
-        )
-        result.add_deduction(
             reason=_t("suid_audit.unexpected_suid_reason",
                       count=len(snapshot.unexpected_suid)),
             points=1,
-            context="local",
-            key="suid_audit.unexpected_suid",
+            detail=_t("suid_audit.unexpected_suid_detail"),
+            cmd=" && ".join(f"stat {shlex.quote(p)}" for p in snapshot.unexpected_suid[:5]),
+            cmd_type="check",
         )
 
     # --- User-whitelisted SUID (INFO only) ---

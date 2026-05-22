@@ -225,18 +225,14 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
         extra = fi.mode & (~fi.max_mode & 0o777)
 
         if extra & 0o002:   # world-writable — critical risk, no deduction cap
-            result.alert(
+            result.alert_with_deduction(
+                key=f"file_perms.{fi.key}.world_writable",
                 message=_t("file_perms.world_writable",
                            path=fi.path, mode=oct(fi.mode)),
-                detail=_t("file_perms.world_writable_detail", path=fi.path),
-                cmd=f"sudo chmod o-w {fi.path}",
-                key=f"file_perms.{fi.key}.world_writable",
-            )
-            result.add_deduction(
                 reason=_t("file_perms.world_writable_reason", path=fi.path),
                 points=3,
-                context="local",
-                key=f"file_perms.{fi.key}.world_writable",
+                detail=_t("file_perms.world_writable_detail", path=fi.path),
+                cmd=f"sudo chmod o-w {fi.path}",
             )
 
         elif extra:     # other unexpected bits (group-write, world-read…) — capped

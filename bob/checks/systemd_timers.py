@@ -173,17 +173,13 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
         entries = "; ".join(pipe_entries[:3])
         if count > 3:
             entries += f" (+{count - 3})"
-        result.warn(
-            message=_t("systemd_timers.pipe_to_shell", count=count),
-            detail=_t("systemd_timers.pipe_to_shell_detail", entries=entries),
-            nature="action",
+        result.warn_with_deduction(
             key="systemd_timers.pipe_to_shell",
-        )
-        result.add_deduction(
+            message=_t("systemd_timers.pipe_to_shell", count=count),
             reason=_t("systemd_timers.pipe_to_shell_reason", count=count),
             points=2,
-            context="local",
-            key="systemd_timers.pipe_to_shell",
+            detail=_t("systemd_timers.pipe_to_shell_detail", entries=entries),
+            nature="action",
         )
 
     # --- World-writable scripts ----------------------------------------------
@@ -193,18 +189,14 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
         count   = len(writable)
         if count > 3:
             scripts += f" (+{count - 3})"
-        result.warn(
+        result.warn_with_deduction(
+            key="systemd_timers.world_writable",
             message=_t("systemd_timers.world_writable", count=count, scripts=scripts),
+            reason=_t("systemd_timers.world_writable_reason", count=count),
+            points=1,
             detail=_t("systemd_timers.world_writable_detail"),
             cmd=_chmod_cmd(writable),
             nature="action",
-            key="systemd_timers.world_writable",
-        )
-        result.add_deduction(
-            reason=_t("systemd_timers.world_writable_reason", count=count),
-            points=1,
-            context="local",
-            key="systemd_timers.world_writable",
         )
 
     # --- User-created timers running as root (informational) -----------------

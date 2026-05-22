@@ -146,19 +146,13 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
             devices = ", ".join(snapshot.fwupd_pending_updates[:3])
             if count > 3:
                 devices += f" (+{count - 3})"
-            result.warn(
-                message=_t("firmware.fwupd_updates", count=count, devices=devices),
-                detail=_t("firmware.fwupd_updates_detail"),
-                cmd="sudo fwupdmgr update",
-                cmd_type="fix",
-                nature="improvement",
+            result.warn_with_deduction(
                 key="firmware.fwupd_updates",
-            )
-            result.add_deduction(
+                message=_t("firmware.fwupd_updates", count=count, devices=devices),
                 reason=_t("firmware.fwupd_updates_reason", count=count),
                 points=1,
-                context="local",
-                key="firmware.fwupd_updates",
+                detail=_t("firmware.fwupd_updates_detail"),
+                cmd="sudo fwupdmgr update",
             )
         elif not snapshot.fwupd_error:
             result.ok(
@@ -186,19 +180,13 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
             )
         else:
             pkg = "intel-microcode" if snapshot.cpu_vendor == "intel" else "amd64-microcode"
-            result.warn(
-                message=_t("firmware.microcode_missing", vendor=snapshot.cpu_vendor.upper()),
-                detail=_t("firmware.microcode_missing_detail"),
-                cmd=f"sudo apt install {pkg}",
-                cmd_type="fix",
-                nature="improvement",
+            result.warn_with_deduction(
                 key="firmware.microcode_missing",
-            )
-            result.add_deduction(
+                message=_t("firmware.microcode_missing", vendor=snapshot.cpu_vendor.upper()),
                 reason=_t("firmware.microcode_missing_reason", vendor=snapshot.cpu_vendor.upper()),
                 points=1,
-                context="local",
-                key="firmware.microcode_missing",
+                detail=_t("firmware.microcode_missing_detail"),
+                cmd=f"sudo apt install {pkg}",
             )
 
     return result

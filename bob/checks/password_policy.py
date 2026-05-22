@@ -181,18 +181,14 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
 
     # ---- No PAM quality module ---------------------------------------------
     if snapshot.pam_quality_module is None:
-        result.warn(
+        result.warn_with_deduction(
+            key="password_policy.no_quality_module",
             message=_t("password_policy.no_quality_module"),
+            reason=_t("password_policy.no_quality_module_reason"),
+            points=_DEDUCTION_NO_QUALITY_MODULE,
             detail=_t("password_policy.no_quality_module_detail"),
             cmd="sudo apt install libpam-pwquality && sudo pam-auth-update",
             nature="action",
-            key="password_policy.no_quality_module",
-        )
-        result.add_deduction(
-            reason=_t("password_policy.no_quality_module_reason"),
-            points=_DEDUCTION_NO_QUALITY_MODULE,
-            context="local",
-            key="password_policy.no_quality_module",
         )
         has_finding = True
 
@@ -203,21 +199,17 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
         snapshot.pam_minlen is not None
         and snapshot.pam_minlen < _MIN_LEN_THRESHOLD
     ):
-        result.warn(
+        result.warn_with_deduction(
+            key="password_policy.weak_minlen",
             message=_t("password_policy.weak_minlen", minlen=snapshot.pam_minlen),
+            reason=_t("password_policy.weak_minlen_reason", minlen=snapshot.pam_minlen),
+            points=_DEDUCTION_WEAK_MINLEN,
             detail=_t("password_policy.weak_minlen_detail"),
             cmd=(
                 "sudo nano /etc/security/pwquality.conf"
                 f"  →  minlen = {_MIN_LEN_THRESHOLD}"
             ),
             nature="action",
-            key="password_policy.weak_minlen",
-        )
-        result.add_deduction(
-            reason=_t("password_policy.weak_minlen_reason", minlen=snapshot.pam_minlen),
-            points=_DEDUCTION_WEAK_MINLEN,
-            context="local",
-            key="password_policy.weak_minlen",
         )
         has_finding = True
 

@@ -127,35 +127,25 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
         return result
 
     if not snapshot.service_active:
-        result.warn(
-            message=_t("fail2ban.service_inactive"),
-            detail=_t("fail2ban.service_inactive_detail"),
-            cmd="sudo systemctl enable --now fail2ban",
-            nature="improvement",
+        result.warn_with_deduction(
             key="fail2ban.service_inactive",
-        )
-        result.add_deduction(
+            message=_t("fail2ban.service_inactive"),
             reason=_t("fail2ban.service_inactive_reason"),
             points=1,
-            context="local",
-            key="fail2ban.service_inactive",
+            detail=_t("fail2ban.service_inactive_detail"),
+            cmd="sudo systemctl enable --now fail2ban",
         )
         return result
 
     if not snapshot.active_jails:
-        result.warn(
+        result.warn_with_deduction(
+            key="fail2ban.no_jails",
             message=_t("fail2ban.no_jails"),
+            reason=_t("fail2ban.no_jails_reason"),
+            points=1,
             detail=_t("fail2ban.no_jails_detail"),
             cmd="sudo fail2ban-client status",
             cmd_type="check",
-            nature="improvement",
-            key="fail2ban.no_jails",
-        )
-        result.add_deduction(
-            reason=_t("fail2ban.no_jails_reason"),
-            points=1,
-            context="local",
-            key="fail2ban.no_jails",
         )
         return result
 

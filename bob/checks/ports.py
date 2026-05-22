@@ -224,17 +224,13 @@ def check_ports(
             if not ufw_active:
                 result.info(message=_t("ports.uncovered", port=pp), key="ports.uncovered")
                 continue
-            result.warn(
-                message=_t("ports.uncovered", port=pp),
-                nature="improvement",
-                cmd=f"sudo ufw allow from 192.168.1.0/24 to any port {lport.port} proto {lport.proto}",
+            result.warn_with_deduction(
                 key="ports.uncovered_netbios",
-            )
-            result.add_deduction(
+                message=_t("ports.uncovered", port=pp),
                 reason=_t("deduction.netbios_no_rule", port=pp),
                 points=1,
                 context=network_context,
-                key="ports.uncovered_netbios",
+                cmd=f"sudo ufw allow from 192.168.1.0/24 to any port {lport.port} proto {lport.proto}",
             )
             continue
 

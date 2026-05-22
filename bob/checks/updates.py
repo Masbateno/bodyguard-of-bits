@@ -286,17 +286,13 @@ def check_updates(
         pkgs  = ", ".join(security[:5])
         if count > 5:
             pkgs += f" (+{count - 5})"
-        result.warn(
-            message=_t("updates.security_pending", count=count, packages=pkgs),
-            detail=_t("updates.security_pending_detail"),
-            cmd="sudo apt-get upgrade",
+        result.warn_with_deduction(
             key="updates.security_pending",
-        )
-        result.add_deduction(
+            message=_t("updates.security_pending", count=count, packages=pkgs),
             reason=_t("updates.security_pending_reason", count=count),
             points=2,
-            context="local",
-            key="updates.security_pending",
+            detail=_t("updates.security_pending_detail"),
+            cmd="sudo apt-get upgrade",
         )
 
     # --- Regular packages pending -------------------------------------------
@@ -313,17 +309,13 @@ def check_updates(
     if not uu_ok:
         if security and profile_name not in ("workstation", "desktop"):
             # Compound risk: security gap + no automation (server/default only)
-            result.warn(
-                message=_t("updates.unattended_not_configured"),
-                detail=_t("updates.unattended_not_configured_detail"),
-                cmd="sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
+            result.warn_with_deduction(
                 key="updates.unattended_not_configured",
-            )
-            result.add_deduction(
+                message=_t("updates.unattended_not_configured"),
                 reason=_t("updates.unattended_not_configured_reason"),
                 points=1,
-                context="local",
-                key="updates.unattended_not_configured",
+                detail=_t("updates.unattended_not_configured_detail"),
+                cmd="sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
             )
         else:
             # Workstation profile, or system up to date — informational only

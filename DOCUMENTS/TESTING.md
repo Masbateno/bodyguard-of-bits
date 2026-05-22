@@ -4,7 +4,7 @@
 
 Two complementary parts:
 
-- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.5.0 (4538 tests, +39 from v0.4.8 with the Phase-1 refactor coverage pass).
+- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.5.1 (4538 tests, unchanged from v0.5.0 — Phase 2 of v0.5.x refactor was a contract-preserving helper migration, no test deltas).
 - **Manual UFW regression plan** (Categories A–E at the bottom) — deliberately dangerous UFW rules and the expected BOB behaviour for each. Used to validate detection + remediation on real systems.
 
 ---
@@ -13,6 +13,7 @@ Two complementary parts:
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.1 | 4538 | Refactor v0.5.x Phase 2 — big LoC win. New `CheckResult.warn_with_deduction()` + `.alert_with_deduction()` helpers collapse 120 paired `warn`+`add_deduction` sites across 27 check files. **Zero test deltas** — each helper call internally invokes the existing `warn`/`alert` + `add_deduction` sequence, producing bit-identical `Finding` + `Deduction` outputs. The 4538 tests pin the wire output (finding messages, deduction reasons, template_vars, key prefixes, CIS refs) — all preserved. Each of the 6 migration waves (1-site files → 2-site → 3-site → 4-6 site → hardening → ssh.py) passed `pytest tests/` before moving on. Net diff: 37 files changed, +483/−1002 = −519 lines. |
 | v0.5.0 | 4538 | Refactor v0.5.x Phase 1 (+39 tests) — **+4** in new `tests/test_domain_scores_mapping_complete.py` (AST scan of `bob/checks/*.py` for unmapped key prefixes, guards the `_PREFIX_TO_DOMAIN` catch-all from silent drift). **+35** in `tests/test_cron.py` covering 5 previously-untested pure helpers: `TestValidateCronField` (13 — wildcard, integer, range, step, list, out-of-bounds, reversed range, empty entry, garbage), `TestValidateCustomCron` (7 — full 5-field), `TestBuildScriptContent` (7 — shlex.quote, shebang, exports), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5 — incl. legacy `NOTIFY_EMAIL=` parity). **Latent bug fixed**: `apply_cron_schedule()` referenced `_os.open` (undefined at module scope) — v0.4.8 cron-deduplication extraction missed the rename; the new tests surfaced the NameError on first run. Tests in `test_fail2ban.py` and `test_ntp.py` updated to patch `is_unit_active` alongside `_run` (refactor #7). |
 | v0.4.8 | 4499 | Hardening release — sub-agent code-review pass 4 (4 important + 5 minor + 3 suggestion findings) + pyproject.toml deep audit (6 fixes). **−1 test (4500 → 4499):** removed `test_default_method_is_none` in `test_secure_boot.py` after dropping the dead `method: str` field from `SecureBootSnapshot`. Other dead-field removals (`ssh.config_source_files`, `firewall.ipv4_rules_count`/`ipv6_rules_count`, `samba.min_protocol`, `clamav.db_path`/`last_scan_log_path`) had their associated tests updated to drop the now-invalid kwargs. No new behaviour, contract-preserving cleanup. |
 | v0.4.7 | 4500 | Maintenance release — cross-doc audit (24 corrections / 8 files) + UI gauges harmonization + bash completion overhaul (critical `--xxx=<TAB>` value completion fix via positional-arg convention) + GitHub Release CI automation. No new tests; 3 tests in `test_breakdown.py::TestBar` adapted to strip ANSI codes before comparing visible content (bars are now coloured strings, no longer plain `█░░░░░░░░░`). |
@@ -37,6 +38,41 @@ Two complementary parts:
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.5.1 — 4538/4538 (2026-05-21)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in ~6s
+```
+
+**Net: 0 (no new tests, no removals).** v0.5.1 is the big LoC-win refactor (audit finding #1). The migration is contract-preserving: each of the 120 paired `result.warn(...) + result.add_deduction(...)` sites collapses to a single `result.warn_with_deduction(...)` (or `.alert_with_deduction(...)`) call. The helper internally invokes the same `warn`/`alert` + `add_deduction` sequence, producing identical `Finding` and `Deduction` entries in `result.findings` and `result.deductions`.
+
+#### Why zero test deltas
+
+A grep across `tests/` confirmed that all tests on `CheckResult` instances assert on the resulting lists (`result.findings`, `result.deductions`, attribute access on individual entries, level counts via `result.warn_count`/`result.alert_count`/etc.). **No test** patched `CheckResult.warn` or `CheckResult.add_deduction` to count invocations. The helper preserves the wire output exactly, so the test suite is unaffected.
+
+#### Migration discipline — 6 waves, full pytest between each
+
+| Wave | Files | Sites | Test result |
+|---|---|---|---|
+| 1 (1-site files) | backup, ddns, logs, memory, network_context, smtp, suid_audit | 7 | 4538/4538 |
+| 2 (2-site files) | cron_audit, docker_audit, fail2ban, firmware, ipv6, kernel_modules, ntp, password_policy, ports, secure_boot, systemd_timers, umask, updates, user_accounts | 16 | 4538/4538 |
+| 3 (3-site files) | auditd, file_integrity, kernel_hardening, log_rotation, rootkit | 15 | 4538/4538 |
+| 4 (4-6 site files) | file_perms, firewall_stack, firewall (pilot), disk, iptables_nftables, clamav, mac_policy, samba | 29 | 4538/4538 |
+| 5 (hardening) | hardening | 8 | 4538/4538 |
+| 6 (ssh) | ssh | 24 | 4538/4538 |
+| **Total** | **27 files** | **120 sites** | **4538/4538** |
+
+13 sites were intentionally not migrated (capped deductions, level branching, conditional points, divergent template_vars). See `CHANGELOG.md` for the breakdown.
+
+#### Field-testing follows the same pattern as v0.5.0
+
+The Phase-1 v0.5.0 release was field-tested on 5 distros (Linux Mint 22.3 production + so6minttest, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) with `sudo bob -v -d --french`. v0.5.1's refactor preserves the wire output exactly, so the same cross-distro coverage applies. The recommended field test for v0.5.1: install via `pipx upgrade bodyguard-of-bits` and run `sudo bob -v -d` — the audit output, score breakdown, and per-domain bars must be bit-identical to v0.5.0 (modulo system state changes between runs).
 
 ---
 

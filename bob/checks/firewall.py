@@ -162,17 +162,11 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
 
     # --- Default incoming policy ---
     if status.incoming_policy == "allow":
-        result.alert(
+        result.alert_with_deduction(
+            key="firewall.policy_open",
             message=_t("firewall.policy_open"),
-            nature="action",
-            cmd="sudo ufw default deny incoming",
-            key="firewall.policy_open",
-        )
-        result.add_deduction(
-            reason=_t("firewall.policy_open"),
             points=3,
-            context="local",
-            key="firewall.policy_open",
+            cmd="sudo ufw default deny incoming",
         )
     elif status.incoming_policy == "deny":
         result.ok(message=_t("firewall.policy_ok"), key="firewall.policy_ok")
@@ -250,15 +244,11 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
         is_dup = False
         if clean in seen_clean:
             del_index = real_index if real_index else seen_clean[clean]
-            result.alert(
-                message=t("rules.duplicate_found", rule=clean),
-                nature="action",
-                cmd=f"sudo ufw --force delete {del_index}",
+            result.alert_with_deduction(
                 key="rules.duplicate_found",
-            )
-            result.add_deduction(
-                reason=t("rules.duplicate_found", rule=clean), points=1,
-                context="local", key="rules.duplicate_found",
+                message=t("rules.duplicate_found", rule=clean),
+                points=1,
+                cmd=f"sudo ufw --force delete {del_index}",
             )
             is_dup = True
             found_duplicate = True
@@ -269,15 +259,11 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
                 if m:
                     proto_less_clean = " ".join([m.group(1)] + tokens[1:])
                     if proto_less_clean in proto_less_rules:
-                        result.alert(
-                            message=t("rules.duplicate_found", rule=clean),
-                            nature="action",
-                            cmd=f"sudo ufw --force delete {real_index}",
+                        result.alert_with_deduction(
                             key="rules.duplicate_found",
-                        )
-                        result.add_deduction(
-                            reason=t("rules.duplicate_found", rule=clean), points=1,
-                            context="local", key="rules.duplicate_found",
+                            message=t("rules.duplicate_found", rule=clean),
+                            points=1,
+                            cmd=f"sudo ufw --force delete {real_index}",
                         )
                         is_dup = True
                         found_duplicate = True
@@ -366,13 +352,10 @@ def _check_ipv6_coverage(
 
     if ipv4_count > 0 and ipv6_count == 0:
         if ipv6_enabled:
-            result.warn(
-                message=t("rules.ipv6_missing"), nature="improvement",
+            result.warn_with_deduction(
                 key="rules.ipv6_missing",
-            )
-            result.add_deduction(
-                reason=t("rules.ipv6_missing"), points=1,
-                context="local", key="rules.ipv6_missing",
+                message=t("rules.ipv6_missing"),
+                points=1,
             )
         # else: IPv6 is disabled in /etc/default/ufw — no warning
     elif ipv4_count > 0:
@@ -399,17 +382,11 @@ def check_ufw_logging(status: FirewallStatus, t: TranslationFunc | None = None) 
 
     level = status.logging_level
     if level == "off":
-        result.alert(
+        result.alert_with_deduction(
+            key="firewall.logging_off",
             message=_t("firewall.logging_off"),
-            nature="action",
-            cmd="sudo ufw logging low",
-            key="firewall.logging_off",
-        )
-        result.add_deduction(
-            reason=_t("firewall.logging_off"),
             points=2,
-            context="local",
-            key="firewall.logging_off",
+            cmd="sudo ufw logging low",
         )
     elif level in ("low", "medium"):
         result.ok(

@@ -161,19 +161,14 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
             continue
 
         if not sr.passed:
-            result.alert(
+            result.alert_with_deduction(
+                key="disk.smart_failed",
                 message=_t("disk.smart_failed", device=sr.device, model=sr.model),
+                reason=_t("disk.smart_failed_reason", device=sr.device),
+                points=3,
                 detail=_t("disk.smart_failed_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
-                nature="action",
-                key="disk.smart_failed",
-            )
-            result.add_deduction(
-                reason=_t("disk.smart_failed_reason", device=sr.device),
-                points=3,
-                context="local",
-                key="disk.smart_failed",
             )
             found_issue = True
         else:
@@ -184,84 +179,68 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
 
         # Critical attributes
         if sr.reallocated_sectors > 0:
-            result.warn(
+            result.warn_with_deduction(
+                key="disk.reallocated_sectors",
                 message=_t(
                     "disk.reallocated_sectors",
                     device=sr.device,
                     count=sr.reallocated_sectors,
                 ),
+                reason=_t("disk.reallocated_sectors_reason", device=sr.device),
+                points=1,
                 detail=_t("disk.reallocated_sectors_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
-                key="disk.reallocated_sectors",
-            )
-            result.add_deduction(
-                reason=_t("disk.reallocated_sectors_reason", device=sr.device),
-                points=1,
-                context="local",
-                key="disk.reallocated_sectors",
             )
             found_issue = True
 
         if sr.pending_sectors > 0:
-            result.warn(
+            result.warn_with_deduction(
+                key="disk.pending_sectors",
                 message=_t(
                     "disk.pending_sectors",
                     device=sr.device,
                     count=sr.pending_sectors,
                 ),
+                reason=_t("disk.pending_sectors_reason", device=sr.device),
+                points=1,
                 detail=_t("disk.pending_sectors_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
-                key="disk.pending_sectors",
-            )
-            result.add_deduction(
-                reason=_t("disk.pending_sectors_reason", device=sr.device),
-                points=1,
-                context="local",
-                key="disk.pending_sectors",
             )
             found_issue = True
 
         if sr.uncorrectable_errors > 0:
-            result.warn(
+            result.warn_with_deduction(
+                key="disk.uncorrectable_errors",
                 message=_t(
                     "disk.uncorrectable_errors",
                     device=sr.device,
                     count=sr.uncorrectable_errors,
                 ),
+                reason=_t("disk.uncorrectable_errors_reason", device=sr.device),
+                points=1,
                 detail=_t("disk.uncorrectable_errors_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
-                key="disk.uncorrectable_errors",
-            )
-            result.add_deduction(
-                reason=_t("disk.uncorrectable_errors_reason", device=sr.device),
-                points=1,
-                context="local",
-                key="disk.uncorrectable_errors",
             )
             found_issue = True
 
     # --- Partition usage ---
     for part in snapshot.partitions:
         if part.used_pct >= _WARN_USAGE_PCT:
-            result.warn(
+            result.warn_with_deduction(
+                key="disk.partition_critical",
                 message=_t(
                     "disk.partition_critical",
                     mountpoint=part.mountpoint,
                     pct=part.used_pct,
                 ),
+                reason=_t("disk.partition_critical_reason", mountpoint=part.mountpoint),
+                points=1,
                 detail=_t("disk.partition_critical_detail", mountpoint=part.mountpoint),
                 cmd=f"du -x -h --max-depth=1 {shlex.quote(part.mountpoint)} 2>/dev/null | sort -rh | head -20",
                 cmd_type="check",
-                key="disk.partition_critical",
-            )
-            result.add_deduction(
-                reason=_t("disk.partition_critical_reason", mountpoint=part.mountpoint),
-                points=1,
-                context="local",
-                key="disk.partition_critical",
             )
             found_issue = True
         elif part.used_pct >= _INFO_USAGE_PCT:

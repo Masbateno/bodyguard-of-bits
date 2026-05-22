@@ -252,16 +252,11 @@ def check_logs(
 
     # Findings — bruteforce gets a WARN
     for hit in brute_hits:
-        result.warn(
-            message=_t("logs.brute_found", ip=hit.src_ip, port=hit.port_proto),
-            nature="improvement",
+        result.warn_with_deduction(
             key="logs.brute_found",
-        )
-        result.add_deduction(
+            message=_t("logs.brute_found", ip=hit.src_ip, port=hit.port_proto),
             reason=_t("deduction.brute_force", ip=hit.src_ip, port=hit.port_proto),
             points=1,
-            context="local",
-            key="logs.brute_found",
         )
 
     # Service hits on high/critical ports get an INFO

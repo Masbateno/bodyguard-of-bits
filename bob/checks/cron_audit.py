@@ -258,17 +258,13 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
     # --- curl/wget | shell pattern ------------------------------------------
     if pipe_entries:
         count = len(pipe_entries)
-        result.warn(
-            message=_t("cron_audit.pipe_to_shell", count=count),
-            detail=_t("cron_audit.pipe_to_shell_detail"),
-            nature="action",
+        result.warn_with_deduction(
             key="cron_audit.pipe_to_shell",
-        )
-        result.add_deduction(
+            message=_t("cron_audit.pipe_to_shell", count=count),
             reason=_t("cron_audit.pipe_to_shell_reason", count=count),
             points=2,
-            context="local",
-            key="cron_audit.pipe_to_shell",
+            detail=_t("cron_audit.pipe_to_shell_detail"),
+            nature="action",
         )
 
     # --- World-writable scripts in cron -------------------------------------
@@ -277,18 +273,14 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
         count   = len(writable_scripts)
         if count > 3:
             scripts += f" (+{count - 3})"
-        result.warn(
+        result.warn_with_deduction(
+            key="cron_audit.world_writable",
             message=_t("cron_audit.world_writable", count=count, scripts=scripts),
+            reason=_t("cron_audit.world_writable_reason", count=count),
+            points=1,
             detail=_t("cron_audit.world_writable_detail"),
             cmd=_chmod_cmd(writable_scripts),
             nature="action",
-            key="cron_audit.world_writable",
-        )
-        result.add_deduction(
-            reason=_t("cron_audit.world_writable_reason", count=count),
-            points=1,
-            context="local",
-            key="cron_audit.world_writable",
         )
 
     # --- Unexpected user crontabs (informational) ---------------------------

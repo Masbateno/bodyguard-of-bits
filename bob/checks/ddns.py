@@ -256,16 +256,10 @@ def check_ddns(
     # separate "→ 22/tcp" sub-items under the INFO advice (terrain Mint test,
     # 15-05-2026 — visually confusing).
     ports_str = ", ".join(open_ports)
-    result.warn(
+    result.warn_with_deduction(
+        key="ddns.warn",
         message=_t("ddns.warn", ports=ports_str),
-        nature="improvement",
-        key="ddns.warn",
-    )
-    result.add_deduction(
-        reason=_t("ddns.warn", ports=ports_str),
         points=1,
-        context="local",
-        key="ddns.warn",
     )
 
     # Expose the ports list for programmatic access (compare.py baseline diff,
