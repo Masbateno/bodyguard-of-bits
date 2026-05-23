@@ -10,8 +10,8 @@ shipped data (locales/, data/, …). Set by the installer entry point (typically
 to ``/usr/local/share/bob`` or ``/usr/share/bob`` for distro packages).
 
 ``UFW_AUDIT_SHARE`` (legacy alias) — accepted for backward compatibility with
-pre-v0.4.2 installer scripts. Will be dropped in a future major release.
-``BOB_SHARE`` takes precedence when both are set.
+pre-v0.4.2 installer scripts. **Deprecated since v0.5.4** and will be removed
+in **v0.6.0**. ``BOB_SHARE`` takes precedence when both are set.
 """
 
 from __future__ import annotations
@@ -55,10 +55,11 @@ def resolve_share_dir() -> Path | None:
         return None
     if resolved.is_absolute() and resolved.is_dir():
         if source == _ENV_LEGACY:
-            logger.info(
-                "Using legacy env var %s — please update your installer to %s "
-                "(both are accepted today; the legacy name will be dropped in a future major release).",
-                _ENV_LEGACY, _ENV_PRIMARY,
+            logger.warning(
+                "Using legacy env var %s — DEPRECATED since v0.5.4, will be "
+                "REMOVED in v0.6.0. Update your installer to %s (both are "
+                "accepted today; %s takes precedence when both are set).",
+                _ENV_LEGACY, _ENV_PRIMARY, _ENV_PRIMARY,
             )
         return resolved
     logger.warning("%s is invalid or unsafe, ignoring: %r", source, share)

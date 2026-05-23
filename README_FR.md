@@ -66,7 +66,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.5.3  │  Auditeur de durcissement Linux                               ║
+║  BOB v0.5.4  │  Auditeur de durcissement Linux                               ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : v0.36.2                                                     ║

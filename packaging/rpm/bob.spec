@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.3
+Version:        0.5.4
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,30 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.4-1
+- Refactor v0.5.x Phase 5 of 5 (final, closes the v0.5.x audit).
+  Three audit findings (#6, #9, #15b) + one user-requested metier
+  feature (cache APT option C). Two findings deferred to v0.6.0.
+- #6: new prompt_wizard() helper in bob/_tty.py + 10 input()
+  sites migrated in bob/cron.py (install + edit wizards).
+- #9: UFW_AUDIT_SHARE env var DEPRECATED since v0.5.4, REMOVED
+  in v0.6.0. logger.info -> logger.warning; docstring updated.
+- #15b: _PREFIX_TO_DOMAIN explicit mapping. fail2ban -> ssh,
+  virt -> hardening, docker_audit -> hardening. Per-domain score
+  reshuffle on affected hosts; global score unchanged.
+- Cache APT option C: new INFO updates.apt_cache_age line when
+  no security/regular pending and cache below 7-day stale
+  threshold. Closes observability gap surfaced by v0.5.3 Ubuntu
+  VM terrain test.
+- #13/#14 (ssh.py/cron.py splits) deferred to v0.6.0 per
+  conservative-refactor principle.
+- Net diff: 12 code files, +118 / -69 = +49 lines.
+- 4538/4538 tests unchanged. Wire output: 1 new INFO line on
+  idle hosts (cache APT C) + per-domain reshuffle on hosts with
+  fail2ban/virt/docker_audit findings. Global score unchanged.
+- 2 new locale keys (updates.apt_cache_age + detail) in EN+FR.
+- JSON contract preserved.
+
 * Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.3-1
 - Refactor v0.5.x Phase 4 (audit findings #5 + #12 + #8). Three
   pure structural refactors; zero behaviour change.

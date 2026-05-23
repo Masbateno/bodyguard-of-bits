@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.3 (4538 tests, inchangé depuis v0.5.0 — Phases 2, 3 et 4 du refactor v0.5.x sont contract-preserving, aucun delta de tests).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.4 (4538 tests, inchangé depuis v0.5.0 — les cinq Phases du refactor v0.5.x sont contract-preserving, aucun delta de tests sur toute la branche).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.4 | 4538 | Refactor v0.5.x Phase 5 sur 5 (finale) — **#6 helper `prompt_wizard()`** dans `bob/_tty.py` + 10 sites migrés dans `bob/cron.py` (wizards install + edit) + **#9 sunset `UFW_AUDIT_SHARE`** (`logger.info` → `logger.warning` avec message explicite "REMOVED en v0.6.0") + **#15b mapping `_PREFIX_TO_DOMAIN` explicite** (`fail2ban` → ssh, `virt` → hardening, `docker_audit` → hardening) + **cache APT option C** (nouvelle feature métier : ligne INFO `updates.apt_cache_age` permanente quand aucune mise à jour security/regular en attente et cache sous le seuil obsolète, ferme le gap d'observabilité remonté par le test terrain VM Ubuntu v0.5.3). **Zero delta de tests** — Phase 5 est contract-preserving comme les Phases 2-4. 3 entrées de test retirées de `_CATCH_ALL_BY_DESIGN` dans `tests/test_domain_scores_mapping_complete.py` (reflet de la migration de prefixes #15b), mais aucun test ajouté ou supprimé. Le test scan AST `#15a` continue de pin chaque prefixe de clé émis. **#13 (split ssh.py, 1324 LoC) et #14 (split cron.py, 1223 LoC) déférés à v0.6.0** selon le principe conservative-refactor. Diff net : 12 fichiers code modifiés, +118 / −69 = +49 LoC. Ferme l'audit v0.5.x (13/15 findings shippés + 1 feature métier + 2 déférés avec justification). |
 | v0.5.3 | 4538 | Refactor v0.5.x Phase 4 — **#5 table dispatch `_LEVEL_DISPATCH`** dans `display_result` (cascade 4-branches OK/WARN/ALERT/INFO → boucle déclarative pilotée par dataclass `_LevelTraits`) + **#12 split `print_audit_summary`** en 3 helpers module-level (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) + `_add_finding_lines` remonté d'inner closure à module-level + **#8 retrait `CheckResult.log_data`** (dict escape hatch → tuple return `check_logs(...) -> (CheckResult, LogReportData | None)` avec dataclass frozen `LogReportData`). **Zero delta de tests** — refactor purement structurel, sortie wire bit-identique à v0.5.2. 3 tests renommés (`test_log_data_*` → `test_report_data_*`) et réécrits pour accès attribut dataclass au lieu d'accès dict-clé ; ~20 sites tests utilisent `result, _ = check_logs(...)` tuple unpack. Side-fix lors de #12 : `report.write_summary(score=score, risk_level=level_str, network_context=ctx_str, ...)` référait des locals devenues dead après l'extraction du header ; remplacées par expressions directes sur `engine.score` / `t(f"scoring.level.{engine.level.value}")` — attrapé par les tests `TestScoreTrend` (8 failures → 0 après fix). Diff net : display.py +23 LoC, logs.py +19 LoC, runner.py 0, scoring.py −1, tests +3 = **+40 LoC total**. |
 | v0.5.2 | 4538 | Refactor v0.5.x Phase 3 — **#4 table directive SSH** (8 directives uniformes migrées vers table `_BAD_DIRECTIVES`) + **#3 extension runner._sec** avec callbacks `skip_if=` / `post_display=` (4 blocs inline migrés). **Zero delta de tests** — refactor purement structurel. La dataclass `_BadDirective` + table + helper `_apply_bad_directive()` produit des findings et déductions bit-identiques aux if-blocks impératifs précédents. L'extension `_sec` est keyword-only (call sites existants inaffectés). `test_ssh.py` (122 tests) a passé avant et après la migration. Diff net : ssh.py +56 LoC (table verbose), runner.py −29 LoC. **#13 (split ssh.py) déféré Phase 5** — ssh.py reste à 1324 LoC (cible <1000 non atteinte). |
 | v0.5.1 | 4538 | Refactor v0.5.x Phase 2 — gros gain LoC. Nouveaux helpers `CheckResult.warn_with_deduction()` + `.alert_with_deduction()` collapsent 120 sites paired `warn`+`add_deduction` dans 27 fichiers check. **Zéro delta de tests** — chaque appel helper invoque en interne la séquence existante `warn`/`alert` + `add_deduction`, produisant des sorties `Finding` + `Deduction` bit-identiques. Les 4538 tests pinnent la sortie wire (messages findings, raisons déductions, template_vars, préfixes clés, refs CIS) — tous préservés. Chacune des 6 vagues de migration (fichiers 1-site → 2-site → 3-site → 4-6 site → hardening → ssh.py) a passé `pytest tests/` avant de continuer. Diff net : 37 fichiers modifiés, +483/−1002 = −519 lignes. |
@@ -40,6 +41,58 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.4 — 4538/4538 (22-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4538 passed in ~6s
+```
+
+**Net : 0 (aucun nouveau test, aucune suppression).** v0.5.4 ferme l'audit v0.5.x avec la Phase 5 (findings #6 + #9 + #15b + cache APT option C). Les quatre changements sont soit des refactors contract-preserving (#6, #9), soit des raffinements display-only (ligne INFO cache APT C, re-bucketing score #15b). La suite de tests existante pin :
+
+- Toutes les clés de finding (via scan AST `test_locale_coverage.py`)
+- Tous les prefixes de clé de domain-score (via scan AST `test_domain_scores_mapping_complete.py`, ajouté en v0.5.0 — #15a)
+- Tous les contrats scoring (via `test_scoring.py`, `test_domain_scores.py`, `test_golden_scenarios.py`)
+
+#### Update whitelist `_CATCH_ALL_BY_DESIGN` (conséquence #15b)
+
+`tests/test_domain_scores_mapping_complete.py:_CATCH_ALL_BY_DESIGN` perd 3 entrées que #15b a migrées vers mappings explicites :
+
+| Entrée retirée | Où elle est allée (dans `_PREFIX_TO_DOMAIN`) |
+|---|---|
+| `fail2ban` | `ssh` |
+| `virt` | `hardening` |
+| `docker_audit` | `hardening` |
+
+Les entrées restantes (`smtp`, `desktop_apps`, `prerequisites`) reçoivent des justifications rafraîchies — elles ne pointent plus vers "review in v0.5.4" puisque cette review est maintenant faite. Le bloc de commentaire au-dessus de `_CATCH_ALL_BY_DESIGN` mis à jour pour refléter la clôture (plus aucun candidat flaggé pour tightening).
+
+Le test `test_every_emitted_prefix_is_mapped_or_whitelisted` continue d'enforcer que chaque prefixe de clé de finding émis est soit dans `_PREFIX_TO_DOMAIN` soit dans `_CATCH_ALL_BY_DESIGN`. Si un futur contributeur ajoute un check émettant un nouveau prefixe (ex `clamav_signatures.something`) sans le mapper, le test échoue au moment du PR.
+
+#### Cache APT option C — couverture locale
+
+Les 2 nouvelles clés locale (`updates.apt_cache_age` + `updates.apt_cache_age_detail`) sont attrapées par `test_locale_coverage.py` (scan AST introduit en v0.4.5). Le test de couverture locale enforce que chaque littéral `t("foo.bar")` dans le codebase a une entrée correspondante dans `en.json` ET `fr.json`. Les 2 nouvelles entrées passent le check.
+
+#### #6 `prompt_wizard` — aucun nouveau test, compatibilité mock préservée
+
+`prompt_wizard()` dans `bob/_tty.py` appelle `input()` en interne, donc les mocks `builtins.input` existants dans `tests/test_cron.py` continuent de fonctionner sans modification. Les 10 sites migrés dans `bob/cron.py` délèguent chacun à `prompt_wizard` au lieu d'appeler `input()` directement, mais la stack d'appel sous-jacente hit toujours `input()` — donc le test setup comme `patch("builtins.input", side_effect=["yes", "1", ""])` opère de la même façon.
+
+Le helper lui-même (`prompt_wizard`) n'est pas testé unitairement directement. Son comportement est exercé end-to-end via les tests du wizard cron qui mockent déjà `input()`.
+
+#### Test terrain
+
+Approche de couverture cross-distro inchangée depuis les Phases 1-4 — pipx upgrade + `sudo bob -v -d` sur chaque VM. Deux changements observables sont attendus versus v0.5.3 :
+
+1. **Ligne INFO cache APT** dans section MISES À JOUR SYSTÈME quand le host a APT, aucune mise à jour security/regular en attente, et âge du cache sous le seuil obsolète de 7 jours.
+2. **Reshuffle score par domaine** sur hosts émettant findings `fail2ban.*` / `virt.*` / `docker_audit.*` — le score global est inchangé.
+
+Sur le host dev `so6desktop` (Mint 22.3 + Docker installé + libvirt KVM), le reshuffle est observable : `Pare-feu & Services` est passé de 3/10 à 10/10 (`virt.bypass_risk` sorti du catch-all), `Durcissement` est descendu de 6/10 à 5/10 (`virt.bypass_risk` compté là maintenant). Le score global reste à 8/10.
+
+Les 4538 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 

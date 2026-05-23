@@ -1,3 +1,54 @@
+bodyguard-of-bits (0.5.4-1) UNRELEASED; urgency=low
+
+  * Refactor v0.5.x Phase 5 of 5 (final, closes the v0.5.x audit).
+    Three audit findings (#6, #9, #15b) + one user-requested metier
+    feature (cache APT option C). Two findings deferred to v0.6.0.
+  * #6 — new prompt_wizard() helper in bob/_tty.py: translation-
+    agnostic wrapper around input() with uniform q/quit cancel and
+    default-on-Enter. 10 raw input() sites migrated in bob/cron.py
+    (install wizard + edit wizard). Existing test mocks of
+    builtins.input continue to work unchanged.
+  * #9 — UFW_AUDIT_SHARE env var deprecation timeline committed.
+    bob/_paths.py:resolve_share_dir() upgraded logger.info(...) ->
+    logger.warning(...) with explicit "DEPRECATED since v0.5.4,
+    will be REMOVED in v0.6.0" message. Module docstring updated
+    to match. Packagers using legacy env var see a clear sunset
+    timeline. SECURITY.md/SECURITY_FR.md already declared v0.4.x
+    EOL in v0.5.3.
+  * #15b — _PREFIX_TO_DOMAIN explicit mapping for 3 v0.4.x
+    catch-all entries: fail2ban -> ssh (SSH anti-bruteforce is
+    the primary purpose), virt -> hardening (KVM/bridge bypass is
+    kernel/system surface), docker_audit -> hardening (container
+    hardening, daemon.json security). smtp and desktop_apps stay
+    catch-all by design (no clean domain fit). Per-domain score
+    reshuffle on hosts emitting these prefixes; global score is
+    unchanged.
+  * Cache APT option C — new INFO updates.apt_cache_age line in
+    bob/checks/updates.py when no security/regular updates pending
+    AND cache age is below the 7-day stale threshold. Closes the
+    observability gap surfaced by the v0.5.3 Ubuntu VM terrain
+    test where a dormant VM returned "up to date" despite 8
+    pending LTS security updates upstream.
+  * #13 (ssh.py split, 1324 LoC) and #14 (cron.py split, 1223 LoC)
+    deferred to v0.6.0 per conservative-refactor principle. The
+    #15a AST scan test in v0.5.0 continues to pin every emitted
+    key prefix; whatever the v0.6.0 split decision is, the test
+    catches unhandled prefixes at PR time.
+  * Net diff: 12 code files, +118 / -69 = +49 lines. cron.py +1
+    net, _tty.py +24 (prompt_wizard), updates.py +20 (cache APT
+    C), domain_scores.py +10 (3 explicit mappings), _paths.py +5
+    (sunset), locales +4 keys (apt_cache_age + detail in EN+FR),
+    tests -6 (3 catch-all entries removed + simplified comments).
+  * 4538/4538 tests unchanged across the entire v0.5.x branch.
+    All five v0.5.x releases are contract-preserving — wire
+    output preserved bit-for-bit through Phases 1-4; Phase 5
+    introduces 2 intentional wire-visible changes (cache APT
+    INFO line, per-domain score re-bucketing) documented above.
+  * Closes the v0.5.x audit: 13/15 findings shipped + 1 metier
+    feature + 1 deprecation (env var) + 2 splits deferred.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 22 May 2026 21:00:00 +0200
+
 bodyguard-of-bits (0.5.3-1) UNRELEASED; urgency=low
 
   * Refactor v0.5.x Phase 4 (audit findings #5 + #12 + #8). Three

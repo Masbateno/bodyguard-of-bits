@@ -6,6 +6,234 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.4] — 22-05-2026
+
+**Refactor v0.5.x — Phase 5 sur 5 (finale, ferme l'audit v0.5.x).** Trois findings d'audit clôturés (`#6`, `#9`, `#15b`), une feature métier demandée par l'utilisateur (cache APT option C), deux findings (`#13` split ssh.py, `#14` split cron.py) explicitement déférés à v0.6.0. Voir `CHANGELOG_FR.md` pour le détail par finding. Cette entrée `CHANGELOG_FULL_FR.md` mirror ce contenu et ajoute les notes de clôture de la branche v0.5.x.
+
+### Synthèse branche v0.5.x (Phase 1 → 5)
+
+| Phase | Version | Date | Titre | Delta LoC vs précédent |
+|---|---|---|---|---|
+| 1 | v0.5.0 | 21-05-2026 | Ouvre la branche — 6 helpers + couverture cron (+39 tests) + 1 fix bug latent | additif |
+| 2 | v0.5.1 | 21-05-2026 | `warn_with_deduction()` — 120 sites sur 27 fichiers | **−519** |
+| 3 | v0.5.2 | 22-05-2026 | Table `_BAD_DIRECTIVES` + callbacks `_sec()` | +27 |
+| 4 | v0.5.3 | 22-05-2026 | `_LEVEL_DISPATCH` + helpers summary + retrait `log_data` | +40 |
+| 5 | **v0.5.4** | **22-05-2026** | `prompt_wizard` + sunset + `_PREFIX_TO_DOMAIN` + cache APT C | +49 |
+| **Total** | — | — | **13/15 findings audit + 1 feature métier + sunset + 1 deprecation** | **≈ −350 LoC vs v0.4.8** |
+
+La branche v0.5.x a shippé sur **5 releases en 2 jours calendrier** (2026-05-21 à 2026-05-22). Les cinq releases testées cross-distro sur 5 VMs (Linux Mint 22.3 prod + Mint+DDNS, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) avec zéro régression observée. Sortie wire préservée bit-pour-bit à travers les Phases 1–4 ; Phase 5 introduit 2 changements wire intentionnels (ligne INFO cache APT, re-bucketing scores par domaine) documentés ci-dessus.
+
+### #6 — Helper `prompt_wizard()` pour wizards plain-text
+
+`bob/_tty.py` expose un nouveau helper `prompt_wizard(label, *, default="")` qui wrappe `input()` avec le boilerplate wizard-step que chaque wizard plain-text devait répéter. La signature du helper est intentionnellement minimale — pas d'args `t` / `key` comme suggéré par `_prompt(t, key, validator)` de l'audit. Le caller pré-formate le label (déjà traduit) et gère la validation downstream. Cela garde le helper :
+
+- **Idempotent** sous `patch("builtins.input", ...)` — les mocks de test existants continuent de fonctionner.
+- **Translation-agnostic** — utilisable depuis n'importe quel contexte où un label est déjà disponible.
+- **Composable** — la validation vit au site d'appel donc le helper ne porte pas de policy de retry.
+
+```python
+def prompt_wizard(label: str, *, default: str = "") -> "str | None":
+    """Prompt wizard plain-text avec gestion uniforme cancel + default.
+
+    Utilisez ``label="  > "`` quand la question a déjà été imprimée via
+    :func:`print` (wizards multi-lignes). Utilisez un label inline complet
+    (``"  Foo [{default}]: "``) pour les prompts single-line.
+
+    Retourne :
+        ``None`` — l'utilisateur a tapé ``q`` ou ``quit`` (case-insensitive).
+        ``str``  — input trimmé, ou ``default`` si Enter pressé tout seul.
+    """
+    raw = input(label).strip()
+    if raw.lower() in ("q", "quit"):
+        return None
+    return raw or default
+```
+
+Migration dans `bob/cron.py` :
+
+- **Install wizard** (`_run_install_cron_plain`, lignes 470-595) : 5 sites `input()` → 5 appels `prompt_wizard()`. Le boilerplate pré-Phase-5 (`.strip()` + `.lower() in ("q","quit")` + fallback default) faisait 4-5 lignes par site ; post-migration c'est 2-3 lignes par site (appel helper + check `None`).
+- **Edit wizard** (`edit_cron_schedule`, lignes 929-1009) : 4 sites `input()` → 4 appels `prompt_wizard()`. Le prompt schedule-type garde `read_line()` (raw-mode, Esc-aware) — asymétrie intentionnelle ; l'edit wizard a hérité de la navigation menu raw-mode de son contexte adjacent-curses, mais le reste de ses steps réutilise le helper plain-wizard pour la cohérence.
+
+Sites NON migrés (sémantique différente) :
+
+- `prompt_emails` confirmations y/n (4 sites lignes 414, 428, 432) : requièrent un `y` explicite vs n'importe quoi d'autre, pas de default-on-Enter.
+- `_run_install_cron_plain` confirmation overwrite (ligne 589) : même pattern y/n.
+- `manage_cron.email_store_enter` (ligne 708) : entrée nom standalone sans cancel.
+- `manage_logs.prompt_path()` : déjà un wrapper higher-level autour de `input()` avec handling path-specific.
+
+Après migration `cron.py` a 10 sites `input()` bruts restants (vs 20+ avant), tous des confirmations y/n ou prompts spécialisés.
+
+### #9 — Sunset env var `UFW_AUDIT_SHARE` (REMOVED en v0.6.0)
+
+Historique : BOB s'appelait à l'origine "UFW Audit" avant v0.1.0. L'env var de share-dir a gardé l'ancien nom malgré le renommage. v0.4.2 a introduit `BOB_SHARE` comme primaire documenté ; `UFW_AUDIT_SHARE` est resté accepté avec un diagnostic niveau INFO pour les packagers utilisant des scripts d'installation legacy.
+
+v0.5.4 commit le timeline de deprecation :
+
+| Changement | Avant (v0.5.3) | Après (v0.5.4) |
+|---|---|---|
+| Niveau log | `logger.info(...)` | `logger.warning(...)` |
+| Message | "the legacy name will be dropped in a future major release" | "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0" |
+| Docstring module | "Will be dropped in a future major release." | "Deprecated since v0.5.4 and will be removed in v0.6.0." |
+
+`SECURITY.md` liste déjà v0.5.x comme la ligne supportée actuelle et v0.4.x comme end-of-life (mis à jour en v0.5.3). Les packagers utilisant `UFW_AUDIT_SHARE` voient le warning de deprecation à chaque run BOB et ont un timeline clair avant v0.6.0.
+
+### #15b — Mapping `_PREFIX_TO_DOMAIN` explicite pour 3 entrées catch-all v0.4.x
+
+Background : `tests/test_domain_scores_mapping_complete.py` (#15a) en v0.5.0 a introduit un test AST-scan qui asserte que chaque prefixe de clé de finding émis est soit explicite dans `_PREFIX_TO_DOMAIN` soit whitelisté dans `_CATCH_ALL_BY_DESIGN`. La whitelist capturait l'état v0.4.x où certains prefixes tombaient silencieusement dans le catch-all `firewall` sans fit propre — flaggé pour review en #15b (Phase 5).
+
+La review Phase 5 a choisi 3 prefixes pour réattribution explicite :
+
+```python
+# bob/domain_scores.py:_PREFIX_TO_DOMAIN contient maintenant :
+"fail2ban":         "ssh",
+"virt":             "hardening",
+"docker_audit":     "hardening",
+```
+
+**Pourquoi ces trois :**
+
+- `fail2ban` → `ssh` : Le jail le plus commun (et inclus par défaut) de Fail2ban est `sshd`. Les findings `fail2ban.*` dans `bob/checks/fail2ban.py` sont dominés par les signaux de protection SSH-bruteforce. Les bucketer sous `ssh` aligne l'impact score avec les jails configurés.
+- `virt` → `hardening` : Le seul finding `virt.bypass_risk` dans `bob/checks/virtualization.py` détecte les bridges libvirt/KVM (virbr0 etc.) insérant des règles iptables qui bypassent la chaîne FORWARD d'UFW. C'est une préoccupation *kernel + stack iptables* — plus proche du durcissement système que de la config firewall.
+- `docker_audit` → `hardening` : `bob/checks/docker.py` audite la *configuration* container (daemon.json `iptables=false`, durcissement container actifs) plutôt que l'exposition réseau docker firewall-level (qui vit sous le prefix `docker` et reste en firewall). La réattribution aligne la séparation des prefixes entre les deux préoccupations.
+
+**Pourquoi PAS `smtp` / `desktop_apps` :**
+
+- `smtp` : L'exposition SMTP locale (Postfix/Exim listening sur 127.0.0.1:25) est genuinely une question de surface d'attaque. Firewall est le fit le plus proche ; aucun domaine candidat ne promet mieux.
+- `desktop_apps` : Inventaire INFO-only (liste les processus desktop détectés — ExpressVPN, kDrive, Brave, etc.). Pas d'impact scoring. Le rebucketer pour la cleanliness n'a pas de payoff — gardé dans catch-all avec justification explicite dans la whitelist de test.
+
+**Impact score** (par domaine sur hosts émettant ces prefixes ; score global inchangé) :
+
+- Hosts avec WARN `virt.bypass_risk` (KVM/libvirt installé, workstations dev) — voient `Pare-feu & Services` monter de 1 point, `Durcissement` descendre de 1 point.
+- Hosts avec findings `fail2ban.*` (rare en pratique ; la plupart des findings fail2ban sont level OK promouvant le domaine SSH) — re-promotion au domaine `ssh`.
+- Hosts avec findings `docker_audit.*` (Docker installé + findings audit, ex workstations dev avec daemon Docker) — déplacés vers `hardening`.
+
+Changements de test dans `tests/test_domain_scores_mapping_complete.py` :
+
+- 3 entrées retirées de `_CATCH_ALL_BY_DESIGN` : `fail2ban`, `virt`, `docker_audit`.
+- 3 entrées restantes (`smtp`, `desktop_apps`, `prerequisites`) reçoivent des justifications rafraîchies — elles ne pointent plus vers un futur "review in v0.5.4" puisque #15b est maintenant fermé.
+- Le bloc de commentaire au-dessus de `_CATCH_ALL_BY_DESIGN` mis à jour pour refléter que le catch-all v0.4.x a été reviewé (plus aucun candidat flaggé pour tightening).
+
+### Cache APT option C — INFO permanent sur âge cache (feature métier demandée par user)
+
+**Contexte (depuis test terrain v0.5.3).** Durant le test cross-distro le 2026-05-22, la VM Ubuntu 26.04 LTS (`so6ubuntutest`) rapportait "Les paquets système sont à jour" dans l'audit BOB, mais un `sudo apt update` manuel lancé immédiatement après révélait 17 paquets en attente (dont 8 LTS security updates : libgnutls30t64, bind9, openvpn, rsync, etc.). L'investigation a montré que la simulation `apt-get -s dist-upgrade` de BOB lisait correctement le cache APT local — mais le cache avait 3-5 jours d'âge (sous le seuil obsolète de 7 jours qui déclenche un WARNING) et n'avait pas été synchronisé avec l'upstream où des annonces de sécurité avaient landé entre-temps.
+
+Le WARNING existant `apt_cache_stale` (>7 jours) couvrait le cas obviously-stale mais laissait la zone silencieuse "frais-assez-mais-pas-zéro" non-observable. L'utilisateur a choisi "option C" parmi 4 options proposées : *toujours* émettre un INFO avec l'âge du cache quand le verdict est "all clear", donnant une transparence permanente sur la fraîcheur du cache.
+
+**Implémentation.** Insérée dans `bob/checks/updates.py:check_updates()` entre les checks de mise à jour en attente existants et l'émission OK "all clear" :
+
+```python
+# --- APT cache age (transparency when no findings security/regular) ----
+# Le verdict "all clear" repose sur l'état du cache APT local. Surface
+# l'âge du cache pour que l'utilisateur sache s'il regarde une lecture
+# fraîche ou un snapshot obsolète. Le WARNING stale-threshold ci-dessus
+# couvre déjà le cas > 7 jours — cet INFO couvre la zone "frais-assez
+# mais pas zéro" que le seuil laisse silencieuse.
+if (
+    cache_age is not None
+    and not security
+    and not regular
+    and cache_age * 86400 < _APT_CACHE_STALE_THRESHOLD
+):
+    result.info(
+        message=_t("updates.apt_cache_age", days=cache_age),
+        detail=_t("updates.apt_cache_age_detail"),
+        key="updates.apt_cache_age",
+    )
+
+# --- All clear ----------------------------------------------------------
+# findings peut être non-vide ici à cause de l'INFO cache-age ci-dessus ;
+# le finding ok n'est émis que quand *aucun* signal n'a été produit.
+if not any(f.key != "updates.apt_cache_age" for f in result.findings):
+    result.ok(
+        message=_t("updates.ok"),
+        key="updates.ok",
+    )
+```
+
+Subtilité : le check "all clear" `result.ok(...)` a changé de `not result.findings` (n'importe quel finding skippe le OK) à `not any(f.key != "updates.apt_cache_age" for f in result.findings)`. Cela préserve l'émission OK quand le seul finding présent est le nouveau INFO cache-age. Sans le changement, les hosts hittant cache APT C perdraient la ligne OK "Les paquets système sont à jour".
+
+**Clés locale** ajoutées dans `bob/locales/en.json` + `bob/locales/fr.json` :
+
+- `updates.apt_cache_age` (EN) : "APT cache age: {days} day(s) — run `sudo apt update` for a fresher read"
+- `updates.apt_cache_age` (FR) : "Âge du cache APT : {days} jour(s) — `sudo apt update` pour une lecture plus fraîche"
+- `updates.apt_cache_age_detail` : explication 1-paragraphe rappelant que BOB est read-only et pointant vers unattended-upgrades pour la fraîcheur automatisée.
+
+**Quand l'INFO fire :**
+
+| Condition | INFO émis ? |
+|---|---|
+| Système non-Debian (`apt` indisponible) | Non (chemin `updates.no_apt`) |
+| Paquets de sécurité en attente | Non (WARN sécurité est le signal primaire) |
+| Paquets réguliers en attente | Non (INFO régulier est le signal primaire) |
+| Âge cache non lisible (`/var/cache/apt/pkgcache.bin` manquant) | Non |
+| Âge cache ≥ 7 jours | Non (WARN `apt_cache_stale` le couvre déjà) |
+| Âge cache 0–6 jours ET aucune mise à jour en attente | **Oui** (le cas cible option C) |
+
+Validation terrain : sur le host dev (so6desktop) avec 4 paquets de sécurité en attente, l'INFO est correctement supprimé (WARN sécurité est le signal primaire). Sur un hypothétique box Ubuntu LTS idle fraîchement synchronisé, l'INFO afficherait "Âge du cache APT : 0 jour(s) — `sudo apt update` pour une lecture plus fraîche" — transparence-by-default.
+
+### Deferrals : `#13` (split ssh.py) et `#14` (split cron.py) → v0.6.0
+
+L'audit v0.5.x (2026-05-21) flagged les deux fichiers comme candidats au split :
+
+```
+bob/checks/ssh.py:  1387 LoC à v0.4.8 → 1268 après #1 (Phase 2) → 1324 après #4 (Phase 3) → 1324 à l'entrée v0.5.4
+bob/cron.py:        1223 LoC à l'audit → 1223 après #6 (Phase 5)  → 1223 à l'entrée v0.5.4
+```
+
+La prédiction de l'audit était que les Phases 2 + 3 shrinkeraient ssh.py sous 1000 LoC, rendant le split inutile. L'état final est 1324 LoC — Phase 2 (`warn_with_deduction`) a coupé 119 lignes mais Phase 3 (`_BAD_DIRECTIVES`) a ajouté 56 (verbosité table compense le shrinkage impératif).
+
+**Décision : défer les deux à v0.6.0.** Selon [`feedback_conservative_refactor`](memory) — splitter un fichier est medium-risk pour un gain de lecture marginal. Dans une ligne de release contract-preserving (v0.5.x), la valeur risk-adjusted est négative. v0.6.0 est un bump majeur qui perturbe déjà les chemins d'import et est l'endroit naturel pour les shifts structurels.
+
+Le test `#15a` (ajouté en v0.5.0) pin tous les prefixes de clé actuels ; quelle que soit la décision du split en v0.6.0, le test attrape les prefixes non gérés au moment du PR avant qu'ils régressent.
+
+### Diff net
+
+| Fichier | Delta | Notes |
+|---|---|---|
+| `bob/_tty.py` | +24 | Helper `prompt_wizard()` + réécriture docstring module |
+| `bob/cron.py` | +1 | 10 sites `input()` migrés ; net minimal car la signature helper est similaire en lignes au boilerplate inline |
+| `bob/checks/updates.py` | +20 | Logique cache APT option C + commentaire in-line extensif |
+| `bob/domain_scores.py` | +10 | 3 nouvelles entrées dans `_PREFIX_TO_DOMAIN` + bloc commentaire 6 lignes citant #15b |
+| `bob/_paths.py` | +5 | Bump log level + message DEPRECATED + update docstring |
+| `bob/locales/{en,fr}.json` | +4 | 2 nouvelles clés × 2 locales |
+| `tests/test_domain_scores_mapping_complete.py` | −6 | 3 entrées retirées de `_CATCH_ALL_BY_DESIGN` + justifications simplifiées |
+
+**Net +49 LoC sur 12 fichiers code.** Comme les Phases 2–4, le delta LoC seul sous-vend le gain structurel : `prompt_wizard` retire ~25 lignes de boilerplate par site consommateur (5 sites × 5 lignes = ~25 lignes net du coût signature helper) ; cache APT C est +20 *nouvelle feature* (pas un refactor sauvant des lignes) ; le changement `_PREFIX_TO_DOMAIN` est +10 pour une amélioration sémantique significative.
+
+### Garde-fou diff observable
+
+Audit `sudo python3 -m bob -v -d --french` sur le host dev (so6desktop) à v0.5.4-pre-bump :
+
+- Score global : **8/10** (inchangé depuis baseline v0.5.3 — confirme que le re-bucketing est global-score-neutral).
+- Nouveau breakdown score par domaine observé :
+  - SSH 10/10 → 7/10 (3 SSH WARNs maintenant correctement attribués au domaine ssh à poids plein)
+  - Sécurité Samba 10/10 (nouveau : le domaine Samba surface maintenant avec ses findings OK)
+  - Mises à jour 8/10 → 7/10
+  - Durcissement 6/10 → 5/10
+  - Santé des disques 9/10 → 10/10
+  - Pare-feu & Services 3/10 → 10/10 (#15b a déplacé `virt.bypass_risk` et autres entrées catch-all hors firewall)
+- Section MISES À JOUR SYSTÈME : INFO cache APT **supprimé** (4 paquets sécurité en attente → WARN sécurité est le signal primaire, INFO C correctement silencé).
+- Pas de WARNING `UFW_AUDIT_SHARE` (env var pas set sur le host dev).
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in ~6s
+```
+
+**4538 → 4538 (inchangé).** Phase 5 est contract-preserving.
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
+- **Sortie wire** : 1 nouvelle ligne INFO sur hosts idle avec cache frais-mais-pas-zéro (cache APT C). Reshuffle par-domaine sur hosts émettant `fail2ban.*` / `virt.*` / `docker_audit.*`. **Score global inchangé.**
+- **API externe** : aucun breaking change. `prompt_wizard` est un nouveau symbole semi-public dans `bob._tty` ; le `read_line` existant continue de fonctionner comme avant.
+- **i18n** : 2 nouvelles clés locale (`updates.apt_cache_age` + `..._detail`) en EN + FR.
+- **Contrat plugin** : inchangé. Les auteurs de plugins écrivant des checks custom ne sont impactés par aucun changement Phase 5.
+
+---
+
 ## [v0.5.3] — 22-05-2026
 
 **Refactor v0.5.x — Phase 4 sur 5.** Trois findings d'audit : **#5 table de dispatch**, **#12 helpers summary**, **#8 retrait escape hatch `log_data`**. Aucun changement de comportement — 4538/4538 tests inchangés, sortie wire bit-identique à v0.5.2.

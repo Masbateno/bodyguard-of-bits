@@ -794,6 +794,8 @@
     "unattended_not_configured_reason": "unattended-upgrades non configuré",
     "apt_cache_stale": "Le cache APT a {days} jour(s) — les mises à jour pendantes peuvent être sous-rapportées",
     "apt_cache_stale_detail": "BOB lit /var/cache/apt/pkgcache.bin pour déterminer ce qui est en attente. Avec un cache obsolète, la simulation dist-upgrade peut retourner 0 paquet alors que des mises à jour de sécurité sont disponibles en amont. Rafraîchir d'abord, puis relancer l'audit.",
+    "apt_cache_age": "Âge du cache APT : {days} jour(s) — `sudo apt update` pour une lecture plus fraîche",
+    "apt_cache_age_detail": "BOB rapporte les mises à jour en attente depuis le cache APT local (read-only par conception — pas d'appel réseau). Des annonces de sécurité peuvent être publiées en amont depuis le dernier rafraîchissement. Rafraîchir le cache régulièrement (ou via unattended-upgrades) pour maintenir le rapport aligné avec le dépôt amont.",
     "dist_upgrade_inconsistent": "{count} paquet(s) signalés upgradables par apt mais la simulation dist-upgrade retourne zéro — état incohérent",
     "dist_upgrade_inconsistent_detail": "apt list --upgradable signale des paquets en attente alors que apt-get -s dist-upgrade retourne zéro. Cela indique généralement que la base APT est dans un état transitoire (dépendances cassées, paquet bloqué) ou qu'un autre gestionnaire de paquets détient le verrou. Lancer apt update puis apt list --upgradable pour investiguer.",
     "ok": "Les paquets système sont à jour"

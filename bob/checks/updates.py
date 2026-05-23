@@ -325,8 +325,28 @@ def check_updates(
                 key="updates.unattended_not_configured",
             )
 
+    # --- APT cache age (transparency when no findings security/regular) ----
+    # The "all clear" verdict relies on the local APT cache state. Surface
+    # the cache age so the user knows whether they are looking at a fresh
+    # read or a stale snapshot. The stale-threshold warning above already
+    # handles the > 7-day case — this INFO covers the "fresh-enough but
+    # not zero" range that the threshold leaves silent.
+    if (
+        cache_age is not None
+        and not security
+        and not regular
+        and cache_age * 86400 < _APT_CACHE_STALE_THRESHOLD
+    ):
+        result.info(
+            message=_t("updates.apt_cache_age", days=cache_age),
+            detail=_t("updates.apt_cache_age_detail"),
+            key="updates.apt_cache_age",
+        )
+
     # --- All clear ----------------------------------------------------------
-    if not result.findings:
+    # findings can be non-empty here from the cache-age INFO above; the
+    # ok finding is only emitted when *no* signal at all was produced.
+    if not any(f.key != "updates.apt_cache_age" for f in result.findings):
         result.ok(
             message=_t("updates.ok"),
             key="updates.ok",

@@ -794,6 +794,8 @@
     "unattended_not_configured_reason": "unattended-upgrades not configured",
     "apt_cache_stale": "APT cache is {days} day(s) old — pending updates may be under-reported",
     "apt_cache_stale_detail": "BOB reads /var/cache/apt/pkgcache.bin to decide what is pending. With a stale cache the dist-upgrade simulation may return 0 packages even when security updates are available upstream. Refresh first, then re-run the audit.",
+    "apt_cache_age": "APT cache age: {days} day(s) — run `sudo apt update` for a fresher read",
+    "apt_cache_age_detail": "BOB reports pending updates from the local APT cache (read-only by design — no network call). Security advisories may have been published upstream since the last refresh. Refresh the cache periodically (or via unattended-upgrades) to keep the report aligned with the upstream archive.",
     "dist_upgrade_inconsistent": "{count} package(s) reported upgradable by apt but dist-upgrade simulation returned none — inconsistent state",
     "dist_upgrade_inconsistent_detail": "apt list --upgradable reports pending packages while apt-get -s dist-upgrade reports zero. This usually means the APT database is in a transitional state (broken dependencies, a held package) or another package manager is holding the lock. Run apt update then apt list --upgradable to investigate.",
     "ok": "System packages are up to date"

@@ -1,12 +1,30 @@
-"""Raw-mode line reader — Esc support for interactive menus.
+"""Terminal input helpers for BOB.
 
-In a real TTY: reads characters one-by-one in raw mode so that
-pressing Esc returns None immediately without requiring Enter.
-Falls back to input() in non-TTY environments (tests, pipes).
+- :func:`read_line` — raw-mode line reader with Esc-to-cancel (used by
+  curses-adjacent menus; falls back to :func:`input` in non-TTY contexts).
+- :func:`prompt_wizard` — uniform ``input()`` wrapper for plain-text wizards:
+  strips, handles ``q``/``quit`` cancel, and applies a default on bare Enter.
 """
 from __future__ import annotations
 
 import sys
+
+
+def prompt_wizard(label: str, *, default: str = "") -> "str | None":
+    """Plain-text wizard prompt with uniform cancel + default handling.
+
+    Use ``label="  > "`` when the question has already been printed via
+    :func:`print` (multi-line wizards). Use a full inline label
+    (``"  Foo [{default}]: "``) for single-line prompts.
+
+    Returns:
+        ``None`` — user typed ``q`` or ``quit`` (case-insensitive).
+        ``str``  — trimmed input, or ``default`` when Enter was pressed bare.
+    """
+    raw = input(label).strip()
+    if raw.lower() in ("q", "quit"):
+        return None
+    return raw or default
 
 
 def read_line(prompt: str = "") -> str | None:

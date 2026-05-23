@@ -64,6 +64,13 @@ TOOL_CAPS: dict[str, int] = {
 
 # Known key prefixes that map to specific domains.
 # Any prefix not listed here → "firewall" (catch-all).
+#
+# Re-attributions in v0.5.4 (audit finding #15b — Phase 5):
+#   fail2ban     → ssh         (primary purpose is SSH anti-bruteforce)
+#   virt         → hardening   (KVM/bridge bypass is kernel/system surface)
+#   docker_audit → hardening   (container hardening / daemon.json security)
+# `smtp` and `desktop_apps` stay in the firewall catch-all — no clean
+# domain fit identified; revisit if a "detection" domain is introduced.
 _PREFIX_TO_DOMAIN: dict[str, str] = {
     "ssh":              "ssh",
     "samba":            "samba",
@@ -94,6 +101,9 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "systemd_timers":   "hardening",
     "firmware":         "hardening",
     "disk":             "disk",
+    "fail2ban":         "ssh",
+    "virt":             "hardening",
+    "docker_audit":     "hardening",
 }
 
 

@@ -58,18 +58,13 @@ _CATCH_ALL_BY_DESIGN: dict[str, str] = {
     "docker":          "Docker network exposure (port mappings)",
     "ddns":            "DDNS external exposure surface",
 
-    # v0.4.x silent fallbacks — to be reviewed in finding #15b (Phase 5).
-    # Possible re-attributions (not applied here):
-    #   smtp → firewall (kept)? or hardening (local-only delivery)?
-    #   fail2ban → ssh (anti-bruteforce)
-    #   desktop_apps → its own "detection" domain or hardening
-    #   virt → hardening (kernel/system attack surface)
-    #   docker_audit → hardening (container hardening)
-    "smtp":            "v0.4.x catch-all: local SMTP exposure → review in v0.5.4",
-    "fail2ban":        "v0.4.x catch-all: anti-bruteforce → candidate for 'ssh' domain in v0.5.4",
-    "desktop_apps":    "v0.4.x catch-all: desktop process detection → review in v0.5.4",
-    "virt":            "v0.4.x catch-all: virtualization bypass risk → candidate for 'hardening' in v0.5.4",
-    "docker_audit":    "v0.4.x catch-all: container hardening → candidate for 'hardening' in v0.5.4",
+    # v0.4.x silent fallbacks reviewed in finding #15b (Phase 5 / v0.5.4):
+    #   fail2ban     → moved to 'ssh' (primary purpose is SSH anti-bruteforce)
+    #   virt         → moved to 'hardening' (KVM/bridge bypass is kernel surface)
+    #   docker_audit → moved to 'hardening' (container hardening)
+    # `smtp` and `desktop_apps` stay catch-all: no clean domain fit identified.
+    "smtp":            "Local SMTP exposure (Postfix/Exim) — fits firewall surface semantics",
+    "desktop_apps":    "Desktop process detection — INFO-only inventory, no clean domain fit",
     "prerequisites":   "Prerequisites check (UFW installed) — INFO-only, no scoring impact",
 }
 

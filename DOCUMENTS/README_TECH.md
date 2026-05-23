@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.5.3-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.5.4-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -282,7 +282,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.5.3  │  Linux hardening auditor                                      ║
+║  BOB v0.5.4  │  Linux hardening auditor                                      ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -594,7 +594,7 @@ The `findings[*].key` and `deductions[*].key` are part of the `--explain` key se
 
 > **Stable public commitment** — these rules govern when BOB drops support for an older Python.
 
-BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.5.3:
+BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.5.4:
 
 | Python | Status |
 |---|---|

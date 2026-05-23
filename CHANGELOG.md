@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.5.4](#v054) | 2026-05-22 | Refactor v0.5.x Phase 5 of 5 (final) — **#6 + #9 + #15b + cache APT option C**. **#6 `prompt_wizard()` helper** in `bob/_tty.py` (translation-agnostic wrapper around `input()` with uniform `q`/`quit` cancel + default-on-Enter) replaces 10 raw `input()` sites in `bob/cron.py` install + edit wizards. **#9 UFW_AUDIT_SHARE sunset** — `bob/_paths.py:resolve_share_dir()` upgraded `logger.info(...)` → `logger.warning(...)` with explicit "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0" message; legacy env var still functional today. **#15b explicit `_PREFIX_TO_DOMAIN` mapping** — three v0.4.x silent catch-all fallbacks moved out of the firewall catch-all: `fail2ban` → `ssh` (primary purpose is SSH anti-bruteforce), `virt` → `hardening` (KVM/bridge bypass is kernel/system surface), `docker_audit` → `hardening` (container hardening / daemon.json security). `smtp` and `desktop_apps` stay catch-all by design (no clean domain fit). **Cache APT option C** (new metier feature) — `bob/checks/updates.py` adds an INFO `updates.apt_cache_age` line when no security/regular updates are pending AND the cache age is below the stale threshold, giving permanent transparency about how fresh the "system is up to date" verdict actually is. Surfaced by Ubuntu VM terrain testing on 2026-05-22 where a dormant VM returned "à jour" despite 8 pending LTS security updates upstream. **#13 (ssh.py split, 1324 LoC) and #14 (cron.py split, 1223 LoC) deferred to v0.6.0** — per conservative-refactor principle, splitting >1000-LoC files for marginal readability gain doesn't pass the gain × risk test in a contract-preserving release. Net diff: 12 files changed, +118 / −69 = +49 lines (cron.py +1 net, _tty.py +24, updates.py +20, domain_scores.py +10, _paths.py +5, locales +4 keys, tests −6 net). 4538/4538 tests unchanged. Wire output diff vs v0.5.3 is intentional: new INFO line in section MISES À JOUR SYSTÈME on hosts with cache + no pending updates, and per-domain score reshuffle on hosts emitting `fail2ban.*` / `virt.*` / `docker_audit.*` findings. Closes the v0.5.x audit (15/15 findings addressed, 2 deferred with justification). |
 | [v0.5.3](#v053) | 2026-05-22 | Refactor v0.5.x Phase 4 — **#5 + #12 + #8**. **#5 `_LEVEL_DISPATCH` table** in `bob/display.py` collapses the 4-branch OK/WARN/ALERT/INFO cascade in `display_result()` to a single dispatch loop driven by a frozen `_LevelTraits(report_label, threshold_key, print_fn, has_recurrence, has_body, detail_unconditional, show_note, show_cis)` dataclass. The 4-row table captures per-level behaviour declaratively; the special-case ALERT path that prints detail unconditionally (even without `--verbose`) is now expressed as `detail_unconditional=True` rather than an imperative branch. **#12 `print_audit_summary` split** — the 142-line function is broken into 3 focused helpers (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) plus `_add_finding_lines` extracted from inner-function to module-level. The orchestrator becomes a 3-line assembler. **#8 `CheckResult.log_data` removed** — the typed-dict escape hatch on `CheckResult` is replaced by a tuple return from `check_logs(...) -> (CheckResult, LogReportData | None)`. New frozen dataclass `LogReportData(log_days, days_available, total, brute_hits, top_ips, top_ports, svc_hits)` in `bob/checks/logs.py`. `runner.py` unpacks the tuple; `display_log_results` takes the report as an explicit arg. **Net diff: 5 files changed, +109 / −69 = +40 lines** (display.py +23 for explicit helper signatures, logs.py +19 for `LogReportData`, scoring.py −1 for removed field). 4538/4538 tests unchanged — 3 tests renamed (`test_log_data_*` → `test_report_data_*`), ~20 test sites use tuple unpack. Wire output bit-identical to v0.5.2. |
 | [v0.5.2](#v052) | 2026-05-22 | Refactor v0.5.x Phase 3 — **#4 + #3**. **#4 SSH directive table** : nouvelles `_BadDirective` dataclass + `_BAD_DIRECTIVES` table (8 entrées) + helper `_apply_bad_directive()` dans `bob/checks/ssh.py`. Migre les 8 directives `sshd_config` uniformes (PermitEmptyPasswords, X11Forwarding, IgnoreRhosts, HostbasedAuthentication, PermitUserEnvironment, StrictModes, AllowTcpForwarding, PubkeyAuthentication) d'une cascade de `if value == "yes"`/`"no"` blocs vers une boucle `for rule in _BAD_DIRECTIVES`. Le helper expose deux styles de prédicats (`bad_values` tuple ou `safe_values` tuple) — `safe_values` couvre le cas AllowTcpForwarding où `"local"` est acceptable en plus de `"no"`. Cas spéciaux préservés en impératif : PermitRootLogin (4-way branch avec sous-états OK), PasswordAuthentication (dépend de `ssh_exposed`), MaxAuthTries (seuil entier), LoginGraceTime (INFO-only), AllowUsers/AllowGroups (info-only), Match block (info-only), weak ciphers/macs/kex (helper `_check_weak_algo` séparé). Net `_check_sshd_config` : ~180 → ~50 LoC, ssh.py total +56 (cost de la dataclass + 8 entrées). **#3 runner._sec extension** avec keyword-only params `skip_if=Callable[[snapshot], bool]` et `post_display=Callable[[snapshot, result], None]`. Permet de remplacer 4 blocs inline par des appels `_sec` 1-liner : `samba` (`skip_if=not s.installed`), `docker_audit` (`skip_if=not s.docker_installed`), `desktop_apps` (`skip_if=not s.detected`), `disk` (`post_display=display_disk_partitions`). Net runner.py : −29 lignes. **#13 (ssh.py split) déféré à Phase 5** — estimation audit (-150 LoC pour #4) trop optimiste, ssh.py reste à 1324 LoC (cible <1000 non atteinte). Tests 4538/4538 inchangés — comportement bit-identique à v0.5.1, c'est purement un re-shape interne. |
 | [v0.5.1](#v051) | 2026-05-21 | Refactor v0.5.x Phase 2 — **the big LoC win** (audit finding #1). New `CheckResult.warn_with_deduction(key, *, message, points, reason=None, ...)` and `.alert_with_deduction(...)` helpers in `bob/scoring.py` collapse the paired `result.warn(...) + result.add_deduction(...)` idiom that recurred across ~130 sites in `bob/checks/*.py`. **120 sites migrated** in 27 files: firewall (4), fail2ban (2), clamav (5), ntp (2), ddns (1), updates (2), ssh (24 — the big one), backup (1), log_rotation (3), auditd (3), file_integrity (3), kernel_hardening (3), rootkit (3), hardening (8), samba (6), mac_policy (6), disk (5), iptables_nftables (5), firewall_stack (4), file_perms (1), suid_audit (1), smtp (1), memory (1), network_context (1), cron_audit (2), docker_audit (2), kernel_modules (2), umask (2), user_accounts (2), password_policy (2), secure_boot (2), systemd_timers (2), logs (1), firmware (2), ipv6 (1), ports (1). **13 sites intentionally not migrated** — patterns where the deduction is conditional on a different predicate than the finding (caps via local counter: `services_state`, `ssl_certs` x3, `file_perms` x3, `ipv6.port_no_v6_rule`), or where finding-level branches `warn`/`alert` on a separate condition than the deduction (`docker` x2, `services.exposure`, `ports.uncovered_public`). The `reason=` override handles cases where the deduction uses a `_reason` suffix translation key distinct from the finding message (e.g. `ssh.host_key_dsa_reason` ≠ `ssh.host_key_dsa`). **Net diff: 37 files changed, +483 / −1002 = −519 lines.** Tests unchanged: 4538/4538 pass (helpers are additive, no behaviour change). JSON `schema_version="1"`, the 7 score domains, the 116 EXPLAIN_KEYS, and the 34 filterable sections are all preserved. |
@@ -31,6 +32,159 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.5.4] — 2026-05-22
+
+**Refactor v0.5.x — Phase 5 of 5 (final).** Three audit findings closed (`#6`, `#9`, `#15b`) + one user-requested metier feature (cache APT option C). Two findings (`#13` ssh.py split, `#14` cron.py split) explicitly deferred to v0.6.0.
+
+### #6 — `prompt_wizard()` helper for plain-text wizards
+
+`bob/_tty.py` exposes a new `prompt_wizard(label, *, default="")` helper that wraps `input()` with the wizard-step boilerplate every plain-text wizard had to repeat:
+
+```python
+def prompt_wizard(label: str, *, default: str = "") -> "str | None":
+    """Plain-text wizard prompt with uniform cancel + default handling.
+
+    Returns:
+        None — user typed 'q' or 'quit' (case-insensitive).
+        str  — trimmed input, or default when Enter was pressed bare.
+    """
+    raw = input(label).strip()
+    if raw.lower() in ("q", "quit"):
+        return None
+    return raw or default
+```
+
+10 sites migrated in `bob/cron.py`:
+
+- `_run_install_cron_plain()` (5 sites): name, schedule type, weekdays, monthdays, custom expr, time
+- `edit_cron_schedule()` (4 sites): weekdays, monthdays, custom expr, time
+- (the schedule-type prompt in `edit_cron_schedule` keeps `read_line()` for raw-mode Esc support — intentional asymmetry between the two wizards)
+
+Yes/no confirmation prompts (4 sites in `prompt_emails`, 1 in install_cron overwrite, 1 in email_store_enter) are NOT migrated — they don't fit the `default-on-Enter` semantic of `prompt_wizard` (they need explicit `y` vs anything-else).
+
+### #9 — `UFW_AUDIT_SHARE` env var deprecation
+
+`bob/_paths.py:resolve_share_dir()` previously logged an `INFO` when only the legacy `UFW_AUDIT_SHARE` env var was set (without `BOB_SHARE`). The message politely said "the legacy name will be dropped in a future major release" without committing to a version.
+
+v0.5.4 commits to a sunset version:
+
+- Level bumped `logger.info(...)` → `logger.warning(...)`
+- Message rewritten: "Using legacy env var %s — DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to %s …"
+- Module docstring updated to match.
+
+`SECURITY.md` / `SECURITY_FR.md` (updated in v0.5.3) already declared the support matrix that v0.4.x is end-of-life. Packagers seeing the warning have a clear timeline to update installer scripts.
+
+### #15b — Explicit `_PREFIX_TO_DOMAIN` mapping (medium-risk re-attribution)
+
+`bob/domain_scores.py:_PREFIX_TO_DOMAIN` gains three new explicit entries that were previously silent catch-all fallbacks to the `firewall` domain:
+
+| Prefix | Old (catch-all) | New (explicit) | Rationale |
+|---|---|---|---|
+| `fail2ban` | firewall | **ssh** | Primary purpose is SSH anti-bruteforce — most jails target the sshd jail |
+| `virt` | firewall | **hardening** | KVM/libvirt bridge can insert iptables rules bypassing UFW FORWARD — that's a kernel/system attack-surface concern, not a firewall config concern |
+| `docker_audit` | firewall | **hardening** | Container hardening (daemon.json iptables=false setting, running container audit) is system hardening, not network surface |
+
+`smtp` and `desktop_apps` stay in the firewall catch-all: no clean domain fit (smtp local exposure has some firewall semantics; desktop_apps is INFO-only inventory).
+
+Per-domain score impact: on hosts emitting findings under these prefixes, the score breakdown shifts. The **global score is unchanged** (deductions are the same, just re-bucketed). Observed on the dev host: virt.bypass_risk WARN moved from `Pare-feu & Services` (3/10 → 10/10 with other intra-firewall finding clean-up) to `Durcissement` (6/10 → 5/10).
+
+`tests/test_domain_scores_mapping_complete.py:_CATCH_ALL_BY_DESIGN` updated to remove the 3 migrated entries; the remaining `smtp` / `desktop_apps` / `prerequisites` entries get refreshed justifications (no longer "review in v0.5.4" — that's done).
+
+### Cache APT option C — Permanent INFO on cache age
+
+User-requested metier feature. Surfaces the APT cache age when the audit reports "system is up to date" so the user knows whether that verdict reflects a fresh read or a stale snapshot:
+
+```python
+if (
+    cache_age is not None
+    and not security
+    and not regular
+    and cache_age * 86400 < _APT_CACHE_STALE_THRESHOLD
+):
+    result.info(
+        message=_t("updates.apt_cache_age", days=cache_age),
+        detail=_t("updates.apt_cache_age_detail"),
+        key="updates.apt_cache_age",
+    )
+```
+
+Triggered when:
+- APT available
+- No security packages pending
+- No regular packages pending
+- Cache age known
+- Cache age below the 7-day stale threshold (the stale-cache WARNING already covers the > 7-day case; this INFO covers the silent "fresh-enough but not zero" range)
+
+New locale keys (EN + FR):
+- `updates.apt_cache_age`: "APT cache age: {days} day(s) — run `sudo apt update` for a fresher read"
+- `updates.apt_cache_age_detail`: explains BOB is read-only by design, points to unattended-upgrades.
+
+Surfaced by Ubuntu VM terrain testing on 2026-05-22 where a dormant VM returned "à jour" despite 8 pending LTS security updates upstream. The cache wasn't stale enough to trigger the `apt_cache_stale` WARNING (< 7 days), but was old enough to be desynchronized from upstream. The new INFO closes that observability gap.
+
+### Deferrals: `#13` (ssh.py split) and `#14` (cron.py split) → v0.6.0
+
+The original v0.5.x audit (2026-05-21) flagged both files as candidates for split:
+- `ssh.py`: 1387 LoC at audit time. Targeted < 1000 after Phases 2 + 3. Actual end of v0.5.x: **1324 LoC** (target missed by 32%).
+- `cron.py`: 1223 LoC at audit time. Stays at **1223 LoC** end of v0.5.x.
+
+Decision: defer both to v0.6.0. Per [`feedback_conservative_refactor`](memory) — splitting a file is medium-risk for marginal reader gain; doing it inside a contract-preserving release line adds noise without clear payoff. v0.6.0 is the natural place: a major-version bump typically already perturbs imports and tests, so the split lands alongside other structural shifts.
+
+`#15a` test coverage (added in v0.5.0) still pins all current key prefixes against `_PREFIX_TO_DOMAIN` and `_CATCH_ALL_BY_DESIGN`; whatever the v0.6.0 split decision is, the test will catch unhandled prefixes before they regress.
+
+### Net diff
+
+| File | Delta | Notes |
+|---|---|---|
+| `bob/_tty.py` | +24 | `prompt_wizard()` + docstring rewrite |
+| `bob/cron.py` | +1 | 10 `input()` sites migrated to `prompt_wizard` |
+| `bob/checks/updates.py` | +20 | Cache APT option C logic + commentary |
+| `bob/domain_scores.py` | +10 | 3 new entries in `_PREFIX_TO_DOMAIN` + 6-line comment block |
+| `bob/_paths.py` | +5 | log level bump + DEPRECATED message + docstring update |
+| `bob/locales/{en,fr}.json` | +4 | 2 new keys × 2 locales |
+| `tests/test_domain_scores_mapping_complete.py` | −6 | 3 entries removed from `_CATCH_ALL_BY_DESIGN` + simplified comments |
+
+**Net +49 LoC across 12 code files.** All changes are contract-preserving (no new score domains, no new finding levels, no breaking signature change). Wire output gains 1 new INFO line on idle hosts (cache APT C) and reshuffles per-domain scores on hosts with `fail2ban.*` / `virt.*` / `docker_audit.*` findings — the **global score is unchanged**.
+
+### v0.5.x audit closure: 13/15 findings shipped, 2 deferred
+
+| # | Phase | Outcome |
+|---|---|---|
+| #1 | v0.5.1 | `warn_with_deduction()` / `alert_with_deduction()` — 120 sites |
+| #2 | v0.5.0 | `print_titled_box()` — 4 sites + `--no-color` leak fix |
+| #3 | v0.5.2 | `_sec()` skip_if= / post_display= — 4 sites |
+| #4 | v0.5.2 | `_BAD_DIRECTIVES` table for sshd_config — 8 directives |
+| #5 | v0.5.3 | `_LEVEL_DISPATCH` table for `display_result` |
+| #6 | **v0.5.4** | `prompt_wizard()` helper — 10 sites in cron.py |
+| #7 | v0.5.0 | `is_unit_active()` / `is_unit_enabled()` — 9 sites |
+| #8 | v0.5.3 | `CheckResult.log_data` escape hatch removed — tuple return |
+| #9 | **v0.5.4** | `UFW_AUDIT_SHARE` sunset (REMOVED in v0.6.0) |
+| #10 | v0.5.0 | `bob.report.Report` `typing.Protocol` |
+| #11 | v0.5.0 | `emit_section()` / `emit_group()` — 20 sites |
+| #12 | v0.5.3 | `print_audit_summary` split into 3 helpers |
+| #13 | **deferred v0.6.0** | ssh.py split (1324 LoC) |
+| #14 | **deferred v0.6.0** | cron.py split (1223 LoC) |
+| #15a | v0.5.0 | `test_domain_scores_mapping_complete.py` AST scan |
+| #15b | **v0.5.4** | `_PREFIX_TO_DOMAIN` explicit mapping for `fail2ban` / `virt` / `docker_audit` |
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4538 passed in ~6s
+```
+
+**4538 → 4538 (unchanged).** Phase 5 is contract-preserving — all changes either internal helper extraction (#6) or display-only refinements (cache APT C, #15b score re-bucketing) or non-functional log messaging (#9).
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, the 116 EXPLAIN_KEYS — **unchanged**.
+- **Per-domain score**: re-bucketed on hosts with `fail2ban.*` / `virt.*` / `docker_audit.*` findings. **Global score unchanged.**
+- **Wire output**: 1 new INFO line on idle hosts (cache APT C). Reshuffle of per-domain breakdown when `#15b` prefixes are emitted. WARNING on hosts using legacy `UFW_AUDIT_SHARE` (previously was INFO).
+- **External API**: no breaking change.
+- **i18n**: 2 new locale keys (`updates.apt_cache_age` + `..._detail`) in EN + FR.
 
 ---
 

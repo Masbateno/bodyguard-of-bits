@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from bob._tty import read_line as _rl
+from bob._tty import read_line as _rl, prompt_wizard
 
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
@@ -470,12 +470,13 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     # --- Step 1: Name ---
     existing_names = [e.name for e in list_installed_crons()]
     suggestion = suggest_name(existing_names)
-    raw_name = input(f"  {t('install_cron.prompt_name', suggestion=suggestion)} : ").strip()
-    if raw_name.lower() in ("q", "quit"):
+    raw_name = prompt_wizard(
+        f"  {t('install_cron.prompt_name', suggestion=suggestion)} : ",
+        default=suggestion,
+    )
+    if raw_name is None:
         print(f"  {t('install_cron.cancelled')}")
         return 0
-    if not raw_name:
-        raw_name = suggestion
     slug = make_slug(raw_name)
     if not slug:
         print(f"  ✖ {t('install_cron.invalid_name')}")
@@ -489,12 +490,10 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     print(f"    3. {t('install_cron.schedule_monthdays')}")
     print(f"    4. {t('install_cron.schedule_custom')}")
     print()
-    raw_choice = input("  > ").strip()
-    if raw_choice.lower() in ("q", "quit"):
+    raw_choice = prompt_wizard("  > ", default="1")
+    if raw_choice is None:
         print(f"  {t('install_cron.cancelled')}")
         return 0
-    if not raw_choice:
-        raw_choice = "1"
     if raw_choice not in ("1", "2", "3", "4"):
         print(f"  ✖ {t('install_cron.invalid_schedule')}")
         return 1
@@ -509,8 +508,8 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     if choice == 2:
         print()
         print(f"  {t('install_cron.prompt_weekdays')}")
-        raw_days = input("  > ").strip()
-        if raw_days.lower() in ("q", "quit"):
+        raw_days = prompt_wizard("  > ")
+        if raw_days is None:
             print(f"  {t('install_cron.cancelled')}")
             return 0
         parts = re.split(r"[\s,]+", raw_days)
@@ -522,8 +521,8 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     elif choice == 3:
         print()
         print(f"  {t('install_cron.prompt_monthdays')}")
-        raw_days = input("  > ").strip()
-        if raw_days.lower() in ("q", "quit"):
+        raw_days = prompt_wizard("  > ")
+        if raw_days is None:
             print(f"  {t('install_cron.cancelled')}")
             return 0
         parts = re.split(r"[\s,]+", raw_days)
@@ -535,8 +534,8 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     elif choice == 4:
         print()
         print(f"  {t('install_cron.prompt_custom')}")
-        custom_expr = input("  > ").strip()
-        if custom_expr.lower() in ("q", "quit"):
+        custom_expr = prompt_wizard("  > ")
+        if custom_expr is None:
             print(f"  {t('install_cron.cancelled')}")
             return 0
         err = _validate_custom_cron(custom_expr)
@@ -547,12 +546,13 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     # --- Step 3: Time ---
     if choice != 4:
         print()
-        raw_time = input(f"  {t('install_cron.prompt_time')} : ").strip()
-        if raw_time.lower() in ("q", "quit"):
+        raw_time = prompt_wizard(
+            f"  {t('install_cron.prompt_time')} : ",
+            default="03:00",
+        )
+        if raw_time is None:
             print(f"  {t('install_cron.cancelled')}")
             return 0
-        if not raw_time:
-            raw_time = "03:00"
         if not re.match(r"^\d{1,2}:\d{2}$", raw_time):
             print(f"  ✖ {t('install_cron.invalid_time')}")
             return 1
@@ -958,8 +958,8 @@ def edit_cron_schedule(entry, config, t) -> None:
     if choice == 2:
         print()
         print(f"  {t('install_cron.prompt_weekdays')}")
-        raw_days = input("  > ").strip()
-        if raw_days.lower() in ("q", "quit"):
+        raw_days = prompt_wizard("  > ")
+        if raw_days is None:
             print(f"  {t('manage_cron.cancelled')}")
             return
         parts = re.split(r"[\s,]+", raw_days)
@@ -971,8 +971,8 @@ def edit_cron_schedule(entry, config, t) -> None:
     elif choice == 3:
         print()
         print(f"  {t('install_cron.prompt_monthdays')}")
-        raw_days = input("  > ").strip()
-        if raw_days.lower() in ("q", "quit"):
+        raw_days = prompt_wizard("  > ")
+        if raw_days is None:
             print(f"  {t('manage_cron.cancelled')}")
             return
         parts = re.split(r"[\s,]+", raw_days)
@@ -984,8 +984,8 @@ def edit_cron_schedule(entry, config, t) -> None:
     elif choice == 4:
         print()
         print(f"  {t('install_cron.prompt_custom')}")
-        custom_expr = input("  > ").strip()
-        if custom_expr.lower() in ("q", "quit"):
+        custom_expr = prompt_wizard("  > ")
+        if custom_expr is None:
             print(f"  {t('manage_cron.cancelled')}")
             return
         err = _validate_custom_cron(custom_expr)
@@ -995,12 +995,13 @@ def edit_cron_schedule(entry, config, t) -> None:
 
     if choice != 4:
         print()
-        raw_time = input(f"  {t('install_cron.prompt_time')} : ").strip()
-        if raw_time.lower() in ("q", "quit"):
+        raw_time = prompt_wizard(
+            f"  {t('install_cron.prompt_time')} : ",
+            default=f"{entry.hour:02d}:{entry.minute:02d}",
+        )
+        if raw_time is None:
             print(f"  {t('manage_cron.cancelled')}")
             return
-        if not raw_time:
-            raw_time = f"{entry.hour:02d}:{entry.minute:02d}"
         if not re.match(r"^\d{1,2}:\d{2}$", raw_time):
             print(f"  ✖ {t('install_cron.invalid_time')}")
             return
