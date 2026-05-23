@@ -33,11 +33,10 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import Tuple
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Modules considered risky on a hardened server
@@ -76,7 +75,6 @@ _RETENTION: dict[str, int] = {
     "container": 2,   # section is skipped in runner.py, but safe default
 }
 
-
 # ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
@@ -94,10 +92,10 @@ class KernelModulesSnapshot:
         installed_kernels:  List of installed kernel version strings from dpkg.
     """
     lsmod_available:    bool       = False
-    loaded_modules:     List[str]  = field(default_factory=list)
+    loaded_modules:     list[str]  = field(default_factory=list)
     dpkg_available:     bool       = False
     running_kernel:     str        = ""
-    installed_kernels:  List[str]  = field(default_factory=list)
+    installed_kernels:  list[str]  = field(default_factory=list)
     apt_update_available: bool     = False
     apt_candidate_kernel: str      = ""
     apt_checked:          bool     = False
@@ -152,7 +150,6 @@ class KernelModulesSnapshot:
         snap.apt_candidate_kernel = candidate
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -232,7 +229,6 @@ def check_kernel_modules(
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Private helpers — kernel cleanup
 # ---------------------------------------------------------------------------
@@ -292,7 +288,6 @@ def _query_apt_kernel_update() -> Tuple[bool, bool, str]:
 
     return False, False, ""
 
-
 def _kernel_sort_key(version: str) -> Tuple[int, int, int, int]:
     """Return a sortable tuple from a kernel version string.
 
@@ -306,8 +301,7 @@ def _kernel_sort_key(version: str) -> Tuple[int, int, int, int]:
         return (int(m.group(1)), int(m.group(2)), int(m.group(3)), abi)
     return (0, 0, 0, 0)
 
-
-def _parse_installed_kernels(dpkg_output: str) -> List[str]:
+def _parse_installed_kernels(dpkg_output: str) -> list[str]:
     """
     Extract version strings from ``dpkg-query`` output.
 
@@ -346,7 +340,6 @@ def _parse_installed_kernels(dpkg_output: str) -> List[str]:
                 versions.append(version)
     return versions
 
-
 def _purge_cmd(versions: list[str]) -> str:
     """Build an ``apt purge`` command for the given kernel version list. Returns '' for empty list."""
     if not versions:
@@ -354,11 +347,9 @@ def _purge_cmd(versions: list[str]) -> str:
     pkgs = [shlex.quote(f"linux-image-{v}") for v in versions]
     return "sudo apt purge " + " ".join(pkgs)
 
-
 def _strip_unsigned(version: str) -> str:
     """Strip Debian -unsigned suffix so signed/unsigned variants compare equal."""
     return version[:-len("-unsigned")] if version.endswith("-unsigned") else version
-
 
 def _check_installed_kernels(
     snapshot: KernelModulesSnapshot,
@@ -478,7 +469,6 @@ def _check_installed_kernels(
             message=_t("kernel_modules.kernels_listed", count=len(kernels), installed=installed_str),
             key="kernel_modules.kernels_listed",
         )
-
 
 # ---------------------------------------------------------------------------
 # Private helpers — module unload

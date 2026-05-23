@@ -40,7 +40,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
@@ -75,7 +74,6 @@ _TARSNAP_CONFIGS: tuple[Path, ...] = (
     Path("/root/.tarsnap.conf"),
 )
 
-
 # ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
@@ -89,8 +87,8 @@ class BackupSnapshot:
         active_tools:    Tools confirmed active: binary present + config/service found.
         installed_tools: Tools installed but without detectable configuration.
     """
-    active_tools:    List[str] = field(default_factory=list)
-    installed_tools: List[str] = field(default_factory=list)
+    active_tools:    list[str] = field(default_factory=list)
+    installed_tools: list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "BackupSnapshot":
@@ -170,7 +168,6 @@ class BackupSnapshot:
 
         return snap
 
-
 # ---------------------------------------------------------------------------
 # Pure check logic
 # ---------------------------------------------------------------------------
@@ -249,7 +246,6 @@ def check_backup(
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -261,7 +257,6 @@ def _borgmatic_config_exists(path: Path) -> bool:
     if path.is_dir():
         return any(path.iterdir())
     return False
-
 
 def _service_active(service: str) -> bool:
     """Return True if the given systemd service is active. Never raises."""

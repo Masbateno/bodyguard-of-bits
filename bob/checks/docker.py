@@ -27,7 +27,6 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
@@ -35,7 +34,6 @@ from bob.scoring import CheckResult
 logger = logging.getLogger(__name__)
 
 DAEMON_JSON_PATH = Path("/etc/docker/daemon.json")
-
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -61,7 +59,6 @@ class ExposedPort:
             return not ipaddress.ip_address(self.host_ip).is_loopback
         except ValueError:
             return True  # unrecognised format — assume public to be safe
-
 
 @dataclass
 class DockerSnapshot:
@@ -135,7 +132,6 @@ class DockerSnapshot:
             daemon_json_exists=False,
             exposed_ports=exposed_ports or [],
         )
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -227,7 +223,6 @@ def check_docker(
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # System helpers
 # ---------------------------------------------------------------------------
@@ -254,7 +249,6 @@ def _check_daemon_json() -> tuple[bool, bool]:
     except json.JSONDecodeError as exc:
         logger.warning("Cannot parse %s: %s", DAEMON_JSON_PATH, exc)
         return True, False
-
 
 def _get_exposed_ports() -> list[ExposedPort]:
     """
@@ -293,8 +287,7 @@ def _get_exposed_ports() -> list[ExposedPort]:
 
     return ports
 
-
-def _parse_port_entry(container_name: str, entry: str) -> Optional[ExposedPort]:
+def _parse_port_entry(container_name: str, entry: str) -> ExposedPort | None:
     """
     Parse a Docker port mapping entry.
 
@@ -361,5 +354,4 @@ def _parse_port_entry(container_name: str, entry: str) -> Optional[ExposedPort]:
     # Unknown format — log and skip
     logger.debug("Docker: unrecognised port entry: %r", entry)
     return None
-
 

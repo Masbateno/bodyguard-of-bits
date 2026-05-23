@@ -20,7 +20,6 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from bob._tty import read_line as _rl, prompt_wizard
 from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
@@ -35,7 +34,6 @@ LEGACY_SCRIPT_PATH = SCRIPT_DIR / "bob-nightly"
 _DAYS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 _DAYS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 
-
 @dataclass
 class CronEntry:
     """Represents an installed BOB cron job."""
@@ -48,7 +46,6 @@ class CronEntry:
     cron_path: Path
     email: str = ""
     legacy: bool = False  # True if this is a pre-v0.13 cron
-
 
 def list_installed_crons() -> list[CronEntry]:
     """Return all installed BOB cron entries."""
@@ -70,8 +67,7 @@ def list_installed_crons() -> list[CronEntry]:
 
     return entries
 
-
-def parse_cron_file(path: Path, legacy: bool = False) -> Optional[CronEntry]:
+def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
     """Parse a BOB cron file and return a CronEntry, or None if unrecognised."""
     try:
         text = path.read_text(encoding="utf-8")
@@ -124,7 +120,6 @@ def parse_cron_file(path: Path, legacy: bool = False) -> Optional[CronEntry]:
         legacy=legacy,
     )
 
-
 def cron_to_human(expr: str, lang: str = "en") -> str:
     """Convert a 5-field cron expression to a human-readable description."""
     parts = expr.strip().split()
@@ -166,14 +161,13 @@ def cron_to_human(expr: str, lang: str = "en") -> str:
         return f"expression personnalisée : {expr}"
     return f"custom expression: {expr}"
 
-
 def build_schedule_expr(
     choice: int,
     hour: int,
     minute: int,
-    week_days: Optional[list[int]] = None,
-    month_days: Optional[list[int]] = None,
-    custom_expr: Optional[str] = None,
+    week_days: list[int] | None = None,
+    month_days: list[int] | None = None,
+    custom_expr: str | None = None,
 ) -> str:
     """
     Build a cron schedule expression from wizard answers.
@@ -201,14 +195,12 @@ def build_schedule_expr(
         return (custom_expr or "").strip()
     raise ValueError(f"Invalid choice: {choice}")
 
-
 def make_slug(name: str) -> str:
     """Convert a free-form name to a filesystem-safe slug."""
     slug = name.lower().strip()
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
     slug = slug.strip("-")
     return slug or "custom"
-
 
 def suggest_name(existing_names: list[str]) -> str:
     """Suggest a cron name that does not conflict with existing ones."""
@@ -219,7 +211,6 @@ def suggest_name(existing_names: list[str]) -> str:
     while f"audit-{i}" in existing_names:
         i += 1
     return f"audit-{i}"
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -237,7 +228,6 @@ def _parse_day_names(dow: str, days_list: list[str]) -> list[str]:
             result.append(part)
     return result
 
-
 def _parse_dom(dom: str) -> list[int]:
     """Parse a DOM field into a sorted list of day-of-month integers."""
     result = []
@@ -245,7 +235,6 @@ def _parse_dom(dom: str) -> list[int]:
         if part.isdigit():
             result.append(int(part))
     return sorted(result)
-
 
 def _ordinal(n: int) -> str:
     """Return the English ordinal string for an integer (1st, 2nd, 3rd, …)."""
@@ -255,7 +244,6 @@ def _ordinal(n: int) -> str:
         else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     )
     return f"{n}{suffix}"
-
 
 # ---------------------------------------------------------------------------
 # Cron expression validator
@@ -268,7 +256,6 @@ _CRON_FIELD_BOUNDS = (
     ("month",        1, 12),
     ("day of week",  0, 7),  # 0 and 7 both = Sunday
 )
-
 
 def _validate_cron_field(field: str, name: str, lo: int, hi: int) -> str:
     """Validate one cron field. Returns "" on success or an error message.
@@ -310,7 +297,6 @@ def _validate_cron_field(field: str, name: str, lo: int, hi: int) -> str:
         return f"{name} value {chunk!r} not understood"
     return ""
 
-
 def _validate_custom_cron(expr: str) -> str:
     """
     Validate a 5-field cron expression entered by the user.
@@ -331,7 +317,6 @@ def _validate_custom_cron(expr: str) -> str:
         if err:
             return err
     return ""
-
 
 # ---------------------------------------------------------------------------
 # MTA detection
@@ -356,7 +341,6 @@ def _detect_mta() -> tuple[bool, str]:
             return True, name
     return True, ""
 
-
 # ---------------------------------------------------------------------------
 # Interactive runners (--install-cron, --manage-cron, --remove-cron)
 # ---------------------------------------------------------------------------
@@ -375,8 +359,6 @@ def prompt_emails(t) -> list[str] | None:
         List of selected email strings (may be empty).
     """
     from bob.config import EmailStore
-
-
 
     store  = EmailStore.load()
     selected: list[str] = []
@@ -434,7 +416,6 @@ def prompt_emails(t) -> list[str] | None:
 
     return selected
 
-
 def prompt_email(t) -> str:
     """Backward-compatible single-email wrapper around prompt_emails.
 
@@ -444,7 +425,6 @@ def prompt_email(t) -> str:
     if emails is None or not emails:
         return ""
     return emails[0]
-
 
 def _run_install_cron_plain(user_config, config, t) -> int:
     """Install a cron job for automated audits using the schedule wizard."""
@@ -634,10 +614,8 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     print(f"  ✔ {t('install_cron.done_schedule', name=raw_name, schedule=human)}")
     return 0
 
-
 class _CronQuit(Exception):
     """Raised from any curses sub-screen when the user presses q to quit entirely."""
-
 
 def run_install_cron(user_config, config, t) -> int:
     """Dispatcher: curses TUI in a TTY, plain text fallback otherwise."""
@@ -654,7 +632,6 @@ def run_install_cron(user_config, config, t) -> int:
         return 0
     except (_curses.error, OSError):
         return _run_install_cron_plain(user_config, config, t)
-
 
 # ---------------------------------------------------------------------------
 # Management — plain-text helpers
@@ -763,7 +740,6 @@ def _manage_email_store(t) -> None:
             store.remove(addr)
             print(f"  ✔ {t('manage_cron.email_store_removed', email=addr)}")
 
-
 def _atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
     """Write *content* to *path* atomically (temp file + os.replace).
 
@@ -778,7 +754,6 @@ def _atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(content)
     os.replace(str(tmp), str(path))
-
 
 def build_script_content(notify_email: str, log_dir: "Path | str") -> str:
     """Build the bash script content for a BOB cron job."""
@@ -831,7 +806,6 @@ def build_script_content(notify_email: str, log_dir: "Path | str") -> str:
         "fi\n"
     )
 
-
 # ---------------------------------------------------------------------------
 # File-patching helpers — shared between the plain-text wizard
 # (edit_cron_schedule / edit_cron_email below) and the curses TUI
@@ -869,7 +843,6 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
     except OSError as exc:
         return str(exc)
     return ""
-
 
 def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
     """Patch *entry.cron_path* and the associated wrapper script with *new_email*.
@@ -912,7 +885,6 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
             return (str(exc), subst_count)
     return ("", subst_count)
 
-
 def edit_cron_email(entry, t) -> None:
     """Change the notification email of an existing cron entry.
 
@@ -937,7 +909,6 @@ def edit_cron_email(entry, t) -> None:
 
     label = new_email if new_email else t("manage_cron.no_email")
     print(f"  ✔ {t('manage_cron.email_updated', name=entry.name, email=label)}")
-
 
 def edit_cron_schedule(entry, config, t) -> None:
     """Re-run the schedule wizard for an existing cron entry and patch its cron file."""
@@ -1043,7 +1014,6 @@ def edit_cron_schedule(entry, config, t) -> None:
         return
 
     print(f"  ✔ {t('manage_cron.updated', name=entry.name, schedule=human)}")
-
 
 def _run_manage_cron_plain(config, t) -> int:
     """Manage installed cron jobs — list, edit schedule/email, delete.
@@ -1218,7 +1188,6 @@ def _run_manage_cron_plain(config, t) -> int:
 
         else:
             print(f"  ✖ {t('manage_cron.invalid')}")
-
 
 def run_manage_cron(config, t) -> int:
     """Dispatcher: curses TUI in a TTY, plain text fallback otherwise."""

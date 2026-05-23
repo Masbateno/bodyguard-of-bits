@@ -22,7 +22,6 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
@@ -70,7 +69,6 @@ _CLAMD_SOCKETS: list[Path] = [
     Path("/var/run/clamav/clamd.ctl"),
 ]
 
-
 # ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
@@ -86,8 +84,8 @@ class ClamAVSnapshot:
     installed:            bool           = False  # clamscan or clamdscan found
     freshclam_installed:  bool           = False  # freshclam found
     clamd_active:         bool           = False  # clamav-daemon service running
-    db_age_days:          Optional[int]  = None   # None = no DB file found
-    last_scan_date:       Optional[str]  = None   # ISO date string or None
+    db_age_days:          int | None  = None   # None = no DB file found
+    last_scan_date:       str | None  = None   # ISO date string or None
     install_cmd:          str            = "sudo apt install clamav clamav-daemon"
 
     @classmethod
@@ -137,7 +135,6 @@ class ClamAVSnapshot:
         snap.last_scan_date = _find_last_scan_date()
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Main check function (pure logic — no I/O)
@@ -255,12 +252,11 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _find_last_scan_date() -> Optional[str]:
+def _find_last_scan_date() -> str | None:
     """
     Search standard ClamAV log paths for the most recent scan 'End Date:'.
 
@@ -268,7 +264,7 @@ def _find_last_scan_date() -> Optional[str]:
         ISO date string (YYYY-MM-DD) of the most recent scan found across
         all candidate log paths, or None if no scan log line was found.
     """
-    latest_dt: Optional[datetime] = None
+    latest_dt: datetime | None = None
 
     for log_path in _SCAN_LOG_CANDIDATES:
         if not log_path.exists():
@@ -297,7 +293,6 @@ def _find_last_scan_date() -> Optional[str]:
         return None
     return latest_dt.strftime("%Y-%m-%d")
 
-
 def _tail_lines(path: Path, n: int) -> list[str]:
     """Return the last n lines of a text file efficiently."""
     with path.open("rb") as fh:
@@ -312,8 +307,7 @@ def _tail_lines(path: Path, n: int) -> list[str]:
     lines = data.decode("utf-8", errors="replace").splitlines()
     return lines[-n:]
 
-
-def _scan_age_days(iso_date: str) -> Optional[int]:
+def _scan_age_days(iso_date: str) -> int | None:
     """Return the number of days since iso_date (YYYY-MM-DD), or None on error.
 
     Uses naive local time to match ClamAV log timestamps.

@@ -30,7 +30,6 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
 
 from bob.checks._run import (
     TranslationFunc,
@@ -54,15 +53,13 @@ _NGINX_SSL_RE  = re.compile(r"^\s*ssl_certificate\s+([^;]+);", re.MULTILINE)
 _APACHE_SSL_RE = re.compile(r"^\s*SSLCertificateFile\s+(\S+)", re.MULTILINE | re.IGNORECASE)
 _POSTFIX_RE    = re.compile(r"^\s*smtpd_tls_cert_file\s*=\s*(\S+)", re.MULTILINE)
 
-
 @dataclass
 class CertEntry:
     """A single discovered server certificate."""
     path:       str
-    days_left:  Optional[int]   # None = could not read
+    days_left:  int | None   # None = could not read
     expiry_str: str
-    error:      Optional[str] = None
-
+    error:      str | None = None
 
 @dataclass
 class SslCertsSnapshot:
@@ -73,7 +70,7 @@ class SslCertsSnapshot:
         certs:              List of discovered cert entries.
         openssl_available:  True if the openssl binary is present.
     """
-    certs:             List[CertEntry] = field(default_factory=list)
+    certs:             list[CertEntry] = field(default_factory=list)
     openssl_available: bool = True
 
     @classmethod
@@ -130,7 +127,6 @@ class SslCertsSnapshot:
 
         snap.certs.sort(key=lambda c: (c.days_left is None, c.days_left or 0))
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Check logic
@@ -239,7 +235,6 @@ def check_ssl_certs(snapshot: SslCertsSnapshot, t: TranslationFunc | None = None
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -252,7 +247,6 @@ def _add_path(path: Path, seen: set[str]) -> None:
             seen.add(real)
     except OSError:
         pass
-
 
 def _collect_from_configs(conf_dir: Path, pattern: re.Pattern, paths: set[str]) -> None:
     """Scan .conf files in conf_dir for cert path matches (capped at _MAX_CONF_FILES)."""
@@ -272,8 +266,7 @@ def _collect_from_configs(conf_dir: Path, pattern: re.Pattern, paths: set[str]) 
         except OSError:
             pass
 
-
-def _read_cert_expiry(path: Path) -> tuple[Optional[int], str, Optional[str]]:
+def _read_cert_expiry(path: Path) -> tuple[int | None, str, str | None]:
     """
     Run openssl x509 on *path* and return (days_left, expiry_str, error).
 

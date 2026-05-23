@@ -26,7 +26,6 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import (
     TranslationFunc,
@@ -67,7 +66,6 @@ _GEOIP2_DB_PATHS = [
 # In-memory cache — each IP resolved only once per session
 _GEO_CACHE: dict[str, str] = {}
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -92,7 +90,6 @@ class LogEntry:
     def port_proto(self) -> str:
         return f"{self.dst_port}/{self.proto.lower()}"
 
-
 @dataclass
 class BruteforceHit:
     """A detected bruteforce pattern."""
@@ -104,7 +101,6 @@ class BruteforceHit:
     @property
     def port_proto(self) -> str:
         return f"{self.dst_port}/{self.proto.lower()}"
-
 
 @dataclass(frozen=True)
 class LogReportData:
@@ -120,7 +116,6 @@ class LogReportData:
     top_ips:        list[tuple[str, int]]
     top_ports:      list[tuple[str, int]]
     svc_hits:       dict[str, int]
-
 
 @dataclass
 class LogsSnapshot:
@@ -203,7 +198,6 @@ class LogsSnapshot:
 
         return cls(entries=[], days_available=0,
                    log_days=log_days, log_found=False, log_source="none")
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -301,7 +295,6 @@ def check_logs(
 
     return result, report_data
 
-
 # ---------------------------------------------------------------------------
 # Analysis helpers
 # ---------------------------------------------------------------------------
@@ -311,12 +304,10 @@ def _top_sources(entries: list[LogEntry], n: int) -> list[tuple[str, int]]:
     counter = Counter(e.src_ip for e in entries)
     return counter.most_common(n)
 
-
 def _top_ports(entries: list[LogEntry], n: int) -> list[tuple[str, int]]:
     """Return top N destination port/proto sorted by descending count."""
     counter = Counter(e.port_proto for e in entries)
     return counter.most_common(n)
-
 
 def _detect_bruteforce(
     entries: list[LogEntry],
@@ -351,7 +342,6 @@ def _detect_bruteforce(
 
     return sorted(hits, key=lambda h: h.count, reverse=True)
 
-
 def _max_in_window(timestamps: list[datetime], window_s: int) -> int:
     """Return the maximum number of timestamps within any window_s second window."""
     if not timestamps:
@@ -363,7 +353,6 @@ def _max_in_window(timestamps: list[datetime], window_s: int) -> int:
             left += 1
         max_count = max(max_count, right - left + 1)
     return max_count
-
 
 def _service_hits(
     entries: list[LogEntry],
@@ -386,14 +375,12 @@ def _service_hits(
             counter[entry.port_proto] += 1
     return dict(counter.most_common())
 
-
 _LOCAL_DOMINANCE_THRESHOLD = 0.70   # fraction of total blocks from one local IP
 _LOCAL_DOMINANCE_MIN_COUNT = 50     # ignore very quiet logs (< 50 total blocks)
 
-
 def _dominant_local_source(
     entries: list[LogEntry],
-) -> tuple[Optional[str], int, int]:
+) -> tuple[str | None, int, int]:
     """
     Detect whether a single private IP dominates the block log.
 
@@ -418,7 +405,6 @@ def _dominant_local_source(
         return top_ip, top_count, int(pct * 100)
 
     return None, 0, 0
-
 
 def get_ip_geo(ip: str, lang: str = "en") -> str:
     """
@@ -456,7 +442,6 @@ def get_ip_geo(ip: str, lang: str = "en") -> str:
     _GEO_CACHE[cache_key] = result
     return result
 
-
 def _geo_via_geoip2(ip: str) -> str:
     """
     Look up geolocation via GeoIP2 local database.
@@ -491,7 +476,6 @@ def _geo_via_geoip2(ip: str) -> str:
 
     return ""
 
-
 def geoip2_status() -> str:
     """
     Return a human-readable status string for GeoIP2 availability.
@@ -507,7 +491,6 @@ def geoip2_status() -> str:
             return "available"
 
     return "no_database"
-
 
 # ---------------------------------------------------------------------------
 # Parsing helpers
@@ -545,7 +528,6 @@ def _read_from_journald(log_days: int) -> tuple[str, bool]:
         pass
     return "", False
 
-
 def _count_available_days(content: str) -> int:
     """Count the number of distinct calendar days in the log file."""
     dates: set[str] = set()
@@ -560,7 +542,6 @@ def _count_available_days(content: str) -> int:
         if syslog:
             dates.add(syslog.group(1))
     return len(dates)
-
 
 def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
     """
@@ -616,8 +597,7 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
 
     return entries
 
-
-def _parse_timestamp(line: str, current_year: int) -> Optional[datetime]:
+def _parse_timestamp(line: str, current_year: int) -> datetime | None:
     """Extract and parse the timestamp from a log line."""
     # ISO 8601: 2026-03-19T18:20:08.898+01:00
     iso_match = re.match(
@@ -653,10 +633,8 @@ def _parse_timestamp(line: str, current_year: int) -> Optional[datetime]:
 
     return None
 
-
-def _extract_field(line: str, field_name: str) -> Optional[str]:
+def _extract_field(line: str, field_name: str) -> str | None:
     """Extract a KEY=value field from a UFW log line (max 256 chars)."""
     match = re.search(rf"\b{re.escape(field_name)}=(\S{{1,256}})", line)
     return match.group(1) if match else None
-
 

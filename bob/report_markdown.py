@@ -28,13 +28,12 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bob.report import SystemInfo
 
 logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Markdown report writer
@@ -53,7 +52,7 @@ class MarkdownReport:
         enabled:  Always True for instances created via open().
     """
 
-    def __init__(self, path: Path, created_at: Optional[datetime] = None) -> None:
+    def __init__(self, path: Path, created_at: datetime | None = None) -> None:
         self.path: Path = path
         self.enabled: bool = True
         self._lines: list[str] = []
@@ -310,7 +309,6 @@ class MarkdownReport:
         """Append a line to internal buffer."""
         self._lines.append(text)
 
-
 # ---------------------------------------------------------------------------
 # HTML Conversion (zero-dependency markdown parser)
 # ---------------------------------------------------------------------------
@@ -432,7 +430,6 @@ hr {{ margin: 20px 0; border: none; border-top: 1px solid #ccc; }}
 </body>
 </html>"""
 
-
 def _safe_url(url: str) -> str:
     """Return url only if it uses a safe scheme; otherwise return '#'.
 
@@ -447,9 +444,7 @@ def _safe_url(url: str) -> str:
         return html.escape(url, quote=True)
     return "#"
 
-
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
-
 
 def _inline_format(text: str) -> str:
     """Apply inline formatting (bold, code, links) to text.
@@ -474,7 +469,6 @@ def _inline_format(text: str) -> str:
     text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
 
     return text
-
 
 def _parse_markdown_table(table_lines: list[str]) -> str:
     """Convert markdown table to HTML table."""
@@ -509,7 +503,6 @@ def _parse_markdown_table(table_lines: list[str]) -> str:
 
     html += "</tbody>\n</table>"
     return html
-
 
 # ---------------------------------------------------------------------------
 # Email helper (zero-dependency MIME multipart)
@@ -603,7 +596,6 @@ def send_html_email(
         logger.error(f"Failed to send email: {exc}")
         return False
 
-
 # ---------------------------------------------------------------------------
 # Audit report log → HTML email converter (for cron integration)
 # ---------------------------------------------------------------------------
@@ -649,7 +641,6 @@ def send_audit_log_as_html_email(
         subject = "BOB Report"
 
     return send_html_email(recipient, subject, html, log_text[:1000])
-
 
 def _audit_log_to_html(log_text: str) -> str:
     """

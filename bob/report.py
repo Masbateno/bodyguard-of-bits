@@ -28,13 +28,12 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
 _SEPARATOR = "=" * 62
 _THIN_SEP  = "-" * 62
-
 
 # ---------------------------------------------------------------------------
 # Report — structural type (PEP 544 Protocol)
@@ -60,7 +59,7 @@ class Report(Protocol):
     captures the contract structurally with zero runtime overhead.
     """
 
-    path: Optional[Path]
+    path: Path | None
     enabled: bool
 
     def write_header(self, info: "SystemInfo") -> None: ...
@@ -89,7 +88,6 @@ class Report(Protocol):
     ) -> None: ...
     def write_next_steps(self, steps: list[str]) -> None: ...
     def close(self) -> None: ...
-
 
 # ---------------------------------------------------------------------------
 # System info container
@@ -133,7 +131,6 @@ class SystemInfo:
         self.config_path      = config_path
         self.language         = language
         self.version          = version
-
 
 # ---------------------------------------------------------------------------
 # Report writer
@@ -404,7 +401,6 @@ class AuditReport:
         self._fh.write(text + "\n")
         self._fh.flush()
 
-
 # ---------------------------------------------------------------------------
 # Null report — no-op implementation for when --detailed is not active
 # ---------------------------------------------------------------------------
@@ -419,7 +415,7 @@ class NullReport(AuditReport):
 
     def __init__(self) -> None:
         # Deliberately skip AuditReport.__init__ — no file is opened
-        self.path: Optional[Path] = None
+        self.path: Path | None = None
         self.enabled: bool = False
 
     def _writeln(self, text: str) -> None:

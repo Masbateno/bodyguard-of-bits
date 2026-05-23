@@ -18,7 +18,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
@@ -29,13 +28,11 @@ _PAM_UMASK_RE  = re.compile(r"pam_umask\.so.*umask=([0-7]{3,4})", re.MULTILINE)
 # pam_umask.so without explicit umask= — effective value comes from login.defs or default 022
 _PAM_UMASK_NOARG_RE = re.compile(r"^\s*session\s+\S+\s+pam_umask\.so\s*$", re.MULTILINE)
 
-
 def _normalize(raw: str) -> str:
     """Normalize raw octal string to 3 digits (e.g. '0022' → '022')."""
     return raw.zfill(4)[-3:]
 
-
-def _get_proc_umask() -> Optional[str]:
+def _get_proc_umask() -> str | None:
     """Read the effective umask from /proc/self/status (Linux 4.7+)."""
     try:
         content = Path("/proc/self/status").read_text(encoding="utf-8")
@@ -46,8 +43,7 @@ def _get_proc_umask() -> Optional[str]:
         pass
     return None
 
-
-def _fix_cmd(source: Optional[str]) -> str:
+def _fix_cmd(source: str | None) -> str:
     """Return the fix command appropriate for the file where the umask was found."""
     if not source or source == "/etc/login.defs":
         return "sudo sed -i 's/^UMASK[[:space:]].*/UMASK\\t\\t022/' /etc/login.defs"
@@ -55,8 +51,7 @@ def _fix_cmd(source: Optional[str]) -> str:
         return f"sudo sed -i 's/umask=[0-7]*/umask=022/' {source}"
     return f"sudo sed -i 's/\\bumask [0-7]*/umask 022/' {source}"
 
-
-def _scan(path: Path, regex) -> Optional[str]:
+def _scan(path: Path, regex) -> str | None:
     """Read *path* and return the first umask value matched by *regex*, or None."""
     try:
         content = path.read_text(encoding="utf-8", errors="ignore")
@@ -66,7 +61,6 @@ def _scan(path: Path, regex) -> Optional[str]:
     except OSError:
         pass
     return None
-
 
 @dataclass
 class UmaskSnapshot:
@@ -79,8 +73,8 @@ class UmaskSnapshot:
         all_sources:  All files that define a umask, mapped to their values.
                       Used to detect conflicting definitions.
     """
-    umask_value: Optional[str] = None
-    source:      Optional[str] = None
+    umask_value: str | None = None
+    source:      str | None = None
     all_sources: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -153,7 +147,6 @@ class UmaskSnapshot:
             return snap
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Check logic

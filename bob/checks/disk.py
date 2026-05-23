@@ -25,11 +25,9 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,7 +43,6 @@ _ATTR_REALLOCATED_SECTORS = 5
 _ATTR_PENDING_SECTORS     = 197
 _ATTR_UNCORRECTABLE       = 198
 
-
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -55,12 +52,11 @@ class SmartResult:
     """SMART assessment for a single disk."""
     device:               str
     model:                str  = ""
-    passed:               Optional[bool] = None   # None = unknown/unavailable
+    passed:               bool | None = None   # None = unknown/unavailable
     virtual:              bool = False             # SMART not applicable (VM)
     reallocated_sectors:  int  = 0
     pending_sectors:      int  = 0
     uncorrectable_errors: int  = 0
-
 
 @dataclass
 class PartitionInfo:
@@ -69,7 +65,6 @@ class PartitionInfo:
     device:     str
     size_gb:    float
     used_pct:   int
-
 
 @dataclass
 class DiskSnapshot:
@@ -82,8 +77,8 @@ class DiskSnapshot:
         partitions:         Usage info for mounted partitions.
     """
     smartctl_available: bool               = False
-    smart_results:      List[SmartResult]  = field(default_factory=list)
-    partitions:         List[PartitionInfo] = field(default_factory=list)
+    smart_results:      list[SmartResult]  = field(default_factory=list)
+    partitions:         list[PartitionInfo] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "DiskSnapshot":
@@ -106,7 +101,6 @@ class DiskSnapshot:
         snap.partitions = _read_partition_usage()
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -290,7 +284,6 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # System detection helpers
 # ---------------------------------------------------------------------------
@@ -313,7 +306,6 @@ def _detect_block_devices() -> list[str]:
         if dev_type in ("disk",):
             devices.append(f"/dev/{name}")
     return devices
-
 
 def _query_smart(device: str) -> SmartResult:
     """
@@ -376,7 +368,6 @@ def _query_smart(device: str) -> SmartResult:
 
     return sr
 
-
 def _parse_nvme_attrs(attrs_output: str) -> tuple[int, int]:
     """
     Parse NVMe health indicators from `smartctl -A` output.
@@ -404,7 +395,6 @@ def _parse_nvme_attrs(attrs_output: str) -> tuple[int, int]:
                 pass
     return media_errors, error_log
 
-
 def _parse_smart_attr(attrs_output: str, attr_id: int) -> int:
     """
     Parse a SMART attribute RAW_VALUE from `smartctl -A` output.
@@ -428,7 +418,6 @@ def _parse_smart_attr(attrs_output: str, attr_id: int) -> int:
         except (ValueError, IndexError):
             pass
     return 0
-
 
 def _read_partition_usage() -> list[PartitionInfo]:
     """
@@ -468,7 +457,6 @@ def _read_partition_usage() -> list[PartitionInfo]:
         ))
 
     return partitions
-
 
 def _safe_float(value: str) -> float:
     """Parse a string to float, return 0.0 on failure."""

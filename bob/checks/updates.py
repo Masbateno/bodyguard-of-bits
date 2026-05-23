@@ -19,11 +19,9 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
-
 
 # Age threshold (in seconds) above which the APT cache is considered stale.
 # 7 days mirrors the typical unattended-upgrades refresh window; beyond this
@@ -41,11 +39,9 @@ _APT_CACHE_FILE = Path("/var/cache/apt/pkgcache.bin")
 # more transparency INFOs are introduced.
 _TRANSPARENCY_KEYS: frozenset[str] = frozenset({"updates.apt_cache_age"})
 
-
 def _has_actionable_findings(result) -> bool:
     """Return True if any finding signals an actual issue (not a pure note)."""
     return any(f.key not in _TRANSPARENCY_KEYS for f in result.findings)
-
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -71,8 +67,8 @@ class UpdatesSnapshot:
                               the command isn't available or failed.
     """
     apt_available:          bool = False
-    pending_security:       List[str] = field(default_factory=list)
-    pending_regular:        List[str] = field(default_factory=list)
+    pending_security:       list[str] = field(default_factory=list)
+    pending_regular:        list[str] = field(default_factory=list)
     unattended_installed:   bool = False
     unattended_enabled:     bool = False
     apt_cache_age_days:     int | None = None
@@ -98,7 +94,6 @@ class UpdatesSnapshot:
         snap.upgradable_count = _count_upgradable()
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -141,7 +136,6 @@ def _collect_pending_updates() -> tuple[list[str], list[str]]:
     # Deduplicate while preserving order (apt can emit the same package twice)
     return list(dict.fromkeys(security)), list(dict.fromkeys(regular))
 
-
 def _apt_cache_age_days() -> int | None:
     """Return age of the APT cache in days, or ``None`` if it cannot be read.
 
@@ -156,7 +150,6 @@ def _apt_cache_age_days() -> int | None:
     if age_seconds < 0:
         return 0
     return int(age_seconds // 86400)
-
 
 def _count_upgradable() -> int | None:
     """Return the count from ``apt list --upgradable``, or ``None`` on failure.
@@ -184,7 +177,6 @@ def _count_upgradable() -> int | None:
             count += 1
     return count
 
-
 def _check_unattended() -> tuple[bool, bool]:
     """
     Return (installed, enabled) for unattended-upgrades.
@@ -210,7 +202,6 @@ def _check_unattended() -> tuple[bool, bool]:
     # Step 3 — fallback: systemd timer active
     enabled = is_unit_active("apt-daily-upgrade.timer")
     return True, enabled
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

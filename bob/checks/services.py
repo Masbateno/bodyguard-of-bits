@@ -25,7 +25,6 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, _run
 from bob.registry import Service, ServiceRegistry
@@ -69,7 +68,6 @@ class ServiceState(Enum):
     def is_inactive(self) -> bool:
         return self in (ServiceState.INACTIVE_ENABLED, ServiceState.INACTIVE_DISABLED)
 
-
 class Exposure(Enum):
     """UFW exposure level for a single port."""
     OPEN_WORLD = "open_world"   # ALLOW without source restriction
@@ -80,7 +78,6 @@ class Exposure(Enum):
     LOOPBACK_NO_RULE = "loopback_no_rule"  # loopback-only, no UFW rule — covered by default deny
     NOT_LISTENING    = "not_listening"     # port in registry but not actively listening
 
-
 # Resolved after ServiceState is defined
 _STATE_PRIORITY = {
     ServiceState.ACTIVE_ENABLED:    4,
@@ -89,7 +86,6 @@ _STATE_PRIORITY = {
     ServiceState.INACTIVE_DISABLED: 1,
     ServiceState.UNKNOWN:           0,
 }
-
 
 # ---------------------------------------------------------------------------
 # Service snapshot
@@ -133,8 +129,8 @@ class ServiceSnapshot:
         cls,
         service: Service,
         ufw_rules: str,
-        loopback_ports: Optional[set[str]],
-        all_listening_ports: Optional[set[str]],
+        loopback_ports: set[str] | None,
+        all_listening_ports: set[str] | None,
     ) -> "ServiceSnapshot":
         """
         Build a ServiceSnapshot for a single service, installed or not.
@@ -184,9 +180,9 @@ class ServiceSnapshot:
     def collect(
         cls,
         registry: ServiceRegistry,
-        ufw_rules: Optional[str] = None,
-        loopback_ports: Optional[set] = None,
-        all_listening_ports: Optional[set] = None,
+        ufw_rules: str | None = None,
+        loopback_ports: set | None = None,
+        all_listening_ports: set | None = None,
     ) -> list["ServiceSnapshot"]:
         """
         Collect snapshots for installed services only.
@@ -217,9 +213,9 @@ class ServiceSnapshot:
     def collect_all(
         cls,
         registry: ServiceRegistry,
-        ufw_rules: Optional[str] = None,
-        loopback_ports: Optional[set] = None,
-        all_listening_ports: Optional[set] = None,
+        ufw_rules: str | None = None,
+        loopback_ports: set | None = None,
+        all_listening_ports: set | None = None,
     ) -> list["ServiceSnapshot"]:
         """
         Collect snapshots for ALL services in the registry.
@@ -244,7 +240,6 @@ class ServiceSnapshot:
             cls._build_snapshot(service, ufw_rules, loopback_ports, all_listening_ports)
             for service in registry
         ]
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -275,7 +270,6 @@ def check_services(
         _check_single_service(snap, result, network_context, ufw_active, _t)
 
     return result
-
 
 def _check_single_service(
     snap: ServiceSnapshot,
@@ -326,7 +320,6 @@ def _check_single_service(
     # Analyse each port exposure
     for port, exposure in snap.exposures.items():
         _check_port_exposure(snap, port, exposure, result, network_context, ufw_active, _t)
-
 
 def _check_port_exposure(
     snap: ServiceSnapshot,
@@ -395,7 +388,6 @@ def _check_port_exposure(
     elif exposure == Exposure.NOT_LISTENING:
         result.info(message=port_msg, key="services.exposure.not_listening")
 
-
 # ---------------------------------------------------------------------------
 # System detection helpers
 # ---------------------------------------------------------------------------
@@ -429,7 +421,6 @@ def _detect_installation(service: Service) -> tuple[bool, str]:
             return True, "binary"
 
     return False, ""
-
 
 def _detect_single_unit_state(svc_name: str) -> ServiceState:
     """
@@ -468,7 +459,6 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
         return ServiceState.INACTIVE_DISABLED
     return ServiceState.UNKNOWN
 
-
 def _detect_state(service: Service) -> ServiceState:
     """
     Determine the effective systemd state of a service.
@@ -490,7 +480,6 @@ def _detect_state(service: Service) -> ServiceState:
             best = state
     return best
 
-
 def _resolve_ports(service: Service) -> list[str]:
     """
     Resolve the actual ports for a service.
@@ -508,11 +497,7 @@ def _resolve_ports(service: Service) -> list[str]:
 
     return list(service.ports)
 
-
-
-
-
-def _auto_detect_port(service: Service) -> Optional[str]:
+def _auto_detect_port(service: Service) -> str | None:
     """
     Attempt to detect the actual port from the service configuration file.
 
@@ -563,7 +548,6 @@ def _auto_detect_port(service: Service) -> Optional[str]:
             return f"{port_num}/{proto}"
 
     return None
-
 
 def _classify_exposure(port: str, ufw_rules: str) -> Exposure:
     """

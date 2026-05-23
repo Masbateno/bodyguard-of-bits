@@ -21,7 +21,6 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
@@ -51,7 +50,6 @@ _RKHUNTER_SCAN_RE = re.compile(
 # even on systems with many rootkit checks.
 _LOG_TAIL_BYTES = 100_000
 
-
 @dataclass
 class RootkitSnapshot:
     """
@@ -67,8 +65,8 @@ class RootkitSnapshot:
     rkhunter_installed:   bool          = False
     chkrootkit_installed: bool          = False
     tool:                 str           = ""
-    db_age_days:          Optional[int] = None
-    last_scan_date:       Optional[str] = None
+    db_age_days:          int | None = None
+    last_scan_date:       str | None = None
 
     @classmethod
     def from_system(cls) -> "RootkitSnapshot":
@@ -88,12 +86,11 @@ class RootkitSnapshot:
 
         return snap
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _rkhunter_db_age() -> Optional[int]:
+def _rkhunter_db_age() -> int | None:
     """Return age in days of the rkhunter database file, or None if absent."""
     try:
         if not _RKHUNTER_DB.exists():
@@ -105,8 +102,7 @@ def _rkhunter_db_age() -> Optional[int]:
     except OSError:
         return None
 
-
-def _rkhunter_last_scan() -> Optional[str]:
+def _rkhunter_last_scan() -> str | None:
     """
     Return the ISO date of the last rkhunter scan, or None if not found.
 
@@ -141,8 +137,7 @@ def _rkhunter_last_scan() -> Optional[str]:
     except OSError:
         return None
 
-
-def _chkrootkit_last_scan() -> Optional[str]:
+def _chkrootkit_last_scan() -> str | None:
     """Return the ISO date of the last chkrootkit scan, or None."""
     for log_path in (_CHKROOTKIT_LOG, _CHKROOTKIT_LOG_ALT):
         try:
@@ -156,15 +151,13 @@ def _chkrootkit_last_scan() -> Optional[str]:
             continue
     return None
 
-
-def _scan_age_days(iso_date: str) -> Optional[int]:
+def _scan_age_days(iso_date: str) -> int | None:
     """Return days since iso_date (YYYY-MM-DD), or None on parse error."""
     try:
         dt = datetime.strptime(iso_date, "%Y-%m-%d")
         return max(0, (datetime.now() - dt).days)
     except ValueError:
         return None
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

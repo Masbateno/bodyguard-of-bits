@@ -23,11 +23,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import _identity_t, _is_safe_config_path, _run, is_unit_active
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # DDNS client registry
@@ -50,7 +48,6 @@ class DdnsClientDef:
     services:     tuple[str, ...]
     config_files: tuple[str, ...]
     client_type:  str
-
 
 _DDNS_CLIENTS: list[DdnsClientDef] = [
     DdnsClientDef(
@@ -92,7 +89,6 @@ _PRIVATE_SOURCE = re.compile(
 # (same spirit as ports._SYSTEM_PORTS — DNS runs locally, not a user service)
 _DDNS_SYSTEM_PORTS: set[int] = {53, 67, 68, 546, 547, 5353}
 
-
 # ---------------------------------------------------------------------------
 # Snapshot
 # ---------------------------------------------------------------------------
@@ -108,8 +104,8 @@ class DdnsSnapshot:
         active:       True if the DDNS service is currently running.
         installed:    True if the DDNS client was found on the system.
     """
-    client_name: Optional[str]
-    domain:      Optional[str]
+    client_name: str | None
+    domain:      str | None
     active:      bool
     installed:   bool
 
@@ -147,7 +143,7 @@ class DdnsSnapshot:
     def detected(
         cls,
         client_name: str,
-        domain: Optional[str] = None,
+        domain: str | None = None,
         active: bool = True,
     ) -> "DdnsSnapshot":
         """Factory for building test snapshots."""
@@ -157,7 +153,6 @@ class DdnsSnapshot:
             active=active,
             installed=True,
         )
-
 
 # ---------------------------------------------------------------------------
 # Context helper
@@ -180,7 +175,6 @@ def ddns_effective_context(
         return "local"
     return "ddns" if _find_open_ports(ufw_rules, loopback_ports, active_ports) else "local"
 
-
 # ---------------------------------------------------------------------------
 # Pure check logic
 # ---------------------------------------------------------------------------
@@ -189,8 +183,8 @@ def check_ddns(
     snapshot: DdnsSnapshot,
     ufw_rules: str = "",
     t=None,
-    loopback_ports: Optional[set[str]] = None,
-    active_ports: Optional[set[str]] = None,
+    loopback_ports: set[str] | None = None,
+    active_ports: set[str] | None = None,
 ) -> CheckResult:
     """
     Evaluate DDNS snapshot and return findings.
@@ -271,7 +265,6 @@ def check_ddns(
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Detection helpers
 # ---------------------------------------------------------------------------
@@ -292,7 +285,6 @@ def _is_installed(client_def: DdnsClientDef) -> bool:
 
     return False
 
-
 def _is_active(client_def: DdnsClientDef) -> bool:
     """Return True if the DDNS service is currently active."""
     for svc in client_def.services:
@@ -308,10 +300,7 @@ def _is_active(client_def: DdnsClientDef) -> bool:
 
     return False
 
-
-
-
-def _extract_domain(client_def: DdnsClientDef) -> Optional[str]:
+def _extract_domain(client_def: DdnsClientDef) -> str | None:
     """
     Attempt to extract the configured domain from the client's config file.
 
@@ -343,8 +332,7 @@ def _extract_domain(client_def: DdnsClientDef) -> Optional[str]:
 
     return None
 
-
-def _extract_ddclient_domain(content: str) -> Optional[str]:
+def _extract_ddclient_domain(content: str) -> str | None:
     """Extract domain from ddclient.conf."""
     # Standard key: hostname = domain.tld
     match = re.search(r"^(?:host|hostname)\s*=\s*(.+)", content, re.MULTILINE)
@@ -366,8 +354,7 @@ def _extract_ddclient_domain(content: str) -> Optional[str]:
 
     return None
 
-
-def _extract_inadyn_domain(content: str) -> Optional[str]:
+def _extract_inadyn_domain(content: str) -> str | None:
     """Extract domain from inadyn.conf."""
     match = re.search(r"hostname\s*=\s*(.+)", content, re.MULTILINE)
     if match:
@@ -376,16 +363,14 @@ def _extract_inadyn_domain(content: str) -> Optional[str]:
             return value
     return None
 
-
-def _extract_noip_domain(content: str) -> Optional[str]:
+def _extract_noip_domain(content: str) -> str | None:
     """Extract domain from no-ip2.conf."""
     match = re.search(r"^hostname\s+(\S+)", content, re.MULTILINE)
     if match:
         return match.group(1)
     return None
 
-
-def _extract_duckdns_domain(content: str) -> Optional[str]:
+def _extract_duckdns_domain(content: str) -> str | None:
     """Extract domain from DuckDNS script or cron entry."""
     # DuckDNS update URL: ?domains=myhost — reconstruct full domain
     param_match = re.search(r"[?&]domains=([a-z0-9-]+)", content)
@@ -397,15 +382,14 @@ def _extract_duckdns_domain(content: str) -> Optional[str]:
         return match.group(1)
     return None
 
-
 # ---------------------------------------------------------------------------
 # UFW helpers
 # ---------------------------------------------------------------------------
 
 def _find_open_ports(
     ufw_rules: str,
-    loopback_ports: Optional[set[str]] = None,
-    active_ports: Optional[set[str]] = None,
+    loopback_ports: set[str] | None = None,
+    active_ports: set[str] | None = None,
 ) -> list[str]:
     """
     Find ports with unrestricted ALLOW rules (no source IP restriction).
@@ -464,5 +448,4 @@ def _find_open_ports(
                         open_ports.append(port_proto)
 
     return open_ports
-
 

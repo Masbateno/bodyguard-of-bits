@@ -18,11 +18,10 @@ from __future__ import annotations
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, NamedTuple, Tuple
+from typing import NamedTuple, Tuple
 
 from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Sensitive files specification
@@ -33,7 +32,6 @@ class _FileSpec(NamedTuple):
     max_mode: int   # maximum allowed permissions (low 9 octal bits)
     key:      str   # short tag used to build unique finding keys
 
-
 _SENSITIVE_FILES: tuple[_FileSpec, ...] = (
     _FileSpec("/etc/passwd",  0o644, "passwd"),
     _FileSpec("/etc/shadow",  0o640, "shadow"),
@@ -41,7 +39,6 @@ _SENSITIVE_FILES: tuple[_FileSpec, ...] = (
     _FileSpec("/etc/group",   0o644, "group"),
     _FileSpec("/etc/sudoers", 0o440, "sudoers_file"),
 )
-
 
 # ---------------------------------------------------------------------------
 # Snapshot dataclasses
@@ -56,7 +53,6 @@ class FileInfo:
     max_mode: int   # expected maximum
     key:      str   # short tag from _FileSpec
 
-
 @dataclass
 class FilePermsSnapshot:
     """
@@ -64,10 +60,10 @@ class FilePermsSnapshot:
 
     All I/O happens in from_system(). check_file_perms() is pure logic.
     """
-    sensitive_files:           List[FileInfo]            = field(default_factory=list)
-    ssh_host_key_issues:       List[Tuple[str, int]]     = field(default_factory=list)
-    sudoers_nopasswd_all:      List[str]                 = field(default_factory=list)
-    sudoers_nopasswd_specific: List[str]                 = field(default_factory=list)
+    sensitive_files:           list[FileInfo]            = field(default_factory=list)
+    ssh_host_key_issues:       list[Tuple[str, int]]     = field(default_factory=list)
+    sudoers_nopasswd_all:      list[str]                 = field(default_factory=list)
+    sudoers_nopasswd_specific: list[str]                 = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "FilePermsSnapshot":
@@ -118,7 +114,6 @@ class FilePermsSnapshot:
 
         return snap
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -164,7 +159,6 @@ def _collect_nopasswd_entries() -> tuple[list[str], list[str]]:
 
     return nopasswd_all, nopasswd_specific
 
-
 def _is_nopasswd_all(line: str) -> bool:
     """
     Return True if this sudoers line grants unrestricted passwordless sudo.
@@ -187,7 +181,6 @@ def _is_nopasswd_all(line: str) -> bool:
     after = after.lstrip(": \t")
     # Only flag when the command field is exactly ALL — nothing more, nothing less
     return after.strip() == "ALL"
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

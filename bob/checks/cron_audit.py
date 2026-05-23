@@ -24,11 +24,9 @@ import shlex
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Patterns for risky cron content
@@ -68,7 +66,6 @@ _USER_CRONTAB_DIR = Path("/var/spool/cron/crontabs")
 # Users expected to have crontabs; root is always expected
 _EXPECTED_CRONTAB_USERS: frozenset[str] = frozenset({"root"})
 
-
 # ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
@@ -83,9 +80,9 @@ class CronAuditSnapshot:
         world_writable_scripts: Script paths referenced in cron that are world-writable.
         unexpected_user_crons:  Usernames with crontabs that are not in the expected set.
     """
-    pipe_to_shell_entries:  List[str] = field(default_factory=list)
-    world_writable_scripts: List[str] = field(default_factory=list)
-    unexpected_user_crons:  List[str] = field(default_factory=list)
+    pipe_to_shell_entries:  list[str] = field(default_factory=list)
+    world_writable_scripts: list[str] = field(default_factory=list)
+    unexpected_user_crons:  list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "CronAuditSnapshot":
@@ -141,7 +138,6 @@ class CronAuditSnapshot:
 
         return snap
 
-
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -164,7 +160,6 @@ def _read_cron_file(path: Path, out: list[tuple[str, str]]) -> None:
         stripped = line.strip()
         if stripped and not stripped.startswith("#"):
             out.append((str(path), line))
-
 
 def _find_world_writable_scripts(
     cron_lines: list[tuple[str, str]],
@@ -210,7 +205,6 @@ def _find_world_writable_scripts(
 
     return sorted(world_writable)
 
-
 def _find_unexpected_user_crons() -> list[str]:
     """
     Return usernames that have a crontab in /var/spool/cron/crontabs
@@ -226,7 +220,6 @@ def _find_unexpected_user_crons() -> list[str]:
     except OSError:
         pass
     return unexpected
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -299,7 +292,6 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
         )
 
     return result
-
 
 # ---------------------------------------------------------------------------
 # Private helpers

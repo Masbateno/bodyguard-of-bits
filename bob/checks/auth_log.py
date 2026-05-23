@@ -20,7 +20,6 @@ import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
 from bob.scoring import CheckResult
@@ -57,7 +56,6 @@ _PRIVATE_NETWORKS = (
     ipaddress.ip_network("fe80::/10"),
 )
 
-
 def _read_auth_from_journald(max_days: int = 90) -> str:
     """
     Read SSH authentication events from journald.
@@ -93,14 +91,12 @@ def _read_auth_from_journald(max_days: int = 90) -> str:
         pass
     return ""
 
-
 def _is_private(ip_str: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip_str)
         return any(addr in net for net in _PRIVATE_NETWORKS)
     except ValueError:
         return True  # unparseable IP: treat as private to avoid alerting on log noise
-
 
 @dataclass
 class LoginEntry:
@@ -109,7 +105,6 @@ class LoginEntry:
     user:    str
     source:  str   # IP address
     is_public: bool
-
 
 @dataclass
 class AuthLogSnapshot:
@@ -121,7 +116,7 @@ class AuthLogSnapshot:
         log_available:  True if at least one auth log file was readable.
         days_analysed:  Approximate number of days covered by the log.
     """
-    entries:       List[LoginEntry] = field(default_factory=list)
+    entries:       list[LoginEntry] = field(default_factory=list)
     log_available: bool = False
     days_analysed: int  = 0
     failed_count:  int  = 0
@@ -186,7 +181,6 @@ class AuthLogSnapshot:
         snap.failed_count = len(_FAILED_RE.findall(combined))
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Check logic
@@ -261,7 +255,6 @@ def check_auth_log(snapshot: AuthLogSnapshot, t: TranslationFunc | None = None) 
         )
 
     return result
-
 
 # ---------------------------------------------------------------------------
 # Helpers

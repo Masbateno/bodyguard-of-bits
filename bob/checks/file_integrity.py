@@ -24,7 +24,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
@@ -48,7 +47,6 @@ _AIDE_LOG_PATHS = (
 _TRIPWIRE_DB_DIR  = Path("/var/lib/tripwire")
 _TRIPWIRE_LOG_DIR = Path("/var/log/tripwire")
 
-
 @dataclass
 class FileIntegritySnapshot:
     """
@@ -61,7 +59,7 @@ class FileIntegritySnapshot:
     """
     tool:            str           = ""
     db_exists:       bool          = False
-    last_check_date: Optional[str] = None
+    last_check_date: str | None = None
 
     @classmethod
     def from_system(cls) -> "FileIntegritySnapshot":
@@ -82,12 +80,11 @@ class FileIntegritySnapshot:
 
         return snap
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _mtime_iso(path: Path) -> Optional[str]:
+def _mtime_iso(path: Path) -> str | None:
     """Return the ISO date of ``path``'s mtime, or None on error."""
     try:
         mtime_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
@@ -95,10 +92,9 @@ def _mtime_iso(path: Path) -> Optional[str]:
     except OSError:
         return None
 
-
-def _last_run_from_logs(log_paths: tuple) -> Optional[str]:
+def _last_run_from_logs(log_paths: tuple) -> str | None:
     """Return ISO date of the most recently modified log file, or None."""
-    best: Optional[str] = None
+    best: str | None = None
     best_mtime: float = 0.0
     for p in log_paths:
         try:
@@ -112,8 +108,7 @@ def _last_run_from_logs(log_paths: tuple) -> Optional[str]:
             continue
     return best
 
-
-def _last_run_from_dir(directory: Path, pattern: str) -> Optional[str]:
+def _last_run_from_dir(directory: Path, pattern: str) -> str | None:
     """Return ISO date of the most recently modified file matching pattern, or None."""
     try:
         files = list(directory.glob(pattern))
@@ -124,7 +119,6 @@ def _last_run_from_dir(directory: Path, pattern: str) -> Optional[str]:
     except OSError:
         return None
 
-
 def _tripwire_db_exists() -> bool:
     """Return True if any Tripwire database file (.twd) exists."""
     try:
@@ -132,15 +126,13 @@ def _tripwire_db_exists() -> bool:
     except OSError:
         return False
 
-
-def _check_age_days(iso_date: str) -> Optional[int]:
+def _check_age_days(iso_date: str) -> int | None:
     """Return days since iso_date (YYYY-MM-DD), or None on parse error."""
     try:
         dt = datetime.strptime(iso_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         return max(0, (datetime.now(timezone.utc) - dt).days)
     except ValueError:
         return None
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

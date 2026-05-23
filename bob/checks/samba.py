@@ -22,7 +22,6 @@ from __future__ import annotations
 import configparser
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t
 from bob.scoring import CheckResult
@@ -45,7 +44,6 @@ _META_SECTIONS: frozenset[str] = frozenset({
     "global", "homes", "printers", "print$", "ipc$",
 })
 
-
 # ---------------------------------------------------------------------------
 # Sub-dataclass
 # ---------------------------------------------------------------------------
@@ -56,7 +54,6 @@ class GuestShare:
     name:     str
     path:     str  = ""
     writable: bool = False
-
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -82,7 +79,7 @@ class SambaSnapshot:
     bind_interfaces_only: bool = False
 
     # share-level findings
-    guest_shares:         List[GuestShare] = field(default_factory=list)
+    guest_shares:         list[GuestShare] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "SambaSnapshot":
@@ -171,7 +168,6 @@ class SambaSnapshot:
             snap.guest_shares.append(share)
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Main check function (pure logic — no I/O)
@@ -298,7 +294,6 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -332,11 +327,9 @@ def _read_smb_conf(path: Path) -> dict[str, dict[str, str]]:
 
     return result
 
-
 def _section_get(opts: dict[str, str], key: str) -> str:
     """Return opts[key] (lowercased key, stripped), or '' if absent."""
     return opts.get(key.strip().lower(), "").strip()
-
 
 def _is_yes(opts: dict[str, str], key: str) -> bool:
     """Return True if opts[key] is a truthy Samba value (yes/true/1)."""

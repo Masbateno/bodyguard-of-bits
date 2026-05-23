@@ -24,11 +24,10 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
 
 from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -42,8 +41,7 @@ _SHADOW_PATH = Path("/etc/shadow")
 # are also caught without maintaining an exhaustive path list.
 _NO_LOGIN_BASENAMES: frozenset[str] = frozenset({"nologin", "false"})
 
-
-def _is_no_login_shell(shell: Optional[str]) -> bool:
+def _is_no_login_shell(shell: str | None) -> bool:
     """Return True if *shell* is a non-interactive shell (nologin / false)."""
     if not shell:
         return False
@@ -52,7 +50,6 @@ def _is_no_login_shell(shell: Optional[str]) -> bool:
 # Maximum deduction from this check.
 _MAX_DEDUCTION_UID_ZERO:       int = 3
 _MAX_DEDUCTION_EMPTY_PASSWORD: int = 2
-
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -75,8 +72,8 @@ class UserAccountsSnapshot:
                                  to a non-system account (UID ≥ 1000).
     """
     shadow_readable:         bool            = False
-    uid_zero_accounts:       List[str]       = field(default_factory=list)
-    empty_password_accounts: List[str]       = field(default_factory=list)
+    uid_zero_accounts:       list[str]       = field(default_factory=list)
+    empty_password_accounts: list[str]       = field(default_factory=list)
     expired_accounts:        Dict[str, str]  = field(default_factory=dict)
 
     @classmethod
@@ -155,7 +152,6 @@ class UserAccountsSnapshot:
                     pass
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

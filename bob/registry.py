@@ -27,7 +27,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator
 
 from bob._paths import resolve_share_dir
 from bob.sysinfo import get_user_home
@@ -56,7 +56,6 @@ VALID_CONFIG_KEYS = frozenset({"fixed", "auto", "ask"})
 # Port format: "number/proto" e.g. "22/tcp", "5353/udp"
 _PORT_RE = re.compile(r"^\d{1,5}/(tcp|udp)$")
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -82,7 +81,6 @@ class Detection:
             snap=tuple(data.get("snap", [])),
             config_files=tuple(data.get("config_files", [])),
         )
-
 
 @dataclass(frozen=True)
 class Service:
@@ -195,13 +193,11 @@ class Service:
             detection=Detection.from_dict(data.get("detection", {})),
         )
 
-
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
 _CURRENT_PLUGIN_SCHEMA_VERSION = 1
-
 
 def _extract_plugin_entries(raw: object, plugin_name: str) -> list | None:
     """
@@ -258,7 +254,6 @@ def _extract_plugin_entries(raw: object, plugin_name: str) -> list | None:
         plugin_name,
     )
     return None
-
 
 def _load_plugins(services: list[Service], ids_seen: set[str]) -> None:
     """
@@ -319,7 +314,6 @@ def _load_plugins(services: list[Service], ids_seen: set[str]) -> None:
             ids_seen.add(service.id)
             services.append(service)
             logger.debug("Loaded plugin service %r from %s", service.id, plugin_file.name)
-
 
 class ServiceRegistry:
     """
@@ -403,7 +397,7 @@ class ServiceRegistry:
         """Return all services in definition order."""
         return list(self._services)
 
-    def get(self, service_id: str) -> Optional[Service]:
+    def get(self, service_id: str) -> Service | None:
         """
         Return the service with the given id, or None if not found.
 

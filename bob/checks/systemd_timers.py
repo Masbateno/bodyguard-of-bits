@@ -25,7 +25,6 @@ import shlex
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
@@ -56,7 +55,6 @@ _SERVICE_DIRS: list[Path] = [
 _MAX_TIMERS      = 100  # hard cap to avoid stalling on large deployments
 _MAX_EXEC_LENGTH = 200  # truncate ExecStart strings in findings output
 
-
 # ---------------------------------------------------------------------------
 # Snapshot
 # ---------------------------------------------------------------------------
@@ -77,9 +75,9 @@ class SystemdTimersSnapshot:
         timer_count:              Total timers returned by list-timers.
         systemctl_available:      True if the systemctl binary is present.
     """
-    pipe_to_shell_entries:    List[str] = field(default_factory=list)
-    world_writable_scripts:   List[str] = field(default_factory=list)
-    user_created_root_timers: List[str] = field(default_factory=list)
+    pipe_to_shell_entries:    list[str] = field(default_factory=list)
+    world_writable_scripts:   list[str] = field(default_factory=list)
+    user_created_root_timers: list[str] = field(default_factory=list)
     timer_count:              int  = 0
     systemctl_available:      bool = True
 
@@ -127,7 +125,6 @@ class SystemdTimersSnapshot:
                 snap.user_created_root_timers.append(timer_name)
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Check logic
@@ -220,7 +217,6 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -250,7 +246,6 @@ def _list_timer_units() -> list[tuple[str, str]]:
 
     return result
 
-
 def _find_service_file(service: str) -> Path | None:
     """Return the first existing service unit file path, or None."""
     for d in _SERVICE_DIRS:
@@ -258,7 +253,6 @@ def _find_service_file(service: str) -> Path | None:
         if p.exists():
             return p
     return None
-
 
 def _parse_service_file(path: Path) -> tuple[list[str], bool]:
     """
@@ -275,14 +269,12 @@ def _parse_service_file(path: Path) -> tuple[list[str], bool]:
     has_user    = bool(_USER_DIRECTIVE_RE.search(text))
     return exec_starts, has_user
 
-
 def _is_world_writable(path_str: str) -> bool:
     """Return True if the path exists and has the world-writable bit set."""
     try:
         return bool(Path(path_str).stat().st_mode & stat.S_IWOTH)
     except OSError:
         return False
-
 
 def _chmod_cmd(scripts: list[str]) -> str:
     """Return a chmod o-w command for the given script list."""

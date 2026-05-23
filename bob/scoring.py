@@ -28,10 +28,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List
 
 logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -44,14 +42,12 @@ class FindingLevel(Enum):
     WARN    = "warn"
     ALERT   = "alert"
 
-
 class RiskLevel(Enum):
     """Overall risk level derived from the final score."""
     LOW      = "low"
     MEDIUM   = "medium"
     HIGH     = "high"
     CRITICAL = "critical"
-
 
 # Score thresholds — inclusive lower bound for each level
 _RISK_THRESHOLDS: list[tuple[int, RiskLevel]] = [
@@ -64,13 +60,11 @@ _RISK_THRESHOLDS: list[tuple[int, RiskLevel]] = [
 # Maximum achievable score
 MAX_SCORE: int = 10
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
 VALID_CONTEXTS: frozenset[str] = frozenset({"local", "public", "ddns", "structural"})
-
 
 @dataclass
 class Deduction:
@@ -111,7 +105,6 @@ class Deduction:
                 f"Must be one of: {sorted(VALID_CONTEXTS)}"
             )
 
-
 @dataclass
 class Finding:
     """
@@ -146,7 +139,6 @@ class Finding:
     key:           str = ""
     template_vars: dict = field(default_factory=dict)
 
-
 @dataclass
 class ScoreCap:
     """
@@ -159,7 +151,6 @@ class ScoreCap:
     maximum: int
     reason:  str
     key:     str = ""
-
 
 @dataclass
 class CheckResult:
@@ -174,10 +165,10 @@ class CheckResult:
         open_ports:  Ports identified as exposed (used by DDNS check for display).
         caps:        Score ceiling requests to be applied by the engine.
     """
-    deductions:  List[Deduction] = field(default_factory=list)
-    findings:    List[Finding]   = field(default_factory=list)
-    open_ports:  List[str]       = field(default_factory=list)
-    caps:        List[ScoreCap]  = field(default_factory=list)
+    deductions:  list[Deduction] = field(default_factory=list)
+    findings:    list[Finding]   = field(default_factory=list)
+    open_ports:  list[str]       = field(default_factory=list)
+    caps:        list[ScoreCap]  = field(default_factory=list)
 
     def add_deduction(
         self,
@@ -315,7 +306,6 @@ class CheckResult:
             points=points, context=context,
             key=key, template_vars=template_vars,
         )
-
 
 # ---------------------------------------------------------------------------
 # Score engine

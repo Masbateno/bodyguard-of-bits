@@ -18,14 +18,12 @@ Split into:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
 from bob.scoring import CheckResult
 
 # Jail names that protect SSH (checked via substring match)
 _SSH_JAIL_PATTERNS = ("sshd", "ssh")
-
 
 @dataclass
 class Fail2banSnapshot:
@@ -40,7 +38,7 @@ class Fail2banSnapshot:
     """
     installed:      bool        = False
     service_active: bool        = False
-    active_jails:   List[str]   = field(default_factory=list)
+    active_jails:   list[str]   = field(default_factory=list)
     ssh_jail:       str         = ""
 
     @classmethod
@@ -77,8 +75,7 @@ class Fail2banSnapshot:
 
         return snap
 
-
-def _parse_jails(status_output: str) -> List[str]:
+def _parse_jails(status_output: str) -> list[str]:
     """
     Parse jail names from ``fail2ban-client status`` output.
 
@@ -97,7 +94,6 @@ def _parse_jails(status_output: str) -> List[str]:
             jails = [j.strip() for j in value.split(",") if j.strip()]
             return jails
     return []
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

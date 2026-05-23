@@ -29,7 +29,6 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
@@ -42,7 +41,6 @@ _EMAILS_FILENAME = "emails"
 
 # Minimal email sanity check — rejects obvious non-addresses before persisting
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
-
 
 # ---------------------------------------------------------------------------
 # Email store
@@ -130,7 +128,6 @@ class EmailStore:
             logger.error("Could not write emails file %s: %s", self._path, exc)
             raise
 
-
 class UserConfig:
     """
     Persistent key=value store for BOB user settings.
@@ -174,7 +171,7 @@ class UserConfig:
     # Public API
     # ------------------------------------------------------------------
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """
         Return the value for key, or None if not set.
 

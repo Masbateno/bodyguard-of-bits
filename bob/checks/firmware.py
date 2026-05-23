@@ -24,7 +24,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
@@ -38,7 +37,6 @@ _FWUPD_ERROR_RE = re.compile(r"\b(error|failed)\b", re.IGNORECASE)
 
 _MAX_ERROR_LEN  = 200
 _FWUPD_TIMEOUT  = 30  # fwupdmgr can be slow on first run
-
 
 # ---------------------------------------------------------------------------
 # Snapshot
@@ -59,7 +57,7 @@ class FirmwareSnapshot:
         microcode_not_applicable: True if CPU vendor is not Intel or AMD (no package needed).
     """
     fwupd_available:          bool       = False
-    fwupd_pending_updates:    List[str]  = field(default_factory=list)
+    fwupd_pending_updates:    list[str]  = field(default_factory=list)
     fwupd_error:              str        = ""
     cpu_vendor:               str        = ""
     microcode_installed:      bool       = False
@@ -103,7 +101,6 @@ class FirmwareSnapshot:
                 snap.fwupd_pending_updates = _parse_fwupd_updates(out)
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Check logic
@@ -191,7 +188,6 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -212,7 +208,6 @@ def _detect_cpu_vendor() -> str:
     except OSError:
         return "unknown"
 
-
 def _dpkg_installed(package: str) -> bool:
     """Return True if the package is installed according to dpkg (exact name match)."""
     out = _run("dpkg", "-l", package) or ""
@@ -221,7 +216,6 @@ def _dpkg_installed(package: str) -> bool:
         if len(cols) >= 2 and cols[0] == "ii" and cols[1].split(":")[0] == package:
             return True
     return False
-
 
 _TREE_ITEM_RE = re.compile(r"^[├└]─\s*")
 _FLAT_SKIP_RE = re.compile(

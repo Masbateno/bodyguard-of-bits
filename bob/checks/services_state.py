@@ -20,11 +20,9 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass, field
-from typing import List
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Security-relevant services to monitor
@@ -49,7 +47,6 @@ SECURITY_SERVICES: frozenset[str] = frozenset({
 # Maximum score deduction from this check (one point per inactive service).
 _MAX_DEDUCTION: int = 3
 
-
 # ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
@@ -66,7 +63,7 @@ class ServicesStateSnapshot:
                                inactive or failed.
     """
     systemctl_available:  bool       = False
-    enabled_inactive:     List[str]  = field(default_factory=list)
+    enabled_inactive:     list[str]  = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "ServicesStateSnapshot":
@@ -149,7 +146,6 @@ class ServicesStateSnapshot:
 
         snap.enabled_inactive = enabled_inactive
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

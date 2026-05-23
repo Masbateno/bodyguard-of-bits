@@ -24,11 +24,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from bob.checks._run import _identity_t, _run
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,7 +42,6 @@ _RAM_FREE_THRESHOLD: float = 0.50
 # Minimum swap usage (bytes) to consider "swap is in use" — avoids noise
 # from 1–2 MB of hibernation data or rounding.
 _MIN_SWAP_USED_KB: int = 32 * 1024   # 32 MB
-
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -70,7 +67,7 @@ class MemorySnapshot:
     swap_free_kb:     int       = 0
     swappiness:       int       = 60
     swap_on_ssd:      bool      = False
-    swap_devices:     List[str] = field(default_factory=list)
+    swap_devices:     list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "MemorySnapshot":
@@ -96,7 +93,6 @@ class MemorySnapshot:
         snap.swap_on_ssd = _detect_swap_on_ssd(snap.swap_devices)
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -233,7 +229,6 @@ def check_memory(
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -268,7 +263,6 @@ def _read_meminfo() -> tuple[int, int, int, int]:
         fields["SwapFree"],
     )
 
-
 def _read_swappiness() -> int:
     """Read vm.swappiness from /proc/sys/vm/swappiness. Returns 60 on error."""
     try:
@@ -276,7 +270,6 @@ def _read_swappiness() -> int:
         return int(val)
     except (OSError, ValueError):
         return 60
-
 
 def _read_swap_devices() -> list[str]:
     """
@@ -290,7 +283,6 @@ def _read_swap_devices() -> list[str]:
     if not out:
         return []
     return [line.strip() for line in out.splitlines() if line.strip()]
-
 
 def _detect_swap_on_ssd(swap_devices: list[str]) -> bool:
     """

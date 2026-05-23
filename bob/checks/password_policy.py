@@ -25,11 +25,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -55,7 +53,6 @@ _PASS_MIN_DAYS_RE   = re.compile(r"^\s*PASS_MIN_DAYS\s+(\d+)", re.MULTILINE)
 _PAM_MINLEN_RE      = re.compile(r"\bminlen=(\d+)", re.IGNORECASE)
 _PWQUALITY_MINLEN_RE = re.compile(r"^\s*minlen\s*=\s*(\d+)", re.IGNORECASE | re.MULTILINE)
 
-
 # ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
@@ -78,10 +75,10 @@ class PasswordPolicySnapshot:
                                None means using the module default (8).
     """
     login_defs_readable: bool          = False
-    pass_max_days:       Optional[int] = None
-    pass_min_days:       Optional[int] = None
-    pam_quality_module:  Optional[str] = None
-    pam_minlen:          Optional[int] = None
+    pass_max_days:       int | None = None
+    pass_min_days:       int | None = None
+    pam_quality_module:  str | None = None
+    pam_minlen:          int | None = None
 
     @classmethod
     def from_system(cls) -> "PasswordPolicySnapshot":
@@ -114,7 +111,7 @@ class PasswordPolicySnapshot:
             pass
 
         # ---- /etc/pam.d/common-password -------------------------------------
-        pam_minlen_inline: Optional[int] = None
+        pam_minlen_inline: int | None = None
         try:
             pam_text = _COMMON_PASSWORD.read_text(encoding="utf-8")
             for line in pam_text.splitlines():
@@ -151,7 +148,6 @@ class PasswordPolicySnapshot:
             snap.pam_minlen = pam_minlen_inline
 
         return snap
-
 
 # ---------------------------------------------------------------------------
 # Pure check logic

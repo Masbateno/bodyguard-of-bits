@@ -31,7 +31,6 @@ import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 from bob.checks._run import (
     TranslationFunc,
@@ -94,7 +93,6 @@ _WEAK_KEX: frozenset[str] = frozenset({
 #   - LoginGraceTime, AllowUsers/AllowGroups, _match_block (INFO-only paths)
 #   - Weak ciphers/macs/kex (handled by _check_weak_algo with intersection logic)
 
-
 @dataclass(frozen=True)
 class _BadDirective:
     """Declarative rule for one sshd_config directive."""
@@ -122,7 +120,6 @@ class _BadDirective:
         if self.bad_values:
             return v in self.bad_values
         return v not in self.safe_values
-
 
 _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
     _BadDirective(
@@ -178,7 +175,6 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
     ),
 )
 
-
 def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t) -> bool:
     """Apply a single ``_BadDirective`` rule. Returns True if a finding was emitted."""
     value = cfg.get(rule.name, rule.default).lower()
@@ -199,7 +195,6 @@ def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t
         result.warn_with_deduction(**kwargs)
     return True
 
-
 _SSHD_CONFIG_PATH = Path("/etc/ssh/sshd_config")
 
 # Files in ~/.ssh/ that are never private keys
@@ -212,7 +207,6 @@ _NON_KEY_FILES: frozenset[str] = frozenset({
 # Public key file extensions (their private counterpart is the bare name)
 _PUB_SUFFIX = ".pub"
 
-
 # ---------------------------------------------------------------------------
 # Sub-dataclasses
 # ---------------------------------------------------------------------------
@@ -222,8 +216,7 @@ class HostKeyInfo:
     """Information about a server host key in /etc/ssh/."""
     path:     Path
     key_type: str           # "rsa", "dsa", "ecdsa", "ed25519", "unknown"
-    rsa_bits: Optional[int] # None for non-RSA keys or when undeterminable
-
+    rsa_bits: int | None # None for non-RSA keys or when undeterminable
 
 @dataclass
 class PrivateKeyInfo:
@@ -231,19 +224,17 @@ class PrivateKeyInfo:
     path:           Path
     permissions:    int           # raw stat mode bits (S_IMODE)
     key_type:       str           # "rsa", "dsa", "ecdsa", "ed25519", "unknown"
-    rsa_bits:       Optional[int] # None for non-RSA keys or when undeterminable
-    has_passphrase: Optional[bool]# None if undeterminable
-
+    rsa_bits:       int | None # None for non-RSA keys or when undeterminable
+    has_passphrase: bool | None# None if undeterminable
 
 @dataclass
 class AuthorizedKeyEntry:
     """A single valid key entry from authorized_keys."""
     line_no:          int
     key_type:         str           # e.g. "ssh-rsa", "ssh-ed25519"
-    rsa_bits:         Optional[int]
+    rsa_bits:         int | None
     has_restrictions: bool          # True if options like command=, from=, no-pty present
     blob_prefix:      str           # first 32 chars of base64 blob (used for dedup)
-
 
 @dataclass
 class KnownHostEntry:
@@ -253,14 +244,12 @@ class KnownHostEntry:
     key_type:  str
     is_hashed: bool
 
-
 @dataclass
 class ClientConfigEntry:
     """A directive from ~/.ssh/config."""
     host:  str  # "Host" pattern this applies to ("*" = global)
     key:   str  # directive name (lowercased)
     value: str  # directive value (stripped)
-
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -278,24 +267,24 @@ class SSHSnapshot:
     sshd_active:             bool = False
     sshd_config:             dict = field(default_factory=dict)
 
-    host_keys:               List[HostKeyInfo] = field(default_factory=list)
+    host_keys:               list[HostKeyInfo] = field(default_factory=list)
 
     sudo_user:               str = ""
-    user_home:               Optional[Path] = None
+    user_home:               Path | None = None
     ssh_dir_exists:          bool = False
-    ssh_dir_perms:           Optional[int] = None  # None if dir absent
+    ssh_dir_perms:           int | None = None  # None if dir absent
 
-    private_keys:            List[PrivateKeyInfo] = field(default_factory=list)
+    private_keys:            list[PrivateKeyInfo] = field(default_factory=list)
 
     authorized_keys_exists:  bool = False
-    authorized_keys_perms:   Optional[int] = None
-    authorized_keys_entries: List[AuthorizedKeyEntry] = field(default_factory=list)
+    authorized_keys_perms:   int | None = None
+    authorized_keys_entries: list[AuthorizedKeyEntry] = field(default_factory=list)
 
     client_config_exists:    bool = False
-    client_config_entries:   List[ClientConfigEntry] = field(default_factory=list)
+    client_config_entries:   list[ClientConfigEntry] = field(default_factory=list)
 
     known_hosts_exists:      bool = False
-    known_hosts_entries:     List[KnownHostEntry] = field(default_factory=list)
+    known_hosts_entries:     list[KnownHostEntry] = field(default_factory=list)
     install_cmd:             str = ""  # distro-appropriate install command
 
     @classmethod
@@ -377,7 +366,6 @@ class SSHSnapshot:
 
         return snap
 
-
 # ---------------------------------------------------------------------------
 # Main check function (pure logic — no I/O)
 # ---------------------------------------------------------------------------
@@ -456,7 +444,6 @@ def check_ssh(snapshot: SSHSnapshot, t: TranslationFunc | None = None, ssh_expos
 
     return result
 
-
 # ---------------------------------------------------------------------------
 # Sub-check functions
 # ---------------------------------------------------------------------------
@@ -498,7 +485,6 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 key="ssh.host_key_ok",
                 template_vars={"name": name, "type": hk.key_type.upper()},  # pilot v0.4.1
             )
-
 
 def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
                        ssh_exposed: bool = True) -> None:
@@ -605,7 +591,6 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     if not found_issue:
         result.ok(message=_t("ssh.config_ok"), key="ssh.config_ok")
 
-
 def _check_weak_algo(
     cfg: dict, result: "CheckResult", _t,
     cfg_key: str, weak_set: "frozenset[str]", t_key: str, param: str, points: int,
@@ -625,7 +610,6 @@ def _check_weak_algo(
         points=points,
     )
     return True
-
 
 def _check_ssh_dir(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     """Check ~/.ssh directory permissions."""
@@ -648,7 +632,6 @@ def _check_ssh_dir(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
         )
     else:
         result.ok(message=_t("ssh.dir_perms_ok"), key="ssh.dir_perms_ok")
-
 
 def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     """Analyse private SSH keys in ~/.ssh/."""
@@ -712,7 +695,6 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 message=_t("ssh.key_ok", name=name),
                 key="ssh.key_ok",
             )
-
 
 def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     """Analyse authorized_keys entries."""
@@ -796,7 +778,6 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
             key="ssh.authorized_keys_ok",
         )
 
-
 def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     """Analyse ~/.ssh/config for dangerous settings."""
     if not snapshot.ssh_dir_exists:
@@ -850,7 +831,6 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
             key="ssh.client_config_ok",
         )
 
-
 def _check_known_hosts(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     """Analyse known_hosts entries."""
     if not snapshot.ssh_dir_exists:
@@ -897,7 +877,6 @@ def _check_known_hosts(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
             message=_t("ssh.known_hosts_ok", count=len(entries)),
             key="ssh.known_hosts_ok",
         )
-
 
 # ---------------------------------------------------------------------------
 # Parsing helpers
@@ -956,7 +935,6 @@ def _parse_config_file(
             value = m.group(2).strip().strip('"')
             config.setdefault(key, value)  # first-value-wins
 
-
 def _collect_private_keys(ssh_dir: Path) -> list[PrivateKeyInfo]:
     """Return PrivateKeyInfo for each private key file found in ssh_dir."""
     results = []
@@ -989,7 +967,7 @@ def _collect_private_keys(ssh_dir: Path) -> list[PrivateKeyInfo]:
             perms = 0
 
         key_type = _detect_private_key_type(f, header)
-        rsa_bits: Optional[int] = None
+        rsa_bits: int | None = None
         if key_type == "rsa":
             pub = ssh_dir / (f.name + _PUB_SUFFIX)
             if pub.is_file():
@@ -1005,7 +983,6 @@ def _collect_private_keys(ssh_dir: Path) -> list[PrivateKeyInfo]:
             has_passphrase=has_pass,
         ))
     return results
-
 
 def _detect_private_key_type(path: Path, header: str) -> str:
     """Infer key type from file header or name."""
@@ -1038,7 +1015,6 @@ def _detect_private_key_type(path: Path, header: str) -> str:
             pass
     return "unknown"
 
-
 def _key_type_from_algo(algo: str) -> str:
     """Map SSH algorithm string to short key type."""
     algo = algo.lower()
@@ -1053,8 +1029,7 @@ def _key_type_from_algo(algo: str) -> str:
         return "ed25519"
     return "unknown"
 
-
-def _rsa_bits_from_pub_file(pub_path: Path) -> Optional[int]:
+def _rsa_bits_from_pub_file(pub_path: Path) -> int | None:
     """Extract RSA key size in bits from a .pub file."""
     try:
         parts = pub_path.read_text(encoding="utf-8", errors="ignore").split()
@@ -1064,8 +1039,7 @@ def _rsa_bits_from_pub_file(pub_path: Path) -> Optional[int]:
         return None
     return _rsa_bits_from_blob(parts[1])
 
-
-def _rsa_bits_from_blob(b64_blob: str) -> Optional[int]:
+def _rsa_bits_from_blob(b64_blob: str) -> int | None:
     """
     Decode the base64 public key blob and extract the RSA modulus length.
     SSH RSA public key wire format: [ktype_len][ktype][e_len][e][n_len][n]
@@ -1090,8 +1064,7 @@ def _rsa_bits_from_blob(b64_blob: str) -> Optional[int]:
     except (struct.error, ValueError):
         return None
 
-
-def _has_passphrase(path: Path) -> Optional[bool]:
+def _has_passphrase(path: Path) -> bool | None:
     """
     Return True if the private key is encrypted, False if not, None if unknown.
 
@@ -1140,7 +1113,6 @@ def _has_passphrase(path: Path) -> Optional[bool]:
 
     return None
 
-
 # Regex matching SSH public key algo names in authorized_keys
 _AK_KEY_TYPES = re.compile(
     r"^(ssh-rsa|ssh-dss|ssh-ed25519|ecdsa-sha2-nistp256|"
@@ -1155,7 +1127,6 @@ _AK_RESTRICTIONS = re.compile(
     r'no-port-forwarding|restrict\b)',
     re.IGNORECASE,
 )
-
 
 def _parse_authorized_keys(path: Path) -> list[AuthorizedKeyEntry]:
     """Parse authorized_keys, return one AuthorizedKeyEntry per valid key line."""
@@ -1189,7 +1160,7 @@ def _parse_authorized_keys(path: Path) -> list[AuthorizedKeyEntry]:
         if not key_type:
             continue
 
-        rsa_bits: Optional[int] = None
+        rsa_bits: int | None = None
         if key_type == "ssh-rsa" and blob:
             rsa_bits = _rsa_bits_from_blob(blob)
 
@@ -1201,7 +1172,6 @@ def _parse_authorized_keys(path: Path) -> list[AuthorizedKeyEntry]:
             blob_prefix=blob[:32],
         ))
     return entries
-
 
 def _parse_client_config(path: Path) -> list[ClientConfigEntry]:
     """Parse ~/.ssh/config into ClientConfigEntry list."""
@@ -1231,7 +1201,6 @@ def _parse_client_config(path: Path) -> list[ClientConfigEntry]:
         ))
     return entries
 
-
 def _parse_known_hosts(path: Path) -> list[KnownHostEntry]:
     """Parse known_hosts into KnownHostEntry list."""
     entries: list[KnownHostEntry] = []
@@ -1257,7 +1226,6 @@ def _parse_known_hosts(path: Path) -> list[KnownHostEntry]:
             is_hashed=is_hashed,
         ))
     return entries
-
 
 def _collect_host_keys() -> list[HostKeyInfo]:
     """
@@ -1285,14 +1253,13 @@ def _collect_host_keys() -> list[HostKeyInfo]:
         algo = parts[0].lower()
         blob = parts[1]
         key_type = _key_type_from_algo(algo)
-        rsa_bits: Optional[int] = None
+        rsa_bits: int | None = None
         if key_type == "rsa":
             rsa_bits = _rsa_bits_from_blob(blob)
 
         results.append(HostKeyInfo(path=priv, key_type=key_type, rsa_bits=rsa_bits))
 
     return results
-
 
 def _detect_ssh_install_cmd() -> str:
     """Return the distro-appropriate command to install openssh-server."""
@@ -1309,7 +1276,6 @@ def _detect_ssh_install_cmd() -> str:
         if _command_exists(cmd):
             return install
     return "sudo <package-manager> install openssh-server"
-
 
 def _parse_time_seconds(value: str) -> int:
     """
