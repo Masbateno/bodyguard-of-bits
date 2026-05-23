@@ -25,9 +25,12 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -539,5 +542,17 @@ class ScoreEngine:
     # ------------------------------------------------------------------
 
     def _apply_deduction(self, deduction: Deduction) -> None:
+        # I-2 (v0.5.5): defensive guard against post-finalize deductions.
+        # The orchestrator contract is one-way: finalize() bakes in the cap
+        # then sets _finalized=True. A late deduction would mutate
+        # _raw_score *after* the cap was applied — bypassing it silently.
+        # Log and drop instead.
+        if self._finalized:
+            logger.warning(
+                "ScoreEngine: deduction %r applied after finalize() — discarded "
+                "to preserve cap semantics. Re-order callers if intentional.",
+                deduction.key or deduction.reason[:40],
+            )
+            return
         self._raw_score -= deduction.points
         self.breakdown.append(deduction)

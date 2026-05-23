@@ -86,11 +86,19 @@ _RULES: list[CorrelationRule] = [
         level=FindingLevel.WARN,
         message_key="corr.stale_unmonitored",
     ),
-    # No audit trail + no firewall logs + no intrusion detection
+    # M-4 (v0.5.5): no audit trail + no firewall logs + no intrusion detection.
+    # Pre-v0.5.5 the fail2ban requirement was `not_installed` only, so a host
+    # with fail2ban installed-but-stopped (`service_inactive`) silently
+    # escaped the rule despite being equally blind. Sibling rule
+    # `corr.stale_unmonitored` already accepts both states via any_of —
+    # we mirror that here by widening fail2ban to either-or.
     CorrelationRule(
         key="corr.fully_blind",
-        all_of=frozenset({"firewall.logging_off", "fail2ban.not_installed"}),
-        any_of=frozenset({"auditd.not_installed", "auditd.service_inactive"}),
+        all_of=frozenset({"firewall.logging_off"}),
+        any_of=frozenset({
+            "fail2ban.not_installed", "fail2ban.service_inactive",
+            "auditd.not_installed", "auditd.service_inactive",
+        }),
         level=FindingLevel.WARN,
         message_key="corr.fully_blind",
     ),

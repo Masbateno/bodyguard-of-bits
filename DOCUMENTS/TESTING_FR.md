@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.4 (4538 tests, inchangé depuis v0.5.0 — les cinq Phases du refactor v0.5.x sont contract-preserving, aucun delta de tests sur toute la branche).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.5 (4545 tests, +7 net de couverture régression depuis l'audit hardening post-cycle ; les phases précédentes v0.5.0 → v0.5.4 étaient contract-preserving avec zéro delta de tests sur toute la branche).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.5 | 4545 | Passe de hardening — post-v0.5.4 audit par un sub-agent général-purpose profond. **4 bugs réels** (C-1 bug mode `apply_cron_email` cassant les audits programmés, C-2/C-3 cmds `password_policy` non-fixables par `--fix --apply` à cause de `&&`/flèche Unicode, C-4 drift `EXPLAIN_KEYS` pour `services_state`), **4 security smells** (I-1 `recurrence.json`+`ignore.yml` écrits world-readable au lieu de 0o600, I-2 déductions post-`finalize()` bypassant les caps silencieusement, I-3 `_safe_url` ne re-escapait pas le contexte attribut HTML autorisant XSS dans rapports email, I-4 `_PRIVATE_IPV4_RE` brittle + cassure widening stdlib Python 3.12+), **11 cleanups mineurs** (M-1 dedup regex email, M-2 `_NullReport` → canonique `bob.report.NullReport`, M-3 3 clés locale mortes, M-4 check fail2ban asymétrique `corr.fully_blind`, M-7 extract helper `_has_actionable_findings`, M-8/M-9 commentaires clarifiants, M-10 ancre regex cron plus stricte, M-11 split cmd `&&` `services_state.service_inactive`). +7 tests régression couvrant chaque classe de fix. Commit cosmétique M-6 migre typing `Optional[X]` / `List[X]` sur 18 modules. **Diff net : 23 fichiers code, +312 / -112 = +200 LoC.** Changement wire visible sur hosts sans pwquality : finding password_policy se déplace de "À corriger" à "Améliorations possibles" (nature='action' → 'improvement'). Score global inchangé. |
 | v0.5.4 | 4538 | Refactor v0.5.x Phase 5 sur 5 (finale) — **#6 helper `prompt_wizard()`** dans `bob/_tty.py` + 10 sites migrés dans `bob/cron.py` (wizards install + edit) + **#9 sunset `UFW_AUDIT_SHARE`** (`logger.info` → `logger.warning` avec message explicite "REMOVED en v0.6.0") + **#15b mapping `_PREFIX_TO_DOMAIN` explicite** (`fail2ban` → ssh, `virt` → hardening, `docker_audit` → hardening) + **cache APT option C** (nouvelle feature métier : ligne INFO `updates.apt_cache_age` permanente quand aucune mise à jour security/regular en attente et cache sous le seuil obsolète, ferme le gap d'observabilité remonté par le test terrain VM Ubuntu v0.5.3). **Zero delta de tests** — Phase 5 est contract-preserving comme les Phases 2-4. 3 entrées de test retirées de `_CATCH_ALL_BY_DESIGN` dans `tests/test_domain_scores_mapping_complete.py` (reflet de la migration de prefixes #15b), mais aucun test ajouté ou supprimé. Le test scan AST `#15a` continue de pin chaque prefixe de clé émis. **#13 (split ssh.py, 1324 LoC) et #14 (split cron.py, 1223 LoC) déférés à v0.6.0** selon le principe conservative-refactor. Diff net : 12 fichiers code modifiés, +118 / −69 = +49 LoC. Ferme l'audit v0.5.x (13/15 findings shippés + 1 feature métier + 2 déférés avec justification). |
 | v0.5.3 | 4538 | Refactor v0.5.x Phase 4 — **#5 table dispatch `_LEVEL_DISPATCH`** dans `display_result` (cascade 4-branches OK/WARN/ALERT/INFO → boucle déclarative pilotée par dataclass `_LevelTraits`) + **#12 split `print_audit_summary`** en 3 helpers module-level (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) + `_add_finding_lines` remonté d'inner closure à module-level + **#8 retrait `CheckResult.log_data`** (dict escape hatch → tuple return `check_logs(...) -> (CheckResult, LogReportData | None)` avec dataclass frozen `LogReportData`). **Zero delta de tests** — refactor purement structurel, sortie wire bit-identique à v0.5.2. 3 tests renommés (`test_log_data_*` → `test_report_data_*`) et réécrits pour accès attribut dataclass au lieu d'accès dict-clé ; ~20 sites tests utilisent `result, _ = check_logs(...)` tuple unpack. Side-fix lors de #12 : `report.write_summary(score=score, risk_level=level_str, network_context=ctx_str, ...)` référait des locals devenues dead après l'extraction du header ; remplacées par expressions directes sur `engine.score` / `t(f"scoring.level.{engine.level.value}")` — attrapé par les tests `TestScoreTrend` (8 failures → 0 après fix). Diff net : display.py +23 LoC, logs.py +19 LoC, runner.py 0, scoring.py −1, tests +3 = **+40 LoC total**. |
 | v0.5.2 | 4538 | Refactor v0.5.x Phase 3 — **#4 table directive SSH** (8 directives uniformes migrées vers table `_BAD_DIRECTIVES`) + **#3 extension runner._sec** avec callbacks `skip_if=` / `post_display=` (4 blocs inline migrés). **Zero delta de tests** — refactor purement structurel. La dataclass `_BadDirective` + table + helper `_apply_bad_directive()` produit des findings et déductions bit-identiques aux if-blocks impératifs précédents. L'extension `_sec` est keyword-only (call sites existants inaffectés). `test_ssh.py` (122 tests) a passé avant et après la migration. Diff net : ssh.py +56 LoC (table verbose), runner.py −29 LoC. **#13 (split ssh.py) déféré Phase 5** — ssh.py reste à 1324 LoC (cible <1000 non atteinte). |
@@ -41,6 +42,84 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.5 — 4545/4545 (23-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4545 passed in ~7s
+```
+
+**Net : +7 (4538 → 4545).** Premier delta de tests sur la ligne v0.5.x — la passe de hardening a fait apparaître 4 bugs réels et 4 security smells, chacun pinné par un test régression pour prévenir la ré-introduction. Changements de tests résumés :
+
+| Catégorie | Ajoutés | Supprimés | Renommés | Net |
+|---|---|---|---|---|
+| Tests régression bugs (C-1, C-2, C-3, C-4) | 4 | 0 | 2 (`test_nature_is_action` → `test_nature_is_improvement`) | +4 |
+| Régression sécurité (I-2, I-3) | 10 (9 dans le nouveau `tests/test_report_markdown_safety.py` + 1 dans `test_scoring.py`) | 0 | 0 | +10 |
+| Changement comportement (M-4, M-10) | 3 | 1 (`test_no_fire_missing_auditd` retiré — changement sémantique) | 0 | +2 |
+| Cleanup code mort (M-2 retrait `_NullReport`, M-3 clés locale mortes) | 1 (`test_enabled_flag_is_false`) | 9 (`TestNullReportIsolation` 5 + `test_any_method_returns_none` + `test_attribute_access_returns_callable` + `test_hint_key_en` + 1 autre) | 0 | −8 |
+| **Total** | **18** | **10** | **2** | **+7** |
+
+#### Nouveaux tests régression
+
+**C-1 : `tests/test_cron.py::test_preserves_script_executable_mode`** — pin que `apply_cron_email()` garde le script à `0o755` (cassait à `0o600` et tuait silencieusement les audits programmés).
+
+**C-2 + C-3 : `tests/test_password_policy.py::test_nature_is_improvement`** (× 2 — `TestNoQualityModule` et `TestWeakMinlen`) — renommés de `test_nature_is_action` et assertion inversée. Lock la demotion qui empêche `--fix --apply` d'essayer d'exec des cmds non-exécables.
+
+**C-4 : `tests/test_explain.py::test_services_state_alias_routes_to_canonical`** — pin que `normalize_key("services_state.service_inactive")` résout à `services_state.enabled_inactive` via `EXPLAIN_KEY_ALIASES`.
+
+**I-2 : `tests/test_scoring.py::test_post_finalize_deduction_is_discarded`** — utilise `caplog` pour vérifier à la fois le discard et le message log WARNING. Couvre le guard `_apply_deduction`.
+
+**I-3 : `tests/test_report_markdown_safety.py`** — nouveau fichier avec 9 tests couvrant `_safe_url` :
+- URLs plain passent through (http/https)
+- Schemes inconnus bloqués (javascript:, data:, file:, vide)
+- Escape double-quote (`"` → `&quot;` dans contexte attribut)
+- Escape single-quote (`'` → `&#x27;`)
+- Escape angle-bracket (`<` → `&lt;`)
+- Texte plain html-escape
+- Link rendu comme anchor
+- Test full pipeline XSS attack-string (assert le href ferme correctement, pas de `"` injecté)
+
+**M-4 : `tests/test_correlation.py::test_fires_with_only_fail2ban_inactive`** + `test_does_not_fire_when_firewall_logging_present` — pin la sémantique élargie de `corr.fully_blind`.
+
+**M-10 : `tests/test_cron.py::test_comment_line_with_root_token_not_modified`** — pin que la regex resserrée skippe les comment lines `# 0 3 * * * root /usr/bin/legacy-bob`.
+
+#### Tests supprimés
+
+`tests/test_watch.py::TestNullReportIsolation` (5 tests) + `TestNullReport::test_any_method_returns_none` + `test_attribute_access_returns_callable` — ces tests testaient le magic `__getattr__` de l'ancien `bob.watch._NullReport`. M-2 le remplace par le `bob.report.NullReport` explicite (Report Protocol de v0.5.0 #10) qui a des méthodes typées `write_section` / `write_finding` / `_writeln` / `close`. Les tests d'accès attribut catch-all ne sont plus applicables.
+
+`tests/test_ignore.py::test_hint_key_en` — testait que `t("ignored.hint", ...)` résout. M-3 a supprimé cette clé locale (orpheline — jamais utilisée par le code production).
+
+`tests/test_correlation.py::test_no_fire_missing_auditd` — pinnait la sémantique pré-M-4 (la règle NE fire PAS quand fail2ban présent mais auditd manquant). M-4 a changé cette sémantique (fire maintenant) donc l'assertion a été inversée via deux nouveaux tests ci-dessus.
+
+#### Timeline du compteur de tests à travers v0.5.x
+
+```
+v0.5.0  →  4538 tests  (+39 vs v0.4.8 : scan AST mapping domaines + couverture cron)
+v0.5.1  →  4538 tests  (sans changement — Phase 2 contract-preserving)
+v0.5.2  →  4538 tests  (sans changement — Phase 3 contract-preserving)
+v0.5.3  →  4538 tests  (sans changement — Phase 4 contract-preserving)
+v0.5.4  →  4538 tests  (sans changement — Phase 5 contract-preserving)
+v0.5.5  →  4545 tests  (+7 — premier delta depuis v0.5.0 ; régressions hardening)
+```
+
+Le plateau 4538 à travers les Phases 2-5 confirme que la garantie contract-preservation a tenu durant tout le refactor. v0.5.5 fait grossir la suite parce qu'il fixe des bugs réels — chaque fix obtient un pin.
+
+#### Test terrain
+
+Même approche couverture cross-distro que v0.5.4 — pipx upgrade + `sudo bob -v -d` sur chaque VM (so6desktop, debian13vm, kali, so6minttest, so6ubuntutest). Changements visibles attendus vs v0.5.4 :
+
+- **Shift display password_policy** : sur hosts sans `pam_pwquality` installé (so6desktop, so6ubuntutest, autres), le finding se déplace de "À corriger" (bloc action) à "Améliorations possibles" (bloc improvement) dans le summary box. Score global inchangé. Texte verdict change de "Des corrections sont nécessaires" à "Configuration globalement saine".
+- **Changement shape cmd `services_state.service_inactive`** : sur hosts avec services monitorés inactifs, le cmd ne chaîne plus `&& sudo journalctl …` (ce qui le rendait non-fixable). La suggestion journalctl se déplace en `note=` pour guidance.
+- **Aucun changement visible** sur hosts qui ne déclenchent pas les conditions ci-dessus (debian13vm, kali, so6minttest dans leur état actuel).
+
+INFO C cache APT continue de fonctionner comme avant (supprimé quand mises à jour security/regular en attente).
+
+Les 4545 tests passent en ~7s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 

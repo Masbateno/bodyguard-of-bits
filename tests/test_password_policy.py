@@ -142,10 +142,17 @@ class TestNoQualityModule:
         result = check_password_policy(make_snap(pam_quality_module=None), t=_t)
         assert "password_policy.no_quality_module" in deduction_keys(result)
 
-    def test_nature_is_action(self):
+    def test_nature_is_improvement(self):
+        """v0.5.5 C-2: cmd contains '&&' so nature must NOT be 'action'.
+
+        The fix queue rejects shell operators via fixes._has_shell_ops;
+        emitting as 'action' surfaces an unfixable cmd to --fix --apply
+        and confuses the user. 'improvement' shows the same guidance
+        without entering the fix queue.
+        """
         result = check_password_policy(make_snap(pam_quality_module=None), t=_t)
         warn = next(f for f in result.findings if f.key == "password_policy.no_quality_module")
-        assert warn.nature == "action"
+        assert warn.nature == "improvement"
 
     def test_cmd_present(self):
         result = check_password_policy(make_snap(pam_quality_module=None), t=_t)
@@ -199,10 +206,14 @@ class TestWeakMinlen:
         assert "password_policy.weak_minlen" not in finding_keys(result)
         assert "password_policy.no_quality_module" in finding_keys(result)
 
-    def test_nature_is_action(self):
+    def test_nature_is_improvement(self):
+        """v0.5.5 C-3: cmd is decorative (`sudo nano FILE → minlen = 8`),
+        the Unicode arrow makes it non-executable. Demoted to improvement
+        so --fix --apply doesn't try to exec a non-command string.
+        """
         result = check_password_policy(make_snap(pam_minlen=6), t=_t)
         warn = next(f for f in result.findings if f.key == "password_policy.weak_minlen")
-        assert warn.nature == "action"
+        assert warn.nature == "improvement"
 
 
 # ---------------------------------------------------------------------------

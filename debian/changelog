@@ -1,3 +1,70 @@
+bodyguard-of-bits (0.5.5-1) UNRELEASED; urgency=low
+
+  * Hardening pass — post-v0.5.4 audit by a deep general-purpose
+    sub-agent. 19 findings addressed: 4 real bugs (C-1 to C-4), 4
+    security smells (I-1 to I-4), 11 minor cleanups (M-1 to M-11).
+    17 fixed with code/test changes; 2 are doc comments (M-8/M-9).
+  * C-1 — apply_cron_email() silently broke scheduled audits:
+    rewrote wrapper scripts via _atomic_write() which forced mode
+    0o600, stripping the script's executable bit. Cron continued
+    reading the cron file but could not exec the script — the
+    scheduled audit silently never ran. _atomic_write() now takes
+    explicit mode=; callers pass 0o640 (cron file) and 0o755
+    (script). Regression test pins the resulting modes.
+  * C-2 — password_policy.no_quality_module cmd contained '&&'
+    (rejected by fixes._has_shell_ops). Demoted nature='action'
+    to 'improvement' so --fix --apply doesn't silently reject.
+  * C-3 — password_policy.weak_minlen cmd is decorative (Unicode
+    arrow makes shlex.split tokenize into junk). Same demotion
+    as C-2.
+  * C-4 — EXPLAIN_KEYS drift: services_state.py emits
+    'services_state.service_inactive' but the canonical key in
+    EXPLAIN_KEYS is 'services_state.enabled_inactive'. Added
+    alias to EXPLAIN_KEY_ALIASES (preserves JSON output
+    contract; --explain resolves via alias).
+  * I-1 — recurrence.json + ignore.yml written with default umask
+    (typically 0o644 world-readable on Debian/Ubuntu) instead of
+    0o600 like every other ~/.config/bob/ state file. Both now
+    use explicit os.open(..., 0o600) + os.fdopen().
+  * I-2 — _apply_deduction bypassed score cap after finalize().
+    Added defensive guard that logs WARNING and discards.
+  * I-3 — _safe_url didn't re-escape attribute context, allowing
+    XSS via crafted markdown links in HTML email reports. Now
+    uses html.escape(url, quote=True).
+  * I-4 — sysinfo._PRIVATE_IPV4_RE brittle regex + would have
+    broken on Python 3.12+ stdlib widening. Replaced by explicit
+    ipaddress.ip_network membership lists for IPv4 + IPv6.
+  * M-1 — email regex unified via bob.config._EMAIL_RE (was
+    duplicated 3×).
+  * M-2 — bob/watch.py:_NullReport removed, use canonical
+    bob.report.NullReport (Report Protocol from v0.5.0 #10).
+  * M-3 — 3 dead locale keys removed (_meta.lang, _meta.version,
+    ignored.hint).
+  * M-4 — corr.fully_blind rule widened: fail2ban-stopped or
+    auditd-stopped both qualify as "blind" detection layer.
+  * M-7 — extract _has_actionable_findings() helper in
+    updates.py + _TRANSPARENCY_KEYS frozenset future-proofing.
+  * M-8 + M-9 — clarifying comments in ssh.py (Match block
+    Include skip) and ports.py (process/iface empty semantics).
+  * M-10 — apply_cron_schedule regex anchored with cron-token
+    first field; comment lines containing "root /path" no
+    longer rewritten.
+  * M-11 — services_state.service_inactive cmd: dropped
+    '&& sudo journalctl' shell chain (moved to note=).
+  * M-6 (separate commit) — Optional[X] / List[X] → X | None /
+    list[X] sweep across 18 modules. Pure cosmetic, zero
+    behaviour change. Python 3.10+ syntax.
+  * Net diff: 23 code files, +312 / -112 = +200 LoC.
+  * 4538 → 4545 tests (+7 regression coverage). 18 added,
+    10 removed (obsolete _NullReport magic + dead locale key
+    test + semantic-changed correlation test), 2 renamed.
+  * JSON contract (schema_version="1"), 116 EXPLAIN_KEYS — all
+    preserved. Wire output visible delta only on hosts without
+    pwquality (password_policy moves from action block to
+    improvement block).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 23 May 2026 20:00:00 +0200
+
 bodyguard-of-bits (0.5.4-1) UNRELEASED; urgency=low
 
   * Refactor v0.5.x Phase 5 of 5 (final, closes the v0.5.x audit).

@@ -249,8 +249,13 @@ EXPLAIN_KEYS: list[str] = [k for _, keys in _EXPLAIN_GROUPS for k in keys]
 # ---------------------------------------------------------------------------
 
 EXPLAIN_KEY_ALIASES: dict[str, str] = {
-    # Example (commented out, kept for reference):
-    # "ssh.permit_root":  "ssh.permit_root_login",   # renamed in v0.X.0
+    # v0.5.5: services_state.py emits "services_state.service_inactive" but
+    # the EXPLAIN_KEYS entry and locale block are named "enabled_inactive"
+    # (different naming choices made independently — drift detected by the
+    # hardening audit). JSON output keeps emitting "service_inactive" to
+    # preserve the contract; `bob --explain` routes through the canonical
+    # name via this alias.
+    "services_state.service_inactive": "services_state.enabled_inactive",
 }
 
 

@@ -23,6 +23,7 @@ from bob.compare import (
     display_delta,
     save_baseline,
 )
+from bob.report import AuditReport
 from bob.runner import run_checks
 from bob.scoring import ScoreEngine
 from bob.sysinfo import detect_network_context
@@ -34,11 +35,9 @@ if TYPE_CHECKING:
     from bob.registry import ServiceRegistry
 
 
-class _NullReport:
-    """Report sink that silently discards all writes (used in watch iterations)."""
-
-    def __getattr__(self, name):
-        return lambda *args, **kwargs: None
+# M-2 (v0.5.5): _NullReport removed — use bob.report.NullReport via
+# AuditReport.null() (added in v0.5.0 alongside the Report Protocol).
+# Previous duck-typed implementation duplicated the no-op surface.
 
 
 def run_watch(
@@ -85,7 +84,7 @@ def run_watch(
             engine = ScoreEngine()
             network_context, _ = detect_network_context(offline=config.offline)
             result = run_checks(
-                watch_cfg, t, engine, _NullReport(), registry, network_context,
+                watch_cfg, t, engine, AuditReport.null(), registry, network_context,
                 profile=active_profile,
                 user_config=user_config,
             )

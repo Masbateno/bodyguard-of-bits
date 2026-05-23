@@ -434,9 +434,17 @@ hr {{ margin: 20px 0; border: none; border-top: 1px solid #ccc; }}
 
 
 def _safe_url(url: str) -> str:
-    """Return url only if it uses a safe scheme; otherwise return '#'."""
+    """Return url only if it uses a safe scheme; otherwise return '#'.
+
+    I-3 (v0.5.5): the URL is inserted into ``href="..."`` (attribute
+    context). Caller's ``html.escape(text)`` defaults to ``quote=False``,
+    which leaves ``"`` and ``'`` raw — a crafted markdown link like
+    ``[label](https://x.com" onclick="alert(1))`` would break out of the
+    attribute. Re-escape with ``quote=True`` here to plug that vector
+    even though current call sites only consume BOB-emitted markdown.
+    """
     if url.startswith(("http://", "https://")):
-        return url  # already html.escaped by _inline_format caller
+        return html.escape(url, quote=True)
     return "#"
 
 

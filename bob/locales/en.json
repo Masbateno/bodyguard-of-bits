@@ -1,8 +1,4 @@
 {
-  "_meta": {
-    "lang": "en",
-    "version": "0.16"
-  },
   "banner": {
     "title": "BOB",
     "subtitle": "Linux hardening auditor",
@@ -693,8 +689,7 @@
   "ignored": {
     "header": "Suppressed findings (ignore list)",
     "tag": "IGNORED",
-    "summary": "{count} finding(s) silenced by ignore.yml — run with --show-ignored to display them",
-    "hint": "Run `bob --ignore {check_key}` to silence this finding permanently"
+    "summary": "{count} finding(s) silenced by ignore.yml — run with --show-ignored to display them"
   },
   "ssh": {
     "not_installed": "SSH server (sshd) is not installed",

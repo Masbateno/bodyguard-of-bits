@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.5.5](#v055) | 23-05-2026 | Passe de hardening — 4 bugs réels (C-1 à C-4) + 4 security smells (I-1 à I-4) + 11 cleanups mineurs (M-1 à M-11) depuis un audit sub-agent profond. **C-1** : `apply_cron_email()` réécrivait les scripts wrapper via `_atomic_write()` qui forçait le mode `0o600` — les scripts perdaient leur bit exécutable `0o755` et cron arrêtait silencieusement de lancer l'audit. `_atomic_write()` prend maintenant `mode=` explicitement ; les réécritures de cron files passent `0o640`, les scripts `0o755`. **C-2 + C-3 + M-11** : 3 valeurs `cmd=` contenaient `&&` (opérateur shell rejeté par `_has_shell_ops`) ou une flèche Unicode décorative → `--fix --apply` les rejetait silencieusement. Demotion `password_policy.no_quality_module` + `password_policy.weak_minlen` de `nature="action"` à `nature="improvement"` (visible dans le summary box sous "Améliorations possibles" au lieu de "À corriger") + split du cmd `services_state.service_inactive` pour retirer le `&& journalctl` chaîné (déplacé en `note=`). **C-4** : `bob/checks/services_state.py` émet `services_state.service_inactive` mais `EXPLAIN_KEYS` déclarait `services_state.enabled_inactive` — `bob --explain` retournait "key not found". Fix via `EXPLAIN_KEY_ALIASES` (conservatif — préserve le contrat JSON output). **I-1** : `recurrence.py` + `ignore.py` écrivaient les fichiers state avec l'umask process (typiquement world-readable `0o644`) au lieu de `0o600` comme tous les autres `~/.config/bob/`. **I-2** : appels post-`finalize()` à `_apply_deduction` bypassaient silencieusement les caps de score — log WARNING + discard maintenant. **I-3** : `_safe_url` dans HTML email markdown ne re-escapait pas le contexte attribut — URL craftée contenant `"` pouvait sortir de `href=""`. Utilise maintenant `html.escape(..., quote=True)`. **I-4** : regex brittle `sysinfo._PRIVATE_IPV4_RE` (avec hack `removeprefix("^")`) remplacée par checks d'appartenance `ipaddress.ip_network` explicites ; contourne le widening Python 3.12+ de `is_private` incluant les ranges documentation. **M-1** : 3 sites regex email dupliqués unifiés via `bob.config._EMAIL_RE`. **M-2** : `bob/watch.py:_NullReport` retiré au profit de `bob.report.NullReport` (type Protocol introduit en v0.5.0 #10). **M-3** : 3 clés locale mortes retirées (`_meta.lang`, `_meta.version`, `ignored.hint`). **M-4** : règle `corr.fully_blind` asymétrique — exigait `fail2ban.not_installed` mais ignorait l'aveuglement équivalent `fail2ban.service_inactive`. Élargi pour fire quand n'importe quel layer de détection est aveugle. **M-7** : extraction helper `_has_actionable_findings()` dans `updates.py` (plus clair qu'un blacklist inline de `apt_cache_age`). **M-8 + M-9** : commentaires clarifiants dans ssh.py (skip Include après Match block) et ports.py (champs process/iface vides = "inconnu"). **M-10** : regex `apply_cron_schedule` anchored avec cron-token premier champ — les comment lines contenant "root /path" ne sont plus réécrites. **M-6 (commit séparé)** : `Optional[X]` / `List[X]` → `X \| None` / `list[X]` sur 18 modules — syntaxe Python 3.10+. 4538 → 4545 tests (+7 régression). Diff net : 23 fichiers code, +312 / −112 = +200 LoC. Score sur host dev inchangé (8/10) ; le changement `nature` password_policy fait visiblement disparaître le bloc "À corriger" sur les hosts sans pwquality. |
 | [v0.5.4](#v054) | 22-05-2026 | Refactor v0.5.x Phase 5 sur 5 (finale) — **#6 + #9 + #15b + cache APT option C**. **#6 helper `prompt_wizard()`** dans `bob/_tty.py` (wrapper translation-agnostic autour de `input()` avec cancel `q`/`quit` uniforme + default-on-Enter) remplace 10 sites `input()` bruts dans les wizards install + edit de `bob/cron.py`. **#9 sunset UFW_AUDIT_SHARE** — `bob/_paths.py:resolve_share_dir()` upgradé `logger.info(...)` → `logger.warning(...)` avec message explicite "DEPRECATED depuis v0.5.4, sera REMOVED en v0.6.0" ; la legacy env var reste fonctionnelle aujourd'hui. **#15b mapping `_PREFIX_TO_DOMAIN` explicite** — trois fallbacks silencieux v0.4.x sortent du catch-all firewall : `fail2ban` → `ssh` (vocation primaire anti-bruteforce SSH), `virt` → `hardening` (bypass KVM/bridge est surface kernel/système), `docker_audit` → `hardening` (durcissement container / sécurité daemon.json). `smtp` et `desktop_apps` restent catch-all par design (pas de fit propre). **Cache APT option C** (nouvelle feature métier) — `bob/checks/updates.py` ajoute une ligne INFO `updates.apt_cache_age` quand aucune mise à jour security/regular n'est en attente ET l'âge du cache est sous le seuil obsolète, donnant une transparence permanente sur la fraîcheur du verdict "système à jour". Remonté par le test terrain VM Ubuntu du 2026-05-22 où une VM dormante retournait "à jour" malgré 8 LTS security updates en attente upstream. **#13 (split ssh.py, 1324L) et #14 (split cron.py, 1223L) déférés à v0.6.0** — selon le principe conservative-refactor, splitter des fichiers >1000 LoC pour un gain marginal de lisibilité ne passe pas le test gain × risque dans une release contract-preserving. Diff net : 12 fichiers modifiés, +118 / −69 = +49 lignes (cron.py +1, _tty.py +24, updates.py +20, domain_scores.py +10, _paths.py +5, locales +4 clés, tests −6). 4538/4538 tests inchangés. Diff de sortie vs v0.5.3 est intentionnel : nouvelle ligne INFO dans section MISES À JOUR SYSTÈME sur hosts avec cache + aucune update en attente, et reshuffle du score par domaine sur hosts émettant des findings `fail2ban.*` / `virt.*` / `docker_audit.*`. Ferme l'audit v0.5.x (13/15 findings shippés, 2 déférés avec justification). |
 | [v0.5.3](#v053) | 22-05-2026 | Refactor v0.5.x Phase 4 — **#5 + #12 + #8**. **#5 Table `_LEVEL_DISPATCH`** dans `bob/display.py` collapse la cascade 4-branches OK/WARN/ALERT/INFO de `display_result()` en une seule boucle de dispatch pilotée par une dataclass frozen `_LevelTraits(report_label, threshold_key, print_fn, has_recurrence, has_body, detail_unconditional, show_note, show_cis)`. La table 4 lignes capture le comportement par niveau de manière déclarative ; le cas spécial ALERT qui imprime le détail sans `--verbose` est maintenant exprimé via `detail_unconditional=True` plutôt qu'une branche impérative. **#12 split `print_audit_summary`** — la fonction de 142 lignes est découpée en 3 helpers focalisés (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) plus `_add_finding_lines` remonté d'inner-function à niveau module. L'orchestrateur devient un assembleur 3 lignes. **#8 retrait de `CheckResult.log_data`** — l'escape hatch dict typé sur `CheckResult` est remplacé par un retour tuple de `check_logs(...) -> (CheckResult, LogReportData | None)`. Nouvelle dataclass frozen `LogReportData(log_days, days_available, total, brute_hits, top_ips, top_ports, svc_hits)` dans `bob/checks/logs.py`. `runner.py` unpacke le tuple ; `display_log_results` prend le report comme arg explicite. **Diff net : 5 fichiers modifiés, +109 / −69 = +40 lignes** (display.py +23 pour signatures helpers explicites, logs.py +19 pour `LogReportData`, scoring.py −1 pour le champ retiré). 4538/4538 tests inchangés — 3 tests renommés (`test_log_data_*` → `test_report_data_*`), ~20 sites tests utilisent l'unpack tuple. Sortie wire bit-identique à v0.5.2. |
 | [v0.5.2](#v052) | 22-05-2026 | Refactor v0.5.x Phase 3 — **#4 + #3**. **#4 Table directive SSH** : nouvelle dataclass `_BadDirective` + table `_BAD_DIRECTIVES` (8 entrées) + helper `_apply_bad_directive()` dans `bob/checks/ssh.py`. Migre les 8 directives `sshd_config` uniformes (PermitEmptyPasswords, X11Forwarding, IgnoreRhosts, HostbasedAuthentication, PermitUserEnvironment, StrictModes, AllowTcpForwarding, PubkeyAuthentication) d'une cascade de blocs `if value == "yes"`/`"no"` vers une boucle `for rule in _BAD_DIRECTIVES`. Helper avec deux styles de prédicats (`bad_values` ou `safe_values`) — `safe_values` couvre AllowTcpForwarding où `"local"` est acceptable en plus de `"no"`. Cas spéciaux préservés en impératif : PermitRootLogin (4-way branch), PasswordAuthentication (dépend de `ssh_exposed`), MaxAuthTries (seuil entier), LoginGraceTime (INFO-only), AllowUsers/AllowGroups (info-only), Match block, weak ciphers/macs/kex (helper séparé). Net `_check_sshd_config` : ~180 → ~50 LoC, ssh.py total +56 (coût dataclass + 8 entrées). **#3 extension runner._sec** avec params keyword-only `skip_if=Callable[[snapshot], bool]` et `post_display=Callable[[snapshot, result], None]`. Permet de remplacer 4 blocs inline par des appels `_sec` 1-liner : samba (skip_if not installed), docker_audit (skip_if not docker_installed), desktop_apps (skip_if not detected), disk (post_display=display_disk_partitions). Net runner.py : −29 lignes. **#13 (split ssh.py) déféré à Phase 5** — estimation audit (-150 LoC pour #4) trop optimiste, ssh.py reste à 1324 LoC. Tests 4538/4538 inchangés — comportement bit-identique à v0.5.1. |
@@ -32,6 +33,84 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.5.5] — 23-05-2026
+
+**Passe de hardening — post-v0.5.4 audit par un sub-agent profond.** 4 bugs réels + 4 security smells + 11 cleanups mineurs = **19 findings** adressés (17 avec changements code/test, 2 avec commentaires doc). Commit cosmétique compagnon migre le typing `Optional[X]` / `List[X]` sur 18 modules.
+
+### Bugs critiques (4)
+
+**C-1 — `apply_cron_email()` cassait silencieusement les audits programmés**
+`bob/cron.py:apply_cron_email()` réécrivait à la fois les cron files et les wrapper scripts via `_atomic_write()`, qui ouvrait toujours le fichier temp avec mode `0o600`. Après `os.replace()`, le nouveau fichier héritait de ce mode — donc le wrapper script (originellement `0o755`) perdait son bit exécutable. Cron continuait à lire le cron file mais **ne pouvait plus exec le script**, et l'audit programmé ne tournait plus silencieusement. N'importe qui ayant utilisé `bob --manage-cron` pour changer son email de notification entrait dans cet état.
+
+`_atomic_write(path, content, mode=0o600)` prend maintenant un mode explicite. Les callers dans `apply_cron_email` passent `0o640` (cron file) et `0o755` (script). Test régression ajouté dans `tests/test_cron.py::TestApplyCronEmail::test_preserves_script_executable_mode`.
+
+**C-2 — `password_policy.no_quality_module` cmd non-fixable**
+`cmd="sudo apt install libpam-pwquality && sudo pam-auth-update"` émis avec `nature="action"` → `--fix --apply` le rejetait via `fixes._has_shell_ops` (le `&&` est correctement flaggé comme syntaxe shell unsafe). L'utilisateur voyait le cmd dans le summary mais presser `y` ne faisait rien.
+
+Fix : demotion à `nature="improvement"`. Le cmd apparaît toujours dans la sortie audit comme guidance — il n'entre simplement pas dans la queue fix-mode. `apt install … && pam-auth-update` 2-étapes n'est de toute façon pas chainable en un seul exec.
+
+**C-3 — `password_policy.weak_minlen` cmd décoratif, pas exécutable**
+`cmd="sudo nano /etc/security/pwquality.conf  →  minlen = 8"` — la flèche Unicode fait que `shlex.split` tokenise en arguments junk. Comme C-2, demotion à `nature="improvement"`.
+
+**C-4 — Drift `EXPLAIN_KEYS` pour `services_state`**
+`bob/checks/services_state.py` émet des findings avec `key="services_state.service_inactive"`, mais `EXPLAIN_KEYS` (dans `bob/explain.py`) déclarait le nom canonique `services_state.enabled_inactive`. `bob --explain services_state.service_inactive` retournait "key not found".
+
+Fix : ajout de `"services_state.service_inactive": "services_state.enabled_inactive"` à `EXPLAIN_KEY_ALIASES`. Le contrat JSON output est préservé (émet toujours `service_inactive`), et les lookups `--explain` résolvent via l'alias. Option (b) plutôt que (a) (renommer la clé émise aurait été un breaking change JSON output — réservé pour v0.6.0).
+
+### Important issues (4)
+
+**I-1 — `recurrence.json` + `ignore.yml` écrits avec umask par défaut**
+Les deux fichiers s'appuyaient sur l'umask process (typiquement `0o644` sur Debian/Ubuntu — world-readable). Tous les autres fichiers state persistants dans BOB (`config.conf`, rapports audit, historique score) s'ouvrent avec un `0o600` explicite. Corrigés tous deux pour utiliser `os.open(..., 0o600)` + `os.fdopen()`.
+
+**I-2 — `_apply_deduction` bypassait le cap de score après `finalize()`**
+Le contrat orchestrateur est one-way : `finalize()` bake-in le cap puis set `_finalized=True`. Un `engine.apply(result)` tardif muterait `_raw_score` après que le cap était appliqué — bypassant silencieusement. Ajout d'un guard défensif avec log WARNING ; la déduction est jetée.
+
+**I-3 — `_safe_url` permettait injection `"` dans HTML email attribut href**
+Le pipeline html-escape le texte d'abord (avec `quote=False` par défaut), puis re-substitue `[label](url)` en `<a href="url">label</a>`. L'URL était insérée dans le contexte attribut sans re-escape — un `[label](https://x.com" onclick="alert(1))` craft pouvait sortir du href. `_safe_url` appelle maintenant `html.escape(url, quote=True)` pour encoder `"`/`'`/`<`/`>`.
+
+Surface d'attaque réaliste étroite (un plugin `services.d/*.json` malveillant émettant des markdown links avec strings craftés, rendu dans le mail client de l'utilisateur) mais le fix est cheap et le rapport email est désormais XSS-safe garanti.
+
+**I-4 — `sysinfo._PRIVATE_IPV4_RE` brittle + cassure Python 3.12+**
+Deux problèmes : (1) le call site ligne 192 faisait `re.search(r"via\s+" + _PRIVATE_IPV4_RE.pattern.removeprefix("^"), …)` — manipulant l'attribut `.pattern` d'un pattern compilé et droppant les flags ; (2) `ipaddress.IPv4Address.is_private` a été élargi en Python 3.12.4+ pour inclure documentation/reserved ranges comme `203.0.113.0/24`, donc un switch naïf vers stdlib mal-classifierait ces ranges comme "private" et casserait `detect_network_context()`.
+
+Fix : tuples explicites `_PRIVATE_IPV4_NETS` + `_PRIVATE_IPV6_NETS` d'objets `ipaddress.ip_network`, avec helpers `_is_private_or_loopback_ipv4()` / `_is_private_or_loopback_ipv6()` utilisant l'appartenance `addr in net`. Couvre RFC 1918, loopback (127/8 + ::1), link-local (169.254/16 + fe80::/10), CGNAT (100.64/10), et ULA IPv6 (fc00::/7). Les ranges documentation restent "public" donc ne déclenchent pas le contexte "local".
+
+### Cleanups mineurs (11)
+
+| # | Fix | Fichiers |
+|---|---|---|
+| **M-1** | Regex email unifiée via `bob.config._EMAIL_RE` (dupliquée 3×) | `bob/cron.py` |
+| **M-2** | `bob/watch.py:_NullReport` retiré → use `bob.report.NullReport` (Report Protocol de v0.5.0 #10) | `bob/watch.py`, `tests/test_watch.py` |
+| **M-3** | 3 clés locale mortes retirées : `_meta.lang`, `_meta.version`, `ignored.hint` | `bob/locales/{en,fr}.json`, `tests/test_ignore.py` |
+| **M-4** | Règle `corr.fully_blind` élargie : fail2ban-stoppé ou auditd-stoppé qualifient comme "aveugle" (était asymétrique — fire seulement si les deux layers complètement absents) | `bob/correlation.py`, `tests/test_correlation.py` |
+| **M-7** | Extraction helper `_has_actionable_findings()` dans `updates.py` (remplace le filter inline fragile `f.key != "updates.apt_cache_age"`) + frozenset `_TRANSPARENCY_KEYS` future-proof | `bob/checks/updates.py` |
+| **M-8** | Commentaire seul — clarifie pourquoi `_parse_config_file` s'arrête aux Match blocks (skippe aussi les Include suivants, intentionnel) | `bob/checks/ssh.py` |
+| **M-9** | Commentaire seul — clarifie que les champs vides `ListeningPort.process`/`iface` veulent dire "inconnu" pas "pas de processus" (quand `ss -p` manque le privilège) | `bob/checks/ports.py` |
+| **M-10** | Regex `apply_cron_schedule` resserrée : premier champ doit être un cron-token (`[0-9*,\-/]…`) pour que les comment lines commençant par `#` ne soient pas matchées | `bob/cron.py`, `tests/test_cron.py` |
+| **M-11** | Cmd `services_state.service_inactive` : drop du chain shell `&& sudo journalctl …` (déplacé en `note=` guidance) pour que `--fix --apply` l'accepte | `bob/checks/services_state.py` |
+
+### M-6 (commit séparé) — `Optional[X]` / `List[X]` → `X | None` / `list[X]`
+
+Sweep mécanique sur 18 modules. Syntaxe Python 3.10+. Pur cosmétique, zéro changement de comportement. Commit isolé pour revert-chirurgical-sur-typo safety.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4545 passed in ~7s
+```
+
+**4538 → 4545 (+7).** Couverture régression pour C-1 (mode cron), C-2 + C-3 (assertion `nature`), C-4 (résolution alias), I-2 (guard post-finalize), I-3 (XSS attr-escape, 9 tests dans le nouveau `tests/test_report_markdown_safety.py`), M-4 (fail2ban-seul aveugle), M-10 (comment-line cron skippée). 8 tests supprimés (magic `_NullReport.__getattr__` obsolète de M-2, test mort `ignored.hint` de M-3). 2 tests renommés pour clarté (`test_nature_is_action` → `test_nature_is_improvement` sur `password_policy`).
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS — **inchangés**. C-4 utilise `EXPLAIN_KEY_ALIASES` (additif) pour préserver la clé émise tout en routant `--explain` vers le nom canonique.
+- **Sortie wire** : Delta visible sur hosts sans `pam_pwquality` installé — le finding password_policy passe de "À corriger" (action) à "Améliorations possibles" (improvement) dans le summary box. Score global inchangé.
+- **i18n** : 3 clés retirées (`_meta.lang`, `_meta.version`, `ignored.hint`). Test locale-coverage toujours vert.
+- **API externe** : aucun breaking change. `prompt_wizard` (v0.5.4 #6) et `_atomic_write` (prend maintenant `mode`) gagnent des paramètres optionnels.
 
 ---
 

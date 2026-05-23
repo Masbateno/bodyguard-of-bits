@@ -23,8 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from bob._tty import read_line as _rl, prompt_wizard
-
-_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
 
 CRON_DIR = Path("/etc/cron.d")
 SCRIPT_DIR = Path("/usr/local/bin")
@@ -706,7 +705,7 @@ def _manage_email_store(t) -> None:
 
         if answer == "a":
             raw = input(f"  {t('manage_cron.email_store_enter')} : ").strip()
-            if not re.match(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$", raw):
+            if not _EMAIL_RE.match(raw):  # M-1 (v0.5.5): use bob.config._EMAIL_RE
                 print(f"  ✖ {t('manage_cron.email_store_invalid_email')}")
             else:
                 store.add(raw)
@@ -765,10 +764,17 @@ def _manage_email_store(t) -> None:
             print(f"  ✔ {t('manage_cron.email_store_removed', email=addr)}")
 
 
-def _atomic_write(path: Path, content: str) -> None:
-    """Write *content* to *path* atomically (temp file + os.replace)."""
+def _atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
+    """Write *content* to *path* atomically (temp file + os.replace).
+
+    *mode* is the open() flag mode for the *new* file. Default is 0o600
+    (private) — appropriate for state files. Callers patching existing
+    cron files (0o640) or wrapper scripts (0o755) MUST pass the right
+    mode explicitly, otherwise os.replace() preserves the tmp file's
+    mode (0o600) and breaks the original file's permissions.
+    """
     tmp = path.with_suffix(path.suffix + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(content)
     os.replace(str(tmp), str(path))
@@ -845,8 +851,13 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
     except OSError as exc:
         return str(exc)
     new_line = f"{schedule_expr}  root  {entry.script_path}"
+    # M-10 (v0.5.5): anchor first field to cron-token shape
+    # ([0-9*,\-/]) to skip comment lines that would otherwise match
+    # if their text accidentally fits 5 whitespace-separated tokens
+    # followed by " root ". The previous `^\S+\s+...` matched any
+    # non-whitespace start including `#`.
     new_text = re.sub(
-        r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
+        r"^[0-9*,\-/]\S*\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
         lambda _: new_line,
         text,
         flags=re.MULTILINE,
@@ -879,7 +890,8 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
             f"# email: {new_email}" if ln.startswith("# email:") else ln
             for ln in lines
         ]
-        _atomic_write(entry.cron_path, "\n".join(updated) + "\n")
+        # Cron files in /etc/cron.d/ must be 0o640 (root:root) or cron skips them.
+        _atomic_write(entry.cron_path, "\n".join(updated) + "\n", mode=0o640)
     except OSError as exc:
         return (str(exc), 0)
 
@@ -894,7 +906,8 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
                 text,
                 flags=re.MULTILINE,
             )
-            _atomic_write(entry.script_path, text)
+            # Wrapper script must be 0o755 (executable) — cron exec's it directly.
+            _atomic_write(entry.script_path, text, mode=0o755)
         except OSError as exc:
             return (str(exc), subst_count)
     return ("", subst_count)

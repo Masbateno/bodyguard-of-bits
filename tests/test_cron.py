@@ -581,6 +581,34 @@ class TestApplyCronSchedule:
         err = apply_cron_schedule(bogus, "0 3 * * *")
         assert err  # OSError string surfaced to caller
 
+    def test_comment_line_with_root_token_not_modified(self, tmp_path):
+        """v0.5.5 M-10: regex must not match commented-out cron lines.
+
+        Pre-v0.5.5 the regex was `^\\S+\\s+...` which matched any non-
+        whitespace start including `#`. A comment like
+        `# 0 3 * * * root /usr/bin/legacy-bob` would be silently rewritten.
+        """
+        cron_path = tmp_path / "bob-test"
+        script_path = tmp_path / "bob-test.sh"
+        cron_path.write_text(
+            "# email: admin@example.com\n"
+            "# legacy entry: 0 3 * * * root /usr/bin/legacy-bob\n"
+            "0 3 * * *  root  /usr/local/bin/bob-test.sh\n",
+            encoding="utf-8",
+        )
+        script_path.write_text("#!/bin/bash\necho hi\n", encoding="utf-8")
+        entry = CronEntry(
+            name="test", schedule_expr="0 3 * * *", hour=3, minute=0,
+            script_path=script_path, cron_path=cron_path,
+        )
+        err = apply_cron_schedule(entry, "30 14 * * 1")
+        assert err == ""
+        content = entry.cron_path.read_text(encoding="utf-8")
+        # The comment line must survive intact (was being rewritten pre-fix)
+        assert "# legacy entry: 0 3 * * * root /usr/bin/legacy-bob" in content
+        # The real schedule line must be replaced
+        assert "30 14 * * 1  root  " in content
+
 
 # ---------------------------------------------------------------------------
 # apply_cron_email — patches cron file + wrapper script
@@ -644,3 +672,21 @@ class TestApplyCronEmail:
         assert err == ""
         # shlex.quote wraps with single quotes when needed
         assert "NOTIFY_EMAILS='a b@c'" in entry.script_path.read_text(encoding="utf-8")
+
+    def test_preserves_script_executable_mode(self, tmp_path):
+        """Regression for v0.5.5 C-1: apply_cron_email() must keep script 0o755.
+
+        Pre-v0.5.5 the helper rewrote the script via _atomic_write() which
+        forced mode 0o600 — cron could no longer exec the script and the
+        scheduled audit silently never ran. Tests must pin the mode.
+        """
+        import stat as _stat
+        entry = self._make_entry(tmp_path)
+        # Set the initial modes that bob --install-cron produces.
+        entry.cron_path.chmod(0o640)
+        entry.script_path.chmod(0o755)
+        err, count = apply_cron_email(entry, "new@example.com")
+        assert err == ""
+        assert count == 1
+        assert _stat.S_IMODE(entry.cron_path.stat().st_mode) == 0o640
+        assert _stat.S_IMODE(entry.script_path.stat().st_mode) == 0o755

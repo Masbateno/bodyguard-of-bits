@@ -181,6 +181,10 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
 
     # ---- No PAM quality module ---------------------------------------------
     if snapshot.pam_quality_module is None:
+        # C-2 fix: nature="action" routes the cmd through --fix --apply, which
+        # rejects any shell operator (&&, ||, ;) via fixes._has_shell_ops.
+        # Two-step install isn't safely chainable in a single exec — emit as
+        # improvement so the user sees the guidance without --fix breaking.
         result.warn_with_deduction(
             key="password_policy.no_quality_module",
             message=_t("password_policy.no_quality_module"),
@@ -188,7 +192,7 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
             points=_DEDUCTION_NO_QUALITY_MODULE,
             detail=_t("password_policy.no_quality_module_detail"),
             cmd="sudo apt install libpam-pwquality && sudo pam-auth-update",
-            nature="action",
+            nature="improvement",
         )
         has_finding = True
 
@@ -199,6 +203,10 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
         snapshot.pam_minlen is not None
         and snapshot.pam_minlen < _MIN_LEN_THRESHOLD
     ):
+        # C-3 fix: cmd was "sudo nano FILE  →  minlen = 8" — the Unicode arrow
+        # makes the string non-executable (shlex.split tokenises it as args).
+        # Demote to improvement so it appears as guidance without --fix
+        # trying to exec it.
         result.warn_with_deduction(
             key="password_policy.weak_minlen",
             message=_t("password_policy.weak_minlen", minlen=snapshot.pam_minlen),
@@ -209,7 +217,7 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
                 "sudo nano /etc/security/pwquality.conf"
                 f"  →  minlen = {_MIN_LEN_THRESHOLD}"
             ),
-            nature="action",
+            nature="improvement",
         )
         has_finding = True
 

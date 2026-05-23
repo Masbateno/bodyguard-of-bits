@@ -6,6 +6,177 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.5] — 23-05-2026
+
+**Passe de hardening — post-v0.5.4 audit par un sub-agent général-purpose profond.** 19 findings : 4 bugs réels (C-1 à C-4), 4 security smells (I-1 à I-4), 11 cleanups mineurs (M-1 à M-11). 17 fixés avec changements code/test ; 2 sont commentaires doc (M-8/M-9). Commit cosmétique compagnon (M-6) migre le typing `Optional[X]` / `List[X]` sur 18 modules.
+
+### Méthodologie audit
+
+Un sub-agent général-purpose a fait une lecture profonde de 22 modules (`bob/cron.py`, `bob/checks/ssh.py`, `bob/checks/services_state.py`, `bob/scoring.py`, `bob/domain_scores.py`, `bob/explain.py`, `bob/__main__.py`, `bob/sysinfo.py`, `bob/fixes.py`, `bob/recurrence.py`, `bob/compare.py`, `bob/ignore.py`, `bob/correlation.py`, `bob/i18n.py`, `bob/watch.py`, `bob/webhook.py`, `bob/checks/_run.py`, `bob/report_markdown.py`, `bob/checks/updates.py`, `bob/checks/password_policy.py`, `bob/checks/user_accounts.py`, `bob/checks/file_perms.py`) + 15+ modules spot-checkés. Findings remontés en sévérité-graded (C / I / M / S) avec file:line, cause racine, fix recommandé, risque régression. Couverture rapportée dans l'audit (listes full / spot / not-touched).
+
+Modules non profondément auditées (déférés pour passes futures) : `bob/manage_logs.py` (999L curses TUI), `bob/tui/cron.py` (920L curses TUI), `bob/checks/logs.py` (662L regex UFW), `bob/display.py`, `bob/output.py`, formats `bob/html_output.py` / `bob/csv_output.py` / `bob/markdown_output.py`.
+
+### Bugs critiques (4)
+
+**C-1 — `apply_cron_email()` cassait silencieusement les audits programmés**
+
+`bob/cron.py:apply_cron_email()` (lignes 863-900) réécrivait à la fois `entry.cron_path` et `entry.script_path` via `_atomic_write()`, qui ouvrait toujours le fichier temp avec mode `0o600`. Après `os.replace()` le nouveau fichier héritait de ce mode — le wrapper script (originellement `0o755`) perdait son bit exécutable, et cron silencieusement ne pouvait plus l'exec. N'importe qui ayant utilisé `bob --manage-cron` pour changer son email de notification entrait dans cet état. Cron continuait à lire le cron file mais le script ne tournait plus ; l'audit programmé devenait silencieusement dark.
+
+Le pattern était hérité de quand `_atomic_write` a été introduit (fichiers state privés, `0o600` correct). Les callers cron.py ajoutés plus tard n'ont pas tenu compte de la différence de mode.
+
+```python
+def _atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
+    """Write *content* to *path* atomically (temp file + os.replace).
+
+    *mode* is the open() flag mode for the *new* file. Default is 0o600
+    (private) — appropriate for state files. Callers patching existing
+    cron files (0o640) or wrapper scripts (0o755) MUST pass the right
+    mode explicitly, otherwise os.replace() preserves the tmp file's
+    mode (0o600) and breaks the original file's permissions.
+    """
+    ...
+```
+
+Deux call sites `apply_cron_email` mis à jour : `mode=0o640` pour cron file, `mode=0o755` pour script. Test régression ajouté : `tests/test_cron.py::TestApplyCronEmail::test_preserves_script_executable_mode` pin le mode résultant après la réécriture. La recommandation audit S-2 ("test for permission preservation on cron-managed files") est maintenant satisfaite.
+
+**C-2 — `password_policy.no_quality_module` cmd non-fixable via `--fix --apply`**
+
+`bob/checks/password_policy.py:184-192` émettait `cmd="sudo apt install libpam-pwquality && sudo pam-auth-update"` avec `nature="action"`. `bob/fixes.py:106` (`_has_shell_ops`) flagge correctement `&&` comme syntaxe shell unsafe et rejette le cmd au moment du fix avec "unsafe shell syntax in command". L'utilisateur pressait `y` et ne voyait rien se passer.
+
+`apt install … && pam-auth-update` 2-étapes n'est de toute façon pas chainable en un seul `subprocess` exec (l'install pkg peut échouer ; pam-auth-update a besoin de voir le nouveau pkg). Demotion à `nature="improvement"` pour que le cmd apparaisse comme guidance sans entrer dans la queue fix. Test `test_nature_is_improvement` remplace `test_nature_is_action`.
+
+**C-3 — `password_policy.weak_minlen` cmd décoratif, pas exécutable**
+
+`cmd="sudo nano /etc/security/pwquality.conf  →  minlen = 8"` — la flèche Unicode `→` tokenise via `shlex.split()` en junk : `["sudo", "nano", "/etc/security/pwquality.conf", "→", "minlen", "=", "8"]`. Même si ça parsait, c'est un *hint de guidance avec next-step embedded*, pas une commande. Même classe de fix que C-2 : demotion à `nature="improvement"`.
+
+**C-4 — Drift `EXPLAIN_KEYS` pour `services_state`**
+
+Drift de renommage. `bob/checks/services_state.py:197,204,211` émet des findings avec `key="services_state.service_inactive"`. `bob/explain.py:151` déclare l'EXPLAIN_KEY canonique `services_state.enabled_inactive`. Le bloc locale `explain.services_state.enabled_inactive` décrit le bon concept. Le drift fait que `bob --explain services_state.service_inactive` retourne "key not found" — alors que l'utilisateur vient de voir cette clé dans sa sortie audit.
+
+Deux options sur la table :
+- **(a)** Renommer la clé émise dans `services_state.py` pour matcher le nom canonique. **Casse le contrat JSON output** pour n'importe quel utilisateur automatisant sur la clé `service_inactive` (JSON `schema_version="1"` inclut les finding keys).
+- **(b)** Ajouter `services_state.service_inactive` → `services_state.enabled_inactive` à `EXPLAIN_KEY_ALIASES`. JSON output inchangé. `--explain` résout via alias.
+
+Option (b) choisie (conservatrice). Test régression `test_services_state_alias_routes_to_canonical` ajouté pour lock l'alias.
+
+### Important issues (4)
+
+**I-1 — `recurrence.json` + `ignore.yml` écrits avec umask par défaut**
+
+`bob/recurrence.py:56-57` utilisait `tmp.open("w", encoding="utf-8")` et `bob/ignore.py:89` utilisait `path.write_text(content, encoding="utf-8")`. Les deux s'appuyaient sur l'umask process. Sur Debian/Ubuntu par défaut l'umask est `0022`, produisant des fichiers world-readable `0644`. **Tous les autres fichiers state persistants dans BOB** (`bob/config.py:123`, `bob/compare.py:185`, `bob/history.py`, `bob/report.py:160`, `bob/manage_logs.py`) utilisent `os.open(..., 0o600)` via soit `_atomic_write` soit `os.fdopen` explicite — un invariant documenté `~/.config/bob/`. SNAPSHOT.md flagge cela explicitement.
+
+Les données ne sont pas haute sensibilité (clés finding récurrentes, clés finding ignorées) mais l'incohérence viole l'invariant. Les deux corrigés pour utiliser `os.open(str(path), os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o600)` + `os.fdopen()`.
+
+**I-2 — `_apply_deduction` bypassait le cap de score après `finalize()`**
+
+Le contrat orchestrateur documenté à `bob/scoring.py:437-446` est one-way : `finalize()` bake-in le cap puis set `_finalized=True`. Un `engine.apply(result)` tardif muterait `_raw_score` via `_apply_deduction` après que le cap était appliqué — bypassant silencieusement. Pas de guard.
+
+Guard défensif ajouté à `bob/scoring.py:541-548` :
+
+```python
+def _apply_deduction(self, deduction: Deduction) -> None:
+    if self._finalized:
+        logger.warning(
+            "ScoreEngine: deduction %r applied after finalize() — discarded "
+            "to preserve cap semantics. Re-order callers if intentional.",
+            deduction.key or deduction.reason[:40],
+        )
+        return
+    self._raw_score -= deduction.points
+    self.breakdown.append(deduction)
+```
+
+Le path production appelle toujours `finalize()` en dernier donc ce guard est défensif. Test régression `test_post_finalize_deduction_is_discarded` pin à la fois le discard et le log WARNING.
+
+**I-3 — `_safe_url` permettait injection `"` dans HTML email href attribut**
+
+`bob/report_markdown.py:_inline_format()` (lignes 446-468) html-escape le texte d'abord (avec `quote=False` par défaut), puis re-substitue `[label](url)` en `<a href="url">label</a>`. L'URL est le 2e groupe regex — déjà html-escapée, mais avec `quote=False` seulement, donc `"` et `'` restent raw. `_safe_url(url)` (ligne 436) ne vérifiait que le préfixe de scheme URL et retournait l'URL non modifiée dans le contexte attribut.
+
+Chaîne d'attaque : un markdown link craft dans un texte user-controllable (ex. label plugin `services.d/*.json` malveillant, ou string traduit avec markdown dedans) :
+```
+[label](https://x.com" onclick="alert(1))
+```
+
+Après `html.escape()` l'URL devient `https://x.com&quot; onclick=&quot;alert(1)` (seulement `&` escapé car `quote=False` laisse `"` tranquille). Hmm — en fait avec `html.escape` Python par défaut, `"` est converti à `&quot;` SEULEMENT quand `quote=True`. Avec `quote=False` (le default) `"` reste raw → c'est le vecteur. L'URL avec `"` raw atterrit dans `href="…"` → breakout attribut → injection JavaScript.
+
+Fix : `_safe_url` fait maintenant `html.escape(url, quote=True)` pour encoder n'importe quel `"`/`'`/`<`/`>` resté dans l'URL. Re-escape est safe (double-escape produit `&amp;quot;` que les browsers décodent une fois en `&quot;` — un littéral dans la valeur URL, pas de syntaxe active).
+
+Nouveau fichier de test `tests/test_report_markdown_safety.py` avec 9 assertions régression (passthrough URL, rejet scheme, escape double-quote, escape single-quote, escape angle-bracket, full-pipeline test attack-string).
+
+Surface d'attaque réaliste étroite (le corps HTML de l'email est rendu dans le mail client de l'utilisateur ; les seuls strings user-controllable atteignant `_inline_format` sont les strings locale traduits et les labels service plugin-définis). Mais le fix est cheap et le rapport email est maintenant XSS-safe-by-construction.
+
+**I-4 — `sysinfo._PRIVATE_IPV4_RE` brittle + Python 3.12+ aurait cassé un switch stdlib**
+
+Deux problèmes compoundés :
+1. Le call site à `bob/sysinfo.py:192` faisait `re.search(r"via\s+" + _PRIVATE_IPV4_RE.pattern.removeprefix("^"), result.stdout)` — manipulant l'attribut `.pattern` d'un pattern compilé via concaténation string. Drop les flags compile originaux.
+2. Un switch naïf vers `ipaddress.IPv4Address.is_private` de stdlib casserait sur Python 3.12.4+ : la définition de `is_private` s'est élargie pour inclure les ranges documentation/reserved (`192.0.0.0/29`, `192.0.2.0/24`, `198.51.100.0/24`, **`203.0.113.0/24`**, `198.18.0.0/15`, etc.). Les tests utilisant des IPs documentation (`tests/test_sysinfo.py` utilise `203.0.113.5` comme exemple "public") classifieraient soudain ces ranges comme "local". Attrapé seulement après la première tentative de refactor qui a fail.
+
+Fix final : tuples explicites `_PRIVATE_IPV4_NETS` + `_PRIVATE_IPV6_NETS` d'objets `ipaddress.ip_network`. Helpers `_is_private_or_loopback_ipv4()` / `_is_private_or_loopback_ipv6()` utilisent appartenance `addr in net`. Couvre :
+- IPv4 : RFC 1918 (10/8, 172.16/12, 192.168/16), loopback (127/8), link-local (169.254/16), CGNAT (100.64/10)
+- IPv6 : loopback (::1/128), link-local (fe80::/10), ULA (fc00::/7)
+
+Les ranges documentation/reserved restent "public" donc `detect_network_context()` les identifie correctement comme nécessitant une recherche IP publique.
+
+### Cleanups mineurs (11)
+
+| # | Fix | Fichiers affectés |
+|---|---|---|
+| **M-1** | Regex email unifiée via `bob.config._EMAIL_RE` (dupliquée en module-level + littéral inline × 3 sites) | `bob/cron.py` |
+| **M-2** | `bob/watch.py:_NullReport` retiré → use `bob.report.NullReport` (Report Protocol canonique introduit en v0.5.0 #10). L'ancien magic `__getattr__` 5-lignes ad-hoc était exactement le genre de drift duck-typed que l'introduction Protocol était censé prévenir. | `bob/watch.py`, `tests/test_watch.py` |
+| **M-3** | 3 clés locale mortes retirées : `_meta.lang`, `_meta.version` (manifest metadata pour un outil non-existant), `ignored.hint` (test-only, jamais wiré dans le display production). | `bob/locales/{en,fr}.json`, `tests/test_ignore.py` |
+| **M-4** | Règle `corr.fully_blind` avait `all_of={"firewall.logging_off", "fail2ban.not_installed"}` — exigeait `not_installed` mais ignorait `fail2ban.service_inactive`. Règle sœur `corr.stale_unmonitored` accepte déjà les deux via `any_of`. Élargie pour fire quand firewall est aveugle AND n'importe quel layer de détection (fail2ban ou auditd, dans l'un ou l'autre état) est aveugle. | `bob/correlation.py`, `tests/test_correlation.py` |
+| **M-7** | Extraction helper `_has_actionable_findings()` + frozenset `_TRANSPARENCY_KEYS` dans `updates.py`. Le filter inline `any(f.key != "updates.apt_cache_age" for f in result.findings)` était fragile — ajouter un 2e INFO transparence changerait silencieusement la sémantique "all clear". Le helper + frozenset future-proof. | `bob/checks/updates.py` |
+| **M-8** | Commentaire seul — clarifie pourquoi `_parse_config_file` s'arrête aux Match blocks ET skippe silencieusement les `Include` suivants. Choix défensif intentionnel (modéliser le contexte conditionnel Match safely est hors scope) ; le flag `_match_block=True` surface ça à l'utilisateur via l'INFO existant `ssh.match_block`. | `bob/checks/ssh.py` |
+| **M-9** | Commentaire seul — clarifie que les champs vides `ListeningPort.process`/`iface` veulent dire "inconnu" (quand `ss -p` manque le privilège ou est indisponible), pas "pas de processus". `is_all_interfaces` en tient déjà compte. | `bob/checks/ports.py` |
+| **M-10** | Regex `apply_cron_schedule` resserrée : ancre premier champ changée de `^\S+` à `^[0-9*,\-/]\S*` (shape cron-token). Les comment lines commençant par `#` ne matchent plus — précédemment un commenté `# 0 3 * * * root /usr/bin/legacy-bob` aurait été réécrit silencieusement. | `bob/cron.py`, `tests/test_cron.py` |
+| **M-11** | Cmd `services_state.service_inactive` contenait `&& sudo journalctl …` — même rejet shell-op que C-2. Drop le journalctl du cmd (diagnostic, pas part du fix restart) et déplacé la suggestion en `note=` pour guidance. | `bob/checks/services_state.py` |
+
+### M-6 (commit séparé) — `Optional[X]` / `List[X]` → `X | None` / `list[X]`
+
+Sweep mécanique pur sur 18 modules. Syntaxe Python 3.10+ (minimum du projet). Déjà utilisée dans les modules récents introduits durant v0.5.x. Cela unifie le codebase sur une forme.
+
+Commit isolé pour deux raisons :
+1. **Safety revert** — si un search-and-replace mécanique introduit un typo (ex. un `Optional[X]` dans un docstring quoted incorrectement converti), le commit cosmétique peut être reverté sans perdre les fix bugs Waves 1-3.
+2. **Review hygiene** — bug fixes et changements typing cosmétiques ont des concerns de review différents. Les bundler dans un commit obscurcit le diff.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4545 passed in ~7s
+```
+
+**4538 → 4545 (+7).** Nouveaux tests :
+- `tests/test_cron.py::test_preserves_script_executable_mode` (C-1)
+- `tests/test_explain.py::test_services_state_alias_routes_to_canonical` (C-4)
+- `tests/test_scoring.py::test_post_finalize_deduction_is_discarded` (I-2)
+- `tests/test_report_markdown_safety.py` — nouveau fichier avec 9 tests régression (I-3)
+- `tests/test_correlation.py::test_fires_with_only_fail2ban_inactive` + `test_does_not_fire_when_firewall_logging_present` (M-4)
+- `tests/test_cron.py::test_comment_line_with_root_token_not_modified` (M-10)
+
+Tests supprimés :
+- `tests/test_watch.py::TestNullReportIsolation` (5 tests — magic `__getattr__` obsolète de l'ancien `_NullReport`)
+- `tests/test_watch.py::TestNullReport::test_any_method_returns_none` + `test_attribute_access_returns_callable` (2 tests — même raison)
+- `tests/test_ignore.py::test_hint_key_en` (1 test — clé locale supprimée)
+
+Tests renommés : `test_nature_is_action` → `test_nature_is_improvement` (× 2 dans `tests/test_password_policy.py`).
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"` et les 116 EXPLAIN_KEYS inchangés. C-4 utilise `EXPLAIN_KEY_ALIASES` (additif) — clés JSON output préservées ; `--explain` route via alias.
+- **Score par domaine** : inchangé. Score global sur host dev (so6desktop) : 8/10 → 8/10. Le score *display* shifte légèrement : sur les hosts sans `pam_pwquality`, le finding password_policy se déplace du bloc "À corriger" (action) à "Améliorations possibles" (improvement). Changement visuel, pas changement de score.
+- **Diff sortie wire** : visible seulement sur les hosts hittant les findings demotés-à-improvement (password_policy.no_quality_module + .weak_minlen, services_state.service_inactive — ce dernier change seulement la shape `cmd`, pas la nature). Tous les autres hosts voient une sortie identique.
+- **API externe** : aucun breaking change. `_atomic_write` (prend maintenant `mode=` kwarg) et `EXPLAIN_KEY_ALIASES` (a maintenant une entrée) sont additifs.
+- **i18n** : 3 clés locale retirées (vérifié via AST scan locale-coverage + `grep` manuel).
+
+### Où v0.5.5 se situe dans la ligne v0.5.x
+
+Ceci est une **release de maintenance** pour la branche v0.5.x, post-cycle hardening. La branche refactor de 5 releases (v0.5.0 → v0.5.4) a clos le 2026-05-22 avec les 13/15 findings audit shippés + 2 splits déférés v0.6.0. v0.5.5 adresse un audit 19-findings séparé focalisé sur les **dimensions hardening** (bugs réels, security smells, code health) plutôt que refactor structurel.
+
+La ligne v0.5.x s'engage à rester contract-preserving. Deferrals pour v0.6.0 incluent #13 (split ssh.py, 1324 LoC), #14 (split cron.py, 1224 LoC), et tout cleanup breaking-change que le prochain cycle audit fait apparaître.
+
+---
+
 ## [v0.5.4] — 22-05-2026
 
 **Refactor v0.5.x — Phase 5 sur 5 (finale, ferme l'audit v0.5.x).** Trois findings d'audit clôturés (`#6`, `#9`, `#15b`), une feature métier demandée par l'utilisateur (cache APT option C), deux findings (`#13` split ssh.py, `#14` split cron.py) explicitement déférés à v0.6.0. Voir `CHANGELOG_FR.md` pour le détail par finding. Cette entrée `CHANGELOG_FULL_FR.md` mirror ce contenu et ajoute les notes de clôture de la branche v0.5.x.

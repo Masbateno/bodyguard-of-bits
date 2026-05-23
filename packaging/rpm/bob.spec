@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.4
+Version:        0.5.5
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,39 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat May 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.5-1
+- Hardening pass — post-v0.5.4 audit by deep sub-agent. 19
+  findings: 4 real bugs (C-1 to C-4), 4 security smells
+  (I-1 to I-4), 11 minor cleanups (M-1 to M-11).
+- C-1: apply_cron_email() silently broke scheduled audits —
+  scripts lost 0o755 executable bit via _atomic_write() forcing
+  0o600. Fix: _atomic_write() takes explicit mode= now.
+- C-2/C-3: password_policy cmds with '&&' or Unicode arrow
+  rejected by --fix --apply. Demoted to nature='improvement'.
+- C-4: EXPLAIN_KEYS drift for services_state. Fixed via
+  EXPLAIN_KEY_ALIASES (preserves JSON output contract).
+- I-1: recurrence/ignore state files written with default
+  umask (world-readable). Now use os.open(..., 0o600).
+- I-2: _apply_deduction bypassed score cap after finalize().
+  Added defensive guard with WARNING log.
+- I-3: _safe_url XSS in HTML email href attribute context.
+  Now uses html.escape(url, quote=True).
+- I-4: sysinfo._PRIVATE_IPV4_RE brittle + Python 3.12+ break.
+  Replaced by explicit ipaddress.ip_network membership.
+- M-1: email regex dedup via bob.config._EMAIL_RE.
+- M-2: _NullReport → bob.report.NullReport (canonical).
+- M-3: 3 dead locale keys removed.
+- M-4: corr.fully_blind widened to fire on fail2ban or
+  auditd blindness (was asymmetric).
+- M-7: extract _has_actionable_findings() helper in updates.py.
+- M-8/M-9: clarifying comments in ssh.py + ports.py.
+- M-10: cron regex anchor tighter (skip comment lines).
+- M-11: services_state cmd dropped '&&' journalctl chain.
+- M-6 (separate commit): Optional[X] → X | None on 18 modules.
+- Net diff: 23 code files, +312/-112 = +200 LoC.
+- 4538 → 4545 tests (+7 regression coverage).
+- JSON contract preserved.
+
 * Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.4-1
 - Refactor v0.5.x Phase 5 of 5 (final, closes the v0.5.x audit).
   Three audit findings (#6, #9, #15b) + one user-requested metier

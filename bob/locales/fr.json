@@ -1,8 +1,4 @@
 {
-  "_meta": {
-    "lang": "fr",
-    "version": "0.16"
-  },
   "banner": {
     "title": "BOB",
     "subtitle": "Auditeur de durcissement Linux",
@@ -693,8 +689,7 @@
   "ignored": {
     "header": "Résultats supprimés (liste d'exceptions)",
     "tag": "IGNORÉ",
-    "summary": "{count} résultat(s) masqué(s) par ignore.yml — relancer avec --show-ignored pour les afficher",
-    "hint": "Exécutez `bob --ignore {check_key}` pour masquer ce résultat définitivement"
+    "summary": "{count} résultat(s) masqué(s) par ignore.yml — relancer avec --show-ignored pour les afficher"
   },
   "ssh": {
     "not_installed": "Le serveur SSH (sshd) n'est pas installé",

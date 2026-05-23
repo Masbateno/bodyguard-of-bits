@@ -326,12 +326,9 @@ class TestIgnoreLocaleKeys:
         msg = t("ignored.summary", count=2)
         assert "2" in msg
 
-    def test_hint_key_en(self):
-        from bob.i18n import t
-        import bob.i18n as i18n
-        i18n.init(lang="en")
-        msg = t("ignored.hint", check_key="ssh.permit_root_login")
-        assert "ssh.permit_root_login" in msg
+    # M-3 (v0.5.5): test_hint_key_en removed — `ignored.hint` was an
+    # orphan locale key, never used by production code. Deleted in
+    # v0.5.5 alongside _meta.lang / _meta.version (3 dead keys).
 
     def test_header_key_exists(self):
         from bob.i18n import t

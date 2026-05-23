@@ -234,6 +234,26 @@ class TestScoreEngineFinalize:
         _ = engine.score  # triggers finalize
         assert engine._finalized
 
+    def test_post_finalize_deduction_is_discarded(self, caplog):
+        """v0.5.5 I-2: deductions applied after finalize() bypass the cap
+        silently. The engine now logs a WARNING and drops the deduction.
+        """
+        import logging
+        engine = ScoreEngine()
+        engine.cap(3, "test cap")
+        engine.deduct("first deduction", 2)
+        engine.finalize()
+        score_before = engine.score
+
+        # Apply a deduction after finalize — should be discarded.
+        result = CheckResult()
+        result.add_deduction("late deduction", 5, key="ssh.late")
+        with caplog.at_level(logging.WARNING, logger="bob.scoring"):
+            engine.apply(result)
+
+        assert engine.score == score_before  # unchanged
+        assert any("after finalize" in rec.message for rec in caplog.records)
+
 
 class TestRiskLevel:
     @pytest.mark.parametrize("deductions,expected_level", [

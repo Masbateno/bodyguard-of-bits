@@ -316,10 +316,27 @@ class TestCorrelationFullyBlind:
         keys = [cf.key for cf in run_correlations(engine, _t)]
         assert "corr.fully_blind" in keys
 
-    def test_no_fire_missing_auditd(self):
+    def test_fires_with_only_fail2ban_inactive(self):
+        """v0.5.5 M-4: fail2ban-stopped (without auditd issue) is also a
+        blind-detection signal. Pre-v0.5.5 the rule only fired when both
+        fail2ban AND auditd were blind, which silently let through hosts
+        with firewall logging off + fail2ban inactive — the case this
+        rule was meant to catch.
+        """
         engine = FakeEngine(
             ("firewall.logging_off", FindingLevel.WARN),
+            ("fail2ban.service_inactive", FindingLevel.WARN),
+        )
+        keys = [cf.key for cf in run_correlations(engine, _t)]
+        assert "corr.fully_blind" in keys
+
+    def test_does_not_fire_when_firewall_logging_present(self):
+        """all_of requires firewall.logging_off — without it, the rule
+        cannot fire even when other detection layers are blind.
+        """
+        engine = FakeEngine(
             ("fail2ban.not_installed", FindingLevel.WARN),
+            ("auditd.not_installed", FindingLevel.WARN),
         )
         keys = [cf.key for cf in run_correlations(engine, _t)]
         assert "corr.fully_blind" not in keys

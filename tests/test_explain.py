@@ -112,6 +112,15 @@ class TestExplainKeyAliases:
         assert normalize_key("ssh.password_auth") == "ssh.password_auth"
         assert normalize_key("nonexistent.key") == "nonexistent.key"
 
+    def test_services_state_alias_routes_to_canonical(self):
+        """v0.5.5 C-4 regression: bob/checks/services_state.py emits the key
+        'services_state.service_inactive' but EXPLAIN_KEYS uses the canonical
+        name 'services_state.enabled_inactive'. The alias map must route
+        --explain queries for the emitted key to the canonical one.
+        """
+        from bob.explain import normalize_key
+        assert normalize_key("services_state.service_inactive") == "services_state.enabled_inactive"
+
 
 class TestExplainKeyFreezePolicy:
     """Public-API stability — these keys must NEVER disappear within v1 schema."""

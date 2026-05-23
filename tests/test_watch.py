@@ -18,7 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bob.watch import _NullReport, _score_bar
+from bob.report import NullReport
+from bob.watch import _score_bar
 from bob.cli import AuditConfig, CLIError, parse_args
 
 
@@ -61,31 +62,28 @@ class TestScoreBar:
 
 
 # ---------------------------------------------------------------------------
-# _NullReport
+# NullReport (used by watch loop) — M-2 (v0.5.5): bob.watch._NullReport
+# removed in favour of bob.report.NullReport (the canonical Protocol impl
+# introduced in v0.5.0 alongside the Report Protocol).
 # ---------------------------------------------------------------------------
 
 class TestNullReport:
     def test_write_section_does_not_raise(self):
-        r = _NullReport()
+        r = NullReport()
         r.write_section("anything")  # must not raise
 
     def test_write_finding_does_not_raise(self):
-        r = _NullReport()
+        r = NullReport()
         r.write_finding("INFO", "msg")
 
-    def test_any_method_returns_none(self):
-        r = _NullReport()
-        assert r.totally_unknown_method("a", b=1) is None
-
     def test_multiple_calls_no_error(self):
-        r = _NullReport()
+        r = NullReport()
         for i in range(100):
             r.write_section(f"section {i}")
 
-    def test_attribute_access_returns_callable(self):
-        r = _NullReport()
-        fn = r.arbitrary_attribute
-        assert callable(fn)
+    def test_enabled_flag_is_false(self):
+        """NullReport.enabled must be False so write-guards behave correctly."""
+        assert NullReport().enabled is False
 
 
 # ---------------------------------------------------------------------------
@@ -315,35 +313,11 @@ class TestScoreBarTypes:
             assert set(bar) <= {"█", "░"}, f"Unexpected char in bar for score={score}"
 
 
-# ---------------------------------------------------------------------------
-# _NullReport: attribute isolation
-# ---------------------------------------------------------------------------
-
-class TestNullReportIsolation:
-    def test_two_attributes_are_distinct_callables(self):
-        """__getattr__ must return a fresh callable each time — no shared state."""
-        r = _NullReport()
-        assert r.foo is not r.bar
-
-    def test_callable_returns_none(self):
-        r = _NullReport()
-        assert r.anything() is None
-
-    def test_callable_with_args_returns_none(self):
-        r = _NullReport()
-        assert r.method(1, 2, key="val") is None
-
-    def test_real_dunder_not_intercepted(self):
-        """`__class__` is resolved via normal lookup, not __getattr__."""
-        r = _NullReport()
-        assert r.__class__ is _NullReport
-
-    def test_chaining_raises(self):
-        """r.foo() returns None; None.bar() raises AttributeError — chaining unsupported."""
-        r = _NullReport()
-        with pytest.raises(AttributeError):
-            r.foo().bar()
-
+# M-2 (v0.5.5): TestNullReportIsolation removed — those tests exercised
+# the `__getattr__` magic of the old `bob.watch._NullReport`, which no
+# longer exists. The replacement `bob.report.NullReport` has explicit
+# write_* methods (the Report protocol contract), not catch-all attr
+# access; isolation tests are no longer applicable.
 
 # ---------------------------------------------------------------------------
 # run_watch: KeyboardInterrupt exits cleanly

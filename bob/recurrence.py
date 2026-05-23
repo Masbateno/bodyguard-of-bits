@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from bob.sysinfo import chown_to_sudo_user, get_user_home
@@ -53,7 +54,12 @@ def save_recurrence(data: dict[str, int], path: Path | None = None) -> None:
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
         chown_to_sudo_user(dest.parent)
-        with tmp.open("w", encoding="utf-8") as fh:
+        # I-1 (v0.5.5): force 0o600 explicitly — relying on umask leaves
+        # the file world-readable on default Debian/Ubuntu umasks (0644).
+        # Aligns with bob.config / bob.compare / bob.report which all
+        # use os.open(..., 0o600) for private state.
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2)
             fh.write("\n")
         tmp.replace(dest)

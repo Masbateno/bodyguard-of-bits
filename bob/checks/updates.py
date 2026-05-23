@@ -35,6 +35,17 @@ _APT_CACHE_STALE_THRESHOLD = 7 * 86400  # 7 days
 # also stat, but pkgcache.bin is simpler and equally reliable in practice.
 _APT_CACHE_FILE = Path("/var/cache/apt/pkgcache.bin")
 
+# M-7 (v0.5.5): "transparency" INFO keys never produced by a real failure.
+# Used by _has_actionable_findings to decide whether to emit the "all clear"
+# OK alongside informational notes (cache age, etc.). Add new keys here as
+# more transparency INFOs are introduced.
+_TRANSPARENCY_KEYS: frozenset[str] = frozenset({"updates.apt_cache_age"})
+
+
+def _has_actionable_findings(result) -> bool:
+    """Return True if any finding signals an actual issue (not a pure note)."""
+    return any(f.key not in _TRANSPARENCY_KEYS for f in result.findings)
+
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -344,9 +355,11 @@ def check_updates(
         )
 
     # --- All clear ----------------------------------------------------------
-    # findings can be non-empty here from the cache-age INFO above; the
-    # ok finding is only emitted when *no* signal at all was produced.
-    if not any(f.key != "updates.apt_cache_age" for f in result.findings):
+    # M-7 (v0.5.5): emit OK only when no *deductive* finding was produced.
+    # The apt_cache_age INFO above is transparency, not a signal — it must
+    # not block the "system is up to date" OK. Extract helper rather than
+    # inline-key-blacklist so adding future transparency INFOs is safe.
+    if not _has_actionable_findings(result):
         result.ok(
             message=_t("updates.ok"),
             key="updates.ok",

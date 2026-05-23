@@ -193,13 +193,16 @@ def check_services_state(snapshot: ServicesStateSnapshot, *, t: TranslationFunc 
 
     deducted = 0
     for svc in inactive:
+        # M-11 (v0.5.5): cmd contained `&& sudo journalctl` chained via
+        # shell operator. fixes._has_shell_ops rejected this under
+        # --fix --apply, leaving the WARN unfixable. Drop the journalctl
+        # diagnostic from the cmd (it's not part of the fix) and move
+        # it to `note` for guidance.
         result.warn(
             message=_t("services_state.service_inactive", service=svc),
             detail=_t("services_state.service_inactive_detail", service=svc),
-            cmd=(
-                f"sudo systemctl restart {shlex.quote(svc)}"
-                f" && sudo journalctl -u {shlex.quote(svc)} -n 50"
-            ),
+            cmd=f"sudo systemctl restart {shlex.quote(svc)}",
+            note=f"sudo journalctl -u {shlex.quote(svc)} -n 50",
             nature="action",
             key="services_state.service_inactive",
         )

@@ -85,6 +85,11 @@ class ListeningPort:
     proto:    str
     address:  str
     raw_line: str
+    # M-9 (v0.5.5): process and iface stay empty when `ss -p` lacks
+    # privileges or `ss` is unavailable. Callers must treat empty as
+    # "unknown", not "no process / no interface scope". is_all_interfaces
+    # already accounts for this (only True when iface is empty AND
+    # address matches 0.0.0.0/::).
     process:  str = ""
     iface:    str = ""   # non-empty when bound to a specific interface (e.g. "virbr0")
 

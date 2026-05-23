@@ -122,23 +122,62 @@ def collect_system_info(version: str, lang: str):
 # Network context
 # ---------------------------------------------------------------------------
 
-# Private IPv4 ranges (RFC 1918 + loopback + CGNAT)
-_PRIVATE_IPV4_RE = re.compile(
-    r"^(10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)"
-)
-
-
 _PUBLIC_IP_PROVIDERS = [
     "https://api.ipify.org",
     "https://ifconfig.me/ip",
     "https://icanhazip.com",
 ]
 
-# Private/loopback IPv6 prefixes
-_PRIVATE_IPV6_RE = re.compile(
-    r"^(::1$|fe80:|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)",
-    re.IGNORECASE,
+
+# I-4 (v0.5.5): explicit network list rather than stdlib `is_private` —
+# Python 3.12.4+ widened is_private to include documentation/reserved
+# ranges (e.g. 203.0.113.0/24, 198.51.100.0/24) that BOB treats as
+# "public" for network-context detection. RFC 1918 + loopback + link-
+# local + CGNAT covers what we actually want; documentation ranges are
+# globally routable in practice and should NOT trigger "local" context.
+import ipaddress as _ipaddress
+
+_PRIVATE_IPV4_NETS = (
+    _ipaddress.ip_network("10.0.0.0/8"),
+    _ipaddress.ip_network("172.16.0.0/12"),
+    _ipaddress.ip_network("192.168.0.0/16"),
+    _ipaddress.ip_network("127.0.0.0/8"),       # loopback
+    _ipaddress.ip_network("169.254.0.0/16"),    # link-local
+    _ipaddress.ip_network("100.64.0.0/10"),     # CGNAT
 )
+
+_PRIVATE_IPV6_NETS = (
+    _ipaddress.ip_network("::1/128"),           # loopback
+    _ipaddress.ip_network("fe80::/10"),         # link-local
+    _ipaddress.ip_network("fc00::/7"),          # ULA (Unique Local)
+)
+
+
+def _is_private_or_loopback_ipv4(ip: str) -> bool:
+    """Return True if ``ip`` is RFC 1918, loopback, link-local, or CGNAT.
+
+    Replaces the previous brittle hand-rolled regex `_PRIVATE_IPV4_RE`
+    and its `removeprefix("^")` hack at the call site.
+    """
+    try:
+        addr = _ipaddress.IPv4Address(ip)
+    except (ValueError, _ipaddress.AddressValueError):
+        return False
+    return any(addr in net for net in _PRIVATE_IPV4_NETS)
+
+
+def _is_private_or_loopback_ipv6(ip: str) -> bool:
+    """Return True if ``ip`` is loopback (::1), link-local (fe80::/10), or ULA (fc00::/7).
+
+    Uses explicit network list (not stdlib `is_private`) — Python 3.12+
+    widens `is_private` to include 2001:db8::/32 (documentation), which
+    BOB treats as "public" for network-context detection.
+    """
+    try:
+        addr = _ipaddress.IPv6Address(ip)
+    except (ValueError, _ipaddress.AddressValueError):
+        return False
+    return any(addr in net for net in _PRIVATE_IPV6_NETS)
 
 
 def get_public_ip(offline: bool = False) -> str:
@@ -189,7 +228,9 @@ def detect_network_context(offline: bool = False) -> tuple[str, str]:
             capture_output=True, text=True, timeout=5,
             env=_C_LOCALE_ENV,
         )
-        if re.search(r"via\s+" + _PRIVATE_IPV4_RE.pattern.removeprefix("^"), result.stdout):
+        # Match the gateway IP after "via" and validate via stdlib.
+        gw_match = re.search(r"via\s+(\S+)", result.stdout)
+        if gw_match and _is_private_or_loopback_ipv4(gw_match.group(1)):
             public_ip = get_public_ip(offline=offline)
             return "local", public_ip
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
@@ -204,12 +245,12 @@ def detect_network_context(offline: bool = False) -> tuple[str, str]:
         # IPv4 public address
         for match in re.finditer(r"inet\s+([\d.]+)/", result.stdout):
             ip = match.group(1)
-            if not _PRIVATE_IPV4_RE.match(ip):
+            if not _is_private_or_loopback_ipv4(ip):
                 return "public", ip
         # IPv6 public address (non-loopback, non-link-local, non-ULA)
         for match in re.finditer(r"inet6\s+([0-9a-fA-F:]+)/", result.stdout):
             ip = match.group(1)
-            if not _PRIVATE_IPV6_RE.match(ip):
+            if not _is_private_or_loopback_ipv6(ip):
                 return "public", ip
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         _log.debug("ip addr failed during network type detection: %s", exc)

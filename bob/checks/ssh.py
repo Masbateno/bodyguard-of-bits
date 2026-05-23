@@ -928,7 +928,13 @@ def _parse_config_file(
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        # Stop at Match blocks — conditional overrides not handled
+        # Stop at Match blocks — conditional overrides not handled.
+        # M-8 (v0.5.5): this also stops Include parsing for any include
+        # directives appearing AFTER a Match block, which OpenSSH itself
+        # would parse. Intentional: handling conditional includes safely
+        # requires modeling the full Match context. The audit surfaces
+        # the gap via `_match_block=True` → `ssh.match_block` INFO,
+        # warning the user to review their config manually.
         if re.match(r"^match\b", stripped, re.IGNORECASE):
             config["_match_block"] = True
             break
