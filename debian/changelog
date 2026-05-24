@@ -1,3 +1,75 @@
+bodyguard-of-bits (0.5.7-1) UNRELEASED; urgency=low
+
+  * Targeted hardening pass on curses TUI: bob/manage_logs.py
+    (999 LoC) and bob/tui/cron.py (920 LoC) — the bucket
+    explicitly deferred by the v0.5.5 and v0.5.6 audits.
+    11 findings from a focused sub-agent: 0 critical, 3
+    important, 8 minor (3 shipped + 5 deferred to v0.5.8).
+  * I-1 — _curses_readline accepted curses KEY_* keypad codes
+    as input characters via chr(ch_i). Pressing arrows or
+    function keys inserted Greek/Unicode glyphs (KEY_UP=259
+    → chr(259) = 'Ι', KEY_F1=265 → chr(265) = 'Ω') into
+    name/email/days/time/custom-expression input buffers.
+    No security impact thanks to downstream validation
+    (_EMAIL_RE, _validate_custom_cron, digit-only filter,
+    make_slug whitelist) but UX-visibly corrupted. Fix:
+    new _is_printable_input_char(ch_i) helper bounds inputs
+    to printable Latin-1 only (32 <= ch_i < 256 and isprintable).
+  * I-2 — three bare input() sites in manage_logs.py did not
+    catch EOFError. Ctrl-D at the path prompt, the move-logs
+    [y/N] confirmation, or the delete-all [y/N] confirmation
+    dumped a Python traceback. Fix: try/except EOFError on
+    all three sites matching the _rl() convention — EOF
+    treated as empty input (falls through to "use default"
+    for paths, "no" for confirmations). KeyboardInterrupt
+    propagates naturally (Python's exit-130 default).
+  * I-3 — apply_cron_schedule() used raw os.open(O_WRONLY |
+    O_CREAT | O_TRUNC) + fdopen.write instead of the project's
+    _atomic_write helper. Power-loss or SIGKILL between
+    open(O_TRUNC) and write would leave the cron file empty
+    → cron silently drops the entry. Asymmetric with the
+    sister apply_cron_email which already used _atomic_write
+    (since v0.5.5 #C-1). Fix: switch to _atomic_write(path,
+    new_text, mode=0o640) — mode preserved (cron skips
+    files with wrong mode).
+  * M-1 — manage_logs.deleted_one status flashed
+    pending_delete[0].name even when index 0 failed to
+    unlink (permission denied) and only a different index
+    succeeded. Now tracks the first successfully-deleted
+    name explicitly.
+  * M-3 — dead-code elif body in _curses_edit_sub
+    (chosen = sel; if ch_i == ord("1"): chosen = 0; elif
+    ord("2"): chosen = 1 — guard already constrained
+    chosen == sel). Simplified, elif rewritten with
+    explicit parentheses.
+  * M-4 — duplicate `from bob.cron import apply_cron_schedule,
+    apply_cron_email` at line 132 consolidated into the
+    main import block.
+  * Deferred to v0.5.8 (5 cosmetic minors): M-2 cursor-shift
+    assumes deletions sit before cursor, M-5 schedule wizard
+    local constants → module-level IntEnum, M-6 summary_start
+    falsy check misses index 0 (unreachable), M-7 over-greedy
+    continuation grouping in _extract_summary_view, M-8
+    local `from datetime import` lifted to module top.
+  * +11 regression tests across tests/test_cron.py
+    (TestApplyCronScheduleAtomic, TestIsPrintableInputChar)
+    and tests/test_manage_logs.py (TestEOFErrorOnPromptPath,
+    TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm,
+    TestDeletedOneCorrectName).
+  * 4560 → 4571 tests.
+  * Single-commit release. JSON contract (schema_version="1"),
+    116 EXPLAIN_KEYS, keybindings, no-curses fallback path,
+    exit codes — all preserved.
+  * UX-visible deltas only: clean Ctrl-D exit (no traceback),
+    arrow/function keys no longer print Greek glyphs in TUI
+    prompts.
+  * After v0.5.7, v0.5.x deep-audit campaign closed:
+    25 modules audited + ~25 spot-checked. v0.5.8 will clear
+    the 5 deferred cosmetic minors. v0.6.0 reserved for #13
+    (ssh.py split) + #14 (cron.py split).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 24 May 2026 23:00:00 +0200
+
 bodyguard-of-bits (0.5.6-1) UNRELEASED; urgency=low
 
   * Targeted hardening pass on bob/checks/logs.py (662 LoC UFW

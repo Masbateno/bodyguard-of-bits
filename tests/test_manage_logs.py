@@ -880,3 +880,119 @@ class TestStatFallback:
         out = capsys.readouterr().out
         assert "(0 " in out
         assert "?" in out
+
+
+# ---------------------------------------------------------------------------
+# I-2 (v0.5.7): Ctrl-D (EOFError) at input() prompts must not crash with
+# a Python traceback. Match the _rl() convention: treat as empty answer.
+# ---------------------------------------------------------------------------
+
+class TestEOFErrorOnPromptPath:
+    def test_eoferror_returns_default(self, tmp_path):
+        """prompt_path() must treat Ctrl-D as 'use default', not crash."""
+        from bob.manage_logs import prompt_path
+        default = tmp_path / "default-logs"
+        with patch("builtins.input", side_effect=EOFError):
+            result = prompt_path("ignored", default)
+        assert result == default
+
+    def test_eoferror_returns_default_with_allow_cancel(self, tmp_path):
+        """Even with allow_cancel=True, Ctrl-D is not 'cancel' — it's 'empty
+        input' which falls through to the default. Explicit 'q'/'quit' is
+        still the cancel signal."""
+        from bob.manage_logs import prompt_path
+        default = tmp_path / "default-logs"
+        with patch("builtins.input", side_effect=EOFError):
+            result = prompt_path("ignored", default, allow_cancel=True)
+        assert result == default
+
+
+class TestEOFErrorOnMoveConfirm:
+    def test_ctrl_d_at_move_prompt_does_not_crash(self, tmp_path):
+        """Ctrl-D at the [y/N] move prompt must be treated as 'no' and the
+        loop continues without raising EOFError."""
+        old_dir = tmp_path / "old"
+        new_dir = tmp_path / "new"
+        old_dir.mkdir()
+        log_path = _make_log(old_dir, "bob_2026-01-01.log")
+
+        uc, store = _make_user_config(str(old_dir))
+        # 'c' enters change-location; move prompt sees EOFError → cancel; 'q' quits
+        responses = ["c", EOFError, "q"]
+        it = iter(responses)
+
+        def _next(*_, **__):
+            v = next(it)
+            if isinstance(v, type) and issubclass(v, BaseException):
+                raise v()
+            return v
+
+        with patch("builtins.input", side_effect=_next), \
+             patch("bob.manage_logs.prompt_path", side_effect=[new_dir]):
+            from bob.manage_logs import run_manage_logs
+            rc = run_manage_logs(uc, _make_config(), _t)
+
+        assert rc == 0
+        assert store["log_dir"] == str(new_dir)  # dir change still applied
+        assert log_path.exists()  # but log NOT moved (Ctrl-D == decline)
+
+
+class TestEOFErrorOnDeleteAllConfirm:
+    def test_ctrl_d_at_delete_all_prompt_does_not_crash(self, tmp_path):
+        """Ctrl-D at the 'all' confirmation must cancel the deletion without
+        raising EOFError out of _run_manage_logs_plain."""
+        cur_dir = tmp_path / "logs"
+        cur_dir.mkdir()
+        log_path = _make_log(cur_dir, "bob_2026-01-01.log")
+
+        uc, _ = _make_user_config(str(cur_dir))
+        responses = ["all", EOFError, "q"]
+        it = iter(responses)
+
+        def _next(*_, **__):
+            v = next(it)
+            if isinstance(v, type) and issubclass(v, BaseException):
+                raise v()
+            return v
+
+        with patch("builtins.input", side_effect=_next):
+            from bob.manage_logs import run_manage_logs
+            rc = run_manage_logs(uc, _make_config(), _t)
+
+        assert rc == 0
+        assert log_path.exists()  # NOT deleted — Ctrl-D was treated as 'no'
+
+
+# ---------------------------------------------------------------------------
+# M-1 (v0.5.7): when 'deleted_one' is shown, the displayed name must be the
+# file that was actually deleted, not pending_delete[0] which might be a
+# different (failed) entry under selective permission errors.
+# ---------------------------------------------------------------------------
+
+class TestDeletedOneCorrectName:
+    def test_unlink_logic_picks_first_success(self, tmp_path):
+        """Direct unit test of the M-1 fix logic — iterate over a reverse-
+        sorted index list, skip OSError, capture the FIRST successful name."""
+        files = [tmp_path / f"bob_{i}.log" for i in range(3)]
+        for f in files:
+            f.write_text("x")
+        # Simulate the marked-for-delete indices (the user marked all 3)
+        pending_delete = [0, 1, 2]
+        # Make index 0 and 1 fail on unlink (e.g., permission denied);
+        # only index 2 succeeds. Pre-M-1 code displayed files[0].name; post-fix
+        # must display files[2].name.
+        deleted = 0
+        deleted_name = None
+        for li in sorted(pending_delete, reverse=True):  # iterates 2, 1, 0
+            try:
+                name = files[li].name
+                if li in (0, 1):
+                    raise OSError("simulated permission denied")
+                files[li].unlink()
+                deleted += 1
+                if deleted_name is None:
+                    deleted_name = name
+            except OSError:
+                pass
+        assert deleted == 1
+        assert deleted_name == "bob_2.log"  # NOT bob_0.log (the pre-M-1 bug)

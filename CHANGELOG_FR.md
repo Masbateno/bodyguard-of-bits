@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.5.7](#v057) | 24-05-2026 | Passe de hardening ciblée sur le TUI curses (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — le bucket explicitement déféré par les audits v0.5.5 / v0.5.6. 11 findings d'un sub-agent focalisé : 0 critique, 3 important (I-1 `_curses_readline` acceptait les codes keypad curses `KEY_*` via `chr(ch_i)` — flèches et touches de fonction insèrent glyphes Grecs/Unicode comme `Ι` / `Ω` dans les buffers d'entrée nom/email/jours/heure/expression-custom ; aucun impact sécurité grâce à la validation downstream (`_EMAIL_RE`, `_validate_custom_cron`, filtrage digit-only) mais UX visiblement corrompue. Nouveau helper `_is_printable_input_char(ch_i)` borne aux Latin-1 imprimables · I-2 trois sites `input()` dans `prompt_path` + confirmation move-logs + confirmation delete-all ne catchaient pas `EOFError` — Ctrl-D dumpait une traceback Python à l'annulation. S'aligne maintenant sur la convention `_rl()` (EOF = entrée vide) · I-3 `apply_cron_schedule` utilisait `os.open(O_WRONLY \| O_CREAT \| O_TRUNC) + fdopen.write` brut au lieu du helper `_atomic_write` du projet. Coupure de courant ou `SIGKILL` entre `open(O_TRUNC)` et `write` laisserait le fichier cron vide → cron drop silencieusement l'entrée, aucune notification. Asymétrique avec `apply_cron_email` qui utilisait déjà `_atomic_write`. Mode `0o640` enforced), 3 mineurs (M-1 status `manage_logs.deleted_one` affichait `pending_delete[0].name` même quand l'index 0 échouait au unlink et qu'un autre index réussissait — traque maintenant le premier nom effectivement supprimé · M-3 dead-code `if ch_i == ord("1"): chosen = 0 elif chosen = 1` dans `_curses_edit_sub` simplifié, garde elif réécrite avec parenthèses explicites · M-4 `from bob.cron import apply_cron_schedule, apply_cron_email` dupliqué consolidé dans le bloc d'import principal). +11 tests régression à travers `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) et `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). 4560 → 4571 tests. Format wire JSON inchangé, EXPLAIN_KEYS inchangées, aucun ajout d'API publique. Deltas UX visibles : sortie Ctrl-D propre (sans traceback), touches fléchées/fonction n'insèrent plus de garbage dans les prompts TUI. Déférés à v0.5.8 (5 findings cosmétiques) : M-2 cursor-shift suppose suppressions avant cursor · M-5 constantes du wizard schedule scoped-locales → module-level / IntEnum · M-6 falsy check `summary_start` rate l'index 0 (unreachable) · M-7 regroupement over-greedy des lignes de continuation · M-8 `from datetime import` local remonté au top. Après v0.5.7, branche v0.5.x auditée intégralement (25 modules deep-audit + ~25 spot-check). |
 | [v0.5.6](#v056) | 24-05-2026 | Passe de hardening ciblée sur `bob/checks/logs.py` (662 LoC parser UFW logs) — module explicitement déféré par l'audit v0.5.5 à cause de la densité regex. 10 findings depuis un sub-agent focalisé : 0 critique, 2 important (I-1 regex private-IP incohérente avec `sysinfo.py` — manquait CGNAT 100.64/10 + link-local IPv6 fe80::/10 + faux positifs sur strings commençant par `fc`/`fd` ; I-2 year-rollover droppait silencieusement les événements syslog 1s en avance de l'horloge en rollbackant d'une année entière), 8 mineurs (M-1 variante IPv6 `[UFW BLOCK6]` silencieusement ignorée — regex anchored attrape maintenant les deux ; M-2 regex `_count_available_days` restreinte aux noms de mois anglais ; M-3 ordre paths GeoIP City-avant-Country sur tous les dirs ; M-4 `geoip2_status()` accepte symlinks comme `_geo_via_geoip2` ; M-5 `_GEO_CACHE` borné à 2048 avec éviction FIFO ; M-6 arithmétique `tell()`/`seek()` mode binaire — conformité opaque-cookie TextIOBase ; M-7 `subprocess.TimeoutExpired` redondant retiré ; M-8 `proto` normalisé en upper au parse-time pour qu'un build downstream lowercase ne split pas silencieusement une campagne bruteforce). +15 tests régression dans `tests/test_logs.py` couvrant chaque classe de fix. Single-module pass, single commit. 4545 → 4560 tests. Contrat JSON préservé. Sortie wire inchangée sur hosts avec config UFW standard ; visible seulement sur hosts émettant `[UFW BLOCK6]` (précédemment droppés — maintenant comptés) ou avec logs syslog locale non-anglais (précédemment inflated days_available — maintenant exact). |
 | [v0.5.5](#v055) | 24-05-2026 | Passe de hardening — 4 bugs réels (C-1 à C-4) + 4 security smells (I-1 à I-4) + 11 cleanups mineurs (M-1 à M-11) depuis un audit sub-agent profond. **C-1** : `apply_cron_email()` réécrivait les scripts wrapper via `_atomic_write()` qui forçait le mode `0o600` — les scripts perdaient leur bit exécutable `0o755` et cron arrêtait silencieusement de lancer l'audit. `_atomic_write()` prend maintenant `mode=` explicitement ; les réécritures de cron files passent `0o640`, les scripts `0o755`. **C-2 + C-3 + M-11** : 3 valeurs `cmd=` contenaient `&&` (opérateur shell rejeté par `_has_shell_ops`) ou une flèche Unicode décorative → `--fix --apply` les rejetait silencieusement. Demotion `password_policy.no_quality_module` + `password_policy.weak_minlen` de `nature="action"` à `nature="improvement"` (visible dans le summary box sous "Améliorations possibles" au lieu de "À corriger") + split du cmd `services_state.service_inactive` pour retirer le `&& journalctl` chaîné (déplacé en `note=`). **C-4** : `bob/checks/services_state.py` émet `services_state.service_inactive` mais `EXPLAIN_KEYS` déclarait `services_state.enabled_inactive` — `bob --explain` retournait "key not found". Fix via `EXPLAIN_KEY_ALIASES` (conservatif — préserve le contrat JSON output). **I-1** : `recurrence.py` + `ignore.py` écrivaient les fichiers state avec l'umask process (typiquement world-readable `0o644`) au lieu de `0o600` comme tous les autres `~/.config/bob/`. **I-2** : appels post-`finalize()` à `_apply_deduction` bypassaient silencieusement les caps de score — log WARNING + discard maintenant. **I-3** : `_safe_url` dans HTML email markdown ne re-escapait pas le contexte attribut — URL craftée contenant `"` pouvait sortir de `href=""`. Utilise maintenant `html.escape(..., quote=True)`. **I-4** : regex brittle `sysinfo._PRIVATE_IPV4_RE` (avec hack `removeprefix("^")`) remplacée par checks d'appartenance `ipaddress.ip_network` explicites ; contourne le widening Python 3.12+ de `is_private` incluant les ranges documentation. **M-1** : 3 sites regex email dupliqués unifiés via `bob.config._EMAIL_RE`. **M-2** : `bob/watch.py:_NullReport` retiré au profit de `bob.report.NullReport` (type Protocol introduit en v0.5.0 #10). **M-3** : 3 clés locale mortes retirées (`_meta.lang`, `_meta.version`, `ignored.hint`). **M-4** : règle `corr.fully_blind` asymétrique — exigait `fail2ban.not_installed` mais ignorait l'aveuglement équivalent `fail2ban.service_inactive`. Élargi pour fire quand n'importe quel layer de détection est aveugle. **M-7** : extraction helper `_has_actionable_findings()` dans `updates.py` (plus clair qu'un blacklist inline de `apt_cache_age`). **M-8 + M-9** : commentaires clarifiants dans ssh.py (skip Include après Match block) et ports.py (champs process/iface vides = "inconnu"). **M-10** : regex `apply_cron_schedule` anchored avec cron-token premier champ — les comment lines contenant "root /path" ne sont plus réécrites. **M-6 (commit séparé)** : `Optional[X]` / `List[X]` → `X \| None` / `list[X]` sur 18 modules — syntaxe Python 3.10+. 4538 → 4545 tests (+7 régression). Diff net : 23 fichiers code, +312 / −112 = +200 LoC. Score sur host dev inchangé (8/10) ; le changement `nature` password_policy fait visiblement disparaître le bloc "À corriger" sur les hosts sans pwquality. |
 | [v0.5.4](#v054) | 22-05-2026 | Refactor v0.5.x Phase 5 sur 5 (finale) — **#6 + #9 + #15b + cache APT option C**. **#6 helper `prompt_wizard()`** dans `bob/_tty.py` (wrapper translation-agnostic autour de `input()` avec cancel `q`/`quit` uniforme + default-on-Enter) remplace 10 sites `input()` bruts dans les wizards install + edit de `bob/cron.py`. **#9 sunset UFW_AUDIT_SHARE** — `bob/_paths.py:resolve_share_dir()` upgradé `logger.info(...)` → `logger.warning(...)` avec message explicite "DEPRECATED depuis v0.5.4, sera REMOVED en v0.6.0" ; la legacy env var reste fonctionnelle aujourd'hui. **#15b mapping `_PREFIX_TO_DOMAIN` explicite** — trois fallbacks silencieux v0.4.x sortent du catch-all firewall : `fail2ban` → `ssh` (vocation primaire anti-bruteforce SSH), `virt` → `hardening` (bypass KVM/bridge est surface kernel/système), `docker_audit` → `hardening` (durcissement container / sécurité daemon.json). `smtp` et `desktop_apps` restent catch-all par design (pas de fit propre). **Cache APT option C** (nouvelle feature métier) — `bob/checks/updates.py` ajoute une ligne INFO `updates.apt_cache_age` quand aucune mise à jour security/regular n'est en attente ET l'âge du cache est sous le seuil obsolète, donnant une transparence permanente sur la fraîcheur du verdict "système à jour". Remonté par le test terrain VM Ubuntu du 2026-05-22 où une VM dormante retournait "à jour" malgré 8 LTS security updates en attente upstream. **#13 (split ssh.py, 1324L) et #14 (split cron.py, 1223L) déférés à v0.6.0** — selon le principe conservative-refactor, splitter des fichiers >1000 LoC pour un gain marginal de lisibilité ne passe pas le test gain × risque dans une release contract-preserving. Diff net : 12 fichiers modifiés, +118 / −69 = +49 lignes (cron.py +1, _tty.py +24, updates.py +20, domain_scores.py +10, _paths.py +5, locales +4 clés, tests −6). 4538/4538 tests inchangés. Diff de sortie vs v0.5.3 est intentionnel : nouvelle ligne INFO dans section MISES À JOUR SYSTÈME sur hosts avec cache + aucune update en attente, et reshuffle du score par domaine sur hosts émettant des findings `fail2ban.*` / `virt.*` / `docker_audit.*`. Ferme l'audit v0.5.x (13/15 findings shippés, 2 déférés avec justification). |
@@ -34,6 +35,86 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.5.7] — 24-05-2026
+
+**Passe de hardening ciblée sur le TUI curses.** Les audits v0.5.5 et v0.5.6 ont explicitement déféré `bob/manage_logs.py` (999 LoC) et `bob/tui/cron.py` (920 LoC) — les deux modules curses interactifs principaux — à une passe future dédiée. Cette release ferme ce bucket. Un sub-agent focalisé a produit 11 findings : 6 shippés en v0.5.7 (3 important + 3 minor triviaux), 5 minors cosmétiques documentés pour v0.5.8.
+
+### Important (3)
+
+**I-1 — `_curses_readline` acceptait les codes `KEY_*` curses comme caractères**
+
+`_read_key` collapse la sortie de `stdscr.get_wch()` en un seul int peu importe que le type sous-jacent soit `str` (imprimable) ou `int` (keypad). Downstream, `_curses_readline` filtrait sur `ch_i >= ord(" ")` — mais les touches spéciales comme `curses.KEY_UP = 259`, `KEY_F1 = 265`, `KEY_RIGHT = 261` passent toutes ce gate. `chr(259)` est `Ι` (iota capital grec), `chr(265)` est `Ω`. Appuyer sur les flèches ou les touches de fonction dans les prompts nom/email/jours/heure/expression-custom insérait des glyphes grecs dans le buffer.
+
+Aucun impact sécurité — chaque consommateur downstream valide : `_EMAIL_RE` rejette le garbage, `_validate_custom_cron` rejette les expressions cron malformées, le filtrage `re.split` + `isdigit()` drop les non-digits, le regex whitelist `make_slug` strip tout hors `[a-z0-9]`. Mais UX visiblement corrompue (`Mon Audit│Ι Ω`).
+
+Fix : helper `_is_printable_input_char(ch_i)` extrait au scope module bornant les entrées à `32 <= ch_i < 256 and chr(ch_i).isprintable()`. Range Latin-1 imprimable pur ; rejette explicitement toutes les constantes `curses.KEY_*` (toutes ≥ 256).
+
+**I-2 — Sites `input()` bruts ne catchaient pas Ctrl-D**
+
+Trois appels `input()` dans `manage_logs.py` propagaient `EOFError` directement : le prompt de chemin dans `prompt_path()` (ligne 104), la confirmation `[y/N]` move-logs dans la branche change-location (ligne 360), et la confirmation `[y/N]` delete-all (ligne 378). Tous les autres sites de lecture interactive du codebase passent par `bob._tty.read_line` qui mappe déjà `EOFError` à chaîne vide. Ctrl-D à n'importe lequel de ces trois prompts dumpait une traceback Python à l'utilisateur.
+
+Fix : wrap chaque `input()` dans `try/except EOFError` alignant sur la convention `_rl()` — EOF traité comme chaîne vide, qui fall through à "use default" pour le path prompt et "no" pour les confirmations. `KeyboardInterrupt` non catché délibérément (l'exit Python 130 par défaut est correct).
+
+**I-3 — `apply_cron_schedule` non atomique**
+
+Vit dans `bob/cron.py` (techniquement hors scope strict du TUI) mais le flow d'édition cron curses est son appelant principal via `_apply_cron_schedule` (`bob/tui/cron.py:135`). La fonction faisait :
+
+```python
+fd = os.open(str(entry.cron_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+with os.fdopen(fd, "w") as fh:
+    fh.write(new_text)
+```
+
+Coupure de courant, `SIGKILL`, ou crash de process entre `open(O_TRUNC)` et `write` laisserait le fichier cron vide. `cron` et `crond` drop ensuite silencieusement l'entrée — aucun warning, aucune notification d'échec, l'audit planifié arrête juste de tourner. Asymétrique avec la sœur `apply_cron_email` qui utilisait déjà `_atomic_write` (introduit en v0.5.5 #C-1).
+
+Fix : switch vers `_atomic_write(entry.cron_path, new_text, mode=0o640)`. Mode `0o640` préservé (cron skip les fichiers avec mauvais mode). Changement d'une ligne ; les tests `TestApplyCronSchedule` existants passent toujours.
+
+### Mineur (3 shippés + 5 déférés v0.5.8)
+
+| # | Statut | Fix |
+|---|---|---|
+| **M-1** | shippé | Status `manage_logs.deleted_one` flashait `pending_delete[0].name` même quand l'index 0 échouait au unlink (permission denied) et qu'un autre index réussissait — nom affiché ne matchait pas la deletion. Traque maintenant le PREMIER nom effectivement supprimé |
+| **M-3** | shippé | Dead-code elif body dans `_curses_edit_sub` (`if ch_i == ord("1"): chosen = 0 elif ord("2"): chosen = 1` — garde déjà constrained `chosen == sel`). Simplifié à `chosen = sel` unique, elif réécrite avec parenthèses explicites |
+| **M-4** | shippé | `from bob.cron import apply_cron_schedule, apply_cron_email` dupliqué à ligne 132 (après un commentaire section) consolidé dans le bloc d'import principal au top. Commentaire section nettoyé |
+| **M-2** | déféré v0.5.8 | Cursor shift après delete suppose toutes les suppressions sont avant le cursor — cosmétique |
+| **M-5** | déféré v0.5.8 | Constantes wizard schedule scoped-locales (`_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4`) → promote à `IntEnum` module-level |
+| **M-6** | déféré v0.5.8 | `_extract_summary_view` `summary_start` falsy check rate l'index 0 (unreachable en pratique ; sentinelle `None` serait plus propre) |
+| **M-7** | déféré v0.5.8 | Groupement des lignes de continuation dans `_extract_summary_view` over-greedy — avale n'importe quelle ligne indentée 4-espaces. Artifact layout-only |
+| **M-8** | déféré v0.5.8 | `from datetime import datetime` local dans le block de build cron — remonter au top |
+
+### Observations cross-cutting (informationnel, pas des findings)
+
+- **Aucune vulnérabilité de comparaison `datetime.now()`** trouvée à travers les 1920 LoC de scope — un seul site `datetime.now()` existe (génération du timestamp header cron, pas de comparaison). La classe de bug v0.5.6 #I-2 est contenue à `logs.py`.
+- **Aucun `os.system`, `shell=True`, ou appel subprocess non sanitisé** dans aucun des deux modules. La génération cron dans `bob/cron.py::build_script_content` utilise déjà `shlex.quote` pour tous les champs contrôlés par l'utilisateur (notify_email, log_dir, audit_bin, bob_path).
+- **Aucun path-traversal** — `prompt_path` appelle `_resolve_path` qui fait `Path(raw).expanduser().resolve()` (normalise `..`, suit symlinks une fois).
+- **`raw_name` ne peut pas injecter de lignes crontab** malgré être écrit verbatim dans le commentaire header cron `# name: {raw_name}` : `_curses_readline` filtre `\n`/`\r`/`\t` (< 32), et le paste terminal collapse l'input multi-ligne en single-ligne.
+
+### Lignée des classes de bugs
+
+- **I-3** mirror **v0.5.5 #C-1** (régression mode `_atomic_write`) et **v0.5.5 #I-1** (enforcement mode 0o600 pour `recurrence.py` / `ignore.py`) — l'enforcement du contrat atomic-write est maintenant uniforme à travers toutes les mutations de fichiers dans le codebase.
+- **I-2** mirror **v0.5.5 #C-2/C-3** (UX défensive) — la gestion Ctrl-D / Ctrl-C est maintenant uniforme à travers tous les sites de lecture interactive (`_rl`, `prompt_path`, deux prompts de confirmation).
+
+### Couverture tests
+
+- `tests/test_cron.py` : +6 tests (`TestApplyCronScheduleAtomic`, `TestIsPrintableInputChar`)
+- `tests/test_manage_logs.py` : +5 tests (`TestEOFErrorOnPromptPath`, `TestEOFErrorOnMoveConfirm`, `TestEOFErrorOnDeleteAllConfirm`, `TestDeletedOneCorrectName`)
+- 4560 → **4571 tests** (+11)
+
+### Ce qui N'EST PAS dans cette release
+
+- Les 5 mineurs déférés (M-2, M-5, M-6, M-7, M-8) — explicitement trackés pour v0.5.8
+- Aucun changement man-page (keybindings TUI inchangés)
+- Aucun changement locale (pas de churn de strings user-facing)
+- Aucun changement `bob/data/services.json`
+- Aucun changement score-engine
+- Aucune nouvelle API publique
+
+### Roadmap
+
+Après v0.5.7, la branche v0.5.x a été deeply auditée end-to-end (22 core modules en v0.5.5 + `checks/logs.py` en v0.5.6 + les 2 modules TUI curses en v0.5.7 = 25 modules deep-audit + ~25 autres spot-check). v0.5.8 clearera les 5 minors TUI déférés. Le prochain cap de version mineure (v0.6.0) est réservé pour #13 (split `ssh.py` 1324 LoC) et #14 (split `cron.py` 1223 LoC), les deux refactors architecturaux délibérément déférés du roadmap v0.5.x.
 
 ---
 

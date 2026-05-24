@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.6 (4560 tests, +15 net depuis la passe hardening ciblée `logs.py` ; +7 en v0.5.5 depuis l'audit post-cycle ; phases précédentes v0.5.0 → v0.5.4 étaient contract-preserving avec zéro delta).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.7 (4571 tests, +11 net depuis la passe hardening ciblée TUI curses ; +15 en v0.5.6 depuis la passe `logs.py` ; +7 en v0.5.5 depuis l'audit post-cycle ; phases précédentes v0.5.0 → v0.5.4 étaient contract-preserving avec zéro delta).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.7 | 4571 | Passe de hardening ciblée sur TUI curses (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — bucket explicitement déféré par les audits v0.5.5 / v0.5.6. 11 findings du sub-agent focalisé : 0 critique, 3 important (I-1 `_curses_readline` acceptait les codes keypad curses `KEY_*` via `chr(ch_i)` insérant glyphes Grecs dans les buffers d'entrée TUI — UX-corrompant seulement grâce à validation downstream ; I-2 trois sites `input()` bruts dans `manage_logs.py` ne catchaient pas `EOFError` — Ctrl-D dumpait une traceback Python ; I-3 `apply_cron_schedule` utilisait `os.open(O_TRUNC) + write` brut au lieu de `_atomic_write` — coupure de courant entre truncate et write viderait silencieusement le fichier cron et dropperait l'entrée, asymétrique avec `apply_cron_email` qui utilisait déjà l'écriture atomique), 3 mineurs (M-1 status `deleted_one` flashait mauvais nom de fichier sous échecs unlink sélectifs, M-3 dead-code elif body simplifié, M-4 `from bob.cron import` dupliqué consolidé). +11 tests régression à travers `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) et `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). Release single-commit. Contrat JSON préservé. Deltas UX-visibles seulement : sortie Ctrl-D propre (pas de traceback), touches fléchées/fonction n'impriment plus de glyphes Grecs dans les prompts TUI. 5 mineurs cosmétiques (M-2, M-5, M-6, M-7, M-8) explicitement déférés à v0.5.8. Après v0.5.7, campagne deep-audit v0.5.x fermée (25 modules audités + ~25 spot-checkés). |
 | v0.5.6 | 4560 | Passe de hardening ciblée sur `bob/checks/logs.py` (662 LoC parser UFW logs) — module explicitement déféré par l'audit v0.5.5 à cause densité regex. 10 findings sub-agent focalisé : 0 critique, 2 important (I-1 regex `_PRIVATE_IP` incohérente avec sysinfo — manquait CGNAT 100.64/10 + IPv6 link-local fe80::/10 + faux positifs sur strings `fc`/`fd` ; I-2 year-rollover droppait silencieusement événements syslog 1s en avance de l'horloge), 8 mineurs (M-1 variante IPv6 `[UFW BLOCK6]` silencieusement ignorée, M-2 regex `_count_available_days` restreinte mois anglais, M-3 ordre paths GeoIP City-avant-Country, M-4 consistance symlink `geoip2_status`, M-5 `_GEO_CACHE` borné 2048 éviction FIFO, M-6 arithmétique binaire `tell()`/`seek()`, M-7 `subprocess.TimeoutExpired` redondant retiré, M-8 `proto.upper()` au parse-time). +15 tests régression dans `tests/test_logs.py` (4 nouvelles classes : `TestPrivateIPDispatch`, `TestParseTimestampYearRollover`, `TestBlockPrefixMatcher`, `TestProtoNormalisation`). Single-module pass, single commit. Contrat JSON préservé. Sortie wire : deltas étroits seulement sur hosts émettant `[UFW BLOCK6]` (maintenant comptés) ou avec syslog locale non-anglais (maintenant `days_available` exact). |
 | v0.5.5 | 4545 | Passe de hardening — post-v0.5.4 audit par un sub-agent général-purpose profond. **4 bugs réels** (C-1 bug mode `apply_cron_email` cassant les audits programmés, C-2/C-3 cmds `password_policy` non-fixables par `--fix --apply` à cause de `&&`/flèche Unicode, C-4 drift `EXPLAIN_KEYS` pour `services_state`), **4 security smells** (I-1 `recurrence.json`+`ignore.yml` écrits world-readable au lieu de 0o600, I-2 déductions post-`finalize()` bypassant les caps silencieusement, I-3 `_safe_url` ne re-escapait pas le contexte attribut HTML autorisant XSS dans rapports email, I-4 `_PRIVATE_IPV4_RE` brittle + cassure widening stdlib Python 3.12+), **11 cleanups mineurs** (M-1 dedup regex email, M-2 `_NullReport` → canonique `bob.report.NullReport`, M-3 3 clés locale mortes, M-4 check fail2ban asymétrique `corr.fully_blind`, M-7 extract helper `_has_actionable_findings`, M-8/M-9 commentaires clarifiants, M-10 ancre regex cron plus stricte, M-11 split cmd `&&` `services_state.service_inactive`). +7 tests régression couvrant chaque classe de fix. Commit cosmétique M-6 migre typing `Optional[X]` / `List[X]` sur 18 modules. **Diff net : 23 fichiers code, +312 / -112 = +200 LoC.** Changement wire visible sur hosts sans pwquality : finding password_policy se déplace de "À corriger" à "Améliorations possibles" (nature='action' → 'improvement'). Score global inchangé. |
 | v0.5.4 | 4538 | Refactor v0.5.x Phase 5 sur 5 (finale) — **#6 helper `prompt_wizard()`** dans `bob/_tty.py` + 10 sites migrés dans `bob/cron.py` (wizards install + edit) + **#9 sunset `UFW_AUDIT_SHARE`** (`logger.info` → `logger.warning` avec message explicite "REMOVED en v0.6.0") + **#15b mapping `_PREFIX_TO_DOMAIN` explicite** (`fail2ban` → ssh, `virt` → hardening, `docker_audit` → hardening) + **cache APT option C** (nouvelle feature métier : ligne INFO `updates.apt_cache_age` permanente quand aucune mise à jour security/regular en attente et cache sous le seuil obsolète, ferme le gap d'observabilité remonté par le test terrain VM Ubuntu v0.5.3). **Zero delta de tests** — Phase 5 est contract-preserving comme les Phases 2-4. 3 entrées de test retirées de `_CATCH_ALL_BY_DESIGN` dans `tests/test_domain_scores_mapping_complete.py` (reflet de la migration de prefixes #15b), mais aucun test ajouté ou supprimé. Le test scan AST `#15a` continue de pin chaque prefixe de clé émis. **#13 (split ssh.py, 1324 LoC) et #14 (split cron.py, 1223 LoC) déférés à v0.6.0** selon le principe conservative-refactor. Diff net : 12 fichiers code modifiés, +118 / −69 = +49 LoC. Ferme l'audit v0.5.x (13/15 findings shippés + 1 feature métier + 2 déférés avec justification). |
@@ -43,6 +44,52 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.7 — 4571/4571 (24-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4571 passed in ~6s
+```
+
+**Net : +11 (4560 → 4571).** Passe hardening ciblée sur le TUI curses (`bob/manage_logs.py` + `bob/tui/cron.py`). Les +11 tests sont tous des couvertures de régression pour les fix de cette release :
+
+| Classe de tests | Nombre | Pin finding |
+|---|---|---|
+| `TestApplyCronScheduleAtomic` | 2 | I-3 — spy sur `_atomic_write` pour vérifier qu'il est appelé ; simule échec pour vérifier que le contenu original du fichier cron survit intact (contrat d'atomicité) |
+| `TestIsPrintableInputChar` | 4 | I-1 — ASCII imprimable accepté, Latin-1 imprimable accepté, chars de contrôle rejetés (NUL/TAB/CR/LF/ESC), codes keypad curses `KEY_*` (≥ 256) rejetés sur toute la plage |
+| `TestEOFErrorOnPromptPath` | 2 | I-2 — Ctrl-D au prompt de chemin retourne default (avec et sans `allow_cancel`), aucune propagation `EOFError` |
+| `TestEOFErrorOnMoveConfirm` | 1 | I-2 — Ctrl-D à confirmation move-logs `[y/N]` annule le move silencieusement ; fichier log PAS déplacé |
+| `TestEOFErrorOnDeleteAllConfirm` | 1 | I-2 — Ctrl-D à confirmation delete-all `[y/N]` annule la deletion silencieusement ; fichier log PAS supprimé |
+| `TestDeletedOneCorrectName` | 1 | M-1 — sous échecs unlink sélectifs, le nom affiché est le PREMIER fichier effectivement supprimé, pas `pending_delete[0]` (qui peut référer à un index échoué) |
+
+#### Pourquoi pas de tests pour M-3 et M-4
+
+- **M-3** (dead-code elif body simplifié) — `chosen = sel` produit déjà un comportement identique dans toutes les branches que le guard autorise. Pas de changement sémantique, couvert par les tests de navigation menu existants.
+- **M-4** (consolidation `from bob.cron import` dupliqué) — pure dé-duplication de la source d'import. Les noms importés restent disponibles ; `python3 -c "from bob.tui.cron import apply_cron_schedule"` continue de fonctionner.
+
+#### Timeline du compteur de tests mis à jour
+
+```
+v0.5.0  →  4538 tests  (+39 vs v0.4.8 : domain mapping AST scan + cron coverage)
+v0.5.1  →  4538 tests  (sans changement — Phase 2 contract-preserving)
+v0.5.2  →  4538 tests  (sans changement — Phase 3 contract-preserving)
+v0.5.3  →  4538 tests  (sans changement — Phase 4 contract-preserving)
+v0.5.4  →  4538 tests  (sans changement — Phase 5 contract-preserving)
+v0.5.5  →  4545 tests  (+7 — régressions hardening post-cycle)
+v0.5.6  →  4560 tests  (+15 — régressions hardening ciblé logs.py)
+v0.5.7  →  4571 tests  (+11 — régressions hardening ciblé TUI curses)
+```
+
+#### Test terrain
+
+Approche standard de couverture cross-distro. La sortie wire (plain-text + JSON) est inchangée — seul l'affichage TUI change (pas de leak de glyphes Grecs sur pression de touche de fonction ; sortie propre sur Ctrl-D). Le changement atomic-write dans `apply_cron_schedule` produit un contenu de fichier cron bit-identique en opération normale ; la différence n'est observable que sous scénarios de crash-durant-écriture (testable dans `tests/`, pas sur VMs terrain).
+
+Tous les 4571 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 

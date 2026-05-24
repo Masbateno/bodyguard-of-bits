@@ -690,3 +690,100 @@ class TestApplyCronEmail:
         assert count == 1
         assert _stat.S_IMODE(entry.cron_path.stat().st_mode) == 0o640
         assert _stat.S_IMODE(entry.script_path.stat().st_mode) == 0o755
+
+
+# ---------------------------------------------------------------------------
+# I-3 (v0.5.7): apply_cron_schedule must go through _atomic_write to prevent
+# truncation between O_TRUNC and write under power-loss / SIGKILL.
+# ---------------------------------------------------------------------------
+
+class TestApplyCronScheduleAtomic:
+    @staticmethod
+    def _make_entry(tmp_path: Path) -> CronEntry:
+        cron_path = tmp_path / "bob-test"
+        script_path = tmp_path / "bob-test.sh"
+        cron_path.write_text(
+            "# email: admin@example.com\n"
+            "0 3 * * *  root  /usr/local/bin/bob-test.sh\n",
+            encoding="utf-8",
+        )
+        return CronEntry(
+            name="test", schedule_expr="0 3 * * *", hour=3, minute=0,
+            script_path=script_path, cron_path=cron_path,
+        )
+
+    def test_goes_through_atomic_write(self, tmp_path):
+        """Spy on _atomic_write to confirm schedule edits no longer do raw
+        os.open(O_TRUNC) + write — that pattern leaves the cron file empty
+        if the process dies after open but before write completes."""
+        from bob import cron as cron_mod
+        entry = self._make_entry(tmp_path)
+        original = cron_mod._atomic_write
+        calls = []
+
+        def spy(path, content, mode=0o600):
+            calls.append((path, content, mode))
+            return original(path, content, mode=mode)
+
+        with patch.object(cron_mod, "_atomic_write", side_effect=spy):
+            err = apply_cron_schedule(entry, "30 14 * * 1")
+        assert err == ""
+        assert len(calls) == 1
+        path, content, mode = calls[0]
+        assert path == entry.cron_path
+        assert "30 14 * * 1  root  " in content
+        assert mode == 0o640  # cron skips files with wrong mode
+
+    def test_failed_write_does_not_truncate(self, tmp_path):
+        """If _atomic_write fails, the on-disk file must still contain the
+        original schedule — this is the whole point of the atomic-write
+        contract. Pre-I-3 the raw O_TRUNC truncated before write could fail."""
+        from bob import cron as cron_mod
+        entry = self._make_entry(tmp_path)
+        original_text = entry.cron_path.read_text(encoding="utf-8")
+
+        def boom(*args, **kwargs):
+            raise OSError("simulated disk full")
+
+        with patch.object(cron_mod, "_atomic_write", side_effect=boom):
+            err = apply_cron_schedule(entry, "30 14 * * 1")
+        assert "simulated disk full" in err
+        assert entry.cron_path.read_text(encoding="utf-8") == original_text
+
+
+# ---------------------------------------------------------------------------
+# I-1 (v0.5.7): _is_printable_input_char must reject curses KEY_* codes that
+# previously leaked through chr(ch_i) as Greek/Unicode glyphs.
+# ---------------------------------------------------------------------------
+
+class TestIsPrintableInputChar:
+    def test_accepts_printable_ascii(self):
+        from bob.tui.cron import _is_printable_input_char
+        for ch in "aZ0! @~":
+            assert _is_printable_input_char(ord(ch)), f"rejected {ch!r}"
+
+    def test_accepts_printable_latin1(self):
+        from bob.tui.cron import _is_printable_input_char
+        for ch in "éèàç€":
+            # € is U+20AC > 256 so it gets rejected — that's accepted limitation
+            expected = ord(ch) < 256 and ch.isprintable()
+            assert _is_printable_input_char(ord(ch)) == expected
+
+    def test_rejects_control_chars(self):
+        from bob.tui.cron import _is_printable_input_char
+        for code in (0, 1, 9, 10, 13, 27, 31):  # NUL, SOH, TAB, LF, CR, ESC, US
+            assert not _is_printable_input_char(code)
+
+    def test_rejects_curses_keypad_codes(self):
+        """The whole point of I-1: KEY_UP=259, KEY_F1=265 etc. previously
+        passed the `ch_i >= 32` gate and inserted Greek glyphs (Ι, Ε) into
+        input buffers because chr(259)='Ι', chr(265)='Ω'."""
+        import curses
+        from bob.tui.cron import _is_printable_input_char
+        for code in (
+            curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT,
+            curses.KEY_HOME, curses.KEY_END, curses.KEY_PPAGE, curses.KEY_NPAGE,
+            curses.KEY_F1, curses.KEY_F12,
+        ):
+            assert code >= 256, f"sanity: {code} should be >= 256"
+            assert not _is_printable_input_char(code)

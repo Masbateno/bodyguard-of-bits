@@ -27,6 +27,10 @@ from bob.cron import (
     suggest_name,
     _validate_custom_cron,
     _detect_mta,
+    # File-patching helpers — single source of truth, see v0.4.8 cleanup pass
+    # that merged the duplicated implementations.
+    apply_cron_schedule,
+    apply_cron_email,
 )
 
 
@@ -56,6 +60,17 @@ def _read_key(stdscr) -> int:
     if isinstance(ch, str) and len(ch) == 1:
         return ord(ch)
     return -1
+
+
+def _is_printable_input_char(ch_i: int) -> bool:
+    """I-1 (v0.5.7): True for chars safe to append to a readline buffer.
+
+    Excludes curses KEY_* codes (>= 256) which previously leaked through
+    `chr(ch_i)` as Greek/Unicode glyphs (KEY_UP=259, KEY_F1=265 etc.) when
+    `_read_key` collapsed keypad ints and printable strs into a single int.
+    Bound to printable Latin-1 only.
+    """
+    return 32 <= ch_i < 256 and chr(ch_i).isprintable()
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +104,7 @@ def _curses_readline(stdscr, row: int, w: int, prompt: str, default: str = "") -
         elif ch_i in (127, 8) or ch_i == _c.KEY_BACKSPACE:
             if buf:
                 buf.pop()
-        elif ch_i >= ord(" "):
+        elif _is_printable_input_char(ch_i):
             buf.append(chr(ch_i))
 
 
@@ -125,12 +140,8 @@ def _init_colors_cron() -> None:
 
 
 # ---------------------------------------------------------------------------
-# File-patching helpers — delegated to bob.cron (single source of truth, see
-# v0.4.8 cleanup pass that merged the duplicated implementations).
+# File-patching wrappers — delegated to bob.cron (see import block above).
 # ---------------------------------------------------------------------------
-
-from bob.cron import apply_cron_schedule, apply_cron_email
-
 
 def _apply_cron_schedule(entry, schedule_expr: str) -> str:
     """Thin wrapper kept for the existing curses call site (line ~601)."""
@@ -557,12 +568,15 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
             sel = max(0, sel - 1)
         elif ch_i in (_c.KEY_DOWN, ord("j")):
             sel = min(1, sel + 1)
-        elif ch_i in (_c.KEY_ENTER, 10, 13) or ch_i == ord("1") and sel == 0 or ch_i == ord("2") and sel == 1:
+        elif (
+            ch_i in (_c.KEY_ENTER, 10, 13)
+            or (ch_i == ord("1") and sel == 0)
+            or (ch_i == ord("2") and sel == 1)
+        ):
+            # M-3 (v0.5.7): the guard already constrains "1"→sel==0 and "2"→sel==1,
+            # so chosen == sel holds for all entry paths; previous explicit override
+            # was dead code.
             chosen = sel
-            if ch_i == ord("1"):
-                chosen = 0
-            elif ch_i == ord("2"):
-                chosen = 1
             if chosen == 0:
                 new_expr = _curses_schedule_wizard(stdscr, entry, config, t)
                 if new_expr:

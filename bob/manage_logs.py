@@ -102,6 +102,10 @@ def prompt_path(prompt_label: str, default: Path, allow_cancel: bool = False) ->
 
     try:
         raw = input(f"  {prompt_label} [{default}] : ").strip()
+    except EOFError:
+        # I-2 (v0.5.7): treat Ctrl-D as "use default" so the caller does not
+        # crash with a traceback when stdin closes mid-prompt.
+        raw = ""
     finally:
         try:
             import readline
@@ -357,9 +361,14 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                     _add_extra_dir(user_config, log_dir)
                 # Offer to move all visible reports to the new location
                 if all_logs and chosen != log_dir:
-                    move_confirm = input(
-                        f"  {t('manage_logs.move_logs_prompt', count=len(all_logs))} [y/N] "
-                    ).strip().lower()
+                    try:
+                        move_confirm = input(
+                            f"  {t('manage_logs.move_logs_prompt', count=len(all_logs))} [y/N] "
+                        ).strip().lower()
+                    except EOFError:
+                        # I-2 (v0.5.7): match _rl() convention — Ctrl-D means
+                        # "no answer" which here equals declining the move.
+                        move_confirm = ""
                     if move_confirm == "y":
                         import shutil as _shutil
                         moved = 0
@@ -375,9 +384,14 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                 print(f"  ✔ {t('manage_logs.location_updated', path=str(chosen))}")
 
         elif answer == "all":
-            confirm = input(
-                f"  {t('manage_logs.confirm_all', count=len(all_logs))} [y/N] "
-            ).strip().lower()
+            try:
+                confirm = input(
+                    f"  {t('manage_logs.confirm_all', count=len(all_logs))} [y/N] "
+                ).strip().lower()
+            except EOFError:
+                # I-2 (v0.5.7): Ctrl-D at the "delete all" confirmation must
+                # not detonate the loop; treat as "no" and cancel the action.
+                confirm = ""
             if confirm != "y":
                 print(f"  {t('manage_logs.cancelled')}")
             else:
@@ -861,16 +875,20 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
             confirm_delete = False
             if ch in (ord("y"), ord("Y")):
                 deleted = 0
+                deleted_name = None  # M-1 (v0.5.7): track which file actually succeeded
                 for li in sorted(pending_delete, reverse=True):
                     try:
+                        name = all_logs[li].name
                         all_logs[li].unlink()
                         deleted += 1
+                        if deleted_name is None:
+                            deleted_name = name
                     except OSError:
                         pass
                 marked.clear()
                 cursor = max(0, cursor - deleted)
-                if deleted == 1 and pending_delete:
-                    status = t("manage_logs.deleted_one", name=all_logs[pending_delete[0]].name)
+                if deleted == 1 and deleted_name is not None:
+                    status = t("manage_logs.deleted_one", name=deleted_name)
                 elif deleted:
                     status = t("manage_logs.deleted_multi", count=deleted)
             else:

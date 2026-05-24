@@ -837,9 +837,10 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
         flags=re.MULTILINE,
     )
     try:
-        fd = os.open(str(entry.cron_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(new_text)
+        # I-3 (v0.5.7): atomic write — power-loss between open(O_TRUNC) and
+        # write would leave cron file empty and silently drop the entry.
+        # Cron files in /etc/cron.d/ must be 0o640 or cron skips them.
+        _atomic_write(entry.cron_path, new_text, mode=0o640)
     except OSError as exc:
         return str(exc)
     return ""

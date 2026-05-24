@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.6
+Version:        0.5.7
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,44 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun May 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.7-1
+- Targeted hardening pass on curses TUI: bob/manage_logs.py
+  (999 LoC) and bob/tui/cron.py (920 LoC) — the bucket
+  deferred by v0.5.5 / v0.5.6 audits. 11 findings: 0 critical,
+  3 important (I-1, I-2, I-3), 8 minor (3 shipped + 5 deferred
+  to v0.5.8).
+- I-1: _curses_readline accepted curses KEY_* keypad codes via
+  chr(ch_i), inserting Greek/Unicode glyphs into TUI inputs.
+  No security impact (downstream validation) but UX corrupted.
+  Fix: new _is_printable_input_char(ch_i) helper bounds inputs
+  to printable Latin-1 (32 <= ch_i < 256 and isprintable).
+- I-2: three bare input() sites in manage_logs.py did not catch
+  EOFError. Ctrl-D dumped a Python traceback. Fix: try/except
+  EOFError aligning on the _rl() convention (EOF = empty).
+- I-3: apply_cron_schedule() used raw os.open(O_TRUNC) + write
+  instead of _atomic_write. Power-loss between truncate and
+  write would silently empty the cron file. Fix: switch to
+  _atomic_write(path, content, mode=0o640). Mirrors v0.5.5
+  #C-1 / #I-1 — atomic-write contract now uniform across the
+  codebase.
+- M-1: deleted_one status flashed wrong filename under selective
+  unlink failures. Now tracks first successfully-deleted name.
+- M-3: dead-code elif body in _curses_edit_sub simplified.
+- M-4: duplicate `from bob.cron import` consolidated.
+- Deferred to v0.5.8: M-2 cursor-shift, M-5 wizard IntEnum,
+  M-6 summary_start sentinel, M-7 continuation grouping,
+  M-8 local datetime import.
+- +11 regression tests across tests/test_cron.py and
+  tests/test_manage_logs.py (TestApplyCronScheduleAtomic,
+  TestIsPrintableInputChar, TestEOFErrorOnPromptPath,
+  TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm,
+  TestDeletedOneCorrectName).
+- 4560 → 4571 tests.
+- Single-commit release. JSON contract, EXPLAIN_KEYS,
+  keybindings, no-curses fallback, exit codes — all preserved.
+- UX-visible deltas only: clean Ctrl-D exit (no traceback),
+  function keys no longer leak Greek glyphs into TUI prompts.
+
 * Sun May 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.6-1
 - Targeted hardening pass on bob/checks/logs.py (662 LoC UFW
   log parser) — module deferred by v0.5.5 audit. 10 findings:

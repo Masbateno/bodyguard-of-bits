@@ -6,6 +6,120 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.7] — 24-05-2026
+
+**Passe de hardening ciblée sur le TUI curses.** Les deux modules curses interactifs (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) explicitement déférés par les audits v0.5.5 et v0.5.6. Un sub-agent focalisé a audité les deux modules en intégralité. 11 findings : 0 critique, 3 important, 8 mineur (3 shippés + 5 déférés à v0.5.8).
+
+Voir `CHANGELOG_FR.md` pour le détail par finding. Notes spécifiques à ce doc FULL :
+
+### Méthodologie audit — deuxième passe TUI-only
+
+Cette release complète la campagne audit 2-pass sur le bucket déféré par v0.5.5. Le pattern (sub-agent single-domain + exclusions explicites des findings déjà shippés) hérité de v0.5.6 et tuné avec deux ajouts pour le code curses :
+
+1. **Callout frozen-contracts en tête** : keybindings (`q`/`r`/`h`/flèches/`Enter`/`Esc`), fallback no-curses (`BOB_NO_CURSES` env + branche `sys.stdout.isatty()`), exit codes (0/1/130), schéma JSON, système de profiles. Sub-agent a confirmé tous intacts après l'audit.
+2. **Chasse à la classe de bugs v0.5.6** : scan actif des sites de comparaison `datetime.now()`. Résultat : un seul site (`bob/tui/cron.py:712`, génération timestamp header, pas de comparaison) — clean.
+
+### Distribution ROI : 0 critique (encore)
+
+Comme v0.5.6, aucun finding critique. Le TUI curses a été extensivement exercé en production sur le cycle v0.5.x (5 releases × 5 VMs cross-distro) et v0.5.5 #M-2 a récemment retiré du dead code curses (`_NullReport`). Les concerns high-risk (path traversal, shell injection, atomic writes ailleurs) déjà adressés par les passes précédentes.
+
+Les 3 findings important sont tous de vrais bugs mais avec impact contraint :
+- **I-1** uniquement UX-corrompant — la validation downstream prévient la propagation
+- **I-2** uniquement exit-cleanliness — le path Ctrl-D était déjà un geste "je veux sortir"
+- **I-3** un vrai gap d'atomicité avec basse fréquence (les réécritures cron sont rares, coupure de courant pendant encore plus) mais un haut blast radius (cessation silencieuse d'audit)
+
+### Lignée des classes de bugs : atomic write + gestion EOFError
+
+**I-3** amène le contrat atomic-write à son état final à travers le codebase. Après :
+- v0.5.5 #C-1 (régression mode `apply_cron_email`)
+- v0.5.5 #I-1 (enforcement mode 0o600 `recurrence.py` / `ignore.py`)
+- v0.5.7 #I-3 (`apply_cron_schedule` → `_atomic_write`)
+
+…tous les sites de mutation de fichier dans BOB passent maintenant par `_atomic_write(path, content, mode=)`. Les audits futurs peuvent utiliser un grep unique (`grep -rn "os\.open.*O_TRUNC\|open(.*'w'" bob/`) pour vérifier l'absence de régression.
+
+**I-2** amène le contrat EOF de lecture interactive à son état final. Après :
+- helper v0.5.0 `_rl()` (gestion EOF propre pour les wizards principaux)
+- helper v0.5.4 `prompt_wizard()` (prompt translation-agnostic avec cancel)
+- v0.5.7 #I-2 (les 3 sites `input()` bruts restants dans `manage_logs.py`)
+
+…tous les sites de lecture interactive dans BOB routent maintenant EOF vers la sémantique chaîne-vide. Ctrl-D ne crash jamais ; Ctrl-C continue à exit 130 via le default Python.
+
+### Mineurs déférés : liste explicite defer pour v0.5.8
+
+Les 5 mineurs déférés trackés ici pour référence d'auditeur futur :
+
+| # | Fichier:Ligne | Description |
+|---|---|---|
+| M-2 | `manage_logs.py:871` | `cursor = max(0, cursor - deleted)` suppose toutes les suppressions sont avant le cursor — si items marqués sont après, cursor bouge à gauche à tort |
+| M-5 | `tui/cron.py:212` | `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` — assignment magic-number ; promote à `IntEnum` module-level |
+| M-6 | `manage_logs.py:520-523` | `if summary_start: break` traite index 0 comme "pas de séparateur trouvé" — utiliser sentinelle `None` |
+| M-7 | `manage_logs.py:536, 545` | `while ... lines[j].startswith("    ")` over-greedy : avale des lignes body 4-espaces non liées |
+| M-8 | `tui/cron.py:711` + `bob/cron.py:761` | `from datetime import datetime` local au body de fonction — remonter au top du module |
+
+Tous cosmétique / unreachable / layout-only. Zéro changement de comportement en v0.5.8 (quand shippé).
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4571 passed in ~6s
+```
+
+**4560 → 4571 (+11).** Nouvelles classes de tests :
+
+`tests/test_cron.py` :
+- `TestApplyCronScheduleAtomic` (2) — pin régression I-3. Spy sur `_atomic_write` pour vérifier qu'il est appelé ; simule échec pour vérifier que le contenu original du fichier cron survit intact.
+- `TestIsPrintableInputChar` (4) — pin régression I-1. Vérifie la frontière à travers ASCII imprimable, Latin-1 imprimable, caractères de contrôle, et la plage complète des constantes `curses.KEY_*`.
+
+`tests/test_manage_logs.py` :
+- `TestEOFErrorOnPromptPath` (2) — pin régression I-2 dans `prompt_path()` avec et sans `allow_cancel`.
+- `TestEOFErrorOnMoveConfirm` (1) — pin régression I-2 dans la branche move-logs `[y/N]` (Ctrl-D == decline).
+- `TestEOFErrorOnDeleteAllConfirm` (1) — pin régression I-2 dans la branche delete-all `[y/N]` (Ctrl-D == cancel, fichier PAS supprimé).
+- `TestDeletedOneCorrectName` (1) — pin logique M-1 : sous échecs unlink sélectifs, le nom affiché est le PREMIER fichier effectivement supprimé, pas `pending_delete[0]`.
+
+### Diff net
+
+| Fichier | Delta |
+|---|---|
+| `bob/cron.py` | -6 / +5 (I-3 swap `os.open` brut → `_atomic_write`) |
+| `bob/tui/cron.py` | +20 / -10 (helper I-1 + appel filter, cleanup dead-code M-3, consolidation import M-4) |
+| `bob/manage_logs.py` | +24 / -3 (I-2 trois catches EOFError, tracking deleted_name M-1) |
+| `tests/test_cron.py` | +95 (TestApplyCronScheduleAtomic + TestIsPrintableInputChar) |
+| `tests/test_manage_logs.py` | +90 (4 nouvelles classes de tests pour I-2 + M-1) |
+| Bump version + changelogs | ~17 fichiers standard |
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS — inchangés.
+- **Score par domaine** : inchangé. Score global inchangé.
+- **Sortie wire** : aucun changement à la sortie plain-text ou JSON. Les affichages TUI ne montrent plus de glyphes Grecs sur pression de touche de fonction (UX-visible uniquement).
+- **API externe** : `_is_printable_input_char(ch_i)` est un nouveau helper module-level dans `bob/tui/cron.py`. Aucun retrait.
+- **Keybindings** : inchangés. `q`/`r`/`h`/flèches/`Enter`/`Esc` se comportent identiquement.
+- **Fallback no-curses** : inchangé. Mêmes branches `BOB_NO_CURSES` / `sys.stdout.isatty()`.
+
+### Progrès closure audit v0.5.x (FINAL pour la passe deep-audit)
+
+| Module | Statut | Release |
+|---|---|---|
+| 22 modules core (ssh.py, scoring.py, etc.) | audité (v0.5.5) | v0.5.5 |
+| `checks/logs.py` | audité (v0.5.6) | v0.5.6 |
+| **`manage_logs.py`, `tui/cron.py`** | **audité (v0.5.7, cette release)** | **v0.5.7** |
+| Format renderers (`html/csv/markdown_output.py`) | spot-checké | — |
+| `display.py`, `output.py` | spot-checké | — |
+| ~25 autres modules `checks/*.py` (petits <300L chacun) | spot-checké | — |
+
+**Campagne deep-audit branche v0.5.x fermée.** 25 modules deeply audités (3 passes × multiples sub-agents) + ~25 spot-checkés. Les 5 mineurs v0.5.7 déférés shipperont en v0.5.8 (release cosmétique-only).
+
+### Roadmap
+
+Après v0.5.8 (5 mineurs TUI déférés), la branche v0.5.x sera à son état final de maintenance. La prochaine version mineure (v0.6.0) est réservée pour les deux refactors architecturaux délibérément déférés du roadmap v0.5.x :
+- **#13** : split `bob/checks/ssh.py` (actuellement 1324 LoC après la consolidation table `_BadDirective` v0.5.2)
+- **#14** : split `bob/cron.py` (actuellement 1223 LoC après l'extraction des helpers de file-patching v0.4.8)
+
+Les deux fichiers excèdent le soft ceiling 1000-LoC du projet ; les splits ont été déférés parce que gain × risque ne justifiait pas le churn dans une release minor contract-preserving. v0.6.0 est l'endroit approprié.
+
+---
+
 ## [v0.5.6] — 24-05-2026
 
 **Passe de hardening ciblée sur `bob/checks/logs.py`** — le module parser UFW logs (662 LoC) explicitement déféré par l'audit v0.5.5 à cause de sa densité regex. Un sub-agent focalisé a audité le module en intégralité (chaque fonction et branche). 10 findings shippés : 0 critique, 2 important, 8 mineur.
