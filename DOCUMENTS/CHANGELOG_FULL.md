@@ -6,6 +6,91 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.5.6] — 2026-05-24
+
+**Targeted hardening pass on `bob/checks/logs.py`** — the UFW log parser module (662 LoC) explicitly deferred by the v0.5.5 audit because of its regex density. A focused sub-agent audited the module in full (every function and branch). 10 findings shipped: 0 critical, 2 important, 8 minor.
+
+See `CHANGELOG.md` for per-finding detail. Notes specific to this FULL doc:
+
+### Why a single-module release
+
+The audit roadmap (set in v0.5.5 close notes) had `logs.py`, `manage_logs.py`, and `tui/cron.py` as "not deeply audited". The decision was a 2-pass campaign:
+- **v0.5.6** = `logs.py` (regex parser, high bug density risk)
+- **v0.5.7** = `manage_logs.py` + `tui/cron.py` (curses TUI, user-visible)
+
+Single-module releases keep the diff focused: 23 files touched (logs.py + tests + the standard 17 version-bump sites + 5 changelogs), one auditable scope. Easier review than bundling all v0.5.x audit remainder in one v0.5.7.
+
+### Audit findings: ROI distribution
+
+The audit found 10 issues but **no critical bug**. This matches expectations:
+- The module was already touched by v0.5.x #8 (`tuple` return refactor) which forced an end-to-end review of every code path
+- Terrain testing on 5 VMs across 5 releases (v0.5.0 → v0.5.4) exercised it in production
+- The high-risk concerns (regex correctness, journald fallback semantics, GeoIP integration) were stable
+
+The 2 important findings (I-1 private-IP regex inconsistency, I-2 year-rollover silent drop) are genuine bugs but with low operational impact under typical conditions. The 8 minor findings are quality-of-implementation improvements.
+
+### Single source of truth: private-IP detection
+
+I-1 closes the last hand-rolled private-IP matcher in the codebase. After v0.5.5 #I-4 rewrote `sysinfo._PRIVATE_IPV4_RE` to use `ipaddress.ip_network` membership lists, `bob/checks/logs.py:46` remained as the only outlier with its own ad-hoc regex. The new `_is_private_ip(ip)` helper in `logs.py` delegates to the sysinfo helpers — there is now exactly one model for "is this IP private/loopback/link-local" across BOB.
+
+### Bug class extracted: year-rollover under clock skew
+
+I-2 documents a pattern worth watching elsewhere in the codebase:
+> Any date-comparison logic that calls `datetime.now()` to decide whether a parsed timestamp is "in the past" needs a tolerance window (typically 5 minutes) to absorb NTP jitter, log buffering, and process-clock skew. A tight `> now` check silently drops legitimate near-realtime data.
+
+Sites in BOB that use `datetime.now()` for comparisons (grep result):
+- `bob/checks/logs.py:_parse_timestamp` — **fixed in v0.5.6 (this release)**
+- `bob/checks/ssl_certs.py` — uses `notAfter > now` for expiry (correct direction; no rollback)
+- `bob/checks/firmware.py` — uses `last_update > now - days(N)` (correct direction)
+- `bob/checks/rkhunter.py`, `bob/checks/clamav.py`, `bob/checks/file_integrity.py` — DB age comparisons (correct direction)
+
+No other site has the same year-rollover pattern. Documented in `project_v056_logs_audit.md` memory.
+
+### `[UFW BLOCK6]` IPv6 variant
+
+M-1 catches an undocumented variant of the UFW prefix used by some downstream packagers (Debian backports, custom `before6.rules` configurations). The substring matcher had been silently dropping these for years. Field impact unclear — most users probably never noticed because IPv6 BLOCK volume is dominated by mDNS link-local traffic that wouldn't surface as a "missing finding".
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4560 passed in ~6s
+```
+
+**4545 → 4560 (+15).** All new in `tests/test_logs.py`:
+- `TestPrivateIPDispatch` (8) — pins I-1 regression coverage including CGNAT, IPv6 link-local, ULA, invalid input
+- `TestParseTimestampYearRollover` (3) — pins I-2 regression for current-year, 1s-skew, genuine December rollback
+- `TestBlockPrefixMatcher` (3) — pins M-1 across `[UFW BLOCK]`, `[UFW BLOCK6]`, `[UFW ALLOW]` rejection
+- `TestProtoNormalisation` (1) — pins M-8 proto upper-case normalisation
+
+### Net diff
+
+| File | Delta |
+|---|---|
+| `bob/checks/logs.py` | +60 / -25 (I-1 helper + I-2 tolerance + M-1 regex + M-2 anchor + M-3 reorder + M-5 cache helper + M-6 binary read + M-7/M-8 minor) |
+| `tests/test_logs.py` | +150 (4 new test classes) |
+| Version bump + changelogs | standard ~17 files |
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, the 116 EXPLAIN_KEYS — unchanged.
+- **Per-domain score**: unchanged. Global score unchanged.
+- **Wire output**: 2 narrow deltas — `[UFW BLOCK6]` lines now counted (previously dropped), and `_count_available_days` no longer over-counts on non-English locale logs.
+- **External API**: `_is_private_ip(ip)` is a new semi-public helper in `logs.py`. The undocumented `_PRIVATE_IP` regex constant is removed.
+
+### v0.5.x audit closure progress
+
+| Module | Status | Release |
+|---|---|---|
+| 22 core modules (ssh.py, scoring.py, etc.) | audited (v0.5.5) | v0.5.5 |
+| `checks/logs.py` | **audited (v0.5.6, this release)** | **v0.5.6** |
+| `manage_logs.py`, `tui/cron.py` | pending | v0.5.7 |
+| Format renderers (`html/csv/markdown_output.py`) | spot-checked (I-3 in v0.5.5) | — |
+| `display.py`, `output.py` | spot-checked | — |
+| ~25 other `checks/*.py` modules (small <300L each) | spot-checked | — |
+
+---
+
 ## [v0.5.5] — 2026-05-24
 
 **Hardening pass — post-v0.5.4 audit by a deep general-purpose sub-agent.** 19 findings: 4 real bugs (C-1 to C-4), 4 security smells (I-1 to I-4), 11 minor cleanups (M-1 to M-11). 17 fixed with code/test changes; 2 are doc comments (M-8/M-9). Companion cosmetic commit (M-6) migrates `Optional[X]` / `List[X]` typing on 18 modules.

@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.5.6](#v056) | 2026-05-24 | Targeted hardening pass on `bob/checks/logs.py` (662 LoC UFW log parser) — module explicitly deferred by the v0.5.5 audit because of regex density. 10 findings from a focused sub-agent: 0 critical, 2 important (I-1 private-IP regex inconsistent with `sysinfo.py` — missed CGNAT 100.64/10 + IPv6 link-local fe80::/10 + false positives on any string starting with `fc`/`fd`; I-2 year-rollover silently dropped near-realtime syslog events 1s ahead of wall-clock by rolling back a full year), 8 minor (M-1 `[UFW BLOCK6]` IPv6 variant silently ignored — anchored regex now catches both; M-2 `_count_available_days` regex restricted to English month names; M-3 GeoIP path order City-before-Country across all dirs; M-4 `geoip2_status()` accepts symlinks like `_geo_via_geoip2` does; M-5 `_GEO_CACHE` bounded at 2048 with FIFO eviction; M-6 binary-mode `tell()`/`seek()` arithmetic (TextIOBase opaque-cookie compliance); M-7 redundant `subprocess.TimeoutExpired` dropped from except tuple; M-8 `proto` normalised to upper at parse time so a downstream lowercase build can't silently split a bruteforce campaign). +15 regression tests in `tests/test_logs.py` covering each fix class. Single-module pass, single commit. 4545 → 4560 tests. JSON contract preserved. Wire output unchanged on hosts with standard UFW configs; visible only on hosts emitting `[UFW BLOCK6]` (previously dropped — now counted) or with non-English locale syslog logs (previously inflated days_available — now accurate). |
 | [v0.5.5](#v055) | 2026-05-24 | Hardening pass — 4 real bugs (C-1 to C-4) + 4 security smells (I-1 to I-4) + 11 minor cleanups (M-1 to M-11) from a deep audit sub-agent. **C-1**: `apply_cron_email()` was rewriting wrapper scripts via `_atomic_write()` which forced mode `0o600` — scripts lost their `0o755` executable bit and cron silently stopped running the audit. `_atomic_write()` now takes `mode=` explicitly; cron file rewrites pass `0o640`, scripts pass `0o755`. **C-2 + C-3 + M-11**: 3 finding `cmd=` values contained `&&` (shell operator rejected by `_has_shell_ops`) or a decorative Unicode arrow → `--fix --apply` rejected them silently. Demoted `password_policy.no_quality_module` + `password_policy.weak_minlen` from `nature="action"` to `nature="improvement"` (visible in summary box under "Améliorations possibles" instead of "À corriger") + split `services_state.service_inactive` cmd to drop the `&&` chained `journalctl` (moved to `note=` guidance). **C-4**: `bob/checks/services_state.py` emits `services_state.service_inactive` but `EXPLAIN_KEYS` declared `services_state.enabled_inactive` — `bob --explain` returned "key not found". Fixed via `EXPLAIN_KEY_ALIASES` (conservative — preserves JSON output contract). **I-1**: `recurrence.py` + `ignore.py` wrote state files with process umask (typically world-readable `0o644`) instead of `0o600` like every other `~/.config/bob/` file. **I-2**: post-`finalize()` calls to `_apply_deduction` silently bypassed score caps — now logs WARNING and discards. **I-3**: `_safe_url` in markdown email HTML didn't re-escape attribute context — a crafted URL containing `"` could break out of `href=""`. Now uses `html.escape(..., quote=True)`. **I-4**: `sysinfo._PRIVATE_IPV4_RE` brittle regex (with `removeprefix("^")` hack) replaced by explicit `ipaddress.ip_network` membership checks; works around Python 3.12+ widening `is_private` to include documentation ranges. **M-1**: 3 duplicate email regex sites unified via `bob.config._EMAIL_RE`. **M-2**: `bob/watch.py:_NullReport` removed in favour of canonical `bob.report.NullReport` (Protocol type introduced in v0.5.0 #10). **M-3**: 3 dead locale keys removed (`_meta.lang`, `_meta.version`, `ignored.hint`). **M-4**: `corr.fully_blind` rule was asymmetric — required `fail2ban.not_installed` but ignored equally-blind `fail2ban.service_inactive`. Widened to fire when any detection layer is blind. **M-7**: extract `_has_actionable_findings()` helper in `updates.py` (clearer than inline-key-blacklist of `apt_cache_age`). **M-8 + M-9**: clarifying comments in ssh.py (Match block Include skip) and ports.py (process/iface empty semantics). **M-10**: `apply_cron_schedule` regex tightened with first-field cron-token anchor so comment lines containing "root /path" are no longer rewritten. **M-6 (separate commit)**: `Optional[X]` / `List[X]` → `X \| None` / `list[X]` sweep across 18 modules — Python 3.10+ syntax. 4538 → 4545 tests (+7 regression coverage). Net diff: 23 code files, +312 / −112 = +200 LoC. Score on dev host unchanged (8/10); the password_policy `nature` change visibly shrinks the "À corriger" block on hosts without pwquality. |
 | [v0.5.4](#v054) | 2026-05-22 | Refactor v0.5.x Phase 5 of 5 (final) — **#6 + #9 + #15b + cache APT option C**. **#6 `prompt_wizard()` helper** in `bob/_tty.py` (translation-agnostic wrapper around `input()` with uniform `q`/`quit` cancel + default-on-Enter) replaces 10 raw `input()` sites in `bob/cron.py` install + edit wizards. **#9 UFW_AUDIT_SHARE sunset** — `bob/_paths.py:resolve_share_dir()` upgraded `logger.info(...)` → `logger.warning(...)` with explicit "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0" message; legacy env var still functional today. **#15b explicit `_PREFIX_TO_DOMAIN` mapping** — three v0.4.x silent catch-all fallbacks moved out of the firewall catch-all: `fail2ban` → `ssh` (primary purpose is SSH anti-bruteforce), `virt` → `hardening` (KVM/bridge bypass is kernel/system surface), `docker_audit` → `hardening` (container hardening / daemon.json security). `smtp` and `desktop_apps` stay catch-all by design (no clean domain fit). **Cache APT option C** (new metier feature) — `bob/checks/updates.py` adds an INFO `updates.apt_cache_age` line when no security/regular updates are pending AND the cache age is below the stale threshold, giving permanent transparency about how fresh the "system is up to date" verdict actually is. Surfaced by Ubuntu VM terrain testing on 2026-05-22 where a dormant VM returned "à jour" despite 8 pending LTS security updates upstream. **#13 (ssh.py split, 1324 LoC) and #14 (cron.py split, 1223 LoC) deferred to v0.6.0** — per conservative-refactor principle, splitting >1000-LoC files for marginal readability gain doesn't pass the gain × risk test in a contract-preserving release. Net diff: 12 files changed, +118 / −69 = +49 lines (cron.py +1 net, _tty.py +24, updates.py +20, domain_scores.py +10, _paths.py +5, locales +4 keys, tests −6 net). 4538/4538 tests unchanged. Wire output diff vs v0.5.3 is intentional: new INFO line in section MISES À JOUR SYSTÈME on hosts with cache + no pending updates, and per-domain score reshuffle on hosts emitting `fail2ban.*` / `virt.*` / `docker_audit.*` findings. Closes the v0.5.x audit (15/15 findings addressed, 2 deferred with justification). |
 | [v0.5.3](#v053) | 2026-05-22 | Refactor v0.5.x Phase 4 — **#5 + #12 + #8**. **#5 `_LEVEL_DISPATCH` table** in `bob/display.py` collapses the 4-branch OK/WARN/ALERT/INFO cascade in `display_result()` to a single dispatch loop driven by a frozen `_LevelTraits(report_label, threshold_key, print_fn, has_recurrence, has_body, detail_unconditional, show_note, show_cis)` dataclass. The 4-row table captures per-level behaviour declaratively; the special-case ALERT path that prints detail unconditionally (even without `--verbose`) is now expressed as `detail_unconditional=True` rather than an imperative branch. **#12 `print_audit_summary` split** — the 142-line function is broken into 3 focused helpers (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) plus `_add_finding_lines` extracted from inner-function to module-level. The orchestrator becomes a 3-line assembler. **#8 `CheckResult.log_data` removed** — the typed-dict escape hatch on `CheckResult` is replaced by a tuple return from `check_logs(...) -> (CheckResult, LogReportData | None)`. New frozen dataclass `LogReportData(log_days, days_available, total, brute_hits, top_ips, top_ports, svc_hits)` in `bob/checks/logs.py`. `runner.py` unpacks the tuple; `display_log_results` takes the report as an explicit arg. **Net diff: 5 files changed, +109 / −69 = +40 lines** (display.py +23 for explicit helper signatures, logs.py +19 for `LogReportData`, scoring.py −1 for removed field). 4538/4538 tests unchanged — 3 tests renamed (`test_log_data_*` → `test_report_data_*`), ~20 test sites use tuple unpack. Wire output bit-identical to v0.5.2. |
@@ -33,6 +34,79 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.5.6] — 2026-05-24
+
+**Targeted hardening pass on `bob/checks/logs.py`.** The v0.5.5 audit explicitly deferred this module ("not deeply audited") because of its regex density — UFW log parser + systemd-journald fallback + GeoIP2 integration + bruteforce detection in 662 LoC. A focused sub-agent audit produced 10 findings: 0 critical, 2 important, 8 minor. All ship in this single-module release.
+
+### Important (2)
+
+**I-1 — `_PRIVATE_IP` regex inconsistent with `sysinfo.py`**
+
+The hand-rolled `^(10\.|172\.…|192\.168\.|127\.|::1$|fc|fd)` regex had three problems vs the canonical `sysinfo._is_private_or_loopback_ipv4/_ipv6` helpers (rewritten in v0.5.5 #I-4):
+- **Missed CGNAT** (`100.64.0.0/10`, RFC 6598) — sources behind carrier-grade NAT got GeoIP-looked-up instead of labelled "local"
+- **Missed IPv6 link-local** (`fe80::/10`) — local IoT noise mis-classified as public
+- **False positive on any string starting `fc`/`fd`** — e.g. `"fcsa"`, `"fdgarbage"` matched as "local" (lucky harmless today because the SRC field is always an IP, but inconsistent with the model)
+
+Same finding class as v0.5.5 #I-4 (`sysinfo._PRIVATE_IPV4_RE`). Fix: new `_is_private_ip(ip)` helper in `logs.py` dispatches by `:` and delegates to `sysinfo._is_private_or_loopback_ipv4/_ipv6`. Single source of truth across the codebase.
+
+**I-2 — Year-rollover dropped near-realtime syslog events**
+
+`_parse_timestamp` falls back to `current_year` for syslog format (no year in the line). The rollback heuristic was:
+```python
+if ts > datetime.now():
+    ts = ts.replace(year=ts.year - 1)
+```
+
+A syslog event timestamped `12:00:01` parsed at wall-clock `12:00:00` (1s in the future from NTP jitter / log buffer flush / clock skew) was rolled back a full year → fell outside `cutoff_dt = now - timedelta(days=log_days)` → **silently dropped**. Real impact on busy systems with high UFW BLOCK rates.
+
+Bonus subtle bug: `current_year` and `datetime.now()` are called at different points in the parse loop, so the year-rollover decision could disagree with `current_year` if the parse straddles midnight Dec 31.
+
+Fix: snapshot `now` once at the top of `_parse_log`, pass it to `_parse_timestamp`, and use `if ts > now + timedelta(minutes=5)` to absorb skew while still catching genuine year-end Dec entries parsed in Jan.
+
+### Minor (8)
+
+| # | Fix |
+|---|---|
+| **M-1** | Anchored `r"\[UFW BLOCK6?\]"` matcher — accepts the `[UFW BLOCK6]` IPv6 variant (silently dropped pre-v0.5.6) and rejects substring spoofing |
+| **M-2** | `_count_available_days` regex restricted to English month names — was inflated by non-date leading tokens (e.g. `"mai 23"`, kernel boot facility names) |
+| **M-3** | `_GEOIP2_DB_PATHS` reordered: all City entries first across all dirs, then all Country — `_geo_via_geoip2` returns on first hit, so City always wins richer data when both DBs exist |
+| **M-4** | `geoip2_status()` now accepts symlinks (`Path.resolve(strict=True)`) — matching `_geo_via_geoip2` which already does. Fixes contradictory "no database installed" notice on `geoipupdate` setups using symlinks |
+| **M-5** | `_GEO_CACHE` bounded at 2048 entries with FIFO eviction via `_geo_cache_put()` helper — prevents unbounded growth in long-lived embedders |
+| **M-6** | `LogsSnapshot.from_system` reads in binary mode (`open("rb")` + `.decode("utf-8", errors="ignore")`) — `TextIOBase.tell()` returns an opaque number per docs; the byte-offset arithmetic worked by accident on CPython |
+| **M-7** | `except (OSError, subprocess.SubprocessError)` — dropped redundant `subprocess.TimeoutExpired` (subclass of SubprocessError) |
+| **M-8** | `proto.upper()` at parse time — a downstream patched UFW emitting lowercase `proto` would silently split a single bruteforce campaign into two sub-groups under threshold |
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4560 passed in ~6s
+```
+
+**4545 → 4560 (+15).** New `tests/test_logs.py` classes:
+- `TestPrivateIPDispatch` (8 tests) — pins CGNAT, IPv6 link-local, ULA, public IPv4, invalid-string edge cases (I-1)
+- `TestParseTimestampYearRollover` (3 tests) — current-year, 1s-skew, genuine December rollback (I-2)
+- `TestBlockPrefixMatcher` (3 tests) — `[UFW BLOCK]`, `[UFW BLOCK6]`, `[UFW ALLOW]` rejection (M-1)
+- `TestProtoNormalisation` (1 test) — lowercase proto upper-cased at parse (M-8)
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, the 116 EXPLAIN_KEYS — unchanged.
+- **Wire output**: unchanged on standard UFW configs. Visible delta only on:
+  - Hosts emitting `[UFW BLOCK6]` (previously silently dropped — now counted in `total` and `top_ips`)
+  - Hosts with mixed-locale syslog content (previously inflated `days_available` count — now accurate)
+- **External API**: `_is_private_ip(ip)` is a new semi-public helper. `_PRIVATE_IP` constant removed (was undocumented; one downstream `pipx`-installed user might import it — unlikely).
+- **Per-domain score**: unchanged. Global score unchanged.
+- **i18n**: no locale key changes.
+
+### Coverage
+
+Single-module pass: `bob/checks/logs.py` audited in full. No other module touched.
+
+Remaining queue (per audit roadmap): **v0.5.7** = `manage_logs.py` + `bob/tui/cron.py` curses TUI (~1920 LoC combined). After that, the v0.5.x line is fully audited.
 
 ---
 

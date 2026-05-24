@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.5
+Version:        0.5.6
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,29 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun May 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.6-1
+- Targeted hardening pass on bob/checks/logs.py (662 LoC UFW
+  log parser) — module deferred by v0.5.5 audit. 10 findings:
+  0 critical, 2 important (I-1, I-2), 8 minor (M-1 to M-8).
+- I-1: _PRIVATE_IP regex inconsistent with sysinfo.py (missed
+  CGNAT 100.64/10 + IPv6 link-local fe80::/10 + false positives
+  on fc/fd strings). Now delegates to canonical sysinfo helpers.
+- I-2: year-rollover silently dropped near-realtime syslog
+  events 1s ahead of wall-clock. Fix: 5-min tolerance +
+  snapshot `now` once per parse.
+- M-1: anchored [UFW BLOCK6?] matcher catches IPv6 variant.
+- M-2: _count_available_days regex restricted to English month
+  names.
+- M-3: GeoIP DB path order City-before-Country across all dirs.
+- M-4: geoip2_status() accepts symlinks like _geo_via_geoip2.
+- M-5: _GEO_CACHE bounded at 2048 with FIFO eviction.
+- M-6: binary tell()/seek() arithmetic (TextIOBase compliance).
+- M-7: dropped redundant subprocess.TimeoutExpired.
+- M-8: proto.upper() at parse time prevents bruteforce split.
+- +15 regression tests in tests/test_logs.py (4 new classes).
+- 4545 → 4560 tests.
+- Single-module pass, single commit. JSON contract preserved.
+
 * Sun May 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.5-1
 - Hardening pass — post-v0.5.4 audit by deep sub-agent. 19
   findings: 4 real bugs (C-1 to C-4), 4 security smells

@@ -42,10 +42,27 @@ BRUTEFORCE_THRESHOLD = 10   # attempts from same IP on same port within window
 BRUTEFORCE_WINDOW_S  = 60   # seconds
 TOP_N = 10                  # number of entries in top IPs / top ports tables
 
-# Private IP ranges — no geolocation needed
-_PRIVATE_IP = re.compile(
-    r"^(10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|127\.|::1$|fc|fd)"
+# I-1 (v0.5.6): use the canonical helpers from sysinfo.py rather than a
+# hand-rolled regex. The old regex missed CGNAT (100.64/10) and IPv6
+# link-local (fe80::/10), and had false positives on any string starting
+# with "fc" or "fd". Sysinfo's I-4 (v0.5.5) helpers are the single source
+# of truth for "is this IP private/loopback/link-local?".
+from bob.sysinfo import (
+    _is_private_or_loopback_ipv4,
+    _is_private_or_loopback_ipv6,
 )
+
+
+def _is_private_ip(ip: str) -> bool:
+    """Return True for any private/loopback/link-local IPv4 or IPv6 address.
+
+    Dispatches by ``:`` substring (IPv6 contains ``:``, IPv4 doesn't).
+    Invalid input returns False (safe default — caller may geo-lookup
+    and discover the bad IP, instead of mis-classifying it as local).
+    """
+    if ":" in ip:
+        return _is_private_or_loopback_ipv6(ip)
+    return _is_private_or_loopback_ipv4(ip)
 
 # GeoIP2 optional import — silent fallback if not installed
 try:
@@ -55,16 +72,35 @@ try:
 except ImportError:
     _GEOIP2_AVAILABLE = False
 
-# Standard paths for MaxMind GeoLite2 database
+# Standard paths for MaxMind GeoLite2 database.
+# M-3 (v0.5.6): City entries first across all dirs, then Country across all
+# dirs. _geo_via_geoip2 returns on first hit, so City-before-Country wins
+# the richer data when both exist in different directories.
 _GEOIP2_DB_PATHS = [
     "/usr/share/GeoIP/GeoLite2-City.mmdb",
-    "/usr/share/GeoIP/GeoLite2-Country.mmdb",
     "/var/lib/GeoIP/GeoLite2-City.mmdb",
+    "/usr/share/GeoIP/GeoLite2-Country.mmdb",
     "/var/lib/GeoIP/GeoLite2-Country.mmdb",
 ]
 
-# In-memory cache — each IP resolved only once per session
+# In-memory cache — each IP resolved only once per session.
+# M-5 (v0.5.6): bounded (LRU-like). Previously unbounded — fine for a CLI
+# one-shot but problematic for any long-lived embedder. The cap at 2048
+# entries is well above the TOP_N * unique-host realistic working set.
+_GEO_CACHE_MAX = 2048
 _GEO_CACHE: dict[str, str] = {}
+
+
+def _geo_cache_put(key: str, value: str) -> None:
+    """Insert into _GEO_CACHE with FIFO eviction at the cap."""
+    if len(_GEO_CACHE) >= _GEO_CACHE_MAX:
+        # FIFO eviction: drop the oldest insertion (dict preserves order
+        # since Python 3.7). Cheaper than full LRU and fine for our usage.
+        try:
+            del _GEO_CACHE[next(iter(_GEO_CACHE))]
+        except (StopIteration, KeyError):
+            pass
+    _GEO_CACHE[key] = value
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -160,12 +196,19 @@ class LogsSnapshot:
         # --- Primary source: /var/log/ufw.log ---
         if log_path.exists():
             _MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
+            # M-6 (v0.5.6): binary mode for the seek/tell arithmetic.
+            # TextIOBase.tell() returns "an opaque number" per Python
+            # docs — arithmetic on it is UB. CPython today returns
+            # byte offsets for utf-8 streams (working by accident),
+            # but binary mode is the documented contract. Decode the
+            # tail with errors="ignore" to preserve the original
+            # behaviour on encoding errors.
             try:
-                with log_path.open(encoding="utf-8", errors="ignore") as fh:
+                with log_path.open("rb") as fh:
                     fh.seek(0, 2)
                     file_size = fh.tell()
                     fh.seek(max(file_size - _MAX_LOG_SIZE, 0))
-                    content = fh.read()
+                    content = fh.read().decode("utf-8", errors="ignore")
                 days_available = _count_available_days(content)
                 entries = _parse_log(content, cutoff_dt)
                 return cls(
@@ -394,7 +437,7 @@ def _dominant_local_source(
         return None, 0, 0
 
     local_counts: Counter = Counter(
-        e.src_ip for e in entries if _PRIVATE_IP.match(e.src_ip)
+        e.src_ip for e in entries if _is_private_ip(e.src_ip)
     )
     if not local_counts:
         return None, 0, 0
@@ -429,9 +472,9 @@ def get_ip_geo(ip: str, lang: str = "en") -> str:
 
     local_label = "réseau local" if lang == "fr" else "local network"
 
-    # Private / loopback
-    if _PRIVATE_IP.match(ip):
-        _GEO_CACHE[cache_key] = local_label
+    # Private / loopback / link-local — no geolocation needed
+    if _is_private_ip(ip):
+        _geo_cache_put(cache_key, local_label)
         return local_label
 
     # GeoIP2 lookup
@@ -439,7 +482,7 @@ def get_ip_geo(ip: str, lang: str = "en") -> str:
     if _GEOIP2_AVAILABLE:
         result = _geo_via_geoip2(ip)
 
-    _GEO_CACHE[cache_key] = result
+    _geo_cache_put(cache_key, result)
     return result
 
 def _geo_via_geoip2(ip: str) -> str:
@@ -485,10 +528,16 @@ def geoip2_status() -> str:
     if not _GEOIP2_AVAILABLE:
         return "unavailable"
 
+    # M-4 (v0.5.6): accept symlinks — geoipupdate commonly installs the DB
+    # as a symlink chain. The previous `not p.is_symlink()` check rejected
+    # legitimate setups while `_geo_via_geoip2` accepts them: contradictory.
+    # `resolve()` collapses symlinks safely (errors → return "no_database").
     for db_path in _GEOIP2_DB_PATHS:
-        p = Path(db_path)
-        if p.exists() and not p.is_symlink():
-            return "available"
+        try:
+            if Path(db_path).resolve(strict=True).is_file():
+                return "available"
+        except OSError:
+            continue
 
     return "no_database"
 
@@ -524,7 +573,8 @@ def _read_from_journald(log_days: int) -> tuple[str, bool]:
         if result.returncode == 0 and result.stdout.strip():
             content = result.stdout
             return (content if "[UFW " in content else ""), True
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+    # M-7 (v0.5.6): TimeoutExpired is a SubprocessError subclass — redundant.
+    except (OSError, subprocess.SubprocessError):
         pass
     return "", False
 
@@ -538,7 +588,13 @@ def _count_available_days(content: str) -> int:
             dates.add(iso.group(1))
             continue
         # Syslog format: Mar 19 ...
-        syslog = re.match(r"^([A-Za-z]+ +\d+)", line)
+        # M-2 (v0.5.6): restrict to English month names to avoid counting
+        # non-date leading tokens (e.g. "mai 23", "Apparmor kernel ...")
+        # as a distinct "day". Mirrors _parse_english_month_day's set.
+        syslog = re.match(
+            r"^((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\d+)",
+            line,
+        )
         if syslog:
             dates.add(syslog.group(1))
     return len(dates)
@@ -559,13 +615,23 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
         List of parsed LogEntry objects.
     """
     entries: list[LogEntry] = []
-    current_year = datetime.now().year
+    # I-2 (v0.5.6): snapshot now once per parse to avoid year-boundary race
+    # where current_year (computed earlier) and the rollback comparison
+    # below could disagree on the year if the parse straddles midnight Dec 31.
+    now = datetime.now()
+    current_year = now.year
+
+    # M-1 (v0.5.6): anchored prefix matcher catches both upstream variants
+    # (`[UFW BLOCK]` and `[UFW BLOCK6]`) and rejects spurious substrings
+    # (the previous `"[UFW BLOCK]" in line` accepted any junk containing
+    # the literal substring, and missed `[UFW BLOCK6]` entirely).
+    block_re = re.compile(r"\[UFW BLOCK6?\]")
 
     for line in content.splitlines():
-        if "[UFW BLOCK]" not in line:
+        if not block_re.search(line):
             continue
 
-        ts = _parse_timestamp(line, current_year)
+        ts = _parse_timestamp(line, current_year, now)
         if ts is None:
             continue
 
@@ -588,17 +654,32 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
         if not (1 <= port_num <= 65535):
             continue
 
+        # M-8 (v0.5.6): normalise proto to uppercase at parse time. UFW
+        # always emits uppercase but a downstream patched build (or future
+        # UFW change) emitting lowercase would split a single bruteforce
+        # campaign into two sub-groups under the threshold, silencing the
+        # detection. Single source of truth: parse-time normalisation.
         entries.append(LogEntry(
             timestamp=ts,
             src_ip=src_ip,
             dst_port=port_num,
-            proto=proto,
+            proto=proto.upper(),
         ))
 
     return entries
 
-def _parse_timestamp(line: str, current_year: int) -> datetime | None:
-    """Extract and parse the timestamp from a log line."""
+def _parse_timestamp(
+    line: str,
+    current_year: int,
+    now: datetime | None = None,
+) -> datetime | None:
+    """Extract and parse the timestamp from a log line.
+
+    I-2 (v0.5.6): ``now`` may be passed by the caller to avoid (a) a
+    re-call to ``datetime.now()`` per line, and (b) silently rolling
+    back near-realtime syslog events that appear up to a few seconds
+    in the future due to clock skew, log buffering, or NTP jitter.
+    """
     # ISO 8601: 2026-03-19T18:20:08.898+01:00
     iso_match = re.match(
         r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", line
@@ -625,9 +706,14 @@ def _parse_timestamp(line: str, current_year: int) -> datetime | None:
             ts = datetime(current_year, month, day, hh, mm, ss)
         except ValueError:
             return None
-        # Year-boundary fix: if the parsed timestamp is in the future
-        # (e.g. a December entry parsed in January), roll back one year.
-        if ts > datetime.now():
+        # Year-boundary fix: roll back one year only if the parsed timestamp
+        # is meaningfully in the future. 5-minute tolerance absorbs NTP
+        # jitter, log-buffer flush delays, and clock-skew on busy systems.
+        # Without the tolerance, an event timestamped 1s ahead of wall-clock
+        # silently rolls back a full year and falls outside the cutoff_dt
+        # filter — silent data loss.
+        ref = now if now is not None else datetime.now()
+        if ts > ref + timedelta(minutes=5):
             ts = ts.replace(year=ts.year - 1)
         return ts
 

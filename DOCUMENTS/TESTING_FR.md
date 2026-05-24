@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.5 (4545 tests, +7 net de couverture régression depuis l'audit hardening post-cycle ; les phases précédentes v0.5.0 → v0.5.4 étaient contract-preserving avec zéro delta de tests sur toute la branche).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.6 (4560 tests, +15 net depuis la passe hardening ciblée `logs.py` ; +7 en v0.5.5 depuis l'audit post-cycle ; phases précédentes v0.5.0 → v0.5.4 étaient contract-preserving avec zéro delta).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.6 | 4560 | Passe de hardening ciblée sur `bob/checks/logs.py` (662 LoC parser UFW logs) — module explicitement déféré par l'audit v0.5.5 à cause densité regex. 10 findings sub-agent focalisé : 0 critique, 2 important (I-1 regex `_PRIVATE_IP` incohérente avec sysinfo — manquait CGNAT 100.64/10 + IPv6 link-local fe80::/10 + faux positifs sur strings `fc`/`fd` ; I-2 year-rollover droppait silencieusement événements syslog 1s en avance de l'horloge), 8 mineurs (M-1 variante IPv6 `[UFW BLOCK6]` silencieusement ignorée, M-2 regex `_count_available_days` restreinte mois anglais, M-3 ordre paths GeoIP City-avant-Country, M-4 consistance symlink `geoip2_status`, M-5 `_GEO_CACHE` borné 2048 éviction FIFO, M-6 arithmétique binaire `tell()`/`seek()`, M-7 `subprocess.TimeoutExpired` redondant retiré, M-8 `proto.upper()` au parse-time). +15 tests régression dans `tests/test_logs.py` (4 nouvelles classes : `TestPrivateIPDispatch`, `TestParseTimestampYearRollover`, `TestBlockPrefixMatcher`, `TestProtoNormalisation`). Single-module pass, single commit. Contrat JSON préservé. Sortie wire : deltas étroits seulement sur hosts émettant `[UFW BLOCK6]` (maintenant comptés) ou avec syslog locale non-anglais (maintenant `days_available` exact). |
 | v0.5.5 | 4545 | Passe de hardening — post-v0.5.4 audit par un sub-agent général-purpose profond. **4 bugs réels** (C-1 bug mode `apply_cron_email` cassant les audits programmés, C-2/C-3 cmds `password_policy` non-fixables par `--fix --apply` à cause de `&&`/flèche Unicode, C-4 drift `EXPLAIN_KEYS` pour `services_state`), **4 security smells** (I-1 `recurrence.json`+`ignore.yml` écrits world-readable au lieu de 0o600, I-2 déductions post-`finalize()` bypassant les caps silencieusement, I-3 `_safe_url` ne re-escapait pas le contexte attribut HTML autorisant XSS dans rapports email, I-4 `_PRIVATE_IPV4_RE` brittle + cassure widening stdlib Python 3.12+), **11 cleanups mineurs** (M-1 dedup regex email, M-2 `_NullReport` → canonique `bob.report.NullReport`, M-3 3 clés locale mortes, M-4 check fail2ban asymétrique `corr.fully_blind`, M-7 extract helper `_has_actionable_findings`, M-8/M-9 commentaires clarifiants, M-10 ancre regex cron plus stricte, M-11 split cmd `&&` `services_state.service_inactive`). +7 tests régression couvrant chaque classe de fix. Commit cosmétique M-6 migre typing `Optional[X]` / `List[X]` sur 18 modules. **Diff net : 23 fichiers code, +312 / -112 = +200 LoC.** Changement wire visible sur hosts sans pwquality : finding password_policy se déplace de "À corriger" à "Améliorations possibles" (nature='action' → 'improvement'). Score global inchangé. |
 | v0.5.4 | 4538 | Refactor v0.5.x Phase 5 sur 5 (finale) — **#6 helper `prompt_wizard()`** dans `bob/_tty.py` + 10 sites migrés dans `bob/cron.py` (wizards install + edit) + **#9 sunset `UFW_AUDIT_SHARE`** (`logger.info` → `logger.warning` avec message explicite "REMOVED en v0.6.0") + **#15b mapping `_PREFIX_TO_DOMAIN` explicite** (`fail2ban` → ssh, `virt` → hardening, `docker_audit` → hardening) + **cache APT option C** (nouvelle feature métier : ligne INFO `updates.apt_cache_age` permanente quand aucune mise à jour security/regular en attente et cache sous le seuil obsolète, ferme le gap d'observabilité remonté par le test terrain VM Ubuntu v0.5.3). **Zero delta de tests** — Phase 5 est contract-preserving comme les Phases 2-4. 3 entrées de test retirées de `_CATCH_ALL_BY_DESIGN` dans `tests/test_domain_scores_mapping_complete.py` (reflet de la migration de prefixes #15b), mais aucun test ajouté ou supprimé. Le test scan AST `#15a` continue de pin chaque prefixe de clé émis. **#13 (split ssh.py, 1324 LoC) et #14 (split cron.py, 1223 LoC) déférés à v0.6.0** selon le principe conservative-refactor. Diff net : 12 fichiers code modifiés, +118 / −69 = +49 LoC. Ferme l'audit v0.5.x (13/15 findings shippés + 1 feature métier + 2 déférés avec justification). |
 | v0.5.3 | 4538 | Refactor v0.5.x Phase 4 — **#5 table dispatch `_LEVEL_DISPATCH`** dans `display_result` (cascade 4-branches OK/WARN/ALERT/INFO → boucle déclarative pilotée par dataclass `_LevelTraits`) + **#12 split `print_audit_summary`** en 3 helpers module-level (`_summary_header_lines`, `_summary_findings_lines`, `_summary_breakdown_lines`) + `_add_finding_lines` remonté d'inner closure à module-level + **#8 retrait `CheckResult.log_data`** (dict escape hatch → tuple return `check_logs(...) -> (CheckResult, LogReportData | None)` avec dataclass frozen `LogReportData`). **Zero delta de tests** — refactor purement structurel, sortie wire bit-identique à v0.5.2. 3 tests renommés (`test_log_data_*` → `test_report_data_*`) et réécrits pour accès attribut dataclass au lieu d'accès dict-clé ; ~20 sites tests utilisent `result, _ = check_logs(...)` tuple unpack. Side-fix lors de #12 : `report.write_summary(score=score, risk_level=level_str, network_context=ctx_str, ...)` référait des locals devenues dead après l'extraction du header ; remplacées par expressions directes sur `engine.score` / `t(f"scoring.level.{engine.level.value}")` — attrapé par les tests `TestScoreTrend` (8 failures → 0 après fix). Diff net : display.py +23 LoC, logs.py +19 LoC, runner.py 0, scoring.py −1, tests +3 = **+40 LoC total**. |
@@ -42,6 +43,57 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.6 — 4560/4560 (24-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4560 passed in ~6s
+```
+
+**Net : +15 (4545 → 4560).** Passe hardening single-module sur `bob/checks/logs.py`. Les +15 tests sont tous couverture régression pour les fix de cette release :
+
+| Classe test | Compte | Pin finding |
+|---|---|---|
+| `TestPrivateIPDispatch` | 8 | I-1 — CGNAT (`100.64.5.1`), IPv6 link-local (`fe80::1`), ULA (`fc00::1`), loopback (`127.0.0.1`, `::1`), private (`10.0.0.1`, `192.168.1.1`), public (`8.8.8.8`), input invalide (`"fcsa"`, string vide) tous classifiés correctement via helper dispatch `_is_private_ip` |
+| `TestParseTimestampYearRollover` | 3 | I-2 — entrée current-year passée (pas de rollback), entrée 1s-future (pas de rollback sous tolérance 5 min), vraie entrée Décembre parsée en Janvier (rollback appliqué) |
+| `TestBlockPrefixMatcher` | 3 | M-1 — `[UFW BLOCK]` matché, `[UFW BLOCK6]` matché (était silencieusement droppé), `[UFW ALLOW]` rejeté |
+| `TestProtoNormalisation` | 1 | M-8 — `proto="tcp"` normalisé à `"TCP"` au parse-time |
+
+#### Pourquoi tous I-1/I-2/M-1/M-8 sont régression-pinned
+
+Ces quatre étaient les seuls fixes avec changements de comportement visible sur code path. Les autres sont soit :
+- **Pure délégation** (M-3 reorder path, M-4 consistance symlink, M-7 cleanup except) — couverts par tests existants qui exercent les code paths changés
+- **Performance / boundary safety** (M-5 cache bound, M-6 lecture binaire) — aucun changement de comportement pour les inputs test existants ; ne fériait surface que sous fixtures contrived 10000+-IP (hors scope)
+- **Ajustement locale-coverage** (M-2 restriction regex) — couvert par `test_count_available_days` indirectement
+
+Les 4 régressions pinned couvrent la surface I-1/I-2/M-1/M-8 où de futurs contributeurs pourraient re-introduire les bugs.
+
+#### Timeline du compteur de tests mis à jour
+
+```
+v0.5.0  →  4538 tests  (+39 vs v0.4.8 : scan AST mapping domaines + couverture cron)
+v0.5.1  →  4538 tests  (sans changement — Phase 2 contract-preserving)
+v0.5.2  →  4538 tests  (sans changement — Phase 3 contract-preserving)
+v0.5.3  →  4538 tests  (sans changement — Phase 4 contract-preserving)
+v0.5.4  →  4538 tests  (sans changement — Phase 5 contract-preserving)
+v0.5.5  →  4545 tests  (+7 — régressions hardening post-cycle)
+v0.5.6  →  4560 tests  (+15 — régressions hardening ciblé logs.py)
+```
+
+#### Test terrain
+
+Approche couverture cross-distro standard. Delta visible vs v0.5.5 attendu sur :
+- Hosts émettant `[UFW BLOCK6]` (ex. Debian backports avec configs `before6.rules` custom) — ces lignes comptent maintenant dans l'agrégation `total`/`top_ips` (précédemment droppées)
+- Hosts avec contenu syslog locale mixte — compte `days_available` peut diminuer (précédemment inflated par tokens mois non-anglais)
+
+La plupart des VMs (configs UFW par défaut, locale anglaise) ne voient **aucun changement visible**.
+
+Les 4560 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 

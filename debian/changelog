@@ -1,3 +1,55 @@
+bodyguard-of-bits (0.5.6-1) UNRELEASED; urgency=low
+
+  * Targeted hardening pass on bob/checks/logs.py (662 LoC UFW
+    log parser) — module explicitly deferred by the v0.5.5
+    audit because of regex density. 10 findings from a focused
+    sub-agent: 0 critical, 2 important, 8 minor.
+  * I-1 — _PRIVATE_IP regex inconsistent with sysinfo.py:
+    missed CGNAT (100.64.0.0/10), IPv6 link-local (fe80::/10),
+    and produced false positives on any string starting with
+    `fc` or `fd`. Replaced with `_is_private_ip(ip)` helper
+    delegating to sysinfo._is_private_or_loopback_ipv4/_ipv6
+    (single source of truth across the codebase).
+  * I-2 — year-rollover silently dropped near-realtime syslog
+    events 1s ahead of wall-clock by rolling back a full year
+    → entry fell outside cutoff_dt. Fix: 5-minute tolerance
+    + snapshot `now` once at top of _parse_log.
+  * M-1 — anchored `\[UFW BLOCK6?\]` matcher catches both
+    `[UFW BLOCK]` and `[UFW BLOCK6]` (previously the substring
+    match silently dropped the IPv6 variant).
+  * M-2 — _count_available_days regex restricted to English
+    month names (was inflated by non-date leading tokens).
+  * M-3 — _GEOIP2_DB_PATHS reordered: all City entries first
+    across all dirs, then all Country. _geo_via_geoip2 returns
+    on first hit; City always wins richer data.
+  * M-4 — geoip2_status() now accepts symlinks like
+    _geo_via_geoip2 does. Fixes contradictory "no database
+    installed" notice on geoipupdate setups.
+  * M-5 — _GEO_CACHE bounded at 2048 entries with FIFO
+    eviction via _geo_cache_put() helper.
+  * M-6 — LogsSnapshot.from_system reads in binary mode then
+    decodes; TextIOBase.tell() returns an opaque cookie per
+    Python docs.
+  * M-7 — dropped redundant subprocess.TimeoutExpired from
+    except tuple (subclass of SubprocessError).
+  * M-8 — proto.upper() at parse time prevents a downstream
+    lowercase build from silently splitting a bruteforce
+    campaign into two sub-groups under threshold.
+  * +15 regression tests in tests/test_logs.py (4 new test
+    classes: TestPrivateIPDispatch, TestParseTimestampYear-
+    Rollover, TestBlockPrefixMatcher, TestProtoNormalisation).
+  * 4545 → 4560 tests.
+  * Single-module pass, single commit. JSON contract
+    (schema_version="1"), 116 EXPLAIN_KEYS — all preserved.
+  * Wire output: narrow deltas only on hosts emitting
+    [UFW BLOCK6] (now counted) or with non-English locale
+    syslog (now accurate days_available).
+  * v0.5.7 pending: manage_logs.py + bob/tui/cron.py curses
+    TUI (~1920 LoC combined). After that, v0.5.x line is
+    fully audited.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 24 May 2026 22:00:00 +0200
+
 bodyguard-of-bits (0.5.5-1) UNRELEASED; urgency=low
 
   * Hardening pass — post-v0.5.4 audit by a deep general-purpose

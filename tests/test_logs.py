@@ -677,3 +677,131 @@ class TestLogsSnapshotFromSystem:
             snap = LogsSnapshot.from_system(log_days=7, log_path=log_file)
         mock_jd.assert_not_called()
         assert snap.log_source == "file"
+
+
+# ---------------------------------------------------------------------------
+# v0.5.6 hardening regression tests (audit findings I-1, I-2, M-1, M-8)
+# ---------------------------------------------------------------------------
+
+class TestPrivateIPDispatch:
+    """I-1 (v0.5.6): _is_private_ip uses sysinfo helpers, covers CGNAT + IPv6 LL."""
+
+    def test_rfc1918_ipv4_is_private(self):
+        from bob.checks.logs import _is_private_ip
+        assert _is_private_ip("10.0.0.1") is True
+        assert _is_private_ip("192.168.1.5") is True
+        assert _is_private_ip("172.16.5.10") is True
+
+    def test_loopback_is_private(self):
+        from bob.checks.logs import _is_private_ip
+        assert _is_private_ip("127.0.0.1") is True
+        assert _is_private_ip("::1") is True
+
+    def test_cgnat_is_private(self):
+        from bob.checks.logs import _is_private_ip
+        # 100.64.0.0/10 (RFC 6598). Old regex missed this.
+        assert _is_private_ip("100.64.1.2") is True
+        assert _is_private_ip("100.127.255.254") is True
+
+    def test_ipv4_link_local_is_private(self):
+        from bob.checks.logs import _is_private_ip
+        # 169.254.0.0/16. Old regex missed this.
+        assert _is_private_ip("169.254.1.1") is True
+
+    def test_ipv6_link_local_is_private(self):
+        from bob.checks.logs import _is_private_ip
+        # fe80::/10. Old regex missed this.
+        assert _is_private_ip("fe80::1") is True
+
+    def test_ipv6_ula_is_private(self):
+        from bob.checks.logs import _is_private_ip
+        # fc00::/7. Old regex matched these via "fc"/"fd" substring (lucky).
+        assert _is_private_ip("fc00::1") is True
+        assert _is_private_ip("fd12:3456:789a::1") is True
+
+    def test_public_ipv4_is_not_private(self):
+        from bob.checks.logs import _is_private_ip
+        assert _is_private_ip("8.8.8.8") is False
+        assert _is_private_ip("203.0.113.5") is False  # documentation range, public
+
+    def test_invalid_string_is_not_private(self):
+        from bob.checks.logs import _is_private_ip
+        # Old regex matched any string starting with "fc"/"fd"; new path
+        # returns False (safe default — caller may geo-lookup and reveal
+        # the bad input).
+        assert _is_private_ip("fcsa") is False
+        assert _is_private_ip("fdgarbage") is False
+        assert _is_private_ip("not-an-ip") is False
+        assert _is_private_ip("") is False
+
+
+class TestParseTimestampYearRollover:
+    """I-2 (v0.5.6): 5-min tolerance prevents silent rollback on clock skew."""
+
+    def test_syslog_now_is_current_year(self):
+        from bob.checks.logs import _parse_timestamp
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        line = "Jun 15 12:00:00 host kernel: [UFW BLOCK] junk"
+        ts = _parse_timestamp(line, current_year=2026, now=now)
+        assert ts.year == 2026
+
+    def test_syslog_one_second_ahead_stays_current_year(self):
+        """Clock skew of 1s should NOT trigger year rollback."""
+        from bob.checks.logs import _parse_timestamp
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        line = "Jun 15 12:00:01 host kernel: [UFW BLOCK] junk"  # 1s in future
+        ts = _parse_timestamp(line, current_year=2026, now=now)
+        assert ts.year == 2026  # NOT 2025
+
+    def test_syslog_genuinely_future_rolls_back(self):
+        """Event > 5 min in the future = previous-year December entry."""
+        from bob.checks.logs import _parse_timestamp
+        now = datetime(2026, 1, 5, 12, 0, 0)
+        line = "Dec 31 23:59:00 host kernel: [UFW BLOCK] junk"
+        ts = _parse_timestamp(line, current_year=2026, now=now)
+        assert ts.year == 2025  # December parsed in January → prior year
+
+
+class TestBlockPrefixMatcher:
+    """M-1 (v0.5.6): [UFW BLOCK6?] anchored matcher catches IPv6 variant."""
+
+    def test_ufw_block_matches(self):
+        from bob.checks.logs import _parse_log
+        line = (
+            "Jun 15 12:00:00 host kernel: [UFW BLOCK] IN=eth0 OUT= MAC=... "
+            "SRC=1.2.3.4 DST=5.6.7.8 LEN=60 TTL=64 PROTO=TCP SPT=12345 DPT=22\n"
+        )
+        entries = _parse_log(line, cutoff_dt=datetime(2025, 1, 1))
+        assert len(entries) == 1
+
+    def test_ufw_block6_also_matches(self):
+        """IPv6 variant [UFW BLOCK6] was silently dropped pre-v0.5.6."""
+        from bob.checks.logs import _parse_log
+        line = (
+            "Jun 15 12:00:00 host kernel: [UFW BLOCK6] IN=eth0 OUT= MAC=... "
+            "SRC=2001:db8::1 DST=2001:db8::2 LEN=60 PROTO=TCP SPT=12345 DPT=22\n"
+        )
+        entries = _parse_log(line, cutoff_dt=datetime(2025, 1, 1))
+        assert len(entries) == 1
+
+    def test_ufw_allow_does_not_match(self):
+        from bob.checks.logs import _parse_log
+        line = (
+            "Jun 15 12:00:00 host kernel: [UFW ALLOW] SRC=1.2.3.4 DPT=22 PROTO=TCP\n"
+        )
+        entries = _parse_log(line, cutoff_dt=datetime(2025, 1, 1))
+        assert len(entries) == 0
+
+
+class TestProtoNormalisation:
+    """M-8 (v0.5.6): proto is uppercased at parse time to avoid bruteforce split."""
+
+    def test_lowercase_proto_normalised_to_upper(self):
+        from bob.checks.logs import _parse_log
+        line = (
+            "Jun 15 12:00:00 host kernel: [UFW BLOCK] "
+            "SRC=1.2.3.4 DPT=22 PROTO=tcp\n"
+        )
+        entries = _parse_log(line, cutoff_dt=datetime(2025, 1, 1))
+        assert len(entries) == 1
+        assert entries[0].proto == "TCP"  # normalised, not "tcp"

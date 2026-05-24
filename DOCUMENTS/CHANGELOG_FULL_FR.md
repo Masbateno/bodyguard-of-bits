@@ -6,6 +6,91 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.5.6] — 24-05-2026
+
+**Passe de hardening ciblée sur `bob/checks/logs.py`** — le module parser UFW logs (662 LoC) explicitement déféré par l'audit v0.5.5 à cause de sa densité regex. Un sub-agent focalisé a audité le module en intégralité (chaque fonction et branche). 10 findings shippés : 0 critique, 2 important, 8 mineur.
+
+Voir `CHANGELOG_FR.md` pour le détail par finding. Notes spécifiques à ce doc FULL :
+
+### Pourquoi une release single-module
+
+La roadmap audit (fixée en notes clôture v0.5.5) avait `logs.py`, `manage_logs.py`, et `tui/cron.py` comme "not deeply audited". La décision était une campagne 2-passes :
+- **v0.5.6** = `logs.py` (parser regex, haute densité bug)
+- **v0.5.7** = `manage_logs.py` + `tui/cron.py` (curses TUI, user-visible)
+
+Les releases single-module gardent le diff focalisé : 23 fichiers touchés (logs.py + tests + les 17 sites standard de bump version + 5 changelogs), un scope auditable. Plus facile à review que bundler tout le reste audit v0.5.x dans une seule v0.5.7.
+
+### Findings audit : distribution ROI
+
+L'audit a trouvé 10 issues mais **aucun bug critique**. Cela matche les attentes :
+- Le module a déjà été touché par v0.5.x #8 (refactor `tuple` return) qui a forcé une review end-to-end de chaque code path
+- Tests terrain sur 5 VMs sur 5 releases (v0.5.0 → v0.5.4) l'ont exercé en production
+- Les concerns haut-risque (correctness regex, sémantique journald fallback, intégration GeoIP) étaient stables
+
+Les 2 findings important (I-1 regex private-IP incohérente, I-2 year-rollover silent drop) sont de vrais bugs mais avec impact opérationnel faible sous conditions typiques. Les 8 mineurs sont des améliorations quality-of-implementation.
+
+### Source unique de vérité : détection private-IP
+
+I-1 ferme le dernier matcher private-IP hand-rolled du codebase. Après que v0.5.5 #I-4 ait réécrit `sysinfo._PRIVATE_IPV4_RE` pour utiliser des listes d'appartenance `ipaddress.ip_network`, `bob/checks/logs.py:46` restait le seul outlier avec sa propre regex ad-hoc. Le nouvel helper `_is_private_ip(ip)` dans `logs.py` délègue aux helpers sysinfo — il y a maintenant exactement un modèle pour "est-ce qu'cette IP est private/loopback/link-local" dans BOB.
+
+### Classe de bug extraite : year-rollover sous clock skew
+
+I-2 documente un pattern à watcher ailleurs dans le codebase :
+> N'importe quelle logique de comparaison de date qui appelle `datetime.now()` pour décider si un timestamp parsé est "dans le passé" a besoin d'une fenêtre de tolérance (typiquement 5 minutes) pour absorber le jitter NTP, le log buffering, et le clock skew process. Un check `> now` strict drop silencieusement les données legitimate quasi-temps-réel.
+
+Sites dans BOB qui utilisent `datetime.now()` pour comparaisons (résultat grep) :
+- `bob/checks/logs.py:_parse_timestamp` — **corrigé en v0.5.6 (cette release)**
+- `bob/checks/ssl_certs.py` — utilise `notAfter > now` pour expiry (direction correcte ; pas de rollback)
+- `bob/checks/firmware.py` — utilise `last_update > now - days(N)` (direction correcte)
+- `bob/checks/rkhunter.py`, `bob/checks/clamav.py`, `bob/checks/file_integrity.py` — comparaisons d'âge DB (direction correcte)
+
+Aucun autre site n'a le même pattern year-rollover. Documenté dans le memory `project_v056_logs_audit.md`.
+
+### Variante IPv6 `[UFW BLOCK6]`
+
+M-1 attrape une variante non-documentée du préfixe UFW utilisée par certains packagers downstream (Debian backports, configs `before6.rules` custom). Le matcher substring les avait silencieusement droppées depuis des années. Impact terrain peu clair — la plupart des utilisateurs ne l'ont probablement jamais remarqué parce que le volume BLOCK IPv6 est dominé par le trafic link-local mDNS qui ne ferait pas surface comme un "finding manquant".
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4560 passed in ~6s
+```
+
+**4545 → 4560 (+15).** Tous nouveaux dans `tests/test_logs.py` :
+- `TestPrivateIPDispatch` (8) — pin couverture régression I-1 incluant CGNAT, IPv6 link-local, ULA, input invalide
+- `TestParseTimestampYearRollover` (3) — pin régression I-2 pour current-year, 1s-skew, vraie rollback Décembre
+- `TestBlockPrefixMatcher` (3) — pin M-1 sur `[UFW BLOCK]`, `[UFW BLOCK6]`, rejet `[UFW ALLOW]`
+- `TestProtoNormalisation` (1) — pin M-8 normalisation upper-case proto
+
+### Diff net
+
+| Fichier | Delta |
+|---|---|
+| `bob/checks/logs.py` | +60 / -25 (helper I-1 + tolérance I-2 + regex M-1 + ancre M-2 + reorder M-3 + helper cache M-5 + lecture binaire M-6 + M-7/M-8 minor) |
+| `tests/test_logs.py` | +150 (4 nouvelles classes test) |
+| Bump version + changelogs | standard ~17 fichiers |
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS — inchangés.
+- **Score par domaine** : inchangé. Score global inchangé.
+- **Sortie wire** : 2 deltas étroits — lignes `[UFW BLOCK6]` maintenant comptées (précédemment droppées), et `_count_available_days` ne sur-compte plus sur logs locale non-anglais.
+- **API externe** : `_is_private_ip(ip)` est un nouveau helper semi-public dans `logs.py`. La constante regex non-documentée `_PRIVATE_IP` est retirée.
+
+### Progression clôture audit v0.5.x
+
+| Module | Statut | Release |
+|---|---|---|
+| 22 modules core (ssh.py, scoring.py, etc.) | audités (v0.5.5) | v0.5.5 |
+| `checks/logs.py` | **audité (v0.5.6, cette release)** | **v0.5.6** |
+| `manage_logs.py`, `tui/cron.py` | pending | v0.5.7 |
+| Format renderers (`html/csv/markdown_output.py`) | spot-checked (I-3 en v0.5.5) | — |
+| `display.py`, `output.py` | spot-checked | — |
+| ~25 autres modules `checks/*.py` (petits <300L chacun) | spot-checked | — |
+
+---
+
 ## [v0.5.5] — 24-05-2026
 
 **Passe de hardening — post-v0.5.4 audit par un sub-agent général-purpose profond.** 19 findings : 4 bugs réels (C-1 à C-4), 4 security smells (I-1 à I-4), 11 cleanups mineurs (M-1 à M-11). 17 fixés avec changements code/test ; 2 sont commentaires doc (M-8/M-9). Commit cosmétique compagnon (M-6) migre le typing `Optional[X]` / `List[X]` sur 18 modules.
