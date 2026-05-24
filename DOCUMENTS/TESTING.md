@@ -45,7 +45,7 @@ Two complementary parts:
 
 ---
 
-### v0.5.5 — 4545/4545 (2026-05-23)
+### v0.5.5 — 4545/4545 (2026-05-24)
 
 **Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
 

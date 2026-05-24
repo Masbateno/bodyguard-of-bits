@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Sat May 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.5-1
+* Sun May 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.5-1
 - Hardening pass — post-v0.5.4 audit by deep sub-agent. 19
   findings: 4 real bugs (C-1 to C-4), 4 security smells
   (I-1 to I-4), 11 minor cleanups (M-1 to M-11).

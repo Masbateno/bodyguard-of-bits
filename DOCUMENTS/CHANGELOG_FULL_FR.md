@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.5.5] — 23-05-2026
+## [v0.5.5] — 24-05-2026
 
 **Passe de hardening — post-v0.5.4 audit par un sub-agent général-purpose profond.** 19 findings : 4 bugs réels (C-1 à C-4), 4 security smells (I-1 à I-4), 11 cleanups mineurs (M-1 à M-11). 17 fixés avec changements code/test ; 2 sont commentaires doc (M-8/M-9). Commit cosmétique compagnon (M-6) migre le typing `Optional[X]` / `List[X]` sur 18 modules.
 

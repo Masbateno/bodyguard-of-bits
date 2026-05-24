@@ -63,7 +63,7 @@ bodyguard-of-bits (0.5.5-1) UNRELEASED; urgency=low
     pwquality (password_policy moves from action block to
     improvement block).
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 23 May 2026 20:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 24 May 2026 20:00:00 +0200
 
 bodyguard-of-bits (0.5.4-1) UNRELEASED; urgency=low
 
