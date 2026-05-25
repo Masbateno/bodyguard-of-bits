@@ -9,12 +9,17 @@ are not backported.
 
 | Version   | Supported          |
 |-----------|--------------------|
-| 0.5.x     | ✅ current          |
+| 0.6.x     | ✅ current          |
+| 0.5.x     | ❌ end of life      |
 | 0.4.x     | ❌ end of life      |
-| 0.3.x     | ❌ end of life      |
-| < 0.3.0   | ❌ end of life      |
+| < 0.4.0   | ❌ end of life      |
 
-Patches release as `0.5.x+1`. A breaking change bumps the minor (`0.6.0`).
+Patches release as `0.6.x+1`. A breaking change bumps the minor (`0.7.0`).
+
+v0.5.x was declared EOL on the same day v0.6.0 shipped (2026-05-25). The
+v0.6.0 release is backwards-compatible with the full v0.5.x public API via
+`__init__.py` re-exports — upgrading is a `pipx upgrade bodyguard-of-bits`
+with no source-code changes required on the user side.
 
 ## Reporting a vulnerability
 
@@ -117,7 +122,7 @@ privileges as BOB itself (typically root). Trust your plugin sources as you
 would any other code you `sudo`-execute.
 
 A future major version may introduce a restricted-mode plugin runner (no
-filesystem write, no subprocess), but it is out of scope for the 0.5.x line.
+filesystem write, no subprocess), but it is out of scope for the 0.6.x line.
 
 ## Network surface
 
