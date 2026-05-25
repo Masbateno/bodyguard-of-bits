@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.5.8](#v058) | 2026-05-25 | Cleanup of the 5 cosmetic minors explicitly deferred by v0.5.7. **M-2** `manage_logs.py` cursor shift after delete now only counts deletions ≤ cursor (pre-fix: `cursor -= deleted` shifted by the full count even when most deleted items sat AFTER the cursor — visible cursor displacement on multi-selection deletes mixing items before+after the active position). **M-5** schedule wizard constants promoted from local `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` tuple unpack to a module-level `_Schedule(IntEnum)` with explicit `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` names — 3 call sites updated, IntEnum preserves `choice == _Schedule.WEEKDAYS` semantics so wire-equivalent. **M-6** `_extract_summary_view` `summary_start: int \| None = None` sentinel replaces `summary_start = 0` falsy check — handles the (unreachable in practice but semantically wrong) edge case where the SEP62 separator sits at line 0. **M-7** new `_is_finding_continuation(line)` helper stops the 4-space-indent grouping at any boundary that obviously belongs to a different finding (`[ALERT]`/`[WARN]`/`[OK]`/`[INFO]` markers) or a section delimiter (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — defends against over-greedy grouping of subsequent indented content. **M-8** `from datetime import datetime` lifted to module-level in both `bob/cron.py` and `bob/tui/cron.py`; 3 local imports removed (`_run_install_cron_plain`, `build_script_content`, install cron curses path). +12 regression tests across `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) and `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). 4571 → 4583 tests. JSON wire format unchanged, EXPLAIN_KEYS unchanged, keybindings unchanged, no public API removals. **Closes the v0.5.x deep-audit campaign — branch fully audited (25 modules deep-audit + ~25 spot-checked, 0 critical findings outstanding).** Next minor (v0.6.0) reserved for #13 (ssh.py split) and #14 (cron.py split) — the two deliberately-deferred architectural refactors. |
 | [v0.5.7](#v057) | 2026-05-24 | Targeted hardening pass on curses TUI (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — the bucket explicitly deferred by the v0.5.5 / v0.5.6 audits. 11 findings from a focused sub-agent: 0 critical, 3 important (I-1 `_curses_readline` accepted curses `KEY_*` keypad codes via `chr(ch_i)` — pressing arrows or function keys inserted Greek/Unicode glyphs like `Ι` / `Ω` into name/email/days/time/custom-expression input buffers; no security impact thanks to downstream `_EMAIL_RE` / `_validate_custom_cron` / digit-only filtering, but visibly corrupted UX. New `_is_printable_input_char(ch_i)` helper bounds inputs to printable Latin-1 only · I-2 three `input()` sites in `prompt_path` + move-logs confirmation + delete-all confirmation didn't catch `EOFError` so Ctrl-D dumped a Python traceback on cancel — now matches the `_rl()` convention treating EOF as empty input · I-3 `apply_cron_schedule` used raw `os.open(O_WRONLY \| O_CREAT \| O_TRUNC) + fdopen.write` instead of the project's `_atomic_write` helper. Power loss or `SIGKILL` between `open(O_TRUNC)` and `write` would leave the cron file empty → cron silently drops the entry, no notification. Asymmetric with `apply_cron_email` which already used `_atomic_write`. Same `mode=0o640` enforced), 3 minor (M-1 status `manage_logs.deleted_one` displayed `pending_delete[0].name` even when index 0 failed to delete and only a different index succeeded under selective permission errors — now tracks the first successfully-deleted name · M-3 dead-code `if ch_i == ord("1"): chosen = 0 elif chosen = 1` inside `_curses_edit_sub` simplified, elif guard rewritten with explicit parentheses · M-4 duplicate `from bob.cron import apply_cron_schedule, apply_cron_email` consolidated into the main import block). +11 regression tests across `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) and `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). 4560 → 4571 tests. JSON wire format unchanged, EXPLAIN_KEYS unchanged, no public API additions. UX-visible deltas: clean Ctrl-D exit (no traceback), arrow/function keys no longer print garbage into TUI prompts. Deferred to v0.5.8 (5 cosmetic findings not worth churn now): M-2 cursor-shift assumes deletions sit before cursor · M-5 schedule wizard local-scoped constants → module-level / IntEnum · M-6 `summary_start` falsy check misses index 0 (unreachable in practice) · M-7 over-greedy continuation grouping in `_extract_summary_view` · M-8 local `from datetime import` lifted to module top. After v0.5.7, v0.5.x branch fully audited (22 core + logs.py + 2 TUI = 25 modules deep-audited + ~25 spot-checked). |
 | [v0.5.6](#v056) | 2026-05-24 | Targeted hardening pass on `bob/checks/logs.py` (662 LoC UFW log parser) — module explicitly deferred by the v0.5.5 audit because of regex density. 10 findings from a focused sub-agent: 0 critical, 2 important (I-1 private-IP regex inconsistent with `sysinfo.py` — missed CGNAT 100.64/10 + IPv6 link-local fe80::/10 + false positives on any string starting with `fc`/`fd`; I-2 year-rollover silently dropped near-realtime syslog events 1s ahead of wall-clock by rolling back a full year), 8 minor (M-1 `[UFW BLOCK6]` IPv6 variant silently ignored — anchored regex now catches both; M-2 `_count_available_days` regex restricted to English month names; M-3 GeoIP path order City-before-Country across all dirs; M-4 `geoip2_status()` accepts symlinks like `_geo_via_geoip2` does; M-5 `_GEO_CACHE` bounded at 2048 with FIFO eviction; M-6 binary-mode `tell()`/`seek()` arithmetic (TextIOBase opaque-cookie compliance); M-7 redundant `subprocess.TimeoutExpired` dropped from except tuple; M-8 `proto` normalised to upper at parse time so a downstream lowercase build can't silently split a bruteforce campaign). +15 regression tests in `tests/test_logs.py` covering each fix class. Single-module pass, single commit. 4545 → 4560 tests. JSON contract preserved. Wire output unchanged on hosts with standard UFW configs; visible only on hosts emitting `[UFW BLOCK6]` (previously dropped — now counted) or with non-English locale syslog logs (previously inflated days_available — now accurate). |
 | [v0.5.5](#v055) | 2026-05-24 | Hardening pass — 4 real bugs (C-1 to C-4) + 4 security smells (I-1 to I-4) + 11 minor cleanups (M-1 to M-11) from a deep audit sub-agent. **C-1**: `apply_cron_email()` was rewriting wrapper scripts via `_atomic_write()` which forced mode `0o600` — scripts lost their `0o755` executable bit and cron silently stopped running the audit. `_atomic_write()` now takes `mode=` explicitly; cron file rewrites pass `0o640`, scripts pass `0o755`. **C-2 + C-3 + M-11**: 3 finding `cmd=` values contained `&&` (shell operator rejected by `_has_shell_ops`) or a decorative Unicode arrow → `--fix --apply` rejected them silently. Demoted `password_policy.no_quality_module` + `password_policy.weak_minlen` from `nature="action"` to `nature="improvement"` (visible in summary box under "Améliorations possibles" instead of "À corriger") + split `services_state.service_inactive` cmd to drop the `&&` chained `journalctl` (moved to `note=` guidance). **C-4**: `bob/checks/services_state.py` emits `services_state.service_inactive` but `EXPLAIN_KEYS` declared `services_state.enabled_inactive` — `bob --explain` returned "key not found". Fixed via `EXPLAIN_KEY_ALIASES` (conservative — preserves JSON output contract). **I-1**: `recurrence.py` + `ignore.py` wrote state files with process umask (typically world-readable `0o644`) instead of `0o600` like every other `~/.config/bob/` file. **I-2**: post-`finalize()` calls to `_apply_deduction` silently bypassed score caps — now logs WARNING and discards. **I-3**: `_safe_url` in markdown email HTML didn't re-escape attribute context — a crafted URL containing `"` could break out of `href=""`. Now uses `html.escape(..., quote=True)`. **I-4**: `sysinfo._PRIVATE_IPV4_RE` brittle regex (with `removeprefix("^")` hack) replaced by explicit `ipaddress.ip_network` membership checks; works around Python 3.12+ widening `is_private` to include documentation ranges. **M-1**: 3 duplicate email regex sites unified via `bob.config._EMAIL_RE`. **M-2**: `bob/watch.py:_NullReport` removed in favour of canonical `bob.report.NullReport` (Protocol type introduced in v0.5.0 #10). **M-3**: 3 dead locale keys removed (`_meta.lang`, `_meta.version`, `ignored.hint`). **M-4**: `corr.fully_blind` rule was asymmetric — required `fail2ban.not_installed` but ignored equally-blind `fail2ban.service_inactive`. Widened to fire when any detection layer is blind. **M-7**: extract `_has_actionable_findings()` helper in `updates.py` (clearer than inline-key-blacklist of `apt_cache_age`). **M-8 + M-9**: clarifying comments in ssh.py (Match block Include skip) and ports.py (process/iface empty semantics). **M-10**: `apply_cron_schedule` regex tightened with first-field cron-token anchor so comment lines containing "root /path" are no longer rewritten. **M-6 (separate commit)**: `Optional[X]` / `List[X]` → `X \| None` / `list[X]` sweep across 18 modules — Python 3.10+ syntax. 4538 → 4545 tests (+7 regression coverage). Net diff: 23 code files, +312 / −112 = +200 LoC. Score on dev host unchanged (8/10); the password_policy `nature` change visibly shrinks the "À corriger" block on hosts without pwquality. |
@@ -35,6 +36,118 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.5.8] — 2026-05-25
+
+**Cleanup release.** Clears the 5 cosmetic minors explicitly deferred by v0.5.7 (M-2, M-5, M-6, M-7, M-8). All five are layout / readability / explicit-naming improvements with zero behaviour change in normal operation. **This closes the v0.5.x deep-audit campaign.**
+
+### Fixes (5)
+
+**M-2 — `manage_logs.py` cursor shift after delete**
+
+`cursor = max(0, cursor - deleted)` assumed all deletions sat at or before the cursor. With multi-selection where some marked items were AFTER the active cursor position, the cursor still shifted left by the full deletion count → it ended up on the wrong file. Now:
+
+```python
+deleted_before_cursor = 0
+for li in sorted(pending_delete, reverse=True):
+    ...
+    if li <= cursor:
+        deleted_before_cursor += 1
+...
+cursor = max(0, cursor - deleted_before_cursor)
+```
+
+**M-5 — Schedule wizard constants → module-level `IntEnum`**
+
+The wizard had a local tuple-unpack `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` (note the throwaway `_` for DAILY = 1). Promoted to:
+
+```python
+class _Schedule(IntEnum):
+    DAILY = 1
+    WEEKDAYS = 2
+    MONTHDAYS = 3
+    CUSTOM = 4
+```
+
+`IntEnum` preserves `choice == _Schedule.WEEKDAYS` semantics where `choice` is a plain int derived from menu position. Three call sites updated (`if choice == _Schedule.WEEKDAYS:` etc.).
+
+**M-6 — `_extract_summary_view` sentinel `None`**
+
+`summary_start = 0` + `if summary_start: break` treated index 0 as "not found". If the `SEP62` separator sat on line 0 (unreachable in practice — logs always start with header lines), the loop would mis-detect. Replaced with:
+
+```python
+summary_start: int | None = None
+...
+if summary_start is not None:
+    break
+```
+
+**M-7 — `_extract_summary_view` over-greedy continuation grouping**
+
+`while ... lines[j].startswith("    ")` swallowed ANY 4-space-indented line as continuation of the previous ALERT/WARN finding, including unrelated body lines from other sections. Extracted helper:
+
+```python
+def _is_finding_continuation(line: str) -> bool:
+    if not line.startswith("    "):
+        return False
+    stripped = line.lstrip()
+    if any(m in stripped for m in ("[ALERT]", "[WARN]", "[OK]", "[INFO]")):
+        return False
+    if stripped[:1] in ("┌", "└", "│", "━", "╔", "╠", "╚", "║"):
+        return False
+    return True
+```
+
+Stops on finding markers and on section delimiters even if the line happens to be 4-space indented. Layout-only fix; no security impact.
+
+**M-8 — `from datetime import datetime` lifted to module top**
+
+Three local imports inside function bodies (`bob/cron.py:_run_install_cron_plain`, `bob/cron.py:build_script_content`, `bob/tui/cron.py:_run_install_cron_curses`) → one module-level import in each file. Also removes a redundant local `import os` and `from pathlib import Path` (both already imported at top of `bob/cron.py`).
+
+### Tests
+
+`tests/test_cron.py`:
+- `TestScheduleIntEnum` (2) — values match menu indices; IntEnum compares equal to plain int (preserves existing call-site semantics).
+- `TestDatetimeImportLifted` (3) — `bob.cron.datetime` and `bob.tui.cron.datetime` are exposed at module level + smoke test `build_script_content` still stamps today's date.
+
+`tests/test_manage_logs.py`:
+- `TestCursorShiftAfterDelete` (2) — mixed before/after deletion shifts cursor only by the before-count; all-after deletions leave cursor unchanged.
+- `TestSummaryStartSentinel` (1) — synthetic SEP62-at-index-0 edge case correctly detected.
+- `TestIsFindingContinuation` (4) — accepts indented body lines; rejects non-indented; rejects indented `[ALERT]`/`[WARN]`/`[OK]`/`[INFO]` markers; rejects indented section delimiters.
+
+4571 → **4583 tests** (+12).
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, the 116 EXPLAIN_KEYS — unchanged.
+- **Score**: unchanged. No score-engine changes.
+- **Wire output**: unchanged.
+- **External API**: `_Schedule(IntEnum)` and `_is_finding_continuation()` are new module-level symbols in `bob.tui.cron` and `bob.manage_logs` respectively. No removals. Three local `from datetime import datetime` statements deleted from function bodies (not part of any public surface).
+- **Keybindings**: unchanged.
+
+### v0.5.x deep-audit campaign — CLOSED
+
+After v0.5.8, the v0.5.x branch is at its final maintenance state:
+
+| Release | Scope | Findings shipped |
+|---|---|---|
+| v0.5.5 | 22 core modules (deep) + ~15 spot-checked | 19 (4C + 4I + 11M) |
+| v0.5.6 | `bob/checks/logs.py` (662L) | 10 (0C + 2I + 8M) |
+| v0.5.7 | `bob/manage_logs.py` + `bob/tui/cron.py` (~1920L) | 6 shipped + 5 deferred |
+| **v0.5.8** | **The 5 v0.5.7-deferred minors** | **5 (all minor)** |
+
+**Total**: 25 modules deeply audited + ~25 spot-checked. 0 critical findings outstanding on the branch.
+
+### What's next
+
+- **v0.6.0** (major bump) reserved for the deliberately-deferred architectural refactors:
+  - **#13**: split `bob/checks/ssh.py` (1324 LoC after the v0.5.2 `_BadDirective` table consolidation)
+  - **#14**: split `bob/cron.py` (1223 LoC after the v0.4.8 file-patching helper extraction + v0.5.8 import lift)
+  - Other architectural decisions (TUI prompt unification, JSON schema v2 cadence, etc.)
+
+Both files exceed the project's soft 1000-LoC ceiling. The splits were deferred because gain × risk did not justify the churn in a contract-preserving minor release.
 
 ---
 

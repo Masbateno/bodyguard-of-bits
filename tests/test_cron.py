@@ -787,3 +787,59 @@ class TestIsPrintableInputChar:
         ):
             assert code >= 256, f"sanity: {code} should be >= 256"
             assert not _is_printable_input_char(code)
+
+
+# ---------------------------------------------------------------------------
+# M-5 (v0.5.8): schedule wizard constants promoted from local tuple unpack
+# to module-level IntEnum for explicit names + introspection.
+# ---------------------------------------------------------------------------
+
+class TestScheduleIntEnum:
+    def test_enum_values_match_menu_indices(self):
+        from bob.tui.cron import _Schedule
+        assert _Schedule.DAILY == 1
+        assert _Schedule.WEEKDAYS == 2
+        assert _Schedule.MONTHDAYS == 3
+        assert _Schedule.CUSTOM == 4
+
+    def test_enum_supports_int_comparison(self):
+        """The wizard does `choice == _Schedule.WEEKDAYS` where choice is a
+        raw int derived from `sel + 1` or `ch_i - ord('0')`. IntEnum must
+        compare equal to plain ints to preserve the existing call sites."""
+        from bob.tui.cron import _Schedule
+        for raw_choice, expected in (
+            (1, _Schedule.DAILY),
+            (2, _Schedule.WEEKDAYS),
+            (3, _Schedule.MONTHDAYS),
+            (4, _Schedule.CUSTOM),
+        ):
+            assert raw_choice == expected
+
+
+# ---------------------------------------------------------------------------
+# M-8 (v0.5.8): datetime imports lifted to module-level. Verify both modules
+# expose `datetime` as a module attribute (no local import inside functions).
+# ---------------------------------------------------------------------------
+
+class TestDatetimeImportLifted:
+    def test_bob_cron_has_module_level_datetime(self):
+        import bob.cron
+        from datetime import datetime as _dt_stdlib
+        assert hasattr(bob.cron, "datetime")
+        assert bob.cron.datetime is _dt_stdlib
+
+    def test_bob_tui_cron_has_module_level_datetime(self):
+        import bob.tui.cron
+        from datetime import datetime as _dt_stdlib
+        assert hasattr(bob.tui.cron, "datetime")
+        assert bob.tui.cron.datetime is _dt_stdlib
+
+    def test_build_script_content_still_stamps_date(self):
+        """Smoke test: lifting the import must not break the existing
+        date-stamping behaviour in build_script_content."""
+        from bob.cron import build_script_content
+        script = build_script_content("a@b.c", "/var/log/bob")
+        # The stamp line uses today's date in YYYY-MM-DD
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        assert today in script

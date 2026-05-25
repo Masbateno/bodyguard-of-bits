@@ -1,3 +1,61 @@
+bodyguard-of-bits (0.5.8-1) UNRELEASED; urgency=low
+
+  * Cleanup release — clears the 5 cosmetic minors explicitly
+    deferred by v0.5.7. All five are layout / readability /
+    explicit-naming improvements with no behavioural delta in
+    normal operation. Closes the v0.5.x deep-audit campaign:
+    branch fully audited (25 modules deep + ~25 spot-checked,
+    0 critical findings outstanding on the branch).
+  * M-2 — manage_logs.py cursor shift after delete now tracks
+    deleted_before_cursor separately so the cursor only shifts
+    by deletions at-or-before the active position. Pre-fix:
+    `cursor -= deleted` shifted by the full count even when
+    most deleted items sat AFTER the cursor → visible cursor
+    displacement on multi-selection deletes mixing items
+    before+after the active position.
+  * M-5 — schedule wizard local tuple unpack `_,
+    _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM
+    = 1, 2, 3, 4` promoted to a module-level _Schedule(IntEnum)
+    with explicit DAILY/WEEKDAYS/MONTHDAYS/CUSTOM names. IntEnum
+    preserves `choice == _Schedule.X` comparison semantics so
+    wire-equivalent. 3 call sites updated.
+  * M-6 — _extract_summary_view sentinel `summary_start: int
+    | None = None` replaces falsy `summary_start = 0` check.
+    Handles the unreachable-in-practice edge case where the
+    SEP62 separator sits at line 0.
+  * M-7 — new _is_finding_continuation(line) helper stops the
+    4-space-indent grouping at finding markers ([ALERT]/[WARN]/
+    [OK]/[INFO]) and section delimiters (┌/└/│/━/╔/╠/╚/║).
+    Defends against over-greedy grouping of subsequent indented
+    content. 2 call sites updated in _extract_summary_view.
+  * M-8 — `from datetime import datetime` lifted to module-level
+    in both bob/cron.py and bob/tui/cron.py. 3 local imports
+    removed (_run_install_cron_plain, build_script_content,
+    install cron curses path). Also dropped 2 redundant local
+    `import os` / `from pathlib import Path` in
+    _run_install_cron_plain (both already imported at module
+    scope in bob/cron.py).
+  * +12 regression tests across tests/test_cron.py
+    (TestScheduleIntEnum, TestDatetimeImportLifted) and
+    tests/test_manage_logs.py (TestCursorShiftAfterDelete,
+    TestSummaryStartSentinel, TestIsFindingContinuation).
+  * 4571 → 4583 tests.
+  * Single-commit release. JSON contract (schema_version="1"),
+    116 EXPLAIN_KEYS, keybindings, no-curses fallback, exit
+    codes — all preserved. Wire output unchanged.
+  * 2 new module-level symbols: bob.tui.cron._Schedule (IntEnum)
+    and bob.manage_logs._is_finding_continuation. Both leading-
+    underscore = internal/semi-public. No removals.
+  * v0.5.x deep-audit campaign FINAL: v0.5.5 (22 core + 19
+    findings) → v0.5.6 (logs.py + 10) → v0.5.7 (TUI + 6 + 5
+    deferred) → v0.5.8 (5 deferred = THIS). +45 tests
+    cumulative over v0.5.5 → v0.5.8.
+  * v0.6.0 reserved for #13 (ssh.py 1324L split) + #14
+    (cron.py 1223L split) — the two deliberately-deferred
+    architectural refactors.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 25 May 2026 21:00:00 +0200
+
 bodyguard-of-bits (0.5.7-1) UNRELEASED; urgency=low
 
   * Targeted hardening pass on curses TUI: bob/manage_logs.py

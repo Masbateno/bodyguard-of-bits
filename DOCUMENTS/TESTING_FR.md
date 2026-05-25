@@ -4,7 +4,7 @@
 
 Deux parties complémentaires :
 
-- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.7 (4571 tests, +11 net depuis la passe hardening ciblée TUI curses ; +15 en v0.5.6 depuis la passe `logs.py` ; +7 en v0.5.5 depuis l'audit post-cycle ; phases précédentes v0.5.0 → v0.5.4 étaient contract-preserving avec zéro delta).
+- **Historique des tests unitaires** (table par version + sections détaillées) — chaque release liste les tests ajoutés, supprimés ou corrigés, avec la plateforme et le compteur de tests de l'époque. C'est la trace d'audit de la croissance de la suite, de v0.1.0 (4200 tests) à v0.5.8 (4583 tests, +12 net depuis le cleanup des mineurs déférés v0.5.7 ; +11 en v0.5.7 depuis la passe hardening ciblée TUI curses ; +15 en v0.5.6 depuis la passe `logs.py` ; +7 en v0.5.5 depuis l'audit post-cycle ; phases précédentes v0.5.0 → v0.5.4 étaient contract-preserving avec zéro delta).
 - **Plan de régression UFW manuel** (Catégories A–E en bas) — règles UFW délibérément dangereuses et le comportement BOB attendu pour chacune. Utilisé pour valider la détection + remédiation sur de vrais systèmes.
 
 ---
@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.5.8 | 4583 | Cleanup des 5 mineurs cosmétiques explicitement déférés par v0.5.7 (M-2, M-5, M-6, M-7, M-8). **M-2** cursor-shift de `manage_logs.py` après delete traque maintenant `deleted_before_cursor` séparément donc le cursor ne shift que par les deletions à-ou-avant la position active (pré-fix `cursor -= deleted` shiftait par le total même quand la plupart des items supprimés étaient après le cursor). **M-5** tuple unpack local du wizard schedule `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` promu en `_Schedule(IntEnum)` module-level avec noms explicites `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` — IntEnum préserve la sémantique `choice == _Schedule.X` donc wire-équivalent. **M-6** sentinelle `summary_start: int \| None = None` de `_extract_summary_view` remplace le check truthy `summary_start = 0` — gère le edge case unreachable-en-pratique où SEP62 est à la ligne 0. **M-7** nouveau helper `_is_finding_continuation(line)` stoppe le grouping 4-space-indent aux markers de finding (`[ALERT]`/`[WARN]`/`[OK]`/`[INFO]`) et aux délimiteurs de section (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — défense contre le grouping over-greedy de contenu indenté ultérieur. **M-8** `from datetime import datetime` remonté au niveau module dans `bob/cron.py` et `bob/tui/cron.py`, 3 imports locaux retirés (aussi retiré 2 `import os` / `from pathlib import Path` locaux redondants dans `_run_install_cron_plain`). +12 tests régression à travers `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) et `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). Release single-commit. Contrat JSON préservé. Sortie wire inchangée. **Ferme la campagne deep-audit v0.5.x — branche intégralement auditée (25 modules deep + ~25 spot-checkés, 0 finding critique en suspens).** Prochaine version mineure (v0.6.0) réservée pour #13 (split ssh.py) et #14 (split cron.py). |
 | v0.5.7 | 4571 | Passe de hardening ciblée sur TUI curses (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — bucket explicitement déféré par les audits v0.5.5 / v0.5.6. 11 findings du sub-agent focalisé : 0 critique, 3 important (I-1 `_curses_readline` acceptait les codes keypad curses `KEY_*` via `chr(ch_i)` insérant glyphes Grecs dans les buffers d'entrée TUI — UX-corrompant seulement grâce à validation downstream ; I-2 trois sites `input()` bruts dans `manage_logs.py` ne catchaient pas `EOFError` — Ctrl-D dumpait une traceback Python ; I-3 `apply_cron_schedule` utilisait `os.open(O_TRUNC) + write` brut au lieu de `_atomic_write` — coupure de courant entre truncate et write viderait silencieusement le fichier cron et dropperait l'entrée, asymétrique avec `apply_cron_email` qui utilisait déjà l'écriture atomique), 3 mineurs (M-1 status `deleted_one` flashait mauvais nom de fichier sous échecs unlink sélectifs, M-3 dead-code elif body simplifié, M-4 `from bob.cron import` dupliqué consolidé). +11 tests régression à travers `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) et `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). Release single-commit. Contrat JSON préservé. Deltas UX-visibles seulement : sortie Ctrl-D propre (pas de traceback), touches fléchées/fonction n'impriment plus de glyphes Grecs dans les prompts TUI. 5 mineurs cosmétiques (M-2, M-5, M-6, M-7, M-8) explicitement déférés à v0.5.8. Après v0.5.7, campagne deep-audit v0.5.x fermée (25 modules audités + ~25 spot-checkés). |
 | v0.5.6 | 4560 | Passe de hardening ciblée sur `bob/checks/logs.py` (662 LoC parser UFW logs) — module explicitement déféré par l'audit v0.5.5 à cause densité regex. 10 findings sub-agent focalisé : 0 critique, 2 important (I-1 regex `_PRIVATE_IP` incohérente avec sysinfo — manquait CGNAT 100.64/10 + IPv6 link-local fe80::/10 + faux positifs sur strings `fc`/`fd` ; I-2 year-rollover droppait silencieusement événements syslog 1s en avance de l'horloge), 8 mineurs (M-1 variante IPv6 `[UFW BLOCK6]` silencieusement ignorée, M-2 regex `_count_available_days` restreinte mois anglais, M-3 ordre paths GeoIP City-avant-Country, M-4 consistance symlink `geoip2_status`, M-5 `_GEO_CACHE` borné 2048 éviction FIFO, M-6 arithmétique binaire `tell()`/`seek()`, M-7 `subprocess.TimeoutExpired` redondant retiré, M-8 `proto.upper()` au parse-time). +15 tests régression dans `tests/test_logs.py` (4 nouvelles classes : `TestPrivateIPDispatch`, `TestParseTimestampYearRollover`, `TestBlockPrefixMatcher`, `TestProtoNormalisation`). Single-module pass, single commit. Contrat JSON préservé. Sortie wire : deltas étroits seulement sur hosts émettant `[UFW BLOCK6]` (maintenant comptés) ou avec syslog locale non-anglais (maintenant `days_available` exact). |
 | v0.5.5 | 4545 | Passe de hardening — post-v0.5.4 audit par un sub-agent général-purpose profond. **4 bugs réels** (C-1 bug mode `apply_cron_email` cassant les audits programmés, C-2/C-3 cmds `password_policy` non-fixables par `--fix --apply` à cause de `&&`/flèche Unicode, C-4 drift `EXPLAIN_KEYS` pour `services_state`), **4 security smells** (I-1 `recurrence.json`+`ignore.yml` écrits world-readable au lieu de 0o600, I-2 déductions post-`finalize()` bypassant les caps silencieusement, I-3 `_safe_url` ne re-escapait pas le contexte attribut HTML autorisant XSS dans rapports email, I-4 `_PRIVATE_IPV4_RE` brittle + cassure widening stdlib Python 3.12+), **11 cleanups mineurs** (M-1 dedup regex email, M-2 `_NullReport` → canonique `bob.report.NullReport`, M-3 3 clés locale mortes, M-4 check fail2ban asymétrique `corr.fully_blind`, M-7 extract helper `_has_actionable_findings`, M-8/M-9 commentaires clarifiants, M-10 ancre regex cron plus stricte, M-11 split cmd `&&` `services_state.service_inactive`). +7 tests régression couvrant chaque classe de fix. Commit cosmétique M-6 migre typing `Optional[X]` / `List[X]` sur 18 modules. **Diff net : 23 fichiers code, +312 / -112 = +200 LoC.** Changement wire visible sur hosts sans pwquality : finding password_policy se déplace de "À corriger" à "Améliorations possibles" (nature='action' → 'improvement'). Score global inchangé. |
@@ -44,6 +45,49 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.5.8 — 4583/4583 (25-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4583 passed in ~6s
+```
+
+**Net : +12 (4571 → 4583).** Cleanup des 5 mineurs cosmétiques déférés par v0.5.7. Tous les +12 tests pinent la couverture de régression :
+
+| Classe de tests | Nombre | Pin finding |
+|---|---|---|
+| `TestCursorShiftAfterDelete` | 2 | M-2 — deletion mixte avant/après shift le cursor seulement par le before-count ; deletions toutes-après laissent le cursor inchangé |
+| `TestScheduleIntEnum` | 2 | M-5 — valeurs enum matchent les indices menu (1-4) ; parité comparaison IntEnum-vs-int préservée |
+| `TestSummaryStartSentinel` | 1 | M-6 — edge case synthétique SEP62-à-index-0 correctement détecté |
+| `TestIsFindingContinuation` | 4 | M-7 — accepte body indenté, rejette non-indenté, rejette markers de finding indentés, rejette délimiteurs de section indentés |
+| `TestDatetimeImportLifted` | 3 | M-8 — `bob.cron.datetime` et `bob.tui.cron.datetime` exposés au niveau module ; smoke test `build_script_content` stamp toujours la date |
+
+#### Timeline du compteur de tests mis à jour
+
+```
+v0.5.0  →  4538 tests  (+39 vs v0.4.8 : domain mapping AST scan + cron coverage)
+v0.5.1  →  4538 tests  (sans changement — Phase 2 contract-preserving)
+v0.5.2  →  4538 tests  (sans changement — Phase 3 contract-preserving)
+v0.5.3  →  4538 tests  (sans changement — Phase 4 contract-preserving)
+v0.5.4  →  4538 tests  (sans changement — Phase 5 contract-preserving)
+v0.5.5  →  4545 tests  (+7 — régressions hardening post-cycle)
+v0.5.6  →  4560 tests  (+15 — régressions hardening ciblé logs.py)
+v0.5.7  →  4571 tests  (+11 — régressions hardening ciblé TUI curses)
+v0.5.8  →  4583 tests  (+12 — régressions cleanup mineurs déférés v0.5.7)
+```
+
+**Croissance nette sur les releases hardening v0.5.x (v0.5.5 → v0.5.8) : +45 tests** sur 4 passes focalisées, alors que les releases refactor structurel (v0.5.0 → v0.5.4) étaient contract-preserving (+39 en v0.5.0 seulement, tous depuis de nouveaux fichiers test pour helpers purs).
+
+#### Test terrain
+
+Approche standard de couverture cross-distro. Sortie wire (plain-text + JSON) inchangée — la migration IntEnum M-5 produit un comportement wizard bit-identique ; le helper M-7 est strictement plus strict que le prédicat précédent mais le cas over-greedy contre lequel il se défend ne surface dans aucune sortie BOB actuelle ; M-6 sentinelle gère un edge case unreachable-en-pratique ; correction cursor M-2 ne change la position d'affichage qu'après multi-sélection deletes mélangeant items avant+après le cursor ; M-8 est un lift structurel pur.
+
+Tous les 4583 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 

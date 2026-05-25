@@ -6,6 +6,115 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.5.8] — 2026-05-25
+
+**Cleanup release.** Clears the 5 cosmetic minors explicitly deferred by v0.5.7 (M-2, M-5, M-6, M-7, M-8). All five are layout / readability / explicit-naming improvements with no behavioural delta in normal operation. **This closes the v0.5.x deep-audit campaign — branch fully audited (25 modules deep + ~25 spot-checked, 0 critical findings outstanding).**
+
+See `CHANGELOG.md` for per-finding detail. Notes specific to this FULL doc:
+
+### Why a separate cleanup release
+
+v0.5.7 explicitly shipped 6 fixes (3 important + 3 trivial minors) and explicitly deferred 5 cosmetic minors with file:line breadcrumbs in the changelog. Two paths were possible:
+1. Bundle the 5 minors into v0.6.0 (the next major bump).
+2. Ship them as a focused v0.5.8 cleanup release.
+
+Option 2 was chosen because:
+- v0.6.0 is reserved for the **#13 + #14 architectural splits** (ssh.py 1324L + cron.py 1223L) — bundling unrelated cosmetic minors there would dilute the major-version theme.
+- The 5 minors are tiny and self-contained — fits the "small focused release" cadence the v0.5.x branch has established.
+- It keeps the audit-finding lineage clean: every finding from the v0.5.7 sub-agent audit has a release that explicitly addresses it.
+
+### Behavioural impact on the wire
+
+Zero. Verified by:
+- `pytest -q` 4571 → 4583 (+12, all green) with no existing test failure or rename
+- `_Schedule.WEEKDAYS` compares equal to plain int 2 (preserves all `if choice == _Schedule.X:` semantics)
+- `_is_finding_continuation` is strictly stricter than the previous `startswith("    ")` predicate, but the over-greedy case it defends against only occurs when a section delimiter happens to be 4-space indented (not the case in any current BOB output)
+- M-2 cursor-shift correction only changes display position after multi-selection deletes mixing items before+after the cursor — never observed as a user complaint, but semantically a real fix
+- `datetime` import lift is a pure structural change
+
+### M-7 helper design
+
+The new `_is_finding_continuation(line)` helper is intentionally conservative: it rejects ANY indented line that contains a finding marker or starts with a section glyph. Alternatives considered:
+- **Anchored regex** like `re.match(r"^    (?!\[ALERT\]|\[WARN\]|\[OK\]|\[INFO\])", line)` — works but less readable
+- **Indent-level tracking** (a continuation must be MORE indented than the parent finding) — overengineered for the actual problem
+- **Empty-line sentinel** (stop only on blank lines) — too permissive; would not catch the over-greedy case the agent flagged
+
+The chosen design is direct: list the patterns that obviously belong to a different parent, and stop there. Easy to extend if a new boundary glyph appears (just add to the tuple).
+
+### M-5 IntEnum vs module-level constants
+
+Considered three forms:
+- **Module-level `int` constants** (`_SCHEDULE_DAILY = 1; ...`) — simplest, but no introspection or class-membership guarantees
+- **`Enum`** — strongest type, but breaks `choice == 2` comparisons unless `.value` is used
+- **`IntEnum`** — chosen because it compares equal to plain ints (preserving every existing call site untouched) AND provides explicit names
+
+Cost: one stdlib import (`from enum import IntEnum`). No runtime overhead.
+
+### M-8 follow-up: the unused local import sweep
+
+Lifting `from datetime import datetime` in `bob/cron.py:_run_install_cron_plain` also revealed two other redundant local imports in the same function: `import os` and `from pathlib import Path` were both already at module scope. Removed in the same commit (small but cumulative clarity win).
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4583 passed in ~6s
+```
+
+**4571 → 4583 (+12).** New test classes:
+
+`tests/test_cron.py`:
+- `TestScheduleIntEnum` (2) — `_Schedule.DAILY == 1`, `_Schedule.WEEKDAYS == 2`, etc., plus IntEnum-vs-int comparison parity.
+- `TestDatetimeImportLifted` (3) — `bob.cron.datetime` is `datetime.datetime`; same for `bob.tui.cron.datetime`; `build_script_content` smoke test still stamps today's date.
+
+`tests/test_manage_logs.py`:
+- `TestCursorShiftAfterDelete` (2) — mixed before/after case (cursor shifts by before-count only); all-after case (cursor unchanged).
+- `TestSummaryStartSentinel` (1) — synthetic SEP62-at-index-0 detection.
+- `TestIsFindingContinuation` (4) — accepts indented body lines; rejects non-indented; rejects indented `[ALERT]`/`[WARN]`/`[OK]`/`[INFO]` markers; rejects indented section delimiters (`┌`/`└`/`━`/`╔`).
+
+### Net diff
+
+| File | Delta |
+|---|---|
+| `bob/cron.py` | -3 / +1 (M-8: 1 top-level import, 2 local-import lines removed; also dropped redundant local `import os` / `from pathlib import Path` in `_run_install_cron_plain`) |
+| `bob/tui/cron.py` | -2 / +12 (M-5: `IntEnum` class definition; M-5: 4 call sites updated; M-8: 1 top-level import, 1 local-import line removed) |
+| `bob/manage_logs.py` | -3 / +24 (M-2: deleted_before_cursor tracking; M-6: sentinel `None`; M-7: new `_is_finding_continuation` helper + 2 call sites updated) |
+| `tests/test_cron.py` | +49 (TestScheduleIntEnum + TestDatetimeImportLifted) |
+| `tests/test_manage_logs.py` | +94 (TestCursorShiftAfterDelete + TestSummaryStartSentinel + TestIsFindingContinuation) |
+| Version bump + changelogs | standard ~17 files |
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, the 116 EXPLAIN_KEYS — unchanged.
+- **Per-domain score**: unchanged. Global score unchanged.
+- **Wire output**: unchanged.
+- **External API**: 2 new module-level symbols (`bob.tui.cron._Schedule` and `bob.manage_logs._is_finding_continuation`). Both leading-underscore = internal/semi-public. No removals.
+- **Keybindings**: unchanged.
+- **No-curses fallback**: unchanged.
+
+### v0.5.x deep-audit campaign — FINAL summary
+
+| Release | Scope | Findings shipped | Tests |
+|---|---|---|---|
+| v0.5.5 | 22 core modules (deep) + ~15 spot-checked | 19 (4C + 4I + 11M) | +7 |
+| v0.5.6 | `bob/checks/logs.py` (662L) | 10 (0C + 2I + 8M) | +15 |
+| v0.5.7 | `bob/manage_logs.py` + `bob/tui/cron.py` (~1920L) | 6 shipped + 5 deferred | +11 |
+| **v0.5.8** | **The 5 v0.5.7-deferred minors** | **5 (all minor)** | **+12** |
+
+**Cumulative**: 25 modules deeply audited + ~25 spot-checked. 0 critical findings outstanding on the branch. Net test growth from v0.5.4 baseline: 4538 → 4583 (+45 in 4 hardening releases).
+
+### What's next (v0.6.0)
+
+The major-version bump is reserved for:
+- **#13**: split `bob/checks/ssh.py` (1324 LoC)
+- **#14**: split `bob/cron.py` (1223 LoC after v0.5.8 import lift)
+- TUI prompt unification (`_curses_readline` / `prompt_wizard` / `_rl` form a 3-tier hierarchy that could be flattened)
+- Optional JSON schema v2 cadence (no breaking changes yet but plan documented)
+
+Both file splits are deliberately deferred from v0.5.x because gain × risk did not justify the churn in a contract-preserving minor release.
+
+---
+
 ## [v0.5.7] — 2026-05-24
 
 **Targeted hardening pass on the curses TUI.** The two interactive curses modules (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) explicitly deferred by the v0.5.5 and v0.5.6 audits. A focused sub-agent audited both modules in full. 11 findings: 0 critical, 3 important, 8 minor (3 shipped + 5 deferred to v0.5.8).

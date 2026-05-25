@@ -12,7 +12,22 @@ Plain-text flows and core data types live in bob.cron.
 from __future__ import annotations
 
 import re
+from datetime import datetime
+from enum import IntEnum
 from typing import NamedTuple
+
+
+class _Schedule(IntEnum):
+    """M-5 (v0.5.8): schedule choices for the install/edit wizard.
+
+    Values are the 1-based menu indices the user sees ("1. Daily…").
+    Promoted from a local `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS,
+    _SCHEDULE_CUSTOM = 1, 2, 3, 4` tuple unpack inside the wizard.
+    """
+    DAILY = 1
+    WEEKDAYS = 2
+    MONTHDAYS = 3
+    CUSTOM = 4
 
 from bob.cron import (
     _EMAIL_RE,
@@ -220,9 +235,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
     hour = entry.hour if entry else 3
     minute = entry.minute if entry else 0
 
-    _, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4
-
-    if choice == _SCHEDULE_WEEKDAYS:
+    if choice == _Schedule.WEEKDAYS:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         _hdr()
@@ -237,7 +250,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
         if not week_days:
             return None
 
-    elif choice == _SCHEDULE_MONTHDAYS:
+    elif choice == _Schedule.MONTHDAYS:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         _hdr()
@@ -252,7 +265,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
         if not month_days:
             return None
 
-    elif choice == _SCHEDULE_CUSTOM:
+    elif choice == _Schedule.CUSTOM:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         _hdr()
@@ -276,7 +289,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
         custom_expr = raw
 
     # Step 3 — time (not for custom)
-    if choice != _SCHEDULE_CUSTOM:
+    if choice != _Schedule.CUSTOM:
         default_time = f"{hour:02d}:{minute:02d}"
         stdscr.erase()
         h, w = stdscr.getmaxyx()
@@ -722,7 +735,6 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
             _curses_status_flash(stdscr, f"✖ Cannot write {script_path}: {exc}")
             return 1
 
-        from datetime import datetime
         now_str = datetime.now().strftime("%Y-%m-%d")
         human = cron_to_human(schedule_expr, lang=config.lang)
         cron_content = (

@@ -521,22 +521,42 @@ def _init_colors_ml():
         return False
 
 
+def _is_finding_continuation(line: str) -> bool:
+    """M-7 (v0.5.8): True if *line* belongs to the previous finding's body.
+
+    Stops the over-greedy 4-space-indent grouping at any boundary that
+    obviously belongs to a different finding (markers `[ALERT]`/`[WARN]`/
+    `[OK]`/`[INFO]`) or a section delimiter (`┌`/`└`/`━`/`╔`/`╠`/`╚`).
+    """
+    if not line.startswith("    "):
+        return False
+    stripped = line.lstrip()
+    if any(m in stripped for m in ("[ALERT]", "[WARN]", "[OK]", "[INFO]")):
+        return False
+    if stripped[:1] in ("┌", "└", "│", "━", "╔", "╠", "╚", "║"):
+        return False
+    return True
+
+
 def _extract_summary_view(lines: list[str]) -> list[str]:
     """Return a condensed view: summary block + ALERT/WARN findings."""
     SEP62 = "=" * 62
 
     # Locate the summary block: last separator followed within 6 lines by 'Score   :'
-    summary_start = 0
+    # M-6 (v0.5.8): sentinel None handles the (unreachable in practice) case
+    # where the separator sits at line 0 — falsy 0 previously short-circuited
+    # the break and could mis-detect.
+    summary_start: int | None = None
     for i in range(len(lines) - 1, -1, -1):
         if lines[i].strip() == SEP62:
             for j in range(i, min(i + 8, len(lines))):
                 if lines[j].startswith("Score   :") or lines[j].startswith("OK      :"):
                     summary_start = i
                     break
-            if summary_start:
+            if summary_start is not None:
                 break
 
-    summary_block = lines[summary_start:] if summary_start else []
+    summary_block = lines[summary_start:] if summary_start is not None else []
 
     # Collect ALERT and WARN findings with their continuation lines
     alert_lines: list[str] = []
@@ -547,7 +567,7 @@ def _extract_summary_view(lines: list[str]) -> list[str]:
         if "[ALERT]" in line:
             group = [line]
             j = i + 1
-            while j < len(lines) and lines[j].startswith("    "):
+            while j < len(lines) and _is_finding_continuation(lines[j]):
                 group.append(lines[j])
                 j += 1
             alert_lines.extend(group)
@@ -556,7 +576,7 @@ def _extract_summary_view(lines: list[str]) -> list[str]:
         elif "[WARN]" in line:
             group = [line]
             j = i + 1
-            while j < len(lines) and lines[j].startswith("    "):
+            while j < len(lines) and _is_finding_continuation(lines[j]):
                 group.append(lines[j])
                 j += 1
             warn_lines.extend(group)
@@ -876,17 +896,20 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
             if ch in (ord("y"), ord("Y")):
                 deleted = 0
                 deleted_name = None  # M-1 (v0.5.7): track which file actually succeeded
+                deleted_before_cursor = 0  # M-2 (v0.5.8): only shift for items <= cursor
                 for li in sorted(pending_delete, reverse=True):
                     try:
                         name = all_logs[li].name
                         all_logs[li].unlink()
                         deleted += 1
+                        if li <= cursor:
+                            deleted_before_cursor += 1
                         if deleted_name is None:
                             deleted_name = name
                     except OSError:
                         pass
                 marked.clear()
-                cursor = max(0, cursor - deleted)
+                cursor = max(0, cursor - deleted_before_cursor)
                 if deleted == 1 and deleted_name is not None:
                     status = t("manage_logs.deleted_one", name=deleted_name)
                 elif deleted:

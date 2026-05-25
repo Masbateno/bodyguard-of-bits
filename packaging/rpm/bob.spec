@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.7
+Version:        0.5.8
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,38 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon May 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.8-1
+- Cleanup release — clears the 5 cosmetic minors explicitly
+  deferred by v0.5.7 (M-2, M-5, M-6, M-7, M-8). Closes the
+  v0.5.x deep-audit campaign: 25 modules deep-audited +
+  ~25 spot-checked, 0 critical findings outstanding.
+- M-2: manage_logs.py cursor shift after delete now only counts
+  deletions <= cursor (pre-fix shifted by total even when most
+  deleted items sat after the cursor).
+- M-5: schedule wizard constants promoted from local tuple
+  unpack to module-level _Schedule(IntEnum) with explicit
+  DAILY/WEEKDAYS/MONTHDAYS/CUSTOM names. IntEnum preserves
+  `choice == _Schedule.X` semantics so wire-equivalent.
+- M-6: _extract_summary_view sentinel None replaces falsy 0
+  check (handles unreachable-in-practice SEP62-at-index-0).
+- M-7: new _is_finding_continuation(line) helper stops 4-space
+  grouping at finding markers and section delimiters
+  (defends against over-greedy grouping).
+- M-8: `from datetime import datetime` lifted to module-level
+  in bob/cron.py and bob/tui/cron.py (3 local imports removed,
+  plus 2 redundant local `import os` / `from pathlib import Path`
+  dropped from _run_install_cron_plain).
+- +12 regression tests (TestScheduleIntEnum,
+  TestDatetimeImportLifted, TestCursorShiftAfterDelete,
+  TestSummaryStartSentinel, TestIsFindingContinuation).
+- 4571 → 4583 tests.
+- Single-commit release. JSON contract, EXPLAIN_KEYS,
+  keybindings, no-curses fallback, exit codes — all preserved.
+- Wire output unchanged.
+- 2 new module-level symbols: bob.tui.cron._Schedule and
+  bob.manage_logs._is_finding_continuation. No removals.
+- v0.6.0 reserved for #13 (ssh.py split) + #14 (cron.py split).
+
 * Sun May 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.7-1
 - Targeted hardening pass on curses TUI: bob/manage_logs.py
   (999 LoC) and bob/tui/cron.py (920 LoC) — the bucket

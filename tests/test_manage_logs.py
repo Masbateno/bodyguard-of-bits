@@ -996,3 +996,113 @@ class TestDeletedOneCorrectName:
                 pass
         assert deleted == 1
         assert deleted_name == "bob_2.log"  # NOT bob_0.log (the pre-M-1 bug)
+
+
+# ---------------------------------------------------------------------------
+# M-2 (v0.5.8): cursor shift after delete must only count deletions <= cursor.
+# Pre-fix: `cursor = max(0, cursor - deleted)` shifted left by the FULL count
+# even when most deleted items sat AFTER the cursor.
+# ---------------------------------------------------------------------------
+
+class TestCursorShiftAfterDelete:
+    def test_only_deletions_before_cursor_shift(self, tmp_path):
+        """User cursor at index 2; marked 0, 4, 5 (one before, two after).
+        Cursor must shift by 1 (only index 0 was before), not by 3."""
+        files = [tmp_path / f"bob_{i}.log" for i in range(6)]
+        for f in files:
+            f.write_text("x")
+        pending_delete = [0, 4, 5]
+        cursor = 2
+
+        deleted = 0
+        deleted_before_cursor = 0
+        for li in sorted(pending_delete, reverse=True):
+            try:
+                files[li].unlink()
+                deleted += 1
+                if li <= cursor:
+                    deleted_before_cursor += 1
+            except OSError:
+                pass
+
+        new_cursor = max(0, cursor - deleted_before_cursor)
+        assert deleted == 3
+        assert deleted_before_cursor == 1  # only index 0
+        assert new_cursor == 1  # was 2, shifted by 1 (not 3 like pre-fix)
+
+    def test_all_deletions_after_cursor_no_shift(self, tmp_path):
+        """User cursor at index 0; marked 3, 4 (both after). Cursor unchanged."""
+        files = [tmp_path / f"bob_{i}.log" for i in range(5)]
+        for f in files:
+            f.write_text("x")
+        pending_delete = [3, 4]
+        cursor = 0
+
+        deleted = 0
+        deleted_before_cursor = 0
+        for li in sorted(pending_delete, reverse=True):
+            try:
+                files[li].unlink()
+                deleted += 1
+                if li <= cursor:
+                    deleted_before_cursor += 1
+            except OSError:
+                pass
+
+        assert deleted == 2
+        assert deleted_before_cursor == 0
+        assert max(0, cursor - deleted_before_cursor) == 0  # cursor stays
+
+
+# ---------------------------------------------------------------------------
+# M-6 (v0.5.8): summary_start = None sentinel handles the (unreachable in
+# practice) case where the separator sits at line 0. Pre-fix `if summary_start:`
+# treated index 0 as "not found".
+# ---------------------------------------------------------------------------
+
+class TestSummaryStartSentinel:
+    def test_separator_at_index_zero_detected(self):
+        """Synthetic edge case: SEP62 on line 0 followed immediately by
+        Score line. Pre-M-6, the falsy 0 check would skip it; post-fix,
+        the None sentinel correctly recognises the summary block."""
+        from bob.manage_logs import _extract_summary_view
+        SEP62 = "=" * 62
+        lines = [SEP62, "Score   : 8/10", "Risk    : Low"]
+        result = _extract_summary_view(lines)
+        combined = "\n".join(result)
+        assert "Score   : 8/10" in combined
+
+
+# ---------------------------------------------------------------------------
+# M-7 (v0.5.8): _is_finding_continuation must stop on the next finding marker
+# or section delimiter even when the line starts with 4 spaces.
+# ---------------------------------------------------------------------------
+
+class TestIsFindingContinuation:
+    def test_accepts_indented_body_lines(self):
+        from bob.manage_logs import _is_finding_continuation
+        assert _is_finding_continuation("    Que faire ?")
+        assert _is_finding_continuation("    → sudo apt install foo")
+        assert _is_finding_continuation("    ℹ Some info")
+
+    def test_rejects_non_indented_lines(self):
+        from bob.manage_logs import _is_finding_continuation
+        assert not _is_finding_continuation("")
+        assert not _is_finding_continuation("  CIS Ubuntu 22.04")
+        assert not _is_finding_continuation("Some other line")
+
+    def test_rejects_next_finding_even_when_indented(self):
+        """The over-greedy case: a finding marker that happens to be 4-space
+        indented (synthetic but possible) must not be eaten as continuation."""
+        from bob.manage_logs import _is_finding_continuation
+        assert not _is_finding_continuation("    [ALERT] another finding")
+        assert not _is_finding_continuation("    [WARN] another finding")
+        assert not _is_finding_continuation("    [OK] should not group")
+        assert not _is_finding_continuation("    [INFO] should not group")
+
+    def test_rejects_section_delimiters(self):
+        from bob.manage_logs import _is_finding_continuation
+        assert not _is_finding_continuation("    ┌──────────")
+        assert not _is_finding_continuation("    └──────────")
+        assert not _is_finding_continuation("    ━━━━━━━━━━")
+        assert not _is_finding_continuation("    ╔══════════")

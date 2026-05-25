@@ -19,6 +19,7 @@ import os
 import re
 import shlex
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from bob._tty import read_line as _rl, prompt_wizard
@@ -428,9 +429,6 @@ def prompt_email(t) -> str:
 
 def _run_install_cron_plain(user_config, config, t) -> int:
     """Install a cron job for automated audits using the schedule wizard."""
-    import os
-    from datetime import datetime
-    from pathlib import Path
     from bob import output
     output.init(no_color=config.no_color)
 
@@ -758,7 +756,6 @@ def _atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
 def build_script_content(notify_email: str, log_dir: "Path | str") -> str:
     """Build the bash script content for a BOB cron job."""
     import shutil
-    from datetime import datetime
     audit_bin = shutil.which("bob") or "/usr/local/bin/bob"
     now_str   = datetime.now().strftime("%Y-%m-%d")
     try:
