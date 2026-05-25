@@ -6,6 +6,126 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.6.0] — 25-05-2026
+
+**Bump majeur ouvrant la branche v0.6.x.** Deux splits architecturaux (#13 + #14) délibérément déférés tout au long du cycle v0.5.x, plus un sunset honoré (env var legacy `UFW_AUDIT_SHARE`). Tous les changements contract-preserving via re-exports `__init__.py`.
+
+Voir `CHANGELOG_FR.md` pour le détail par module. Notes spécifiques à ce doc FULL :
+
+### Pourquoi deux splits de fichier dans une release majeure
+
+Le principe conservative-refactor (cf. memory [[feedback_conservative_refactor]]) — "gain × risque ≤ 0 dans une release contract-preserving = STOP" — interdisait les splits pendant v0.5.x. Splitter un fichier 1000+ LoC requiert :
+- Déplacer chaque fonction vers un nouveau module
+- Ajuster tous les imports internes
+- Ajuster tous les imports externes (autres packages + tests)
+- Risquer des bugs subtils d'ordre d'import ou de cycle qui ne surfacent pas dans les unit tests
+
+Dans une release patch v0.x.y, c'est high-risk pour un gain marginal de lisibilité. Dans un bump majeur v0.x+1.0, les imports sont ATTENDUS de bouger (c'est la convention pour les versions majeures de shipper des changements structurels), donc le risque est socialisé. v0.6.0 est le bon vecteur.
+
+### Pourquoi re-exports via `__init__.py` plutôt que migration de path
+
+Les splits auraient pu déplacer les symboles publics vers de nouveaux chemins d'import (ex. `from bob.checks.ssh.snapshot import SSHSnapshot`). Ce serait un vrai breaking change requérant un cycle de deprecation. À la place, chaque symbole public est re-exporté depuis le `__init__.py` du package, donc `from bob.checks.ssh import SSHSnapshot` continue à marcher identiquement.
+
+Tradeoff : le fichier `__init__.py` du package devient une liste de re-exports (boilerplate ennuyeux), mais :
+- Zéro breakage user-visible
+- Fichiers tests inchangés
+- Intégrations externes inchangées
+- L'option de migrer les chemins d'import en v0.7+ reste ouverte si un redesign API plus profond est voulu
+
+C'est le même pattern que la stdlib Python utilise pour beaucoup de ses packages (ex. `email.mime.text.MIMEText` est aussi re-exporté comme `email.MIMEText`).
+
+### Break du cycle dans le package ssh
+
+La dépendance naturelle est bidirectionnelle :
+- `_parsers` retourne des instances des dataclasses définies dans `_snapshot` → besoin de les importer
+- `_snapshot.SSHSnapshot.from_system` appelle des fonctions parser de `_parsers` → besoin de les importer
+
+Pour break le cycle : `_parsers` importe les dataclasses depuis `_snapshot` au niveau module ; `_snapshot.from_system` utilise un import local de fonction `from . import _parsers`. C'est propre parce que :
+- Les dataclasses load en premier (pas de dep sur `_parsers`)
+- Les parsers load en second (utilise les dataclasses depuis `_snapshot` déjà-loadé)
+- `from_system` ne résout `_parsers` qu'au call time, moment où tout est loadé
+
+Le pattern est documenté dans les docstrings module de `_snapshot.py` et `_parsers.py` — les futurs contributors qui ont besoin d'ajouter un nouveau parser ou modifier `from_system` savent qu'il ne faut pas ajouter un import top-level qui ré-introduirait le cycle.
+
+### Gotcha résolution path `build_script_content`
+
+Pré-v0.6.0, `bob/cron.py` vivait à un niveau sous `bob/`, donc `Path(__file__).parent.parent` résolvait vers la racine du repo (PYTHONPATH-able). Post-split, `_io.py` vit DEUX niveaux sous `bob/` (`bob/cron/_io.py`), donc la fonction walk maintenant TROIS parents :
+
+```python
+bob_path = str(Path(__file__).parent.parent.parent)
+#                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#                       _io.py → cron/ → bob/ → racine repo
+```
+
+C'est le seul changement "subtil" en v0.6.0 — partout ailleurs, les splits sont pur déplacement de code. Le smoke test `tests/test_cron.py::TestDatetimeImportLifted::test_build_script_content_still_stamps_date` exerce la fonction end-to-end et aurait catché une régression.
+
+### Updates infrastructure tests (3 fixes triviaux)
+
+Trois fichiers tests ont eu besoin d'updates pour accommoder la nouvelle structure de package :
+
+1. **`tests/test_template_vars_migration.py`** — `_check_modules()` / `_module_paths()` étendu pour recursivement scanner les répertoires de package. Liste pilote migrée des noms suffixés `.py` aux noms de module.
+2. **`tests/test_domain_scores_mapping_complete.py`** — changement d'une seule ligne `glob` → `rglob` avec filtre `__pycache__` pour que l'AST scanner pickup `bob/checks/ssh/_subchecks.py`.
+3. **`tests/test_cron.py::TestApplyCronScheduleAtomic`** — target patch shifté de `bob.cron._atomic_write` (re-export package) à `bob.cron._io._atomic_write` (où `apply_cron_schedule` appelle effectivement). Le patch doit être set sur le module où le call site lit, pas où la fonction se trouve aussi re-exportée.
+
+Ce sont des updates mécaniques sans changement de scope. La couverture reste identique : 4583 tests, 0 ajouté, 0 retiré.
+
+### Mécanique du retrait `UFW_AUDIT_SHARE`
+
+La chaîne de deprecation (12+ mois) :
+
+- **v0.4.2** (2026-05-14) : `BOB_SHARE` documenté comme le contrat ; `UFW_AUDIT_SHARE` accepté comme alias legacy avec notice `logger.info(...)`
+- **v0.5.4** (2026-05-22) : `logger.info` upgradé à `logger.warning(...)` avec message explicite "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to BOB_SHARE..."
+- **v0.6.0** (cette release) : constante `_ENV_LEGACY` supprimée, lecture fallback supprimée, branche warning supprimée. La variable est maintenant silencieusement ignorée — les packages settant encore verront `resolve_share_dir()` retourner None et fall back aux data package-local, ce qui est le default safe.
+
+Changement net dans `bob/_paths.py` : -20 lignes (une constante, une lecture fallback, la branche warning). La docstring est mise à jour pour noter "removed in v0.6.0" pour référence historique. Deux références commentaire stales dans `bob/i18n.py:44` et `bob/registry.py:38` ont aussi été mises à jour.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4583 passed in ~7s
+```
+
+**4583 inchangés.** Zéro changement de comportement.
+
+### Diff net
+
+| Fichier | Delta |
+|---|---|
+| `bob/checks/ssh.py` (supprimé) | −1296L |
+| `bob/checks/ssh/` package (5 fichiers) | +1402L (+106 overhead depuis `__init__.py` + docstrings par fichier + imports module-level) |
+| `bob/cron.py` (supprimé) | −1204L |
+| `bob/cron/` package (5 fichiers) | +1359L (+155 overhead similaire) |
+| `bob/_paths.py` (drop UFW_AUDIT_SHARE) | −20L |
+| `bob/i18n.py`, `bob/registry.py` (cleanup docstring) | −2L |
+| `tests/test_template_vars_migration.py` (support rglob) | +30L / −10L net |
+| `tests/test_domain_scores_mapping_complete.py` (shift rglob) | +3L / −1L |
+| `tests/test_cron.py::TestApplyCronScheduleAtomic` (target patch) | +2L / −0L |
+| Bump version + changelogs | ~17 fichiers standard |
+
+**Cumulé : ~+260 LoC overhead** pour le split (à travers les deux packages) vs l'équivalent monolithique. Justifié par le gain de modularité — le plus gros module simple post-split est 529L (bien sous le soft ceiling 1000-LoC du projet), down de 1296L pré-split.
+
+### Observation cross-cutting : la surface API publique est maintenant explicite
+
+Pré-v0.6.0, les monolithes v0.5.x exposaient ~30 symboles implicitement (tout top-level non-préfixé `_`). Avec le split package, la liste re-export `__init__.py` rend l'API publique explicite et reviewable :
+
+- `bob/checks/ssh/__init__.py` : 7 noms re-exportés (`SSHSnapshot` + 5 dataclasses + `check_ssh`) + 6 helpers test-only
+- `bob/cron/__init__.py` : 17 noms re-exportés (set compat full v0.5.x) + re-export `_EMAIL_RE` depuis `bob.config` + re-export `datetime` pour test v0.5.8
+
+Les futurs contributors qui veulent ajouter un nouveau symbole public doivent explicitement opt-in en le listant dans `__all__` et/ou le bloc d'import. C'est un side-benefit utile du split qui n'était pas part de la motivation audit originale.
+
+### Roadmap
+
+v0.6.x accueillera :
+- Maintenance + bug reports terrain cross-distro
+- Possible unification prompt TUI (était candidate v0.6.0 mais punted pour maintenir le focus release sur les splits)
+- Planning cadence schema JSON v2 (pas de breaking changes encore — plan documenté pour v1.0)
+- Préparation EOL Python 3.10 (deviendra probablement candidate bump min-version en v0.7+)
+
+Aucune campagne deep-audit prévue — la campagne v0.5.x s'est fermée exhaustivement. Tous les futurs audits seront triggered par des concerns spécifiques (une nouvelle classe de vulnérabilité, un CVE dans une dépendance, une requête de contributor) plutôt que des sweeps proactifs.
+
+---
+
 ## [v0.5.8] — 25-05-2026
 
 **Release cleanup.** Clear des 5 mineurs cosmétiques explicitement déférés par v0.5.7 (M-2, M-5, M-6, M-7, M-8). Tous les cinq sont des améliorations layout / lisibilité / nommage-explicite sans delta comportemental en opération normale. **Cela ferme la campagne deep-audit v0.5.x — branche intégralement auditée (25 modules deep + ~25 spot-checkés, 0 finding critique en suspens).**

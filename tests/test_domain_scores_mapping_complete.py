@@ -77,8 +77,12 @@ def _collect_static_key_prefixes() -> set[str]:
     convention as :mod:`tests.test_locale_coverage`.
     """
     prefixes: set[str] = set()
-    for py in sorted(_CHECKS_DIR.glob("*.py")):
+    # rglob to traverse check packages (e.g. bob/checks/ssh/*.py post v0.6.0
+    # #13 split). Single-file checks (bob/checks/*.py) still match at depth 1.
+    for py in sorted(_CHECKS_DIR.rglob("*.py")):
         if py.name == "__init__.py":
+            continue
+        if "__pycache__" in py.parts:
             continue
         try:
             tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))

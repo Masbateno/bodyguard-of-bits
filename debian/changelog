@@ -1,3 +1,77 @@
+bodyguard-of-bits (0.6.0-1) UNRELEASED; urgency=low
+
+  * Major bump opening the v0.6.x branch. Two architectural
+    splits (#13 + #14) deliberately deferred across the entire
+    v0.5.x cycle, plus one sunset honored. All changes
+    contract-preserving via package __init__.py re-exports —
+    every `from bob.checks.ssh import …` or
+    `from bob.cron import …` call site continues to work
+    unchanged.
+  * #13 — bob/checks/ssh.py (1296 LoC monolith) → bob/checks/ssh/
+    package with 4 submodules:
+      _directives.py (165L): _BadDirective table +
+        _BAD_DIRECTIVES tuple + _apply_bad_directive helper +
+        weak crypto reference sets (_WEAK_CIPHERS, _WEAK_MACS,
+        _WEAK_KEX).
+      _snapshot.py (198L): 5 dataclasses + SSHSnapshot +
+        SSHSnapshot.from_system. Uses function-local
+        `from . import _parsers` to break the natural cycle
+        with the parser layer.
+      _parsers.py (446L): all pure parsers — sshd_config,
+        authorized_keys, known_hosts, client config — plus
+        key-type/RSA-bits helpers + _collect_host_keys +
+        _detect_ssh_install_cmd + _parse_time_seconds.
+      _subchecks.py (529L): check_ssh entry point + all
+        _check_* per-area helpers.
+  * #14 — bob/cron.py (1204 LoC monolith) → bob/cron/ package
+    with 4 submodules:
+      _parse.py (330L): CronEntry + parse_cron_file +
+        list_installed_crons + cron_to_human +
+        build_schedule_expr + validators + day helpers + MTA
+        detection + constants.
+      _io.py (164L): _atomic_write + build_script_content +
+        apply_cron_schedule + apply_cron_email.
+      _install.py (319L): prompt_emails / prompt_email +
+        _run_install_cron_plain + run_install_cron +
+        _CronQuit exception (shared with _manage).
+      _manage.py (445L): _manage_email_store +
+        edit_cron_email + edit_cron_schedule +
+        _run_manage_cron_plain + run_manage_cron.
+  * Sunset: UFW_AUDIT_SHARE legacy env var removed. Announced
+    "REMOVED in v0.6.0" in the v0.5.4 deprecation warning. Only
+    BOB_SHARE is now accepted by resolve_share_dir(). Installers
+    still setting UFW_AUDIT_SHARE will see no effect — update
+    them to use BOB_SHARE.
+  * Test infrastructure updates (3 trivial fixes, mechanical
+    only — coverage unchanged):
+      tests/test_template_vars_migration.py: _check_modules →
+        _module_paths handles both files and package dirs;
+        pilot list converted from .py-suffixed to module-name.
+      tests/test_domain_scores_mapping_complete.py: glob →
+        rglob with __pycache__ filter so the AST scanner
+        picks up bob/checks/ssh/_subchecks.py.
+      tests/test_cron.py::TestApplyCronScheduleAtomic: spy
+        target shifted from bob.cron._atomic_write to
+        bob.cron._io._atomic_write (where apply_cron_schedule
+        now lives + calls it).
+  * 4583 tests inchangés (0 added, 0 removed — splits +
+    sunset are wire-equivalent).
+  * Largest module post-split is ssh/_subchecks.py at 529L,
+    well below the project's soft 1000-LoC ceiling.
+  * JSON contract (schema_version="1"), 116 EXPLAIN_KEYS,
+    keybindings, no-curses fallback, exit codes — all
+    preserved.
+  * Backwards compatibility: every public symbol from v0.5.x
+    monoliths is re-exported by the new packages'
+    __init__.py. Zero user-visible import breakage.
+  * Closes the deferred architectural roadmap from v0.5.x.
+  * Next: v0.6.x maintenance + cross-distro field bug reports.
+    No deep-audit campaign planned (v0.5.x closed
+    comprehensively: 25 modules deep-audited + ~25
+    spot-checked, 0 critical findings outstanding).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 25 May 2026 07:30:00 +0200
+
 bodyguard-of-bits (0.5.8-1) UNRELEASED; urgency=low
 
   * Cleanup release — clears the 5 cosmetic minors explicitly

@@ -41,7 +41,7 @@ _lang: str = "en"
 _initialized: bool = False
 
 # Locale files location:
-# - If BOB_SHARE (or legacy UFW_AUDIT_SHARE) env var is set (installed), use that share directory
+# - If BOB_SHARE env var is set (installed), use that share directory
 # - Otherwise fall back to locales/ next to this module (development)
 _share_path = resolve_share_dir()
 _LOCALES_DIR = (_share_path / "locales") if _share_path else (Path(__file__).parent / "locales")

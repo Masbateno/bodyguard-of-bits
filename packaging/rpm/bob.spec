@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.5.8
+Version:        0.6.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,33 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon May 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.6.0-1
+- Major bump opening v0.6.x branch. Two architectural splits
+  (#13 + #14) deferred from v0.5.x, plus UFW_AUDIT_SHARE
+  sunset honored. All contract-preserving via __init__.py
+  re-exports.
+- #13: bob/checks/ssh.py (1296L) → bob/checks/ssh/ package
+  with 4 submodules (_directives 165L, _snapshot 198L,
+  _parsers 446L, _subchecks 529L). All v0.5.x public API
+  re-exported.
+- #14: bob/cron.py (1204L) → bob/cron/ package with 4
+  submodules (_parse 330L, _io 164L, _install 319L,
+  _manage 445L). All v0.5.x public API re-exported.
+- Removed legacy env var UFW_AUDIT_SHARE. Announced "REMOVED
+  in v0.6.0" since v0.5.4 — honored. Only BOB_SHARE is now
+  accepted by resolve_share_dir().
+- Three trivial test-infrastructure updates: test_template_-
+  vars_migration / test_domain_scores_mapping_complete use
+  rglob instead of glob; TestApplyCronScheduleAtomic patches
+  bob.cron._io._atomic_write instead of the package
+  re-export.
+- 4583 tests inchangés (0 added, 0 removed).
+- Largest module post-split is ssh/_subchecks.py at 529L,
+  well below the project's soft 1000-LoC ceiling.
+- JSON contract, EXPLAIN_KEYS, keybindings, no-curses
+  fallback, exit codes — all preserved.
+- Closes the deferred architectural roadmap from v0.5.x.
+
 * Mon May 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.8-1
 - Cleanup release — clears the 5 cosmetic minors explicitly
   deferred by v0.5.7 (M-2, M-5, M-6, M-7, M-8). Closes the

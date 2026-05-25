@@ -4,7 +4,7 @@
 
 Two complementary parts:
 
-- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.5.8 (4583 tests, +12 net from the v0.5.7-deferred minors cleanup; +11 in v0.5.7 from the curses-TUI hardening pass; +15 in v0.5.6 from the `logs.py` pass; +7 in v0.5.5 from the post-cycle audit; previous v0.5.0 → v0.5.4 phases were contract-preserving with zero test delta).
+- **Unit test history** (per-version table + detailed sections) — every release lists the tests added, removed, or corrected, with the platform and test count at the time. This is the audit trail of how the suite grew from v0.1.0 (4200 tests) to v0.6.0 (4583 tests). The +45 net growth across v0.5.5 → v0.5.8 came from the deep-audit campaign hardening regressions. v0.6.0 is contract-preserving — the ssh.py + cron.py splits and the UFW_AUDIT_SHARE sunset add zero test delta.
 - **Manual UFW regression plan** (Categories A–E at the bottom) — deliberately dangerous UFW rules and the expected BOB behaviour for each. Used to validate detection + remediation on real systems.
 
 ---
@@ -13,6 +13,7 @@ Two complementary parts:
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.6.0 | 4583 | **Major bump** opening the v0.6.x branch. Two architectural splits (`bob/checks/ssh.py` 1296L → `bob/checks/ssh/` 4-module package; `bob/cron.py` 1204L → `bob/cron/` 4-module package) deliberately deferred across the entire v0.5.x cycle, both contract-preserving via `__init__.py` re-exports. Plus the `UFW_AUDIT_SHARE` legacy env var sunset honored (announced "REMOVED in v0.6.0" in v0.5.4). Three trivial test-infrastructure updates: `tests/test_template_vars_migration.py` and `tests/test_domain_scores_mapping_complete.py` switched from `glob` to `rglob` so AST scanners pick up the new check-package submodules; `tests/test_cron.py::TestApplyCronScheduleAtomic` patch target shifted from `bob.cron._atomic_write` (package re-export) to `bob.cron._io._atomic_write` (where `apply_cron_schedule` actually calls it). 4583 tests inchangés (0 added, 0 removed — splits + sunset are wire-equivalent). Largest module post-split is `ssh/_subchecks.py` at 529L, well below the project's soft 1000-LoC ceiling. All v0.5.x public APIs preserved via re-exports. JSON contract, EXPLAIN_KEYS, keybindings, no-curses fallback, exit codes — all preserved. Closes the deferred architectural roadmap from v0.5.x. |
 | v0.5.8 | 4583 | Cleanup of the 5 cosmetic minors explicitly deferred by v0.5.7 (M-2, M-5, M-6, M-7, M-8). **M-2** `manage_logs.py` cursor-shift after delete now tracks `deleted_before_cursor` separately so the cursor only shifts by deletions at-or-before the active position (pre-fix `cursor -= deleted` shifted by the full count even when most deleted items sat after the cursor). **M-5** schedule wizard local tuple unpack `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` promoted to a module-level `_Schedule(IntEnum)` with explicit `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` names — IntEnum preserves `choice == _Schedule.X` semantics so wire-equivalent. **M-6** `_extract_summary_view` sentinel `summary_start: int \| None = None` replaces falsy `summary_start = 0` check — handles the unreachable-in-practice edge case where SEP62 sits at line 0. **M-7** new `_is_finding_continuation(line)` helper stops the 4-space-indent grouping at finding markers (`[ALERT]`/`[WARN]`/`[OK]`/`[INFO]`) and section delimiters (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — defends against over-greedy grouping of subsequent indented content. **M-8** `from datetime import datetime` lifted to module-level in both `bob/cron.py` and `bob/tui/cron.py`, 3 local imports removed (also dropped 2 redundant local `import os` / `from pathlib import Path` in `_run_install_cron_plain`). +12 regression tests across `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) and `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). Single-commit release. JSON contract preserved. Wire output unchanged. **Closes the v0.5.x deep-audit campaign — branch fully audited (25 modules deep + ~25 spot-checked, 0 critical findings outstanding).** Next minor (v0.6.0) reserved for #13 (ssh.py split) and #14 (cron.py split). |
 | v0.5.7 | 4571 | Targeted hardening pass on curses TUI (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — bucket explicitly deferred by v0.5.5 / v0.5.6 audits. 11 findings from focused sub-agent: 0 critical, 3 important (I-1 `_curses_readline` accepted curses `KEY_*` keypad codes via `chr(ch_i)` inserting Greek glyphs into TUI input buffers — UX-corrupting only thanks to downstream validation; I-2 three bare `input()` sites in `manage_logs.py` didn't catch `EOFError` so Ctrl-D dumped a Python traceback; I-3 `apply_cron_schedule` used raw `os.open(O_TRUNC) + write` instead of `_atomic_write` — power-loss between truncate and write would silently empty the cron file and drop the entry, asymmetric with `apply_cron_email` which already used atomic write), 3 minor (M-1 `deleted_one` status flashed wrong filename under selective unlink failures, M-3 dead-code elif body simplified, M-4 duplicate `from bob.cron import` consolidated). +11 regression tests across `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) and `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). Single-commit release. JSON contract preserved. UX-visible deltas only: clean Ctrl-D exit (no traceback), arrow/function keys no longer print Greek glyphs in TUI prompts. 5 cosmetic minors (M-2, M-5, M-6, M-7, M-8) explicitly deferred to v0.5.8. After v0.5.7, v0.5.x deep-audit campaign closed (25 modules audited + ~25 spot-checked). |
 | v0.5.6 | 4560 | Targeted hardening pass on `bob/checks/logs.py` (662 LoC UFW log parser) — module explicitly deferred by the v0.5.5 audit because of regex density. 10 findings from focused sub-agent: 0 critical, 2 important (I-1 `_PRIVATE_IP` regex inconsistent with sysinfo — missed CGNAT 100.64/10 + IPv6 link-local fe80::/10 + false positives on `fc`/`fd` strings; I-2 year-rollover silently dropped near-realtime syslog events 1s ahead of wall-clock), 8 minor (M-1 `[UFW BLOCK6]` IPv6 variant silently ignored, M-2 `_count_available_days` regex restricted to English month names, M-3 GeoIP path order City-before-Country, M-4 `geoip2_status` symlink consistency, M-5 `_GEO_CACHE` bounded 2048 with FIFO eviction, M-6 binary `tell()`/`seek()` arithmetic, M-7 redundant `subprocess.TimeoutExpired` dropped, M-8 `proto.upper()` at parse time). +15 regression tests in `tests/test_logs.py` (4 new test classes: `TestPrivateIPDispatch`, `TestParseTimestampYearRollover`, `TestBlockPrefixMatcher`, `TestProtoNormalisation`). Single-module pass, single commit. JSON contract preserved. Wire output: narrow deltas only on hosts emitting `[UFW BLOCK6]` (now counted) or with non-English locale syslog (now accurate `days_available`). |
@@ -45,6 +46,54 @@ Two complementary parts:
 | v0.1.1 | 4206 | +4 regression tests: fwupd 1.9+ tree-format output (`├─`/`└─` parser) — bug found on Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 regression tests: exposure surface INFO-level findings (`ssh.not_installed`, `fail2ban.not_installed`) — bugs found on Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Initial release — 65 test files; 39 new tests in `test_cis_refs.py` (CIS benchmark mapping); full coverage across all 46 checks |
+
+---
+
+### v0.6.0 — 4583/4583 (2026-05-25)
+
+**Platform:** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4583 passed in ~7s
+```
+
+**Net: 0.** Major architectural bump opening the v0.6.x branch. Two package splits (#13 ssh.py → bob/checks/ssh/, #14 cron.py → bob/cron/) and one sunset (`UFW_AUDIT_SHARE`). All structural — no behaviour change, no new test classes, no removed tests.
+
+Three test-infrastructure updates were required to accommodate the package layout (not coverage changes):
+
+| Test file | Update | Reason |
+|---|---|---|
+| `tests/test_template_vars_migration.py` | `_check_modules()` → `_module_paths()` walks `iterdir()` + handles both files and package dirs; `_module_has_template_vars(path)` does `rglob("*.py")` for packages | The AST scanner needs to recurse into `bob/checks/ssh/` to find the 4 submodules' `template_vars=` call sites |
+| `tests/test_domain_scores_mapping_complete.py` | `_CHECKS_DIR.glob("*.py")` → `_CHECKS_DIR.rglob("*.py")` + `__pycache__` filter | Same recursion need — the AST scanner must see every check submodule's emitted key prefixes |
+| `tests/test_cron.py::TestApplyCronScheduleAtomic` | Patch target shifted from `bob.cron._atomic_write` to `bob.cron._io._atomic_write` | `apply_cron_schedule` lives in `_io.py` post-split and calls the local `_atomic_write` directly; the spy must be set where the call site reads |
+
+These updates are mechanical — the assertions and coverage they enforce are unchanged.
+
+#### Test count timeline updated
+
+```
+v0.5.0  →  4538 tests  (+39 vs v0.4.8: domain mapping AST scan + cron coverage)
+v0.5.1  →  4538 tests  (no change — Phase 2 contract-preserving)
+v0.5.2  →  4538 tests  (no change — Phase 3 contract-preserving)
+v0.5.3  →  4538 tests  (no change — Phase 4 contract-preserving)
+v0.5.4  →  4538 tests  (no change — Phase 5 contract-preserving)
+v0.5.5  →  4545 tests  (+7 — post-cycle hardening regressions)
+v0.5.6  →  4560 tests  (+15 — logs.py targeted hardening regressions)
+v0.5.7  →  4571 tests  (+11 — curses-TUI targeted hardening regressions)
+v0.5.8  →  4583 tests  (+12 — v0.5.7-deferred minors cleanup regressions)
+v0.6.0  →  4583 tests  (0 — splits + sunset are contract-preserving)
+```
+
+**Branch summary v0.5.x: +45 net tests across 4 hardening releases (v0.5.5 → v0.5.8).** v0.6.0 opens v0.6.x without adding tests because it's a structural reorganisation.
+
+#### Field test
+
+Standard cross-distro coverage approach. Wire output is bit-identical to v0.5.8 (no behaviour change). Visible deltas to expect on user systems:
+- **None on standard installs.** All v0.5.x imports continue to work.
+- **Only on systems still setting `UFW_AUDIT_SHARE`**: the env var is now silently ignored. Update installers to use `BOB_SHARE`.
+
+All 4583 tests pass in ~7s on Python 3.12 / Linux Mint 22.3.
 
 ---
 

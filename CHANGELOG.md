@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.6.0](#v060) | 2026-05-25 | **Major bump** — opens the v0.6.x branch. Two architectural splits + one sunset, all contract-preserving via package re-exports. **#13 split `bob/checks/ssh.py` (1296 LoC monolith) → `bob/checks/ssh/` package** with 4 modules: `_directives` (165L: `_BadDirective` table + `_BAD_DIRECTIVES` + `_apply_bad_directive` + weak crypto reference sets), `_snapshot` (198L: 5 dataclasses + `SSHSnapshot` + `SSHSnapshot.from_system`), `_parsers` (446L: pure parsers for sshd_config / authorized_keys / known_hosts / client config + key-type / RSA-bits helpers + `_collect_host_keys` + `_detect_ssh_install_cmd` + `_parse_time_seconds`), `_subchecks` (529L: `check_ssh` entry point + all `_check_*` per-area helpers). **#14 split `bob/cron.py` (1204 LoC monolith) → `bob/cron/` package** with 4 modules: `_parse` (330L: `CronEntry` + `parse_cron_file` + `list_installed_crons` + `cron_to_human` + `build_schedule_expr` + validators + day helpers + MTA detection + constants), `_io` (164L: `_atomic_write` + `build_script_content` + `apply_cron_schedule` + `apply_cron_email`), `_install` (319L: `prompt_emails` / `prompt_email` + `_run_install_cron_plain` + `run_install_cron` + `_CronQuit` exception), `_manage` (445L: `_manage_email_store` + `edit_cron_email` + `edit_cron_schedule` + `_run_manage_cron_plain` + `run_manage_cron`). Both packages preserve the full v0.5.x public API via `__init__.py` re-exports — `from bob.checks.ssh import check_ssh, SSHSnapshot, …` and `from bob.cron import CronEntry, run_install_cron, _EMAIL_RE, datetime, …` continue to work unchanged. **Sunset: `UFW_AUDIT_SHARE` legacy env var removed** (announced "REMOVED in v0.6.0" in v0.5.4 deprecation warning — honored). Only `BOB_SHARE` is now accepted; installers still setting the legacy alias will see no effect. Two AST-scanning tests (`tests/test_template_vars_migration.py`, `tests/test_domain_scores_mapping_complete.py`) updated to recurse into check packages (one-line `glob` → `rglob` shift). One regression test (`TestApplyCronScheduleAtomic`) updated to patch the new `bob.cron._io._atomic_write` site instead of the package-level re-export. 4583 tests inchangés (zero net delta — splits + sunset are wire-equivalent). LoC: ssh.py 1296L → 4 modules (max 529L), cron.py 1204L → 4 modules (max 445L). Largest check module is now `ssh/_subchecks.py` at 529L, well below the project's soft 1000-LoC ceiling. JSON contract (`schema_version="1"`), 116 EXPLAIN_KEYS, keybindings, no-curses fallback, exit codes — all preserved. **Closes the deferred architectural roadmap from v0.5.x.** |
 | [v0.5.8](#v058) | 2026-05-25 | Cleanup of the 5 cosmetic minors explicitly deferred by v0.5.7. **M-2** `manage_logs.py` cursor shift after delete now only counts deletions ≤ cursor (pre-fix: `cursor -= deleted` shifted by the full count even when most deleted items sat AFTER the cursor — visible cursor displacement on multi-selection deletes mixing items before+after the active position). **M-5** schedule wizard constants promoted from local `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` tuple unpack to a module-level `_Schedule(IntEnum)` with explicit `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` names — 3 call sites updated, IntEnum preserves `choice == _Schedule.WEEKDAYS` semantics so wire-equivalent. **M-6** `_extract_summary_view` `summary_start: int \| None = None` sentinel replaces `summary_start = 0` falsy check — handles the (unreachable in practice but semantically wrong) edge case where the SEP62 separator sits at line 0. **M-7** new `_is_finding_continuation(line)` helper stops the 4-space-indent grouping at any boundary that obviously belongs to a different finding (`[ALERT]`/`[WARN]`/`[OK]`/`[INFO]` markers) or a section delimiter (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — defends against over-greedy grouping of subsequent indented content. **M-8** `from datetime import datetime` lifted to module-level in both `bob/cron.py` and `bob/tui/cron.py`; 3 local imports removed (`_run_install_cron_plain`, `build_script_content`, install cron curses path). +12 regression tests across `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) and `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). 4571 → 4583 tests. JSON wire format unchanged, EXPLAIN_KEYS unchanged, keybindings unchanged, no public API removals. **Closes the v0.5.x deep-audit campaign — branch fully audited (25 modules deep-audit + ~25 spot-checked, 0 critical findings outstanding).** Next minor (v0.6.0) reserved for #13 (ssh.py split) and #14 (cron.py split) — the two deliberately-deferred architectural refactors. |
 | [v0.5.7](#v057) | 2026-05-24 | Targeted hardening pass on curses TUI (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — the bucket explicitly deferred by the v0.5.5 / v0.5.6 audits. 11 findings from a focused sub-agent: 0 critical, 3 important (I-1 `_curses_readline` accepted curses `KEY_*` keypad codes via `chr(ch_i)` — pressing arrows or function keys inserted Greek/Unicode glyphs like `Ι` / `Ω` into name/email/days/time/custom-expression input buffers; no security impact thanks to downstream `_EMAIL_RE` / `_validate_custom_cron` / digit-only filtering, but visibly corrupted UX. New `_is_printable_input_char(ch_i)` helper bounds inputs to printable Latin-1 only · I-2 three `input()` sites in `prompt_path` + move-logs confirmation + delete-all confirmation didn't catch `EOFError` so Ctrl-D dumped a Python traceback on cancel — now matches the `_rl()` convention treating EOF as empty input · I-3 `apply_cron_schedule` used raw `os.open(O_WRONLY \| O_CREAT \| O_TRUNC) + fdopen.write` instead of the project's `_atomic_write` helper. Power loss or `SIGKILL` between `open(O_TRUNC)` and `write` would leave the cron file empty → cron silently drops the entry, no notification. Asymmetric with `apply_cron_email` which already used `_atomic_write`. Same `mode=0o640` enforced), 3 minor (M-1 status `manage_logs.deleted_one` displayed `pending_delete[0].name` even when index 0 failed to delete and only a different index succeeded under selective permission errors — now tracks the first successfully-deleted name · M-3 dead-code `if ch_i == ord("1"): chosen = 0 elif chosen = 1` inside `_curses_edit_sub` simplified, elif guard rewritten with explicit parentheses · M-4 duplicate `from bob.cron import apply_cron_schedule, apply_cron_email` consolidated into the main import block). +11 regression tests across `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) and `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). 4560 → 4571 tests. JSON wire format unchanged, EXPLAIN_KEYS unchanged, no public API additions. UX-visible deltas: clean Ctrl-D exit (no traceback), arrow/function keys no longer print garbage into TUI prompts. Deferred to v0.5.8 (5 cosmetic findings not worth churn now): M-2 cursor-shift assumes deletions sit before cursor · M-5 schedule wizard local-scoped constants → module-level / IntEnum · M-6 `summary_start` falsy check misses index 0 (unreachable in practice) · M-7 over-greedy continuation grouping in `_extract_summary_view` · M-8 local `from datetime import` lifted to module top. After v0.5.7, v0.5.x branch fully audited (22 core + logs.py + 2 TUI = 25 modules deep-audited + ~25 spot-checked). |
 | [v0.5.6](#v056) | 2026-05-24 | Targeted hardening pass on `bob/checks/logs.py` (662 LoC UFW log parser) — module explicitly deferred by the v0.5.5 audit because of regex density. 10 findings from a focused sub-agent: 0 critical, 2 important (I-1 private-IP regex inconsistent with `sysinfo.py` — missed CGNAT 100.64/10 + IPv6 link-local fe80::/10 + false positives on any string starting with `fc`/`fd`; I-2 year-rollover silently dropped near-realtime syslog events 1s ahead of wall-clock by rolling back a full year), 8 minor (M-1 `[UFW BLOCK6]` IPv6 variant silently ignored — anchored regex now catches both; M-2 `_count_available_days` regex restricted to English month names; M-3 GeoIP path order City-before-Country across all dirs; M-4 `geoip2_status()` accepts symlinks like `_geo_via_geoip2` does; M-5 `_GEO_CACHE` bounded at 2048 with FIFO eviction; M-6 binary-mode `tell()`/`seek()` arithmetic (TextIOBase opaque-cookie compliance); M-7 redundant `subprocess.TimeoutExpired` dropped from except tuple; M-8 `proto` normalised to upper at parse time so a downstream lowercase build can't silently split a bruteforce campaign). +15 regression tests in `tests/test_logs.py` covering each fix class. Single-module pass, single commit. 4545 → 4560 tests. JSON contract preserved. Wire output unchanged on hosts with standard UFW configs; visible only on hosts emitting `[UFW BLOCK6]` (previously dropped — now counted) or with non-English locale syslog logs (previously inflated days_available — now accurate). |
@@ -36,6 +37,116 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.6.0] — 2026-05-25
+
+**Major bump opening the v0.6.x branch.** Two architectural splits (#13 + #14) deliberately deferred across the entire v0.5.x cycle, plus one sunset honored. All three changes are contract-preserving via package `__init__.py` re-exports — every `from bob.checks.ssh import …` or `from bob.cron import …` call site in the codebase and in user scripts continues to work unchanged.
+
+### #13 — `bob/checks/ssh.py` → `bob/checks/ssh/` package
+
+The 1296-line SSH check module split into 4 focused submodules:
+
+| Module | LoC | Content |
+|---|---|---|
+| `_directives.py` | 165 | `_BadDirective` declarative table + `_BAD_DIRECTIVES` tuple + `_apply_bad_directive` helper + weak crypto reference sets (`_WEAK_CIPHERS`, `_WEAK_MACS`, `_WEAK_KEX`) |
+| `_snapshot.py` | 198 | 5 dataclasses (`HostKeyInfo`, `PrivateKeyInfo`, `AuthorizedKeyEntry`, `KnownHostEntry`, `ClientConfigEntry`) + `SSHSnapshot` + `SSHSnapshot.from_system` |
+| `_parsers.py` | 446 | Pure parsers: `_parse_config_file`, `_collect_private_keys`, `_detect_private_key_type`, `_key_type_from_algo`, `_rsa_bits_from_*`, `_has_passphrase`, `_parse_authorized_keys`, `_parse_client_config`, `_parse_known_hosts`, `_collect_host_keys`, `_detect_ssh_install_cmd`, `_parse_time_seconds` |
+| `_subchecks.py` | 529 | `check_ssh` entry point + all `_check_*` per-area helpers (`_check_host_keys`, `_check_sshd_config`, `_check_weak_algo`, `_check_ssh_dir`, `_check_private_keys`, `_check_authorized_keys`, `_check_client_config`, `_check_known_hosts`) |
+| `__init__.py` | 64 | Public re-exports |
+
+**Cycle break**: `_parsers` imports dataclasses from `_snapshot` at module level; `_snapshot.SSHSnapshot.from_system` uses a function-local `from . import _parsers` import to avoid the otherwise-circular dep. Clean and intention-revealing.
+
+### #14 — `bob/cron.py` → `bob/cron/` package
+
+The 1204-line cron module split into 4 focused submodules:
+
+| Module | LoC | Content |
+|---|---|---|
+| `_parse.py` | 330 | `CronEntry` dataclass + `parse_cron_file` + `list_installed_crons` + `cron_to_human` + `build_schedule_expr` + `make_slug` + `suggest_name` + `_validate_cron_field` + `_validate_custom_cron` + `_parse_day_names` + `_parse_dom` + `_ordinal` + `_detect_mta` + constants (`CRON_DIR`, `SCRIPT_DIR`, `LEGACY_*`, `_DAYS_EN`, `_DAYS_FR`, `_CRON_FIELD_BOUNDS`) |
+| `_io.py` | 164 | `_atomic_write` + `build_script_content` + `apply_cron_schedule` + `apply_cron_email` (all file-mutation helpers) |
+| `_install.py` | 319 | `prompt_emails` + `prompt_email` + `_run_install_cron_plain` + `run_install_cron` + `_CronQuit` exception (shared with `_manage`) |
+| `_manage.py` | 445 | `_manage_email_store` + `edit_cron_email` + `edit_cron_schedule` + `_run_manage_cron_plain` + `run_manage_cron` |
+| `__init__.py` | 101 | Public re-exports incl. `datetime` + `_EMAIL_RE` for backwards-compat |
+
+**Note on `build_script_content` path resolution**: the function uses `Path(__file__).parent.parent.parent` to derive `PYTHONPATH` for the generated cron script — post-split `__file__` resolves to `bob/cron/_io.py` so we now walk THREE parents (`_io.py` → `cron/` → `bob/` → repo root) instead of two. Verified by the existing smoke test (`tests/test_cron.py::TestDatetimeImportLifted::test_build_script_content_still_stamps_date`).
+
+### Sunset: `UFW_AUDIT_SHARE` legacy env var
+
+Announced "REMOVED in v0.6.0" by the deprecation warning shipped in v0.5.4 (`bob/_paths.py:60`). Honored. Only `BOB_SHARE` is now accepted by `resolve_share_dir()`. Installers still setting `UFW_AUDIT_SHARE` will see no effect — update them to use `BOB_SHARE`. The deprecation chain:
+
+- v0.4.2: `BOB_SHARE` becomes the documented contract; `UFW_AUDIT_SHARE` accepted as legacy alias
+- v0.5.4: `logger.info(...)` upgraded to `logger.warning(...)` with explicit "REMOVED in v0.6.0" message
+- **v0.6.0**: Removed (this release)
+
+3-line drop in `bob/_paths.py` (the `_ENV_LEGACY` constant, the fallback read, and the legacy warning branch) plus 2 docstring updates in `bob/i18n.py` and `bob/registry.py`.
+
+### Backwards compatibility
+
+Every public symbol from the v0.5.x monoliths is re-exported by the new packages' `__init__.py`:
+
+```python
+# Still works in v0.6.0:
+from bob.checks.ssh import SSHSnapshot, check_ssh, AuthorizedKeyEntry  # and 8+ more
+from bob.cron import CronEntry, run_install_cron, apply_cron_schedule, _EMAIL_RE, datetime, _CronQuit
+```
+
+This was the deciding factor for the conservative split — the alternative (forcing user-visible import-path changes) would be a true breaking change and is not warranted for an internal refactor. The packaging keeps the option open for v0.7+ if a deeper API redesign is wanted later.
+
+### Test infrastructure updates (2 trivial AST scan fixes)
+
+The check-module discovery in two introspection tests needed to recurse into the new package directories:
+
+- **`tests/test_template_vars_migration.py`**: `_check_modules()` (now `_module_paths()`) walks `iterdir()` and returns either single `.py` files or package directories; `_module_has_template_vars(path)` does `rglob("*.py")` for package targets. Pilot list converted from `frozenset({"ssh.py", "hardening.py", "firewall.py"})` to module-name form `frozenset({"ssh", "hardening", "firewall"})`.
+- **`tests/test_domain_scores_mapping_complete.py`**: single-line change — `_CHECKS_DIR.glob("*.py")` → `_CHECKS_DIR.rglob("*.py")` with `__pycache__` filter, so the AST scan picks up `bob/checks/ssh/_subchecks.py` and all sibling submodule key emissions.
+
+One regression test (`tests/test_cron.py::TestApplyCronScheduleAtomic`) was updated to spy on `bob.cron._io._atomic_write` rather than the package-level re-export — because `apply_cron_schedule` now lives in `_io.py` and calls the local `_atomic_write` directly. The spy needs to be set on the module where the call site reads it.
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, the 116 EXPLAIN_KEYS — unchanged.
+- **Per-domain score**: unchanged. Global score unchanged.
+- **Wire output**: unchanged.
+- **External Python API**: all v0.5.x public symbols re-exported from the new packages. No removals.
+- **Environment variables**: `UFW_AUDIT_SHARE` removed (announced for 12+ months). Only `BOB_SHARE` accepted.
+- **Keybindings**, **no-curses fallback**, **exit codes** — unchanged.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4583 passed in ~7s
+```
+
+**4583 unchanged.** No new tests, no removed tests — the splits + sunset are structural and don't change behaviour. The 3 test files updated (template_vars_migration, domain_scores_mapping_complete, test_cron) shift assertion targets to accommodate the new module layout but keep the same coverage scope.
+
+### Net diff
+
+| File | Delta |
+|---|---|
+| `bob/checks/ssh.py` (deleted) | −1296L |
+| `bob/checks/ssh/__init__.py` + 4 submodules | +1402L (165 + 198 + 446 + 529 + 64) |
+| `bob/cron.py` (deleted) | −1204L |
+| `bob/cron/__init__.py` + 4 submodules | +1359L (330 + 164 + 319 + 445 + 101) |
+| `bob/_paths.py` | −20L (legacy alias path + warning) |
+| `bob/i18n.py`, `bob/registry.py` | −2L (docstring updates) |
+| 2 test file updates | +20L net (rglob + path-not-stem migration) |
+| 1 test patch-target fix | +2L net (cron_io vs cron_mod) |
+| Version bump + changelogs | standard ~17 files |
+
+Overhead: +261L total across both packages vs the monolithic equivalent. That's the cost of `__init__.py` re-exports + module-level imports + per-file docstrings. Worth it for the modularity.
+
+### Roadmap
+
+v0.6.0 closes the architectural-split backlog from v0.5.x. The v0.6.x branch will host:
+- **Maintenance** of the now-modular structure
+- **Field bug reports** from cross-distro testing
+- **TUI prompt unification** (`_curses_readline` / `prompt_wizard` / `_rl` → flatter hierarchy) — was listed as v0.6.0 candidate but punted to maintain release focus
+- **JSON schema v2 cadence planning** (preparation for breaking changes in v1.0)
+- **Python 3.10 EOL preparation** (will become minimum-version bump candidate in v0.7+)
+
+No deep-audit campaign planned for v0.6.x — the v0.5.x campaign closed comprehensively (25 modules deep-audited + ~25 spot-checked, 0 critical findings outstanding).
 
 ---
 

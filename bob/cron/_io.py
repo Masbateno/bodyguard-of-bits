@@ -1,0 +1,164 @@
+"""File-patching helpers for cron entries (atomic writes + in-place patches).
+
+Extracted from bob/cron.py in v0.6.0 (#14 split). All file mutations here go
+through ``_atomic_write`` to guarantee crash-safety — power loss between
+truncate and write would leave cron files empty and silently drop entries
+(see v0.5.7 #I-3 for the apply_cron_schedule fix that closed this).
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shlex
+from datetime import datetime
+from pathlib import Path
+
+
+def _atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
+    """Write *content* to *path* atomically (temp file + os.replace).
+
+    *mode* is the open() flag mode for the *new* file. Default is 0o600
+    (private) — appropriate for state files. Callers patching existing
+    cron files (0o640) or wrapper scripts (0o755) MUST pass the right
+    mode explicitly, otherwise os.replace() preserves the tmp file's
+    mode (0o600) and breaks the original file's permissions.
+    """
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    os.replace(str(tmp), str(path))
+
+def build_script_content(notify_email: str, log_dir: "Path | str") -> str:
+    """Build the bash script content for a BOB cron job."""
+    import shutil
+    audit_bin = shutil.which("bob") or "/usr/local/bin/bob"
+    now_str   = datetime.now().strftime("%Y-%m-%d")
+    try:
+        # __file__ resolves to bob/cron/_io.py post-v0.6.0 split → parents[2]
+        # walks up two levels (cron/ then bob/) and parent.parent gives the
+        # bob package's parent dir (PYTHONPATH-able).
+        bob_path = str(Path(__file__).parent.parent.parent)
+    except (TypeError, AttributeError):
+        bob_path = "/usr/local/lib"
+    return (
+        "#!/bin/bash\n"
+        f"# BOB script — generated {now_str} by bob --install-cron\n"
+        "# Re-generate: sudo bob --install-cron\n\n"
+        f"NOTIFY_EMAILS={shlex.quote(notify_email)}\n"
+        f"LOG_DIR={shlex.quote(str(log_dir))}\n"
+        f"export PYTHONPATH={shlex.quote(bob_path)}:\"$PYTHONPATH\"\n\n"
+        f"{shlex.quote(str(audit_bin))} --quiet --detailed\n"
+        "RC=$?\n\n"
+        'if [ "$RC" -gt 0 ] && [ -n "$NOTIFY_EMAILS" ]; then\n'
+        '    LOG=$(ls -t "$LOG_DIR"/bob_*.log 2>/dev/null | head -1)\n'
+        '    if [ -n "$LOG" ]; then\n'
+        '        IFS="," read -ra _ADDRS <<< "$NOTIFY_EMAILS"\n'
+        '        for _ADDR in "${_ADDRS[@]}"; do\n'
+        "            export AUDIT_LOG=\"$LOG\"\n"
+        "            export AUDIT_EMAIL=\"$_ADDR\"\n"
+        "            export AUDIT_RC=\"$RC\"\n"
+        "            python3 << 'PYTHON_EOF'\n"
+        "import os, re\n"
+        "from bob.report_markdown import send_audit_log_as_html_email\n\n"
+        "hostname = os.uname().nodename\n"
+        "log_file = os.environ.get('AUDIT_LOG')\n"
+        "email = os.environ.get('AUDIT_EMAIL')\n"
+        "score = 'N/A'\n"
+        "if log_file:\n"
+        "    try:\n"
+        "        content = open(log_file, encoding='utf-8', errors='replace').read()\n"
+        "        m = re.search(r'Score\\s*:\\s*(\\d+/10)', content)\n"
+        "        if m:\n"
+        "            score = m.group(1)\n"
+        "    except OSError:\n"
+        "        pass\n"
+        "subject = f'[BOB] {hostname} - Score {score}'\n"
+        "if log_file and email:\n"
+        "    send_audit_log_as_html_email(log_file, email, subject)\n"
+        "PYTHON_EOF\n"
+        "        done\n"
+        "    fi\n"
+        "fi\n"
+    )
+
+# ---------------------------------------------------------------------------
+# Cron-file mutation helpers — shared between the plain-text wizard
+# (edit_cron_schedule / edit_cron_email in _manage.py) and the curses TUI
+# (bob/tui/cron.py imports these). Centralising avoids drift between the
+# two branches — see v0.4.8 cleanup pass.
+# ---------------------------------------------------------------------------
+
+def apply_cron_schedule(entry, schedule_expr: str) -> str:
+    """Patch *entry.cron_path* in place with *schedule_expr*.
+
+    Replaces the unique `MIN HOUR DOM MONTH DOW root <script>` line of the
+    cron file. Returns an empty string on success, or the OSError string on
+    read/write failure (caller renders it to the user).
+    """
+    try:
+        text = entry.cron_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return str(exc)
+    new_line = f"{schedule_expr}  root  {entry.script_path}"
+    # M-10 (v0.5.5): anchor first field to cron-token shape
+    # ([0-9*,\-/]) to skip comment lines that would otherwise match
+    # if their text accidentally fits 5 whitespace-separated tokens
+    # followed by " root ". The previous `^\S+\s+...` matched any
+    # non-whitespace start including `#`.
+    new_text = re.sub(
+        r"^[0-9*,\-/]\S*\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
+        lambda _: new_line,
+        text,
+        flags=re.MULTILINE,
+    )
+    try:
+        # I-3 (v0.5.7): atomic write — power-loss between open(O_TRUNC) and
+        # write would leave cron file empty and silently drop the entry.
+        # Cron files in /etc/cron.d/ must be 0o640 or cron skips them.
+        _atomic_write(entry.cron_path, new_text, mode=0o640)
+    except OSError as exc:
+        return str(exc)
+    return ""
+
+def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
+    """Patch *entry.cron_path* and the associated wrapper script with *new_email*.
+
+    Accepts the legacy `NOTIFY_EMAIL=` form (no S) in the script for
+    backward-compat with pre-v0.3 generated wrappers.
+
+    Returns:
+        (error_string, script_subst_count)
+        - error_string is "" on success, otherwise the OSError message.
+        - script_subst_count is the number of replacements done in the
+          wrapper script. 0 indicates the NOTIFY_EMAILS= line was missing
+          (the caller may want to warn the user).
+    """
+    try:
+        lines = entry.cron_path.read_text(encoding="utf-8").splitlines()
+        updated = [
+            f"# email: {new_email}" if ln.startswith("# email:") else ln
+            for ln in lines
+        ]
+        # Cron files in /etc/cron.d/ must be 0o640 (root:root) or cron skips them.
+        _atomic_write(entry.cron_path, "\n".join(updated) + "\n", mode=0o640)
+    except OSError as exc:
+        return (str(exc), 0)
+
+    subst_count = 0
+    if entry.script_path.exists():
+        try:
+            text = entry.script_path.read_text(encoding="utf-8")
+            # Match both NOTIFY_EMAILS= (current) and NOTIFY_EMAIL= (legacy)
+            text, subst_count = re.subn(
+                r"^NOTIFY_EMAILS?=.*$",
+                lambda _: f"NOTIFY_EMAILS={shlex.quote(new_email)}",
+                text,
+                flags=re.MULTILINE,
+            )
+            # Wrapper script must be 0o755 (executable) — cron exec's it directly.
+            _atomic_write(entry.script_path, text, mode=0o755)
+        except OSError as exc:
+            return (str(exc), subst_count)
+    return ("", subst_count)

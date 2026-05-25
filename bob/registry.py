@@ -35,7 +35,7 @@ from bob.sysinfo import get_user_home
 logger = logging.getLogger(__name__)
 
 # Service data location:
-# - If BOB_SHARE (or legacy UFW_AUDIT_SHARE) env var is set (installed), use that share directory
+# - If BOB_SHARE env var is set (installed), use that share directory
 # - Otherwise fall back to data/ next to this module (development)
 _share_path = resolve_share_dir()
 _DATA_DIR = (_share_path / "data") if _share_path else (Path(__file__).parent / "data")

@@ -716,16 +716,19 @@ class TestApplyCronScheduleAtomic:
         """Spy on _atomic_write to confirm schedule edits no longer do raw
         os.open(O_TRUNC) + write — that pattern leaves the cron file empty
         if the process dies after open but before write completes."""
-        from bob import cron as cron_mod
+        # v0.6.0 (#14 split): apply_cron_schedule lives in bob.cron._io and
+        # calls the local _atomic_write directly — patch the _io submodule,
+        # not the package re-export.
+        from bob.cron import _io as cron_io
         entry = self._make_entry(tmp_path)
-        original = cron_mod._atomic_write
+        original = cron_io._atomic_write
         calls = []
 
         def spy(path, content, mode=0o600):
             calls.append((path, content, mode))
             return original(path, content, mode=mode)
 
-        with patch.object(cron_mod, "_atomic_write", side_effect=spy):
+        with patch.object(cron_io, "_atomic_write", side_effect=spy):
             err = apply_cron_schedule(entry, "30 14 * * 1")
         assert err == ""
         assert len(calls) == 1
@@ -738,14 +741,14 @@ class TestApplyCronScheduleAtomic:
         """If _atomic_write fails, the on-disk file must still contain the
         original schedule — this is the whole point of the atomic-write
         contract. Pre-I-3 the raw O_TRUNC truncated before write could fail."""
-        from bob import cron as cron_mod
+        from bob.cron import _io as cron_io
         entry = self._make_entry(tmp_path)
         original_text = entry.cron_path.read_text(encoding="utf-8")
 
         def boom(*args, **kwargs):
             raise OSError("simulated disk full")
 
-        with patch.object(cron_mod, "_atomic_write", side_effect=boom):
+        with patch.object(cron_io, "_atomic_write", side_effect=boom):
             err = apply_cron_schedule(entry, "30 14 * * 1")
         assert "simulated disk full" in err
         assert entry.cron_path.read_text(encoding="utf-8") == original_text
