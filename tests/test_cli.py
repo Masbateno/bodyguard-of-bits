@@ -640,6 +640,64 @@ class TestValidateCheckFilters:
         assert "ssh" in captured.err
 
 
+class TestValidateCheckFiltersAlwaysOn:
+    """M-7 (v0.7.0): always-on sections are valid --check/--skip input."""
+
+    def test_check_always_on_returns_none(self, capsys):
+        """--check=firewall (always-on) must NOT warn or error."""
+        from bob.runner import validate_check_filters
+        config = AuditConfig(check_only=frozenset({"firewall"}))
+        assert validate_check_filters(config) is None
+        assert capsys.readouterr().err == ""
+
+    def test_check_always_on_plus_filterable_returns_none(self, capsys):
+        from bob.runner import validate_check_filters
+        config = AuditConfig(check_only=frozenset({"firewall", "ssh"}))
+        assert validate_check_filters(config) is None
+        assert capsys.readouterr().err == ""
+
+    def test_check_multiple_always_on_returns_none(self, capsys):
+        from bob.runner import validate_check_filters
+        config = AuditConfig(check_only=frozenset({"firewall", "ports_analysis", "ddns"}))
+        assert validate_check_filters(config) is None
+        assert capsys.readouterr().err == ""
+
+    def test_skip_always_on_warns_but_returns_none(self, capsys):
+        """--skip on always-on must warn (no effect) but not error."""
+        from bob.runner import validate_check_filters
+        config = AuditConfig(skip_checks=frozenset({"firewall"}))
+        assert validate_check_filters(config) is None
+        captured = capsys.readouterr()
+        assert "firewall" in captured.err
+        assert "no effect" in captured.err or "always-on" in captured.err
+
+    def test_skip_always_on_plus_filterable(self, capsys):
+        from bob.runner import validate_check_filters
+        config = AuditConfig(skip_checks=frozenset({"firewall", "clamav"}))
+        # firewall = warn ; clamav = silent (valid filterable)
+        assert validate_check_filters(config) is None
+        captured = capsys.readouterr()
+        assert "firewall" in captured.err
+        assert "clamav" not in captured.err
+
+    def test_suggest_no_longer_dumps_all_sections(self, capsys):
+        """The unknown-token suggestion must point to --check=list, not dump 34 names."""
+        from bob.runner import validate_check_filters
+        config = AuditConfig(check_only=frozenset({"xyz123notarealsection"}))
+        validate_check_filters(config)
+        captured = capsys.readouterr()
+        assert "bob --check=list" in captured.err
+        # Sanity: the wall-of-text "Available sections: a, b, c, …" should be gone
+        assert "Available sections:" not in captured.err
+
+    def test_fatal_error_points_to_check_list(self):
+        from bob.runner import validate_check_filters
+        config = AuditConfig(check_only=frozenset({"sshh_not_real_anywhere"}))
+        result = validate_check_filters(config)
+        assert result is not None
+        assert "bob --check=list" in result
+
+
 class TestOutputDirFlag:
     def test_output_dir_with_equals(self):
         config = parse_args(["--output-dir=/var/log/bob"])

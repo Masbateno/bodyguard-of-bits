@@ -80,6 +80,17 @@ _ALL_SECTIONS: tuple[str, ...] = (
     "ssl_certs", "firmware", "iptables_nft", "samba", "desktop_apps",
 )
 
+# M-7 (v0.7.0): sections that run unconditionally — they are not gated by
+# `_section_enabled` and therefore `--check`/`--skip` have no effect on them.
+# Pre-fix, `--check=firewall` raised a fatal "matches no known section" error
+# even though `--check=list` itself advertises these as "core checks (firewall,
+# ports, services, logs) always run". `validate_check_filters` now recognises
+# these tokens as valid input and informs the user that --skip has no effect.
+_ALWAYS_ON_SECTIONS: tuple[str, ...] = (
+    "firewall", "rules", "ufw_logging", "firewall_stack", "network_context",
+    "services", "ports_analysis", "ddns", "docker", "virtualization",
+)
+
 
 def _section_enabled(section: str, config: "AuditConfig", profile: "AuditProfile | None") -> bool:
     """Return True if the section should be run given config filters and the active profile.
@@ -101,30 +112,53 @@ def validate_check_filters(config: "AuditConfig") -> str | None:
     """Validate --check / --skip tokens against known sections.
 
     Prints warnings to stderr for unrecognised tokens and returns a fatal error
-    string when every --check token is unrecognised (nothing would run).
+    string when every --check token matches neither a filterable nor an
+    always-on section (nothing would run beyond the always-on core).
     Returns None when all is well.
+
+    M-7 (v0.7.0): always-on section names (firewall, rules, ports_analysis…)
+    are now recognised — they previously triggered "matches no known section"
+    warnings + a fatal error on ``--check=firewall``.
     """
-    def _matches(tok: str) -> bool:
+    def _matches_filterable(tok: str) -> bool:
         return any(s == tok or s.startswith(tok) for s in _ALL_SECTIONS)
 
+    def _matches_always_on(tok: str) -> bool:
+        return any(s == tok or s.startswith(tok) for s in _ALWAYS_ON_SECTIONS)
+
     def _suggest(tok: str) -> str:
-        matches = difflib.get_close_matches(tok, _ALL_SECTIONS, n=3, cutoff=0.5)
+        all_known = _ALL_SECTIONS + _ALWAYS_ON_SECTIONS
+        matches = difflib.get_close_matches(tok, all_known, n=3, cutoff=0.5)
         if matches:
             return f"Did you mean: {', '.join(matches)}"
-        return f"Available sections: {', '.join(_ALL_SECTIONS)}"
+        return "Run 'bob --check=list' to see all check names."
 
     if config.check_only:
-        bad = sorted(tok for tok in config.check_only if not _matches(tok))
+        bad = sorted(
+            tok for tok in config.check_only
+            if not (_matches_filterable(tok) or _matches_always_on(tok))
+        )
         if bad:
             for tok in bad:
                 print(f"Warning: --check '{tok}' matches no known section — {_suggest(tok)}", file=sys.stderr)
+            # Fatal only when NO token matches anything — always-on tokens
+            # still count as "something will run".
             if len(bad) == len(config.check_only):
-                return "--check matched no known sections. Run 'bob --help' to list available checks."
+                return "--check matched no known sections. Run 'bob --check=list' to see available checks."
 
     if config.skip_checks:
         for tok in sorted(config.skip_checks):
-            if not _matches(tok):
-                print(f"Warning: --skip '{tok}' matches no known section — {_suggest(tok)}", file=sys.stderr)
+            if _matches_filterable(tok):
+                continue
+            if _matches_always_on(tok):
+                # --skip on an always-on section is a no-op: warn the user
+                # rather than silently swallow their intent.
+                print(
+                    f"Warning: --skip '{tok}' has no effect (always-on section)",
+                    file=sys.stderr,
+                )
+                continue
+            print(f"Warning: --skip '{tok}' matches no known section — {_suggest(tok)}", file=sys.stderr)
 
     return None
 
