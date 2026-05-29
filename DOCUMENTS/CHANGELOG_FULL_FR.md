@@ -6,6 +6,72 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.6.2] — 29-05-2026
+
+**Hotfix packaging critique.** Tous les wheels shippés depuis v0.6.0 (v0.6.0 + v0.6.1) manquaient `bob/checks/ssh/` et `bob/cron/`. Voir `CHANGELOG_FR.md` pour le détail. Notes spécifiques à ce doc FULL :
+
+### Pourquoi ce bug est intéressant
+
+C'est un cas d'école du failure mode "tests passent, ship casse". Trois couches de tests avaient chacune une raison de ne pas le catcher :
+
+1. **Tests unitaires** importent depuis le source tree. Le package `bob.checks.ssh` existe comme répertoire dans le working tree ; la résolution d'import Python le trouve via `sys.path` contenant le repo root. La config packaging discovery dans `pyproject.toml` est complètement bypassée.
+
+2. **Smoke pre-ship `sudo python3 -m bob`** tournait depuis le working tree. Même résolution source-tree. Le smoke sur so6desktop reportait `BOB v0.6.1` et un audit normal — exactement parce qu'il chargeait le source directement, pas le wheel v0.6.1.
+
+3. **CI `integration.yml`** utilisait `pip install -e .` (mode editable). Les editable installs ajoutent le repo root à `site-packages` via un fichier `.pth`. Ils bypassent DÉLIBÉRÉMENT la discovery `find_packages()` pour iteration rapide.
+
+Le bug surface seulement quand : (a) un wheel est build, (b) installé là où le source tree N'est PAS sur `sys.path`, (c) l'installer import un module depuis un sous-package manquant.
+
+C'est exactement le workflow pipx upgrade.
+
+### Mécanique du fix
+
+Changement d'1 ligne dans `pyproject.toml` :
+```diff
+-include = ["bob", "bob.checks", "bob.tui"]
++include = ["bob*"]
+```
+
+Le glob `bob*` matche tout package commençant par `bob`. C'est `bob`, `bob.checks`, `bob.checks.ssh`, `bob.cron`, `bob.tui`, et tout futur `bob.something`.
+
+### Hardening CI
+
+Deux changements complémentaires dans `.github/workflows/integration.yml` :
+
+**(1)** `pip install -e .` → `pip install .` — chaque distro build et install un vrai wheel.
+
+**(2)** Nouveau smoke step explicite qui import chaque module v0.6.x-ajouté. Tout futur contributeur qui ajoute un `bob/foo/` sous-package doit étendre cette liste.
+
+### Validation cross-distro
+
+Le nouveau smoke step CI a tourné sur les 7 distros (Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali rolling, Fedora 41) pour le push v0.6.2 et passe partout. Confirme que le fix est correct et le garde opérationnel.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4600 passed in ~6s
+```
+
+**4600 inchangés.** Le fix est dans `pyproject.toml` (config packaging) et workflow CI (opérationnel), pas dans le code.
+
+### Path d'upgrade
+
+```bash
+pipx upgrade bodyguard-of-bits
+bob --version  # doit afficher "bob 0.6.2"
+sudo bob --help > /dev/null  # doit pas crash
+```
+
+### Leçons enregistrées
+
+- **Editable installs cachent les bugs packaging.** Tous les CI integration utilisent `pip install .` désormais.
+- **Glob > liste figée** pour `setuptools.packages.find.include` dans les projets qui peuvent splitter des modules.
+- **Smoke import step pour chaque nouveau sous-package** : catch-all low-cost qui surface le bug class à CI time au lieu du runtime utilisateur.
+- **Les audits scopes devraient inclure `pyproject.toml`** pour le packaging drift, pas seulement le code Python runtime.
+
+---
+
 ## [v0.6.1] — 26-05-2026
 
 **Première release hardening sur la branche v0.6.x.** Sub-agent d'audit profond a produit 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. L'audit a révélé deux **contrats demi-appliqués** depuis v0.5.x — atomic-write (paths de mutation fixés en v0.5.7 #I-3 mais pas les paths de création) et gestion EOF (`manage_logs.py` fixé en v0.5.7 #I-2 mais pas les wizards cron ni `fixes.py`) — plus une **branche validator non-testée** dans le parser de step cron. Tous adressés.

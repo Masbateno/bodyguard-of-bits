@@ -6,6 +6,99 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.6.2] — 2026-05-29
+
+**Critical packaging hotfix.** Every wheel shipped since v0.6.0 (v0.6.0 + v0.6.1) was missing `bob/checks/ssh/` and `bob/cron/` — the two subpackages introduced by the v0.6.0 splits. Users who `pipx upgrade`d hit `ModuleNotFoundError: No module named 'bob.checks.ssh'` at startup. See `CHANGELOG.md` for the full root cause + fix narrative. Notes specific to this FULL doc:
+
+### Why this bug is interesting
+
+It's a textbook example of the "tests pass, ship breaks" failure mode. Three layers of testing each had a reason not to catch it:
+
+1. **Unit tests** import from the source tree. The `bob.checks.ssh` package exists as a directory in the working tree; Python's import resolution finds it via `sys.path` containing the repo root. The packaging discovery config in `pyproject.toml` is bypassed entirely.
+
+2. **Pre-ship `sudo python3 -m bob` smoke** ran from the working tree (`cd ~/github/bodyguard-of-bits && sudo python3 -m bob …`). Same source-tree resolution. The smoke test on so6desktop reported `BOB v0.6.1` and a normal audit run — exactly because it was loading the source directly, not the v0.6.1 wheel.
+
+3. **CI `integration.yml`** used `pip install -e .` (editable mode). Editable installs add the repo root to `site-packages` via a `.pth` file. They DELIBERATELY bypass `find_packages()` discovery for fast iteration. The integration job was therefore testing the source tree wrapped in a venv — not the wheel.
+
+The bug only surfaces when:
+- A wheel is built (`python -m build` or `python setup.py bdist_wheel`)
+- That wheel is installed in a location where the source tree is NOT on `sys.path`
+- The installer then imports a module from a missing subpackage
+
+That's exactly the pipx upgrade workflow: pipx downloads the wheel from PyPI, installs it into a private venv (`~/.local/share/pipx/venvs/bodyguard-of-bits/`), and the binary `bob` shim invokes `python -c "from bob.__main__ import main"`. With ssh/ and cron/ missing, the runner.py import chain crashes.
+
+### Fix mechanics
+
+The 1-line change in `pyproject.toml`:
+```diff
+-include = ["bob", "bob.checks", "bob.tui"]
++include = ["bob*"]
+```
+
+The glob `bob*` matches any package whose name starts with `bob` (the `*` is a setuptools glob, not a regex). That's `bob`, `bob.checks`, `bob.checks.ssh`, `bob.cron`, `bob.tui`, and every future `bob.something` package. The original guard (excluding accidental top-level `bob_*` non-package directories) is preserved because the glob only matches actual Python packages discovered by `find_packages()`.
+
+### CI hardening
+
+Two complementary changes to `.github/workflows/integration.yml`:
+
+**(1) `pip install -e .` → `pip install .`**
+
+Removes the editable-mode bypass. Now each distro in the matrix builds and installs a real wheel — the same code path PyPI users hit. Any future packaging-config bug will now surface on every PR before merge.
+
+**(2) New explicit smoke step**
+
+```yaml
+- name: Smoke — packaging includes all subpackages
+  run: |
+    python3 -c "import bob.checks.ssh; from bob.checks.ssh import check_ssh, SSHSnapshot"
+    python3 -c "import bob.cron; from bob.cron import CronEntry, run_install_cron, _atomic_write"
+    python3 -c "from bob._atomic import atomic_write"
+    python3 -c "from bob._tty import safe_input, prompt_wizard, read_line"
+```
+
+The four imports cover every v0.6.x-added module. Any future contributor adding a new `bob/foo/` subpackage must extend this list — the smoke test failing is more visible than the wheel quietly excluding a directory.
+
+### Cross-distro validation
+
+The new CI smoke step ran on all 7 distros (Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali rolling, Fedora 41) for the v0.6.2 push and passed everywhere. This confirms the fix is correct and the guard is operational.
+
+### What this changes about the audit-campaign baseline
+
+The pre-v0.6.2 v0.5.x deep-audit campaign focused on code correctness (logic bugs, contract violations, security smells). This bug is in a different category: **build-system / packaging config drift**. The audit excluded the `pyproject.toml` from its scope because it's not Python code that runs at audit time. Adding packaging-config to future audit scopes is a lesson logged in `project_v062_packaging_hotfix.md` memory.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4600 passed in ~6s
+```
+
+**4600 unchanged.** The fix is in `pyproject.toml` (packaging config) and CI workflow (operational), not in code. This bug class is not unit-testable from within Python — testing it requires building a wheel and re-installing, which is exactly what the new CI step does.
+
+### Upgrade path
+
+If you upgraded to v0.6.0 or v0.6.1 via pipx, you currently have a broken install. Run:
+
+```bash
+pipx upgrade bodyguard-of-bits
+```
+
+to get the corrected v0.6.2 wheel. Verify with:
+
+```bash
+bob --version  # should print "bob 0.6.2"
+sudo bob --help > /dev/null  # should not crash
+```
+
+### Lessons logged
+
+- **Editable installs hide packaging bugs.** Every integration CI uses `pip install .` going forward.
+- **Glob > literal list** for `setuptools.packages.find.include` in projects that may split modules.
+- **Smoke import step for each new subpackage** is a low-cost catch-all that surfaces the bug class at CI time instead of user-system runtime.
+- **Audit scopes should include `pyproject.toml`** for packaging drift, not just runtime Python code.
+
+---
+
 ## [v0.6.1] — 2026-05-26
 
 **First hardening release on the v0.6.x branch.** Deep audit sub-agent pass produced 14 findings (0 critical + 6 important + 8 minor); 6 important + 4 minor shipped. The audit revealed two **half-applied contracts** from v0.5.x and one **untested validator branch**. See `CHANGELOG.md` for per-finding detail. Notes specific to this FULL doc:
