@@ -594,20 +594,21 @@ The `findings[*].key` and `deductions[*].key` are part of the `--explain` key se
 
 > **Stable public commitment** — these rules govern when BOB drops support for an older Python.
 
-BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.6.0:
+BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.7.0:
 
 | Python | Status |
 |---|---|
-| 3.13 | ✅ supported (when released — to be tested) |
+| 3.14 | ✅ supported (added in v0.7.0 — ladder step 1 for 3.10 drop) |
+| 3.13 | ✅ supported |
 | 3.12 | ✅ supported (current development target, CI default) |
 | 3.11 | ✅ supported |
-| 3.10 | ✅ supported (oldest currently supported) |
+| 3.10 | ✅ supported (oldest — drop planned post-upstream EOL 2026-10) |
 | 3.9  | ❌ end of life (dropped in v0.2.3) |
 
-When Python 3.14 ships upstream (~late 2025), Python 3.10 enters a deprecation window:
-- **+ 1 minor BOB release** with both 3.10 and 3.14 in CI to validate.
-- **+ 1 minor BOB release** announcing 3.10 deprecation in the changelog and `--help`.
-- **+ 1 minor BOB release** drops 3.10 from CI and bumps `python_requires` in `pyproject.toml`.
+Python 3.10 deprecation ladder (in progress as of v0.7.0):
+- **v0.7.0 — Ladder step 1** ✓ : both 3.10 and 3.14 in CI for forward-compatibility validation.
+- **Next minor BOB release — Ladder step 2** : announce 3.10 deprecation in the changelog and `--help` banner.
+- **Following minor BOB release (post-2026-10) — Ladder step 3** : drop 3.10 from CI, bump `requires-python` in `pyproject.toml`.
 
 The intent: at least 6 months of advance notice before any drop, mirrored to distros (Debian stable freezes etc.). Packagers can rely on this policy to plan rebuilds.
 

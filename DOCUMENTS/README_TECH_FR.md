@@ -594,20 +594,21 @@ Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--expl
 
 > **Engagement public stable** — ces règles régissent quand BOB abandonne le support d'un ancien Python.
 
-BOB supporte les versions Python **N et N-2**, où **N** est la stable upstream actuelle. À partir de v0.6.0 :
+BOB supporte les versions Python **N et N-2**, où **N** est la stable upstream actuelle. À partir de v0.7.0 :
 
 | Python | Statut |
 |---|---|
-| 3.13 | ✅ supporté (à la sortie — à tester) |
+| 3.14 | ✅ supporté (ajouté en v0.7.0 — ladder étape 1 pour drop 3.10) |
+| 3.13 | ✅ supporté |
 | 3.12 | ✅ supporté (cible de développement actuelle, CI par défaut) |
 | 3.11 | ✅ supporté |
-| 3.10 | ✅ supporté (le plus ancien actuellement supporté) |
+| 3.10 | ✅ supporté (le plus ancien — drop prévu post-upstream EOL 2026-10) |
 | 3.9  | ❌ end of life (abandonné en v0.2.3) |
 
-Quand Python 3.14 sortira upstream (~fin 2025), Python 3.10 entrera en fenêtre de dépréciation :
-- **+ 1 release minor BOB** avec 3.10 et 3.14 en CI pour valider.
-- **+ 1 release minor BOB** annonçant la dépréciation 3.10 dans le changelog et `--help`.
-- **+ 1 release minor BOB** retire 3.10 de la CI et bump `python_requires` dans `pyproject.toml`.
+Ladder de dépréciation Python 3.10 (en cours à partir de v0.7.0) :
+- **v0.7.0 — Ladder étape 1** ✓ : 3.10 et 3.14 en CI pour valider la compatibilité avant.
+- **Prochaine release minor BOB — Ladder étape 2** : annonce de la dépréciation 3.10 dans le changelog et bannière `--help`.
+- **Release minor BOB suivante (post-2026-10) — Ladder étape 3** : retrait 3.10 de la CI, bump `requires-python` dans `pyproject.toml`.
 
 L'intention : au moins 6 mois de préavis avant tout abandon, miroir des gels distros (Debian stable etc.). Les packagers peuvent compter sur cette politique pour planifier leurs rebuilds.
 
