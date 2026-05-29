@@ -264,6 +264,18 @@ def _run(argv=None) -> int:
             from bob.domain_scores import apply_domain_score_override as _apply_dso
             _apply_dso(engine)
 
+            # Posture escalation (v0.7.0) — lift the displayed risk level out
+            # of LOW when the firewall is structurally broken even if the
+            # weighted-average score stays high. See bob.scoring.ScoreEngine
+            # docstring "posture escalation".
+            engine.set_posture(
+                firewall_inactive=not fw_active,
+                iptables_input_accept=any(
+                    f.key == "iptables_nft.input_accept" for f in engine.findings
+                ),
+                firewall_domain_score=engine.domain_scores.get("firewall"),
+            )
+
             from bob.scoring import FindingLevel as _FL
             _active_keys = {
                 f.key for f in engine.findings

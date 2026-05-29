@@ -57,6 +57,18 @@ _RISK_THRESHOLDS: list[tuple[int, RiskLevel]] = [
     (0, RiskLevel.CRITICAL),
 ]
 
+# Ordered for "max" comparison — LOW < MEDIUM < HIGH < CRITICAL (v0.7.0).
+_RISK_ORDER: tuple[RiskLevel, ...] = (
+    RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL,
+)
+
+
+def _risk_max(a: RiskLevel, b: "RiskLevel | None") -> RiskLevel:
+    """Return the stricter of two risk levels. ``None`` is treated as no floor."""
+    if b is None:
+        return a
+    return _RISK_ORDER[max(_RISK_ORDER.index(a), _RISK_ORDER.index(b))]
+
 # Maximum achievable score
 MAX_SCORE: int = 10
 
@@ -337,6 +349,11 @@ class ScoreEngine:
         self._domain_scores: dict | None = None
         self._active_domains: frozenset | None = None
         self._capped_indices: frozenset[int] = frozenset()
+        # Posture escalation state (v0.7.0) — set via set_posture(); consumed
+        # by effective_level + posture_escalation.
+        self._posture_firewall_inactive: bool = False
+        self._posture_iptables_input_accept: bool = False
+        self._posture_firewall_domain_score: int | None = None
 
     # ------------------------------------------------------------------
     # Mutation
@@ -470,12 +487,77 @@ class ScoreEngine:
 
     @property
     def level(self) -> RiskLevel:
-        """Risk level derived from the current score."""
+        """Risk level derived from the current score (score-only, pre-posture).
+
+        Use ``effective_level`` for user-facing output — it includes posture
+        escalation when the firewall is structurally broken even with a
+        decent score.
+        """
         s = self.score
         for threshold, risk in _RISK_THRESHOLDS:
             if s >= threshold:
                 return risk
         return RiskLevel.CRITICAL  # fallback — should never be reached
+
+    # -- posture escalation (v0.7.0) ----------------------------------------
+    #
+    # Background: pre-v0.7.0, the displayed risk level was derived purely
+    # from the global score. A host with UFW OFF + INPUT ACCEPT but with
+    # otherwise clean domains would still display "LOW risk" because the
+    # global score (a weighted domain average) stays high (~8/10). The
+    # firewall *domain* score is correctly capped to 3 but the global is not
+    # — by design, see DOCUMENTS/README_TECH.md "Score architecture".
+    #
+    # The fix decouples posture from exposure: ``effective_level`` returns
+    # ``max(score-derived level, posture floor)`` so a structurally broken
+    # firewall always lifts the level out of LOW. Network exposure (LAN vs
+    # public) is still the *base* driver — posture only adds a floor.
+
+    def set_posture(
+        self,
+        *,
+        firewall_inactive: bool = False,
+        iptables_input_accept: bool = False,
+        firewall_domain_score: int | None = None,
+    ) -> None:
+        """Record posture state for ``effective_level``/``posture_escalation``.
+
+        Idempotent — calling twice with the same args is safe. Subsequent
+        calls overwrite earlier state.
+        """
+        self._posture_firewall_inactive = firewall_inactive
+        self._posture_iptables_input_accept = iptables_input_accept
+        self._posture_firewall_domain_score = firewall_domain_score
+
+    @property
+    def posture_escalation(self) -> "tuple[RiskLevel | None, str]":
+        """Return ``(floor, locale_key)`` — ``(None, "")`` when posture is fine.
+
+        Triggers (in priority order — first match wins, see v0.7.0 design
+        discussion Q1 option D):
+
+        - ``firewall_inactive``       → ``HIGH``  (``scoring.posture.firewall_inactive``)
+        - ``iptables_input_accept``   → ``HIGH``  (``scoring.posture.iptables_input_accept``)
+        - ``firewall_domain_score ≤ 3`` → ``MEDIUM`` (``scoring.posture.firewall_domain_low``)
+        """
+        if self._posture_firewall_inactive:
+            return RiskLevel.HIGH, "scoring.posture.firewall_inactive"
+        if self._posture_iptables_input_accept:
+            return RiskLevel.HIGH, "scoring.posture.iptables_input_accept"
+        if (self._posture_firewall_domain_score is not None
+                and self._posture_firewall_domain_score <= 3):
+            return RiskLevel.MEDIUM, "scoring.posture.firewall_domain_low"
+        return None, ""
+
+    @property
+    def effective_level(self) -> RiskLevel:
+        """``level`` adjusted for posture escalation.
+
+        Equals ``level`` when ``set_posture`` has not been called or when
+        every trigger is False. Otherwise returns ``max(level, posture_floor)``.
+        """
+        floor, _ = self.posture_escalation
+        return _risk_max(self.level, floor)
 
     @property
     def cap_info(self) -> ScoreCap | None:

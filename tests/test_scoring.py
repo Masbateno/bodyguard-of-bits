@@ -402,3 +402,153 @@ class TestScoringInvariants:
         engine.finalize()
         apply_domain_score_override(engine)
         assert 0 <= engine.score <= MAX_SCORE
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 — Posture escalation
+# ---------------------------------------------------------------------------
+
+class TestPostureEscalation:
+    """Posture state lifts the displayed risk level out of LOW when the
+    firewall is structurally broken even if the score stays high."""
+
+    def test_default_no_escalation(self):
+        e = ScoreEngine()
+        e.finalize()
+        assert e.posture_escalation == (None, "")
+        assert e.effective_level == e.level
+
+    def test_firewall_inactive_raises_to_high(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_inactive=True)
+        floor, key = e.posture_escalation
+        assert floor == RiskLevel.HIGH
+        assert key == "scoring.posture.firewall_inactive"
+
+    def test_iptables_input_accept_raises_to_high(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(iptables_input_accept=True)
+        floor, key = e.posture_escalation
+        assert floor == RiskLevel.HIGH
+        assert key == "scoring.posture.iptables_input_accept"
+
+    def test_firewall_domain_low_raises_to_medium(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_domain_score=3)
+        floor, key = e.posture_escalation
+        assert floor == RiskLevel.MEDIUM
+        assert key == "scoring.posture.firewall_domain_low"
+
+    def test_firewall_domain_4_does_not_trigger(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_domain_score=4)
+        assert e.posture_escalation == (None, "")
+
+    def test_firewall_inactive_takes_priority_over_low_domain(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_inactive=True, firewall_domain_score=1)
+        floor, key = e.posture_escalation
+        assert floor == RiskLevel.HIGH
+        assert key == "scoring.posture.firewall_inactive"
+
+    def test_iptables_takes_priority_over_low_domain(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(iptables_input_accept=True, firewall_domain_score=2)
+        floor, key = e.posture_escalation
+        assert floor == RiskLevel.HIGH
+        assert key == "scoring.posture.iptables_input_accept"
+
+    def test_effective_level_lifts_low_to_high_when_fw_inactive(self):
+        """The Ubuntu VM case: score=8 (LOW) but UFW OFF must display HIGH."""
+        e = ScoreEngine()
+        # No deductions → MAX_SCORE = 10 → LOW
+        e.finalize()
+        assert e.level == RiskLevel.LOW
+        e.set_posture(firewall_inactive=True)
+        assert e.effective_level == RiskLevel.HIGH
+
+    def test_effective_level_never_downgrades(self):
+        """A CRITICAL score must stay CRITICAL even when posture is MEDIUM."""
+        e = ScoreEngine()
+        for _ in range(15):
+            e.deduct("dummy", 1)
+        e.finalize()
+        assert e.level == RiskLevel.CRITICAL
+        e.set_posture(firewall_domain_score=3)  # would push to MEDIUM
+        assert e.effective_level == RiskLevel.CRITICAL
+
+    def test_set_posture_is_idempotent(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_inactive=True)
+        first = e.effective_level
+        e.set_posture(firewall_inactive=True)
+        assert e.effective_level == first
+
+    def test_set_posture_overrides_previous_state(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_inactive=True)
+        assert e.effective_level == RiskLevel.HIGH
+        # Second call with all defaults clears state
+        e.set_posture()
+        assert e.effective_level == e.level
+        assert e.posture_escalation == (None, "")
+
+    def test_low_plus_medium_escalates_to_medium(self):
+        """Score LOW (=8) + posture MEDIUM floor → effective MEDIUM."""
+        e = ScoreEngine()
+        e.deduct("two", 2)  # 10 - 2 = 8 → LOW
+        e.finalize()
+        assert e.level == RiskLevel.LOW
+        e.set_posture(firewall_domain_score=3)  # MEDIUM floor
+        assert e.effective_level == RiskLevel.MEDIUM
+
+    def test_medium_plus_high_escalates_to_high(self):
+        e = ScoreEngine()
+        for _ in range(5):
+            e.deduct("dummy", 1)  # 10-5 = 5 → MEDIUM
+        e.finalize()
+        assert e.level == RiskLevel.MEDIUM
+        e.set_posture(firewall_inactive=True)  # HIGH floor
+        assert e.effective_level == RiskLevel.HIGH
+
+    def test_high_floor_with_high_score_no_change(self):
+        """HIGH score + HIGH floor stays HIGH (no escalation to CRITICAL)."""
+        e = ScoreEngine()
+        for _ in range(7):
+            e.deduct("dummy", 1)  # 10-7=3 → HIGH
+        e.finalize()
+        assert e.level == RiskLevel.HIGH
+        e.set_posture(firewall_inactive=True)
+        assert e.effective_level == RiskLevel.HIGH
+
+
+class TestRiskMax:
+    """The _risk_max helper that drives effective_level."""
+
+    def test_none_floor_returns_base(self):
+        from bob.scoring import _risk_max
+        assert _risk_max(RiskLevel.LOW, None) == RiskLevel.LOW
+        assert _risk_max(RiskLevel.CRITICAL, None) == RiskLevel.CRITICAL
+
+    def test_picks_stricter(self):
+        from bob.scoring import _risk_max
+        assert _risk_max(RiskLevel.LOW, RiskLevel.MEDIUM) == RiskLevel.MEDIUM
+        assert _risk_max(RiskLevel.MEDIUM, RiskLevel.HIGH) == RiskLevel.HIGH
+        assert _risk_max(RiskLevel.HIGH, RiskLevel.CRITICAL) == RiskLevel.CRITICAL
+
+    def test_picks_base_when_base_is_stricter(self):
+        from bob.scoring import _risk_max
+        assert _risk_max(RiskLevel.HIGH, RiskLevel.LOW) == RiskLevel.HIGH
+        assert _risk_max(RiskLevel.CRITICAL, RiskLevel.MEDIUM) == RiskLevel.CRITICAL
+
+    def test_equal_levels(self):
+        from bob.scoring import _risk_max
+        assert _risk_max(RiskLevel.MEDIUM, RiskLevel.MEDIUM) == RiskLevel.MEDIUM

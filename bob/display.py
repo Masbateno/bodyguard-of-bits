@@ -388,10 +388,24 @@ def _summary_header_lines(engine, network_context, config, t,
     from bob.scoring import RiskLevel
 
     score = engine.score
-    level = engine.level
+    # Fallback to .level for legacy callers / test mocks that don't populate
+    # the v0.7.0 effective_level property. Real ScoreEngine instances always
+    # have it.
+    level = getattr(engine, "effective_level", engine.level)
     level_str = t(f"scoring.level.{level.value}")
     ctx_str   = t(f"scoring.context.{network_context}")
     icon = "✔" if level == RiskLevel.LOW else "✖"
+    # Posture escalation annotation (v0.7.0): when the displayed level is
+    # stricter than the score-derived level, surface the reason inline so
+    # operators understand why "score 8 / risk HIGH" can coexist.
+    _esc = getattr(engine, "posture_escalation", (None, ""))
+    try:
+        _posture_floor, _posture_key = _esc
+    except (TypeError, ValueError):
+        _posture_floor, _posture_key = None, ""
+    posture_annotation: str = ""
+    if _posture_floor is not None and level != engine.level:
+        posture_annotation = t(_posture_key)
 
     score_str = f"{score}/10"
     if prev_score is not None:
@@ -401,9 +415,13 @@ def _summary_header_lines(engine, network_context, config, t,
         elif delta < 0:
             score_str += f"  {_c.yellow}↓ {delta}{_c.reset}"
 
+    risk_value = f"{icon} {level_str}"
+    if posture_annotation:
+        risk_value = f"{risk_value}  ({posture_annotation})"
+
     lines: list[tuple[str, str]] = [
         (t("scoring.score_label"),     score_str),
-        (t("scoring.risk_label"),      f"{icon} {level_str}"),
+        (t("scoring.risk_label"),      risk_value),
         (t("scoring.network_context"), ctx_str),
         (t("scoring.profile_label"),   profile_name.capitalize()),
     ]
@@ -538,9 +556,10 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
     print(f"  ℹ {t('summary.scope_line1')}")
     print(f"  ℹ {t('summary.scope_line2')}")
 
+    _effective = getattr(engine, "effective_level", engine.level)
     report.write_summary(
         score=engine.score,
-        risk_level=t(f"scoring.level.{engine.level.value}"),
+        risk_level=t(f"scoring.level.{_effective.value}"),
         network_context=t(f"scoring.context.{network_context}"),
         public_ip=public_ip or "",
         ok_count=engine.ok_count,

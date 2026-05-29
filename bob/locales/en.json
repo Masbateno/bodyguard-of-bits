@@ -244,6 +244,11 @@
       "public": "Direct public IP",
       "ddns": "Public exposure via DDNS"
     },
+    "posture": {
+      "firewall_inactive": "raised by posture: firewall inactive",
+      "iptables_input_accept": "raised by posture: iptables INPUT ACCEPT",
+      "firewall_domain_low": "raised by posture: firewall domain low"
+    },
     "breakdown_title": "Score breakdown",
     "cap_note": "Score capped at {max} (firewall inactive)",
     "target_label": "Target",
@@ -1703,6 +1708,13 @@
         "title": "Unexpected SGID binary detected",
         "why": "SGID (Set Group ID) binaries execute with the file's group privileges. An unexpected SGID binary can provide access to privileged group resources (shadow, disk, docker, sudo) for any user who runs it — enabling group-level privilege escalation.",
         "how": "1. Identify all SGID binaries:\n   find / -perm -2000 -type f 2>/dev/null\n2. Investigate each unexpected binary:\n   dpkg -S /path/to/binary\n3. Remove the SGID bit if not required:\n   sudo chmod g-s /path/to/binary"
+      }
+    },
+    "risk": {
+      "escalated_posture": {
+        "title": "Risk level raised by posture (firewall structural gap)",
+        "why": "BOB derives the displayed risk level from the global score combined with the posture state. Pre-v0.7.0 the level was score-only — a host with UFW inactive but otherwise clean (score 8/10) displayed 'LOW risk', misleading operators about the actual exposure. v0.7.0 introduces a posture floor: when the firewall is structurally broken (inactive, INPUT ACCEPT, or firewall domain ≤ 3/10), the level is lifted out of LOW to reflect that the host is reachable on any port regardless of the cleanliness of the rest. The base score still drives the value; posture only raises the floor.",
+        "how": "1. Identify which posture trigger fired (look at the parenthetical annotation next to the risk level):\n   - 'firewall inactive' → enable UFW: sudo ufw enable\n   - 'iptables INPUT ACCEPT' → set deny default: sudo iptables -P INPUT DROP (or migrate to UFW)\n   - 'firewall domain low' → review the firewall section findings (rules, logging, default policy)\n2. Re-run the audit:\n   sudo bob\n3. The risk level returns to its score-derived value once the posture trigger no longer fires."
       }
     }
   },

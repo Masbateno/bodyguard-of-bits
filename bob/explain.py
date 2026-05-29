@@ -227,6 +227,9 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "suid_audit.unexpected_suid",
         "suid_audit.unexpected_sgid",
     ]),
+    ("Risk", [
+        "risk.escalated_posture",
+    ]),
 ]
 
 # Flat list derived from groups — used externally and for key lookup

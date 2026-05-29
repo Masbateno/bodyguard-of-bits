@@ -80,7 +80,7 @@ def build_json_data(
         "timestamp":       datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "score":           engine.score,
         "score_max":       10,
-        "risk":            engine.level.value,
+        "risk":            engine.effective_level.value,
         "network_context": network_context,
         "public_ip":       public_ip,
         "alerts":          engine.alert_count,

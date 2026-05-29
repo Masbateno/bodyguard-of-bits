@@ -546,5 +546,9 @@
   "virt.bypass_risk": {
     "ref": "Best practice — Ensure bridge interfaces do not bypass UFW FORWARD rules",
     "code": null
+  },
+  "risk.escalated_posture": {
+    "ref": "Best practice — Displayed risk level must reflect posture, not only network exposure",
+    "code": null
   }
 }

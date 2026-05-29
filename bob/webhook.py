@@ -101,7 +101,7 @@ def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "score":     engine.score,
         "max_score": 10,
-        "risk":      engine.level.value,
+        "risk":      engine.effective_level.value,
         "alerts":    engine.alert_count,
         "warnings":  engine.warn_count,
         "domain_scores": {
@@ -138,7 +138,7 @@ def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
     summary = (
         f"*BOB* v{version} — `{sys_info.hostname}`\n"
         f"Score: *{score_display}* | "
-        f"Risk: *{engine.level.value.upper()}* | "
+        f"Risk: *{engine.effective_level.value.upper()}* | "
         f"{engine.alert_count} alert(s), {engine.warn_count} warning(s)"
     )
 

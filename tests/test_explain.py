@@ -158,7 +158,8 @@ class TestExplainKeyFreezePolicy:
 
 class TestExplainKeysList:
     def test_has_one_hundred_twelve_keys(self):
-        assert len(EXPLAIN_KEYS) == 116
+        # v0.7.0: +1 (risk.escalated_posture) → 117
+        assert len(EXPLAIN_KEYS) == 117
 
     def test_all_keys_are_strings(self):
         for k in EXPLAIN_KEYS:

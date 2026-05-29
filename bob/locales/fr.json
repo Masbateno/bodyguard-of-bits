@@ -244,6 +244,11 @@
       "public": "IP publique directe",
       "ddns": "Exposition publique via DDNS"
     },
+    "posture": {
+      "firewall_inactive": "majoré par posture : pare-feu inactif",
+      "iptables_input_accept": "majoré par posture : iptables INPUT ACCEPT",
+      "firewall_domain_low": "majoré par posture : domaine pare-feu faible"
+    },
     "breakdown_title": "Détail du score",
     "cap_note": "Score plafonné à {max} (pare-feu inactif)",
     "target_label": "Objectif",
@@ -1703,6 +1708,13 @@
         "title": "Binaire SGID inattendu détecté",
         "why": "Les binaires SGID (Set Group ID) s'exécutent avec les privilèges du groupe du fichier. Un binaire SGID inattendu peut donner accès aux ressources de groupes privilégiés (shadow, disk, docker, sudo) à tout utilisateur qui l'exécute — permettant une escalade de privilèges au niveau groupe.",
         "how": "1. Identifier tous les binaires SGID :\n   find / -perm -2000 -type f 2>/dev/null\n2. Investiguer chaque binaire inattendu :\n   dpkg -S /chemin/vers/binaire\n3. Supprimer le bit SGID si inutile :\n   sudo chmod g-s /chemin/vers/binaire"
+      }
+    },
+    "risk": {
+      "escalated_posture": {
+        "title": "Niveau de risque majoré par la posture (faille structurelle pare-feu)",
+        "why": "BOB dérive le niveau de risque affiché du score global combiné à l'état de la posture. Avant v0.7.0 le niveau était dérivé du seul score — un hôte UFW inactif mais par ailleurs propre (score 8/10) affichait 'risque FAIBLE', trompant les opérateurs sur l'exposition réelle. v0.7.0 introduit un plancher posture : quand le pare-feu est structurellement cassé (inactif, INPUT ACCEPT, ou domaine pare-feu ≤ 3/10), le niveau est sorti de FAIBLE pour refléter que l'hôte est joignable sur tout port indépendamment de la propreté du reste. Le score de base continue de piloter la valeur ; la posture ne fait qu'élever le plancher.",
+        "how": "1. Identifier le déclencheur posture qui a fait remonter le niveau (cf. annotation entre parenthèses à côté du niveau de risque) :\n   - 'pare-feu inactif' → activer UFW : sudo ufw enable\n   - 'iptables INPUT ACCEPT' → politique deny par défaut : sudo iptables -P INPUT DROP (ou migrer vers UFW)\n   - 'domaine pare-feu faible' → relire les findings de la section pare-feu (règles, journalisation, politique par défaut)\n2. Relancer l'audit :\n   sudo bob\n3. Le niveau de risque revient à sa valeur dérivée du score quand le déclencheur posture ne fire plus."
       }
     }
   },

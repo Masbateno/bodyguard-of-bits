@@ -45,7 +45,7 @@ def build_csv_output(
         "host":      sys_info.hostname,
         "timestamp": ts,
         "score":     engine.score,
-        "risk":      engine.level.value,
+        "risk":      engine.effective_level.value,
         "alerts":    engine.alert_count,
         "warnings":  engine.warn_count,
     }
