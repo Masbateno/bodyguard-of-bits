@@ -273,6 +273,81 @@ class TestParseCronFile:
 
 
 # ---------------------------------------------------------------------------
+# M-1 (v0.7.0): parse_cron_file silent downgrade — explicit logging + flag
+# ---------------------------------------------------------------------------
+
+class TestParseCronFileTimeSimpleFlag:
+    """The time_simple flag signals whether hour/minute reflect the schedule."""
+
+    def _write(self, tmp_path, schedule):
+        p = tmp_path / "bob-test"
+        p.write_text(
+            "# name: test\n"
+            "SHELL=/bin/bash\n\n"
+            f"{schedule}  root  /usr/local/bin/bob-test\n"
+        )
+        return p
+
+    def test_plain_integer_schedule_is_simple(self, tmp_path):
+        p = self._write(tmp_path, "0 3 * * *")
+        entry = parse_cron_file(p)
+        assert entry is not None
+        assert entry.time_simple is True
+        assert entry.hour == 3
+        assert entry.minute == 0
+
+    def test_step_minute_marks_not_simple(self, tmp_path):
+        p = self._write(tmp_path, "*/15 * * * *")
+        entry = parse_cron_file(p)
+        assert entry is not None
+        assert entry.time_simple is False
+        assert entry.hour == 0
+        assert entry.minute == 0
+        # schedule_expr remains the source of truth
+        assert entry.schedule_expr == "*/15 * * * *"
+
+    def test_step_hour_marks_not_simple(self, tmp_path):
+        p = self._write(tmp_path, "0 */6 * * *")
+        entry = parse_cron_file(p)
+        assert entry is not None
+        assert entry.time_simple is False
+        assert entry.schedule_expr == "0 */6 * * *"
+
+    def test_range_in_hour_marks_not_simple(self, tmp_path):
+        p = self._write(tmp_path, "0 8-18 * * *")
+        entry = parse_cron_file(p)
+        assert entry is not None
+        assert entry.time_simple is False
+
+    def test_warning_logged_when_cron_line_missing(self, tmp_path, caplog):
+        p = tmp_path / "bob-broken"
+        p.write_text("# name: broken\n# email: \nSHELL=/bin/bash\n")
+        with caplog.at_level("WARNING", logger="bob.cron._parse"):
+            assert parse_cron_file(p) is None
+        assert any(
+            "no recognisable BOB cron line" in r.message
+            for r in caplog.records
+        )
+
+    def test_info_logged_when_time_not_simple(self, tmp_path, caplog):
+        p = self._write(tmp_path, "*/15 * * * *")
+        with caplog.at_level("INFO", logger="bob.cron._parse"):
+            parse_cron_file(p)
+        assert any(
+            "non-integer time fields" in r.message
+            for r in caplog.records
+        )
+
+    def test_existing_constructors_default_to_simple(self):
+        """Backward-compat: CronEntry built without time_simple gets True."""
+        e = CronEntry(
+            name="x", schedule_expr="0 3 * * *", hour=3, minute=0,
+            script_path=Path("/tmp/x"), cron_path=Path("/tmp/y"),
+        )
+        assert e.time_simple is True
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

@@ -8,9 +8,12 @@ and ``_manage`` (CRUD) all build on.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 CRON_DIR = Path("/etc/cron.d")
 SCRIPT_DIR = Path("/usr/local/bin")
@@ -34,6 +37,10 @@ class CronEntry:
     cron_path: Path
     email: str = ""
     legacy: bool = False  # True if this is a pre-v0.13 cron
+    # M-1 (v0.7.0): False when the minute/hour fields aren't plain integers
+    # (e.g. ``*/15``, ``0-23/3``). In that case hour=0, minute=0 are placeholders
+    # for UI defaults and ``schedule_expr`` is the only source of truth.
+    time_simple: bool = True
 
 def list_installed_crons() -> list[CronEntry]:
     """Return all installed BOB cron entries."""
@@ -85,6 +92,15 @@ def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
         re.MULTILINE,
     )
     if not cron_match:
+        # M-1 (v0.7.0): pre-fix, returning None here was silent — a malformed
+        # bob-* cron file (non-root user, missing column, partial overwrite)
+        # was simply omitted from list_installed_crons(). Log a warning so
+        # operators can see why a BOB cron has "disappeared" from the wizard.
+        _log.warning(
+            "cron file %s has no recognisable BOB cron line "
+            "(expected 5 schedule fields + 'root' + command); skipping",
+            path,
+        )
         return None
 
     minute_s, hour_s, dom, month, dow, script = cron_match.groups()
@@ -94,8 +110,20 @@ def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
     try:
         hour = int(hour_s)
         minute = int(minute_s)
+        time_simple = True
     except ValueError:
+        # M-1 (v0.7.0): pre-fix, hour=0/minute=0 fallback was silent — the
+        # reschedule wizard then showed "00:00" as the current time even when
+        # the cron expression was e.g. "*/15 * * * *", misleading the user.
+        # Now: flag the entry as non-simple, log explicitly, and let the UI
+        # adapt (see bob.cron._manage / bob.tui.cron).
+        _log.info(
+            "cron file %s uses non-integer time fields (minute=%r hour=%r); "
+            "schedule_expr=%r is the source of truth, hour/minute are placeholders",
+            path, minute_s, hour_s, schedule_expr,
+        )
         hour, minute = 0, 0
+        time_simple = False
 
     return CronEntry(
         name=name,
@@ -106,6 +134,7 @@ def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
         cron_path=path,
         email=email,
         legacy=legacy,
+        time_simple=time_simple,
     )
 
 def cron_to_human(expr: str, lang: str = "en") -> str:

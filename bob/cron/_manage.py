@@ -218,9 +218,16 @@ def edit_cron_schedule(entry, config, t) -> None:
 
     if choice != 4:
         print()
+        # M-1 (v0.7.0): when the existing schedule isn't a plain HH:MM (e.g.
+        # "*/15 * * * *"), don't display a misleading "00:00" default. Fall
+        # back to the conventional 03:00 and let the user override.
+        if entry.time_simple:
+            default_time = f"{entry.hour:02d}:{entry.minute:02d}"
+        else:
+            default_time = "03:00"
         raw_time = prompt_wizard(
             f"  {t('install_cron.prompt_time')} : ",
-            default=f"{entry.hour:02d}:{entry.minute:02d}",
+            default=default_time,
         )
         if raw_time is None:
             print(f"  {t('manage_cron.cancelled')}")

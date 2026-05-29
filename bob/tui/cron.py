@@ -232,8 +232,11 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
     week_days = None
     month_days = None
     custom_expr = None
-    hour = entry.hour if entry else 3
-    minute = entry.minute if entry else 0
+    # M-1 (v0.7.0): when the parsed schedule isn't a plain HH:MM (time_simple
+    # False), fall back to the conventional defaults rather than the
+    # misleading placeholder (0, 0) carried in the entry.
+    hour = entry.hour if entry and entry.time_simple else 3
+    minute = entry.minute if entry and entry.time_simple else 0
 
     if choice == _Schedule.WEEKDAYS:
         stdscr.erase()
