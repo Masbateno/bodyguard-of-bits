@@ -57,7 +57,7 @@ LAYER (top→bottom = imports flow down)
     bob/json_output.py + html_output.py + csv_output.py + markdown_output.py + report_markdown.py
         ← export formatters
     bob/formatter.py + bob/i18n.py + bob/locales/{en,fr}.json
-        ← locale-independent reconstruction + i18n (1401 keys per language)
+        ← locale-independent reconstruction + i18n (1400 keys per language)
 
 DATA (read-only at runtime, shipped in the package)
 
@@ -114,7 +114,7 @@ bodyguard-of-bits/
 │   ├── breakdown.py           ← --breakdown score computation transparency
 │   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
-│   ├── i18n.py                ← t(key, **vars), 1401 keys per locale
+│   ├── i18n.py                ← t(key, **vars), 1400 keys per locale
 │   ├── locales/
 │   │   ├── en.json            ← English translation keys
 │   │   └── fr.json            ← French translation keys (strict parity)
@@ -139,7 +139,7 @@ bodyguard-of-bits/
 │   ├── plugin_checks.py       ← user plugin loader (size-limited, ANSI-sanitized)
 │   ├── registry.py            ← ServiceRegistry.load()
 │   ├── report.py              ← AuditReport, NullReport, file output
-│   ├── report_markdown.py     ← MarkdownReport, HTML email (778 L)
+│   ├── report_markdown.py     ← MarkdownReport, HTML email (777 L)
 │   ├── json_output.py         ← --json / --json-full builder
 │   ├── csv_output.py          ← --format csv
 │   ├── html_output.py         ← --html standalone export
@@ -181,7 +181,7 @@ bodyguard-of-bits/
 | `breakdown.py` | — | `--breakdown` / `-B` score computation transparency display |
 | `exposure.py` | — | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | — | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
-| `i18n.py` | — | `t(key, **vars)`, locale auto-detect (POSIX), 1401 keys EN/FR |
+| `i18n.py` | — | `t(key, **vars)`, locale auto-detect (POSIX), 1400 keys EN/FR |
 | `compare.py` | — | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()` |
 | `correlation.py` | — | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | — | Recurring finding tracker: consecutive-audit counters |
@@ -213,7 +213,7 @@ bodyguard-of-bits/
 
 | Check | LoC | Domain (scoring) | Notes |
 |---|---:|---|---|
-| `firewall.py` | 501 | firewall | UFW state, `check_rules()` for duplicates / open-any |
+| `firewall.py` | 463 | firewall | UFW state, `check_rules()` for duplicates / open-any |
 | `firewall_stack.py` | — | firewall | Docker iptables bypass, nftables parallel rules |
 | `iptables_nftables.py` | — | firewall | Fallback audit when UFW inactive (INPUT/FORWARD policy) |
 | `ipv6.py` | — | firewall | IPv6 listener vs UFW v6 rule consistency |
@@ -628,8 +628,8 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 
 - `bob/tui/cron.py` (946 LoC) is now the largest single-file curses unit. Soft-ceiling candidate but works — touching curses code is high-risk-for-low-reward, and the v0.5.7 targeted audit already swept it.
 - `bob/manage_logs.py` (1040 LoC) — UI heavy, curses, but tests/source ratio jumped to 1.07× during v0.5.x. Accept as-is.
-- ~~`bob/checks/ssh.py` (1392 LoC)~~ **Done in v0.6.0** — split into the `bob/checks/ssh/` package (5 files, largest 529 L). Contract preserved via `__init__.py` re-exports.
-- ~~`bob/cron.py` (1201 LoC)~~ **Done in v0.6.0** — split into the `bob/cron/` package (5 files, largest 445 L). Test file grew from 382 → 848 L over the cycle.
+- ~~`bob/checks/ssh.py` (1296 LoC)~~ **Done in v0.6.0** — split into the `bob/checks/ssh/` package (5 files, largest 529 L). Contract preserved via `__init__.py` re-exports.
+- ~~`bob/cron.py` (1204 LoC)~~ **Done in v0.6.0** — split into the `bob/cron/` package (5 files, largest 445 L). Test file grew from 382 → 848 L over the cycle.
 - `bob/runner.py` `_sec()` closure pattern works but adds an extra layer of indirection. Was a refactor in v0.3.5 (-295L from previous form). Could potentially flatten further, but not urgent.
 
 ---
@@ -653,7 +653,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 ## Quick references
 
 - **Add a service**: edit `bob/data/services.json` (32 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
-- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 1401 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` itself does not whitelist languages — `--lang=` accepts any value and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
+- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 1400 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` itself does not whitelist languages — `--lang=` accepts any value and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
 - **Add a check** (full checklist):
   1. Create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)` (follow the pattern of an existing simple check, e.g. `ntp.py`).
   2. Wire in `bob/runner.py`: add the import at the top, add the section name `"foo"` to `_ALL_SECTIONS` tuple (line ~74), and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
