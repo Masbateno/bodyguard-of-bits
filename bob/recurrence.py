@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 
+from bob._atomic import atomic_write
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 _log = logging.getLogger(__name__)
@@ -50,22 +50,22 @@ def save_recurrence(data: dict[str, int], path: Path | None = None) -> None:
     Silently swallows OS errors — recurrence tracking is best-effort.
     """
     dest = path or _RECURRENCE_PATH
-    tmp = dest.with_name(dest.name + ".tmp")
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
         chown_to_sudo_user(dest.parent)
         # I-1 (v0.5.5): force 0o600 explicitly — relying on umask leaves
         # the file world-readable on default Debian/Ubuntu umasks (0644).
-        # Aligns with bob.config / bob.compare / bob.report which all
-        # use os.open(..., 0o600) for private state.
-        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False, indent=2)
-            fh.write("\n")
-        tmp.replace(dest)
+        # v0.6.1: migrated to bob._atomic.atomic_write (single source of
+        # truth for crash-safe persistence across the codebase).
+        atomic_write(
+            dest,
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+            mode=0o600,
+        )
         chown_to_sudo_user(dest)
     except OSError:
-        tmp.unlink(missing_ok=True)
+        # The atomic write may have left a .tmp file — best-effort cleanup.
+        dest.with_name(dest.name + ".tmp").unlink(missing_ok=True)
 
 
 def update_recurrence(

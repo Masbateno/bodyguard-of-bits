@@ -146,7 +146,9 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
 
 def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t) -> bool:
     """Apply a single ``_BadDirective`` rule. Returns True if a finding was emitted."""
-    value = cfg.get(rule.name, rule.default).lower()
+    # M-2 (v0.6.1): single lowercase. ``is_bad`` re-lowercases internally —
+    # passing the raw value is enough.
+    value = cfg.get(rule.name, rule.default)
     if not rule.is_bad(value):
         return False
     kwargs = {

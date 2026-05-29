@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.6.1](#v061) | 26-05-2026 | Première release hardening sur la branche v0.6.x. Sub-agent d'audit profond a remonté 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. **Consolidation contrat atomic-write** : extraction `bob/_atomic.py::atomic_write(path, content, *, mode=)` source unique de vérité ; migration 5 sites (`bob/config.py` ×2, `bob/compare.py`, `bob/history.py`, `bob/recurrence.py`) + fix 4 sites non-atomiques (`bob/cron/_install.py`, `bob/tui/cron.py`, `bob/ignore.py`, `bob/history.py` first-write). v0.5.7 #I-3 avait fermé le path mutation cron mais raté le path création. **Contrat EOF complet** : nouveau `bob/_tty.safe_input(prompt)` + `prompt_wizard()` catche maintenant `EOFError` ; 11 sites `input()` brut migrés (`bob/cron/_install.py` ×5, `bob/cron/_manage.py` ×5, `bob/fixes.py` ×1). Ctrl-D ne crash plus aucun wizard plain-text. **I-3** `_validate_cron_field` rejette les step values excédant le range du field (`*/200` pour minute 0-59 était accepté → cron interprétait "toutes les 200 minutes" = ne se déclenche jamais). **I-4** `shlex.quote()` appliqué sur 8 sites `cmd=f"..."` dans `bob/checks/ssh/_subchecks.py` (4) + `bob/checks/file_perms.py` (3) + `bob/checks/firmware.py` (1) où les paths de `pwd.getpwnam(SUDO_USER).pw_dir` ou scans filesystem pouvaient contenir des espaces et silently mis-target `--fix --apply`. **I-5** `bob/history.py::save_score` first-write crée `history.jsonl` avec mode `0o600` explicite via `os.open(O_WRONLY \| O_APPEND \| O_CREAT)` au lieu d'hériter du umask par défaut (typiquement `0o644` → world-readable des timestamps de score). **Minors shippés** : M-2 redundant double-`.lower()` dans `_apply_bad_directive` ; M-3 `MaxAuthTries=-1` fallback default 6 (était accepté) ; M-6 `bob/__main__.py` fatal-error handler hint `BOB_DEBUG=1` ; M-8 `--watch=N` error wording aligné. +17 tests régression. 4583 → 4600. Contrat JSON, EXPLAIN_KEYS, keybindings, fallback no-curses, exit codes — tous préservés. |
 | [v0.6.0](#v060) | 25-05-2026 | **Bump majeur** — ouvre la branche v0.6.x. Deux splits architecturaux + un sunset, tous contract-preserving via re-exports `__init__.py`. **#13 split `bob/checks/ssh.py` (monolithe 1296 LoC) → package `bob/checks/ssh/`** avec 4 modules : `_directives` (165L : table `_BadDirective` + `_BAD_DIRECTIVES` + `_apply_bad_directive` + sets weak crypto), `_snapshot` (198L : 5 dataclasses + `SSHSnapshot` + `SSHSnapshot.from_system`), `_parsers` (446L : parsers purs sshd_config / authorized_keys / known_hosts / client config + helpers key-type / RSA-bits + `_collect_host_keys` + `_detect_ssh_install_cmd` + `_parse_time_seconds`), `_subchecks` (529L : entry point `check_ssh` + tous les helpers `_check_*` par zone). **#14 split `bob/cron.py` (monolithe 1204 LoC) → package `bob/cron/`** avec 4 modules : `_parse` (330L : `CronEntry` + `parse_cron_file` + `list_installed_crons` + `cron_to_human` + `build_schedule_expr` + validators + day helpers + détection MTA + constantes), `_io` (164L : `_atomic_write` + `build_script_content` + `apply_cron_schedule` + `apply_cron_email`), `_install` (319L : `prompt_emails` / `prompt_email` + `_run_install_cron_plain` + `run_install_cron` + exception `_CronQuit`), `_manage` (445L : `_manage_email_store` + `edit_cron_email` + `edit_cron_schedule` + `_run_manage_cron_plain` + `run_manage_cron`). Les deux packages préservent la full API publique v0.5.x via re-exports `__init__.py` — `from bob.checks.ssh import check_ssh, SSHSnapshot, …` et `from bob.cron import CronEntry, run_install_cron, _EMAIL_RE, datetime, …` continuent de marcher inchangés. **Sunset : env var legacy `UFW_AUDIT_SHARE` retirée** (annoncée "REMOVED in v0.6.0" dans le warning deprecation v0.5.4 — honorée). Seul `BOB_SHARE` est maintenant accepté ; les installers settant encore le legacy alias verront aucun effet. Deux tests AST-scanning (`tests/test_template_vars_migration.py`, `tests/test_domain_scores_mapping_complete.py`) mis à jour pour recurser dans les packages de check (shift d'une ligne `glob` → `rglob`). Un test régression (`TestApplyCronScheduleAtomic`) mis à jour pour patcher le nouveau site `bob.cron._io._atomic_write` au lieu du re-export package-level. 4583 tests inchangés (zéro delta net — splits + sunset sont wire-équivalents). LoC : ssh.py 1296L → 4 modules (max 529L), cron.py 1204L → 4 modules (max 445L). Le plus gros module de check est maintenant `ssh/_subchecks.py` à 529L, bien sous le soft ceiling 1000-LoC du projet. Contrat JSON (`schema_version="1"`), 116 EXPLAIN_KEYS, keybindings, fallback no-curses, exit codes — tous préservés. **Ferme le backlog refactor architectural déféré depuis v0.5.x.** |
 | [v0.5.8](#v058) | 25-05-2026 | Cleanup des 5 mineurs cosmétiques explicitement déférés par v0.5.7. **M-2** `manage_logs.py` cursor shift après delete ne compte maintenant que les deletions ≤ cursor (pré-fix : `cursor -= deleted` shiftait par le total même quand la plupart des items supprimés étaient APRÈS le cursor — déplacement visible sur multi-sélection mélangeant items avant+après position active). **M-5** constantes du wizard schedule promues de `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` tuple unpack local à un `_Schedule(IntEnum)` module-level avec noms explicites `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` — 3 call sites mis à jour, IntEnum préserve la sémantique `choice == _Schedule.WEEKDAYS` donc wire-équivalent. **M-6** `_extract_summary_view` sentinelle `summary_start: int \| None = None` remplace le check truthy `summary_start = 0` — gère le edge case (unreachable en pratique mais sémantiquement faux) où le séparateur SEP62 est à la ligne 0. **M-7** nouveau helper `_is_finding_continuation(line)` stoppe le grouping 4-space-indent à toute frontière qui appartient évidemment à un autre finding (markers `[ALERT]`/`[WARN]`/`[OK]`/`[INFO]`) ou à un délimiteur de section (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — défense contre le grouping over-greedy de contenu indenté ultérieur. **M-8** `from datetime import datetime` remonté au niveau module dans `bob/cron.py` et `bob/tui/cron.py` ; 3 imports locaux retirés (`_run_install_cron_plain`, `build_script_content`, install cron curses path). +12 tests régression à travers `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) et `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). 4571 → 4583 tests. Format wire JSON inchangé, EXPLAIN_KEYS inchangées, keybindings inchangés, aucun retrait d'API publique. **Ferme la campagne deep-audit v0.5.x — branche intégralement auditée (25 modules deep-audit + ~25 spot-checkés, 0 finding critique en suspens).** Prochaine version mineure (v0.6.0) réservée pour #13 (split ssh.py) et #14 (split cron.py) — les deux refactors architecturaux délibérément déférés. |
 | [v0.5.7](#v057) | 24-05-2026 | Passe de hardening ciblée sur le TUI curses (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — le bucket explicitement déféré par les audits v0.5.5 / v0.5.6. 11 findings d'un sub-agent focalisé : 0 critique, 3 important (I-1 `_curses_readline` acceptait les codes keypad curses `KEY_*` via `chr(ch_i)` — flèches et touches de fonction insèrent glyphes Grecs/Unicode comme `Ι` / `Ω` dans les buffers d'entrée nom/email/jours/heure/expression-custom ; aucun impact sécurité grâce à la validation downstream (`_EMAIL_RE`, `_validate_custom_cron`, filtrage digit-only) mais UX visiblement corrompue. Nouveau helper `_is_printable_input_char(ch_i)` borne aux Latin-1 imprimables · I-2 trois sites `input()` dans `prompt_path` + confirmation move-logs + confirmation delete-all ne catchaient pas `EOFError` — Ctrl-D dumpait une traceback Python à l'annulation. S'aligne maintenant sur la convention `_rl()` (EOF = entrée vide) · I-3 `apply_cron_schedule` utilisait `os.open(O_WRONLY \| O_CREAT \| O_TRUNC) + fdopen.write` brut au lieu du helper `_atomic_write` du projet. Coupure de courant ou `SIGKILL` entre `open(O_TRUNC)` et `write` laisserait le fichier cron vide → cron drop silencieusement l'entrée, aucune notification. Asymétrique avec `apply_cron_email` qui utilisait déjà `_atomic_write`. Mode `0o640` enforced), 3 mineurs (M-1 status `manage_logs.deleted_one` affichait `pending_delete[0].name` même quand l'index 0 échouait au unlink et qu'un autre index réussissait — traque maintenant le premier nom effectivement supprimé · M-3 dead-code `if ch_i == ord("1"): chosen = 0 elif chosen = 1` dans `_curses_edit_sub` simplifié, garde elif réécrite avec parenthèses explicites · M-4 `from bob.cron import apply_cron_schedule, apply_cron_email` dupliqué consolidé dans le bloc d'import principal). +11 tests régression à travers `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) et `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). 4560 → 4571 tests. Format wire JSON inchangé, EXPLAIN_KEYS inchangées, aucun ajout d'API publique. Deltas UX visibles : sortie Ctrl-D propre (sans traceback), touches fléchées/fonction n'insèrent plus de garbage dans les prompts TUI. Déférés à v0.5.8 (5 findings cosmétiques) : M-2 cursor-shift suppose suppressions avant cursor · M-5 constantes du wizard schedule scoped-locales → module-level / IntEnum · M-6 falsy check `summary_start` rate l'index 0 (unreachable) · M-7 regroupement over-greedy des lignes de continuation · M-8 `from datetime import` local remonté au top. Après v0.5.7, branche v0.5.x auditée intégralement (25 modules deep-audit + ~25 spot-check). |
@@ -37,6 +38,57 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.6.1] — 26-05-2026
+
+**Première release hardening sur la branche v0.6.x.** Audit profond sub-agent a produit 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. L'audit a révélé deux **contrats demi-appliqués** depuis v0.5.x — atomic-write (paths de mutation fixés en v0.5.7 #I-3 mais pas les paths de création) et gestion EOF (`manage_logs.py` fixé en v0.5.7 #I-2 mais pas les wizards cron ni `fixes.py`) — plus une **branche validator non-testée** dans le parser de step cron. Tous adressés avec fixes localisés.
+
+Voir `CHANGELOG.md` pour le détail par finding. Cette release introduit aussi `bob/_atomic.py` (helper consolidé) et `bob/_tty.safe_input()` (nouveau wrapper).
+
+### Important (6)
+
+- **I-1 + consolidation atomic-write** : extraction `bob/_atomic.py::atomic_write` source unique. Migration 5 sites existants + fix 4 sites non-atomiques. `bob/cron/_io.py::_atomic_write` gardé en alias pour backwards-compat tests.
+- **I-2 EOF contract** : `safe_input()` + `prompt_wizard()` EOFError-safe. 11 sites migrés.
+- **I-3** : `_validate_cron_field` borne step ≤ (hi - lo + 1).
+- **I-4** : `shlex.quote()` sur 8 paths user-contrôlés.
+- **I-5** : `history.jsonl` mode `0o600` au first-write.
+- **I-6** : `ignore.py` atomic via `atomic_write`.
+
+### Minor (4 shippés + 4 déférés)
+
+Shippés : M-2 (double `.lower()` redondant), M-3 (`MaxAuthTries<=0` rejected), M-6 (`BOB_DEBUG=1` traceback hint), M-8 (`--watch=N` wording).
+
+Déférés : M-1 (parse_cron_file silent downgrade — low-impact), M-4 (path constants au import-time — DOCUMENTÉ intentionnel), M-5 (fd leak window — addressé transitivement par I-1), M-7 (`--check/--skip` warning — judgment call UX).
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4600 passed in ~7s
+```
+
+**4583 → 4600 (+17).** Nouveaux : `TestAtomicWritePublicAPI` (4), `TestCronLegacyAliasStillWorks` (1), `TestHistoryFileMode` (2), `TestIgnoreAtomic` (2), `TestSafeInput` (3), `TestStepBoundedToFieldRange` (5).
+
+### Compatibilité
+
+- **Contrat JSON** : `schema_version="1"`, 116 EXPLAIN_KEYS — inchangés.
+- **Score** : inchangé.
+- **Sortie wire** : inchangée. Seul `--watch=N` error wording change (user-visible string).
+- **API externe** : `bob._atomic.atomic_write` + `bob._tty.safe_input` nouveaux (semi-publics via `_` prefix module name). Additifs.
+- **Backwards-compat** : `bob.cron._io._atomic_write` reste alias. Tests patchant ce nom continuent de marcher.
+
+### Suivi campagne audit
+
+| Release | Findings | Tests |
+|---|---|---|
+| v0.5.5 | 19 (4C + 4I + 11M) | +7 |
+| v0.5.6 | 10 (0C + 2I + 8M) | +15 |
+| v0.5.7 + v0.5.8 | 11 (0C + 3I + 8M) | +23 |
+| **v0.6.1** | **14 (0C + 6I + 8M)** | **+17** |
+
+**Cumul** : 30 modules deep-audited, 0 finding critique en suspens. Deux contrats (atomic-write, gestion EOF) maintenant uniformément enforced à travers le codebase.
 
 ---
 

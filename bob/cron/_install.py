@@ -11,12 +11,12 @@ to escape any sub-screen back to the dispatcher, and is caught here in
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime
 from pathlib import Path
 
-from bob._tty import prompt_wizard
+from bob._atomic import atomic_write
+from bob._tty import prompt_wizard, safe_input
 from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
 
 from ._io import build_script_content
@@ -66,7 +66,7 @@ def prompt_emails(t) -> list[str] | None:
         print(f"    q. {t('email_prompt.cancel')}")
         print()
 
-        answer = input("  > ").strip()
+        answer = safe_input("  > ").strip()
 
         if answer.lower() in ("q", "quit"):
             return None   # cancelled — caller must not modify anything
@@ -80,7 +80,7 @@ def prompt_emails(t) -> list[str] | None:
             if 1 <= idx <= len(saved):
                 resolved = saved[idx - 1]
             elif idx == len(saved) + 1:
-                resolved = input(f"  {t('email_prompt.enter_new')} : ").strip()
+                resolved = safe_input(f"  {t('email_prompt.enter_new')} : ").strip()
         else:
             resolved = answer
 
@@ -94,11 +94,11 @@ def prompt_emails(t) -> list[str] | None:
         else:
             selected.append(resolved)
             if resolved not in saved:
-                save_ans = input(f"  {t('email_prompt.save', email=resolved)} ").strip().lower()
+                save_ans = safe_input(f"  {t('email_prompt.save', email=resolved)} ").strip().lower()
                 if save_ans == "y":
                     store.add(resolved)
 
-        add_ans = input(f"  {t('email_prompt.add_another')} ").strip().lower()
+        add_ans = safe_input(f"  {t('email_prompt.add_another')} ").strip().lower()
         if add_ans not in ("y", "o"):
             break
 
@@ -250,17 +250,19 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     script_path = SCRIPT_DIR / f"bob-{slug}"
 
     if cron_path.exists():
-        ans = input(f"\n  {t('install_cron.overwrite', path=str(cron_path))} ").strip().lower()
+        ans = safe_input(f"\n  {t('install_cron.overwrite', path=str(cron_path))} ").strip().lower()
         if ans != "y":
             return 0
 
     now_str      = datetime.now().strftime("%Y-%m-%d")
     script_content = build_script_content(notify_email, log_dir)
 
+    # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed the
+    # mutation path (apply_cron_schedule) but the install paths kept raw
+    # os.open(O_TRUNC). Power-loss between truncate and write would leave
+    # the script/cron file empty, breaking the installed cron silently.
     try:
-        fd = os.open(str(script_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o755)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(script_content)
+        atomic_write(script_path, script_content, mode=0o755)
     except OSError as exc:
         print(f"  ✖ Cannot write {script_path}: {exc}")
         return 1
@@ -277,9 +279,7 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     )
 
     try:
-        fd = os.open(str(cron_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(cron_content)
+        atomic_write(cron_path, cron_content, mode=0o640)
     except OSError as exc:
         print(f"  ✖ Cannot write {cron_path}: {exc}")
         return 1

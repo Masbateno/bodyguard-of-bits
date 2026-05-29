@@ -22,6 +22,7 @@ Split into:
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -183,7 +184,7 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
                 reason=_t("firmware.microcode_missing_reason", vendor=snapshot.cpu_vendor.upper()),
                 points=1,
                 detail=_t("firmware.microcode_missing_detail"),
-                cmd=f"sudo apt install {pkg}",
+                cmd=f"sudo apt install {shlex.quote(pkg)}",
             )
 
     return result

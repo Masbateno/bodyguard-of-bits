@@ -12,6 +12,7 @@ import shlex
 import subprocess
 
 from bob import output as _output
+from bob._tty import safe_input
 
 
 def _has_shell_ops(cmd: str) -> bool:
@@ -100,7 +101,7 @@ def run_fixes(engine, config, t) -> None:
         if config.yes:
             answer = "y"
         else:
-            answer = input(f"  {t('fixes.apply_prompt')} ").strip().lower()
+            answer = safe_input(f"  {t('fixes.apply_prompt')} ").strip().lower()
 
         if answer == "y":
             if _has_shell_ops(cmd):

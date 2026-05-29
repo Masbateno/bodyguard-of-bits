@@ -4,10 +4,28 @@
   curses-adjacent menus; falls back to :func:`input` in non-TTY contexts).
 - :func:`prompt_wizard` — uniform ``input()`` wrapper for plain-text wizards:
   strips, handles ``q``/``quit`` cancel, and applies a default on bare Enter.
+- :func:`safe_input` — thin :func:`input` wrapper that swallows ``EOFError``
+  (Ctrl+D) and returns ``""`` instead of crashing. v0.6.1 #I-2 contract.
 """
 from __future__ import annotations
 
 import sys
+
+
+def safe_input(prompt: str = "") -> str:
+    """I-2 (v0.6.1): :func:`input` wrapper that treats Ctrl+D (EOF) as
+    empty input rather than letting :exc:`EOFError` propagate as a
+    traceback. Use at any site where the next code path can sensibly
+    handle an empty answer (most y/N confirmations, email entry that
+    will fail the regex, menu prompts that recurse).
+
+    Sites that need EOF → None semantics (cancel, not empty) should use
+    :func:`prompt_wizard` (which returns ``None`` on EOF) instead.
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        return ""
 
 
 def prompt_wizard(label: str, *, default: str = "") -> "str | None":
@@ -18,10 +36,16 @@ def prompt_wizard(label: str, *, default: str = "") -> "str | None":
     (``"  Foo [{default}]: "``) for single-line prompts.
 
     Returns:
-        ``None`` — user typed ``q`` or ``quit`` (case-insensitive).
+        ``None`` — user typed ``q`` / ``quit`` (case-insensitive) OR pressed
+                   Ctrl+D (EOFError). I-2 (v0.6.1): EOF is treated as cancel,
+                   not crash. Aligns with :func:`read_line` and the v0.5.7
+                   #I-2 contract applied to manage_logs.py.
         ``str``  — trimmed input, or ``default`` when Enter was pressed bare.
     """
-    raw = input(label).strip()
+    try:
+        raw = input(label).strip()
+    except EOFError:
+        return None
     if raw.lower() in ("q", "quit"):
         return None
     return raw or default

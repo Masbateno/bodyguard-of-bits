@@ -15,6 +15,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from bob._atomic import atomic_write
 from bob.checks._run import TranslationFunc
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
@@ -55,7 +56,14 @@ def save_score(score: int, level: str) -> None:
             "level": level,
         })
         existed = _HISTORY_FILE.exists()
-        with _HISTORY_FILE.open("a", encoding="utf-8") as f:
+        # I-5 (v0.6.1): explicit mode=0o600 on creation. Python's default
+        # `Path.open("a")` uses the process umask (typically 0o644 → world-
+        # readable history file). Score timestamps are privacy-sensitive on
+        # shared systems. os.open with explicit mode is applied ONLY at
+        # creation; existing-file mode is preserved.
+        flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+        fd = os.open(str(_HISTORY_FILE), flags, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(entry + "\n")
         if not existed:
             chown_to_sudo_user(_HISTORY_FILE)
@@ -70,11 +78,7 @@ def _rotate_if_needed() -> None:
         lines = [l for l in _HISTORY_FILE.read_text(encoding="utf-8").splitlines() if l.strip()]
         if len(lines) > _MAX_HISTORY_ENTRIES:
             content = "\n".join(lines[-_MAX_HISTORY_ENTRIES:]) + "\n"
-            tmp = _HISTORY_FILE.with_suffix(".jsonl.tmp")
-            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(content)
-            os.replace(str(tmp), str(_HISTORY_FILE))
+            atomic_write(_HISTORY_FILE, content, mode=0o600)
             chown_to_sudo_user(_HISTORY_FILE)
     except OSError as exc:
         _log.debug("Failed to rotate history file: %s", exc)

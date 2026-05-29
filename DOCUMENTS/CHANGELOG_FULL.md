@@ -6,6 +6,142 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.6.1] — 2026-05-26
+
+**First hardening release on the v0.6.x branch.** Deep audit sub-agent pass produced 14 findings (0 critical + 6 important + 8 minor); 6 important + 4 minor shipped. The audit revealed two **half-applied contracts** from v0.5.x and one **untested validator branch**. See `CHANGELOG.md` for per-finding detail. Notes specific to this FULL doc:
+
+### Why the splits + sunset of v0.6.0 didn't surface these earlier
+
+The v0.6.0 ship was structural (splits + UFW_AUDIT_SHARE removal) — no new logic changed, no behavior change expected. The pre-v0.6.0 v0.5.x deep-audit campaign (v0.5.5 through v0.5.8) focused on a different module set: `bob/checks/logs.py`, `bob/manage_logs.py`, `bob/tui/cron.py`, plus 22 core modules. The cron install paths (`bob/cron/_install.py`, `bob/tui/cron.py` cron-install branch) and `bob/ignore.py` were among the ~25 modules "spot-checked" rather than deeply audited — so the half-applied atomic-write contract (mutation fixed in v0.5.7 #I-3, creation not touched) and `ignore.py`'s non-atomic write survived.
+
+The v0.6.1 audit explicitly targeted post-v0.5.x drift + the modules that v0.5.x had spot-checked. That's where the 6 important findings came from.
+
+### Atomic-write contract consolidation (high-leverage cleanup)
+
+Before v0.6.1, 5 modules implemented their own version of "write to tmp + os.replace" with subtle variations:
+- `bob/config.py:121, 363` — `UserConfig._save` + `EmailStore._save`
+- `bob/compare.py:185` — `save_baseline`
+- `bob/history.py:74` — `_rotate_if_needed` only
+- `bob/recurrence.py:61` — `save_recurrence`
+- `bob/cron/_io.py:28` — `_atomic_write` (the canonical impl)
+
+Three modules did NOT use atomic writes despite the SNAPSHOT.md architectural decision claiming they did:
+- `bob/cron/_install.py:261, 280` (fresh install — script + cron file)
+- `bob/tui/cron.py:731, 749` (curses install — same paths)
+- `bob/ignore.py:93` (raw `os.open(O_TRUNC)`)
+
+And one module (`bob/history.py:58`) used `Path.open("a")` which inherits the process umask — privacy-sensitive given the contents.
+
+v0.6.1 extracts `bob/_atomic.py::atomic_write(path, content, *, mode=)` as the single source of truth. All 5 existing sites migrated; all 4 missing sites fixed. Net change: -100 LoC of duplicated implementation + 50 LoC of new helper + comprehensive docstring.
+
+`bob/cron/_io.py::_atomic_write` is kept as a one-line alias (`from bob._atomic import atomic_write as _atomic_write`) — the existing `TestApplyCronScheduleAtomic` test patches that exact name. Backwards-compat preserved.
+
+### EOF handling contract completion
+
+v0.5.7 #I-2 advertised "all interactive read sites in BOB now route EOF to empty-string semantics". This was true for `bob/_tty.read_line` (already had `try/except EOFError`) and `bob/manage_logs.py` (the 3 sites fixed in v0.5.7). It was false for:
+- `bob/_tty.prompt_wizard` (`raw = input(label).strip()` without try)
+- `bob/cron/_install.py` (5 bare `input()`s)
+- `bob/cron/_manage.py` (5 bare `input()`s)
+- `bob/fixes.py:103` (1 bare `input()`)
+
+v0.6.1 adds `safe_input(prompt) -> str` to `bob/_tty.py` (the swallow-EOFError variant) and:
+- Patches `prompt_wizard()` to also catch `EOFError → None`
+- Migrates the 11 bare `input()` sites to `safe_input`
+
+The semantic difference between `safe_input` (returns `""`) and `prompt_wizard` (returns `None`) is intentional: confirmation prompts (`y/N`) want `""` to mean "no", while cancel-able wizards want `None` to mean "user gave up". Both contracts now uniformly applied.
+
+### `_validate_cron_field` step bounds (I-3)
+
+This was a real bug. The validator at `bob/cron/_parse.py:262` checked `step_s.isdigit() and int(step_s) >= 1` — but never bounded `int(step_s)` against the field range. For the minute field (0-59), `*/200` validated successfully; cron then interpreted it as "every 200 minutes" which never fires (rolls over hourly). Reproducer:
+```python
+>>> _validate_cron_field("*/200", "minute", 0, 59)
+''  # pre-fix: empty = valid
+```
+Post-fix returns `"minute step '200' exceeds field range (60)"`. The boundary case `*/60` is still accepted (means "fire at minute 0 every hour" = equivalent to `0 * * * *`). 
+
+This bug was unreachable via the curses TUI (which restricts step input differently) but reachable via `--validate "* * * * *"` (which doesn't exist yet but is a frequently-requested feature) and via `parse_cron_file` on a hand-edited cron file.
+
+### `shlex.quote()` on `cmd=` paths (I-4)
+
+Auto-fix command strings interpolate paths into shell commands. The actual auto-apply path (`bob/fixes.py`) uses `shlex.split(cmd)` before `subprocess.run([list])`, which means an unquoted path-with-spaces gets split into multiple tokens and the chmod targets the wrong file.
+
+Sites where paths derive from user-controlled sources:
+- SSH: `snapshot.user_home` from `pwd.getpwnam(SUDO_USER).pw_dir` — can be `"/home/Cédric Dev"` etc.
+- file_perms: `fi.path` from filesystem scan of `/etc/`, `/var/log/`, etc.
+- firmware: `pkg` from `dpkg-query` output (typically `intel-microcode`/`amd64-microcode` but defensively quoted)
+
+8 sites fixed. 13 remaining `cmd=` sites are safe-by-construction (port integers, fixed strings, container IDs as hex). Confirmed via grep.
+
+### `history.jsonl` mode 0o600 (I-5)
+
+Subtle bug class: `Path.open("a")` opens in text-append mode and uses the process umask for the create-mode. With the default umask `0o022`, that gives `0o644` — world-readable. The audit cadence + score timestamps from `history.jsonl` are privacy-sensitive on shared/multi-user systems.
+
+The rotation path at `bob/history.py:74` already used `os.open(..., 0o600)` (atomic + restrictive mode). The first-write path at line 58 did not.
+
+Fix: use `os.open(str(_HISTORY_FILE), O_WRONLY | O_APPEND | O_CREAT, 0o600)` then `os.fdopen(fd, "a", encoding="utf-8")` for the append. Mode 0o600 is applied only at creation; existing-file mode is preserved (so users who explicitly chmod'd to 0o644 don't see their permission overwritten on every audit).
+
+### `ignore.py` atomic write (I-6)
+
+Pre-fix, `bob/ignore.py:93` did `os.open(str(path), O_WRONLY | O_CREAT | O_TRUNC, 0o600)` directly on the destination file. Power-loss / OOM between `O_TRUNC` and `write` left `ignore.yml` empty (corruption — loss of all previously-ignored keys, with no recovery path).
+
+Migrated to `atomic_write(path, content, mode=0o600)` via the v0.6.1 helper.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4600 passed in ~7s
+```
+
+**4583 → 4600 (+17).**
+
+New test classes:
+- `tests/test_atomic_v061.py::TestAtomicWritePublicAPI` (4) — pins the `atomic_write(path, content, *, mode=)` contract: file created with explicit mode (0o600 / 0o640 / 0o755), content overwritten cleanly on second call, original file content survives when `os.replace` raises (atomicity guarantee).
+- `tests/test_atomic_v061.py::TestCronLegacyAliasStillWorks` (1) — `bob.cron._io._atomic_write is bob._atomic.atomic_write` (backwards-compat for test patches).
+- `tests/test_atomic_v061.py::TestHistoryFileMode` (2) — I-5 first-write 0o600 + mode preserved on subsequent appends.
+- `tests/test_atomic_v061.py::TestIgnoreAtomic` (2) — I-6 atomic write + simulated `os.replace` failure leaves `ignore.yml` content intact.
+- `tests/test_atomic_v061.py::TestSafeInput` (3) — I-2 `safe_input()` returns `""` on EOF, returns value on normal input, `prompt_wizard` returns `None` on EOF.
+- `tests/test_cron.py::TestStepBoundedToFieldRange` (5) — I-3 step bounds for minute / hour / boundary / zero / full expression.
+
+### Net diff
+
+| File | Delta |
+|---|---|
+| `bob/_atomic.py` (new) | +40L |
+| `bob/_tty.py` | +20L / -1L (safe_input + prompt_wizard EOFError) |
+| `bob/cron/_io.py` | -22L / +5L (replaced with alias) |
+| `bob/config.py`, `bob/compare.py`, `bob/history.py`, `bob/recurrence.py` | net -30L (5 sites migrated, each saves ~5-8L) |
+| `bob/cron/_install.py` | -8L / +8L (atomic_write + safe_input migration) |
+| `bob/tui/cron.py` | -8L / +8L (atomic_write migration) |
+| `bob/cron/_manage.py` | +1L (safe_input import + 5 site migrations) |
+| `bob/fixes.py` | +1L (safe_input import + 1 site migration) |
+| `bob/ignore.py` | -2L / +6L (atomic_write + comment) |
+| `bob/cron/_parse.py` | +3L (step bound check + comment) |
+| 8 `bob/checks/**/*.py` | +8L / -8L (shlex.quote at 8 sites) |
+| `bob/checks/ssh/_directives.py`, `bob/checks/ssh/_subchecks.py`, `bob/__main__.py`, `bob/cli.py` | small M-2/M-3/M-6/M-8 fixes |
+| `tests/test_atomic_v061.py` (new) | +130L |
+| `tests/test_cron.py` | +30L |
+| `tests/test_watch.py` | wording-match update |
+| Version bump + changelogs | standard ~17 files |
+
+### Audit campaign cumulative summary
+
+| Release | Modules touched | Findings shipped | Tests added |
+|---|---|---|---|
+| v0.5.5 | 22 deep + ~15 spot | 19 (4C + 4I + 11M) | +7 |
+| v0.5.6 | logs.py (662L) | 10 (0C + 2I + 8M) | +15 |
+| v0.5.7 | manage_logs.py + tui/cron.py (~1920L) | 6 shipped + 5 deferred | +11 |
+| v0.5.8 | the 5 v0.5.7-deferred minors | 5 (all minor) | +12 |
+| **v0.6.1** | **codebase-wide audit + v0.6.0 post-split modules** | **6I + 4M (4M deferred)** | **+17** |
+
+**Cumulative**: ~85 hardening findings closed over 5 audit cycles. 0 critical findings outstanding. Two contracts uniformly enforced (atomic-write + EOF handling). The "atomic-write helper extraction" recommendation from the SNAPSHOT.md cross-cutting observations is now actioned.
+
+### What's next
+
+v0.6.x will continue receiving hardening releases as findings surface (typically via cross-distro testing or contributor reports). No new audit campaign planned — the v0.6.1 pass closed the cross-cutting gaps the v0.5.x campaign had left open. Future bug-fix releases will be targeted per-issue rather than wholesale audit-driven.
+
+---
+
 ## [v0.6.0] — 2026-05-25
 
 **Major bump opening the v0.6.x branch.** Two architectural splits (#13 + #14) deliberately deferred across the entire v0.5.x cycle, plus one sunset honored (`UFW_AUDIT_SHARE` legacy env var). All changes contract-preserving via package `__init__.py` re-exports.

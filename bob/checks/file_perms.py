@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import shlex
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -225,7 +226,7 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
                 reason=_t("file_perms.world_writable_reason", path=fi.path),
                 points=3,
                 detail=_t("file_perms.world_writable_detail", path=fi.path),
-                cmd=f"sudo chmod o-w {fi.path}",
+                cmd=f"sudo chmod o-w {shlex.quote(str(fi.path))}",
             )
 
         elif extra:     # other unexpected bits (group-write, world-read…) — capped
@@ -235,7 +236,7 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
                            expected=oct(fi.max_mode)),
                 detail=_t("file_perms.too_permissive_detail",
                           path=fi.path, expected=oct(fi.max_mode)),
-                cmd=f"sudo chmod {oct(fi.max_mode)[2:]} {fi.path}",
+                cmd=f"sudo chmod {oct(fi.max_mode)[2:]} {shlex.quote(str(fi.path))}",
                 key=f"file_perms.{fi.key}.too_permissive",
             )
             if warn_deductions < 3:
@@ -254,7 +255,7 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
             message=_t("file_perms.ssh_host_key_perms",
                        path=path, mode=oct(mode)),
             detail=_t("file_perms.ssh_host_key_perms_detail"),
-            cmd=f"sudo chmod 600 {path}",
+            cmd=f"sudo chmod 600 {shlex.quote(str(path))}",
             key=f"file_perms.ssh_host_key.{Path(path).name}",
         )
         if ssh_deductions < 2:

@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.6.1 | 4600 | Première release hardening sur la branche v0.6.x. Sub-agent d'audit profond a remonté 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. **Consolidation contrat atomic-write** : extraction `bob/_atomic.py::atomic_write(path, content, *, mode=)` source unique ; migration 5 implémentations hand-rolled + fix 4 sites non-atomiques (`bob/cron/_install.py`, `bob/tui/cron.py` paths d'install, `bob/ignore.py`, `bob/history.py` first-write). **Contrat EOF complet** : nouveau `bob/_tty.safe_input()` + `prompt_wizard()` catche maintenant EOFError ; 11 sites `input()` brut migrés. **I-3** `_validate_cron_field` borne les step values (`*/200` pour minute 0-59 était accepté). **I-4** `shlex.quote()` appliqué sur 8 sites `cmd=` avec paths user-contrôlés. **I-5** `history.jsonl` mode `0o600` au first-write. Mineurs : M-2/M-3/M-6/M-8 (4 mineurs déférés à judgment-call). +17 tests régression à travers `tests/test_atomic_v061.py` (12 : TestAtomicWritePublicAPI, TestCronLegacyAliasStillWorks, TestHistoryFileMode, TestIgnoreAtomic, TestSafeInput) et `tests/test_cron.py::TestStepBoundedToFieldRange` (5). 4583 → 4600 tests. Contrat JSON préservé. Sortie wire inchangée (seul `--watch=N` error string diffère). Deux contrats uniformément enforced (atomic-write + gestion EOF). |
 | v0.6.0 | 4583 | **Bump majeur** ouvrant la branche v0.6.x. Deux splits architecturaux (`bob/checks/ssh.py` 1296L → package `bob/checks/ssh/` 4 modules ; `bob/cron.py` 1204L → package `bob/cron/` 4 modules) délibérément déférés tout au long du cycle v0.5.x, les deux contract-preserving via re-exports `__init__.py`. Plus le sunset env var legacy `UFW_AUDIT_SHARE` honoré (annoncé "REMOVED in v0.6.0" en v0.5.4). Trois updates triviaux d'infrastructure test : `tests/test_template_vars_migration.py` et `tests/test_domain_scores_mapping_complete.py` switchés de `glob` à `rglob` pour que les AST scanners pickup les nouveaux sous-modules de check-package ; `tests/test_cron.py::TestApplyCronScheduleAtomic` target patch shifté de `bob.cron._atomic_write` (re-export package) à `bob.cron._io._atomic_write` (où `apply_cron_schedule` appelle effectivement). 4583 tests inchangés (0 ajouté, 0 retiré — splits + sunset sont wire-équivalents). Le plus gros module post-split est `ssh/_subchecks.py` à 529L, bien sous le soft ceiling 1000-LoC du projet. Toutes les API publiques v0.5.x préservées via re-exports. Contrat JSON, EXPLAIN_KEYS, keybindings, fallback no-curses, exit codes — tous préservés. Ferme le roadmap architectural déféré depuis v0.5.x. |
 | v0.5.8 | 4583 | Cleanup des 5 mineurs cosmétiques explicitement déférés par v0.5.7 (M-2, M-5, M-6, M-7, M-8). **M-2** cursor-shift de `manage_logs.py` après delete traque maintenant `deleted_before_cursor` séparément donc le cursor ne shift que par les deletions à-ou-avant la position active (pré-fix `cursor -= deleted` shiftait par le total même quand la plupart des items supprimés étaient après le cursor). **M-5** tuple unpack local du wizard schedule `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` promu en `_Schedule(IntEnum)` module-level avec noms explicites `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` — IntEnum préserve la sémantique `choice == _Schedule.X` donc wire-équivalent. **M-6** sentinelle `summary_start: int \| None = None` de `_extract_summary_view` remplace le check truthy `summary_start = 0` — gère le edge case unreachable-en-pratique où SEP62 est à la ligne 0. **M-7** nouveau helper `_is_finding_continuation(line)` stoppe le grouping 4-space-indent aux markers de finding (`[ALERT]`/`[WARN]`/`[OK]`/`[INFO]`) et aux délimiteurs de section (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — défense contre le grouping over-greedy de contenu indenté ultérieur. **M-8** `from datetime import datetime` remonté au niveau module dans `bob/cron.py` et `bob/tui/cron.py`, 3 imports locaux retirés (aussi retiré 2 `import os` / `from pathlib import Path` locaux redondants dans `_run_install_cron_plain`). +12 tests régression à travers `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) et `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). Release single-commit. Contrat JSON préservé. Sortie wire inchangée. **Ferme la campagne deep-audit v0.5.x — branche intégralement auditée (25 modules deep + ~25 spot-checkés, 0 finding critique en suspens).** Prochaine version mineure (v0.6.0) réservée pour #13 (split ssh.py) et #14 (split cron.py). |
 | v0.5.7 | 4571 | Passe de hardening ciblée sur TUI curses (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — bucket explicitement déféré par les audits v0.5.5 / v0.5.6. 11 findings du sub-agent focalisé : 0 critique, 3 important (I-1 `_curses_readline` acceptait les codes keypad curses `KEY_*` via `chr(ch_i)` insérant glyphes Grecs dans les buffers d'entrée TUI — UX-corrompant seulement grâce à validation downstream ; I-2 trois sites `input()` bruts dans `manage_logs.py` ne catchaient pas `EOFError` — Ctrl-D dumpait une traceback Python ; I-3 `apply_cron_schedule` utilisait `os.open(O_TRUNC) + write` brut au lieu de `_atomic_write` — coupure de courant entre truncate et write viderait silencieusement le fichier cron et dropperait l'entrée, asymétrique avec `apply_cron_email` qui utilisait déjà l'écriture atomique), 3 mineurs (M-1 status `deleted_one` flashait mauvais nom de fichier sous échecs unlink sélectifs, M-3 dead-code elif body simplifié, M-4 `from bob.cron import` dupliqué consolidé). +11 tests régression à travers `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) et `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). Release single-commit. Contrat JSON préservé. Deltas UX-visibles seulement : sortie Ctrl-D propre (pas de traceback), touches fléchées/fonction n'impriment plus de glyphes Grecs dans les prompts TUI. 5 mineurs cosmétiques (M-2, M-5, M-6, M-7, M-8) explicitement déférés à v0.5.8. Après v0.5.7, campagne deep-audit v0.5.x fermée (25 modules audités + ~25 spot-checkés). |
@@ -46,6 +47,35 @@ Deux parties complémentaires :
 | v0.1.1  | 4206  | +4 tests de régression : parser fwupd 1.9+ format arbre (`├─`/`└─`) — bug trouvé sur Ubuntu 26.04 LTS |
 | post-v0.1.0 | 4202 | +2 tests de régression : findings INFO non détectés en surface d'attaque (`ssh.not_installed`, `fail2ban.not_installed`) — bugs trouvés sur Ubuntu 26.04 LTS |
 | v0.1.0  | 4200  | Version initiale — 65 fichiers de test ; 39 nouveaux tests dans `test_cis_refs.py` (mapping benchmarks CIS) ; couverture complète des 46 vérifications |
+
+---
+
+### v0.6.1 — 4600/4600 (26-05-2026)
+
+**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+
+```
+pytest tests/ -q
+4600 passed in ~7s
+```
+
+**Net : +17 (4583 → 4600).** Première release hardening sur v0.6.x. Sub-agent d'audit a produit 14 findings ; 6 important + 4 mineur shippés. Tous les +17 tests pinent la couverture de régression.
+
+#### Timeline du compteur de tests mise à jour
+
+```
+v0.5.0  →  4538 tests
+v0.5.5  →  4545 tests  (+7  — régressions hardening)
+v0.5.6  →  4560 tests  (+15 — logs.py)
+v0.5.7  →  4571 tests  (+11 — TUI curses)
+v0.5.8  →  4583 tests  (+12 — cleanup mineurs déférés)
+v0.6.0  →  4583 tests  (0   — splits + sunset contract-preserving)
+v0.6.1  →  4600 tests  (+17 — atomic-write + EOF + cron step bounds)
+```
+
+#### Test terrain
+
+Sortie wire bit-identique à v0.6.0 — seul `--watch=N` error string change. Tous les autres changes sont internes. Tous les 4600 tests passent en ~7s.
 
 ---
 

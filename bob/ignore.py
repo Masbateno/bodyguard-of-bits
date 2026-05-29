@@ -15,10 +15,10 @@ When running via sudo, the real user's home directory is used
 from __future__ import annotations
 
 import logging
-import os
 import re
 from pathlib import Path
 
+from bob._atomic import atomic_write
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 _log = logging.getLogger(__name__)
@@ -87,12 +87,12 @@ def add_ignore_key(key: str, path: Path | None = None) -> bool:
                 content = content.rstrip("\n") + f"\nignore:\n  - key: {key}\n"
         else:
             content = f"ignore:\n  - key: {key}\n"
-        # I-1 (v0.5.5): force 0o600 — relying on umask leaves the file
-        # world-readable on default Debian/Ubuntu (0644). Aligns with
-        # other ~/.config/bob state files.
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
+        # I-6 (v0.6.1): switched from raw os.open(O_TRUNC) to atomic_write.
+        # Pre-fix, power-loss between truncate and write left ignore.yml
+        # corrupted (lost all previously-ignored keys). atomic_write writes
+        # to a .tmp sibling and atomically renames on completion. Mode 0o600
+        # still enforced via the explicit mode= parameter.
+        atomic_write(path, content, mode=0o600)
         chown_to_sudo_user(path)
         return True
     except OSError:

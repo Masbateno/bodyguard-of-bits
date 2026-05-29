@@ -1,3 +1,62 @@
+bodyguard-of-bits (0.6.1-1) UNRELEASED; urgency=low
+
+  * First hardening release on the v0.6.x branch. Deep-audit
+    sub-agent surfaced 14 findings (0 critical + 6 important
+    + 8 minor); 6 important + 4 minor shipped.
+  * I-1 + atomic-write contract consolidation: extracted
+    bob/_atomic.py::atomic_write(path, content, *, mode=) as
+    single source of truth; migrated 5 hand-rolled
+    implementations (bob/config.py x2, bob/compare.py,
+    bob/history.py, bob/recurrence.py); fixed 4 non-atomic
+    sites (bob/cron/_install.py, bob/tui/cron.py install
+    paths, bob/ignore.py, bob/history.py first-write).
+    bob/cron/_io.py::_atomic_write kept as backwards-compat
+    alias for test patch target.
+  * I-2 EOF contract completion: new bob/_tty.safe_input()
+    wrapper + prompt_wizard() now catches EOFError. 11 bare
+    input() sites migrated (cron/_install.py x5,
+    cron/_manage.py x5, fixes.py x1). Ctrl-D no longer
+    crashes any plain-text wizard.
+  * I-3 _validate_cron_field step bounds: rejects step values
+    exceeding field range (*/200 for minute 0-59 was accepted
+    pre-fix; cron then interpreted as "every 200 minutes" =
+    never fires).
+  * I-4 shlex.quote() applied to 8 cmd=f"..." sites in
+    bob/checks/ssh/_subchecks.py (4) + bob/checks/file_perms.py
+    (3) + bob/checks/firmware.py (1) where paths could contain
+    spaces (from pwd.getpwnam(SUDO_USER).pw_dir, filesystem
+    scans, dpkg-query). Pre-fix --fix --apply would chmod the
+    wrong file.
+  * I-5 history.jsonl mode 0o600 on first write (was inheriting
+    process umask, typically 0o644 → world-readable score
+    timestamps). os.open(O_WRONLY | O_APPEND | O_CREAT, 0o600)
+    sets mode only at creation; existing-file mode preserved.
+  * I-6 ignore.py: ignore.yml writes now go through atomic_write.
+    Pre-fix raw os.open(O_TRUNC) corrupted on power-loss.
+  * M-2: redundant double-.lower() in _apply_bad_directive.
+  * M-3: MaxAuthTries=-1 / =0 now treated as default 6 (sshd
+    treats <=0 as misconfiguration).
+  * M-6: bob/__main__.py fatal-error handler hints
+    BOB_DEBUG=1 and prints traceback when set.
+  * M-8: --watch=N error wording: "positive integer" →
+    "integer ≥ 10" (matches the actual constraint).
+  * 4 minor findings deferred (M-1 silent downgrade,
+    M-4 documented intentional, M-5 transitively fixed,
+    M-7 judgment call).
+  * +17 regression tests in tests/test_atomic_v061.py (12) +
+    tests/test_cron.py::TestStepBoundedToFieldRange (5).
+  * 4583 → 4600 tests.
+  * JSON contract (schema_version="1"), 116 EXPLAIN_KEYS,
+    keybindings, no-curses fallback, exit codes — all
+    preserved.
+  * Wire output unchanged. Only --watch=N error string differs.
+  * Two contracts now uniformly enforced across the codebase:
+    atomic-write (every persistent write goes through
+    _atomic.atomic_write) and EOF handling (every interactive
+    read site routes Ctrl-D to clean exit).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 26 May 2026 11:00:00 +0200
+
 bodyguard-of-bits (0.6.0-1) UNRELEASED; urgency=low
 
   * Major bump opening the v0.6.x branch. Two architectural

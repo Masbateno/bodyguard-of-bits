@@ -610,8 +610,9 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
 def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
     """Curses TUI for --install-cron."""
     import curses as _c
-    import os as _os
     from pathlib import Path as _Path
+
+    from bob._atomic import atomic_write as _atomic_write
 
     try:
         _init_colors_cron()
@@ -727,10 +728,11 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
         script_content = build_script_content(notify_email, log_dir)
 
+        # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed
+        # the mutation path (apply_cron_schedule) but the curses install
+        # kept raw os.open(O_TRUNC). Same fix as bob/cron/_install.py.
         try:
-            fd = _os.open(str(script_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o755)
-            with _os.fdopen(fd, "w") as fh:
-                fh.write(script_content)
+            _atomic_write(script_path, script_content, mode=0o755)
         except OSError as exc:
             _curses_status_flash(stdscr, f"✖ Cannot write {script_path}: {exc}")
             return 1
@@ -746,9 +748,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
             f"{schedule_expr}  root  {script_path}\n"
         )
         try:
-            fd = _os.open(str(cron_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o640)
-            with _os.fdopen(fd, "w") as fh:
-                fh.write(cron_content)
+            _atomic_write(cron_path, cron_content, mode=0o640)
         except OSError as exc:
             _curses_status_flash(stdscr, f"✖ Cannot write {cron_path}: {exc}")
             return 1

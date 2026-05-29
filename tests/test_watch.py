@@ -140,11 +140,11 @@ class TestWatchCLIValidation:
             parse_args(["--watch=0"])
 
     def test_non_integer_raises(self):
-        with pytest.raises(CLIError, match="positive integer"):
+        with pytest.raises(CLIError, match="integer"):
             parse_args(["--watch=abc"])
 
     def test_float_raises(self):
-        with pytest.raises(CLIError, match="positive integer"):
+        with pytest.raises(CLIError, match="integer"):
             parse_args(["--watch=1.5"])
 
     def test_empty_value_raises(self):
@@ -156,7 +156,7 @@ class TestWatchCLIValidation:
             parse_args(["--watch", "5"])
 
     def test_space_separated_non_integer_raises(self):
-        with pytest.raises(CLIError, match="positive integer"):
+        with pytest.raises(CLIError, match="integer"):
             parse_args(["--watch", "xyz"])
 
 

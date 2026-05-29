@@ -6,6 +6,94 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.6.1] — 26-05-2026
+
+**Première release hardening sur la branche v0.6.x.** Sub-agent d'audit profond a produit 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. L'audit a révélé deux **contrats demi-appliqués** depuis v0.5.x — atomic-write (paths de mutation fixés en v0.5.7 #I-3 mais pas les paths de création) et gestion EOF (`manage_logs.py` fixé en v0.5.7 #I-2 mais pas les wizards cron ni `fixes.py`) — plus une **branche validator non-testée** dans le parser de step cron. Tous adressés.
+
+Voir `CHANGELOG_FR.md` pour le détail par finding. Cette release introduit `bob/_atomic.py` (helper consolidé) et `bob/_tty.safe_input()`. Le pattern audit→fix→ship répété de v0.5.x continue.
+
+### Pourquoi les splits + sunset v0.6.0 n'avaient pas surfacé ces bugs plus tôt
+
+v0.6.0 était structurel (splits + suppression UFW_AUDIT_SHARE) — pas de nouvelle logique. La campagne v0.5.x focalisait sur un set de modules différent : `bob/checks/logs.py`, `bob/manage_logs.py`, `bob/tui/cron.py`, plus 22 modules core. Les paths d'install cron (`bob/cron/_install.py`, branche cron-install de `bob/tui/cron.py`) et `bob/ignore.py` étaient parmi les ~25 modules "spot-checked" plutôt que deep-audited — donc le contrat atomic-write demi-appliqué (mutation fixé en v0.5.7 #I-3, création non touché) et l'écriture non-atomique de `ignore.py` ont survécu.
+
+L'audit v0.6.1 ciblait explicitement le drift post-v0.5.x + les modules que v0.5.x avait spot-checked. C'est de là que viennent les 6 findings important.
+
+### Consolidation contrat atomic-write (cleanup high-leverage)
+
+Avant v0.6.1, 5 modules implémentaient leur propre version "write tmp + os.replace" avec variations subtiles. 3 modules N'utilisaient PAS atomic write malgré la décision architecturale SNAPSHOT.md qui le réclamait. 1 module (`bob/history.py:58`) utilisait `Path.open("a")` qui hérite du umask process — privacy-sensitive vu le contenu.
+
+v0.6.1 extrait `bob/_atomic.py::atomic_write(path, content, *, mode=)` source unique. Tous les sites existants migrés ; tous les sites manquants fixés. `bob/cron/_io.py::_atomic_write` gardé en alias une-ligne pour backwards-compat tests.
+
+### Complétion contrat gestion EOF
+
+v0.5.7 #I-2 annonçait "tous les sites de read interactif dans BOB routent EOF à empty-string". C'était vrai pour `bob/_tty.read_line` et `bob/manage_logs.py` (les 3 sites fixés en v0.5.7). C'était faux pour `bob/_tty.prompt_wizard` (aucune try), `bob/cron/_install.py` (5 sites), `bob/cron/_manage.py` (5 sites), `bob/fixes.py:103`.
+
+v0.6.1 ajoute `safe_input(prompt) -> str` à `bob/_tty.py` (variante swallow-EOFError) et :
+- Patche `prompt_wizard()` pour aussi catcher `EOFError → None`
+- Migre les 11 sites `input()` brut vers `safe_input`
+
+Différence sémantique intentionnelle : confirmations (`y/N`) veulent `""` = "non", wizards cancelables veulent `None` = "user abandonne".
+
+### `_validate_cron_field` step bounds (I-3)
+
+Vrai bug. Validator à `bob/cron/_parse.py:262` checkait `step_s.isdigit() and int(step_s) >= 1` — mais jamais borné `int(step_s)` contre le range du field. Pour minute (0-59), `*/200` validait avec succès ; cron interprétait "toutes les 200 minutes" = ne se déclenche jamais (roll-over horaire). Reproducer :
+```python
+>>> _validate_cron_field("*/200", "minute", 0, 59)
+''  # pré-fix : vide = valide
+```
+Post-fix retourne `"minute step '200' exceeds field range (60)"`. Cas boundary `*/60` toujours accepté (= "minute 0 chaque heure").
+
+### `shlex.quote()` sur paths `cmd=` (I-4)
+
+Les strings de commande auto-fix interpolent des paths dans des commandes shell. Le path auto-apply (`bob/fixes.py`) utilise `shlex.split(cmd)` avant `subprocess.run([list])`, donc un path-with-spaces non-quoté est split en multiples tokens et chmod target le mauvais fichier.
+
+8 sites fixés (SSH paths from `pwd.getpwnam(SUDO_USER).pw_dir`, file_perms scans, firmware pkg). 13 sites restants safe-by-construction.
+
+### `history.jsonl` mode 0o600 (I-5)
+
+Bug class subtile : `Path.open("a")` utilise le umask process pour le create-mode. Umask défaut `0o022` → `0o644` = world-readable. Cadence audit + timestamps score privacy-sensitive sur systèmes multi-user.
+
+Le path de rotation à `bob/history.py:74` utilisait déjà `os.open(..., 0o600)`. Le first-write à ligne 58 non. Fix : `os.open(O_WRONLY | O_APPEND | O_CREAT, 0o600)` puis `os.fdopen(fd, "a")`. Mode 0o600 appliqué seulement à création ; mode fichier existant préservé.
+
+### `ignore.py` atomic write (I-6)
+
+Pré-fix, `bob/ignore.py:93` faisait `os.open(str(path), O_WRONLY | O_CREAT | O_TRUNC, 0o600)` direct sur la destination. Power-loss entre `O_TRUNC` et `write` laissait `ignore.yml` vide (corruption — perte de toutes les clés précédemment ignorées, sans path de recovery).
+
+Migré à `atomic_write(path, content, mode=0o600)` via le helper v0.6.1.
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4600 passed in ~7s
+```
+
+**4583 → 4600 (+17).**
+
+Nouveaux : `TestAtomicWritePublicAPI` (4), `TestCronLegacyAliasStillWorks` (1), `TestHistoryFileMode` (2), `TestIgnoreAtomic` (2), `TestSafeInput` (3), `TestStepBoundedToFieldRange` (5).
+
+### Diff net
+
+Voir CHANGELOG_FULL.md (en) pour le tableau détaillé. ~12 fichiers code + 2 fichiers test + standard 17 fichiers version/changelogs.
+
+### Cumul campagne audit
+
+| Release | Modules touchés | Findings shippés | Tests ajoutés |
+|---|---|---|---|
+| v0.5.5 | 22 deep + ~15 spot | 19 (4C + 4I + 11M) | +7 |
+| v0.5.6 | logs.py (662L) | 10 (0C + 2I + 8M) | +15 |
+| v0.5.7 | manage_logs.py + tui/cron.py (~1920L) | 6 shippés + 5 déférés | +11 |
+| v0.5.8 | 5 mineurs v0.5.7-déférés | 5 (tous mineurs) | +12 |
+| **v0.6.1** | **audit codebase-wide + modules post-split v0.6.0** | **6I + 4M (4M déférés)** | **+17** |
+
+**Cumul** : ~85 findings hardening fermés sur 5 cycles audit. 0 finding critique en suspens. Deux contrats uniformément enforced (atomic-write + EOF handling). La recommandation "extraction helper atomic-write" des observations cross-cutting SNAPSHOT.md est maintenant actionnée.
+
+### Et après
+
+v0.6.x continuera à recevoir des releases hardening au fil des findings (typiquement via tests cross-distro ou reports contributeurs). Pas de nouvelle campagne audit planifiée — la passe v0.6.1 a fermé les gaps cross-cutting que la campagne v0.5.x avait laissés ouverts. Releases bug-fix futures seront targeted par-issue plutôt que wholesale audit-driven.
+
+---
+
 ## [v0.6.0] — 25-05-2026
 
 **Bump majeur ouvrant la branche v0.6.x.** Deux splits architecturaux (#13 + #14) délibérément déférés tout au long du cycle v0.5.x, plus un sunset honoré (env var legacy `UFW_AUDIT_SHARE`). Tous les changements contract-preserving via re-exports `__init__.py`.

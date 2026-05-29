@@ -261,6 +261,11 @@ def _validate_cron_field(field: str, name: str, lo: int, hi: int) -> str:
             base, _, step_s = chunk.partition("/")
             if not step_s.isdigit() or int(step_s) < 1:
                 return f"{name} step {step_s!r} must be a positive integer"
+            # I-3 (v0.6.1): bound K against the field range. Pre-fix, `*/200`
+            # for minute (0-59) passed validation; cron then interpreted it
+            # as "every 200 minutes" which never fires (rolls over hourly).
+            if int(step_s) > (hi - lo + 1):
+                return f"{name} step {step_s!r} exceeds field range ({hi - lo + 1})"
             chunk = base
         # Range: N-M
         if "-" in chunk and chunk != "*":

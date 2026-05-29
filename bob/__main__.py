@@ -403,7 +403,17 @@ def main(argv=None) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_ERROR
     except Exception as exc:  # noqa: BLE001
+        # M-6 (v0.6.1): one-line summary + traceback under BOB_DEBUG=1 so
+        # bug reports are actionable. Without the hint, users get "Fatal
+        # error: 'NoneType' object has no attribute 'X'" and no way to
+        # diagnose. The env var keeps everyday output clean.
+        import os
         print(f"Fatal error: {exc}", file=sys.stderr)
+        if os.environ.get("BOB_DEBUG"):
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+        else:
+            print("  Set BOB_DEBUG=1 for full traceback.", file=sys.stderr)
         return EXIT_ERROR
 
 

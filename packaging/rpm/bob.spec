@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.6.0
+Version:        0.6.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,29 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Tue May 26 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.6.1-1
+- First hardening release on v0.6.x. Deep audit sub-agent
+  surfaced 14 findings (0 critical + 6 important + 8 minor);
+  6 important + 4 minor shipped.
+- Atomic-write contract consolidation: extracted bob/_atomic.py
+  as single source of truth; migrated 5 hand-rolled
+  implementations + fixed 4 non-atomic sites.
+- I-2 EOF contract: safe_input() wrapper + prompt_wizard()
+  catches EOFError; 11 bare input() sites migrated.
+- I-3: _validate_cron_field step bounds (rejects */200 for
+  minute 0-59).
+- I-4: shlex.quote() on 8 cmd= sites with user-controlled paths.
+- I-5: history.jsonl mode 0o600 on first write.
+- I-6: ignore.py atomic write via _atomic helper.
+- M-2/M-3/M-6/M-8 minor fixes shipped; M-1/M-4/M-5/M-7 deferred.
+- +17 regression tests in tests/test_atomic_v061.py and
+  tests/test_cron.py.
+- 4583 → 4600 tests.
+- JSON contract, EXPLAIN_KEYS, keybindings, exit codes — all
+  preserved. Wire output unchanged.
+- bob/cron/_io.py::_atomic_write kept as alias for
+  backwards-compat with existing test patches.
+
 * Mon May 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.6.0-1
 - Major bump opening v0.6.x branch. Two architectural splits
   (#13 + #14) deferred from v0.5.x, plus UFW_AUDIT_SHARE

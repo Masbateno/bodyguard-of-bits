@@ -846,3 +846,33 @@ class TestDatetimeImportLifted:
         from datetime import datetime
         today = datetime.now().strftime("%Y-%m-%d")
         assert today in script
+
+
+# ---------------------------------------------------------------------------
+# I-3 (v0.6.1): _validate_cron_field step bounded against field range.
+# Pre-fix `*/200` for minute (0-59) passed validation; cron interpreted it as
+# "every 200 minutes" → never fires.
+# ---------------------------------------------------------------------------
+
+class TestStepBoundedToFieldRange:
+    def test_step_within_range_accepted(self):
+        assert _validate_cron_field("*/15", "minute", 0, 59) == ""
+        assert _validate_cron_field("*/60", "minute", 0, 59) == ""  # boundary
+
+    def test_step_above_range_rejected(self):
+        err = _validate_cron_field("*/200", "minute", 0, 59)
+        assert "exceeds field range" in err
+        assert "60" in err  # hi-lo+1 = 60
+
+    def test_step_above_hour_range_rejected(self):
+        err = _validate_cron_field("*/30", "hour", 0, 23)
+        assert "exceeds field range" in err
+        assert "24" in err  # hi-lo+1 = 24
+
+    def test_step_zero_still_rejected(self):
+        err = _validate_cron_field("*/0", "minute", 0, 59)
+        assert "positive integer" in err  # different error path, unchanged
+
+    def test_full_expression_with_oversized_step_rejected(self):
+        err = _validate_custom_cron("*/200 * * * *")
+        assert "exceeds field range" in err

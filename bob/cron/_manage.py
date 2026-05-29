@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from bob._tty import prompt_wizard, read_line as _rl
+from bob._tty import prompt_wizard, read_line as _rl, safe_input
 from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
 
 from ._install import _CronQuit, prompt_emails  # noqa: F401 — _CronQuit re-exported
@@ -67,7 +67,7 @@ def _manage_email_store(t) -> None:
             return
 
         if answer == "a":
-            raw = input(f"  {t('manage_cron.email_store_enter')} : ").strip()
+            raw = safe_input(f"  {t('manage_cron.email_store_enter')} : ").strip()
             if not _EMAIL_RE.match(raw):  # M-1 (v0.5.5): use bob.config._EMAIL_RE
                 print(f"  ✖ {t('manage_cron.email_store_invalid_email')}")
             else:
@@ -243,7 +243,7 @@ def edit_cron_schedule(entry, config, t) -> None:
     print(f"  {t('install_cron.preview', schedule=human)}")
     print()
 
-    ans = input(f"  {t('manage_cron.confirm_update')} ").strip().lower()
+    ans = safe_input(f"  {t('manage_cron.confirm_update')} ").strip().lower()
     if ans != "y":
         return
 
@@ -365,16 +365,16 @@ def _run_manage_cron_plain(config, t) -> int:
 
             # Confirm
             if len(to_delete) == 1:
-                ans = input(
+                ans = safe_input(
                     f"  {t('manage_cron.confirm_delete', name=to_delete[0].name)} "
                 ).strip().lower()
             elif raw_del == "all":
-                ans = input(
+                ans = safe_input(
                     f"  {t('manage_cron.confirm_delete_all', count=len(to_delete))} "
                 ).strip().lower()
             else:
                 names = ", ".join(e.name for e in to_delete)
-                ans = input(
+                ans = safe_input(
                     f"  {t('manage_cron.confirm_delete_multi', count=len(to_delete), names=names)} "
                 ).strip().lower()
 

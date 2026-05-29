@@ -7,6 +7,7 @@ no file I/O or subprocess (those live in ``_snapshot`` / ``_parsers``).
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _identity_t
@@ -114,7 +115,7 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 reason=_t("ssh.host_key_dsa_reason", name=name),
                 points=1,
                 detail=_t("ssh.host_key_dsa_detail"),
-                cmd=f"sudo rm {hk.path} {hk.path}.pub && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && sudo systemctl restart ssh",
+                cmd=f"sudo rm {shlex.quote(str(hk.path))} {shlex.quote(str(hk.path) + '.pub')} && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && sudo systemctl restart ssh",
                 template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
             )
 
@@ -196,8 +197,12 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             found_issue = True
 
     # MaxAuthTries — integer threshold (doesn't fit the enum-style table).
+    # M-3 (v0.6.1): reject non-positive values (sshd treats <=0 as "no retry
+    # allowed" which is also misconfiguration); fall back to default 6.
     try:
         max_tries = int(cfg.get("maxauthtries", "6"))
+        if max_tries < 1:
+            max_tries = 6
     except ValueError:
         max_tries = 6
     if max_tries > 3:
@@ -278,7 +283,7 @@ def _check_ssh_dir(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
             key="ssh.dir_perms",
             message=_t("ssh.dir_perms", perms=perms_str),
             points=2,
-            cmd=f"chmod 700 {snapshot.user_home / '.ssh'}",
+            cmd=f"chmod 700 {shlex.quote(str(snapshot.user_home / '.ssh'))}",
         )
     else:
         result.ok(message=_t("ssh.dir_perms_ok"), key="ssh.dir_perms_ok")
@@ -303,7 +308,7 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 key="ssh.private_key_perms",
                 message=_t("ssh.private_key_perms", name=name, perms=perms_str),
                 points=2,
-                cmd=f"chmod 600 {ki.path}",
+                cmd=f"chmod 600 {shlex.quote(str(ki.path))}",
             )
 
         # key type
@@ -366,7 +371,7 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
             key="ssh.authorized_keys_perms",
             message=_t("ssh.authorized_keys_perms", perms=oct(perms)),
             points=2,
-            cmd=f"chmod 600 {ak_path}",
+            cmd=f"chmod 600 {shlex.quote(str(ak_path))}",
         )
 
     entries = snapshot.authorized_keys_entries

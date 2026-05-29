@@ -4,31 +4,21 @@ Extracted from bob/cron.py in v0.6.0 (#14 split). All file mutations here go
 through ``_atomic_write`` to guarantee crash-safety — power loss between
 truncate and write would leave cron files empty and silently drop entries
 (see v0.5.7 #I-3 for the apply_cron_schedule fix that closed this).
+
+v0.6.1: ``_atomic_write`` is now a thin alias for ``bob._atomic.atomic_write``
+(single source of truth across the codebase). The local name is preserved as
+a backwards-compat alias because ``tests/test_cron.py::TestApplyCronScheduleAtomic``
+patches ``bob.cron._io._atomic_write`` directly.
 """
 
 from __future__ import annotations
 
-import os
 import re
 import shlex
 from datetime import datetime
 from pathlib import Path
 
-
-def _atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
-    """Write *content* to *path* atomically (temp file + os.replace).
-
-    *mode* is the open() flag mode for the *new* file. Default is 0o600
-    (private) — appropriate for state files. Callers patching existing
-    cron files (0o640) or wrapper scripts (0o755) MUST pass the right
-    mode explicitly, otherwise os.replace() preserves the tmp file's
-    mode (0o600) and breaks the original file's permissions.
-    """
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(content)
-    os.replace(str(tmp), str(path))
+from bob._atomic import atomic_write as _atomic_write
 
 def build_script_content(notify_email: str, log_dir: "Path | str") -> str:
     """Build the bash script content for a BOB cron job."""

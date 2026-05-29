@@ -26,10 +26,10 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import re
 from pathlib import Path
 
+from bob._atomic import atomic_write
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 logger = logging.getLogger(__name__)
@@ -116,13 +116,12 @@ class EmailStore:
 
     def _save(self) -> None:
         self._ensure_dir()
-        tmp_path = self._path.with_suffix(".tmp")
         try:
-            fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                for addr in self._emails:
-                    fh.write(f"{addr}\n")
-            tmp_path.replace(self._path)
+            atomic_write(
+                self._path,
+                "".join(f"{addr}\n" for addr in self._emails),
+                mode=0o600,
+            )
             chown_to_sudo_user(self._path)
         except OSError as exc:
             logger.error("Could not write emails file %s: %s", self._path, exc)
@@ -358,13 +357,12 @@ class UserConfig:
             OSError: If the file cannot be written.
         """
         self._ensure_dir()
-        tmp_path = self._path.with_suffix(".tmp")
         try:
-            fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                for key in sorted(self._data.keys()):
-                    fh.write(f"{key}={self._data[key]}\n")
-            tmp_path.replace(self._path)
+            atomic_write(
+                self._path,
+                "".join(f"{key}={self._data[key]}\n" for key in sorted(self._data.keys())),
+                mode=0o600,
+            )
             chown_to_sudo_user(self._path)
         except OSError as exc:
             logger.error("Could not write config file %s: %s", self._path, exc)

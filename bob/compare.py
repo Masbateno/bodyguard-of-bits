@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+from bob._atomic import atomic_write
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # avoid circular imports at runtime
@@ -181,11 +182,11 @@ def save_baseline(baseline: AuditBaseline, path: Path | None = None) -> None:
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
         chown_to_sudo_user(dest.parent)
-        tmp = dest.with_name(dest.name + ".tmp")
-        fd  = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(asdict(baseline), fh, ensure_ascii=False, indent=2)
-        tmp.replace(dest)
+        atomic_write(
+            dest,
+            json.dumps(asdict(baseline), ensure_ascii=False, indent=2),
+            mode=0o600,
+        )
         chown_to_sudo_user(dest)
     except OSError as exc:
         logger.debug("save_baseline: could not write %s: %s", dest, exc)

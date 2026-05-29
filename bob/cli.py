@@ -300,9 +300,9 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             try:
                 n = int(value)
             except ValueError:
-                raise CLIError(f"--watch=N requires a positive integer, got: {value!r}")
+                raise CLIError(f"--watch=N requires an integer ≥ 10, got: {value!r}")
             if n < 10:
-                raise CLIError("--watch=N: interval must be at least 10 seconds")
+                raise CLIError(f"--watch=N: interval must be ≥ 10 seconds, got: {n}")
             config.watch_mode = True
             config.watch_interval = n
 
@@ -315,9 +315,9 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             try:
                 n = int(value)
             except ValueError:
-                raise CLIError(f"--watch N requires a positive integer, got: {value!r}")
+                raise CLIError(f"--watch N requires an integer ≥ 10, got: {value!r}")
             if n < 10:
-                raise CLIError("--watch N: interval must be at least 10 seconds")
+                raise CLIError(f"--watch N: interval must be ≥ 10 seconds, got: {n}")
             config.watch_mode = True
             config.watch_interval = n
 

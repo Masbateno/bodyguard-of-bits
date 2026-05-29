@@ -4,6 +4,7 @@
 
 | Version | Date | Summary |
 |---------|------|---------|
+| [v0.6.1](#v061) | 2026-05-26 | First hardening release on the v0.6.x branch. Deep audit sub-agent surfaced 14 findings (0 critical + 6 important + 8 minor); 6 important + 4 minor shipped. **Atomic-write contract enforcement**: extracted `bob/_atomic.py::atomic_write(path, content, *, mode=)` as the single source of truth; migrated `bob/config.py` (2 sites), `bob/compare.py`, `bob/history.py`, `bob/recurrence.py` from their 5 hand-rolled implementations; **I-1** fixed the cron install paths (`bob/cron/_install.py`, `bob/tui/cron.py`) that were using raw `os.open(O_WRONLY \| O_CREAT \| O_TRUNC) + fdopen.write` on fresh installs — power-loss between truncate and write left the cron file empty (v0.5.7 #I-3 had closed the mutation path but missed the creation path); **I-6** fixed `bob/ignore.py` writing non-atomically — power-loss / OOM corrupted ignore.yml. `bob/cron/_io.py::_atomic_write` kept as a backwards-compat alias for the test patch target. **I-2 EOF contract completion**: new `bob/_tty.safe_input(prompt)` wrapper + `prompt_wizard()` now catches `EOFError` (was raising); 11 bare `input()` sites in `bob/cron/_install.py` (5), `bob/cron/_manage.py` (5), and `bob/fixes.py` (1) migrated to `safe_input`. **I-3** `bob/cron/_parse.py::_validate_cron_field` now rejects step values exceeding the field range (`*/200` for minute 0-59 was previously accepted → cron interpreted as "every 200 minutes" = never fires). **I-4** `shlex.quote()` applied to 8 `cmd=f"..."` sites in `bob/checks/ssh/_subchecks.py` (4) + `bob/checks/file_perms.py` (3) + `bob/checks/firmware.py` (1) where paths from `pwd.getpwnam(SUDO_USER).pw_dir`, filesystem scans, or `dpkg-query` output could contain spaces and silently mis-target `--fix --apply`. **I-5** `bob/history.py::save_score` first-write now creates `history.jsonl` with explicit mode `0o600` via `os.open(O_WRONLY \| O_APPEND \| O_CREAT)` instead of inheriting the default umask (typically 0o644 → world-readable score timestamps). **Minor fixes shipped**: M-2 redundant double-`.lower()` in `_apply_bad_directive`; M-3 `MaxAuthTries=-1` now falls back to default 6 (was accepted); M-6 `bob/__main__.py` fatal-error handler now hints "Set BOB_DEBUG=1 for full traceback" and prints traceback when set; M-8 `--watch=N` error wording aligned ("integer ≥ 10" instead of misleading "positive integer"). +17 regression tests in `tests/test_atomic_v061.py` (12) + `tests/test_cron.py::TestStepBoundedToFieldRange` (5). 4583 → 4600. JSON contract, EXPLAIN_KEYS, keybindings, no-curses fallback, exit codes — all preserved. |
 | [v0.6.0](#v060) | 2026-05-25 | **Major bump** — opens the v0.6.x branch. Two architectural splits + one sunset, all contract-preserving via package re-exports. **#13 split `bob/checks/ssh.py` (1296 LoC monolith) → `bob/checks/ssh/` package** with 4 modules: `_directives` (165L: `_BadDirective` table + `_BAD_DIRECTIVES` + `_apply_bad_directive` + weak crypto reference sets), `_snapshot` (198L: 5 dataclasses + `SSHSnapshot` + `SSHSnapshot.from_system`), `_parsers` (446L: pure parsers for sshd_config / authorized_keys / known_hosts / client config + key-type / RSA-bits helpers + `_collect_host_keys` + `_detect_ssh_install_cmd` + `_parse_time_seconds`), `_subchecks` (529L: `check_ssh` entry point + all `_check_*` per-area helpers). **#14 split `bob/cron.py` (1204 LoC monolith) → `bob/cron/` package** with 4 modules: `_parse` (330L: `CronEntry` + `parse_cron_file` + `list_installed_crons` + `cron_to_human` + `build_schedule_expr` + validators + day helpers + MTA detection + constants), `_io` (164L: `_atomic_write` + `build_script_content` + `apply_cron_schedule` + `apply_cron_email`), `_install` (319L: `prompt_emails` / `prompt_email` + `_run_install_cron_plain` + `run_install_cron` + `_CronQuit` exception), `_manage` (445L: `_manage_email_store` + `edit_cron_email` + `edit_cron_schedule` + `_run_manage_cron_plain` + `run_manage_cron`). Both packages preserve the full v0.5.x public API via `__init__.py` re-exports — `from bob.checks.ssh import check_ssh, SSHSnapshot, …` and `from bob.cron import CronEntry, run_install_cron, _EMAIL_RE, datetime, …` continue to work unchanged. **Sunset: `UFW_AUDIT_SHARE` legacy env var removed** (announced "REMOVED in v0.6.0" in v0.5.4 deprecation warning — honored). Only `BOB_SHARE` is now accepted; installers still setting the legacy alias will see no effect. Two AST-scanning tests (`tests/test_template_vars_migration.py`, `tests/test_domain_scores_mapping_complete.py`) updated to recurse into check packages (one-line `glob` → `rglob` shift). One regression test (`TestApplyCronScheduleAtomic`) updated to patch the new `bob.cron._io._atomic_write` site instead of the package-level re-export. 4583 tests inchangés (zero net delta — splits + sunset are wire-equivalent). LoC: ssh.py 1296L → 4 modules (max 529L), cron.py 1204L → 4 modules (max 445L). Largest check module is now `ssh/_subchecks.py` at 529L, well below the project's soft 1000-LoC ceiling. JSON contract (`schema_version="1"`), 116 EXPLAIN_KEYS, keybindings, no-curses fallback, exit codes — all preserved. **Closes the deferred architectural roadmap from v0.5.x.** |
 | [v0.5.8](#v058) | 2026-05-25 | Cleanup of the 5 cosmetic minors explicitly deferred by v0.5.7. **M-2** `manage_logs.py` cursor shift after delete now only counts deletions ≤ cursor (pre-fix: `cursor -= deleted` shifted by the full count even when most deleted items sat AFTER the cursor — visible cursor displacement on multi-selection deletes mixing items before+after the active position). **M-5** schedule wizard constants promoted from local `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` tuple unpack to a module-level `_Schedule(IntEnum)` with explicit `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` names — 3 call sites updated, IntEnum preserves `choice == _Schedule.WEEKDAYS` semantics so wire-equivalent. **M-6** `_extract_summary_view` `summary_start: int \| None = None` sentinel replaces `summary_start = 0` falsy check — handles the (unreachable in practice but semantically wrong) edge case where the SEP62 separator sits at line 0. **M-7** new `_is_finding_continuation(line)` helper stops the 4-space-indent grouping at any boundary that obviously belongs to a different finding (`[ALERT]`/`[WARN]`/`[OK]`/`[INFO]` markers) or a section delimiter (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — defends against over-greedy grouping of subsequent indented content. **M-8** `from datetime import datetime` lifted to module-level in both `bob/cron.py` and `bob/tui/cron.py`; 3 local imports removed (`_run_install_cron_plain`, `build_script_content`, install cron curses path). +12 regression tests across `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) and `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). 4571 → 4583 tests. JSON wire format unchanged, EXPLAIN_KEYS unchanged, keybindings unchanged, no public API removals. **Closes the v0.5.x deep-audit campaign — branch fully audited (25 modules deep-audit + ~25 spot-checked, 0 critical findings outstanding).** Next minor (v0.6.0) reserved for #13 (ssh.py split) and #14 (cron.py split) — the two deliberately-deferred architectural refactors. |
 | [v0.5.7](#v057) | 2026-05-24 | Targeted hardening pass on curses TUI (`bob/manage_logs.py` 999 LoC + `bob/tui/cron.py` 920 LoC = ~1920 LoC) — the bucket explicitly deferred by the v0.5.5 / v0.5.6 audits. 11 findings from a focused sub-agent: 0 critical, 3 important (I-1 `_curses_readline` accepted curses `KEY_*` keypad codes via `chr(ch_i)` — pressing arrows or function keys inserted Greek/Unicode glyphs like `Ι` / `Ω` into name/email/days/time/custom-expression input buffers; no security impact thanks to downstream `_EMAIL_RE` / `_validate_custom_cron` / digit-only filtering, but visibly corrupted UX. New `_is_printable_input_char(ch_i)` helper bounds inputs to printable Latin-1 only · I-2 three `input()` sites in `prompt_path` + move-logs confirmation + delete-all confirmation didn't catch `EOFError` so Ctrl-D dumped a Python traceback on cancel — now matches the `_rl()` convention treating EOF as empty input · I-3 `apply_cron_schedule` used raw `os.open(O_WRONLY \| O_CREAT \| O_TRUNC) + fdopen.write` instead of the project's `_atomic_write` helper. Power loss or `SIGKILL` between `open(O_TRUNC)` and `write` would leave the cron file empty → cron silently drops the entry, no notification. Asymmetric with `apply_cron_email` which already used `_atomic_write`. Same `mode=0o640` enforced), 3 minor (M-1 status `manage_logs.deleted_one` displayed `pending_delete[0].name` even when index 0 failed to delete and only a different index succeeded under selective permission errors — now tracks the first successfully-deleted name · M-3 dead-code `if ch_i == ord("1"): chosen = 0 elif chosen = 1` inside `_curses_edit_sub` simplified, elif guard rewritten with explicit parentheses · M-4 duplicate `from bob.cron import apply_cron_schedule, apply_cron_email` consolidated into the main import block). +11 regression tests across `tests/test_cron.py` (TestApplyCronScheduleAtomic, TestIsPrintableInputChar) and `tests/test_manage_logs.py` (TestEOFErrorOnPromptPath, TestEOFErrorOnMoveConfirm, TestEOFErrorOnDeleteAllConfirm, TestDeletedOneCorrectName). 4560 → 4571 tests. JSON wire format unchanged, EXPLAIN_KEYS unchanged, no public API additions. UX-visible deltas: clean Ctrl-D exit (no traceback), arrow/function keys no longer print garbage into TUI prompts. Deferred to v0.5.8 (5 cosmetic findings not worth churn now): M-2 cursor-shift assumes deletions sit before cursor · M-5 schedule wizard local-scoped constants → module-level / IntEnum · M-6 `summary_start` falsy check misses index 0 (unreachable in practice) · M-7 over-greedy continuation grouping in `_extract_summary_view` · M-8 local `from datetime import` lifted to module top. After v0.5.7, v0.5.x branch fully audited (22 core + logs.py + 2 TUI = 25 modules deep-audited + ~25 spot-checked). |
@@ -37,6 +38,91 @@
 | [v0.2.0](#v020) | 2026-05-01 | Scoring refactoring (domain average · tool caps) · cron MTA detection · kernel `-unsigned` false positive fix · IoT log dominance WARN · orange banner · 4238/4238 tests |
 | [v0.1.1](#v011) | 2026-04-29 | Hotfix — fwupd tree-format parser · `--install-completion` guidance · panorama column rename · 4206/4206 tests |
 | [v0.1.0](#v010) | 2026-04-26 | Initial release — 46 checks · 9 domains · 32 services · CIS benchmark mapping · EN/FR · 4200/4200 tests |
+
+---
+
+## [v0.6.1] — 2026-05-26
+
+**First hardening release on the v0.6.x branch.** Deep audit sub-agent pass produced 14 findings (0 critical + 6 important + 8 minor); 6 important + 4 minor shipped. The audit revealed two **half-applied contracts** from v0.5.x — atomic-write (mutation paths fixed in v0.5.7 #I-3 but not creation paths) and EOF handling (`manage_logs.py` fixed in v0.5.7 #I-2 but not cron wizards or `fixes.py`) — plus one **untested validator branch** in the cron step parser. All addressed with localized fixes.
+
+### Important (6)
+
+**I-1 + atomic-write contract consolidation** — Extracted `bob/_atomic.py::atomic_write(path, content, *, mode=)` as the single source of truth for crash-safe persistence. Migrated 5 sites that were hand-rolling the temp+rename pattern (`bob/config.py:UserConfig._save` + `EmailStore._save`, `bob/compare.py:save_baseline`, `bob/history.py:_rotate_if_needed`, `bob/recurrence.py:save_recurrence`). Fixed 4 sites that were NOT atomic at all:
+- `bob/cron/_install.py:261, 280` (script + cron file fresh install)
+- `bob/tui/cron.py:731, 749` (same paths in curses install)
+- `bob/ignore.py:93` (ignore.yml — I-6)
+- `bob/history.py:58` (first-write mode 0o600 — I-5, see below)
+
+`bob/cron/_io.py::_atomic_write` kept as an alias (`from bob._atomic import atomic_write as _atomic_write`) — the existing `TestApplyCronScheduleAtomic` test patches that name directly.
+
+**I-2 — EOF contract completion** — `bob/_tty.py` gained a `safe_input(prompt)` wrapper that catches `EOFError` and returns `""`. `prompt_wizard()` now also catches `EOFError` and returns `None` (consistent with `read_line()`). Migrated 11 bare `input()` sites: `bob/cron/_install.py` (5), `bob/cron/_manage.py` (5), `bob/fixes.py` (1). Ctrl-D no longer crashes any plain-text wizard.
+
+**I-3 — `_validate_cron_field` step bounds** — `*/200` for minute (0-59) was accepted by validation; cron then interpreted it as "every 200 minutes" → never fires (rolls over hourly). Added `if int(step_s) > (hi - lo + 1)` check after the existing `>= 1` validation. Now `*/200 minute` returns `"minute step '200' exceeds field range (60)"`.
+
+**I-4 — `shlex.quote()` on `cmd=` paths** — 8 sites where `--fix --apply` would `shlex.split()` paths containing spaces and apply chmod to the wrong file:
+- `bob/checks/ssh/_subchecks.py:117, 281, 306, 369` (host key removal, `~/.ssh` dir, private key, authorized_keys — paths from `pwd.getpwnam(SUDO_USER).pw_dir`)
+- `bob/checks/file_perms.py:228, 238, 257` (world-writable / over-permissive / sensitive paths from filesystem scan)
+- `bob/checks/firmware.py:186` (microcode package name)
+
+`bob/checks/ssl_certs.py:176` was already quoted at the variable definition (`_cert_name = shlex.quote(...)`).
+
+**I-5 — `history.jsonl` mode `0o600` on first write** — `_HISTORY_FILE.open("a")` used the process umask (typically `0o644` → world-readable). Score timestamps are privacy-sensitive on shared systems. Switched to `os.open(O_WRONLY | O_APPEND | O_CREAT, 0o600)` which sets mode only on creation; existing-file mode is preserved.
+
+**I-6 — `ignore.py` atomic write** — `bob/ignore.py:93` wrote `ignore.yml` via raw `os.open(O_TRUNC)`. Power-loss / OOM corrupted the file. Migrated to `atomic_write(path, content, mode=0o600)` (single helper from I-1 consolidation).
+
+### Minor (4 shipped)
+
+| # | Fix |
+|---|---|
+| **M-2** | `bob/checks/ssh/_directives.py::_apply_bad_directive` was calling `.lower()` twice (`is_bad` already lower-cases internally). Dropped the outer call. |
+| **M-3** | `bob/checks/ssh/_subchecks.py` `MaxAuthTries=-1` / `=0` was previously accepted. Now treated as the default 6 (sshd treats `<=0` as "no retry" which is also misconfiguration). |
+| **M-6** | `bob/__main__.py:405` `Fatal error: …` one-line print made bug reports useless. Now hints `Set BOB_DEBUG=1 for full traceback` and prints the traceback when the env var is set. |
+| **M-8** | `bob/cli.py` `--watch=N` error wording: `"positive integer"` → `"integer ≥ 10"` (matches the actual constraint). |
+
+### Minor (4 deferred / judgment-call)
+
+- **M-1** `parse_cron_file` silent downgrade of non-numeric hour/minute to `0` — only used as wizard default, low-impact, kept as-is
+- **M-4** Module-level path constants computed at import time — DOCUMENTED as intentional (M7 lazy resolution discarded in SNAPSHOT.md)
+- **M-5** fd leak window in install paths — addressed transitively by I-1 atomic_write migration
+- **M-7** `--check/--skip` warning vs always-on sections mismatch — judgment call, deferred to a UX review pass
+
+### Tests
+
+```
+$ python3 -m pytest tests/ -q
+.................. 4600 passed in ~7s
+```
+
+**4583 → 4600 (+17).** New test class structure:
+
+`tests/test_atomic_v061.py` (12 tests):
+- `TestAtomicWritePublicAPI` (4) — pins the `atomic_write(path, content, *, mode=)` contract (mode preserved, content overwritten cleanly, original survives on simulated failure)
+- `TestCronLegacyAliasStillWorks` (1) — `bob.cron._io._atomic_write is bob._atomic.atomic_write`
+- `TestHistoryFileMode` (2) — I-5 first-write 0o600, mode preserved on append
+- `TestIgnoreAtomic` (2) — I-6 atomic write + crash-safety
+- `TestSafeInput` (3) — I-2 `safe_input()` + `prompt_wizard()` EOFError handling
+
+`tests/test_cron.py::TestStepBoundedToFieldRange` (5 tests) — I-3 step bounds for minute / hour / boundary / zero / full expression.
+
+### Compatibility
+
+- **JSON contract**: `schema_version="1"`, the 116 EXPLAIN_KEYS — unchanged.
+- **Per-domain score**: unchanged. Global score unchanged.
+- **Wire output**: unchanged. `--watch=N` error wording is the only user-visible string change.
+- **External Python API**: `bob._atomic.atomic_write` is a new module-level helper (semi-public via `_` prefix on module name). `bob._tty.safe_input` is new public. Both additive.
+- **Backwards-compat**: `bob.cron._io._atomic_write` still exists as an alias — existing test patches keep working. The 5 migrated atomic-write sites preserve the exact same wire-output (just routed through the central helper).
+- **Keybindings**, **no-curses fallback**, **exit codes** — unchanged.
+
+### Audit campaign tracking
+
+| Release | Findings | Tests |
+|---|---|---|
+| v0.5.5 | 19 (4C + 4I + 11M) | +7 |
+| v0.5.6 | 10 (0C + 2I + 8M) | +15 |
+| v0.5.7 + v0.5.8 | 11 (0C + 3I + 8M) | +23 |
+| **v0.6.1** | **14 (0C + 6I + 8M)** | **+17** |
+
+**Cumulative**: 30 modules deep-audited, 0 critical findings outstanding. Two contracts (atomic-write, EOF handling) now uniformly enforced across the codebase.
 
 ---
 
