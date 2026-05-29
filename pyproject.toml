@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bodyguard-of-bits"
-version = "0.6.1"
+version = "0.6.2"
 description = "BOB — Bodyguard Of Bits: Linux hardening auditor with CIS benchmark mapping"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
@@ -63,9 +63,15 @@ addopts = "-q"
 
 [tool.setuptools.packages.find]
 where = ["."]
-# Explicit package list (locks down what gets shipped — guards against an
-# accidental top-level `bob_*` directory leaking into the wheel).
-include = ["bob", "bob.checks", "bob.tui"]
+# CRITICAL (v0.6.2 hotfix): use a glob so subpackages added in future
+# refactors (ssh/, cron/ in v0.6.0) are auto-included in the wheel. The
+# previous explicit list `["bob", "bob.checks", "bob.tui"]` did NOT include
+# `bob.checks.ssh` or `bob.cron` — the v0.6.0 splits produced wheels that
+# crashed at import time on every pipx-installed system with:
+#   ModuleNotFoundError: No module named 'bob.checks.ssh'
+# The "bob*" pattern matches bob, bob.checks, bob.checks.ssh, bob.cron, etc.
+# but still excludes top-level non-bob directories (tests/, DOCUMENTS/, etc.).
+include = ["bob*"]
 
 [tool.setuptools.package-data]
 bob = [

@@ -4,6 +4,7 @@
 
 | Version | Date | Résumé |
 |---------|------|--------|
+| [v0.6.2](#v062) | 29-05-2026 | **Hotfix packaging critique.** Tous les wheels shippés depuis v0.6.0 (donc v0.6.0 + v0.6.1) manquaient `bob/checks/ssh/` et `bob/cron/` — les deux sous-packages introduits par les splits v0.6.0. Quiconque a `pipx upgrade`d hit `ModuleNotFoundError: No module named 'bob.checks.ssh'` au startup. Cause racine : `[tool.setuptools.packages.find].include` était une liste figée `["bob", "bob.checks", "bob.tui"]` d'un audit packaging v0.4.x — quand v0.6.0 a ajouté `bob.checks.ssh` et `bob.cron`, la liste n'a pas été mise à jour. Le wheel se construit mais exclut les deux packages silencieusement. Pourquoi non détecté : tests + le smoke pre-ship `sudo python3 -m bob` tournaient depuis le working tree (les répertoires sources sont visibles peu importe la config packaging) ; `.github/workflows/integration.yml` utilisait `pip install -e .` (editable mode) qui met le repo root sur `sys.path` et bypass la discovery packaging entièrement. Fix : `include = ["bob*"]` (glob) auto-découvre tout sous-package futur. CI hardened : jobs intégration utilisent maintenant `pip install .` (non-editable, build + install un vrai wheel) + nouvelle smoke step explicite qui import chaque module v0.6.x-ajouté. Aucun changement de code autre que la config packaging + workflow guard. 4600 tests inchangés. **Quiconque tourne v0.6.0 ou v0.6.1 via pipx doit `pipx upgrade bodyguard-of-bits` vers v0.6.2 pour avoir un install qui marche.** |
 | [v0.6.1](#v061) | 26-05-2026 | Première release hardening sur la branche v0.6.x. Sub-agent d'audit profond a remonté 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. **Consolidation contrat atomic-write** : extraction `bob/_atomic.py::atomic_write(path, content, *, mode=)` source unique de vérité ; migration 5 sites (`bob/config.py` ×2, `bob/compare.py`, `bob/history.py`, `bob/recurrence.py`) + fix 4 sites non-atomiques (`bob/cron/_install.py`, `bob/tui/cron.py`, `bob/ignore.py`, `bob/history.py` first-write). v0.5.7 #I-3 avait fermé le path mutation cron mais raté le path création. **Contrat EOF complet** : nouveau `bob/_tty.safe_input(prompt)` + `prompt_wizard()` catche maintenant `EOFError` ; 11 sites `input()` brut migrés (`bob/cron/_install.py` ×5, `bob/cron/_manage.py` ×5, `bob/fixes.py` ×1). Ctrl-D ne crash plus aucun wizard plain-text. **I-3** `_validate_cron_field` rejette les step values excédant le range du field (`*/200` pour minute 0-59 était accepté → cron interprétait "toutes les 200 minutes" = ne se déclenche jamais). **I-4** `shlex.quote()` appliqué sur 8 sites `cmd=f"..."` dans `bob/checks/ssh/_subchecks.py` (4) + `bob/checks/file_perms.py` (3) + `bob/checks/firmware.py` (1) où les paths de `pwd.getpwnam(SUDO_USER).pw_dir` ou scans filesystem pouvaient contenir des espaces et silently mis-target `--fix --apply`. **I-5** `bob/history.py::save_score` first-write crée `history.jsonl` avec mode `0o600` explicite via `os.open(O_WRONLY \| O_APPEND \| O_CREAT)` au lieu d'hériter du umask par défaut (typiquement `0o644` → world-readable des timestamps de score). **Minors shippés** : M-2 redundant double-`.lower()` dans `_apply_bad_directive` ; M-3 `MaxAuthTries=-1` fallback default 6 (était accepté) ; M-6 `bob/__main__.py` fatal-error handler hint `BOB_DEBUG=1` ; M-8 `--watch=N` error wording aligné. +17 tests régression. 4583 → 4600. Contrat JSON, EXPLAIN_KEYS, keybindings, fallback no-curses, exit codes — tous préservés. |
 | [v0.6.0](#v060) | 25-05-2026 | **Bump majeur** — ouvre la branche v0.6.x. Deux splits architecturaux + un sunset, tous contract-preserving via re-exports `__init__.py`. **#13 split `bob/checks/ssh.py` (monolithe 1296 LoC) → package `bob/checks/ssh/`** avec 4 modules : `_directives` (165L : table `_BadDirective` + `_BAD_DIRECTIVES` + `_apply_bad_directive` + sets weak crypto), `_snapshot` (198L : 5 dataclasses + `SSHSnapshot` + `SSHSnapshot.from_system`), `_parsers` (446L : parsers purs sshd_config / authorized_keys / known_hosts / client config + helpers key-type / RSA-bits + `_collect_host_keys` + `_detect_ssh_install_cmd` + `_parse_time_seconds`), `_subchecks` (529L : entry point `check_ssh` + tous les helpers `_check_*` par zone). **#14 split `bob/cron.py` (monolithe 1204 LoC) → package `bob/cron/`** avec 4 modules : `_parse` (330L : `CronEntry` + `parse_cron_file` + `list_installed_crons` + `cron_to_human` + `build_schedule_expr` + validators + day helpers + détection MTA + constantes), `_io` (164L : `_atomic_write` + `build_script_content` + `apply_cron_schedule` + `apply_cron_email`), `_install` (319L : `prompt_emails` / `prompt_email` + `_run_install_cron_plain` + `run_install_cron` + exception `_CronQuit`), `_manage` (445L : `_manage_email_store` + `edit_cron_email` + `edit_cron_schedule` + `_run_manage_cron_plain` + `run_manage_cron`). Les deux packages préservent la full API publique v0.5.x via re-exports `__init__.py` — `from bob.checks.ssh import check_ssh, SSHSnapshot, …` et `from bob.cron import CronEntry, run_install_cron, _EMAIL_RE, datetime, …` continuent de marcher inchangés. **Sunset : env var legacy `UFW_AUDIT_SHARE` retirée** (annoncée "REMOVED in v0.6.0" dans le warning deprecation v0.5.4 — honorée). Seul `BOB_SHARE` est maintenant accepté ; les installers settant encore le legacy alias verront aucun effet. Deux tests AST-scanning (`tests/test_template_vars_migration.py`, `tests/test_domain_scores_mapping_complete.py`) mis à jour pour recurser dans les packages de check (shift d'une ligne `glob` → `rglob`). Un test régression (`TestApplyCronScheduleAtomic`) mis à jour pour patcher le nouveau site `bob.cron._io._atomic_write` au lieu du re-export package-level. 4583 tests inchangés (zéro delta net — splits + sunset sont wire-équivalents). LoC : ssh.py 1296L → 4 modules (max 529L), cron.py 1204L → 4 modules (max 445L). Le plus gros module de check est maintenant `ssh/_subchecks.py` à 529L, bien sous le soft ceiling 1000-LoC du projet. Contrat JSON (`schema_version="1"`), 116 EXPLAIN_KEYS, keybindings, fallback no-curses, exit codes — tous préservés. **Ferme le backlog refactor architectural déféré depuis v0.5.x.** |
 | [v0.5.8](#v058) | 25-05-2026 | Cleanup des 5 mineurs cosmétiques explicitement déférés par v0.5.7. **M-2** `manage_logs.py` cursor shift après delete ne compte maintenant que les deletions ≤ cursor (pré-fix : `cursor -= deleted` shiftait par le total même quand la plupart des items supprimés étaient APRÈS le cursor — déplacement visible sur multi-sélection mélangeant items avant+après position active). **M-5** constantes du wizard schedule promues de `_, _SCHEDULE_WEEKDAYS, _SCHEDULE_MONTHDAYS, _SCHEDULE_CUSTOM = 1, 2, 3, 4` tuple unpack local à un `_Schedule(IntEnum)` module-level avec noms explicites `DAILY`/`WEEKDAYS`/`MONTHDAYS`/`CUSTOM` — 3 call sites mis à jour, IntEnum préserve la sémantique `choice == _Schedule.WEEKDAYS` donc wire-équivalent. **M-6** `_extract_summary_view` sentinelle `summary_start: int \| None = None` remplace le check truthy `summary_start = 0` — gère le edge case (unreachable en pratique mais sémantiquement faux) où le séparateur SEP62 est à la ligne 0. **M-7** nouveau helper `_is_finding_continuation(line)` stoppe le grouping 4-space-indent à toute frontière qui appartient évidemment à un autre finding (markers `[ALERT]`/`[WARN]`/`[OK]`/`[INFO]`) ou à un délimiteur de section (`┌`/`└`/`│`/`━`/`╔`/`╠`/`╚`/`║`) — défense contre le grouping over-greedy de contenu indenté ultérieur. **M-8** `from datetime import datetime` remonté au niveau module dans `bob/cron.py` et `bob/tui/cron.py` ; 3 imports locaux retirés (`_run_install_cron_plain`, `build_script_content`, install cron curses path). +12 tests régression à travers `tests/test_cron.py` (TestScheduleIntEnum, TestDatetimeImportLifted) et `tests/test_manage_logs.py` (TestCursorShiftAfterDelete, TestSummaryStartSentinel, TestIsFindingContinuation). 4571 → 4583 tests. Format wire JSON inchangé, EXPLAIN_KEYS inchangées, keybindings inchangés, aucun retrait d'API publique. **Ferme la campagne deep-audit v0.5.x — branche intégralement auditée (25 modules deep-audit + ~25 spot-checkés, 0 finding critique en suspens).** Prochaine version mineure (v0.6.0) réservée pour #13 (split ssh.py) et #14 (split cron.py) — les deux refactors architecturaux délibérément déférés. |
@@ -38,6 +39,77 @@
 | [v0.2.0](#v020) | 01-05-2026 | Refonte du scoring (moyenne domaines · plafond par outil) · détection MTA cron · faux positif kernel `-unsigned` · dominance IoT WARN · bannière orange · 4238/4238 tests |
 | [v0.1.1](#v011) | 29-04-2026 | Hotfix — parser fwupd format arbre · message `--install-completion` · renommage colonne panorama · 4206/4206 tests |
 | [v0.1.0](#v010) | 26-04-2026 | Version initiale — 46 vérifications · 9 domaines · 32 services · mapping CIS · FR/EN · 4200/4200 tests |
+
+---
+
+## [v0.6.2] — 29-05-2026
+
+**Hotfix packaging critique.** Tous les wheels shippés depuis v0.6.0 (donc v0.6.0 + v0.6.1) manquaient `bob/checks/ssh/` et `bob/cron/` — les deux sous-packages introduits par les splits v0.6.0. Les utilisateurs qui avaient `pipx upgrade`d hit un crash dur au startup :
+
+```
+$ sudo bob -v -d --french
+Traceback (most recent call last):
+  File "/usr/local/bin/bob", line 3, in <module>
+    from bob.__main__ import main
+  File ".../bob/__main__.py", line 38, in <module>
+    from bob.runner import (
+  File ".../bob/runner.py", line 46, in <module>
+    from bob.checks.ssh import SSHSnapshot, check_ssh
+ModuleNotFoundError: No module named 'bob.checks.ssh'
+```
+
+### Cause racine
+
+`pyproject.toml::[tool.setuptools.packages.find]` avait une liste figée `include = ["bob", "bob.checks", "bob.tui"]` héritée d'un audit packaging v0.4.x. Quand v0.6.0 a splité `bob/checks/ssh.py` → package `bob/checks/ssh/` et `bob/cron.py` → package `bob/cron/`, cette liste n'a pas été mise à jour. `find_packages()` de setuptools a donc EXCLU les deux sous-packages du wheel — ils existent dans le source tree mais ne sont jamais dans la distribution.
+
+### Pourquoi trois couches de tests l'ont raté
+
+1. **Tests unitaires** importent depuis le source tree (`from bob.checks.ssh import …` résout via `sys.path` contenant le repo root). La config packaging est non-pertinente.
+2. **Smoke pre-ship `sudo python3 -m bob`** tournait depuis le working tree (`~/github/bodyguard-of-bits/`). Même résolution source-tree — wheel jamais impliqué.
+3. **CI `integration.yml`** utilisait `pip install -e .` (mode editable), qui ajoute le repo root à `site-packages` via un fichier `.pth`. Les editable installs bypassent DÉLIBÉRÉMENT la discovery `find_packages()` pour iteration rapide — masquant exactement cette classe de bug.
+
+Le premier signal est venu d'un `pipx upgrade` utilisateur sur un système clean, qui build et installe un vrai wheel.
+
+### Fix
+
+**`pyproject.toml`** :
+```diff
+ [tool.setuptools.packages.find]
+ where = ["."]
+-include = ["bob", "bob.checks", "bob.tui"]
++include = ["bob*"]
+```
+
+Le glob `bob*` matche `bob`, `bob.checks`, `bob.checks.ssh`, `bob.cron`, `bob.tui`, et tout futur sous-package `bob.*`. Exclut toujours la cible du garde original (répertoires non-bob top-level `bob_something/`).
+
+**`.github/workflows/integration.yml`** :
+- Changé `pip install -e .` → `pip install .` (build + install un vrai wheel sur chaque distro)
+- Nouveau smoke step qui import explicitement chaque module v0.6.x-ajouté
+
+Ce deuxième garde fail-fast sur un module manquant *à l'install-time sur la CI*, pas au runtime sur un système utilisateur.
+
+### Compatibilité
+
+- **Contrat JSON**, EXPLAIN_KEYS, sortie wire — tous inchangés.
+- **Changements code** : zéro. Seulement `pyproject.toml` (1 ligne) et `.github/workflows/integration.yml` (~15 lignes) modifiés.
+- **Tests** : 4600 inchangés. (Le code test ne touche pas le packaging ; ce bug n'est pas unit-testable sans spawn un build venv, ce qui est la nouvelle étape CI.)
+- **Path d'upgrade** : `pipx upgrade bodyguard-of-bits` sur tout système pipx-installé pour fixer l'install cassé.
+
+### Action requise
+
+Si vous avez upgradé vers v0.6.0 ou v0.6.1 via pipx, vous avez actuellement un install cassé (le binaire `bob` crash à chaque invocation). Exécutez :
+
+```bash
+pipx upgrade bodyguard-of-bits
+```
+
+pour obtenir le wheel v0.6.2 fonctionnel.
+
+### Leçons enregistrées
+
+- **Les editable installs cachent les bugs packaging.** Tous les futurs jobs CI integration utilisent `pip install .` (non-editable).
+- **Smoke step d'import explicite** pour chaque nouveau sous-package fait maintenant partie de la matrice intégration. Ajouter un nouveau `bob/foo/` sous-package dans le futur requiert l'ajouter à la liste smoke — visible en code review.
+- **Memory note** : cette classe de bug est un risque récurrent pour les projets qui pinent des listes de package-discovery. Glob > liste figée pour `setuptools.packages.find.include`.
 
 ---
 

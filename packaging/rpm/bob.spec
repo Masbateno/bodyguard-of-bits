@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.6.1
+Version:        0.6.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,28 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri May 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.6.2-1
+- CRITICAL packaging hotfix. Every wheel since v0.6.0 was
+  missing bob/checks/ssh/ and bob/cron/ subpackages. Users who
+  pipx-upgraded hit ModuleNotFoundError on every invocation.
+- Root cause: pyproject.toml [tool.setuptools.packages.find]
+  had a literal include list inherited from v0.4.x. The v0.6.0
+  splits added bob.checks.ssh and bob.cron but the list was
+  not updated. setuptools' find_packages() excluded both
+  subpackages from the wheel.
+- Fix: include = ["bob*"] glob auto-discovers every current
+  and future bob.* subpackage.
+- CI hardened: pip install . (non-editable) + explicit smoke
+  step importing every v0.6.x-added module.
+- Why undetected: unit tests + pre-ship smoke ran from the
+  source tree (sys.path resolution); CI used pip install -e .
+  (editable mode bypasses find_packages discovery).
+- No code changes. Only pyproject.toml (1 line) and
+  workflows/integration.yml (~15 lines) modified.
+- 4600 tests unchanged.
+- JSON contract, EXPLAIN_KEYS, wire output — all preserved.
+- Upgrade: pipx upgrade bodyguard-of-bits.
+
 * Tue May 26 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.6.1-1
 - First hardening release on v0.6.x. Deep audit sub-agent
   surfaced 14 findings (0 critical + 6 important + 8 minor);

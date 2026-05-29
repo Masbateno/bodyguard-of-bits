@@ -1,3 +1,46 @@
+bodyguard-of-bits (0.6.2-1) UNRELEASED; urgency=high
+
+  * CRITICAL packaging hotfix. Every wheel shipped since v0.6.0
+    (v0.6.0 + v0.6.1) was missing bob/checks/ssh/ and bob/cron/ —
+    the two subpackages introduced by the v0.6.0 splits.
+    pipx upgrade resulted in ModuleNotFoundError on every
+    bob invocation:
+      File ".../bob/runner.py", line 46, in <module>
+        from bob.checks.ssh import SSHSnapshot, check_ssh
+      ModuleNotFoundError: No module named 'bob.checks.ssh'
+  * Root cause: pyproject.toml [tool.setuptools.packages.find]
+    had a literal include = ["bob", "bob.checks", "bob.tui"]
+    list inherited from a v0.4.x packaging audit. The v0.6.0
+    splits added bob.checks.ssh and bob.cron but the list was
+    not updated. setuptools' find_packages() therefore excluded
+    both subpackages from the wheel.
+  * Why three test layers missed it: unit tests import from
+    the source tree (sys.path resolution, packaging config
+    irrelevant); pre-ship sudo python3 -m bob smoke ran from
+    the working tree (same source-tree resolution);
+    .github/workflows/integration.yml used pip install -e .
+    (editable mode) which adds the repo root via a .pth file
+    and bypasses find_packages() discovery entirely.
+  * Fix: include = ["bob*"] (glob) auto-discovers every
+    current and future bob.* subpackage. Excludes top-level
+    non-bob directories (tests/, DOCUMENTS/, packaging/).
+  * CI hardened:
+    - integration.yml steps use pip install . (non-editable,
+      builds + installs a real wheel on each distro)
+    - new explicit smoke step imports every v0.6.x-added
+      module (bob.checks.ssh, bob.cron, bob._atomic,
+      bob._tty.safe_input) so a missing-from-wheel module
+      surfaces at CI install-time, not at runtime on a user
+      system.
+  * No code changes other than packaging config (1 line) and
+    workflow guard (~15 lines).
+  * 4600 tests unchanged. JSON contract, EXPLAIN_KEYS, all
+    wire output — unchanged.
+  * Upgrade path: pipx upgrade bodyguard-of-bits on any
+    pipx-installed system to fix the broken install.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 29 May 2026 22:00:00 +0200
+
 bodyguard-of-bits (0.6.1-1) UNRELEASED; urgency=low
 
   * First hardening release on the v0.6.x branch. Deep-audit

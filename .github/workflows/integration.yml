@@ -76,10 +76,30 @@ jobs:
         #   - Debian 13 / Ubuntu 24+ / Kali require it (apt-installed pip
         #     has no RECORD file → pip refuses uninstall on upgrade).
         # A venv is a clean, distro-independent install location.
+        #
+        # CRITICAL (v0.6.2 hotfix): `pip install .` (non-editable) so the
+        # wheel is actually built. `pip install -e .` (editable) puts the
+        # repo root on sys.path and bypasses the [tool.setuptools.packages]
+        # config — packaging-config bugs go undetected. The v0.6.0 splits
+        # of bob/checks/ssh/ and bob/cron/ shipped a wheel missing those
+        # subpackages because the include= list was a stale literal; the
+        # bug only surfaced after pipx install on a user system.
         run: |
           python3 -m venv /opt/bobenv
-          /opt/bobenv/bin/pip install -e .
+          /opt/bobenv/bin/pip install .
           echo "/opt/bobenv/bin" >> "$GITHUB_PATH"
+
+      - name: Smoke — packaging includes all subpackages
+        # Catches the v0.6.0 class of bug: a refactor adds a new subpackage
+        # but the wheel doesn't include it. The `pip install .` step above
+        # builds the wheel; this step imports each subpackage explicitly so
+        # any missing module surfaces as a clean failure here, not at
+        # runtime on a user system.
+        run: |
+          python3 -c "import bob.checks.ssh; from bob.checks.ssh import check_ssh, SSHSnapshot"
+          python3 -c "import bob.cron; from bob.cron import CronEntry, run_install_cron, _atomic_write"
+          python3 -c "from bob._atomic import atomic_write"
+          python3 -c "from bob._tty import safe_input, prompt_wizard, read_line"
 
       - name: Smoke — bob --version
         run: bob --version
