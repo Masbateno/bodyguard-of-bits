@@ -100,7 +100,15 @@ jobs:
         id: extract
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"   # e.g. v0.4.6
+          VERSION="${GITHUB_REF_NAME}"   # e.g. v0.4.6 or v0.7.0b1
+
+          # --- Detect pre-release per PEP 440 suffix (a/b/rc/.dev followed by digits)
+          IS_PRERELEASE="false"
+          if [[ "$VERSION" =~ (a|b|rc|\.dev)[0-9]+$ ]]; then
+            IS_PRERELEASE="true"
+          fi
+          echo "is_prerelease=$IS_PRERELEASE"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
 
           # --- Body: section between "## [vX.Y.Z]" and the next "## [v" header
           #           in DOCUMENTS/CHANGELOG_FULL.md (the header line itself is skipped)
@@ -111,10 +119,30 @@ jobs:
           ' DOCUMENTS/CHANGELOG_FULL.md > /tmp/notes.md
 
           if [ ! -s /tmp/notes.md ]; then
-            echo "::error::No release notes extracted for $VERSION."
-            echo "DOCUMENTS/CHANGELOG_FULL.md must contain a section starting with:"
-            echo "  ## [$VERSION] — YYYY-MM-DD"
-            exit 1
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              # Pre-release without a CHANGELOG section is allowed: synthesise
+              # minimal notes from git log so VM validation can ship a wheel
+              # without forcing a changelog edit per beta drop.
+              PREV_TAG=$(git describe --tags --abbrev=0 --match='v[0-9]*' HEAD^ 2>/dev/null || echo "")
+              {
+                echo "## Pre-release $VERSION"
+                echo ""
+                echo "Pre-release build for testing. Install with:"
+                echo ""
+                echo '    pipx install --pip-args="--pre" bodyguard-of-bits'
+                echo ""
+                if [ -n "$PREV_TAG" ]; then
+                  echo "### Commits since $PREV_TAG"
+                  echo ""
+                  git log --oneline "$PREV_TAG..HEAD" --no-decorate
+                fi
+              } > /tmp/notes.md
+            else
+              echo "::error::No release notes extracted for $VERSION."
+              echo "DOCUMENTS/CHANGELOG_FULL.md must contain a section starting with:"
+              echo "  ## [$VERSION] — YYYY-MM-DD"
+              exit 1
+            fi
           fi
 
           # --- Title: "vX.Y.Z — <headline>" where <headline> is the text in the
@@ -126,7 +154,11 @@ jobs:
           HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/ — .*$//')
 
           if [ -z "$HEADLINE" ]; then
-            TITLE="$VERSION"
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              TITLE="$VERSION (pre-release)"
+            else
+              TITLE="$VERSION"
+            fi
           else
             TITLE="$VERSION — $HEADLINE"
           fi
@@ -145,4 +177,7 @@ jobs:
           body_path: /tmp/notes.md
           files: dist/*
           fail_on_unmatched_files: true
-          make_latest: true
+          # Pre-release tags (v0.7.0b1, v0.7.0a2, …) do NOT override the
+          # latest-stable badge on the GitHub releases page.
+          make_latest: ${{ steps.extract.outputs.is_prerelease == 'false' }}
+          prerelease: ${{ steps.extract.outputs.is_prerelease == 'true' }}
