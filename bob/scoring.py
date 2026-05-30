@@ -524,7 +524,19 @@ class ScoreEngine:
 
         Idempotent — calling twice with the same args is safe. Subsequent
         calls overwrite earlier state.
+
+        Type guard: ``firewall_domain_score`` MUST be ``int`` or ``None``.
+        Passing the full ``engine.domain_scores["firewall"]`` dict by mistake
+        used to silently break ``posture_escalation`` at the ``<=`` comparison
+        site; we now fail loudly with a clear TypeError instead.
         """
+        if firewall_domain_score is not None and not isinstance(firewall_domain_score, int):
+            raise TypeError(
+                f"firewall_domain_score must be int or None, got "
+                f"{type(firewall_domain_score).__name__}. "
+                f"Did you pass engine.domain_scores['firewall'] (a dict) "
+                f"instead of engine.domain_scores['firewall']['score'] (an int)?"
+            )
         self._posture_firewall_inactive = firewall_inactive
         self._posture_iptables_input_accept = iptables_input_accept
         self._posture_firewall_domain_score = firewall_domain_score

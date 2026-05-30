@@ -530,6 +530,75 @@ class TestPostureEscalation:
         assert e.effective_level == RiskLevel.HIGH
 
 
+class TestPostureTypeGuard:
+    """Regression guard for the so6desktop crash on 2026-05-30:
+    engine.domain_scores returns dict[str, dict] but the first cut of
+    __main__.py passed the inner dict to set_posture, crashing
+    posture_escalation at the ``<=`` comparison."""
+
+    def test_passing_dict_raises_typeerror(self):
+        e = ScoreEngine()
+        e.finalize()
+        # The exact mistake that crashed sudo bob on so6desktop:
+        # engine.domain_scores["firewall"] is a dict, not an int.
+        with pytest.raises(TypeError) as exc:
+            e.set_posture(firewall_domain_score={"score": 3, "deductions": 7, "label": "Firewall"})
+        assert "int or None" in str(exc.value)
+        assert "dict" in str(exc.value).lower()
+
+    def test_passing_str_raises_typeerror(self):
+        e = ScoreEngine()
+        e.finalize()
+        with pytest.raises(TypeError):
+            e.set_posture(firewall_domain_score="3")  # type: ignore[arg-type]
+
+    def test_int_accepted(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_domain_score=3)  # must not raise
+        assert e.posture_escalation[0] == RiskLevel.MEDIUM
+
+    def test_none_accepted(self):
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_domain_score=None)  # must not raise
+        assert e.posture_escalation == (None, "")
+
+
+class TestPostureIntegrationWithDomainScores:
+    """Integration: real engine.domain_scores → set_posture round-trip.
+
+    Pre-fix on so6desktop: __main__.py passed engine.domain_scores.get('firewall')
+    (a dict) directly to set_posture(firewall_domain_score=...), crashing
+    the audit with "'<=' not supported between instances of 'dict' and 'int'".
+    """
+
+    def test_extract_score_from_domain_scores_dict(self):
+        from bob.domain_scores import apply_domain_score_override
+        from bob.scoring import Deduction
+        e = ScoreEngine()
+        # Add a firewall-attributed deduction directly so domain_scores
+        # has a "firewall" entry after apply_domain_score_override.
+        e.breakdown.append(Deduction(reason="test", points=2, key="firewall.inactive"))
+        e.finalize()
+        apply_domain_score_override(e)
+        ds = e.domain_scores
+        # Sanity: the structure is dict[str, dict[str, int|str]]
+        assert isinstance(ds.get("firewall"), dict)
+        assert "score" in ds["firewall"]
+        assert isinstance(ds["firewall"]["score"], int)
+        # The correct way to wire __main__.py:
+        e.set_posture(firewall_domain_score=ds["firewall"]["score"])
+        # No crash, posture_escalation returns a tuple
+        floor, key = e.posture_escalation
+        assert key in (
+            "scoring.posture.firewall_inactive",
+            "scoring.posture.iptables_input_accept",
+            "scoring.posture.firewall_domain_low",
+            "",
+        )
+
+
 class TestRiskMax:
     """The _risk_max helper that drives effective_level."""
 
