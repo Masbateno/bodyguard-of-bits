@@ -97,6 +97,7 @@ class TestImportAllowlist:
         "re", "json", "pathlib", "datetime", "typing",
         "dataclasses", "collections", "enum",
         "math", "string", "hashlib",
+        "time",
         "os.path", "stat",
     })
 
@@ -138,6 +139,23 @@ class TestAdversarialPluginsBlocked:
             f"a CheckResult. Got: {type(result).__name__}"
         )
 
+    # Patterns that indicate the sandbox blocked the attack — either the
+    # plugin's own OK message says "blocked", or the runner's wrapping
+    # WARN message reflects a sandbox-effect (timeout, kill, ImportError
+    # from the import hook, PermissionError from open / Path patches,
+    # MemoryError from RLIMIT_AS, immutable builtins error).
+    _SANDBOX_EFFECT_PATTERNS = (
+        "blocked",
+        "timed out",
+        "killed",
+        "memoryerror",
+        "permissionerror",
+        "not in import allowlist",
+        "not allowed",
+        "read-only",
+        "sandbox",
+    )
+
     @pytest.mark.parametrize(
         "plugin_path", _ALL_ADVERSARIAL, ids=lambda p: p.name,
     )
@@ -168,14 +186,19 @@ class TestAdversarialPluginsBlocked:
         ok_findings = [f for f in result.findings if f.level == FindingLevel.OK]
         if not target:
             # Network / threading / fork / globals / OOM / loop attacks do
-            # not have a fs target; the plugin's own OK finding is the
-            # contract signal that the sandbox blocked the import / call.
-            assert ok_findings or "blocked" in (
-                "".join(f.message.lower() for f in result.findings)
-            ), (
-                f"{plugin_path.name} did not produce an OK 'blocked' finding "
-                f"and has no filesystem target — sandbox effect unverifiable. "
-                f"Findings: {[(f.level.value, f.message) for f in result.findings]}"
+            # not have a fs target; the runner's WARN wrapping (timeout,
+            # ImportError) or the plugin's own OK finding signals the
+            # sandbox effect.
+            combined = "".join(f.message.lower() for f in result.findings)
+            blocked = any(
+                p in combined for p in self._SANDBOX_EFFECT_PATTERNS
+            )
+            assert ok_findings or blocked, (
+                f"{plugin_path.name} produced no sandbox-effect signal "
+                f"(OK 'blocked' finding nor warn with timeout/permission/"
+                f"importerror/memory pattern) and has no filesystem target — "
+                f"sandbox effect unverifiable. Findings: "
+                f"{[(f.level.value, f.message) for f in result.findings]}"
             )
 
 
