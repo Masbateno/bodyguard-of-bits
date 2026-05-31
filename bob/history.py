@@ -45,16 +45,33 @@ def _clamp_entry(e: dict) -> dict:
     return e
 
 
-def save_score(score: int, level: str) -> None:
-    """Append current audit score to history.jsonl."""
+def save_score(
+    score: int,
+    level: str,
+    level_score_only: str | None = None,
+) -> None:
+    """Append current audit score to history.jsonl.
+
+    Args:
+        score: Audit score (0-10).
+        level: Effective risk level (low/medium/high/critical) — reflects
+            posture escalation since v0.7.0.
+        level_score_only: I-4 (v0.7.0 Phase 2.1) — optional un-escalated
+            baseline level. When provided, written as a separate field for
+            trend analysis that needs the score-only view (matches the v2
+            JSON ``posture_escalation.score_level`` semantic).
+    """
     try:
         _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         chown_to_sudo_user(_CONFIG_DIR)
-        entry = json.dumps({
+        entry_dict: dict = {
             "ts":    datetime.now(timezone.utc).isoformat(),
             "score": score,
             "level": level,
-        })
+        }
+        if level_score_only is not None:
+            entry_dict["level_score_only"] = level_score_only
+        entry = json.dumps(entry_dict)
         existed = _HISTORY_FILE.exists()
         # I-5 (v0.6.1): explicit mode=0o600 on creation. Python's default
         # `Path.open("a")` uses the process umask (typically 0o644 → world-

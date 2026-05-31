@@ -313,3 +313,27 @@ class TestMarkdownCLIValidation:
     def test_watch_and_markdown_raises(self):
         with pytest.raises(CLIError, match="[Ii]ncompatible"):
             parse_args(["--watch", "--output=markdown"])
+
+
+class TestMarkdownEffectiveLevel:
+    """I-1 (v0.7.0 Phase 2.1): Markdown must render the posture-aware
+    effective_level, matching display/JSON/CSV/webhook contracts."""
+
+    def test_clean_engine_renders_score_only_level(self):
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        md = build_markdown_output(eng, _make_sys_info())
+        assert "Low" in md
+        assert "High" not in md
+
+    def test_firewall_inactive_renders_effective_high(self):
+        """The Ubuntu VM scenario applied to the Markdown sink."""
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        eng.set_posture(firewall_inactive=True)
+        assert eng.level.value == "low"
+        assert eng.effective_level.value == "high"
+        md = build_markdown_output(eng, _make_sys_info())
+        assert "High" in md

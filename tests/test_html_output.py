@@ -359,3 +359,32 @@ class TestHtmlCli:
     def test_html_compatible_with_verbose(self):
         config = parse_args(["--html", "--verbose"])
         assert config.html_mode and config.verbose
+
+
+class TestHtmlEffectiveLevel:
+    """I-1 (v0.7.0 Phase 2.1): HTML must render the posture-aware effective_level,
+    matching display/JSON/CSV/webhook contracts. Before the fix, a host with
+    UFW inactive saw 'LOW' in the HTML report despite 'HIGH' in the terminal."""
+
+    def test_clean_engine_renders_score_only_level(self):
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        # No posture issue → effective_level == level → LOW
+        html = build_html_output(eng, _make_sys_info())
+        assert "LOW" in html.upper()
+        assert "HIGH" not in html.upper()
+
+    def test_firewall_inactive_renders_effective_high(self):
+        """The Ubuntu VM scenario: score 10 (LOW score-only) + UFW inactive
+        → posture lifts to HIGH. HTML must reflect HIGH, not LOW."""
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        eng.set_posture(firewall_inactive=True)
+        # Sanity: engine surfaces diverge as expected
+        assert eng.level.value == "low"
+        assert eng.effective_level.value == "high"
+        # Output must reflect effective, not score-only
+        html = build_html_output(eng, _make_sys_info())
+        assert "HIGH" in html.upper()

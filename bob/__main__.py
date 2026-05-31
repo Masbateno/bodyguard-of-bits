@@ -356,7 +356,15 @@ def _run(argv=None) -> int:
                 from bob.fixes import run_fixes
                 run_fixes(engine, config, t)
 
-            save_score(engine.score, engine.level.value)
+            # I-4 (v0.7.0 Phase 2.1): history records the effective level
+            # (matches what was displayed/JSON-emitted) AND the score-only
+            # baseline as a separate field, so trend analysis can reach for
+            # either view without re-parsing the audit context.
+            save_score(
+                engine.score,
+                engine.effective_level.value,
+                level_score_only=engine.level.value,
+            )
 
             if config.target > 0 and engine.score < config.target:
                 _exit = EXIT_TARGET_MISSED

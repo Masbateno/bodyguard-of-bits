@@ -238,3 +238,46 @@ class TestRenderHistory:
         lines = render_history(entries)
         spark_line = lines[2][2:]
         assert len(spark_line) == 7
+
+
+class TestSaveScoreLevelScoreOnly:
+    """I-4 (v0.7.0 Phase 2.1): history records the effective level (matching
+    what was displayed/JSON-emitted) AND the un-escalated baseline as a
+    separate ``level_score_only`` field for trend analysis."""
+
+    def test_score_only_field_absent_when_not_provided(self, tmp_path, monkeypatch):
+        """Backward compat: existing 2-arg callers see no behaviour change."""
+        monkeypatch.setattr("bob.history._CONFIG_DIR", tmp_path)
+        hf = tmp_path / "history.jsonl"
+        monkeypatch.setattr("bob.history._HISTORY_FILE", hf)
+        save_score(8, "low")
+        entry = json.loads(hf.read_text().strip())
+        assert entry["level"] == "low"
+        assert "level_score_only" not in entry
+
+    def test_score_only_field_written_when_provided(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("bob.history._CONFIG_DIR", tmp_path)
+        hf = tmp_path / "history.jsonl"
+        monkeypatch.setattr("bob.history._HISTORY_FILE", hf)
+        save_score(8, "high", level_score_only="low")
+        entry = json.loads(hf.read_text().strip())
+        assert entry["level"] == "high"           # effective (what was displayed)
+        assert entry["level_score_only"] == "low" # score-only (un-escalated)
+
+    def test_real_engine_round_trip(self, tmp_path, monkeypatch):
+        """End-to-end: real ScoreEngine with posture escalation produces
+        history entry that captures both views."""
+        from bob.scoring import ScoreEngine
+        monkeypatch.setattr("bob.history._CONFIG_DIR", tmp_path)
+        hf = tmp_path / "history.jsonl"
+        monkeypatch.setattr("bob.history._HISTORY_FILE", hf)
+        eng = ScoreEngine()
+        eng.finalize()
+        eng.set_posture(firewall_inactive=True)
+        save_score(
+            eng.score, eng.effective_level.value,
+            level_score_only=eng.level.value,
+        )
+        entry = json.loads(hf.read_text().strip())
+        assert entry["level"] == "high"
+        assert entry["level_score_only"] == "low"

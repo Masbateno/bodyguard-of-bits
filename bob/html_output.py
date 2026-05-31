@@ -79,7 +79,12 @@ def build_html_output(engine: ScoreEngine, sys_info: SystemInfo) -> str:
     ts         = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     score      = engine.score
     s_color    = _score_color(score)
-    level_label = str(engine.level.value).upper() if engine.level is not None else "UNKNOWN"
+    # I-1 (v0.7.0 Phase 2.1): use effective_level (posture-aware) for the
+    # displayed risk, matching display/JSON/CSV/webhook contracts. Fallback
+    # to engine.level for legacy test mocks that don't populate the new
+    # property.
+    _eff_level = getattr(engine, "effective_level", engine.level)
+    level_label = str(_eff_level.value).upper() if _eff_level is not None else "UNKNOWN"
 
     parts: list[str] = []
     a = parts.append

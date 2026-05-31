@@ -44,7 +44,12 @@ def build_markdown_output(
 ) -> str:
     """Return a Markdown string with the full audit report."""
     ts  = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    level_value = getattr(engine.level, "value", "") if engine.level is not None else ""
+    # I-1 (v0.7.0 Phase 2.1): use effective_level (posture-aware) for the
+    # displayed risk, matching display/JSON/CSV/webhook contracts. Fallback
+    # to engine.level for legacy test mocks that don't populate the new
+    # property.
+    _eff_level = getattr(engine, "effective_level", engine.level)
+    level_value = getattr(_eff_level, "value", "") if _eff_level is not None else ""
     risk_emoji  = _RISK_EMOJI.get(level_value, "")
     level_label = level_value.capitalize() if level_value else "unknown"
 
