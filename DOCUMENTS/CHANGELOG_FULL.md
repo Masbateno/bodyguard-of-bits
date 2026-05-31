@@ -6,6 +6,65 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.7.0b2] — 2026-05-31
+
+**Release-engineering hotfix for v0.7.0b1.** No code, JSON contract, EXPLAIN_KEYS, CLI, or audit behaviour change vs v0.7.0b1 — but the wheel published under that version reported `BOB v0.6.2` in every output (terminal banner, `--version`, JSON `"version"` field, webhook payload, report header).
+
+### What went wrong
+
+BOB declares its version in TWO places:
+
+  - `pyproject.toml` → drives the wheel metadata (what PyPI reads, what `pipx` reports as the installed version).
+  - `bob/__init__.py::__version__` → drives the running code (what every output prints via `from bob import __version__`).
+
+When the v0.7.0b1 ship commit `a4b7b9b` bumped `pyproject.toml` from `0.6.2` → `0.7.0b1`, only that file was updated — `bob/__init__.py` stayed at `0.6.2`. The wheel built and uploaded to PyPI correctly identifies as `bodyguard-of-bits-0.7.0b1`, but anyone running `pipx install --pre` and invoking the binary sees `BOB v0.6.2` in every surface that reads `__version__`.
+
+Caught on the so6 Debian 13 VM during the v0.7.0b1 beta validation (2026-05-31) — the banner said `BOB v0.6.2` after a clean `pipx install bodyguard-of-bits-beta` of the `0.7.0b1` wheel.
+
+### Fix
+
+  - `bob/__init__.py::__version__` bumped to `"0.7.0b2"`.
+  - `pyproject.toml` bumped to `"0.7.0b2"`.
+  - **New invariant test** `tests/test_version_consistency.py`
+    (`test_init_version_matches_pyproject_version`) reads both values and
+    asserts equality on every CI run + every local pre-ship pytest. A
+    future drift between the two files now fails the suite and surfaces
+    the bug before any tag is pushed.
+
+### Why this is the 3rd release-engineering bug on the v0.7.x branch
+
+  1. **v0.6.2** — wheels missing `bob/checks/ssh/` and `bob/cron/` because
+     `[tool.setuptools.packages.find].include` was a literal list that
+     wasn't updated when v0.6.0 introduced the splits.
+  2. **Phase 1 4ed2e3b** — `engine.domain_scores["firewall"]` is a dict
+     not an int; the dict was passed by mistake to `set_posture()` and
+     crashed the audit just before the summary box.
+  3. **v0.7.0b1** — `__version__` not synced with pyproject.toml.
+
+Each one is a different class of failure (packaging discovery / runtime
+contract assumption / version metadata drift), and each one slipped past
+the unit + integration test suites because the gap was at the boundary
+between Python code and the release-engineering toolchain. The strategy
+of project_v07x_phase1 rule 1 (integration-first) catches the runtime
+contract assumption class; the rule 3 (smoke local after each commit
+significant) catches the packaging discovery class; this beta release
+adds the version-consistency invariant as the third complementary guard.
+
+### What testers should do
+
+If you installed v0.7.0b1, upgrade to v0.7.0b2:
+
+```bash
+pipx upgrade --pip-args="--pre" bodyguard-of-bits-beta
+sudo bob-beta --version   # should print 0.7.0b2 (was 0.6.2 in b1)
+```
+
+All other v0.7.0b1 testing remains valid — the misreport was UX-only, the
+audit logic, scoring, JSON output, posture escalation, etc. were all
+correctly v0.7.0 code.
+
+---
+
 ## [v0.7.0b1] — 2026-05-31
 
 **First pre-release of v0.7.0** — opt-in via `pipx install --pip-args="--pre" bodyguard-of-bits`. Stable users (`pipx upgrade bodyguard-of-bits` without `--pre`) stay on v0.6.2 and are NOT impacted by this drop.

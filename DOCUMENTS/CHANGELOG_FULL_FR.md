@@ -6,6 +6,66 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.7.0b2] — 31-05-2026
+
+**Hotfix release-engineering pour v0.7.0b1.** Aucun changement de code, contrat JSON, EXPLAIN_KEYS, CLI ou comportement d'audit vs v0.7.0b1 — mais le wheel publié sous cette version reportait `BOB v0.6.2` dans toutes les sorties (bannière terminal, `--version`, champ `"version"` JSON, payload webhook, header du rapport).
+
+### Ce qui a foiré
+
+BOB déclare sa version à DEUX endroits :
+
+  - `pyproject.toml` → drive la metadata du wheel (ce que PyPI lit, ce que `pipx` reporte comme version installée).
+  - `bob/__init__.py::__version__` → drive le code runtime (ce que chaque sortie print via `from bob import __version__`).
+
+Quand le commit ship v0.7.0b1 `a4b7b9b` a bumpé `pyproject.toml` de `0.6.2` → `0.7.0b1`, seul ce fichier a été mis à jour — `bob/__init__.py` est resté à `0.6.2`. Le wheel construit et uploadé sur PyPI s'identifie correctement comme `bodyguard-of-bits-0.7.0b1`, mais quiconque lance `pipx install --pre` et invoque le binaire voit `BOB v0.6.2` dans chaque surface qui lit `__version__`.
+
+Détecté sur la VM Debian 13 de so6 pendant la validation beta v0.7.0b1 (31-05-2026) — la bannière disait `BOB v0.6.2` après un `pipx install bodyguard-of-bits-beta` clean du wheel `0.7.0b1`.
+
+### Fix
+
+  - `bob/__init__.py::__version__` bumpé à `"0.7.0b2"`.
+  - `pyproject.toml` bumpé à `"0.7.0b2"`.
+  - **Nouveau test invariant** `tests/test_version_consistency.py`
+    (`test_init_version_matches_pyproject_version`) lit les deux valeurs
+    et asserte l'égalité à chaque run CI + chaque pytest pre-ship local.
+    Un drift futur entre les deux fichiers fait maintenant échouer la
+    suite et surface le bug avant que tout tag soit poussé.
+
+### Pourquoi c'est le 3ème bug release-engineering sur la branche v0.7.x
+
+  1. **v0.6.2** — wheels manquaient `bob/checks/ssh/` et `bob/cron/` parce
+     que `[tool.setuptools.packages.find].include` était une liste figée
+     qui n'a pas été mise à jour quand v0.6.0 a introduit les splits.
+  2. **Phase 1 4ed2e3b** — `engine.domain_scores["firewall"]` est un dict
+     pas un int ; le dict a été passé par erreur à `set_posture()` et a
+     crashé l'audit juste avant le summary box.
+  3. **v0.7.0b1** — `__version__` pas synced avec pyproject.toml.
+
+Chacun est une classe différente de failure (discovery packaging /
+assumption contrat runtime / drift metadata version), et chacun a slippé
+les suites unit + integration parce que le gap était à la frontière
+entre le code Python et la chaîne d'outils release-engineering. La
+stratégie de project_v07x_phase1 règle 1 (integration-first) catch la
+classe assumption contrat runtime ; la règle 3 (smoke local après chaque
+commit significant) catch la classe discovery packaging ; cette beta
+release ajoute l'invariant version-consistency comme 3e guard
+complémentaire.
+
+### Ce que les testeurs doivent faire
+
+Si tu as installé v0.7.0b1, upgrade vers v0.7.0b2 :
+
+```bash
+pipx upgrade --pip-args="--pre" bodyguard-of-bits-beta
+sudo bob-beta --version   # doit print 0.7.0b2 (était 0.6.2 en b1)
+```
+
+Tous les autres testings v0.7.0b1 restent valides — le misreport était
+UX-only, la logique d'audit, le scoring, la sortie JSON, l'escalation
+posture, etc. étaient tous correctement du code v0.7.0.
+
+---
+
 ## [v0.7.0b1] — 31-05-2026
 
 **Première pre-release de v0.7.0** — opt-in via `pipx install --pip-args="--pre" bodyguard-of-bits`. Les utilisateurs stables (`pipx upgrade bodyguard-of-bits` sans `--pre`) restent sur v0.6.2 et NE sont PAS impactés par ce drop.
