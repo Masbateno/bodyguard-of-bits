@@ -6,6 +6,80 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.7.0b3] — 2026-05-31
+
+**Sandbox hardening pass + threat-model recadrage** — follows the T3 Phase 3 sub-agent adversarial audit run against the v0.7.0b2 baseline (the Phase 3 plugin sandbox introduced in commits 0ac6ec9 + 960ca84 + de94813). Three Critical + five Important + seven Minor findings surfaced; three of those were locally confirmed via PoC plugins **before** any fix was attempted, so the codebase ships with concrete evidence that the hardening closes the practical attack chains and an honest documentation of what it does NOT close.
+
+### What the PoCs proved against v0.7.0b2
+
+  - **C-1 — `os` module smuggled past the import allowlist via `pathlib`.**
+    `from pathlib import os` returned a live, fully-functional `os` module reference. The `_OS_DANGEROUS_ATTRS` strip list shipped in b2 covered `system` / `popen` / `exec*` / `spawn*` / `fork` but missed **`posix_spawn`, `posix_spawnp`, `open`, `read`, `write`, `close`, `dup`, `pipe`, `chmod`, `chown`, `unlink`, `rename`, `mkdir`, `rmdir`, `truncate`, `chdir`, `chroot`, `umask`, `environ`, `setresuid`/`setresgid`, `nice`, `setpriority`**, etc. PoC plugin opened `/tmp/bob_c1_escape` via `os.open + os.write + os.close` — the file was created with the audit's privileges (root under `sudo`). The Q4' contract ("pathlib write methods blocked") was technically honoured but irrelevant because the attack bypassed pathlib entirely via raw fd I/O.
+
+  - **C-2 — Parent-process RCE through `mp.Queue` pickle round-trip.**
+    The b2 worker pushed the plugin's CheckResult directly onto a `multiprocessing.Queue`; the parent's `q.get()` un-pickled it. A plugin can construct a `type("Evil", (object,), {"__reduce__": evil_reduce})` (the `type` metaclass call bypasses the `__build_class__` strip), reach a real `eval` reference via `json.dumps.__globals__["__builtins__"]` (any allowlisted stdlib module leaks the real builtins this way), and attach an Evil instance to `findings[0].template_vars`. When the parent un-pickles the result, the Evil reduce executes `eval("__import__('os').system('touch /tmp/bob_c2_parent_pwned')")` **in the parent process**. The PoC created the sentinel file from a `sudo bob` run.
+
+  - **Architectural escape — real `__import__` reachable in 5 lines.**
+    `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` returns the unrestricted `builtins.__import__` because Python's stdlib modules carry their own un-restricted builtins reference via their module `__globals__`. The hook installed in the plugin's `__builtins__` is bypassed because external modules don't look up imports through the plugin's namespace. The plugin then calls `real_import("subprocess")` and runs whatever it wants. This is the same fundamental limitation that retired PEP 416 (sandbox proposal) back in 2012. **No Python-only mitigation can close it without breaking the stdlib allowlist itself.**
+
+### Strategic decision — Option B, defence-in-depth honest
+
+After confirming the three PoCs, the solo maintainer reviewed three trajectories:
+
+  - **A.** Patch the concrete chains + claim the sandbox is now adversarial-grade. *Rejected* — every patch only shifts the bar; the architectural escape stands.
+  - **B.** Defence-in-depth honest — fix the concrete chains so accidents and naïve attacks are caught, document the architectural limitation, and point users at OS-level isolation (AppArmor profile shipped with BOB) as the real boundary. *Chosen* — matches the Python community consensus since 2012.
+  - **C.** Revert the T3 commits entirely; defer T3 to v0.8.0 with a subprocess+seccomp design. *Rejected* — would lose the 3 commits of foundation work and the accident-protection has independent value.
+
+### Hardening shipped in `bob/_sandbox.py`
+
+  - **`_OS_DANGEROUS_ATTRS` extended 21 → 84 entries** organised into six categories: subprocess/spawn (16 entries inc. `posix_spawn`, `posix_spawnp`, all `exec*`/`spawn*`/`fork*` variants), process control + signals (10 entries inc. `_exit`, `abort`, `wait*` family, `nice`, `setpriority`), privilege changes (10 entries inc. `setresuid`, `setresgid`, `initgroups`), raw fd I/O (13 entries inc. `open`, `read`, `write`, `close`, `lseek`, `pread`/`pwrite`, `dup*`, `pipe*`, `fdopen`, `truncate`), filesystem writes (16 entries inc. `unlink`, `rename`, `chmod`, `chown`, `symlink`, `link`, `mkfifo`, `mknod`, `utime`), xattr writes (6 entries), process state mutations (8 entries inc. `chdir`, `chroot`, `umask`, `environ`/`environb`, `putenv`/`unsetenv`), plus Windows-specific (1 entry). Closes C-1 directly. As a side-effect, it also breaks the practical subprocess attack chain pinned by C-2 / architectural escape because `subprocess.Popen` needs `os.pipe` internally and `os.pipe` is now stripped.
+
+  - **`_serialize_check_result` / `_deserialize_check_result` JSON-safe round-trip.** The worker now flattens the CheckResult to a primitive-only dict via `_sanitize_for_transport` **before** putting anything on the queue (str / int / float / bool / None / list / dict — anything else is `str()`'d inside the worker). The parent's `q.get()` returns a plain dict and `_deserialize_check_result` rebuilds a fresh CheckResult from it. No plugin-controlled `__reduce__` ever reaches the parent's unpickle. Closes C-2.
+
+  - **`types.MappingProxyType` replaces the `_ImmutableBuiltins` dict subclass.** The previous design relied on overriding `__setitem__`/`__delitem__`/etc. on a dict subclass, but `dict.__setitem__(unbound_instance, k, v)` calls the C-level base method directly, bypassing the virtual dispatch. `MappingProxyType` is a C-level read-only proxy with no `__setitem__` at all — every mutation path (`setitem`, `setdefault`, `update`, `pop`…) raises TypeError unconditionally. Closes I-1.
+
+  - **`q.close()` + `q.join_thread()` in `try/finally`.** The previous code created an `mp.Queue` per run and never closed it. Across many plugin runs in a single session, this leaked fds and the queue's background feeder thread. Now wrapped in `finally`. Closes I-2.
+
+  - **Read-path deny-list on `_make_safe_open`.** Reads on `/etc/shadow`, `/etc/gshadow`, `/etc/sudoers.d/`, `~/.ssh/id_*`, `/.gnupg/`, `/dev/mem`, `/dev/kmem`, `/dev/port`, `/proc/kcore`, `/proc/kmem` now raise `PermissionError`. The deny-list is curated rather than a full read allowlist so legitimate hardening checks reading `/etc/ssh/sshd_config`, `/etc/login.defs`, `/proc/version`, etc. still work. Closes I-5 (the "BOB runs as root under sudo" confused-deputy concern).
+
+  - **`_apply_resource_limits` now sets `RLIMIT_CPU = 10 s`** in addition to `RLIMIT_AS = 256 MiB`. Defends against CPU-bound infinite loops that ignore SIGTERM (the previous design relied on `Process.terminate()` which can be ignored). Also fixes a stale docstring lie in b2 that claimed CPU was capped when only memory was. Closes M-4.
+
+  - **`BOB_SANDBOX_LEGACY=1` warning hardened.** Re-emitted on every `.run()` that actually enters legacy mode (not just at runner `__init__`), via both `logger.critical(...)` (routed through the project's normal log handlers) AND a direct `sys.stderr.write()` (so an accidentally-misconfigured log handler cannot silence the security-relevant event). The legacy flag is re-evaluated per call so toggling the env var mid-session takes effect. Closes M-6 and M-7.
+
+  - **New `has_run_check(source)` AST helper** shared between `bob.plugin_checks._load_one` and `SandboxRunner.run`. Accepts both `def run_check` and `run_check = ...` assignment forms, rejects substring false-positives on commented `# run_check`. The previous code had two inconsistent gates (substring in the runner, AST FunctionDef-only in the loader). Closes I-3.
+
+### New tests
+
+  - **`tests/test_plugin_sandbox.py::TestHardeningPins`** — 5 tests pinning the concrete C-1 / C-2 / I-1 / I-2 / I-5 closure with sentinel-file checks. The C-1 test writes a plugin that attempts the `os.open + os.write` smuggle and asserts no file was created. The C-2 test writes a plugin that attempts the `Evil.__reduce__` attachment and asserts no parent sentinel was created.
+  - **`tests/test_plugin_sandbox.py::TestKnownInProcessLimitation`** — 2 tests that **document the architectural escape as INTENTIONALLY out-of-scope**. The first test confirms the unrestricted builtins remain reachable via `json.dumps.__globals__["__builtins__"]` — if this test ever starts failing, either the escape has been closed (great, update the docs!) or the test plugin broke. The second test confirms the practical `subprocess.run` chain is broken by the strip list. This is the contract that future contributors will read instead of re-deriving the PEP 416 consensus from scratch.
+  - Full suite: **5458 → 5465 tests** (+7 net), 0 regression.
+
+### Docs
+
+  - **`SECURITY.md::Plugin checks` rewritten** with a "Threat model" subsection that states explicitly: *"In-process Python sandboxing is not a security boundary. It is a defence-in-depth layer."* + per-mitigation enumeration + reference to the AppArmor profile as the actual boundary. The previous text was "plugins are not sandboxed" (true in b2 → no longer true) and "a future major version may introduce a restricted-mode runner" (now done, with the limitations spelled out).
+  - **`bob/_sandbox.py` module docstring rewritten** with the same threat model + per-mitigation rationale + reference to the `TestKnownInProcessLimitation` tests.
+
+### Smoke validation
+
+  - **Three PoCs re-tested post-hardening** — `/tmp/bob_c1_escape`, `/tmp/bob_c2_parent_pwned`, `/tmp/bob_arch_escape` all NOT created after the fixes; the runner correctly surfaces each as a WARN finding with the underlying error class (ImportError / AttributeError) and no plugin output reaches the parent.
+  - **5/5 cibles cross-validated** via `pipx install --pip-args="--pre"` of the b3 wheel: so6desktop (Linux Mint 22.3, Python 3.12, score 8/10 LOW clean), Debian 13 VM (Python 3.13, score 9/10 LOW clean), Kali Rolling VM (Python 3.13, score 8/10 LOW clean + compound finding), Ubuntu 26.04 LTS VM (**Python 3.14.4** — the T1 ladder step 1 target, score 8/10 → **HIGH risk raised by posture: firewall inactive**, the critical posture escalation scenario validated end-to-end), Mint + DDNS VM (Python 3.12, score 7/10 MEDIUM with `network_context = Exposition publique via DDNS` shift). Every cible reports "Score inchangé" in its "CHANGEMENTS DEPUIS LE DERNIER AUDIT" section against the b2 baseline from earlier the same day — zero regression on the audit chain.
+
+### Memory
+
+`project_v070_t3_sandbox_threat_model` archives the architectural learning + the three PoC outlines so future audits don't have to re-derive the PEP 416 consensus.
+
+### Who must upgrade
+
+Anyone running v0.7.0b1 or v0.7.0b2 with `~/.config/bob/checks.d/` plugins from **untrusted** sources should upgrade to v0.7.0b3 immediately AND enforce the BOB AppArmor profile (`packaging/apparmor/bob.profile`). Users with no plugins or with code-reviewed plugins remain unaffected by the security findings but get the cleaner internal codepaths.
+
+```bash
+pipx upgrade --pip-args="--pre" bodyguard-of-bits-beta
+sudo bob-beta --version   # should print 0.7.0b3
+```
+
+Next: monitor real-world smoke output on the four VMs across the next 24h. If no surprises surface, the v0.7.0 final cut squashes the four T3 commits into one and ships without further beta cycle.
+
+---
+
 ## [v0.7.0b2] — 2026-05-31
 
 **Release-engineering hotfix for v0.7.0b1.** No code, JSON contract, EXPLAIN_KEYS, CLI, or audit behaviour change vs v0.7.0b1 — but the wheel published under that version reported `BOB v0.6.2` in every output (terminal banner, `--version`, JSON `"version"` field, webhook payload, report header).
