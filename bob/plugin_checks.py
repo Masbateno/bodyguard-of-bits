@@ -70,7 +70,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from bob._sandbox import SandboxRejected, SandboxRunner
+from bob._sandbox import SandboxRejected, SandboxRunner, has_run_check
 from bob.checks._run import TranslationFunc
 from bob.scoring import CheckResult
 from bob.sysinfo import get_user_home
@@ -279,14 +279,13 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
         )
         return None
 
-    # --- run_check presence check (AST walk) ---
-    has_run_check = any(
-        isinstance(node, ast.FunctionDef) and node.name == "run_check"
-        for node in tree.body
-    )
-    if not has_run_check:
+    # --- run_check presence check ---
+    # Accepts both ``def run_check`` and ``run_check = ...`` assignments
+    # via the shared helper. Matches the sandbox runner's gate exactly
+    # so a plugin that passes one passes the other (I-3).
+    if not has_run_check(source):
         logger.warning(
-            "Plugin %s: missing 'def run_check' at module level — skipped",
+            "Plugin %s: missing 'run_check' at module level (no def or assignment) — skipped",
             plugin_path.name,
         )
         return None

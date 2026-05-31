@@ -116,13 +116,75 @@ of dynamic data.
 
 ### Plugin checks (`~/.config/bob/checks.d/*.py`)
 
-Custom Python plugins are loaded with **size limits and ANSI sanitization**
-on their output but they are **NOT sandboxed**: a plugin runs with the same
-privileges as BOB itself (typically root). Trust your plugin sources as you
-would any other code you `sudo`-execute.
+Since **v0.7.0**, plugins run in a **restricted in-process sandbox**:
 
-A future major version may introduce a restricted-mode plugin runner (no
-filesystem write, no subprocess), but it is out of scope for the 0.6.x line.
+  - Process isolation via `multiprocessing.get_context("spawn")` (separate
+    Python interpreter, no shared memory with the audit).
+  - 5-second wall-clock timeout + `RLIMIT_AS = 256 MiB` + `RLIMIT_CPU = 10 s`
+    enforced in the worker.
+  - Import allowlist (only `bob.scoring` and a curated stdlib subset —
+    `json`, `re`, `pathlib`, `datetime`, …).
+  - Restricted `__builtins__` (no `eval` / `exec` / `compile` / `__import__` /
+    `input` / `breakpoint`) installed as a `MappingProxyType` to defeat the
+    classic dict-subclass mutation bypass.
+  - `open()` wrapper that rejects write modes AND denies reads on a small
+    list of well-known-secret paths (`/etc/shadow`, `~/.ssh/id_*`,
+    `/dev/mem`, …).
+  - `pathlib.Path` write methods monkey-patched to `PermissionError`.
+  - Extensive strip of dangerous `os` module attributes
+    (subprocess/spawn, raw fd I/O, FS writes, privilege changes,
+    env mutations, …).
+  - CheckResult shipped from worker to parent via a JSON-safe dict round-trip
+    (not pickle of the plugin-controlled object) so a malicious `__reduce__`
+    in `template_vars` cannot trigger code execution in the parent.
+  - The parent never `exec`s plugin source — `_load_one` is AST-read-only
+    (size + syntax + `run_check` presence + `CHECK_NAME` extraction).
+
+#### Threat model — what the sandbox does and does NOT protect against
+
+**In-process Python sandboxing is not a security boundary** — this is a
+defence-in-depth layer. The Python community has converged on this
+position since 2012 (PEP 416, retracted): a determined attacker can
+always reach the unrestricted builtins via any allowlisted stdlib
+module's `__globals__["__builtins__"]` chain, and no Python-level
+mitigation can close that without breaking legitimate use of those
+modules. RestrictedPython hardens bytecode-level attribute access but
+does not catch the `__globals__` chain (public attribute lookups +
+dict access only).
+
+What the sandbox **does** stop:
+
+  - **Accidents** — a buggy plugin calling `os.unlink`, looping forever,
+    allocating 2 GiB, leaking handles.
+  - **Naïve attacks** — `import subprocess; subprocess.run(...)` at module
+    level, `open("/etc/passwd", "w")`, `eval(...)`.
+  - **Confused-deputy reads** — accidental `open("/etc/shadow")` because
+    the user forgot BOB runs as root.
+
+What it does **NOT** stop:
+
+  - A determined attacker who knows the Python escape playbook
+    (`json.dumps.__globals__["__builtins__"]["__import__"]` is reachable
+    by any plugin — this is *expected* and tested at
+    `TestKnownInProcessLimitation::test_real_builtins_reachable_via_stdlib_globals`).
+  - Side-channel attacks via timing, scheduling, or shared resources.
+  - Attacks that exploit BOB's own input-parsing surface (a malicious
+    `sshd_config` BOB tries to audit).
+
+**Real adversarial isolation requires an OS-level boundary.** BOB ships
+an AppArmor profile (`packaging/apparmor/bob.profile`) that confines the
+BOB process itself; this is the actual boundary against malicious
+plugins. Distros that ship BOB inside a confined runtime (snap, flatpak,
+container) inherit their runtime's isolation.
+
+If you are running BOB unconfined under `sudo`, **you must code-review
+your plugins before installing them**. The sandbox raises the bar
+against accidents and naïve attacks; it does not replace trust.
+
+`BOB_SANDBOX_LEGACY=1` opts out of the sandbox entirely and runs the
+plugin in the parent process — surfaces a CRITICAL log entry + flashy
+stderr WARNING on every run. Deprecated immediately; will be removed
+in v0.8.0.
 
 ## Network surface
 
