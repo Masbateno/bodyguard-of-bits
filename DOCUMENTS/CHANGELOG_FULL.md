@@ -6,6 +6,74 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.7.0b1] — 2026-05-31
+
+**First pre-release of v0.7.0** — opt-in via `pipx install --pip-args="--pre" bodyguard-of-bits`. Stable users (`pipx upgrade bodyguard-of-bits` without `--pre`) stay on v0.6.2 and are NOT impacted by this drop.
+
+Bundles **15 commits since v0.6.2** across three phases of work on branch `v0.7.x`:
+
+### Phase 1 — T1 Foundation refresh (6 commits, ~ +540 LoC, +35 tests)
+
+  - **Python 3.14 ladder step 1** (`1b581c0`) — added 3.14 to CI test+publish matrices + classifier. `requires-python` stays at `>=3.10` since upstream 3.10 EOL is 2026-10. Step 2 (`--help` deprecation banner) planned for next minor; step 3 (drop) for post-EOL release.
+  - **M-1 `parse_cron_file` time_simple flag** (`d972f17`) — `bob/cron/_parse.py` no longer silently downgrades to `hour=0/minute=0` when minute/hour are non-integer (`*/15 * * * *`, `0 */6 * * *`). `CronEntry` gains `time_simple: bool = True`; the reschedule wizard (in `bob/cron/_manage.py` + `bob/tui/cron.py`) uses `03:00` default instead of misleading `00:00` when the parsed schedule is not plain HH:MM.
+  - **M-7 `--check`/`--skip` recognise always-on sections** (`3865738`) — pre-fix, `bob --check=firewall` raised "matches no known section" because the validator didn't know about the 10 always-on sections (firewall, rules, ports_analysis, network_context, firewall_stack, ufw_logging, services, ddns, docker, virtualization). New `_ALWAYS_ON_SECTIONS` tuple in `bob/runner.py`; `--check=<always-on>` is now valid input, `--skip=<always-on>` prints a "has no effect" warning instead of silently swallowing user intent. The "Available sections" wall-of-text in unknown-token warnings is replaced by a single line pointing to `bob --check=list`.
+  - **Posture escalation** (`e3d998f`) — `ScoreEngine` gains `set_posture()` + `posture_escalation` property + `effective_level` derived as `max(score-derived level, posture floor)`. Triggers (first match wins): `firewall_inactive` → `HIGH`, `iptables_input_accept` → `HIGH`, `firewall_domain_score ≤ 3` → `MEDIUM`. Surfaces what Phase 1 fixes structurally: a host with UFW OFF and score 8/10 used to display "LOW risk" (score-only) — now displays "HIGH risk" with the parenthetical "raised by posture: firewall inactive". Migration of 5 sites to `effective_level` (display banner, JSON v2 `risk` field, CSV, webhook payload, report.write_summary). New EXPLAIN key `risk.escalated_posture` (count 116 → 117). New locale strings `scoring.posture.{firewall_inactive,iptables_input_accept,firewall_domain_low}` in EN + FR.
+  - **CI publish pre-release tag handling** (`9def225`) — `.github/workflows/publish.yml` now detects PEP 440 pre-release tag suffix `(a|b|rc|.dev)[0-9]+$` and (a) synthesises minimal release notes from `git log` when no CHANGELOG section exists, (b) sets `make_latest: false` + `prerelease: true` on the GitHub Release so a pre-release does NOT override the "Latest" badge from the v0.6.x stable line, (c) titles the release `"$VERSION (pre-release)"` when no CHANGELOG headline is found. The infrastructure enabling this current v0.7.0b1 ship.
+  - **Posture crash hotfix** (`4ed2e3b`) — smoke test on so6desktop revealed `engine.domain_scores["firewall"]` is a dict, not an int — the dict was passed by mistake to `set_posture(firewall_domain_score=...)` and crashed the audit at the `<=` comparison just before the summary box ("Fatal error: '<=' not supported between instances of 'dict' and 'int'"). Fixed by extracting `["score"]` from the dict + adding a type guard to `set_posture` that raises `TypeError` with a message explicitly naming the dict-vs-int mistake. +5 tests (4 unit + 1 integration test that builds a real engine with `apply_domain_score_override` and exercises the wire-up the same way `__main__.py` does).
+
+### Phase 2 — T2 Schema v2 + EXPLAIN_KEYS audit (4 commits, ~ +940 LoC, +711 tests)
+
+  - **JSON schema v2 dispatch + `--json-v1` flag + posture_escalation block** (`e4420e2`) — `build_json_data()` gains `schema_version: str = "2"` parameter with type guard (`TypeError` for non-str, `ValueError` for unsupported values). Two private producers `_build_v1` and `_build_v2` share no state for cleanliness. v2 fixes the v1 `network_context` type inconsistency (P1: same key was string in short mode but overwritten to dict in full mode), renames `timestamp` → `timestamp_utc` (P/B-3), adds `info_count` top-level (B-7), exposes `posture_escalation` block `{applied, reason_key, score_level}` (P3/A-4), adds `deductions_raw` and `open_ports_all` in full mode (B-4/B-5), and `domain_scores[d]` now carries `deductions` count (B-6). New CLI flag `--json-v1` (implies `--json`) returns the legacy v0.6.x layout exactly for consumers that haven't migrated. Drives 30 new integration tests in `tests/test_json_schema_v2.py` written before the implementation per the integration-first rule.
+  - **v1 baseline gap pins + B-2 retired** (`54f3f14`) — 10 explicit tests in `tests/test_json_schema.py::TestSchemaV1BaselineGaps` document the v1 quirks that the v2 migration addresses (P1 type swap, P2 risk semantics shift, P3 absent posture_escalation, no UTC marker in timestamp, no `info_count`, no `deductions_raw`, no `open_ports_all`, `domain_scores[d]` minimal). One test guards against future regression by pinning the *retained* `firewall_stack` bypass field names (`input_bypasses` / `forward_bypasses` — initially scoped as B-2 rename to `*_count`, then retired during Step 1 of T2 when integration-first writing revealed the fields are `list[str]` of rule descriptions, not int counts — plural naming was already correct).
+  - **EXPLAIN_KEYS canonical naming convention pin** (`f81dd46`) — audit of all 117 explain keys + 30 prefixes confirmed 100% conformance with `<prefix>.<finding_id>` snake_case (single exception: `file_perms.<path>.<finding_id>` handled by `bob.explain.normalize_key`). Grep across `bob/` confirmed every key is referenced as a string literal (no orphans). New `tests/test_explain_naming_convention.py` (+710 parametrized assertions) pins: canonical pattern, lowercase identifiers, no double underscore, no hyphen, no leading digit, prefix vocabulary as an explicit `KNOWN_PREFIXES` allowlist, no overlap between explain keys and aliases, audit count = 117, prefix count = 30. Adding a new prefix in any future commit will fail `test_key_prefix_is_known` until `KNOWN_PREFIXES` is updated, surfacing the addition as a deliberate decision in code review. Zero retirements in v0.7.0 — all candidates deferred to D-3 v0.8.0.
+  - **Docs JSON schema v2 + v1 legacy + migration guide** (`eaea762`) — `DOCUMENTS/README_TECH.md` (and FR) gain a comprehensive section documenting both schema versions, the `posture_escalation` block structure, every new v2 field with type+description, the v1 vs v2 differences table for migration, a jq snippet that handles both versions, and the EXPLAIN_KEYS audit baseline (117 keys / 30 prefixes / canonical pattern). Closes the EXPLAIN_KEYS public commitment in `bob/explain.py` docstring with operational test enforcement.
+
+### Phase 2.1 — Pre-T3 audit cleanup (4 commits, ~ +500 LoC, +18 tests)
+
+A sub-agent deep audit of the cumulated Phase 1 + Phase 2 diff (per project_v07x_phase1 strategy rule 6) surfaced 5 important + 6 minor findings; 5/5 important + 4/6 minor shipped before T3 plugin sandbox runner starts. Two recurring patterns drove the cleanup: (a) the `effective_level` migration was enumerated by hand and missed 3 sinks (HTML, Markdown, history.jsonl) that all leaked the old score-only level into user-visible output; (b) the defensive type-guard pattern from the Phase 1 hotfix was not uniform across engine consumers.
+
+  - **`effective_level` propagation to HTML, Markdown, history.jsonl** (`ef7fb59`) — `bob/html_output.py:82` (`level_label`) and `bob/markdown_output.py:47` (`level_value`) now use the `effective_level` with a `getattr` fallback to preserve legacy test mocks. `bob/history.py::save_score` gains optional kwarg `level_score_only: str | None = None`; when provided, written as a separate JSON field so trend analysis can reach for either the displayed view (`level` = effective) or the score-only baseline (`level_score_only` = un-escalated). `bob/__main__.py:359` updated to pass both: `save_score(engine.score, engine.effective_level.value, level_score_only=engine.level.value)`. +7 integration tests using real `ScoreEngine` + `set_posture(firewall_inactive=True)` asserting the rendered/persisted level matches the effective contract.
+  - **`unpack_posture_escalation` helper extraction** (`8167b76`) — new `bob.scoring.unpack_posture_escalation(engine)` consolidates the defensive `getattr` + `try/except TypeError/ValueError` pattern that was duplicated in `display.py` and missing in `json_output.py::_build_v2`. `_build_v2`'s bare unpack `_posture_floor, _posture_key = engine.posture_escalation` would have crashed v2 JSON on the same MagicMock-style test that triggered the Phase 1 hotfix 4ed2e3b for the summary box. The helper is the single source of truth: T3 plugin runner output sinks should consume it directly. +5 tests covering clean engine, firewall-inactive, legacy stubs without the property, non-iterable property values, and oversized tuples.
+  - **Posture type guard + audit minors** (`8cdf545`) — bundles four small audit items: **I-3** `set_posture(firewall_domain_score=True)` was accepted (`isinstance(x, int)` returns True for bool); guard now rejects bool explicitly with a message naming the surprise. **I-5** `test_v2_posture_escalation_consistent_with_top_level_risk` had `assert ... or True` making the `applied=True` branch vacuously pass — rewritten to assert the explicit shape (`risk == "high"`, `score_level == "low"`, divergence). **M-4** dead alias `_SCHEMA_VERSION = DEFAULT_SCHEMA_VERSION` at bottom of `json_output.py` removed (zero consumers via grep). **M-5** `test_v1_risk_is_one_of_canonical_values` only checked the enum membership — replaced by `test_v1_risk_reflects_effective_level_not_score_only` that builds a real engine with no deductions + `firewall_inactive=True` and asserts v1 emits `"high"`, pinning the Phase 1 silent semantic shift against accidental revert.
+  - **UI symmetry: `--check=list` + report posture annotation** (`a3294fd`) — **M-1** `bob/__main__.py:list_checks` now prints the 10 always-on section names under a second block (`Always-on sections (10 total — these always run, --skip has no effect on them)`) so the validator's accepted vocabulary matches what the `--check=list` help text advertises. The vague "Core checks (firewall, ports, services, logs) always run" line is removed since the explicit list replaces it. **M-3** `bob/report.py::write_summary` gains optional kwarg `posture_annotation: str = ""`; `bob/display.py` computes the annotation via the new `unpack_posture_escalation` helper and passes it through so the on-disk `.txt` report stays in sync with the terminal summary box.
+
+### Test count + smoke validation
+
+  - **5391 → 5409 tests** (+18 net across Phase 2.1, +35 across Phase 1, +711 across Phase 2 — including parametrized EXPLAIN_KEYS audit), 0 regressions throughout the 15-commit chain.
+  - **Smoke validated on so6desktop** (Linux Mint 22.3, 2026-05-31): `sudo bob -v -d --french` audits end-to-end, score 8/10, posture clean (UFW active), `--json` emits schema v2 with `posture_escalation: {applied: false}`, `--json --json-v1` emits legacy schema_version="1" with no posture_escalation block, `--check=list` shows both sections + always-on blocks, `history.jsonl` carries the new `level_score_only` field.
+
+### Deferred to v0.8.0 (contract figé)
+
+Per `project_v08x_deferred.md`:
+
+  - **D-1** — sections renumber: uniformisation `emit_section()` names (44 sections, some incohérent vs `_ALL_SECTIONS`). Reported because rename breaks scripts using `--check=ssh,firewall`.
+  - **D-2** — fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` into one tuple with `is_always_on` flag. Cosmetic; depends on D-1.
+  - **D-3** — retrait `EXPLAIN_KEY_ALIASES` obsolètes — minimum 1 release notice per alias retirement.
+  - **D-4** — sub-checks granulaires (e.g. `ssh.x11_forwarding` split into server/client) — on demand.
+
+### What's NOT in this beta (yet)
+
+  - **T3 — Plugin sandbox runner** (restricted-mode for `~/.config/bob/checks.d/*.py`) is the next phase. Design discussion completed (D + RestrictedPython for sandbox, opt-out for plugins, Tier 2 restrictions, known-bad test suite + sub-agent adversarial review). v0.7.0 final ship will bundle T3 plus this beta1 content.
+
+### Calling for beta testers
+
+This is the first user-facing drop of the v0.7.x line. If you can, please:
+
+```bash
+# 1. Install the beta into a separate pipx venv to keep your stable v0.6.2 intact:
+pipx install --pip-args="--pre" --suffix=-beta bodyguard-of-bits
+# 2. Run a full audit and look at the new `posture_escalation` block:
+sudo bob-beta --json | jq .posture_escalation
+# 3. Compare v2 vs v1 behaviour on the same host:
+sudo bob-beta --json          | jq '{schema_version, risk, timestamp_utc, network_context}'
+sudo bob-beta --json --json-v1 | jq '{schema_version, risk, timestamp,    network_context}'
+# 4. Report anomalies via GitHub issues with the beta tag.
+```
+
+The v0.6.x stable line is unaffected. The beta channel is purely opt-in via `--pre`.
+
+---
+
 ## [v0.6.2] — 2026-05-29
 
 **Critical packaging hotfix.** Every wheel shipped since v0.6.0 (v0.6.0 + v0.6.1) was missing `bob/checks/ssh/` and `bob/cron/` — the two subpackages introduced by the v0.6.0 splits. Users who `pipx upgrade`d hit `ModuleNotFoundError: No module named 'bob.checks.ssh'` at startup. See `CHANGELOG.md` for the full root cause + fix narrative. Notes specific to this FULL doc:
