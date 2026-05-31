@@ -552,6 +552,21 @@ class TestPostureTypeGuard:
         with pytest.raises(TypeError):
             e.set_posture(firewall_domain_score="3")  # type: ignore[arg-type]
 
+    def test_passing_bool_raises_typeerror(self):
+        """I-3 (v0.7.0 Phase 2.1): bool subclasses int but must NOT slip
+        through. A future refactor that writes
+        ``firewall_domain_score=fw_active`` (bool) would coerce to 0/1 and
+        silently trigger the ``<=3`` MEDIUM branch — that's semantically
+        wrong (a bool is not a score). Guard rejects it explicitly."""
+        e = ScoreEngine()
+        e.finalize()
+        with pytest.raises(TypeError) as exc_true:
+            e.set_posture(firewall_domain_score=True)  # type: ignore[arg-type]
+        assert "bool" in str(exc_true.value).lower()
+        with pytest.raises(TypeError) as exc_false:
+            e.set_posture(firewall_domain_score=False)  # type: ignore[arg-type]
+        assert "bool" in str(exc_false.value).lower()
+
     def test_int_accepted(self):
         e = ScoreEngine()
         e.finalize()

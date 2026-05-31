@@ -262,12 +262,22 @@ class TestSchemaV2PostureEscalationBlock:
     def test_v2_posture_escalation_consistent_with_top_level_risk(
             self, engine_firewall_inactive, minimal_args):
         """The top-level ``risk`` is the escalated/effective level, and the
-        block ``score_level`` is the un-escalated baseline. They diverge only
-        when ``applied=True``."""
+        block ``score_level`` is the un-escalated baseline. They diverge
+        whenever ``applied=True`` and converge when ``applied=False``.
+
+        I-5 (v0.7.0 Phase 2.1): pre-fix the ``applied`` branch had
+        ``assert ... or True`` which made the assertion vacuous. The
+        engine_firewall_inactive fixture has no deductions so score is at
+        MAX (LOW) and posture lifts to HIGH — the values always diverge.
+        Pin that explicit shape here."""
         data = _build_v2(engine_firewall_inactive, minimal_args)
         pe = data["posture_escalation"]
         if pe["applied"]:
-            assert data["risk"] != pe["score_level"] or True  # may rarely coincide
+            # Fixture is firewall_inactive with no deductions → score = LOW,
+            # posture → HIGH. Top-level risk reflects effective (HIGH).
+            assert data["risk"] == "high"
+            assert pe["score_level"] == "low"
+            assert data["risk"] != pe["score_level"]
         else:
             assert data["risk"] == pe["score_level"]
 

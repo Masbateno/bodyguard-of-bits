@@ -530,12 +530,21 @@ class ScoreEngine:
         used to silently break ``posture_escalation`` at the ``<=`` comparison
         site; we now fail loudly with a clear TypeError instead.
         """
-        if firewall_domain_score is not None and not isinstance(firewall_domain_score, int):
+        # I-3 (v0.7.0 Phase 2.1): explicit bool rejection. ``isinstance(x, int)``
+        # returns True for bool (subclass of int), so the original guard let
+        # ``firewall_domain_score=fw_active`` slip through. A bool would then
+        # coerce to 0/1 and silently trigger the ``<=3`` MEDIUM branch.
+        if firewall_domain_score is not None and (
+            isinstance(firewall_domain_score, bool)
+            or not isinstance(firewall_domain_score, int)
+        ):
             raise TypeError(
                 f"firewall_domain_score must be int or None, got "
                 f"{type(firewall_domain_score).__name__}. "
                 f"Did you pass engine.domain_scores['firewall'] (a dict) "
-                f"instead of engine.domain_scores['firewall']['score'] (an int)?"
+                f"instead of engine.domain_scores['firewall']['score'] (an int)? "
+                f"Note: bool is rejected explicitly even though it subclasses "
+                f"int — pass an actual score integer."
             )
         self._posture_firewall_inactive = firewall_inactive
         self._posture_iptables_input_accept = iptables_input_accept

@@ -519,9 +519,7 @@ def _populate_v2_full_blocks(
             "ufw_v6_covered":      ipv6_snapshot.ufw_v6_covered,
         }
 
-
-# ---------------------------------------------------------------------------
-# Backward-compat alias kept for client modules that still import the legacy
-# constant ``_SCHEMA_VERSION`` (private but used in a couple of places).
-# ---------------------------------------------------------------------------
-_SCHEMA_VERSION = DEFAULT_SCHEMA_VERSION  # pragma: no cover
+# M-4 (v0.7.0 Phase 2.1): the legacy ``_SCHEMA_VERSION = DEFAULT_SCHEMA_VERSION``
+# alias was removed. Grep across bob/ and tests/ confirmed zero consumers.
+# External clients that need the constant should import
+# ``DEFAULT_SCHEMA_VERSION`` (the explicit name) directly.

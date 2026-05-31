@@ -413,6 +413,32 @@ class TestSchemaV1BaselineGaps:
         data = _build(engine, minimal_args)
         assert data["risk"] in {"low", "medium", "high", "critical"}
 
+    def test_v1_risk_reflects_effective_level_not_score_only(self, minimal_args):
+        """M-5 (v0.7.0 Phase 2.1): pin the post-Phase-1 v1 semantic.
+
+        Pre-Phase-1, v1 ``risk`` was ``engine.level.value`` (score-only).
+        Phase 1 (commit e3d998f) silently shifted it to
+        ``engine.effective_level.value`` so posture escalation propagates
+        to JSON v1 too. The original test only checked the enum membership,
+        which holds both before and after the shift — it would NOT have
+        caught an accidental revert to ``engine.level``. This test does:
+        build a real engine with no deductions (so engine.level = LOW)
+        but firewall_inactive=True (so effective_level = HIGH), then assert
+        v1 emits HIGH."""
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        eng.set_posture(firewall_inactive=True)
+        # Sanity: confirm divergence so the test pins the shift, not the
+        # converged case where both paths agree by coincidence.
+        assert eng.level.value == "low"
+        assert eng.effective_level.value == "high"
+        data = _build(eng, minimal_args)
+        assert data["risk"] == "high", (
+            "v1 risk must reflect engine.effective_level since v0.7.0 Phase 1. "
+            "Reverting to engine.level.value would re-introduce the silent semantic shift."
+        )
+
     # ---- B-3 / B-7 baseline pins (current short-form fields) ---------------
     #
     # B-2 (firewall_stack bypass field rename) was retired from T2 scope
