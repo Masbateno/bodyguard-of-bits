@@ -526,67 +526,175 @@ Exemple cron — audit quotidien à 6h, mail en cas de problème :
 > - Les dicts imbriqués suivent la même règle (ajouts OK, suppressions/renommages = breaking).
 > - Les changements breaking incrémentent `schema_version` à un nouveau majeur (`"2"`, `"3"`…).
 
-### Clés top-level (toujours présentes)
+### Versions du schéma
+
+Deux versions sont émises par `bob.json_output.build_json_data()` :
+
+| Version | Statut | Sélection |
+|---|---|---|
+| **v2** | **Défaut depuis v0.7.0** | `--json` / `--json-full` (aucun flag supplémentaire) |
+| v1 | Legacy depuis v0.6.x — préservé opt-in | `--json-v1` (implique `--json`) |
+
+Les consommateurs qui n'ont pas migré peuvent fixer v1 explicitement :
+
+```bash
+sudo bob --json --json-v1 | jq '.schema_version'   # → "1"
+sudo bob --json            | jq '.schema_version'   # → "2"
+```
+
+Le chemin v1 est conservé pendant au moins un cycle de release minor complet après v0.7.0. Une release future publiera un avis de dépréciation ; un majeur futur pourra retirer `--json-v1` complètement.
+
+### v2 — Clés top-level (toujours présentes)
 
 | Clé | Type | Description |
 |---|---|---|
-| `schema_version` | string | Version majeure du schéma (actuellement `"1"`) |
+| `schema_version` | string | `"2"` |
 | `version` | string | Version de BOB qui produit la sortie |
 | `host` | string | Nom d'hôte (`uname -n`) |
-| `timestamp` | string | Timestamp UTC ISO 8601 |
+| `timestamp_utc` | string | Timestamp UTC ISO 8601 (renommé depuis `timestamp` en v1) |
 | `score` | int (0–10) | Score de sécurité global |
 | `score_max` | int | Toujours `10` |
-| `risk` | string | Niveau de risque : `"low"`, `"medium"`, `"high"`, `"critical"` |
-| `network_context` | string | `"local"`, `"private"`, ou `"public"` |
+| `risk` | string | Niveau de risque **effectif** (inclut l'escalation posture) : `"low"`, `"medium"`, `"high"`, `"critical"` |
+| `network_context` | object | `{ "context": "local" \| "private" \| "public" \| "ddns" }` en mode court ; étendu avec `interfaces`, `connections_count`, `top_remote_ips` en `--json-full` |
 | `public_ip` | string | IP publique (vide derrière NAT) |
 | `alerts` | int | Nombre de findings ALERT |
 | `warnings` | int | Nombre de findings WARN |
-| `deductions` | array | Déductions de score (voir ci-dessous) |
-| `domain_scores` | object | Sous-scores par domaine (voir ci-dessous) |
+| `info_count` | int | Nombre de findings INFO (nouveau en v2) |
+| `deductions` | array | Déductions de score (filtrées : `points > 0`) |
+| `domain_scores` | object | Sous-scores par domaine |
+| `posture_escalation` | object | Contexte de l'ajustement du niveau de risque par la posture (nouveau en v2) |
 
-### Structure `deductions[]`
-
-```json
-{ "reason": "Journalisation UFW désactivée", "points": 2, "key": "firewall.logging_off" }
-```
-
-Le champ `key` est une **clé i18n stable en notation pointée** (`<domaine>.<finding>`) — c'est sur ce champ qu'il faut matcher (et non sur `reason` localisée) pour une logique cliente stable entre locales.
-
-### Structure `domain_scores`
+### v2 — Structure `posture_escalation` (nouvelle)
 
 ```json
 {
-  "ssh":        { "score": 7,  "label": "SSH" },
-  "samba":      { "score": 10, "label": "Samba Security" },
-  "file_perms": { "score": 10, "label": "Files & Access" },
-  "updates":    { "score": 10, "label": "Updates" },
-  "hardening":  { "score": 6,  "label": "Hardening" },
-  "disk":       { "score": 9,  "label": "Disk Health" },
-  "firewall":   { "score": 10, "label": "Firewall & Services" }
+  "applied":     false,
+  "reason_key":  null,
+  "score_level": "low"
 }
 ```
 
-Les clés de domaines sont stables : `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 au total — définies dans `bob.domain_scores.DOMAINS`). Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), et `deductions` (total des points déduits dans ce domaine).
+| Champ | Type | Description |
+|---|---|---|
+| `applied` | bool | `true` quand le `risk` affiché a été remonté par un trigger posture |
+| `reason_key` | string \| null | Clé i18n quand appliqué, ex. `"scoring.posture.firewall_inactive"` |
+| `score_level` | string | Le niveau de risque calculé à partir du seul score, avant escalation posture |
 
-### Clés additionnelles en mode complet (`--json-full`)
+Triggers (1er match wins) :
+
+1. `firewall_inactive` → plancher `high`
+2. `iptables_input_accept` → plancher `high`
+3. `firewall_domain_score ≤ 3` → plancher `medium`
+
+La Phase 1 (commit `e3d998f`) a introduit le concept posture en interne ; v2 le surface dans le JSON pour que les consommateurs distinguent « risque faible parce que clean » de « risque faible dominé par de bons domaines non-pare-feu ».
+
+### v2 — Structure `deductions[]`
+
+```json
+{
+  "reason": "Journalisation UFW désactivée",
+  "points": 2,
+  "key":    "firewall.logging_off",
+  "template_vars": {}
+}
+```
+
+Le champ `key` est une **clé i18n stable en notation pointée** (`<prefix>.<finding_id>`) — c'est sur ce champ qu'il faut matcher (et non sur `reason` localisée) pour une logique cliente stable entre locales. Voir l'audit EXPLAIN_KEYS ci-dessous pour la convention.
+
+### v2 — Structure `domain_scores`
+
+```json
+{
+  "ssh":        { "score": 7,  "label": "SSH",                  "deductions": 3 },
+  "samba":      { "score": 10, "label": "Samba Security",        "deductions": 0 },
+  "file_perms": { "score": 10, "label": "Files & Access",        "deductions": 0 },
+  "updates":    { "score": 10, "label": "Updates",               "deductions": 0 },
+  "hardening":  { "score": 6,  "label": "Hardening",             "deductions": 4 },
+  "disk":       { "score": 9,  "label": "Disk Health",           "deductions": 1 },
+  "firewall":   { "score": 10, "label": "Firewall & Services",   "deductions": 0 }
+}
+```
+
+Les clés de domaines sont stables : `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 au total — définies dans `bob.domain_scores.DOMAINS`). Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), et `deductions` (int — total des points déduits dans ce domaine, nouveau en v2).
+
+### v2 — Clés additionnelles en mode complet (`--json-full`)
 
 | Clé | Type | Description |
 |---|---|---|
-| `findings` | array | Tous les findings avec `{ key, level, message, nature, cmd, note }` |
+| `findings` | array | Tous les findings avec `{ key, level, message, nature, cmd, note, template_vars }` |
 | `services` | array | Services réseau installés avec `{ name, installed, active, risk, ports }` |
-| `open_ports` | array | Ports en écoute sur `0.0.0.0` avec `{ port, address, process }` |
+| `open_ports` | array | Ports en écoute sur `0.0.0.0` avec `{ port, address, process }` (filtré) |
+| `open_ports_all` | array | Tous les ports en écoute, y compris bound localhost (nouveau en v2) |
 | `firewall_stack` | object | Détection bypass UFW : docker, libvirt, nftables, ip_forward, etc. |
+| `deductions_raw` | array | Toutes les déductions, y compris les caps synthétiques à 0 points (nouveau en v2) |
 | `hardening` | object | Flags sysctl/AppArmor (uniquement quand collectés) |
-| `ipv6` | object | Cohérence pile IPv6 (uniquement quand collectées) |
+| `ipv6` | object | Cohérence pile IPv6 (uniquement quand collectée) |
+
+En v2 mode complet, `network_context` porte additionnellement `interfaces` / `connections_count` / `top_remote_ips` — la même enrichissement que v1 portait mais comme une **extension additive** de l'objet, pas un swap de type.
+
+### v1 — Schéma legacy (opt-in via `--json-v1`)
+
+La structure v1 est préservée à l'identique de v0.6.x pour la rétrocompatibilité. Différences notables vs v2 :
+
+| Champ | Comportement v1 | Comportement v2 |
+|---|---|---|
+| `schema_version` | `"1"` | `"2"` |
+| `timestamp` | présent (UTC ISO 8601) | absent (renommé `timestamp_utc`) |
+| `info_count` | absent | présent |
+| `network_context` | string `"local"` etc. en mode court ; **écrasé en dict** en mode complet | toujours dict |
+| `posture_escalation` | absent | présent |
+| `deductions_raw` | absent | présent (mode complet uniquement) |
+| `open_ports_all` | absent | présent (mode complet uniquement) |
+| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` |
+
+Le champ `risk` en v1 reflète déjà le niveau **effectif** (i.e. inclut l'escalation posture depuis v0.7.0 Phase 1). Le niveau pre-Phase-1 score-only n'est pas récupérable depuis v1 — les consommateurs nécessitant la baseline non-escalée doivent utiliser `posture_escalation.score_level` de v2.
+
+### Guide de migration (v1 → v2)
+
+Pour la plupart des consommateurs la migration est mécanique :
+
+| Si ton code v1 lit… | …en v2 utilise |
+|---|---|
+| `data["timestamp"]` | `data["timestamp_utc"]` |
+| `data["network_context"]` (attendant string) | `data["network_context"]["context"]` |
+| `data["domain_scores"]["ssh"]["score"]` | inchangé |
+| `data["domain_scores"]["ssh"]` (attendant 2 clés) | a maintenant 3 (`deductions` ajouté) |
+| (autre) | inchangé — v2 est additif sur v1 |
+
+Un snippet jq qui marche sur **les deux** versions :
+
+```bash
+sudo bob --json | jq '
+  .schema_version as $v
+  | if $v == "2"
+    then .network_context.context
+    else .network_context
+    end
+'
+```
 
 ### Exemple de matching stable (indépendant de la locale)
 
 ```bash
-# Matcher un finding spécifique par clé, indépendamment de la locale
+# Matcher un finding spécifique par clé, indépendamment de la locale et de la version schema
 sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
 ```
 
 Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--explain` — elles ne changeront pas sans bump majeur du schéma.
+
+### Audit EXPLAIN_KEYS (baseline v0.7.0)
+
+À partir de v0.7.0, le set de clés `--explain` contient **117 clés** réparties sur **30 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
+
+- **Pattern :** `<prefix>.<finding_id>` (single dot, snake_case)
+- **Exception :** `file_perms.<path>.<finding_id>` (segments path intermédiaires, résolus par `bob.explain.normalize_key`)
+- **Pas de retrait :** une fois publiée, une clé reste callable pendant la durée de vie du `schema_version` majeur
+- **Aliases :** les renommages de clés passent par `EXPLAIN_KEY_ALIASES` pour la rétrocompatibilité
+- **Ajouts :** de nouvelles clés peuvent être ajoutées dans n'importe quel minor
+
+Vocabulaire des préfixes (alphabétique) : `auditd, auth_log, clamav, cron_audit, disk, docker_audit, file_integrity, file_perms, firewall, firmware, hardening, ipv6, kernel_hardening, kernel_modules, memory, password_policy, prerequisites, risk, rules, samba, secure_boot, services_state, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
+
+Ajouter un nouveau préfixe dans une release future fait échouer `TestExplainPrefixDiscipline::test_key_prefix_is_known` jusqu'à ce que le mainteneur update explicitement `KNOWN_PREFIXES` — surfaçant l'ajout comme décision délibérée en code review.
 
 ---
 

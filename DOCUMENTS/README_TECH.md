@@ -526,67 +526,175 @@ Example cron job — daily audit at 6am, email on issues:
 > - Nested dicts follow the same rule (additions OK, removals/renames = breaking).
 > - Breaking changes bump `schema_version` to a new major (`"2"`, `"3"`…).
 
-### Top-level keys (always present)
+### Schema versions
+
+Two versions are emitted by `bob.json_output.build_json_data()`:
+
+| Version | Status | Selection |
+|---|---|---|
+| **v2** | **Default since v0.7.0** | `--json` / `--json-full` (no extra flag needed) |
+| v1 | Legacy from v0.6.x — preserved opt-in | `--json-v1` (implies `--json`) |
+
+Consumers that have not migrated can pin v1 explicitly:
+
+```bash
+sudo bob --json --json-v1 | jq '.schema_version'   # → "1"
+sudo bob --json            | jq '.schema_version'   # → "2"
+```
+
+The v1 path is kept for at least one full minor release cycle after v0.7.0 ships. A future minor release will publish a deprecation notice; a future major may retire `--json-v1` entirely.
+
+### v2 — Top-level keys (always present)
 
 | Key | Type | Description |
 |---|---|---|
-| `schema_version` | string | Major schema version (currently `"1"`) |
+| `schema_version` | string | `"2"` |
 | `version` | string | BOB version producing the output |
 | `host` | string | Hostname (`uname -n`) |
-| `timestamp` | string | UTC ISO 8601 timestamp |
+| `timestamp_utc` | string | UTC ISO 8601 timestamp (renamed from `timestamp` in v1) |
 | `score` | int (0–10) | Overall security score |
 | `score_max` | int | Always `10` |
-| `risk` | string | Risk level: `"low"`, `"medium"`, `"high"`, `"critical"` |
-| `network_context` | string | `"local"`, `"private"`, or `"public"` |
+| `risk` | string | **Effective** risk level (includes posture escalation): `"low"`, `"medium"`, `"high"`, `"critical"` |
+| `network_context` | object | `{ "context": "local" \| "private" \| "public" \| "ddns" }` in short mode; extended with `interfaces`, `connections_count`, `top_remote_ips` in `--json-full` |
 | `public_ip` | string | Public IP (empty if behind NAT) |
 | `alerts` | int | Number of ALERT-level findings |
 | `warnings` | int | Number of WARN-level findings |
-| `deductions` | array | Score deductions (see below) |
-| `domain_scores` | object | Per-domain sub-scores (see below) |
+| `info_count` | int | Number of INFO-level findings (new in v2) |
+| `deductions` | array | Score deductions (filtered: `points > 0`) |
+| `domain_scores` | object | Per-domain sub-scores |
+| `posture_escalation` | object | Posture-driven risk-level adjustment context (new in v2) |
 
-### `deductions[]` structure
-
-```json
-{ "reason": "UFW logging is off", "points": 2, "key": "firewall.logging_off" }
-```
-
-The `key` field is a **stable dotted i18n key** (`<domain>.<finding>`) — match on this rather than on the localized `reason` for stable client logic across locales.
-
-### `domain_scores` structure
+### v2 — `posture_escalation` structure (new)
 
 ```json
 {
-  "ssh":        { "score": 7,  "label": "SSH" },
-  "samba":      { "score": 10, "label": "Samba Security" },
-  "file_perms": { "score": 10, "label": "Files & Access" },
-  "updates":    { "score": 10, "label": "Updates" },
-  "hardening":  { "score": 6,  "label": "Hardening" },
-  "disk":       { "score": 9,  "label": "Disk Health" },
-  "firewall":   { "score": 10, "label": "Firewall & Services" }
+  "applied":     false,
+  "reason_key":  null,
+  "score_level": "low"
 }
 ```
 
-Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 total — defined in `bob.domain_scores.DOMAINS`). Each entry has `score` (int 0–10), `label` (English display name), and `deductions` (total points deducted in this domain).
+| Field | Type | Description |
+|---|---|---|
+| `applied` | bool | `true` when the displayed `risk` was raised by a posture trigger |
+| `reason_key` | string \| null | i18n key when applied, e.g. `"scoring.posture.firewall_inactive"` |
+| `score_level` | string | The risk level computed from the score alone, before posture escalation |
 
-### Full mode (`--json-full`) additional keys
+Triggers (first match wins):
+
+1. `firewall_inactive` → floor `high`
+2. `iptables_input_accept` → floor `high`
+3. `firewall_domain_score ≤ 3` → floor `medium`
+
+Phase 1 (commit `e3d998f`) introduced the posture concept internally; v2 surfaces it in JSON so consumers can distinguish "low risk because clean" from "low risk dominated by good but non-firewall domains".
+
+### v2 — `deductions[]` structure
+
+```json
+{
+  "reason": "UFW logging is off",
+  "points": 2,
+  "key":    "firewall.logging_off",
+  "template_vars": {}
+}
+```
+
+The `key` field is a **stable dotted i18n key** (`<prefix>.<finding_id>`) — match on this rather than on the localized `reason` for stable client logic across locales. See the EXPLAIN_KEYS audit below for the convention.
+
+### v2 — `domain_scores` structure
+
+```json
+{
+  "ssh":        { "score": 7,  "label": "SSH",                  "deductions": 3 },
+  "samba":      { "score": 10, "label": "Samba Security",        "deductions": 0 },
+  "file_perms": { "score": 10, "label": "Files & Access",        "deductions": 0 },
+  "updates":    { "score": 10, "label": "Updates",               "deductions": 0 },
+  "hardening":  { "score": 6,  "label": "Hardening",             "deductions": 4 },
+  "disk":       { "score": 9,  "label": "Disk Health",           "deductions": 1 },
+  "firewall":   { "score": 10, "label": "Firewall & Services",   "deductions": 0 }
+}
+```
+
+Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 total — defined in `bob.domain_scores.DOMAINS`). Each entry has `score` (int 0–10), `label` (English display name), and `deductions` (int — total points deducted in this domain, new in v2).
+
+### v2 — Full mode (`--json-full`) additional keys
 
 | Key | Type | Description |
 |---|---|---|
-| `findings` | array | All findings with `{ key, level, message, nature, cmd, note }` |
+| `findings` | array | All findings with `{ key, level, message, nature, cmd, note, template_vars }` |
 | `services` | array | Installed network services with `{ name, installed, active, risk, ports }` |
-| `open_ports` | array | Listening ports on `0.0.0.0` with `{ port, address, process }` |
+| `open_ports` | array | Listening ports on `0.0.0.0` with `{ port, address, process }` (filtered) |
+| `open_ports_all` | array | All listening ports, including localhost-bound (new in v2) |
 | `firewall_stack` | object | UFW bypass detection: docker, libvirt, nftables, ip_forward, etc. |
+| `deductions_raw` | array | All deductions, including synthetic zero-point caps (new in v2) |
 | `hardening` | object | Sysctl/AppArmor flags (only when hardening data is collected) |
 | `ipv6` | object | IPv6 stack consistency (only when IPv6 data is collected) |
+
+In v2 full mode, `network_context` additionally carries `interfaces` / `connections_count` / `top_remote_ips` — the same enrichment v1 used to carry but as an **additive** extension of the object, not as a type swap.
+
+### v1 — Legacy schema (opt-in via `--json-v1`)
+
+The v1 layout is preserved exactly as it was in v0.6.x for backward compatibility. Notable differences vs v2:
+
+| Field | v1 behavior | v2 behavior |
+|---|---|---|
+| `schema_version` | `"1"` | `"2"` |
+| `timestamp` | present (UTC ISO 8601) | absent (renamed `timestamp_utc`) |
+| `info_count` | absent | present |
+| `network_context` | string `"local"` etc. in short mode; **overwritten to dict** in full mode | always dict |
+| `posture_escalation` | absent | present |
+| `deductions_raw` | absent | present (full only) |
+| `open_ports_all` | absent | present (full only) |
+| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` |
+
+The v1 `risk` field already reflects the **effective** level (i.e. includes posture escalation since v0.7.0 Phase 1). The pre-Phase-1 score-only level is not retrievable from v1 — consumers needing the un-escalated baseline must use v2's `posture_escalation.score_level`.
+
+### Migration guide (v1 → v2)
+
+For most consumers the migration is mechanical:
+
+| If your v1 code reads… | …in v2 use |
+|---|---|
+| `data["timestamp"]` | `data["timestamp_utc"]` |
+| `data["network_context"]` (expecting string) | `data["network_context"]["context"]` |
+| `data["domain_scores"]["ssh"]["score"]` | unchanged |
+| `data["domain_scores"]["ssh"]` (expecting 2 keys) | now has 3 (`deductions` added) |
+| (anything else) | unchanged — v2 is additive on top of v1 |
+
+A jq snippet that works on **both** versions:
+
+```bash
+sudo bob --json | jq '
+  .schema_version as $v
+  | if $v == "2"
+    then .network_context.context
+    else .network_context
+    end
+'
+```
 
 ### Stable matching example (locale-independent)
 
 ```bash
-# Match a specific finding by key, regardless of locale
+# Match a specific finding by key, regardless of locale and schema version
 sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
 ```
 
 The `findings[*].key` and `deductions[*].key` are part of the `--explain` key set — they will not change without a major schema bump.
+
+### EXPLAIN_KEYS audit (v0.7.0 baseline)
+
+As of v0.7.0, the `--explain` key set contains **117 keys** across **30 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
+
+- **Pattern:** `<prefix>.<finding_id>` (single dot, snake_case)
+- **Exception:** `file_perms.<path>.<finding_id>` (path-segment middles, resolved by `bob.explain.normalize_key`)
+- **No removal:** once published, a key stays callable for the lifetime of the major `schema_version`
+- **Aliases:** key renames go through `EXPLAIN_KEY_ALIASES` for backward compatibility
+- **Additions:** new keys may be added in any minor release
+
+Prefix vocabulary (alphabetically): `auditd, auth_log, clamav, cron_audit, disk, docker_audit, file_integrity, file_perms, firewall, firmware, hardening, ipv6, kernel_hardening, kernel_modules, memory, password_policy, prerequisites, risk, rules, samba, secure_boot, services_state, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
+
+Adding a new prefix in a future release fails `TestExplainPrefixDiscipline::test_key_prefix_is_known` until the maintainer explicitly updates `KNOWN_PREFIXES` — surfacing the addition as a deliberate decision in code review.
 
 ---
 
