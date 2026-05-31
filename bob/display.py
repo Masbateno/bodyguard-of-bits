@@ -398,11 +398,11 @@ def _summary_header_lines(engine, network_context, config, t,
     # Posture escalation annotation (v0.7.0): when the displayed level is
     # stricter than the score-derived level, surface the reason inline so
     # operators understand why "score 8 / risk HIGH" can coexist.
-    _esc = getattr(engine, "posture_escalation", (None, ""))
-    try:
-        _posture_floor, _posture_key = _esc
-    except (TypeError, ValueError):
-        _posture_floor, _posture_key = None, ""
+    # I-2 (v0.7.0 Phase 2.1): defensive unpack consolidated in
+    # bob.scoring.unpack_posture_escalation — preserves MagicMock-style
+    # test mocks while pinning a single source of truth.
+    from bob.scoring import unpack_posture_escalation
+    _posture_floor, _posture_key = unpack_posture_escalation(engine)
     posture_annotation: str = ""
     if _posture_floor is not None and level != engine.level:
         posture_annotation = t(_posture_key)

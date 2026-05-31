@@ -352,7 +352,12 @@ def _build_v2(
       - ``domain_scores[d]`` now includes ``deductions`` (int count) in
         addition to score+label (B-6).
     """
-    _posture_floor, _posture_key = engine.posture_escalation
+    # I-2 (v0.7.0 Phase 2.1): defensive unpack via
+    # bob.scoring.unpack_posture_escalation. Real ScoreEngine always returns
+    # a (RiskLevel|None, str) tuple but the helper guards against test mocks
+    # returning a non-iterable (same hazard as the Phase 1 hotfix 4ed2e3b).
+    from bob.scoring import unpack_posture_escalation
+    _posture_floor, _posture_key = unpack_posture_escalation(engine)
     posture_block = {
         "applied":     _posture_floor is not None,
         "reason_key":  _posture_key if _posture_floor is not None else None,

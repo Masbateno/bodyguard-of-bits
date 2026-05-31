@@ -621,3 +621,60 @@ class TestRiskMax:
     def test_equal_levels(self):
         from bob.scoring import _risk_max
         assert _risk_max(RiskLevel.MEDIUM, RiskLevel.MEDIUM) == RiskLevel.MEDIUM
+
+
+class TestUnpackPostureEscalation:
+    """I-2 (v0.7.0 Phase 2.1): single-source defensive unpack helper.
+
+    Used by display + json_output (and any future engine consumer including
+    the T3 plugin sandbox runner). Real ScoreEngine always returns a clean
+    tuple; the helper exists to absorb MagicMock-style tests that return a
+    non-iterable.
+    """
+
+    def test_clean_engine_returns_none_empty(self):
+        from bob.scoring import unpack_posture_escalation
+        e = ScoreEngine()
+        e.finalize()
+        floor, key = unpack_posture_escalation(e)
+        assert floor is None
+        assert key == ""
+
+    def test_firewall_inactive_returns_floor_and_key(self):
+        from bob.scoring import unpack_posture_escalation
+        e = ScoreEngine()
+        e.finalize()
+        e.set_posture(firewall_inactive=True)
+        floor, key = unpack_posture_escalation(e)
+        assert floor == RiskLevel.HIGH
+        assert key == "scoring.posture.firewall_inactive"
+
+    def test_engine_without_property_returns_none_empty(self):
+        """Legacy test engine stubs that don't define ``posture_escalation``
+        receive the safe default — equivalent to the explicit getattr fallback
+        in display.py's pre-helper code."""
+        from bob.scoring import unpack_posture_escalation
+        class _NoPostureEngine:
+            score = 5
+        floor, key = unpack_posture_escalation(_NoPostureEngine())
+        assert floor is None
+        assert key == ""
+
+    def test_engine_returning_non_iterable_returns_none_empty(self):
+        """The exact scenario the helper guards against (e.g. MagicMock that
+        returns a Mock object instead of a 2-tuple)."""
+        from bob.scoring import unpack_posture_escalation
+        class _BrokenEngine:
+            posture_escalation = "not a tuple"
+        floor, key = unpack_posture_escalation(_BrokenEngine())
+        assert floor is None
+        assert key == ""
+
+    def test_engine_returning_oversized_tuple_returns_none_empty(self):
+        """Triple-length tuple → ValueError on unpacking → safe fallback."""
+        from bob.scoring import unpack_posture_escalation
+        class _OversizedEngine:
+            posture_escalation = (RiskLevel.HIGH, "key", "extra")
+        floor, key = unpack_posture_escalation(_OversizedEngine())
+        assert floor is None
+        assert key == ""

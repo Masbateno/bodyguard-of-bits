@@ -640,3 +640,32 @@ class ScoreEngine:
             return
         self._raw_score -= deduction.points
         self.breakdown.append(deduction)
+
+
+# ---------------------------------------------------------------------------
+# Posture escalation — engine consumer helper (I-2, v0.7.0 Phase 2.1)
+# ---------------------------------------------------------------------------
+
+def unpack_posture_escalation(engine: ScoreEngine) -> tuple[RiskLevel | None, str]:
+    """Defensively unpack ``engine.posture_escalation`` for output sites.
+
+    Real ``ScoreEngine`` instances always return a ``tuple[RiskLevel|None, str]``
+    (``set_posture`` defaults yield ``(None, "")``). Test mocks (MagicMock-style)
+    may return a non-iterable; without this guard, output sites would crash with
+    TypeError/ValueError during unpacking — exactly the class of bug fixed by
+    the Phase 1 hotfix 4ed2e3b for the summary box.
+
+    Returns ``(None, "")`` on any unpacking failure so callers can render a
+    minimal output instead of crashing.
+
+    This helper is the single source of truth for the defensive pattern; the
+    audit findings I-2 from project_v07x_phase1 strategy rule 1 (integration-
+    first) recommended consolidating it before Phase 3 (T3 plugin sandbox
+    runner) which will add new engine consumers that need the same guard.
+    """
+    _esc = getattr(engine, "posture_escalation", (None, ""))
+    try:
+        floor, key = _esc
+        return floor, key
+    except (TypeError, ValueError):
+        return None, ""
