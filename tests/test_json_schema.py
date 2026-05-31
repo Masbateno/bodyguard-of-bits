@@ -354,3 +354,122 @@ class TestFullModeWithOptionalSnapshots:
         )
         assert "hardening" in data
         assert "ipv6" in data
+
+
+# ---------------------------------------------------------------------------
+# v0.7.0 Phase 2 — Pin v1 baseline behavior before introducing schema v2
+#
+# These tests document the CURRENT v1 contract — including the pain points
+# (P1, P3) that drive the v2 migration. They run green on today's code base
+# and will need to be either:
+#   (a) adapted to test the --json-v1 flag explicitly when v2 lands, OR
+#   (b) retired with a note that they pinned the legacy contract.
+#
+# This is Step 1 of the integration-first sequence per project_v07x_phase1
+# strategy rule 1. Step 2 = TestSchemaV2Default in a new test file.
+# ---------------------------------------------------------------------------
+
+class TestSchemaV1BaselineGaps:
+    """Pin the v1 oddities + missing fields that v2 must address."""
+
+    # ---- P1 — network_context type inconsistency ---------------------------
+    def test_v1_network_context_is_string_in_short_mode(self, engine, minimal_args):
+        """Pre-v2 baseline: ``network_context`` is a string at top-level in
+        short mode (the value of the constant context detection — "private",
+        "public", "ddns"). v2 (A-2) will make it always a dict for type-safety
+        in JSON consumers."""
+        data = _build(engine, minimal_args, full=False)
+        assert isinstance(data["network_context"], str)
+
+    def test_v1_network_context_overwritten_to_dict_in_full_mode(self, engine, minimal_args):
+        """Pre-v2 baseline: same ``network_context`` key gets overwritten to
+        a dict in full mode (interfaces + connections_count + top_remote_ips).
+        Two different types under one key based on a flag — exactly the bug
+        v2 A-2 will fix."""
+        data = _build(engine, minimal_args, full=True)
+        assert isinstance(data["network_context"], dict)
+        assert "interfaces" in data["network_context"]
+
+    # ---- P3 — no posture_escalation field exposed --------------------------
+    def test_v1_short_has_no_posture_escalation_field(self, engine, minimal_args):
+        """Pre-v2 baseline: posture escalation is computed in Phase 1 commit
+        e3d998f and CHANGES the value of ``risk`` field (now effective_level),
+        but the escalation context (applied? reason? raw score_level?) is NOT
+        exposed in v1 JSON. v2 A-4 will add a top-level ``posture_escalation``
+        block."""
+        data = _build(engine, minimal_args, full=False)
+        assert "posture_escalation" not in data
+
+    def test_v1_full_has_no_posture_escalation_field(self, engine, minimal_args):
+        data = _build(engine, minimal_args, full=True)
+        assert "posture_escalation" not in data
+
+    # ---- P2 — risk field value semantics (Phase 1 silently shifted) --------
+    def test_v1_risk_is_one_of_canonical_values(self, engine, minimal_args):
+        """Pre-v2 baseline: ``risk`` ∈ {low, medium, high, critical}. v2 keeps
+        the same enum (no value added/removed) but documents that since Phase
+        1 (commit e3d998f) the value comes from ``effective_level`` rather
+        than the raw score-derived ``level``."""
+        data = _build(engine, minimal_args)
+        assert data["risk"] in {"low", "medium", "high", "critical"}
+
+    # ---- B-3 / B-7 baseline pins (current short-form fields) ---------------
+    #
+    # B-2 (firewall_stack bypass field rename) was retired from T2 scope
+    # during Step 1: ``input_bypasses`` / ``forward_bypasses`` are actually
+    # lists of rule descriptions, not int counts, so the plural naming is
+    # already correct. No rename needed.
+
+    def test_v1_firewall_stack_bypasses_are_lists(self, engine, minimal_args):
+        """Pre-v2 baseline (correctly named, retained as-is in v2):
+        ``firewall_stack.input_bypasses`` / ``forward_bypasses`` are lists
+        of rule descriptions, not counts."""
+        data = _build(engine, minimal_args, full=True)
+        fs = data["firewall_stack"]
+        assert isinstance(fs["input_bypasses"], list)
+        assert isinstance(fs["forward_bypasses"], list)
+
+    def test_v1_timestamp_field_has_no_utc_marker(self, engine, minimal_args):
+        """Pre-v2 baseline: ``timestamp`` is UTC-encoded but the name doesn't
+        say so. v2 B-3 will rename to ``timestamp_utc`` or add a sibling
+        timezone field."""
+        data = _build(engine, minimal_args)
+        assert "timestamp" in data
+        assert "timestamp_utc" not in data
+        assert "timezone" not in data
+
+    def test_v1_has_no_info_count(self, engine, minimal_args):
+        """Pre-v2 baseline: only ``alerts`` and ``warnings`` counts are
+        exposed. v2 B-7 will add ``info_count`` for symmetry with the
+        FindingLevel enum."""
+        data = _build(engine, minimal_args)
+        assert "alerts" in data
+        assert "warnings" in data
+        assert "info_count" not in data
+        assert "infos" not in data
+
+    def test_v1_no_deductions_raw_field(self, engine, minimal_args):
+        """Pre-v2 baseline: ``deductions`` filters ``points > 0`` (skips
+        synthetic zero-point caps). v2 B-4 will add ``deductions_raw`` in
+        full mode for consumers that want every entry."""
+        data = _build(engine, minimal_args, full=True)
+        assert "deductions" in data
+        assert "deductions_raw" not in data
+
+    def test_v1_no_open_ports_all_field(self, engine, minimal_args):
+        """Pre-v2 baseline: ``open_ports`` filters ``is_all_interfaces``
+        (skips localhost). v2 B-5 will add ``open_ports_all`` in full mode."""
+        data = _build(engine, minimal_args, full=True)
+        assert "open_ports" in data
+        assert "open_ports_all" not in data
+
+    def test_v1_domain_scores_no_deductions_count(self, engine, minimal_args):
+        """Pre-v2 baseline: ``domain_scores[d]`` exposes only ``{score, label}``.
+        v2 B-6 will add ``deductions`` (the int count already computed
+        internally by compute_domain_scores)."""
+        data = _build(engine, minimal_args)
+        for domain, entry in data["domain_scores"].items():
+            assert set(entry.keys()) == {"score", "label"}, (
+                f"v1 domain_scores[{domain!r}] must have exactly score+label keys, "
+                f"got {set(entry.keys())}"
+            )
