@@ -92,17 +92,29 @@ CHECK_NAME = "PARTIAL"
 raise RuntimeError("module explodes mid-import")
 """
 
-PLUGIN_T_RECEIVED = """\
+PLUGIN_T_REPORT = """\
 from bob.scoring import CheckResult
 
-received_t = None
+def run_check(t=None):
+    result = CheckResult()
+    result.info(f"t-type={type(t).__name__}")
+    return result
+"""
+
+# Plugin that defines run_check AND raises at module level. Pre-v0.7.0,
+# the loader exec'd the module so the raise was caught at load time and
+# the plugin was skipped. In the sandbox model, the parent never executes
+# the module body — the raise is deferred to the worker and surfaces as
+# a WARN CheckResult.
+PLUGIN_DEFERRED_RAISE = """\
+from bob.scoring import CheckResult
+
+raise RuntimeError("top level boom")
 
 def run_check(t=None):
-    global received_t
-    received_t = t
-    result = CheckResult()
-    result.ok("ok")
-    return result
+    r = CheckResult()
+    r.ok("never reached")
+    return r
 """
 
 
@@ -261,13 +273,39 @@ class TestPluginCheckRun:
         levels = [f.level.value for f in result.findings]
         assert "warn" in levels
 
-    def test_run_passes_t_to_plugin(self, tmp_path):
-        path = write_plugin(tmp_path, "check.py", PLUGIN_T_RECEIVED)
+    def test_run_does_not_pass_t_to_plugin(self, tmp_path):
+        """Sandbox contract (v0.7.0+): the translation function ``t`` is
+        accepted by ``PluginCheck.run()`` for API compatibility but NOT
+        forwarded to the plugin — the worker process always receives
+        ``None``. The pre-v0.7.0 contract has always documented ``t`` as
+        safe to ignore, and i18n state cannot trivially cross a
+        ``multiprocessing.spawn`` boundary."""
+        path = write_plugin(tmp_path, "check.py", PLUGIN_T_REPORT)
         pc = _load_one(path)
         assert pc is not None
-        pc.run(_t)
-        # Access the module attribute set by the plugin
-        assert pc._module.received_t is _t
+        result = pc.run(_t)
+        messages = " ".join(f.message for f in result.findings)
+        assert "t-type=NoneType" in messages
+
+    def test_plugin_module_body_does_not_execute_in_parent(self, tmp_path):
+        """Sandbox security pin: a plugin with a top-level ``raise`` AND a
+        ``def run_check`` MUST load cleanly (no module body exec in the
+        parent process), then surface the raise as a WARN finding when the
+        sandboxed worker hits it.
+
+        This is the core sandbox-escape closure: pre-v0.7.0, the parent
+        would have run the top-level ``raise`` itself during
+        ``importlib.exec_module``, allowing module-level
+        ``import subprocess; subprocess.run(...)`` to compromise the
+        audit before any sandbox could intervene."""
+        path = write_plugin(tmp_path, "deferred_boom.py", PLUGIN_DEFERRED_RAISE)
+        pc = _load_one(path)
+        assert pc is not None  # Load succeeds: AST sees `def run_check`.
+        result = pc.run(_t)
+        levels = [f.level.value for f in result.findings]
+        assert "warn" in levels
+        messages = " ".join(f.message for f in result.findings)
+        assert "deferred_boom.py" in messages
 
     def test_run_without_t_arg(self, tmp_path):
         path = write_plugin(tmp_path, "check.py", VALID_PLUGIN)

@@ -1,8 +1,8 @@
 """
 Plugin check loader for BOB.
 
-Scans ~/.config/bob/checks.d/ for Python files that implement a
-custom audit check and runs them as part of the audit pipeline.
+Scans ``~/.config/bob/checks.d/`` for Python files that implement a custom
+audit check and runs them as part of the audit pipeline.
 
 Plugin contract
 ---------------
@@ -11,23 +11,41 @@ Each plugin is a Python file that must expose:
     def run_check(t=None) -> CheckResult:
         ...
 
-The optional ``t`` argument is the active translation function.
-Plugins typically write their own message strings — ``t`` is provided
-for consistency and is safe to ignore.
-
 Plugins may optionally define a module-level string to override the
 section title shown in the report:
 
     CHECK_NAME = "MY CUSTOM CHECK"
 
-Security note
--------------
-Plugins run as root (BOB requires root).  Only place files in
-checks.d/ that you trust.  BOB validates the file size and the
-presence of ``run_check`` before loading, but does not sandbox execution.
+Security model (v0.7.0 Phase 3)
+-------------------------------
+Since v0.7.0, plugins run in a **restricted sandbox** by default:
 
-Example plugin (~/.config/bob/checks.d/motd_check.py)
--------------------------------------------------------------
+  - Process isolation via ``multiprocessing.get_context("spawn")``.
+  - Import allowlist (``bob.scoring`` + safe stdlib only).
+  - ``open()`` wrapper that rejects write/append/exclusive modes.
+  - ``pathlib.Path`` write methods stubbed.
+  - ``os`` dangerous attributes (``system``, ``popen``, ``exec*``, ``fork``,
+    ``putenv``…) stripped.
+  - 256 MiB virtual memory cap + 5s wall-clock timeout per run.
+  - Restricted ``__builtins__`` (no ``eval`` / ``exec`` / ``compile`` /
+    ``__import__`` / ``input``).
+
+The module body of the plugin is **never** loaded into the parent BOB
+process — it executes only in the sandboxed child. This defeats top-level
+malicious code (no ``import subprocess`` at module load time can pwn the
+audit).
+
+For the migration window, ``BOB_SANDBOX_LEGACY=1`` opts out of the sandbox
+entirely and runs the plugin in the parent process with full builtins. A
+flashy WARNING is printed to stderr at runner instantiation. This trap door
+is deprecated immediately and will be removed in v0.8.0.
+
+See ``bob/_sandbox.py`` for the runner implementation and
+``tests/plugins_adversarial/`` for the known-bad attack patterns the
+runner blocks.
+
+Example plugin (``~/.config/bob/checks.d/motd_check.py``)
+---------------------------------------------------------
     from bob.scoring import CheckResult
 
     CHECK_NAME = "MOTD BANNER CHECK"
@@ -45,13 +63,14 @@ Example plugin (~/.config/bob/checks.d/motd_check.py)
 
 from __future__ import annotations
 
-import importlib.util
+import ast
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from bob._sandbox import SandboxRejected, SandboxRunner
 from bob.checks._run import TranslationFunc
 from bob.scoring import CheckResult
 from bob.sysinfo import get_user_home
@@ -74,6 +93,47 @@ def _sanitize_check_name(name: str) -> str:
     return name.strip()
 
 
+def _extract_check_name_from_source(source: str) -> str | None:
+    """Parse the plugin AST and extract the module-level ``CHECK_NAME``.
+
+    Does NOT execute any plugin code — the AST walk is a pure read. Only
+    string literals assigned directly to ``CHECK_NAME`` at module level are
+    accepted; complex expressions are ignored (the loader falls back to
+    deriving the name from the filename).
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if (
+                isinstance(target, ast.Name)
+                and target.id == "CHECK_NAME"
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                return node.value.value
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Runner singleton — instantiated once so the BOB_SANDBOX_LEGACY warning
+# prints once at first plugin load rather than once per plugin.
+# ---------------------------------------------------------------------------
+
+_runner: SandboxRunner | None = None
+
+
+def _get_runner() -> SandboxRunner:
+    global _runner
+    if _runner is None:
+        _runner = SandboxRunner(timeout_seconds=5.0)
+    return _runner
+
+
 # ---------------------------------------------------------------------------
 # Data structure
 # ---------------------------------------------------------------------------
@@ -81,46 +141,56 @@ def _sanitize_check_name(name: str) -> str:
 @dataclass
 class PluginCheck:
     """
-    A validated, loaded plugin check ready to run.
+    A validated plugin check ready to be executed by the sandbox runner.
+
+    Note: prior to v0.7.0, this dataclass also held a loaded Python module
+    (``_module: Any``). That field was removed when plugin execution moved
+    to the sandbox — the parent process never loads the plugin code, which
+    defeats top-level malicious imports.
 
     Args:
-        name:    Section title for display (from CHECK_NAME or filename stem).
-        path:    Absolute path to the plugin source file.
-        _module: Loaded Python module.
+        name: Section title for display (from ``CHECK_NAME`` or filename stem).
+        path: Absolute path to the plugin source file. The runner reads the
+              source from this path each time ``run()`` is called.
     """
-    name:    str
-    path:    Path
-    _module: Any
+    name: str
+    path: Path
 
     def run(self, t: TranslationFunc | None = None) -> CheckResult:
         """
-        Execute the plugin's run_check() function.
+        Execute the plugin in the sandbox and return its CheckResult.
 
-        Catches all exceptions so a buggy plugin never aborts the audit.
-        On error, returns a CheckResult with a single WARN finding.
+        The translation function ``t`` is accepted for API compatibility with
+        the pre-v0.7.0 contract but is NOT passed to the plugin — the
+        sandbox cannot carry over the parent's i18n state across the
+        spawn'd subprocess. Plugins are expected to write their own message
+        strings (the original contract has always documented ``t`` as "safe
+        to ignore").
 
-        Args:
-            t: Translation function (passed through to the plugin).
-
-        Returns:
-            CheckResult from the plugin, or an error CheckResult.
+        Returns the plugin's CheckResult on success, or a WARN-only
+        CheckResult on any runtime error / timeout / sandbox rejection so a
+        single buggy plugin can never abort the audit.
         """
+        runner = _get_runner()
         try:
-            result = self._module.run_check(t)
-            if not isinstance(result, CheckResult):
-                raise TypeError(
-                    f"run_check() must return a CheckResult, "
-                    f"got {type(result).__name__!r}"
-                )
-            return result
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Plugin %s raised an exception", self.path.name)
-            error_result = CheckResult()
-            error_result.warn(
-                message=f"Plugin {self.path.name!r} error: {exc}",
+            return runner.run(self.path)
+        except SandboxRejected as exc:
+            r = CheckResult()
+            r.warn(
+                message=f"Plugin {self.path.name!r} rejected: {exc}",
                 nature="structural",
             )
-            return error_result
+            return r
+        except Exception as exc:  # noqa: BLE001 — defence in depth
+            logger.exception(
+                "Plugin %s: sandbox runner raised unexpectedly", self.path.name,
+            )
+            r = CheckResult()
+            r.warn(
+                message=f"Plugin {self.path.name!r} runner error: {exc}",
+                nature="structural",
+            )
+            return r
 
 
 # ---------------------------------------------------------------------------
@@ -131,17 +201,17 @@ def load_plugin_checks(
     plugin_dir: Path | None = None,
 ) -> list[PluginCheck]:
     """
-    Scan the plugin checks directory and load all valid *.py files.
+    Scan the plugin checks directory and load all valid ``*.py`` files.
 
-    Invalid files (too large, missing run_check, import errors) are
-    logged and skipped — they never abort the audit.
+    Invalid files (too large, missing run_check, syntax error) are logged
+    and skipped — they never abort the audit.
 
     Args:
-        plugin_dir: Override the default ~/.config/bob/checks.d/.
+        plugin_dir: Override the default ``~/.config/bob/checks.d/``.
                     Useful in tests.
 
     Returns:
-        List of PluginCheck objects in filename-sorted order.
+        List of ``PluginCheck`` objects in filename-sorted order.
     """
     directory = plugin_dir or _PLUGIN_CHECKS_DIR
     try:
@@ -163,10 +233,20 @@ def load_plugin_checks(
 
 def _load_one(plugin_path: Path) -> PluginCheck | None:
     """
-    Attempt to load a single plugin file.
+    Validate a single plugin file WITHOUT executing it.
 
-    Returns:
-        PluginCheck on success, None if the file should be skipped.
+    Pre-v0.7.0 this used ``importlib.util.spec_from_file_location`` +
+    ``exec_module`` to load the plugin into the parent process. The new
+    sandbox model defers all execution to the spawn'd child, so this
+    function only:
+
+      - Caps file size at ``_MAX_PLUGIN_SIZE`` (technical limit).
+      - Confirms the source parses without ``SyntaxError``.
+      - Confirms the source defines a ``run_check`` function (AST walk).
+      - Extracts ``CHECK_NAME`` via AST (no exec).
+
+    Returns ``PluginCheck`` on success, ``None`` if the file should be
+    skipped.
     """
     # --- Size check ---
     try:
@@ -182,37 +262,43 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
         )
         return None
 
-    # --- Load module ---
-    # Include path hash to avoid sys.modules name collision when two plugins
-    # share the same stem (e.g. symlinks or reloads during testing).
-    module_name = f"bob_plugin_{plugin_path.stem}_{abs(hash(plugin_path))}"
+    # --- Read source (no exec) ---
     try:
-        spec = importlib.util.spec_from_file_location(module_name, plugin_path)
-        if spec is None or spec.loader is None:
-            raise ImportError("spec_from_file_location returned None")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)  # type: ignore[attr-defined]
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Plugin %s: failed to load: %s — skipped", plugin_path.name, exc)
+        source = plugin_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Plugin %s: cannot read: %s — skipped", plugin_path.name, exc)
         return None
 
-    # --- Validate interface ---
-    if not callable(getattr(module, "run_check", None)):
+    # --- Syntax check (AST parse only, no exec) ---
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
         logger.warning(
-            "Plugin %s: missing callable 'run_check' — skipped",
+            "Plugin %s: syntax error: %s — skipped",
+            plugin_path.name, exc,
+        )
+        return None
+
+    # --- run_check presence check (AST walk) ---
+    has_run_check = any(
+        isinstance(node, ast.FunctionDef) and node.name == "run_check"
+        for node in tree.body
+    )
+    if not has_run_check:
+        logger.warning(
+            "Plugin %s: missing 'def run_check' at module level — skipped",
             plugin_path.name,
         )
         return None
 
     # --- Derive section title ---
-    check_name = getattr(module, "CHECK_NAME", None)
-    if not isinstance(check_name, str) or not check_name.strip():
-        check_name = plugin_path.stem.upper().replace("_", " ")
-    else:
-        # Strip ANSI/control sequences a plugin could inject into the terminal
-        check_name = _sanitize_check_name(check_name)
+    raw_name = _extract_check_name_from_source(source)
+    if isinstance(raw_name, str) and raw_name.strip():
+        check_name = _sanitize_check_name(raw_name)
         if not check_name:
             check_name = plugin_path.stem.upper().replace("_", " ")
+    else:
+        check_name = plugin_path.stem.upper().replace("_", " ")
 
     logger.debug("Loaded plugin check %r from %s", check_name, plugin_path.name)
-    return PluginCheck(name=check_name, path=plugin_path, _module=module)
+    return PluginCheck(name=check_name, path=plugin_path)
