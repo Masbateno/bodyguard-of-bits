@@ -376,6 +376,7 @@ def _run(argv=None) -> int:
                 full=config.json_full, version=VERSION,
                 hardening_snapshot=hardening_snapshot,
                 ipv6_snapshot=ipv6_snapshot,
+                schema_version="1" if config.json_v1 else "2",
             )
             print(_json.dumps(data, ensure_ascii=False, indent=2))
 

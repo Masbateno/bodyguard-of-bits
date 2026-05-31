@@ -128,7 +128,9 @@ def minimal_args() -> dict:
 
 
 def _build(engine: ScoreEngine, minimal_args: dict, full: bool = False) -> dict:
-    return build_json_data(engine=engine, full=full, **minimal_args)
+    """v0.7.0: this file pins v1 baseline contract; we pass schema_version="1"
+    explicitly so the v2 default (post-Step 3) does not shift these tests."""
+    return build_json_data(engine=engine, full=full, schema_version="1", **minimal_args)
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +309,7 @@ class TestFullModeWithOptionalSnapshots:
     def test_full_with_hardening_snapshot_does_not_crash(self, engine, minimal_args):
         """build_json_data must not raise when given full=True + a default HardeningSnapshot."""
         data = build_json_data(
-            engine=engine, full=True,
+            engine=engine, full=True, schema_version="1",
             hardening_snapshot=HardeningSnapshot(),
             ipv6_snapshot=None,
             **minimal_args,
@@ -321,7 +323,7 @@ class TestFullModeWithOptionalSnapshots:
         (key removed from dataclass but still read by json_output)."""
         snap = HardeningSnapshot()
         data = build_json_data(
-            engine=engine, full=True,
+            engine=engine, full=True, schema_version="1",
             hardening_snapshot=snap, ipv6_snapshot=None,
             **minimal_args,
         )
@@ -334,7 +336,7 @@ class TestFullModeWithOptionalSnapshots:
     def test_full_with_ipv6_snapshot_does_not_crash(self, engine, minimal_args):
         """Same regression guard for ipv6 block."""
         data = build_json_data(
-            engine=engine, full=True,
+            engine=engine, full=True, schema_version="1",
             hardening_snapshot=None,
             ipv6_snapshot=IPv6Snapshot(),
             **minimal_args,
@@ -345,7 +347,7 @@ class TestFullModeWithOptionalSnapshots:
     def test_full_with_both_snapshots_does_not_crash(self, engine, minimal_args):
         """The real CLI path passes both snapshots at once."""
         data = build_json_data(
-            engine=engine, full=True,
+            engine=engine, full=True, schema_version="1",
             hardening_snapshot=HardeningSnapshot(),
             ipv6_snapshot=IPv6Snapshot(),
             **minimal_args,

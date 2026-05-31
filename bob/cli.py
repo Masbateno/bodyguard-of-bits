@@ -56,10 +56,14 @@ class AuditConfig:
     """-q / --quiet: suppress all terminal output; use exit code to detect issues."""
 
     json_mode: bool = False
-    """--json: export audit summary as JSON."""
+    """--json: export audit summary as JSON (schema v2 by default since v0.7.0)."""
 
     json_full: bool = False
     """-J / --json-full: export complete audit details as JSON (implies --json)."""
+
+    json_v1: bool = False
+    """--json-v1: opt-in to legacy v0.6.x JSON schema (schema_version="1").
+    Mutually exclusive with the v2 default — implies --json."""
 
     csv_mode: bool = False
     """--output csv: export audit findings as CSV to stdout."""
@@ -210,6 +214,10 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
         elif arg in ("-J", "--json-full"):
             config.json_mode = True
             config.json_full = True
+
+        elif arg == "--json-v1":
+            config.json_mode = True
+            config.json_v1 = True
 
         elif arg == "--french":
             config.lang = "fr"
@@ -593,6 +601,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("-n, --no-color",         "Disable colour output")
     opt("    --format=FORMAT",    "Output format: json | json-full | csv | markdown | html")
     opt("-j / -J",                "Shorthands: --format=json / --format=json-full")
+    opt("    --json-v1",          "Emit legacy v0.6.x JSON schema (v2 is default since v0.7.0)")
     opt("    --min-level=LEVEL",  "Only show findings at or above: warn  |  alert")
 
     section("FIXES — apply remediation suggestions")
