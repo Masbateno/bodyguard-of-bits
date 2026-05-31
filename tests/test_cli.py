@@ -697,6 +697,28 @@ class TestValidateCheckFiltersAlwaysOn:
         assert result is not None
         assert "bob --check=list" in result
 
+    def test_always_on_sections_constant_is_single_source(self):
+        """M-1 (v0.7.0 Phase 2.1): __main__.py imports _ALWAYS_ON_SECTIONS
+        from bob.runner to print them via --check=list. Validate the
+        constant satisfies the symmetry that both consumers depend on."""
+        from bob.runner import _ALWAYS_ON_SECTIONS
+        # Populated tuple
+        assert len(_ALWAYS_ON_SECTIONS) >= 5
+        # All snake_case lowercase identifiers
+        for name in _ALWAYS_ON_SECTIONS:
+            assert name and name == name.lower()
+            assert all(c.isalnum() or c == "_" for c in name), (
+                f"_ALWAYS_ON_SECTIONS entry {name!r} contains non-snake_case chars"
+            )
+        # No overlap with the filterable _ALL_SECTIONS (each section is
+        # either always-on or filterable, not both)
+        from bob.runner import _ALL_SECTIONS
+        overlap = set(_ALWAYS_ON_SECTIONS) & set(_ALL_SECTIONS)
+        assert not overlap, (
+            f"Section listed in both _ALWAYS_ON_SECTIONS and _ALL_SECTIONS: "
+            f"{overlap}. Each section must be exactly one of the two."
+        )
+
 
 class TestOutputDirFlag:
     def test_output_dir_with_equals(self):

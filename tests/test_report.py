@@ -229,6 +229,49 @@ class TestWriteSummary:
         assert "SCORE BREAKDOWN" not in content
 
 
+class TestWriteSummaryPostureAnnotation:
+    """M-3 (v0.7.0 Phase 2.1): the on-disk .txt report must surface the
+    same posture annotation as the terminal summary box so the two stay
+    in sync. Before the fix, the .txt said ``Risk : HIGH`` with no
+    explanation while the terminal said ``Niveau de risque : HIGH
+    (majoré par posture : pare-feu inactif)``."""
+
+    def test_posture_annotation_omitted_when_empty(self, report):
+        """Default behaviour preserved when no escalation occurred."""
+        report.write_summary(
+            score=10, risk_level="LOW", network_context="local",
+            public_ip="", ok_count=5, warn_count=0, alert_count=0,
+            breakdown=[], labels={},
+        )
+        content = read_report(report)
+        assert "Risk    : LOW" in content
+        # No parens after the level
+        assert "Risk    : LOW (" not in content
+
+    def test_posture_annotation_appended_when_provided(self, report):
+        """When the caller passes ``posture_annotation``, it appears
+        parenthetically next to the level."""
+        report.write_summary(
+            score=10, risk_level="HIGH", network_context="local",
+            public_ip="", ok_count=5, warn_count=0, alert_count=0,
+            breakdown=[], labels={},
+            posture_annotation="raised by posture: firewall inactive",
+        )
+        content = read_report(report)
+        assert "Risk    : HIGH" in content
+        assert "(raised by posture: firewall inactive)" in content
+
+    def test_posture_annotation_kwarg_is_optional(self, report):
+        """Backward compat: existing 9-positional-arg callers still work."""
+        report.write_summary(
+            score=8, risk_level="MEDIUM", network_context="local",
+            public_ip="", ok_count=5, warn_count=1, alert_count=0,
+            breakdown=[], labels={},
+        )
+        content = read_report(report)
+        assert "Risk    : MEDIUM" in content
+
+
 # ---------------------------------------------------------------------------
 # write_risk_context_section
 # ---------------------------------------------------------------------------

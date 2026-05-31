@@ -98,6 +98,7 @@ def _run(argv=None) -> int:
         return EXIT_OK
 
     if config.list_checks:
+        from bob.runner import _ALWAYS_ON_SECTIONS as _AO_SECTIONS
         sections = sorted(_ALL_SECTIONS)
         col = max(len(s) for s in sections) + 2
         cols = max(1, 76 // col)
@@ -107,7 +108,18 @@ def _run(argv=None) -> int:
             print(f"  {name:<{col}}", end=end)
         print()
         print("Prefix matching: 'kernel' matches kernel_hardening and kernel_modules.")
-        print("Core checks (firewall, ports, services, logs) always run.")
+        # M-1 (v0.7.0 Phase 2.1): list the always-on sections that --check
+        # accepts as input (since M-7 in v0.7.0) so the help text matches
+        # the validator's accepted vocabulary.
+        always_on = sorted(_AO_SECTIONS)
+        print()
+        print(
+            f"Always-on sections ({len(always_on)} total — these always run, "
+            f"--skip has no effect on them):"
+        )
+        for i, name in enumerate(always_on):
+            end = "\n" if (i + 1) % cols == 0 or i == len(always_on) - 1 else ""
+            print(f"  {name:<{col}}", end=end)
         print()
         print("Usage:")
         print("  sudo bob --check=ssh,hardening")

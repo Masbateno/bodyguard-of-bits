@@ -306,24 +306,36 @@ class AuditReport:
         alert_count: int,
         breakdown: list,
         labels: dict[str, str],
+        posture_annotation: str = "",
     ) -> None:
         """
         Write the audit summary block.
 
         Args:
-            score:           Final security score (0-10).
-            risk_level:      Translated risk level string.
-            network_context: Translated network context string.
-            public_ip:       Public IP if detected, empty string otherwise.
-            ok_count:        Number of OK findings.
-            warn_count:      Number of WARN findings.
-            alert_count:     Number of ALERT findings.
-            breakdown:       List of Deduction objects.
-            labels:          Dict of translated field labels.
+            score:              Final security score (0-10).
+            risk_level:         Translated risk level string.
+            network_context:    Translated network context string.
+            public_ip:          Public IP if detected, empty string otherwise.
+            ok_count:           Number of OK findings.
+            warn_count:         Number of WARN findings.
+            alert_count:        Number of ALERT findings.
+            breakdown:          List of Deduction objects.
+            labels:             Dict of translated field labels.
+            posture_annotation: M-3 (v0.7.0 Phase 2.1) — translated parenthetical
+                                hint shown alongside the risk level when posture
+                                escalation has lifted it (e.g. "raised by posture:
+                                firewall inactive"). Empty when not applicable.
+                                Mirrors the terminal summary box behaviour so
+                                the on-disk .txt report and the screen stay in
+                                sync.
         """
         context_str = network_context
         if public_ip:
             context_str += f" ({public_ip})"
+
+        risk_str = risk_level
+        if posture_annotation:
+            risk_str = f"{risk_str}  ({posture_annotation})"
 
         self._writeln("")
         self._writeln(_SEPARATOR)
@@ -332,7 +344,7 @@ class AuditReport:
         self._writeln(f"Warning : {warn_count}")
         self._writeln(f"Alert   : {alert_count}")
         self._writeln(f"Score   : {score}/10")
-        self._writeln(f"Risk    : {risk_level}")
+        self._writeln(f"Risk    : {risk_str}")
         self._writeln(f"Context : {context_str}")
         self._writeln("")
 

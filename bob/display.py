@@ -557,6 +557,13 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
     print(f"  ℹ {t('summary.scope_line2')}")
 
     _effective = getattr(engine, "effective_level", engine.level)
+    # M-3 (v0.7.0 Phase 2.1): propagate posture annotation to the on-disk
+    # .txt report so it stays in sync with the terminal summary box.
+    from bob.scoring import unpack_posture_escalation
+    _r_floor, _r_key = unpack_posture_escalation(engine)
+    _r_annotation = (
+        t(_r_key) if _r_floor is not None and _effective != engine.level else ""
+    )
     report.write_summary(
         score=engine.score,
         risk_level=t(f"scoring.level.{_effective.value}"),
@@ -570,6 +577,7 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             "summary":   "AUDIT SUMMARY",
             "breakdown": t("scoring.breakdown_title"),
         },
+        posture_annotation=_r_annotation,
     )
 
 
