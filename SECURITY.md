@@ -125,8 +125,14 @@ Since **v0.7.0**, plugins run in a **restricted in-process sandbox**:
   - Import allowlist (only `bob.scoring` and a curated stdlib subset —
     `json`, `re`, `pathlib`, `datetime`, …).
   - Restricted `__builtins__` (no `eval` / `exec` / `compile` / `__import__` /
-    `input` / `breakpoint`) installed as a `MappingProxyType` to defeat the
-    classic dict-subclass mutation bypass.
+    `input` / `breakpoint`) installed as an `_ImmutableBuiltins` dict
+    subclass that overrides `__setitem__`/etc. to raise TypeError. This
+    blocks the natural-Python mutation path `bins["eval"] = ...`. A
+    determined attacker can still bypass via
+    `dict.__setitem__(bins, "eval", ...)` (unbound base method); fully-
+    immutable alternatives (`MappingProxyType`, `frozendict`) trigger
+    `SystemError` from CPython's C-level dict fast paths that `exec()`
+    requires, so the subclass approach is the best Python allows here.
   - `open()` wrapper that rejects write modes AND denies reads on a small
     list of well-known-secret paths (`/etc/shadow`, `~/.ssh/id_*`,
     `/dev/mem`, …).
@@ -167,6 +173,9 @@ What it does **NOT** stop:
     (`json.dumps.__globals__["__builtins__"]["__import__"]` is reachable
     by any plugin — this is *expected* and tested at
     `TestKnownInProcessLimitation::test_real_builtins_reachable_via_stdlib_globals`).
+  - `dict.__setitem__(bins, "eval", real_eval)` unbound bypass of the
+    restricted-builtins subclass — also pinned as known limitation in
+    `TestKnownInProcessLimitation::test_i1_known_limitation_unbound_dict_setitem_bypass`.
   - Side-channel attacks via timing, scheduling, or shared resources.
   - Attacks that exploit BOB's own input-parsing surface (a malicious
     `sshd_config` BOB tries to audit).

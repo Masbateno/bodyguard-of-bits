@@ -57,8 +57,15 @@ Implementation overview (Q1'-Q6' spec from project_v07x_phase2)
     is the real (un-restricted) dict.
   - **Restricted ``__builtins__``** (Q3') — ``eval``, ``exec``, ``compile``,
     ``__import__``, ``input``, ``breakpoint`` are stripped. The restricted
-    mapping is a ``types.MappingProxyType`` so adversarial plugins cannot
-    re-add stripped names via ``dict.__setitem__`` (I-1, v0.7.0b3).
+    mapping is an ``_ImmutableBuiltins`` dict subclass whose
+    ``__setitem__``/etc. raise TypeError, blocking the natural-Python
+    mutation path ``bins["eval"] = ...`` (plugin 12 globals_pollute). A
+    determined attacker can bypass via ``dict.__setitem__(bins, ...)``
+    unbound; this is a known limitation (I-1, kept on the defense-in-depth
+    side because every fully-immutable alternative — ``MappingProxyType``,
+    ``frozendict``, custom C type — breaks the C-level dict fast paths
+    that ``exec()`` requires on Py 3.10/3.11/3.13/3.14, observed as
+    ``SystemError`` from ``Objects/dictobject.c`` in v0.7.0b3 CI).
   - **Path + open wrappers** (Q4'+I-5) — ``open()`` rejects write modes
     and denies reads on a small list of well-known-secret paths
     (``/etc/shadow``, ``~/.ssh/id_*``, ``/dev/mem``…).
@@ -365,26 +372,67 @@ def _patch_pathlib_writes() -> None:
                 pass
 
 
-def _build_restricted_builtins():
-    """Build the restricted ``__builtins__`` mapping used as the plugin's
+class _ImmutableBuiltins(dict):
+    """A dict subclass that ``exec()`` accepts as ``__builtins__`` (CPython
+    requires the builtins object to BE a dict, not just dict-like — a
+    ``MappingProxyType`` triggers ``SystemError`` from the C-level dict
+    fast-paths on Python 3.10 / 3.11 / 3.13 / 3.14, see v0.7.0b3→b4
+    hotfix).
+
+    Plugin 12 ("globals_pollute") tries to re-add stripped builtins via
+    ``globals()["__builtins__"]["eval"] = real_eval`` — that goes through
+    ``__setitem__``'s virtual dispatch and hits the override here, raising
+    TypeError.
+
+    KNOWN LIMITATION (I-1) — an attacker can bypass this override via
+    ``dict.__setitem__(globals()["__builtins__"], "eval", real_eval)``
+    (unbound base-class method skips the override). This is **not** closed
+    because every fully-immutable alternative (MappingProxyType,
+    ``frozendict``, custom C extension) breaks the C-level dict fast-path
+    that ``exec()`` requires. The I-1 bypass is documented in
+    ``SECURITY.md`` alongside the architectural escape — both fall on the
+    "defence-in-depth, not a security boundary" side of the threat model.
+    """
+
+    _MSG = "Plugin sandbox: __builtins__ is read-only"
+
+    def __setitem__(self, key, value):
+        raise TypeError(self._MSG)
+
+    def __delitem__(self, key):
+        raise TypeError(self._MSG)
+
+    def update(self, *args, **kwargs):
+        raise TypeError(self._MSG)
+
+    def clear(self):
+        raise TypeError(self._MSG)
+
+    def pop(self, *args, **kwargs):
+        raise TypeError(self._MSG)
+
+    def popitem(self):
+        raise TypeError(self._MSG)
+
+    def setdefault(self, *args, **kwargs):
+        raise TypeError(self._MSG)
+
+
+def _build_restricted_builtins() -> _ImmutableBuiltins:
+    """Build the restricted ``__builtins__`` dict used as the plugin's
     execution namespace.
 
-    Returns a ``types.MappingProxyType`` — a C-level read-only view over
-    the safe dict. The proxy has no ``__setitem__`` at all, so the
-    classic ``dict.__setitem__(__builtins__, "eval", real_eval)`` bypass
-    (which works on a dict subclass because the override is virtual-
-    dispatched only) cannot mutate it.
-
-    Adversarial plugin 12 ("globals_pollute") attempts to re-add stripped
-    builtins via ``globals()["__builtins__"]["eval"] = ...``; the proxy
-    rejects every mutation path.
+    Returns an ``_ImmutableBuiltins`` instance — a dict subclass whose
+    ``__setitem__``/etc. raise TypeError. This blocks the
+    ``globals()["__builtins__"]["eval"] = ...`` style mutation (plugin
+    12), but is bypassable via ``dict.__setitem__(...)`` unbound — see
+    the subclass docstring for the rationale.
 
     NOTE — like every other restriction in this module, this is
     defence-in-depth, NOT a security boundary: a plugin can still reach
     the unrestricted builtins via any allowlisted stdlib module's
     ``__globals__["__builtins__"]`` chain (see SECURITY.md threat model).
     """
-    import types
     safe: dict[str, Any] = {}
     for name in dir(builtins):
         if name.startswith("_"):
@@ -395,7 +443,8 @@ def _build_restricted_builtins():
     # Install wrappers
     safe["open"] = _make_safe_open(builtins.open)
     safe["__import__"] = _make_import_hook(builtins.__import__)
-    return types.MappingProxyType(safe)
+    # ``dict.__init__`` populates without going through our override.
+    return _ImmutableBuiltins(safe)
 
 
 def _apply_resource_limits() -> None:

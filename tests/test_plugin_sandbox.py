@@ -425,11 +425,12 @@ def run_check(t=None):
                 "C-2: template_vars payload should be flattened to str"
             )
 
-    def test_i1_immutablebuiltins_no_dict_setitem_bypass(self, runner, tmp_path):
-        """I-1: MappingProxyType replaces the dict-subclass approach so
-        the classic ``dict.__setitem__(unbound_method, builtins, k, v)``
-        bypass (which works against a dict subclass because the override
-        is virtual-dispatched only) raises TypeError on the proxy."""
+    def test_i1_virtual_dispatch_mutation_blocked(self, runner, tmp_path):
+        """I-1 (partial closure): the ``_ImmutableBuiltins`` dict subclass
+        override of ``__setitem__`` raises TypeError when plugin code does
+        the natural-Python ``bins["eval"] = ...``. This is the path
+        adversarial plugin 12 ("globals_pollute") actually uses, and the
+        path 99% of attackers reach for first."""
         plugin = tmp_path / "i1.py"
         plugin.write_text("""\
 from bob.scoring import CheckResult
@@ -438,14 +439,15 @@ def run_check(t=None):
     bins = globals()["__builtins__"]
     bypassed = False
     try:
-        dict.__setitem__(bins, "smoke_evil", 42)
+        # Standard mutation — goes through __setitem__ virtual dispatch.
+        bins["smoke_evil"] = 42
         bypassed = True
     except TypeError:
         pass
     if bypassed:
-        r.warn(message="I-1 ATTACK SUCCEEDED — dict.__setitem__ mutated proxy")
+        r.warn(message="I-1 ATTACK SUCCEEDED — bins[k]=v mutated builtins")
     else:
-        r.ok(message="I-1 blocked: mapping proxy rejected dict.__setitem__")
+        r.ok(message="I-1 blocked: __setitem__ override rejected mutation")
     return r
 """)
         result = runner.run(plugin)
@@ -550,6 +552,48 @@ def run_check(t=None):
         msgs = [f.message for f in result.findings]
         assert any("known limitation" in m for m in msgs), (
             f"Architectural escape unexpectedly mitigated or test broken: {msgs}"
+        )
+
+    def test_i1_known_limitation_unbound_dict_setitem_bypass(self, runner, tmp_path):
+        """KNOWN LIMITATION (I-1 unbound bypass): a plugin can call
+        ``dict.__setitem__`` directly as an unbound method to mutate the
+        restricted builtins. The dict-subclass override is virtual-
+        dispatched only; the C-level base method bypasses it. This is
+        documented in SECURITY.md alongside the architectural escape.
+
+        CPython requires the ``__builtins__`` object passed to ``exec()``
+        to BE a dict (not just dict-like) for its C-level fast paths;
+        every fully-immutable alternative (``MappingProxyType``,
+        ``frozendict``, C extension) raises ``SystemError`` from
+        ``Objects/dictobject.c`` on Py 3.10 / 3.11 / 3.13 / 3.14. v0.7.0b3
+        attempted ``MappingProxyType`` and hit exactly that — v0.7.0b4
+        reverted to the subclass approach with this limitation documented.
+        """
+        plugin = tmp_path / "i1_unbound.py"
+        plugin.write_text("""\
+from bob.scoring import CheckResult
+def run_check(t=None):
+    r = CheckResult()
+    bins = globals()["__builtins__"]
+    bypassed = False
+    try:
+        dict.__setitem__(bins, "smoke_evil", 42)
+        bypassed = True
+    except TypeError:
+        pass
+    if bypassed:
+        r.info(message="known limitation: dict.__setitem__ unbound bypassed override")
+    else:
+        r.warn(message="unexpected: I-1 unbound bypass newly mitigated")
+    return r
+""")
+        result = runner.run(plugin)
+        msgs = [f.message for f in result.findings]
+        # The known-limitation message MUST appear — if it doesn't, either
+        # the bypass has been closed (great, update the docs!) or the
+        # test plugin broke.
+        assert any("known limitation" in m for m in msgs), (
+            f"I-1 unbound bypass unexpectedly closed or test broken: {msgs}"
         )
 
     def test_practical_subprocess_chain_blocked_by_strip_list(self, runner, tmp_path):

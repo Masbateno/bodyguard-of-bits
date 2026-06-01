@@ -6,6 +6,64 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.7.0b4] — 2026-06-01
+
+**CI compatibility hotfix for v0.7.0b3.** No threat-model, API, or audit-behaviour change vs b3. One specific element of the b3 hardening pass — the I-1 fix that replaced the `_ImmutableBuiltins` dict subclass with `types.MappingProxyType` — turned out to be incompatible with CPython's C-level dict fast paths that `exec()` requires for `__builtins__`. Every Python version in BOB's CI matrix EXCEPT 3.12.3 (3.10, 3.11, 3.13, 3.14) raised `SystemError: Objects/dictobject.c:1490: bad argument to internal function` inside the spawn'd worker on every plugin run, surfacing in the parent as a WARN finding `"Plugin 'X.py' error: SystemError: ..."`. 16 tests started failing in CI immediately after the b3 tag push.
+
+### Why the b3 VM validation missed this
+
+The b3 ship was gated on 5/5 cible smokes — so6desktop (Linux Mint 22.3, Py 3.12.3), Debian 13 VM (Py 3.13.5), Kali Rolling VM (Py 3.13.12), Ubuntu 26.04 LTS VM (Py 3.14.4), Mint+DDNS VM (Py 3.12.3). Three of those should have caught the regression… except none of them had any plugins installed at `~/.config/bob/checks.d/*.py`, so the audit chain never instantiated the `SandboxRunner` and never tried to exec a plugin under MappingProxyType-as-builtins. The smoke ran the WHOLE audit but completely bypassed the changed code path.
+
+This is the 4th release-engineering bug class on the v0.7.x branch and slots into the same pattern as v0.7.0b1 → v0.7.0b2: a change correct on the maintainer's primary machine, validated end-to-end on multiple cibles, but the validation exercise itself didn't actually touch the modified code. Each prior gap got a matching guard (integration-first / smoke-after-commit / version-consistency); this one will land a `smoke-plugin-on-every-python-matrix-version` step in the publish.yml pre-tag gate.
+
+### Fix
+
+`bob/_sandbox.py::_build_restricted_builtins` reverts to returning an `_ImmutableBuiltins` instance — the dict subclass shipped in v0.7.0b2 with overridden `__setitem__` / `update` / `clear` / `pop` / `popitem` / `setdefault` / `__delitem__`. This blocks the natural Python mutation path `bins["eval"] = real_eval` (which goes through `__setitem__`'s virtual dispatch and hits the override). It does NOT block the unbound bypass `dict.__setitem__(bins, "eval", real_eval)` — that calls the base C method directly. So the b3 attempt to close the I-1 unbound bypass is reverted, and I-1 unbound moves from "closed" back to "known limitation".
+
+### Why MappingProxyType cannot be used here
+
+CPython's bytecode interpreter does `LOAD_GLOBAL` / `LOAD_NAME` / `IMPORT_NAME` etc. by reading `__builtins__` via dict-specific C functions (`_PyDict_GetItemRef`, `PyDict_GetItemString`, etc.) when those functions detect a real dict. A `MappingProxyType` wrapper around a dict is not itself a dict — it's a separate C type that implements `tp_as_mapping` but not the `PyDict_*` fast paths. On Python 3.12.3 specifically the fast-path detection happens to fall back to the generic `PyMapping_GetItemString` for proxies; on 3.10/3.11/3.13/3.14 the fast path checks `PyDict_CheckExact()` or `PyDict_Check()` and raises `SystemError` when the check fails on a proxy.
+
+The same `SystemError` would fire for `frozendict`, custom immutable mapping classes via `collections.abc.Mapping`, or any C extension type that doesn't subclass `dict`. The only way to get a "dict that exec accepts" is to subclass `dict` — at which point `dict.__setitem__(instance, k, v)` unbound is by definition reachable. Python's design here cannot satisfy both "no mutation possible" and "usable as exec builtins". The honest position is to accept the unbound bypass as a known limitation, which is what v0.7.0b4 ships.
+
+### Tests
+
+`tests/test_plugin_sandbox.py::TestHardeningPins::test_i1_immutablebuiltins_no_dict_setitem_bypass` (b3) is renamed to `test_i1_virtual_dispatch_mutation_blocked` and tightened to pin the realistic-attacker path that adversarial plugin 12 actually uses (`bins["eval"] = ...` via subscript syntax → goes through `__setitem__` virtual dispatch). A new test `tests/test_plugin_sandbox.py::TestKnownInProcessLimitation::test_i1_known_limitation_unbound_dict_setitem_bypass` pins the unbound bypass as INTENTIONALLY out of scope — same shape as the architectural escape test. 5466 tests total (5465 b3 + 1 new known-limitation pin), 0 regression in the audit chain on the maintainer's primary 3.12.3.
+
+### Other b3 hardening preserved unchanged
+
+  - C-1 extended `_OS_DANGEROUS_ATTRS` (21 → 84 entries) — unchanged.
+  - C-2 JSON round-trip queue transport (`_serialize_check_result` / `_deserialize_check_result`) — unchanged.
+  - I-2 `q.close()` + `q.join_thread()` in `try/finally` — unchanged.
+  - I-3 shared AST `has_run_check` helper — unchanged.
+  - I-5 read-path deny-list on `_make_safe_open` — unchanged.
+  - M-4 `RLIMIT_CPU = 10s` added — unchanged.
+  - M-6 / M-7 `BOB_SANDBOX_LEGACY=1` warning via `logger.critical` + direct stderr write, re-emitted per run — unchanged.
+
+### Docs
+
+  - `SECURITY.md` "Plugin checks" updated: the I-1 mitigation now says "blocks the natural-Python `bins["eval"] = ...` path" + adds `dict.__setitem__` unbound to the "What it does NOT stop" enumeration.
+  - `bob/_sandbox.py` module docstring Q3' section updated with the same recadrage + the rationale for why `MappingProxyType` cannot work as exec builtins.
+
+### What testers should do
+
+If you installed v0.7.0b3 from PyPI, upgrade to v0.7.0b4:
+
+```bash
+pipx upgrade --pip-args="--pre" bodyguard-of-bits-beta
+sudo bob-beta --version   # should print 0.7.0b4
+```
+
+If you ran v0.7.0b3 WITHOUT any plugins in `~/.config/bob/checks.d/`, you saw NO symptom and your audit results from b3 are valid. The bug only surfaced when an actual plugin was loaded.
+
+If you ran v0.7.0b3 WITH plugins on a non-3.12 Python, every plugin run produced a WARN finding with the SystemError message instead of running normally. After upgrading to b4, run again to get the real plugin outputs.
+
+### Next
+
+Same as b3: monitor 24h of real-world smoke output across the 4 VMs + so6desktop. If no further surprises, the v0.7.0 final cut squashes b1+b2+b3+b4 + the four T3 commits into one and ships without further beta cycle. The pre-tag publish.yml gate gains a "smoke benign plugin on every matrix Python" step.
+
+---
+
 ## [v0.7.0b3] — 2026-05-31
 
 **Sandbox hardening pass + threat-model recadrage** — follows the T3 Phase 3 sub-agent adversarial audit run against the v0.7.0b2 baseline (the Phase 3 plugin sandbox introduced in commits 0ac6ec9 + 960ca84 + de94813). Three Critical + five Important + seven Minor findings surfaced; three of those were locally confirmed via PoC plugins **before** any fix was attempted, so the codebase ships with concrete evidence that the hardening closes the practical attack chains and an honest documentation of what it does NOT close.
