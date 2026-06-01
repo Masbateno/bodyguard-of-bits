@@ -200,7 +200,7 @@ sudo bob --help > /dev/null  # doit pas crash
 
 ---
 
-## [v0.6.1] — 26-05-2026
+## [v0.6.1] — 29-05-2026
 
 **Première release hardening sur la branche v0.6.x.** Sub-agent d'audit profond a produit 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. L'audit a révélé deux **contrats demi-appliqués** depuis v0.5.x — atomic-write (paths de mutation fixés en v0.5.7 #I-3 mais pas les paths de création) et gestion EOF (`manage_logs.py` fixé en v0.5.7 #I-2 mais pas les wizards cron ni `fixes.py`) — plus une **branche validator non-testée** dans le parser de step cron. Tous adressés.
 
@@ -356,7 +356,7 @@ Ce sont des updates mécaniques sans changement de scope. La couverture reste id
 La chaîne de deprecation (12+ mois) :
 
 - **v0.4.2** (2026-05-14) : `BOB_SHARE` documenté comme le contrat ; `UFW_AUDIT_SHARE` accepté comme alias legacy avec notice `logger.info(...)`
-- **v0.5.4** (2026-05-22) : `logger.info` upgradé à `logger.warning(...)` avec message explicite "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to BOB_SHARE..."
+- **v0.5.4** (2026-05-23) : `logger.info` upgradé à `logger.warning(...)` avec message explicite "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to BOB_SHARE..."
 - **v0.6.0** (cette release) : constante `_ENV_LEGACY` supprimée, lecture fallback supprimée, branche warning supprimée. La variable est maintenant silencieusement ignorée — les packages settant encore verront `resolve_share_dir()` retourner None et fall back aux data package-local, ce qui est le default safe.
 
 Changement net dans `bob/_paths.py` : -20 lignes (une constante, une lecture fallback, la branche warning). La docstring est mise à jour pour noter "removed in v0.6.0" pour référence historique. Deux références commentaire stales dans `bob/i18n.py:44` et `bob/registry.py:38` ont aussi été mises à jour.
@@ -881,13 +881,13 @@ Tests renommés : `test_nature_is_action` → `test_nature_is_improvement` (× 2
 
 ### Où v0.5.5 se situe dans la ligne v0.5.x
 
-Ceci est une **release de maintenance** pour la branche v0.5.x, post-cycle hardening. La branche refactor de 5 releases (v0.5.0 → v0.5.4) a clos le 2026-05-22 avec les 13/15 findings audit shippés + 2 splits déférés v0.6.0. v0.5.5 adresse un audit 19-findings séparé focalisé sur les **dimensions hardening** (bugs réels, security smells, code health) plutôt que refactor structurel.
+Ceci est une **release de maintenance** pour la branche v0.5.x, post-cycle hardening. La branche refactor de 5 releases (v0.5.0 → v0.5.4) a clos le 2026-05-23 avec les 13/15 findings audit shippés + 2 splits déférés v0.6.0. v0.5.5 adresse un audit 19-findings séparé focalisé sur les **dimensions hardening** (bugs réels, security smells, code health) plutôt que refactor structurel.
 
 La ligne v0.5.x s'engage à rester contract-preserving. Deferrals pour v0.6.0 incluent #13 (split ssh.py, 1324 LoC), #14 (split cron.py, 1224 LoC), et tout cleanup breaking-change que le prochain cycle audit fait apparaître.
 
 ---
 
-## [v0.5.4] — 22-05-2026
+## [v0.5.4] — 23-05-2026
 
 **Refactor v0.5.x — Phase 5 sur 5 (finale, ferme l'audit v0.5.x).** Trois findings d'audit clôturés (`#6`, `#9`, `#15b`), une feature métier demandée par l'utilisateur (cache APT option C), deux findings (`#13` split ssh.py, `#14` split cron.py) explicitement déférés à v0.6.0. Voir `CHANGELOG_FR.md` pour le détail par finding. Cette entrée `CHANGELOG_FULL_FR.md` mirror ce contenu et ajoute les notes de clôture de la branche v0.5.x.
 
@@ -896,10 +896,10 @@ La ligne v0.5.x s'engage à rester contract-preserving. Deferrals pour v0.6.0 in
 | Phase | Version | Date | Titre | Delta LoC vs précédent |
 |---|---|---|---|---|
 | 1 | v0.5.0 | 21-05-2026 | Ouvre la branche — 6 helpers + couverture cron (+39 tests) + 1 fix bug latent | additif |
-| 2 | v0.5.1 | 21-05-2026 | `warn_with_deduction()` — 120 sites sur 27 fichiers | **−519** |
+| 2 | v0.5.1 | 22-05-2026 | `warn_with_deduction()` — 120 sites sur 27 fichiers | **−519** |
 | 3 | v0.5.2 | 22-05-2026 | Table `_BAD_DIRECTIVES` + callbacks `_sec()` | +27 |
 | 4 | v0.5.3 | 22-05-2026 | `_LEVEL_DISPATCH` + helpers summary + retrait `log_data` | +40 |
-| 5 | **v0.5.4** | **22-05-2026** | `prompt_wizard` + sunset + `_PREFIX_TO_DOMAIN` + cache APT C | +49 |
+| 5 | **v0.5.4** | **23-05-2026** | `prompt_wizard` + sunset + `_PREFIX_TO_DOMAIN` + cache APT C | +49 |
 | **Total** | — | — | **13/15 findings audit + 1 feature métier + sunset + 1 deprecation** | **≈ −350 LoC vs v0.4.8** |
 
 La branche v0.5.x a shippé sur **5 releases en 2 jours calendrier** (2026-05-21 à 2026-05-22). Les cinq releases testées cross-distro sur 5 VMs (Linux Mint 22.3 prod + Mint+DDNS, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) avec zéro régression observée. Sortie wire préservée bit-pour-bit à travers les Phases 1–4 ; Phase 5 introduit 2 changements wire intentionnels (ligne INFO cache APT, re-bucketing scores par domaine) documentés ci-dessus.
@@ -1331,7 +1331,7 @@ $ python3 -m pytest tests/ -q
 
 ---
 
-## [v0.5.1] — 21-05-2026
+## [v0.5.1] — 22-05-2026
 
 **Refactor v0.5.x — Phase 2 sur 5.** Le gros gain LoC. Cette release attaque **l'audit finding #1** : l'idiom paired `result.warn(...) + result.add_deduction(...)` se répétant ~130 fois dans `bob/checks/*.py`. Après que Phase 1 (v0.5.0) ait shippé les findings low-risk additifs + la passe couverture cron, Phase 2 collapse le pattern boilerplate dominant.
 

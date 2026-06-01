@@ -597,7 +597,7 @@ sudo bob --help > /dev/null  # should not crash
 
 ---
 
-## [v0.6.1] — 2026-05-26
+## [v0.6.1] — 2026-05-29
 
 **First hardening release on the v0.6.x branch.** Deep audit sub-agent pass produced 14 findings (0 critical + 6 important + 8 minor); 6 important + 4 minor shipped. The audit revealed two **half-applied contracts** from v0.5.x and one **untested validator branch**. See `CHANGELOG.md` for per-finding detail. Notes specific to this FULL doc:
 
@@ -801,7 +801,7 @@ These are mechanical updates with no scope change. Coverage stays identical: 458
 The deprecation chain (12+ months):
 
 - **v0.4.2** (2026-05-14): `BOB_SHARE` documented as the contract; `UFW_AUDIT_SHARE` accepted as legacy alias with `logger.info(...)` notice
-- **v0.5.4** (2026-05-22): `logger.info` upgraded to `logger.warning(...)` with explicit "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to BOB_SHARE..." message
+- **v0.5.4** (2026-05-23): `logger.info` upgraded to `logger.warning(...)` with explicit "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to BOB_SHARE..." message
 - **v0.6.0** (this release): `_ENV_LEGACY` constant deleted, fallback read deleted, warning branch deleted. The variable is now silently ignored — packages still setting it will see `resolve_share_dir()` return None and fall back to package-local data, which is the safe default.
 
 Net change in `bob/_paths.py`: -20 lines (a constant, a fallback read, the warning branch). The docstring is updated to note "removed in v0.6.0" for historical reference. Two stale comment references in `bob/i18n.py:44` and `bob/registry.py:38` were also updated.
@@ -1326,13 +1326,13 @@ Tests renamed: `test_nature_is_action` → `test_nature_is_improvement` (× 2 in
 
 ### Where v0.5.5 sits in the v0.5.x line
 
-This is a **maintenance release** for the v0.5.x branch, post-cycle hardening. The 5-release refactor branch (v0.5.0 → v0.5.4) closed on 2026-05-22 with the 13/15 audit findings shipped + 2 splits deferred to v0.6.0. v0.5.5 addresses a separate 19-finding audit focused on **hardening dimensions** (real bugs, security smells, code health) rather than structural refactoring.
+This is a **maintenance release** for the v0.5.x branch, post-cycle hardening. The 5-release refactor branch (v0.5.0 → v0.5.4) closed on 2026-05-23 with the 13/15 audit findings shipped + 2 splits deferred to v0.6.0. v0.5.5 addresses a separate 19-finding audit focused on **hardening dimensions** (real bugs, security smells, code health) rather than structural refactoring.
 
 The v0.5.x line is committed to stay contract-preserving. Deferrals for v0.6.0 include #13 (ssh.py split, 1324 LoC), #14 (cron.py split, 1224 LoC), and any breaking-change cleanups the next audit cycle surfaces.
 
 ---
 
-## [v0.5.4] — 2026-05-22
+## [v0.5.4] — 2026-05-23
 
 **Refactor v0.5.x — Phase 5 of 5 (final, closes the v0.5.x audit).** Three audit findings closed (`#6`, `#9`, `#15b`), one user-requested metier feature (cache APT option C), two findings (`#13` ssh.py split, `#14` cron.py split) explicitly deferred to v0.6.0. See `CHANGELOG.md` for the per-finding detail. This `CHANGELOG_FULL.md` entry mirrors that content and adds the v0.5.x branch closure notes.
 
@@ -1341,10 +1341,10 @@ The v0.5.x line is committed to stay contract-preserving. Deferrals for v0.6.0 i
 | Phase | Version | Date | Headline | Net LoC vs prior |
 |---|---|---|---|---|
 | 1 | v0.5.0 | 2026-05-21 | Open the branch — 6 helpers + cron coverage (+39 tests) + 1 latent bug fix | additive |
-| 2 | v0.5.1 | 2026-05-21 | `warn_with_deduction()` — 120 sites in 27 files | **−519** |
+| 2 | v0.5.1 | 2026-05-22 | `warn_with_deduction()` — 120 sites in 27 files | **−519** |
 | 3 | v0.5.2 | 2026-05-22 | `_BAD_DIRECTIVES` table + `_sec()` callbacks | +27 |
 | 4 | v0.5.3 | 2026-05-22 | `_LEVEL_DISPATCH` + summary helpers + `log_data` removal | +40 |
-| 5 | **v0.5.4** | **2026-05-22** | `prompt_wizard` + sunset + `_PREFIX_TO_DOMAIN` + cache APT C | +49 |
+| 5 | **v0.5.4** | **2026-05-23** | `prompt_wizard` + sunset + `_PREFIX_TO_DOMAIN` + cache APT C | +49 |
 | **Total** | — | — | **13/15 audit findings + 1 metier feature + sunset + 1 deprecation** | **≈ −350 LoC vs v0.4.8** |
 
 The v0.5.x branch shipped over **5 releases on 2 calendar days** (2026-05-21 to 2026-05-22). All five releases tested cross-distro on 5 VMs (Linux Mint 22.3 prod + Mint+DDNS, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) with zero regression observed. Wire output preserved bit-for-bit through Phases 1–4; Phase 5 introduces 2 intentional wire-visible changes (cache APT INFO line, per-domain score re-bucketing) documented above.
@@ -1910,7 +1910,7 @@ Cross-distro coverage from v0.5.0/v0.5.1 (5 distros: Mint x2, Debian 13, Kali, U
 
 ---
 
-## [v0.5.1] — 2026-05-21
+## [v0.5.1] — 2026-05-22
 
 **Refactor v0.5.x — Phase 2 of 5.** The big LoC win. This release tackles **audit finding #1**: the paired `result.warn(...) + result.add_deduction(...)` idiom recurring ~130 times across `bob/checks/*.py`. After Phase 1 (v0.5.0) shipped low-risk additive findings + the cron coverage pass, Phase 2 collapses the dominant boilerplate pattern.
 
