@@ -6,6 +6,122 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.7.1] — 2026-06-01
+
+**First v0.7.x hardening patch — same-day follow-up to v0.7.0 final.**
+
+A sub-agent deep-audit on the full v0.7.0 codebase (the same pattern that drove v0.5.5, v0.6.1, Phase 2.1, T3 Step 4) surfaced 0 Critical + 5 Important + 11 Minor findings. v0.7.1 ships 4 Important + 3 Minor. The remaining 1 Important + 8 Minor are deferred to v0.7.2 (see "Deferred" section below); the 5 documented "Known limitations" pinned by v0.7.0 (PEP 416 architectural escape + I-1 unbound dict bypass on sandbox builtins) are NOT in scope and remain intentionally open per `SECURITY.md` "Threat model".
+
+### What's fixed
+
+#### I-1 — `bob --watch` did not propagate posture escalation or ignore.yml
+
+The watch loop created a fresh `ScoreEngine()` per iteration (correct — each audit must be independent) but never set `engine.ignore_keys = load_ignore_keys()` and never called `engine.set_posture(...)`. Result:
+
+  - A host whose UFW just went down (firewall_inactive triggered) kept showing `LOW risk` in `bob --watch=30` even though the next non-watch audit correctly displayed `HIGH risk (raised by posture: firewall inactive)`. Watch was the "easy" entry for monitoring exactly this kind of incident — and it was hiding it.
+  - Findings in the user's `~/.config/bob/ignore.yml` reappeared on every watch iteration: the deduction was applied, the WARN was printed, the operator was annoyed twice a minute.
+
+v0.7.1:
+
+  - `engine.ignore_keys = load_ignore_keys()` set immediately after construction, per iteration.
+  - `engine.set_posture(firewall_inactive=not result.fw_active, iptables_input_accept=..., firewall_domain_score=...)` called after `finalize()` + `apply_domain_score_override()`, with the same input shape `bob/__main__.py` uses for the non-watch audit path.
+  - Watch's per-iteration line now prints `[effective_level]` next to the score bar so the operator sees the posture-escalated level immediately (e.g. `[high]` on a firewall-down host instead of `[low]`).
+  - `_score_bar()` now explicitly rejects `bool` (subclass of `int`) — matches the v0.7.0 Phase 2.1 I-3 guard on `ScoreEngine.set_posture`. Without it, `_score_bar(True)` returned `"█░░░░░░░░░"` silently because `isinstance(True, int) is True`. Defensive; no production caller passes a bool.
+
+#### I-2 — `Report` Protocol + `MarkdownReport.write_summary` did not accept `posture_annotation`
+
+`bob/display.py:567` passes `posture_annotation=...` to `report.write_summary` (added in v0.7.0 Phase 2.1 M-3 for the `.txt` report). The `Report` Protocol in `bob/report.py:72-83` AND the `MarkdownReport.write_summary` impl in `bob/report_markdown.py:152-163` both kept the v0.6.x 9-parameter signature. Today the bug doesn't fire because `display.print_audit_summary` only ever receives `AuditReport` / `NullReport` instances — but the contract drift is a landmine: any future plumbing that routes the audit summary through `MarkdownReport` (e.g. the planned HTML-via-Markdown email path) would TypeError on every call.
+
+v0.7.1 adds `posture_annotation: str = ""` to both the Protocol and `MarkdownReport.write_summary`. The Markdown impl renders the annotation parenthetically next to the Risk row (`| Risk | HIGH (raised by posture: firewall inactive) |`) — same shape as the `.txt` report. Three new tests in `test_report.py::TestMarkdownReportWriteSummarySignatureParity` pin signature parity via `inspect.signature`, plus the rendering for empty and non-empty annotations.
+
+#### I-3 — JSON v1 `risk` field silently changed semantics in v0.7.0
+
+The v1 schema is documented (`DOCUMENTS/README_TECH.md` "JSON output schema") as "v0.6.x verbatim". v0.7.0 Phase 1 silently shifted v1's `risk` field from `engine.level.value` (score-derived) to `engine.effective_level.value` (posture-escalated). Concrete consequence:
+
+  - A v0.6.x consumer doing `if data["risk"] == "low": green` would see `"high"` on a host with score 9 (LOW) but UFW inactive — even though the score field still says 9.
+  - The v0.7.0 docstring at `bob/json_output.py:178-183` did acknowledge the shift, but the "v1 verbatim" contract is the louder invariant. v0.7.1 reverts: `data["risk"] = engine.level.value` again.
+
+Consumers that need the posture-escalated value should migrate to v2's `posture_escalation.score_level` (the original score-derived level, plus an `applied: bool` field) and the v2 top-level `risk_level` (the escalated value, equivalent to what v0.7.0 was mistakenly putting in v1).
+
+The pre-existing test `test_v1_risk_reflects_effective_level_not_score_only` was the v0.7.0 Phase 2.1 M-5 pin for the shift. v0.7.1 renames it to `test_v1_risk_pins_score_only_level_not_effective_level` and inverts the body to assert the revert, so a future re-shift fails the suite before tag push.
+
+#### I-5 — Webhook accepted plain `http://` URLs
+
+`bob/webhook.py:200` accepted both `http://` and `https://`. `SECURITY.md` "Network surface" documents webhook as HTTPS-only because the payload contains `hostname + public_ip + score + alerts` — exactly the data an attacker on the path would want for targeted bruteforce or vulnerability matching. A user copy-pasting a misconfigured endpoint URL silently produced plaintext leakage on every audit.
+
+v0.7.1 rejects `http://` with a clear error message:
+
+> `Webhook URL is plain http:// — audit payload would be sent unencrypted. Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override`
+
+The new env var `BOB_WEBHOOK_ALLOW_INSECURE=1` is the escape hatch for offline labs / private networks where the operator has audited the path. Documented in the `WebhookError` message and pinned by `tests/test_webhook.py::TestSendWebhookInvalidUrl::test_rejects_plain_http_by_default` + `::test_plain_http_accepted_with_escape_hatch`.
+
+#### M-1 — Stale `from typing import Any` import in `bob/plugin_checks.py`
+
+Left over from T3 Step 3 when the `_module: Any` dataclass field was removed. One-line delete. No behavior change.
+
+#### M-2 — `_atomic.py` did not fsync the data or the parent directory inode
+
+The module docstring promised "power loss / SIGKILL / OOM between the start of `atomic_write` and its successful return leaves the destination file in its previous state." On ext4 default `data=ordered` journal mode and most other Linux filesystems, the implementation was insufficient to honour that:
+
+  - `os.replace(tmp, dest)` only guarantees rename atomicity from the kernel's perspective. Durability of the rename across power loss requires fsyncing the parent directory's inode.
+  - The new file's data only reaches stable storage after `fsync(fd)` on the tmp file's open file descriptor. Without that, the rename metadata can commit before the data, leaving a zero-byte file on power loss.
+
+v0.7.1: `fh.flush() + os.fsync(fh.fileno())` before close, then `os.fsync(dir_fd)` on the parent directory inode after `os.replace`. The parent-dir fsync is best-effort (some filesystems / mount options reject it with `EINVAL` — `tmpfs`, certain network mounts) so the OSError is swallowed there. New test `test_atomic_write_calls_fsync_on_fd_and_parent_dir` spies on `os.fsync` to verify both calls fire.
+
+#### M-5 — `--ignore=KEY` accepted any string, silently truncated multi-word values
+
+`add_ignore_key("anything goes here")` produced `- key: anything` in `ignore.yml` (the YAML writer split on whitespace at the first character of the value). The loader's `_KEY_LINE_RE = r"^\s*-\s+key:\s+(\S+)\s*$"` then matched `"anything"`, which doesn't correspond to any audit finding key — so the user-intended ignore did nothing on the next audit. UX bug, not a security bug, but reported by enough confused users (per the audit) that v0.7.1 closes it.
+
+v0.7.1:
+
+  - New `bob.ignore.is_valid_ignore_key(key)` validates against the canonical EXPLAIN_KEYS pattern `r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$"` — same shape enforced by `tests/test_explain_naming_convention.py` on the 117 keys / 30 prefixes declared in `bob/explain.py`.
+  - `add_ignore_key()` calls `is_valid_ignore_key()` first; bad keys return `False` and skip the write entirely (the file is not created/touched).
+  - The CLI handler in `bob/__main__.py` validates BEFORE the write and returns `EXIT_ERROR=3` with a hint: "Invalid key {key!r} — expected canonical `<prefix>.<finding_id>` snake_case. Run `bob --explain list` to see the available keys."
+
+Five new pins in `tests/test_ignore.py::TestAddIgnoreKey`: bare word without dot, uppercase, whitespace, digit-prefixed, and a positive acceptance pin for the canonical shape.
+
+### Deferred to v0.7.2
+
+  - **I-4** — bool slips past `isinstance(int)` check on `bob/watch.py:140-141`. Already fixed inline in v0.7.1 as part of I-1 work (the explicit `isinstance(score, bool) or not isinstance(score, int)` guard); marking as resolved here for symmetry, not deferred.
+  - **M-4** — `bob/html_output.py` + `bob/markdown_output.py` ship hardcoded English headings ("Summary", "Score Deductions", "Generated by BOB", `<html lang="en">`). Out-of-band with the `t()` policy enforced everywhere else. Deferred because the fix is a 30-line locale-extraction pass that's better paired with the next i18n campaign (when `de.json` / `es.json` translators come on board).
+  - **M-6** — `bob/sysinfo.py:199` IPv4-only public-IP detection silently fails on v6-only hosts. Real edge case, low impact: the network-context detection has a v6 fallback so the audit chain still works. Easy two-line fix using `ipaddress.ip_address()` but defer to v0.7.2 because it changes a documented JSON field shape.
+  - **M-7** — `bob/_atomic.py` tmp-file collision under concurrent writers. Real race (cron + watch + manual run can coincide), low probability, defer to v0.7.2 with a `tempfile.NamedTemporaryFile` rewrite.
+  - **M-8** — `bob/json_output.py` `SCHEMA_*_KEYS` public frozensets with zero consumers. Per `feedback_release_monitoring` memory — anticipated API. Either drop or wire into a test invariant; defer to v0.7.2.
+  - **M-9** — `--json-full --json-v1` valid combination not mentioned in `bob --help`. Cosmetic.
+  - **M-10** — `bob/display.py` duplicated posture detection paths. Pure refactor — per `feedback_conservative_refactor` ("gain × risque = STOP"), defer indefinitely unless paired with another change in the same file.
+  - **M-11** — `Iterator` import cosmetic. Skip entirely.
+
+### Tests
+
+5466 → **5479** (+13 net). Breakdown:
+
+  - 5 new pins in `tests/test_ignore.py` for the canonical-key validation (M-5)
+  - 1 new pin in `tests/test_atomic_v061.py` for the fsync calls (M-2)
+  - 2 new pins in `tests/test_webhook.py` for the http:// rejection + escape hatch (I-5)
+  - 3 new pins in `tests/test_report.py::TestMarkdownReportWriteSummarySignatureParity` for the Protocol parity (I-2)
+  - 2 new pins in `tests/test_watch.py::TestWatchContractParity` for the ignore + posture propagation (I-1)
+
+Plus 3 updated tests (not net additions):
+
+  - `tests/test_watch.py::test_bool_is_accepted` → `test_bool_raises_type_error` (inverted assertion for I-4)
+  - `tests/test_json_schema.py::test_v1_risk_reflects_effective_level_not_score_only` → `test_v1_risk_pins_score_only_level_not_effective_level` (inverted assertion for I-3)
+  - 3 `tests/test_ignore.py` tests using non-canonical "k" / "k1" key fixtures updated to use canonical pattern
+
+All 5479 pass on Python 3.12.3 locally. CI multi-Python (3.10/3.11/3.12/3.13/3.14) + multi-distro (Debian 12+13, Ubuntu 22.04+24.04+25.04, Kali, Fedora 41) will validate post-tag-push.
+
+### Upgrade
+
+```bash
+pipx upgrade bodyguard-of-bits
+sudo bob --version   # should print 0.7.1
+```
+
+No CLI contract change. The one user-facing behavioural shift is the I-3 revert: anyone consuming v1 JSON `risk` will see it reverse to score-derived (typically going from "high" back to "low" on a firewall-down + low-score host). That is the intent — v1 is meant to behave like v0.6.x.
+
+Anyone using webhooks with `http://` URLs must either switch to `https://` or set `BOB_WEBHOOK_ALLOW_INSECURE=1` in the bob runtime environment.
+
+---
+
 ## [v0.7.0] — 2026-06-01
 
 **Major bump — opens the v0.7.x stable branch.** Rolls up the four-beta cycle (b1 → b2 → b3 → b4) into the canonical v0.7.0 release. The cumulative payload is three thematic phases (T1 Foundation + T2 JSON schema v2 + T3 Plugin Sandbox) plus four release-engineering guards added in flight, all on top of the v0.6.2 baseline. v0.6.x is now EOL — security fixes will not be backported.

@@ -23,6 +23,7 @@ from bob.compare import (
     display_delta,
     save_baseline,
 )
+from bob.ignore import load_ignore_keys
 from bob.report import AuditReport
 from bob.runner import run_checks
 from bob.scoring import ScoreEngine
@@ -82,6 +83,12 @@ def run_watch(
 
             # ---- Run a silent audit ----
             engine = ScoreEngine()
+            # I-1 (v0.7.1): propagate the user's ignore.yml so watch mode
+            # respects the same skip list as the non-watch audit path
+            # (compare bob/__main__.py "if ignore_keys: engine.ignore_keys = ...").
+            # Pre-v0.7.1, watch ignored ignore.yml entirely, so suppressed
+            # findings reappeared in every iteration and inflated deductions.
+            engine.ignore_keys = load_ignore_keys()
             network_context, _ = detect_network_context(offline=config.offline)
             result = run_checks(
                 watch_cfg, t, engine, AuditReport.null(), registry, network_context,
@@ -91,6 +98,21 @@ def run_watch(
             engine.finalize()
             from bob.domain_scores import apply_domain_score_override as _apply_dso
             _apply_dso(engine)
+
+            # I-1 (v0.7.1): apply the same posture escalation rules used by
+            # the non-watch audit summary. Without this, watch displayed the
+            # raw score-derived level even when UFW was inactive — a host
+            # whose firewall just went down kept showing "LOW" until the
+            # operator ran a full non-watch audit.
+            _fw = engine.domain_scores.get("firewall")
+            engine.set_posture(
+                firewall_inactive=not getattr(result, "fw_active", True),
+                iptables_input_accept=any(
+                    f.key == "iptables_nft.input_accept" for f in engine.findings
+                ),
+                firewall_domain_score=_fw["score"] if isinstance(_fw, dict) else None,
+            )
+
             curr_baseline = build_baseline(
                 engine, result.ports_snapshot, result.snapshots
             )
@@ -98,7 +120,16 @@ def run_watch(
 
             # ---- Display ----
             bar = _score_bar(engine.score)
-            print(f"  [{ts}]  {t('watch.score', score=engine.score)}  {bar}")
+            # I-1 (v0.7.1): display ``effective_level`` so the watch line
+            # surfaces posture escalation. The score itself stays the raw
+            # value (matches the non-watch box header layout).
+            effective_level = getattr(engine, "effective_level", engine.level)
+            print(
+                f"  [{ts}]  "
+                f"{t('watch.score', score=engine.score)}  "
+                f"{bar}  "
+                f"[{effective_level.value}]"
+            )
 
             if prev_baseline is None:
                 output_mod.print_ok(t("watch.baseline_established"))
@@ -135,9 +166,11 @@ def _score_bar(score: int) -> str:
 
     Args:
         score: Integer score in range 0–10. Values outside the range are
-               clamped. Passing a non-int raises TypeError.
+               clamped. Passing a non-int (including bool, which subclasses
+               int) raises TypeError. The explicit bool rejection matches
+               the v0.7.0 Phase 2.1 I-3 ``ScoreEngine.set_posture`` guard.
     """
-    if not isinstance(score, int):
-        raise TypeError(f"_score_bar requires int, got {type(score).__name__}")
+    if isinstance(score, bool) or not isinstance(score, int):
+        raise TypeError(f"_score_bar requires int (not bool), got {type(score).__name__}")
     from bob.output import score_bar
     return score_bar(score)

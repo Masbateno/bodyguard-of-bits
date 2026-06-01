@@ -80,6 +80,7 @@ class Report(Protocol):
         alert_count: int,
         breakdown: list,
         labels: dict[str, str],
+        posture_annotation: str = "",
     ) -> None: ...
     def write_risk_context_section(
         self,

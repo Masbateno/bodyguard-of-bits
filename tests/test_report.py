@@ -273,6 +273,70 @@ class TestWriteSummaryPostureAnnotation:
 
 
 # ---------------------------------------------------------------------------
+# I-2 (v0.7.1): MarkdownReport.write_summary signature parity
+# ---------------------------------------------------------------------------
+
+class TestMarkdownReportWriteSummarySignatureParity:
+    """I-2 (v0.7.1): the ``Report`` Protocol in bob/report.py and the
+    ``MarkdownReport.write_summary`` in bob/report_markdown.py must accept
+    the same ``posture_annotation`` keyword argument as
+    ``AuditReport.write_summary``.
+
+    Pre-v0.7.1 the Markdown variant kept the v0.6.x signature; today the
+    bug doesn't fire because ``display.print_audit_summary`` only ever
+    invokes ``AuditReport`` instances, but the contract drift is a
+    landmine: the moment ``MarkdownReport`` is wired into the audit
+    summary path, every call site explodes."""
+
+    def test_markdown_report_accepts_posture_annotation(self, tmp_path):
+        """MarkdownReport.write_summary must accept and render the
+        ``posture_annotation`` kwarg without TypeError."""
+        from bob.report_markdown import MarkdownReport
+        path = tmp_path / "report.md"
+        report = MarkdownReport(path=path)
+        report.write_summary(
+            score=8, risk_level="HIGH", network_context="local",
+            public_ip="", ok_count=5, warn_count=1, alert_count=0,
+            breakdown=[], labels={},
+            posture_annotation="raised by posture: firewall inactive",
+        )
+        # MarkdownReport buffers in self._lines (close() is a no-op).
+        content = "\n".join(report._lines)
+        assert "HIGH" in content
+        assert "raised by posture: firewall inactive" in content
+
+    def test_markdown_report_omits_annotation_when_empty(self, tmp_path):
+        """Backward-compat: omitted/empty annotation must not add parens."""
+        from bob.report_markdown import MarkdownReport
+        path = tmp_path / "report.md"
+        report = MarkdownReport(path=path)
+        report.write_summary(
+            score=10, risk_level="LOW", network_context="local",
+            public_ip="", ok_count=5, warn_count=0, alert_count=0,
+            breakdown=[], labels={},
+        )
+        content = "\n".join(report._lines)
+        assert "| Risk | LOW |" in content
+        assert "LOW (" not in content
+
+    def test_audit_and_markdown_share_protocol_keyword(self, tmp_path):
+        """Both impls expose the same keyword. A test that simply
+        substitutes one for the other must work transparently."""
+        import inspect
+        from bob.report import AuditReport
+        from bob.report_markdown import MarkdownReport
+        # Both signatures must have posture_annotation as a keyword.
+        audit_sig = inspect.signature(AuditReport.write_summary)
+        md_sig = inspect.signature(MarkdownReport.write_summary)
+        assert "posture_annotation" in audit_sig.parameters
+        assert "posture_annotation" in md_sig.parameters
+        # And the default value must match (empty string) so omitted
+        # callers behave identically.
+        assert audit_sig.parameters["posture_annotation"].default == ""
+        assert md_sig.parameters["posture_annotation"].default == ""
+
+
+# ---------------------------------------------------------------------------
 # write_risk_context_section
 # ---------------------------------------------------------------------------
 

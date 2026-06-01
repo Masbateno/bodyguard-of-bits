@@ -28,6 +28,15 @@ _IGNORE_FILENAME = "ignore.yml"
 # Matches lines like "  - key: ssh.permit_root_login"
 _KEY_LINE_RE = re.compile(r"^\s*-\s+key:\s+(\S+)\s*$")
 
+# M-5 (v0.7.1): canonical EXPLAIN_KEYS pattern — same as enforced by
+# ``tests/test_explain_naming_convention.py``. Lowercase + digits +
+# underscores, dotted hierarchy, at least one dot. Pre-v0.7.1
+# ``add_ignore_key`` accepted any non-empty string; the YAML writer then
+# split on whitespace and silently truncated multi-word keys, so users
+# typing ``--ignore="something with spaces"`` saw "added" but the next
+# audit didn't ignore anything because the loader couldn't match the key.
+_CANONICAL_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
+
 
 # ---------------------------------------------------------------------------
 # Path helper
@@ -63,14 +72,30 @@ def load_ignore_keys(path: Path | None = None) -> frozenset[str]:
     return frozenset(keys)
 
 
+def is_valid_ignore_key(key: str) -> bool:
+    """Return True if *key* matches the canonical EXPLAIN_KEYS pattern.
+
+    The pattern is ``<prefix>.<finding_id>`` snake_case (lowercase + digits +
+    underscores, dotted hierarchy, at least one dot). Same shape enforced by
+    ``tests/test_explain_naming_convention.py`` on the 117 keys / 30 prefixes
+    declared in ``bob/explain.py``.
+
+    Used by ``add_ignore_key`` and by the CLI ``--ignore`` handler to reject
+    typos before the YAML write.
+    """
+    return isinstance(key, str) and bool(_CANONICAL_KEY_RE.match(key))
+
+
 def add_ignore_key(key: str, path: Path | None = None) -> bool:
     """
     Append *key* to ignore.yml.
 
     Creates the file (and parent directories) if needed.
-    Returns True if the key was added, False if it was already present.
+    Returns True if the key was added, False if it was already present
+    or fails the canonical-key validation (use ``is_valid_ignore_key`` to
+    distinguish the two cases before calling).
     """
-    if not key or not isinstance(key, str) or not key.strip():
+    if not is_valid_ignore_key(key):
         return False
     if path is None:
         path = _ignore_file_path()

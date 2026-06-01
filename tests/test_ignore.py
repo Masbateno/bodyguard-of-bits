@@ -109,7 +109,9 @@ class TestAddIgnoreKey:
 
     def test_creates_parent_directories(self, tmp_path):
         f = tmp_path / "sub" / "dir" / "ignore.yml"
-        add_ignore_key("k", path=f)
+        # v0.7.1 M-5: keys must match canonical <prefix>.<finding_id>
+        # snake_case pattern; bare "k" used to be accepted silently.
+        add_ignore_key("ssh.test_key", path=f)
         assert f.exists()
 
     def test_returns_false_for_duplicate(self, tmp_path):
@@ -144,9 +146,50 @@ class TestAddIgnoreKey:
         f = tmp_path / "ignore.yml"
         assert add_ignore_key(None, path=f) is False  # type: ignore[arg-type]
 
+    # ------------------------------------------------------------------
+    # M-5 (v0.7.1): canonical-key validation
+    # ------------------------------------------------------------------
+
+    def test_returns_false_for_key_without_dot(self, tmp_path):
+        """M-5: bare word like 'something' must fail (no prefix separator)."""
+        f = tmp_path / "ignore.yml"
+        assert add_ignore_key("something", path=f) is False
+        assert not f.exists()  # write must NOT happen on validation failure
+
+    def test_returns_false_for_key_with_uppercase(self, tmp_path):
+        """M-5: canonical pattern is lowercase snake_case + dots."""
+        f = tmp_path / "ignore.yml"
+        assert add_ignore_key("SSH.permit_root_login", path=f) is False
+        assert add_ignore_key("ssh.PermitRootLogin", path=f) is False
+        assert not f.exists()
+
+    def test_returns_false_for_key_with_spaces(self, tmp_path):
+        """M-5: pre-v0.7.1 the YAML writer split on whitespace and silently
+        truncated multi-word values, so users typing
+        ``--ignore='something with spaces'`` saw "added" but the next audit
+        didn't ignore anything. v0.7.1 rejects at validation time."""
+        f = tmp_path / "ignore.yml"
+        assert add_ignore_key("something with spaces", path=f) is False
+        assert not f.exists()
+
+    def test_returns_false_for_key_starting_with_digit(self, tmp_path):
+        """M-5: prefix must start with a letter (identifier rule)."""
+        f = tmp_path / "ignore.yml"
+        assert add_ignore_key("9ssh.permit_root_login", path=f) is False
+        assert not f.exists()
+
+    def test_accepts_canonical_pattern(self, tmp_path):
+        """M-5: confirm the canonical pattern still works post-validation
+        for the realistic cases."""
+        from bob.ignore import is_valid_ignore_key
+        assert is_valid_ignore_key("ssh.permit_root_login")
+        assert is_valid_ignore_key("hardening.send_redirects_enabled")
+        assert is_valid_ignore_key("file_perms.ssh_config_700")
+        assert is_valid_ignore_key("a.b")  # minimal valid: one letter . one letter
+
     def test_file_contains_ignore_section_header(self, tmp_path):
         f = tmp_path / "ignore.yml"
-        add_ignore_key("k", path=f)
+        add_ignore_key("ssh.test_key", path=f)
         assert "ignore:" in f.read_text(encoding="utf-8")
 
     def test_key_roundtrip(self, tmp_path):
@@ -176,7 +219,7 @@ class TestAddIgnoreKey:
     def test_multiple_keys_all_in_single_ignore_section(self, tmp_path):
         # All appended keys must share the same ignore: header, not create multiple
         f = tmp_path / "ignore.yml"
-        for key in ("k1", "k2", "k3"):
+        for key in ("ssh.k1", "ssh.k2", "ssh.k3"):
             add_ignore_key(key, path=f)
         content = f.read_text(encoding="utf-8")
         assert content.count("ignore:") == 1

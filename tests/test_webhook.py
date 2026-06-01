@@ -220,13 +220,39 @@ class TestBuildSlackPayload:
 class TestSendWebhookInvalidUrl:
     def test_rejects_non_http_url(self):
         engine = _make_engine()
-        with pytest.raises(WebhookError, match="must start with http"):
+        with pytest.raises(WebhookError, match="must start with"):
             send_webhook("ftp://example.com/hook", engine, _SYS_INFO, _VERSION)
 
     def test_rejects_empty_url(self):
         engine = _make_engine()
         with pytest.raises(WebhookError):
             send_webhook("", engine, _SYS_INFO, _VERSION)
+
+    def test_rejects_plain_http_by_default(self, monkeypatch):
+        """I-5 (v0.7.1): plain http:// is rejected without the
+        BOB_WEBHOOK_ALLOW_INSECURE=1 escape hatch. The audit payload
+        contains hostname + public_ip + score + alerts — that would leak
+        in plaintext on any path between BOB and the receiver. SECURITY.md
+        "Network surface" documents webhook as HTTPS-only."""
+        monkeypatch.delenv("BOB_WEBHOOK_ALLOW_INSECURE", raising=False)
+        engine = _make_engine()
+        with pytest.raises(WebhookError, match="plain http://"):
+            send_webhook("http://hook.example.com/path", engine, _SYS_INFO, _VERSION)
+
+    def test_plain_http_accepted_with_escape_hatch(self, monkeypatch):
+        """I-5 (v0.7.1): BOB_WEBHOOK_ALLOW_INSECURE=1 opts in to plain http,
+        for offline labs / private-network testing. The static rejection
+        must release, but the request itself is then mocked at the
+        urllib boundary by other tests."""
+        monkeypatch.setenv("BOB_WEBHOOK_ALLOW_INSECURE", "1")
+        engine = _make_engine()
+        # http:// URL no longer rejected statically — it goes to the
+        # urllib call which will fail to connect in the test sandbox.
+        # We don't care about the network error; we just assert the
+        # specific "plain http://" rejection no longer fires.
+        with pytest.raises(WebhookError) as excinfo:
+            send_webhook("http://hook.example.com/path", engine, _SYS_INFO, _VERSION)
+        assert "plain http://" not in str(excinfo.value)
 
 
 # ---------------------------------------------------------------------------

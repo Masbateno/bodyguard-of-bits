@@ -33,7 +33,7 @@ from bob.output import print_banner
 from bob.profiles import load_profile
 from bob.registry import ServiceRegistry
 from bob.history import display_history, save_score
-from bob.ignore import add_ignore_key, load_ignore_keys, _ignore_file_path
+from bob.ignore import add_ignore_key, is_valid_ignore_key, load_ignore_keys, _ignore_file_path
 from bob.recurrence import load_recurrence, save_recurrence, update_recurrence
 from bob.runner import (
     _ALL_SECTIONS, _section_enabled as _se, init_report, run_checks,
@@ -129,6 +129,18 @@ def _run(argv=None) -> int:
     if config.ignore_key:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
+        # M-5 (v0.7.1): validate the key against the canonical EXPLAIN_KEYS
+        # pattern BEFORE attempting the write. Pre-v0.7.1 a typo or a
+        # quoted-multi-word value silently truncated to the first whitespace
+        # and the next audit didn't ignore anything.
+        if not is_valid_ignore_key(config.ignore_key):
+            print(
+                f"✖ Invalid key {config.ignore_key!r} — expected canonical "
+                f"<prefix>.<finding_id> snake_case (e.g. ssh.permit_root_login).\n"
+                f"  Run 'bob --explain list' to see the available keys.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
         added = add_ignore_key(config.ignore_key)
         if added:
             print(f"✔ Ignored key added: {config.ignore_key}")

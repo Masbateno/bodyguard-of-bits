@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -197,8 +198,18 @@ def send_webhook(
         WebhookError: If the URL is invalid, the connection fails, or the
                       server returns a non-2xx status code.
     """
+    # I-5 (v0.7.1): reject plain http:// by default — the BOB payload contains
+    # hostname + public_ip + score + alerts which leaks audit posture in
+    # plaintext over the network. SECURITY.md "Network surface" documents
+    # webhook as HTTPS-only. The escape hatch ``BOB_WEBHOOK_ALLOW_INSECURE=1``
+    # is for offline labs / private network testing only.
     if not url.startswith(("http://", "https://")):
-        raise WebhookError(f"Webhook URL must start with http:// or https://: {url!r}")
+        raise WebhookError(f"Webhook URL must start with https:// (or http:// with BOB_WEBHOOK_ALLOW_INSECURE=1): {url!r}")
+    if url.startswith("http://") and os.environ.get("BOB_WEBHOOK_ALLOW_INSECURE") != "1":
+        raise WebhookError(
+            f"Webhook URL is plain http:// — audit payload would be sent unencrypted. "
+            f"Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override: {url!r}"
+        )
 
     effective_fmt = detect_format(url, fmt)
     if effective_fmt == "slack":

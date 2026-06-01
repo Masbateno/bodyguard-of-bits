@@ -175,11 +175,12 @@ def _build_v1(
 ) -> dict:
     """v1 producer — frozen contract, do not extend.
 
-    Phase 1 (v0.7.0) note: ``risk`` reflects ``engine.effective_level`` (i.e.
-    includes posture escalation) since v0.7.0. The pre-Phase-1 value
-    (``engine.level``, score-only) is not available in v1 mode — consumers
-    that need the un-escalated baseline should migrate to v2 where it lives
-    in ``posture_escalation.score_level``.
+    v0.7.1 (I-3): ``risk`` reverts to ``engine.level.value`` (score-derived,
+    pre-posture-escalation). v0.7.0 had quietly switched this field to
+    ``engine.effective_level.value`` — that was a v1 wire-format break per
+    the documented "v1 layout matches v0.6.x exactly" contract. Consumers
+    that need the posture-escalated level live in v2's
+    ``posture_escalation.score_level`` + the top-level ``risk_level``.
     """
     data: dict = {
         "schema_version":  "1",
@@ -188,7 +189,7 @@ def _build_v1(
         "timestamp":       datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "score":           engine.score,
         "score_max":       10,
-        "risk":            engine.effective_level.value,
+        "risk":            engine.level.value,
         "network_context": network_context,
         "public_ip":       public_ip,
         "alerts":          engine.alert_count,

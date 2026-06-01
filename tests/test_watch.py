@@ -301,10 +301,16 @@ class TestScoreBarTypes:
         with pytest.raises(TypeError):
             _score_bar(None)
 
-    def test_bool_is_accepted(self):
-        """bool is a subclass of int in Python — True==1, False==0."""
-        assert _score_bar(True)  == "█░░░░░░░░░"
-        assert _score_bar(False) == "░░░░░░░░░░"
+    def test_bool_raises_type_error(self):
+        """I-4 (v0.7.1): bool is a subclass of int in Python — without an
+        explicit ``isinstance(score, bool)`` guard, ``isinstance(True, int)``
+        returns True and ``_score_bar(True)`` silently produced "█░░░░░░░░░".
+        v0.7.1 rejects bool explicitly, matching the v0.7.0 Phase 2.1 I-3
+        guard on ``ScoreEngine.set_posture``."""
+        with pytest.raises(TypeError):
+            _score_bar(True)
+        with pytest.raises(TypeError):
+            _score_bar(False)
 
     def test_only_expected_unicode_chars(self):
         """Output must contain only the two block characters, nothing else."""
@@ -404,3 +410,104 @@ class TestWatchKeyboardInterrupt:
             )
 
         output.print_info.assert_called_once_with("watch.stopped")
+
+
+# ---------------------------------------------------------------------------
+# I-1 (v0.7.1): watch mode must propagate ignore_keys + posture escalation
+# ---------------------------------------------------------------------------
+
+class TestWatchContractParity:
+    """I-1 (v0.7.1): watch loop must propagate ``ignore_keys`` and call
+    ``engine.set_posture(...)`` the same way ``bob/__main__.py`` does for
+    the non-watch audit path.
+
+    Pre-v0.7.1, the watch loop created a fresh ``ScoreEngine()`` per
+    iteration and never set ``ignore_keys`` nor called ``set_posture``.
+    Result: a host whose UFW just went down kept showing ``LOW risk`` on
+    ``bob --watch`` even though the next non-watch audit would correctly
+    escalate to HIGH; previously ignored findings reappeared and inflated
+    the visible deductions every iteration."""
+
+    def _make_minimal_result(self, fw_active: bool = True):
+        ns = SimpleNamespace()
+        ns.ports_snapshot = None
+        ns.snapshots      = {}
+        ns.fw_active      = fw_active
+        return ns
+
+    def test_watch_loads_ignore_keys_into_engine(self):
+        """I-1: ``engine.ignore_keys = load_ignore_keys()`` must be called
+        per iteration so user-suppressed findings stay suppressed."""
+        from bob.watch import run_watch
+        from bob.cli import AuditConfig
+
+        config   = AuditConfig()
+        t        = lambda key, **kw: key
+        output   = MagicMock()
+
+        fake_engine = MagicMock()
+        fake_engine.score    = 8
+        fake_engine.findings = []
+        fake_engine.domain_scores = {}
+        fake_engine.finalize = MagicMock()
+        fake_engine.effective_level.value = "low"
+
+        minimal_result = self._make_minimal_result(fw_active=True)
+        sentinel_ignore = frozenset({"ssh.permit_root_login"})
+
+        with (
+            patch("bob.watch.detect_network_context", return_value=(MagicMock(), None)),
+            patch("bob.watch.run_checks",             return_value=minimal_result),
+            patch("bob.watch.ScoreEngine",            return_value=fake_engine),
+            patch("bob.watch.build_baseline",         return_value=MagicMock()),
+            patch("bob.watch.save_baseline"),
+            patch("bob.watch.load_ignore_keys",       return_value=sentinel_ignore) as mock_load,
+            patch("bob.watch.time.sleep",             side_effect=KeyboardInterrupt),
+        ):
+            run_watch(
+                config, interval=10, t=t, output_mod=output,
+                registry=MagicMock(), active_profile=MagicMock(), VERSION="test",
+            )
+
+        mock_load.assert_called_once()
+        # The engine must have received the same frozenset.
+        assert fake_engine.ignore_keys == sentinel_ignore
+
+    def test_watch_calls_set_posture_with_firewall_state(self):
+        """I-1: ``engine.set_posture(firewall_inactive=not fw_active, ...)``
+        must fire per iteration so posture escalation propagates."""
+        from bob.watch import run_watch
+        from bob.cli import AuditConfig
+
+        config   = AuditConfig()
+        t        = lambda key, **kw: key
+        output   = MagicMock()
+
+        fake_engine = MagicMock()
+        fake_engine.score    = 8
+        fake_engine.findings = []
+        fake_engine.domain_scores = {"firewall": {"score": 3}}
+        fake_engine.finalize = MagicMock()
+        fake_engine.effective_level.value = "high"
+
+        # firewall_inactive scenario
+        minimal_result = self._make_minimal_result(fw_active=False)
+
+        with (
+            patch("bob.watch.detect_network_context", return_value=(MagicMock(), None)),
+            patch("bob.watch.run_checks",             return_value=minimal_result),
+            patch("bob.watch.ScoreEngine",            return_value=fake_engine),
+            patch("bob.watch.build_baseline",         return_value=MagicMock()),
+            patch("bob.watch.save_baseline"),
+            patch("bob.watch.load_ignore_keys",       return_value=frozenset()),
+            patch("bob.watch.time.sleep",             side_effect=KeyboardInterrupt),
+        ):
+            run_watch(
+                config, interval=10, t=t, output_mod=output,
+                registry=MagicMock(), active_profile=MagicMock(), VERSION="test",
+            )
+
+        fake_engine.set_posture.assert_called_once()
+        call_kwargs = fake_engine.set_posture.call_args.kwargs
+        assert call_kwargs["firewall_inactive"] is True  # not fw_active
+        assert call_kwargs["firewall_domain_score"] == 3

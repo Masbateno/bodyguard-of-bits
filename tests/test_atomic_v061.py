@@ -56,6 +56,37 @@ class TestAtomicWritePublicAPI:
             atomic_write(target, "new content\n", mode=0o600)
         assert target.read_text() == original_text
 
+    def test_atomic_write_calls_fsync_on_fd_and_parent_dir(self, tmp_path, monkeypatch):
+        """M-2 (v0.7.1): the docstring promises crash-safe persistence; the
+        implementation must fsync the tmp file's fd before close AND the
+        parent directory's fd after rename. Without those, ext4's default
+        ``data=ordered`` journal mode can commit the rename metadata
+        before the data, leaving a zero-byte file on power loss.
+
+        We can't simulate power loss in a unit test, but we can spy on
+        ``os.fsync`` and verify both calls fire on the right kind of fd
+        (file fd, then directory fd)."""
+        from bob._atomic import atomic_write
+        from bob import _atomic
+
+        target = tmp_path / "fsync_test.txt"
+        fsync_calls: list[int] = []
+        real_fsync = _atomic.os.fsync
+
+        def spy_fsync(fd: int) -> None:
+            fsync_calls.append(fd)
+            real_fsync(fd)
+
+        monkeypatch.setattr(_atomic.os, "fsync", spy_fsync)
+        atomic_write(target, "data\n", mode=0o600)
+
+        # Two fsync calls expected: one for the file fd, one for the parent dir fd.
+        assert len(fsync_calls) == 2, (
+            f"Expected 2 fsync calls (file + parent dir), got {len(fsync_calls)}. "
+            f"M-2 contract: atomic_write must fsync the tmp fd before close AND "
+            f"the parent dir fd after rename."
+        )
+
 
 class TestCronLegacyAliasStillWorks:
     """bob.cron._io._atomic_write must still be the public spy target for

@@ -68,7 +68,6 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from bob._sandbox import SandboxRejected, SandboxRunner, has_run_check
 from bob.checks._run import TranslationFunc
