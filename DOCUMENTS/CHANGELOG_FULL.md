@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.7.3] — 2026-06-01
+## [v0.7.3] — 2026-06-02
 
 **Third v0.7.x hardening patch — full deep-audit pass.**
 
