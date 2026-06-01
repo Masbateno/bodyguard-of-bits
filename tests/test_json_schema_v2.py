@@ -40,41 +40,27 @@ from bob.scoring import CheckResult, ScoreEngine
 
 
 # ---------------------------------------------------------------------------
-# v2 contract constants — to be added in production at Step 3 (A-1).
+# v2 contract constants — sourced from the production SCHEMA_*_KEYS
+# frozensets in bob/json_output.py.
 #
-# We hardcode them here so the test suite knows what to expect even before
-# bob.json_output exposes them. After A-1 lands, these can be replaced by
-# `from bob.json_output import SCHEMA_V2_REQUIRED_KEYS, ...`.
+# M-8 (v0.7.2): pre-v0.7.2 the test suite had its own local copy of the
+# expected key sets that was supposed to be replaced by an import after
+# the production constants landed in A-1. The migration never happened
+# and the test invariant + production declaration drifted silently. Now
+# the test sources directly from the production constants — any future
+# rename/add/remove fires the assertion in this file rather than letting
+# the two sources of truth disagree.
 # ---------------------------------------------------------------------------
 
-EXPECTED_REQUIRED_KEYS_V2 = frozenset({
-    "schema_version",
-    "version",
-    "host",
-    "timestamp_utc",          # B-3 renamed from "timestamp"
-    "score",
-    "score_max",
-    "risk",
-    "network_context",        # now always dict (P1 fix, A-2)
-    "public_ip",
-    "alerts",
-    "warnings",
-    "info_count",             # B-7 added for symmetry
-    "deductions",
-    "domain_scores",
-    "posture_escalation",     # A-4 new block exposing escalation context
-})
+from bob.json_output import (
+    SCHEMA_V1_FULL_KEYS,
+    SCHEMA_V1_REQUIRED_KEYS,
+    SCHEMA_V2_FULL_KEYS,
+    SCHEMA_V2_REQUIRED_KEYS,
+)
 
-EXPECTED_FULL_KEYS_V2 = frozenset({
-    "findings",
-    "services",
-    "open_ports",
-    "open_ports_all",         # B-5 added (sans filtre is_all_interfaces)
-    "firewall_stack",
-    "deductions_raw",         # B-4 added (sans filtre points > 0)
-    "hardening",
-    "ipv6",
-})
+EXPECTED_REQUIRED_KEYS_V2 = SCHEMA_V2_REQUIRED_KEYS
+EXPECTED_FULL_KEYS_V2 = SCHEMA_V2_FULL_KEYS
 
 
 # ---------------------------------------------------------------------------
@@ -416,3 +402,79 @@ class TestSchemaVersionValidation:
                 schema_version=2,  # int — must be str
                 **minimal_args,
             )
+
+
+# ===========================================================================
+# M-8 (v0.7.2) — production SCHEMA_*_KEYS pinned against actual emitted output
+# ===========================================================================
+
+class TestSchemaConstantsPinActualOutput:
+    """M-8 (v0.7.2): the four ``SCHEMA_*_KEYS`` frozensets declared in
+    ``bob/json_output.py`` are the single source of truth for what the v1
+    and v2 producers emit. Pre-v0.7.2 they were declared but never enforced
+    against the actual output — a rename in the producer would have left
+    them silently wrong. This class asserts production constants match
+    real emitted keys for v1 and v2 in both short and full modes.
+
+    These tests fire IF the producer adds/removes/renames a top-level key
+    without updating the corresponding SCHEMA_*_KEYS frozenset (or vice
+    versa). The fix is always to update both together so the constants
+    stay the contract documentation they claim to be."""
+
+    def test_v1_short_output_keys_match_required_constants(
+        self, engine_clean, minimal_args,
+    ):
+        from bob.json_output import build_json_data
+        data = build_json_data(engine=engine_clean, full=False,
+                               schema_version="1", **minimal_args)
+        assert set(data.keys()) == SCHEMA_V1_REQUIRED_KEYS, (
+            f"v1 short output ↔ SCHEMA_V1_REQUIRED_KEYS drift. "
+            f"emitted ∖ declared: {set(data.keys()) - SCHEMA_V1_REQUIRED_KEYS}, "
+            f"declared ∖ emitted: {SCHEMA_V1_REQUIRED_KEYS - set(data.keys())}"
+        )
+
+    def test_v1_full_output_keys_match_required_plus_full_constants(
+        self, engine_clean, minimal_args,
+    ):
+        from bob.json_output import build_json_data
+        data = build_json_data(engine=engine_clean, full=True,
+                               schema_version="1", **minimal_args)
+        # full mode = required ∪ full keys ; conditional keys (hardening/ipv6)
+        # depend on snapshot presence — they're omitted here.
+        expected_unconditional = SCHEMA_V1_REQUIRED_KEYS | (
+            SCHEMA_V1_FULL_KEYS - {"hardening", "ipv6"}
+        )
+        missing = expected_unconditional - set(data.keys())
+        # Unknown emitted keys = either documented (in REQUIRED ∪ FULL)
+        # or a contract violation.
+        unexpected = set(data.keys()) - (SCHEMA_V1_REQUIRED_KEYS | SCHEMA_V1_FULL_KEYS)
+        assert not missing, f"v1 full mode missing keys: {missing}"
+        assert not unexpected, (
+            f"v1 full mode has undocumented keys: {unexpected}. "
+            f"Add to SCHEMA_V1_FULL_KEYS or remove from producer."
+        )
+
+    def test_v2_short_output_keys_match_required_constants(
+        self, engine_clean, minimal_args,
+    ):
+        data = _build_v2(engine_clean, minimal_args)
+        assert set(data.keys()) == SCHEMA_V2_REQUIRED_KEYS, (
+            f"v2 short output ↔ SCHEMA_V2_REQUIRED_KEYS drift. "
+            f"emitted ∖ declared: {set(data.keys()) - SCHEMA_V2_REQUIRED_KEYS}, "
+            f"declared ∖ emitted: {SCHEMA_V2_REQUIRED_KEYS - set(data.keys())}"
+        )
+
+    def test_v2_full_output_keys_match_required_plus_full_constants(
+        self, engine_clean, minimal_args,
+    ):
+        data = _build_v2(engine_clean, minimal_args, full=True)
+        expected_unconditional = SCHEMA_V2_REQUIRED_KEYS | (
+            SCHEMA_V2_FULL_KEYS - {"hardening", "ipv6"}
+        )
+        missing = expected_unconditional - set(data.keys())
+        unexpected = set(data.keys()) - (SCHEMA_V2_REQUIRED_KEYS | SCHEMA_V2_FULL_KEYS)
+        assert not missing, f"v2 full mode missing keys: {missing}"
+        assert not unexpected, (
+            f"v2 full mode has undocumented keys: {unexpected}. "
+            f"Add to SCHEMA_V2_FULL_KEYS or remove from producer."
+        )

@@ -418,11 +418,16 @@ def _run(argv=None) -> int:
 
         if config.markdown_mode:
             from bob.markdown_output import build_markdown_output
-            print(build_markdown_output(engine, sys_info), end="")
+            # M-4 (v0.7.2): pass the audit's bound translation function so
+            # the export can be localised. The Markdown module accepts t=None
+            # for backwards-compat with legacy callers / test mocks.
+            print(build_markdown_output(engine, sys_info, t=t), end="")
 
         if config.html_mode:
             from bob.html_output import build_html_output
-            print(build_html_output(engine, sys_info), end="")
+            # M-4 (v0.7.2): pass t + lang so the HTML report carries both
+            # the localised strings and a correct <html lang="..."> attr.
+            print(build_html_output(engine, sys_info, t=t, lang=config.lang), end="")
 
         # stdout restored — display post-audit views with full output (no quiet filter)
         if config.diff_mode:

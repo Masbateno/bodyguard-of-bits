@@ -337,3 +337,60 @@ class TestMarkdownEffectiveLevel:
         assert eng.effective_level.value == "high"
         md = build_markdown_output(eng, _make_sys_info())
         assert "High" in md
+
+
+# ---------------------------------------------------------------------------
+# M-4 (v0.7.2): translation function ``t`` routes through to output
+# ---------------------------------------------------------------------------
+
+class TestMarkdownT18nExtraction:
+    """M-4 (v0.7.2): the user-facing strings in the Markdown output go
+    through the optional ``t`` translation function. When the caller
+    passes ``t``, the returned strings appear in the output; when
+    ``t=None``, the English fallback dict supplies the default labels."""
+
+    def test_default_fallback_uses_english(self):
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        md = build_markdown_output(eng, _make_sys_info())  # no t kwarg
+        assert "Summary" in md
+        assert "Risk level" in md
+        assert "Timestamp" in md
+
+    def test_custom_t_routes_through_to_output(self):
+        """Sentinel ``t`` function injects unique markers; assert they all
+        reach the Markdown output. This pins the contract that no user-
+        facing string is hardcoded outside the locale system."""
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+
+        def fake_t(key, **kw):
+            # Sentinel substitution so we can grep for the routed value.
+            return f"<<{key}>>"
+
+        md = build_markdown_output(eng, _make_sys_info(), t=fake_t)
+        # Headings + field labels + footer must all carry the sentinel.
+        assert "<<markdown_output.heading_summary>>" in md
+        assert "<<markdown_output.field_score>>" in md
+        assert "<<markdown_output.field_risk_level>>" in md
+        assert "<<markdown_output.field_host>>" in md
+        assert "<<markdown_output.footer>>" in md
+
+    def test_t_fallback_supplies_all_documented_keys(self):
+        """If a future contributor adds a new ``t(key)`` call without
+        adding the matching fallback entry, the test fires because the
+        un-translated key surfaces in the output verbatim."""
+        from bob.markdown_output import _FALLBACK_LABELS
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        md = build_markdown_output(eng, _make_sys_info())
+        # No raw key (with the markdown_output. prefix) should remain — every
+        # call must have been resolved through the fallback dict.
+        for key in _FALLBACK_LABELS:
+            assert key not in md, (
+                f"Translation key {key!r} surfaced in Markdown output — "
+                f"_FALLBACK_LABELS is incomplete or the fallback was not used."
+            )

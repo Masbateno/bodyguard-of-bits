@@ -23,6 +23,7 @@ the docstring promised "crash-safe" but the impl skipped both fsyncs.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -44,17 +45,36 @@ def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
         OSError: on filesystem errors. The caller decides whether to swallow
                  (best-effort persistence) or surface to the user.
     """
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(content)
-        fh.flush()
-        # M-2 (v0.7.1): fsync the data + metadata of the tmp file BEFORE
-        # the rename. Without this, ext4's default journal mode (data=ordered)
-        # commits the rename metadata before the data, leaving a zero-byte
-        # file on power loss.
-        os.fsync(fh.fileno())
-    os.replace(str(tmp), str(path))
+    # M-7 (v0.7.2): use tempfile.NamedTemporaryFile to generate a per-call
+    # unique tmp name in the destination directory. Pre-v0.7.2 the tmp
+    # name was the fixed pattern ``path.suffix + ".tmp"``: two concurrent
+    # ``bob`` invocations (cron + manual + watch can coincide) raced on
+    # the same path; O_TRUNC let writer B overwrite A's bytes mid-flight
+    # and A's ``os.replace`` then committed an inconsistent file.
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent),
+    )
+    try:
+        os.fchmod(tmp_fd, mode)
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+            fh.flush()
+            # M-2 (v0.7.1): fsync the data + metadata of the tmp file BEFORE
+            # the rename. Without this, ext4's default journal mode
+            # (data=ordered) commits the rename metadata before the data,
+            # leaving a zero-byte file on power loss.
+            os.fsync(fh.fileno())
+        os.replace(tmp_name, str(path))
+    except BaseException:
+        # M-7: clean up the tmp file on ANY failure path, otherwise tmpfile
+        # litter accumulates in ~/.config/bob/ until the next successful
+        # write. Best-effort: a second OSError is swallowed (the original
+        # exception is re-raised).
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     # M-2 (v0.7.1): fsync the parent directory inode so the rename is
     # durable. Best-effort: on filesystems / mounts that disallow
     # directory fsync (rare) the OSError is swallowed.

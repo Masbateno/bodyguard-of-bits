@@ -380,6 +380,31 @@ def display_network_context(snapshot, t, output_mod) -> None:
 # Audit summary
 # ---------------------------------------------------------------------------
 
+def _compute_posture_annotation(engine, t) -> tuple:
+    """M-10 (v0.7.2): consolidated posture-escalation lookup used by both
+    ``_summary_header_lines`` (terminal box) and ``print_audit_summary``
+    (the on-disk ``.txt`` report). Pre-v0.7.2 the lookup was duplicated
+    in two places that landed independently during the v0.7.0 hotfix
+    cycle; this helper is the single source of truth.
+
+    Returns a 2-tuple ``(effective_level, annotation)`` where:
+      - ``effective_level``: ``engine.effective_level`` if exposed,
+        else fall back to ``engine.level`` (legacy callers / test
+        mocks that pre-date v0.7.0 don't populate the effective field).
+      - ``annotation``: translated reason string when posture
+        escalation lifted the displayed level above the score-derived
+        level. Empty string when no escalation occurred OR when the
+        engine doesn't expose ``effective_level`` (legacy callers).
+    """
+    effective_level = getattr(engine, "effective_level", engine.level)
+    from bob.scoring import unpack_posture_escalation
+    posture_floor, posture_key = unpack_posture_escalation(engine)
+    annotation = ""
+    if posture_floor is not None and effective_level != engine.level:
+        annotation = t(posture_key)
+    return effective_level, annotation
+
+
 def _summary_header_lines(engine, network_context, config, t,
                            profile_name: str,
                            prev_score: "int | None") -> list[tuple[str, str]]:
@@ -388,24 +413,12 @@ def _summary_header_lines(engine, network_context, config, t,
     from bob.scoring import RiskLevel
 
     score = engine.score
-    # Fallback to .level for legacy callers / test mocks that don't populate
-    # the v0.7.0 effective_level property. Real ScoreEngine instances always
-    # have it.
-    level = getattr(engine, "effective_level", engine.level)
+    # M-10 (v0.7.2): single source of truth for posture escalation lookup
+    # — duplicated v0.7.0 hotfix pattern consolidated into a module helper.
+    level, posture_annotation = _compute_posture_annotation(engine, t)
     level_str = t(f"scoring.level.{level.value}")
     ctx_str   = t(f"scoring.context.{network_context}")
     icon = "✔" if level == RiskLevel.LOW else "✖"
-    # Posture escalation annotation (v0.7.0): when the displayed level is
-    # stricter than the score-derived level, surface the reason inline so
-    # operators understand why "score 8 / risk HIGH" can coexist.
-    # I-2 (v0.7.0 Phase 2.1): defensive unpack consolidated in
-    # bob.scoring.unpack_posture_escalation — preserves MagicMock-style
-    # test mocks while pinning a single source of truth.
-    from bob.scoring import unpack_posture_escalation
-    _posture_floor, _posture_key = unpack_posture_escalation(engine)
-    posture_annotation: str = ""
-    if _posture_floor is not None and level != engine.level:
-        posture_annotation = t(_posture_key)
 
     score_str = f"{score}/10"
     if prev_score is not None:
@@ -556,14 +569,10 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
     print(f"  ℹ {t('summary.scope_line1')}")
     print(f"  ℹ {t('summary.scope_line2')}")
 
-    _effective = getattr(engine, "effective_level", engine.level)
     # M-3 (v0.7.0 Phase 2.1): propagate posture annotation to the on-disk
     # .txt report so it stays in sync with the terminal summary box.
-    from bob.scoring import unpack_posture_escalation
-    _r_floor, _r_key = unpack_posture_escalation(engine)
-    _r_annotation = (
-        t(_r_key) if _r_floor is not None and _effective != engine.level else ""
-    )
+    # M-10 (v0.7.2): single source of truth via _compute_posture_annotation.
+    _effective, _r_annotation = _compute_posture_annotation(engine, t)
     report.write_summary(
         score=engine.score,
         risk_level=t(f"scoring.level.{_effective.value}"),

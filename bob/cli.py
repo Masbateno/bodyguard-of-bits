@@ -601,7 +601,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("-n, --no-color",         "Disable colour output")
     opt("    --format=FORMAT",    "Output format: json | json-full | csv | markdown | html")
     opt("-j / -J",                "Shorthands: --format=json / --format=json-full")
-    opt("    --json-v1",          "Emit legacy v0.6.x JSON schema (v2 is default since v0.7.0)")
+    opt("    --json-v1",          "Emit legacy v0.6.x JSON schema (combinable with --json-full / -J for the legacy full layout; v2 is default since v0.7.0)")
     opt("    --min-level=LEVEL",  "Only show findings at or above: warn  |  alert")
 
     section("FIXES — apply remediation suggestions")

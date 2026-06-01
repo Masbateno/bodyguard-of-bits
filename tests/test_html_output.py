@@ -388,3 +388,55 @@ class TestHtmlEffectiveLevel:
         # Output must reflect effective, not score-only
         html = build_html_output(eng, _make_sys_info())
         assert "HIGH" in html.upper()
+
+
+# ---------------------------------------------------------------------------
+# M-4 (v0.7.2): translation function ``t`` + ``lang`` routes through
+# ---------------------------------------------------------------------------
+
+class TestHtmlT18nExtraction:
+    """M-4 (v0.7.2): user-facing strings + the <html lang="..."> attr go
+    through the optional ``t`` translation function + ``lang`` kwarg."""
+
+    def test_default_lang_is_en(self):
+        """Backwards-compat: omitted lang kwarg produces ``<html lang="en">``."""
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        html = build_html_output(eng, _make_sys_info())
+        assert '<html lang="en">' in html
+
+    def test_custom_lang_is_emitted(self):
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        html = build_html_output(eng, _make_sys_info(), lang="fr")
+        assert '<html lang="fr">' in html
+
+    def test_custom_t_routes_through_to_output(self):
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+
+        def fake_t(key, **kw):
+            # Sentinel without HTML-unsafe chars so it survives _h() escaping
+            # verbatim. Underscores + the (escaped) period in keys are both
+            # passed through unchanged.
+            return f"SENTINEL_{key.replace('.', '_DOT_')}"
+
+        html = build_html_output(eng, _make_sys_info(), t=fake_t)
+        assert "SENTINEL_html_output_DOT_field_score" in html
+        assert "SENTINEL_html_output_DOT_field_host" in html
+        assert "SENTINEL_html_output_DOT_report_title" in html
+
+    def test_t_fallback_supplies_all_documented_keys(self):
+        from bob.html_output import _FALLBACK_LABELS
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        html = build_html_output(eng, _make_sys_info())
+        for key in _FALLBACK_LABELS:
+            assert key not in html, (
+                f"Translation key {key!r} surfaced in HTML output — "
+                f"_FALLBACK_LABELS is incomplete or the fallback was not used."
+            )

@@ -184,8 +184,13 @@ def get_public_ip(offline: bool = False) -> str:
     """
     Attempt to determine public IP via lightweight HTTP requests.
 
-    Tries multiple providers in order; returns the first valid IPv4 response.
-    Returns "" immediately when offline=True or all providers fail.
+    Tries multiple providers in order; returns the first valid IPv4 OR IPv6
+    response. Returns "" immediately when offline=True or all providers fail.
+
+    M-6 (v0.7.2): accepts IPv6 responses too. Providers return v6 when the
+    request was sent over v6 (typical on v6-only hosts); pre-v0.7.2 the
+    IPv4-only regex rejected those, so v6-only hosts always reported
+    public_ip="" even though they had a working public address.
 
     Args:
         offline: If True, skip all HTTP calls and return "" immediately.
@@ -193,16 +198,19 @@ def get_public_ip(offline: bool = False) -> str:
     if offline:
         return ""
 
+    import ipaddress
     import urllib.error
     import urllib.request
 
-    ipv4_re = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
     for url in _PUBLIC_IP_PROVIDERS:
         try:
             with urllib.request.urlopen(url, timeout=3) as resp:
                 ip = resp.read(64).decode().strip()
-            if ipv4_re.match(ip):
-                return ip
+            # Accept any valid IP address (v4 or v6). ipaddress.ip_address
+            # rejects malformed strings, hostname-style responses, and other
+            # junk via ValueError, which we catch in the except clause below.
+            ipaddress.ip_address(ip)
+            return ip
         except (OSError, urllib.error.URLError, ValueError):
             continue
     return ""

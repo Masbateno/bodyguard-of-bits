@@ -9,12 +9,20 @@ are not backported.
 
 | Version   | Supported          |
 |-----------|--------------------|
-| 0.6.x     | ✅ current          |
+| 0.7.x     | ✅ current          |
+| 0.6.x     | ❌ end of life      |
 | 0.5.x     | ❌ end of life      |
 | 0.4.x     | ❌ end of life      |
 | < 0.4.0   | ❌ end of life      |
 
-Patches release as `0.6.x+1`. A breaking change bumps the minor (`0.7.0`).
+Patches release as `0.7.x+1`. A breaking change bumps the minor (`0.8.0`).
+
+**v0.6.x is end-of-life as of 2026-06-01** (same day v0.7.0 shipped). No
+security fixes will be backported to v0.6.x. Users on v0.6.x must
+`pipx upgrade bodyguard-of-bits` to v0.7.x to receive security patches.
+The v0.7.0 release is backwards-compatible with the v0.6.x public API
+via `__init__.py` re-exports + the `--json-v1` flag for legacy JSON
+consumers — upgrading is transparent for the vast majority of users.
 
 v0.5.x was declared EOL on the same day v0.6.0 shipped (2026-05-25). The
 v0.6.0 release is backwards-compatible with the full v0.5.x public API via
