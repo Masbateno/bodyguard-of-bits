@@ -21,9 +21,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   smoke:
     name: ${{ matrix.distro }}
@@ -73,7 +70,7 @@ jobs:
           dnf install -y --setopt=install_weak_deps=False \
             python3 python3-pip git ca-certificates
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install BOB from source (in venv)
         # Use a venv to sidestep PEP 668 / --break-system-packages:
@@ -218,7 +215,7 @@ jobs:
 
       - name: Upload audit log (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: audit-${{ strategy.job-index }}-${{ matrix.family }}
           path: audit.txt
