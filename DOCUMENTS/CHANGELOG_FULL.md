@@ -6,6 +6,129 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.7.0] — 2026-06-01
+
+**Major bump — opens the v0.7.x stable branch.** Rolls up the four-beta cycle (b1 → b2 → b3 → b4) into the canonical v0.7.0 release. The cumulative payload is three thematic phases (T1 Foundation + T2 JSON schema v2 + T3 Plugin Sandbox) plus four release-engineering guards added in flight, all on top of the v0.6.2 baseline. v0.6.x is now EOL — security fixes will not be backported.
+
+### What changed since v0.6.2
+
+#### Phase 1 — Foundation (T1)
+
+  - **Python 3.14 added to the CI matrix** (ladder step 1). `requires-python>=3.10` retained — Python 3.10 upstream EOL is 2026-10, still supported. The integration-distro matrix carries 3.12 / 3.13 by default depending on the distro; the pytest matrix exercises 3.10 / 3.11 / 3.12 / 3.13 / 3.14 explicitly.
+  - **Posture escalation** — new public API `ScoreEngine.set_posture(level: RiskLevel, key: str)` lets a check raise the floor of the final risk level without touching the numeric score. `engine.effective_level` returns `max(score_level, posture_floor)`. `engine.posture_escalation` is a `(applied: bool, reason_key: str, score_level: str)` tuple suitable for JSON output and history-diff tracking. Triggered by `firewall_inactive` (UFW disabled), `iptables_input_accept` (INPUT chain default ACCEPT), or `firewall_domain_score ≤ 3` (firewall domain critically misconfigured).
+  - **Box-score annotation** — the terminal summary box now reads `Niveau de risque : ✖ ÉLEVÉ  (majoré par posture : pare-feu inactif)` when the posture floor is active. Visible on every audit surface (terminal, txt report, HTML report, JSON v2 output, history.jsonl level_score_only field).
+  - **New EXPLAIN key** `risk.escalated_posture` documents what posture escalation is and when it triggers.
+  - **M-1** — `parse_cron_file` time_simple flag + log normalization for cron entries.
+  - **M-7** — `--check` / `--skip` recognise the 10 always-on section names (firewall_state, dns, etc.) so users can compose targeted audits.
+
+#### Phase 2 — JSON Schema v2 (T2)
+
+  - **`build_json_data(schema_version="2")` is the new default.** `--json-v1` flag preserves the legacy v0.6.x layout exactly for migration. The v2 schema is documented in `DOCUMENTS/README_TECH.md` "JSON output schema" with a v1→v2 migration table.
+  - **v2 changes**: fixes `network_context` type inconsistency (P1 — was sometimes str, sometimes object); renames `timestamp` → `timestamp_utc` (explicit UTC suffix); adds `info_count` (per-domain INFO finding count, useful for trend analysis); adds `posture_escalation` block `{applied, reason_key, score_level}`; in full-mode adds `deductions_raw` (untruncated reasons) + `open_ports_all` (full port list, not the top-N); adds `domain_scores[d].deductions` (per-domain deduction list).
+  - **EXPLAIN_KEYS audit baseline** — 117 keys / 30 prefixes / 100% conformance with the canonical `<prefix>.<finding_id>` snake_case pattern. Pinned by `tests/test_explain_naming_convention.py` (710 parametrized assertions). Any future key that doesn't match the pattern fails the suite before merge.
+  - New file `tests/test_json_schema_v2.py` — 30 tests written BEFORE the implementation per the integration-first rule, drove the impl to match the spec.
+
+#### Phase 2.1 — sub-agent pre-T3 audit
+
+A sub-agent adversarial review on the Phase 1 + Phase 2 + Phase 2.1 commits surfaced 5 important + 6 minor findings. 5/5 important + 4/6 minor shipped pre-T3:
+
+  - **I-1 + I-4** — `effective_level` propagation to HTML / Markdown / `history.jsonl` was incomplete after Phase 1. Added the 3 missed sinks + new `level_score_only` field in `history.jsonl` so history-diff tools can distinguish the raw score level from the posture-escalated effective level.
+  - **I-2** — extracted `bob.scoring.unpack_posture_escalation(engine) → tuple` helper. Consolidates the defensive `getattr` + `try/except` pattern that was duplicated across display / json_output sites and was missing in one of them.
+  - **I-3** — `ScoreEngine.set_posture()` now rejects bool explicitly with a TypeError naming the mistake. Previously `set_posture(True)` was silently accepted via `isinstance(x, int)` returning True for bool — a foot-gun.
+  - **I-5** — vacuous `assert ... or True` in `test_v2_posture_escalation_consistent_with_top_level_risk` rewritten to assert the explicit divergence shape.
+  - **M-1** — `--check=list` output now lists the 10 always-on section names so the help text matches what M-7 accepts as input.
+  - **M-3** — `report.write_summary` (.txt on-disk report) surfaces the posture annotation matching the terminal box.
+
+Two minors deferred (M-2 cosmetic + M-6 doc) — no impact on v0.7.0 contract.
+
+#### Phase 3 — Plugin Sandbox Runner (T3)
+
+The flagship deliverable. Pre-v0.7.0, `~/.config/bob/checks.d/*.py` plugins ran in the parent BOB process with full root privileges. v0.7.0 introduces a restricted-mode sandbox runner; users with plugins get accidents-and-naïve-attacks protection automatically, users without plugins are unaffected.
+
+**Implementation** (`bob/_sandbox.py`, 484 LoC):
+
+  - **Process isolation** — each plugin runs in a fresh `multiprocessing.get_context("spawn")` child. Crash / OOM / FS mutation / env pollution stays contained.
+  - **Timeout + resource limits** — 5s wall-clock `Process.join(timeout=5)` → `terminate()` → `kill()` if needed; `RLIMIT_AS = 256 MiB` cap defends against memory bombs; `RLIMIT_CPU = 10s` cap defends against infinite loops that ignore SIGTERM.
+  - **Import allowlist** — `PLUGIN_IMPORT_ALLOWLIST` enforced by a `builtins.__import__` replacement hook installed in the plugin's restricted namespace. Allowed: `bob.scoring`, `re`, `json`, `pathlib`, `datetime`, `typing`, `dataclasses`, `collections`, `enum`, `math`, `string`, `hashlib`, `time`, `os.path`, `stat`.
+  - **Restricted `__builtins__`** — `_ImmutableBuiltins` dict subclass overriding `__setitem__` / `update` / `clear` / `pop` / `popitem` / `setdefault` to raise TypeError. Strips `eval` / `exec` / `compile` / `__import__` / `input` / `breakpoint`. `open` replaced by `_make_safe_open` which rejects write modes AND denies reads on a curated deny-list (`/etc/shadow`, `/etc/gshadow`, `/etc/sudoers.d/`, `~/.ssh/id_*`, `/.gnupg/`, `/dev/mem`, `/dev/kmem`, `/dev/port`, `/proc/kcore`, `/proc/kmem`). `pathlib.Path` write methods (`write_text`, `write_bytes`, `touch`, `mkdir`, `rmdir`, `unlink`, `chmod`, …) monkey-patched in the worker to raise PermissionError.
+  - **`os` module strip** — extensive `_OS_DANGEROUS_ATTRS` list (84 entries organised into six categories: subprocess/spawn, process control + signals, privilege changes, raw fd I/O, filesystem writes, xattr writes, process/env state, Windows-specific). The list grew significantly between b2 and b3 after a PoC plugin demonstrated `from pathlib import os; os.open + os.write` writing to arbitrary paths despite the b2-level strip — the v0.7.0 ship list closes that path.
+  - **JSON-safe queue transport** — the worker serializes the plugin's CheckResult to a primitive-only dict via `_sanitize_for_transport` BEFORE pushing onto the queue. The parent rebuilds a fresh CheckResult from the dict via `_deserialize_check_result` — never unpickles plugin-controlled objects. This closes the pickle-RCE path where a malicious `__reduce__` attached to `template_vars` could execute `eval` in the parent.
+  - **`BOB_SANDBOX_LEGACY=1` trap door** — bypasses the sandbox entirely; runs plugins in the parent with full builtins. Surfaces a CRITICAL log entry AND a direct stderr write on every run that actually enters legacy mode (re-evaluated per call so toggling the env var mid-session takes effect). Deprecated immediately; will be removed in v0.8.0.
+
+**Parent process never exec's plugin code** — `bob/plugin_checks._load_one()` is now AST read-only (size check + `compile()` for syntax + AST FunctionDef walk for `run_check` presence + AST extraction of `CHECK_NAME`). The pre-v0.7.0 `importlib.exec_module` path is removed. A plugin with `import subprocess; subprocess.run(...)` at module level no longer compromises the audit during plugin discovery — the malicious import is deferred to the sandboxed child where it gets caught by the import allowlist.
+
+**Threat model recadré honest** in `SECURITY.md` "Plugin checks" section. The header line:
+
+> **In-process Python sandboxing is not a security boundary.** This is a defence-in-depth layer.
+
+What the sandbox stops: accidents (buggy plugin calls `os.unlink` by mistake, infinite loop, 2 GiB allocation), naïve attacks (`import subprocess; subprocess.run(...)` at module level), confused-deputy reads (accidental `open("/etc/shadow")` because the user forgot BOB runs as root).
+
+What the sandbox does NOT stop: a determined attacker with the Python escape playbook (`json.dumps.__globals__["__builtins__"]["__import__"]` reachable in 5 lines because allowlisted stdlib modules carry their own unrestricted builtins reference — PEP 416 retracted in 2012 over exactly this), `dict.__setitem__(bins, "eval", real_eval)` unbound bypass of the restricted-builtins subclass (the irreducible limit — every fully-immutable alternative breaks CPython's C-level dict fast paths that `exec()` requires).
+
+Both architectural escapes are pinned as INTENTIONALLY out of scope by `TestKnownInProcessLimitation::test_real_builtins_reachable_via_stdlib_globals` and `::test_i1_known_limitation_unbound_dict_setitem_bypass` — future contributors see these as expected, not regression candidates.
+
+**Real adversarial isolation requires an OS-level boundary**. BOB ships an AppArmor profile (`packaging/apparmor/bob.profile`) that confines the BOB process itself; this is the actual boundary against malicious plugins. Users running BOB unconfined under `sudo` should code-review their plugins before installing them.
+
+#### Four release-engineering guards
+
+The v0.7.0 cycle hit four distinct release-engineering bug classes. Each got a complementary guard:
+
+  1. **integration-first** — Phase 1 4ed2e3b crash discovered at smoke time after Phase 1 was code-complete: `engine.domain_scores["firewall"]` is a dict, not an int, and the dict was passed by mistake to `set_posture()` and crashed the audit just before the summary box. Closed by writing the integration test BEFORE the impl on Phase 2 and Phase 3, and adding an explicit type guard `set_posture` that raises TypeError naming the dict-vs-int mistake.
+  2. **smoke-after-commit** — v0.6.2 packaging discovery: every wheel since v0.6.0 was missing `bob/checks/ssh/` and `bob/cron/` because the `[tool.setuptools.packages.find].include` list was a stale literal. Closed by the v0.6.2 fix (`include=["bob*"]` glob) + new `integration.yml` step `pip install . && python -c "import bob.checks.ssh; from bob.cron import …"`. Held through v0.7.0.
+  3. **version-consistency** — v0.7.0b1 shipped with `bob/__init__.py::__version__` not synced with `pyproject.toml`, banner reported `BOB v0.6.2` while wheel was `0.7.0b1`. Closed in b2 by `tests/test_version_consistency.py::test_init_version_matches_pyproject_version` reading both values and asserting equality on every CI run + every local pre-ship pytest.
+  4. **smoke-plugin-on-CI** — v0.7.0b3 shipped with `types.MappingProxyType` as the plugin sandbox's restricted `__builtins__`, which CPython rejects with `SystemError` on every Python in the matrix except 3.12.3. The 5/5 VM smoke validation missed it because no VM had any plugin in `~/.config/bob/checks.d/`. Closed in b4 + the post-b4 commits 5e0739e + cb4108b: tests.yml drops a benign plugin in a tmp dir and invokes `SandboxRunner` directly on every Python in the matrix; integration.yml drops a plugin into `~/.config/bob/checks.d/` and runs the real `bob --offline` binary on every distro in the matrix; integration.yml trigger extended to fire on `v*.x` branches so the guard runs during beta cycles, not just after merging to main.
+
+Per v0.7.0 these guards are permanent. They will keep firing on every commit / push / tag through v0.7.x and v0.8.x.
+
+### Tests
+
+**5391 → 5466 tests** across the v0.7.0 cycle (+75 net). 0 regression. Breakdown:
+
+  - +30 in `tests/test_json_schema_v2.py` (Phase 2 integration-first)
+  - +710 parametrized in `tests/test_explain_naming_convention.py` (Phase 2 audit pin)
+  - +12 in `tests/test_v2_posture_escalation_*` (Phase 1 + 2.1)
+  - +5 in `tests/test_set_posture_typeerror_on_dict` (Phase 1 4ed2e3b regression pin)
+  - +2 in `tests/test_version_consistency.py` (b2 guard)
+  - +46 in `tests/test_plugin_sandbox.py` (T3 Steps 1-2-3 + hardening pins + known-limitation pins)
+  - +32 in `tests/test_plugin_checks.py` (T3 Step 3 AST-only loader contract)
+  - Reductions from removed dead tests + parametric merges balance the +75 net.
+
+CI matrix validated on 5e0739e + cb4108b + the v0.7.0 final ship:
+  - **tests.yml** — Python 3.10 / 3.11 / 3.12 / 3.13 / 3.14, all green.
+  - **integration.yml** — Debian 12 / Debian 13 / Ubuntu 22.04 / Ubuntu 24.04 / Ubuntu 25.04 / Kali rolling / Fedora 41, all green.
+  - **publish.yml** — fires on the v0.7.0 tag, re-runs the pytest matrix, builds sdist + wheel, uploads to PyPI as the stable release (`make_latest: true` because tag doesn't match the PEP 440 pre-release regex).
+
+### v0.6.x EOL
+
+v0.6.2 (the last v0.6.x release) is now EOL. Security fixes will not be backported. Users on v0.6.x should `pipx upgrade bodyguard-of-bits` to v0.7.0 — there is no breaking CLI contract (all v0.6.x flags continue to work), no breaking JSON contract (`--json-v1` opts into the legacy schema), and the new sandbox is automatic and transparent for users without plugins.
+
+### Deferred to v0.8.0
+
+Items explicitly deferred from v0.7.0 to v0.8.0 (see `project_v08x_deferred` memory):
+
+  - **D-1** — sections renumbering (cosmetic, breaks `--check=N` numeric form which no docs use).
+  - **D-2** — fuse `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` into a single registry.
+  - **D-3** — retire EXPLAIN_KEYS aliases obsoleted by the v0.5.5 canonical-pattern enforcement.
+  - **D-4** — sub-checks granularity (split monolithic check functions where they emit ≥3 distinct domains).
+  - **`BOB_SANDBOX_LEGACY=1` trap door removal** (announced "removed in v0.8.0" in the v0.7.0 docs).
+
+### Upgrade
+
+```bash
+pipx upgrade bodyguard-of-bits
+sudo bob --version   # should print 0.7.0
+sudo bob -v -d       # standard audit; posture escalation auto-applies if firewall is OFF
+```
+
+### Memory archived
+
+  - `project_v07x_phase1` — Phase 1 6-commits + 7-rule strategy for the next phases.
+  - `project_v07x_phase2` — Phase 2 + 2.1 + beta1+beta2 cycle + 3 ship guards.
+  - `project_v070_t3_sandbox_threat_model` — full T3 audit (3C + 5I + 7M sub-agent findings, 3 PoCs locally confirmed, Option B strategic decision, b3 → b4 regression learning, irreducible I-1 unbound bypass at the in-process Python limit).
+  - `project_v08x_deferred` — D-1 to D-4 contract for the next major.
+
+---
+
 ## [v0.7.0b4] — 2026-06-01
 
 **CI compatibility hotfix for v0.7.0b3.** No threat-model, API, or audit-behaviour change vs b3. One specific element of the b3 hardening pass — the I-1 fix that replaced the `_ImmutableBuiltins` dict subclass with `types.MappingProxyType` — turned out to be incompatible with CPython's C-level dict fast paths that `exec()` requires for `__builtins__`. Every Python version in BOB's CI matrix EXCEPT 3.12.3 (3.10, 3.11, 3.13, 3.14) raised `SystemError: Objects/dictobject.c:1490: bad argument to internal function` inside the spawn'd worker on every plugin run, surfacing in the parent as a WARN finding `"Plugin 'X.py' error: SystemError: ..."`. 16 tests started failing in CI immediately after the b3 tag push.
