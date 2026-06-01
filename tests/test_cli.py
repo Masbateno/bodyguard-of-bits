@@ -819,3 +819,52 @@ class TestFormatFlag:
     def test_legacy_html_flag_still_works(self):
         config = parse_args(["--html"])
         assert config.html_mode
+
+
+# ---------------------------------------------------------------------------
+# M-2 / M-3 / M-4 (v0.7.3): argv argument-consumption hardening
+# ---------------------------------------------------------------------------
+
+class TestArgvHardeningV073:
+    """Pin the v0.7.3 argv parsing hardening."""
+
+    def test_lang_accepts_space_separated_form(self):
+        """M-2: ``bob --lang fr`` (space form) now equivalent to
+        ``bob --lang=fr``."""
+        from bob.cli import parse_args, AuditConfig
+        cfg = parse_args(["--lang", "fr"])
+        assert cfg.lang == "fr"
+
+    def test_lang_space_form_rejects_dash_value(self):
+        """M-2/M-4: the space-form check rejects a following arg that
+        starts with '-' so ``bob --lang --quiet`` doesn't silently set
+        ``lang="--quiet"``."""
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError):
+            parse_args(["--lang", "--quiet"])
+
+    def test_explain_empty_value_rejected(self):
+        """M-3: ``bob -e ""`` now errors instead of silently consuming the
+        empty arg."""
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match="requires a key"):
+            parse_args(["-e", ""])
+
+    def test_webhook_space_form_rejects_dash_value(self):
+        """M-4: ``bob -w --quiet`` now errors at parse time instead of
+        silently setting webhook_url="--quiet"."""
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match="Unknown option"):
+            parse_args(["-w", "--quiet"])
+
+    def test_ignore_space_form_rejects_dash_value(self):
+        """M-4: ``bob --ignore --quiet`` rejected at parse time."""
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match="Unknown option"):
+            parse_args(["--ignore", "--quiet"])
+
+    def test_output_dir_space_form_rejects_dash_value(self):
+        """M-4: ``bob --output-dir --quiet`` rejected."""
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match="Unknown option"):
+            parse_args(["--output-dir", "--quiet"])

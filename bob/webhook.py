@@ -203,9 +203,14 @@ def send_webhook(
     # plaintext over the network. SECURITY.md "Network surface" documents
     # webhook as HTTPS-only. The escape hatch ``BOB_WEBHOOK_ALLOW_INSECURE=1``
     # is for offline labs / private network testing only.
-    if not url.startswith(("http://", "https://")):
+    # I-5 (v0.7.3): URL scheme matching is now case-insensitive (RFC 3986).
+    # Pre-v0.7.3 ``HTTPS://example.com`` was rejected with the bogus "must
+    # start with http(s)://" error instead of falling through; the lowered
+    # form is what gets normalised below.
+    url_lower = url.lower()
+    if not url_lower.startswith(("http://", "https://")):
         raise WebhookError(f"Webhook URL must start with https:// (or http:// with BOB_WEBHOOK_ALLOW_INSECURE=1): {url!r}")
-    if url.startswith("http://") and os.environ.get("BOB_WEBHOOK_ALLOW_INSECURE") != "1":
+    if url_lower.startswith("http://") and os.environ.get("BOB_WEBHOOK_ALLOW_INSECURE") != "1":
         raise WebhookError(
             f"Webhook URL is plain http:// — audit payload would be sent unencrypted. "
             f"Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override: {url!r}"

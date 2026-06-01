@@ -6,6 +6,183 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.7.3] — 2026-06-01
+
+**Third v0.7.x hardening patch — full deep-audit pass.**
+
+Sub-agent deep-audit on the v0.7.2 codebase surfaced 0 Critical + 6 Important + 13 Minor findings. After cross-checking each finding in code, v0.7.3 ships 14 fixes (6I + 8M) and explicitly skips 5 minors with clear rationale.
+
+### What's fixed
+
+#### I-1 — FR locale "finding" → "découverte"
+
+`bob/locales/fr.json` `html_output.no_findings` was `"Aucun finding détecté."` and `html_output.findings_count` was `"{count} finding(s)"` — both leaked the English word "finding" into French audits. Fixed to `"Aucune découverte détectée."` and `"{count} découverte(s)"`. The mistake was mine when adding the FR locale entries in v0.7.2 M-4.
+
+#### I-2 — `completion.py` SUDO_USER not validated
+
+`bob/sysinfo.get_user_home` and `chown_to_sudo_user` both guard `pwd.getpwnam(sudo_user)` via `re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user)` before calling. `bob/completion.py:36-37` did NOT validate — a malformed or spoofed `SUDO_USER` (anything not in `/etc/passwd`) crashed `install_completion()` with an unhandled `KeyError` instead of returning exit 3.
+
+v0.7.3 routes through the same regex + `try/except KeyError` pattern. The `else: candidate = None` branch silently falls through when the user doesn't exist.
+
+#### I-3 — CSV column rename: `section` → `nature` (BREAKING)
+
+`bob/csv_output.py:18-30` declared the header column `"section"` but the row population at line 64 used `f.nature` whose documented values are `"action" / "improvement" / "structural" / ""` (per `bob/scoring.py:129`). Tests in `tests/test_csv_output.py:143, 411, 487` baked in the mislabel (`assert rows[0]["section"] == "ssh_audit"` with `nature="ssh_audit"`). External CSV consumers parsing the `section` column received `nature` strings, not audit section names.
+
+v0.7.3 renames the column to `"nature"` to match the actual data. The CSV has no `schema_version` field so this is a wire-format break for external consumers; the CHANGELOG documents the rename clearly.
+
+User decision: `Rename section → nature` (option A) — the mislabel was worse than the rename. Tests updated (`sed -i 's/"section"/"nature"/g'`) plus a new explicit pin `TestCsvColumnNatureRename::test_header_carries_nature_not_section`.
+
+#### I-4 — `manage_logs.py` 3 bare `input()` violated safe_input contract
+
+Project convention #2 requires every interactive prompt to go through `bob._tty.safe_input` or `prompt_wizard`. `bob/manage_logs.py` had 3 bare `input()` sites:
+
+  - Line 104 — the path-prompt with readline path-completer integration. Sub-agent acknowledged this has a "readline integration excuse" — left as-is.
+  - Line 365 — move-logs confirmation prompt. Migrated to `safe_input`.
+  - Line 388 — delete-all confirmation prompt. Migrated to `safe_input`.
+
+The pre-v0.7.3 manual `try/except EOFError: confirm = ""` handling is equivalent to `safe_input`'s EOFError→"" semantic.
+
+#### I-5 — Webhook URL scheme case-insensitive
+
+`bob/webhook.py:206` was `url.startswith(("http://", "https://"))` — case-sensitive. RFC 3986 allows schemes in any case (e.g. `HTTPS://...`). Pre-v0.7.3:
+
+  - `HTTPS://example.com` → rejected with the bogus `"must start with https:// (or http://...)"` error.
+  - `Http://example.com` → rejected at line 206 instead of falling through to the v0.7.1 I-5 http-insecure guard at line 208.
+
+v0.7.3 normalises via `url_lower = url.lower()` and uses `url_lower.startswith(...)` for both the scheme guard and the http-insecure guard. The original `url` is still what reaches `urllib.request` so the actual request preserves the user's case.
+
+Tests: 3 new pins in `TestSendWebhookSchemeCaseInsensitive` — `HTTPS://...` accepted, `HtTpS://...` accepted, `HTTP://...` rejected (without escape hatch).
+
+#### I-6 — markdown/html level guard convergence
+
+The v0.7.2 M-4 i18n extraction added an `effective_level` fallback in both `bob/markdown_output.py` and `bob/html_output.py`, but used different idioms:
+
+  - markdown: `level_value = getattr(_eff_level, "value", "")` then `level_value.capitalize() if level_value else t("...risk_unknown")`. A mock with `effective_level = SomeObj()` (no `.value` attr) silently falls through to "unknown".
+  - html: `_eff_level is not None: str(_eff_level.value).upper()` else `t("...risk_unknown")`. A mock with no `.value` attr would crash.
+
+v0.7.3 converges markdown on the safer html idiom (`is not None` check + direct `.value` access, surfacing type confusion via AttributeError). Capitalize vs upper rendering also documented.
+
+#### M-2 — `--lang VALUE` space-separated form
+
+`bob/cli.py:226-231` accepted `--lang=VALUE` but not `--lang VALUE`. Every other value-taking option supports both forms. Pre-v0.7.3 a user typing `bob --lang fr` got `CLIError: Unknown option: 'fr'`.
+
+v0.7.3 adds the space-form branch right after the `=` form, with the standard "next arg doesn't start with `-`" check. New pin: `test_lang_accepts_space_separated_form`.
+
+#### M-3 — `bob -e ""` empty key rejected
+
+`bob/cli.py:302-304` consumed the next arg if it didn't start with `-`. For `""`, this was true, so `config.explain_key = ""` was set. Then `if config.explain_key:` at `__main__.py:84` was False (empty string is falsy) — the explain branch was skipped entirely, but the arg had been consumed. Net effect = same as no `-e` at all, with no error.
+
+v0.7.3 explicit empty check after the consumption: `if not value: raise CLIError("--explain requires a key...")`. New pin: `test_explain_empty_value_rejected`.
+
+#### M-4 — argv hardening on `-w`/`--ignore`/`--output-dir`
+
+The space-form branches for these three flags didn't have the "next arg doesn't start with `-`" check. A typo like `bob -w --quiet` parsed as `webhook_url="--quiet"`; for `--ignore` the malformed value would later fail the v0.7.1 M-5 canonical-key validator with a confusing message; for `--output-dir` a directory named `--quiet` was silently created.
+
+v0.7.3 adds the same `not argv[i+1].startswith("-")` check to all three flags. The unknown-option branch now catches the typo at parse time. New pins: 3 tests (`test_webhook_space_form_rejects_dash_value`, `test_ignore_space_form_rejects_dash_value`, `test_output_dir_space_form_rejects_dash_value`).
+
+The broader argv-disambiguation cleanup remains a v0.8.0 candidate (every other flag still has the same shape, just no one has typo'd them in practice yet).
+
+#### M-5 — `report.py` field labels i18n
+
+`bob/report.py:344-349` had 6 hardcoded English labels:
+
+```
+self._writeln(f"OK      : {ok_count}")
+self._writeln(f"Warning : {warn_count}")
+self._writeln(f"Alert   : {alert_count}")
+self._writeln(f"Score   : {score}/10")
+self._writeln(f"Risk    : {risk_str}")
+self._writeln(f"Context : {context_str}")
+```
+
+`labels=` dict only carried `"summary"` and `"breakdown"`. A French audit (`bob -d --french`) produced a `.log` file with English field names mixed with the rest of the French content.
+
+v0.7.3 extends `labels=` with 6 new entries (`ok`, `warning`, `alert`, `score`, `risk`, `context`). The caller in `bob/display.py:585-598` populates them via `t("report.field_*")`. New keys under `report.field_*` + `report.summary_title` added to `en.json` and `fr.json`. FR: `Attention` / `Alerte` / `Risque` / `Contexte`.
+
+Defaults match the v0.7.2 English output exactly so legacy callers (test mocks that pre-date the i18n extraction) produce the same `.txt` content.
+
+#### M-6 — `_inline_format` double-escape URL chars fix
+
+`bob/report_markdown.py:467-473` (Markdown→HTML inline converter for email reports) ran `text = html.escape(text)` over the WHOLE input including the link URL inside `(...)`. Then `_LINK_RE.sub` matched and called `_safe_url(m.group(2))` which calls `html.escape(url, quote=True)` again — double-escape.
+
+Concrete impact: a URL `https://example.com/?a=1&b=2` becomes `https://example.com/?a=1&amp;b=2` after the first escape, then `https://example.com/?a=1&amp;amp;b=2` after the second. The rendered `href="..."` carries the double-escaped value.
+
+Latent in v0.7.x: BOB-emitted Markdown doesn't currently include URLs with `&` `<` `>` `"`. But the bug is real.
+
+v0.7.3 fix: `raw_url = html.unescape(m.group(2))` before passing to `_safe_url`. The label part (`m.group(1)`) stays escape-once as it should.
+
+#### M-10 — `set_posture_from_engine` helper extract
+
+`bob/__main__.py:297-304` and `bob/watch.py:107-114` both ran:
+
+```python
+_fw = engine.domain_scores.get("firewall")
+engine.set_posture(
+    firewall_inactive=not fw_active,
+    iptables_input_accept=any(f.key == "iptables_nft.input_accept" for f in engine.findings),
+    firewall_domain_score=_fw["score"] if isinstance(_fw, dict) else None,
+)
+```
+
+The two sites had subtly different guard idioms (`isinstance(_fw, dict)` vs `_fw`) but the same intent.
+
+v0.7.3 extracts `bob.scoring.set_posture_from_engine(engine, fw_active)` as the single source of truth. The helper consolidates the dict-vs-int guard on the firewall domain score so a future entry point (e.g. a new `bob/serve.py` HTTP wrapper) can't accidentally pass the wrong shape — the Phase 1 4ed2e3b regression class is closed by construction.
+
+Per the `feedback-conservative-refactor` rule ("gain × risque = STOP"), this would be borderline if shipped alone (only 2 call sites). Bundled with the other v0.7.3 changes the touch on these 2 files amortises across multiple substantive edits.
+
+#### M-11 — `send_html_email` defensive CRLF stripping
+
+`bob/report_markdown.py:567-583` (the HTML-email sender for the markdown-to-html pipeline) set MIME headers from caller-provided `from_email`, `recipient`, `subject`. `email.MIMEText` handles well-formed values, but a tainted value with an embedded `\r\nBcc:` would be accepted by some MTAs as a header injection.
+
+v0.7.3 strips `\r\n` from the three headers via a local `_strip_crlf` helper. Defence-in-depth; current callers are BOB-internal and not tainted.
+
+#### M-12 — html_output risk label translated
+
+`bob/html_output.py:158` displayed the risk-level badge via `str(_eff_level.value).upper()` — always English (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) regardless of the audit locale. The finding badges below already used translated `_LEVEL_LABEL_KEY` keys, so a French audit had `Aucune découverte détectée.` next to `<strong>LOW</strong>` — mixed-language UX.
+
+v0.7.3 routes the risk label through `t(f"html_output.risk_{_eff_level.value}")` with a fallback to the upper-cased value when the locale key is missing (so a future RiskLevel enum value works without immediately breaking the badge). New keys in `en.json` (`risk_low/medium/high/critical = LOW/MEDIUM/HIGH/CRITICAL`) and `fr.json` (`FAIBLE/MOYEN/ÉLEVÉ/CRITIQUE`). Pins: 2 tests (`test_french_locale_yields_translated_risk_label`, `test_fallback_to_uppercased_value_when_key_missing`).
+
+### Skipped per `feedback-conservative-refactor` (5)
+
+  - **M-1** — `bob/registry.py:363` `f"..."` without interpolation. Pure cosmetic; the `f` prefix has no functional impact. Skip per conservative-refactor.
+  - **M-7** — `csv_output.py` timestamp/score/risk repeat on every row. By design — the CSV is self-contained per row (the v0.4.x design intent). The sub-agent flagged "for visibility, not for action". Skip.
+  - **M-8** — `bob/formatter.py` has zero in-tree consumers. The docstring at line 6 already explains it's a stub for the v0.5.0+ deferred Phase 2 Option A migration; the module is INTENDED to be a future-API placeholder. Skip until the migration moves forward.
+  - **M-9** — `bob/_atomic.py:68` `except BaseException` is broader than `except Exception` — but the comment says "ANY failure path" intentionally. Catching `KeyboardInterrupt` here is REQUIRED so `os.unlink(tmp_name)` runs and we don't leave a `.tmp` file on Ctrl+C. The sub-agent's recommendation to narrow to `Exception` would re-introduce the orphan-tmp bug. Skip.
+  - **M-13** — `bob/explain.py::EXPLAIN_KEYS` is a `list[str]` used as a set in `display.py:477` (O(n) per call). 23k comparisons per audit is well below any perf threshold; `feedback-conservative-refactor` says "gain × risque = STOP" — skip.
+
+### Tests
+
+5490 → **5502** (+12 net), 0 regression. Breakdown:
+
+  - 1 new pin in `tests/test_csv_output.py::TestCsvColumnNatureRename` (I-3)
+  - 3 new pins in `tests/test_webhook.py::TestSendWebhookSchemeCaseInsensitive` (I-5)
+  - 6 new pins in `tests/test_cli.py::TestArgvHardeningV073` (M-2 + M-3 + M-4 × 4 flags)
+  - 2 new pins in `tests/test_html_output.py::TestHtmlRiskLevelTranslated` (M-12)
+
+CI multi-Python (3.10/3.11/3.12/3.13/3.14) × multi-distro (Debian 12+13, Ubuntu 22.04+24.04+25.04, Kali, Fedora 41) validates post-tag-push.
+
+### Upgrade
+
+```bash
+pipx upgrade bodyguard-of-bits
+sudo bob --version   # should print 0.7.3
+```
+
+User-facing behavioural shifts:
+
+  - **CSV column rename `section` → `nature`** is a breaking change for external consumers parsing the CSV. The data was already `Finding.nature`; the rename just labels it correctly. Update your CSV parsers.
+  - **French audit `.txt` reports** now have French field labels (`OK / Attention / Alerte / Score / Risque / Contexte`) — no more mixed-language. English audits unchanged.
+  - **HTML reports** in French locale now have French risk badges (`FAIBLE` / `MOYEN` / `ÉLEVÉ` / `CRITIQUE`). English locale unchanged.
+  - **Webhook URL scheme matching** is now case-insensitive. `HTTPS://example.com` works.
+  - **`bob --lang fr`** (space form) now works. Previously only `--lang=fr`.
+  - **`bob -w --quiet`** (typo) now errors at parse time. Same for `--ignore --quiet` and `--output-dir --quiet`.
+
+### Deferred contract
+
+**v0.7.x audit cycle is now fully closed.** No deferred items remain for v0.7.4. If a new sub-agent audit runs between now and v0.8.0, its findings will be triaged into v0.7.4 directly. The `project_v08x_deferred` memory continues to track items reserved for the next major.
+
+---
+
 ## [v0.7.2] — 2026-06-01
 
 **Second v0.7.x hardening patch — closes the 6 deferred minors from v0.7.1's sub-agent audit + formalises v0.6.x EOL.**

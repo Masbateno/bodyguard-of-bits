@@ -583,8 +583,18 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
         alert_count=engine.alert_count,
         breakdown=engine.breakdown,
         labels={
-            "summary":   "AUDIT SUMMARY",
+            "summary":   t("report.summary_title"),
             "breakdown": t("scoring.breakdown_title"),
+            # M-5 (v0.7.3): the field labels in the on-disk .txt report
+            # are now translatable. Pre-v0.7.3 they were hardcoded English
+            # ("OK", "Warning", "Alert", "Score", "Risk", "Context") so a
+            # French audit's .log file carried mixed-language content.
+            "ok":      t("report.field_ok"),
+            "warning": t("report.field_warning"),
+            "alert":   t("report.field_alert"),
+            "score":   t("report.field_score"),
+            "risk":    t("report.field_risk"),
+            "context": t("report.field_context"),
         },
         posture_annotation=_r_annotation,
     )

@@ -121,10 +121,19 @@ def build_markdown_output(
     # displayed risk, matching display/JSON/CSV/webhook contracts. Fallback
     # to engine.level for legacy test mocks that don't populate the new
     # property.
+    # I-6 (v0.7.3): converge with bob/html_output.py on the safer
+    # ``is not None`` + ``.value`` access pattern. Pre-v0.7.3 a mock with
+    # ``effective_level = SomeObj()`` (no ``.value`` attr) silently fell
+    # through to ``risk_unknown`` instead of surfacing the type confusion.
     _eff_level = getattr(engine, "effective_level", engine.level)
-    level_value = getattr(_eff_level, "value", "") if _eff_level is not None else ""
-    risk_emoji  = _RISK_EMOJI.get(level_value, "")
-    level_label = level_value.capitalize() if level_value else t("markdown_output.risk_unknown")
+    if _eff_level is not None:
+        level_value = _eff_level.value
+        risk_emoji  = _RISK_EMOJI.get(level_value, "")
+        level_label = level_value.capitalize()
+    else:
+        level_value = ""
+        risk_emoji  = ""
+        level_label = t("markdown_output.risk_unknown")
 
     lines: list[str] = []
 

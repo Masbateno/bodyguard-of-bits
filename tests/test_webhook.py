@@ -256,6 +256,47 @@ class TestSendWebhookInvalidUrl:
 
 
 # ---------------------------------------------------------------------------
+# I-5 (v0.7.3): URL scheme matching is case-insensitive (RFC 3986)
+# ---------------------------------------------------------------------------
+
+class TestSendWebhookSchemeCaseInsensitive:
+    """I-5 (v0.7.3): pre-v0.7.3 ``HTTPS://example.com`` was rejected with
+    the "must start with http(s)://" error instead of falling through;
+    the lowered form is now the canonical one for the scheme guard."""
+
+    def test_uppercase_https_accepted(self, monkeypatch):
+        from bob.webhook import send_webhook
+        from unittest.mock import patch, MagicMock
+        engine = _make_engine()
+        resp = MagicMock()
+        resp.status = 200
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        with patch("urllib.request.urlopen", return_value=resp):
+            status = send_webhook("HTTPS://example.com/hook", engine, _SYS_INFO, _VERSION)
+        assert status == 200
+
+    def test_mixedcase_https_accepted(self, monkeypatch):
+        from bob.webhook import send_webhook
+        from unittest.mock import patch, MagicMock
+        engine = _make_engine()
+        resp = MagicMock()
+        resp.status = 200
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        with patch("urllib.request.urlopen", return_value=resp):
+            status = send_webhook("HtTpS://Example.com/hook", engine, _SYS_INFO, _VERSION)
+        assert status == 200
+
+    def test_uppercase_http_rejected_without_escape_hatch(self, monkeypatch):
+        from bob.webhook import send_webhook, WebhookError
+        monkeypatch.delenv("BOB_WEBHOOK_ALLOW_INSECURE", raising=False)
+        engine = _make_engine()
+        with pytest.raises(WebhookError, match="plain http://"):
+            send_webhook("HTTP://example.com/hook", engine, _SYS_INFO, _VERSION)
+
+
+# ---------------------------------------------------------------------------
 # send_webhook — mocked HTTP
 # ---------------------------------------------------------------------------
 

@@ -440,3 +440,43 @@ class TestHtmlT18nExtraction:
                 f"Translation key {key!r} surfaced in HTML output — "
                 f"_FALLBACK_LABELS is incomplete or the fallback was not used."
             )
+
+
+# ---------------------------------------------------------------------------
+# M-12 (v0.7.3): risk-level label is now translated
+# ---------------------------------------------------------------------------
+
+class TestHtmlRiskLevelTranslated:
+    """M-12 (v0.7.3): the summary header's risk badge now uses the
+    ``html_output.risk_<level>`` translation keys. Pre-v0.7.3 it
+    displayed the raw ``.value.upper()`` regardless of locale."""
+
+    def test_french_locale_yields_translated_risk_label(self):
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        # French sentinel translation for risk_low.
+        def fake_t(key, **kw):
+            if key == "html_output.risk_low":
+                return "FAIBLE"
+            return f"<<{key}>>"
+        html = build_html_output(eng, _make_sys_info(), t=fake_t)
+        assert "FAIBLE" in html
+        # Make sure the raw English "LOW" is NOT present from the header.
+        # (the level enum value still appears in CSS for the score color,
+        # so just check the rendered label.)
+        assert ">LOW<" not in html
+
+    def test_fallback_to_uppercased_value_when_key_missing(self):
+        """If a future RiskLevel value lacks a matching locale key, fall
+        back to the raw ``.value.upper()`` so the output never goes
+        empty."""
+        from bob.scoring import ScoreEngine
+        eng = ScoreEngine()
+        eng.finalize()
+        def fake_t(key, **kw):
+            # Make the risk key resolve to itself (sentinel for "missing").
+            return key
+        html = build_html_output(eng, _make_sys_info(), t=fake_t)
+        # The fallback kicks in when t() returns the key unchanged.
+        assert "LOW" in html

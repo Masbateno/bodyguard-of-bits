@@ -104,14 +104,9 @@ def run_watch(
             # raw score-derived level even when UFW was inactive — a host
             # whose firewall just went down kept showing "LOW" until the
             # operator ran a full non-watch audit.
-            _fw = engine.domain_scores.get("firewall")
-            engine.set_posture(
-                firewall_inactive=not getattr(result, "fw_active", True),
-                iptables_input_accept=any(
-                    f.key == "iptables_nft.input_accept" for f in engine.findings
-                ),
-                firewall_domain_score=_fw["score"] if isinstance(_fw, dict) else None,
-            )
+            # M-10 (v0.7.3): single source of truth via set_posture_from_engine.
+            from bob.scoring import set_posture_from_engine
+            set_posture_from_engine(engine, fw_active=getattr(result, "fw_active", True))
 
             curr_baseline = build_baseline(
                 engine, result.ports_snapshot, result.snapshots

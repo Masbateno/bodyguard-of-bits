@@ -408,7 +408,14 @@
   "report": {
     "next_1": "Traitez d'abord toutes les alertes.",
     "next_2": "Examinez les avertissements et évaluez leur impact.",
-    "next_3": "Relancez l'audit après chaque modification pour vérifier."
+    "next_3": "Relancez l'audit après chaque modification pour vérifier.",
+    "summary_title": "RÉSUMÉ DE L'AUDIT",
+    "field_ok": "OK",
+    "field_warning": "Attention",
+    "field_alert": "Alerte",
+    "field_score": "Score",
+    "field_risk": "Risque",
+    "field_context": "Contexte"
   },
   "service_risk": {
     "local_exposure_note": "Risque intrinsèque (voir ci-dessus) — exposition réelle : FAIBLE (SSH non accessible depuis internet sur ce réseau)",
@@ -2063,13 +2070,17 @@
     "col_reason": "Raison",
     "col_message": "Message",
     "col_fix_command": "Commande de correction",
-    "no_findings": "Aucun finding détecté.",
-    "findings_count": "{count} finding(s)",
+    "no_findings": "Aucune découverte détectée.",
+    "findings_count": "{count} découverte(s)",
     "level_alert": "ALERTE",
     "level_warn": "ATTENTION",
     "level_info": "INFO",
     "level_ok": "OK",
     "footer": "Généré par <a href=\"https://github.com/Masbateno/bodyguard-of-bits\">BOB</a>. Les commandes affichées sont des suggestions — vérifiez avant d'exécuter.",
-    "risk_unknown": "INCONNU"
+    "risk_unknown": "INCONNU",
+    "risk_low": "FAIBLE",
+    "risk_medium": "MOYEN",
+    "risk_high": "ÉLEVÉ",
+    "risk_critical": "CRITIQUE"
   }
 }

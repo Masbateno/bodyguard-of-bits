@@ -361,14 +361,14 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                     _add_extra_dir(user_config, log_dir)
                 # Offer to move all visible reports to the new location
                 if all_logs and chosen != log_dir:
-                    try:
-                        move_confirm = input(
-                            f"  {t('manage_logs.move_logs_prompt', count=len(all_logs))} [y/N] "
-                        ).strip().lower()
-                    except EOFError:
-                        # I-2 (v0.5.7): match _rl() convention — Ctrl-D means
-                        # "no answer" which here equals declining the move.
-                        move_confirm = ""
+                    # I-4 (v0.7.3): route through safe_input per project
+                    # contract #2 — bare input() was an outlier in this
+                    # module. safe_input's EOFError→"" semantic matches the
+                    # v0.5.7 I-2 manual handling that previously wrapped this.
+                    from bob._tty import safe_input
+                    move_confirm = safe_input(
+                        f"  {t('manage_logs.move_logs_prompt', count=len(all_logs))} [y/N] "
+                    ).strip().lower()
                     if move_confirm == "y":
                         import shutil as _shutil
                         moved = 0
@@ -384,14 +384,11 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                 print(f"  ✔ {t('manage_logs.location_updated', path=str(chosen))}")
 
         elif answer == "all":
-            try:
-                confirm = input(
-                    f"  {t('manage_logs.confirm_all', count=len(all_logs))} [y/N] "
-                ).strip().lower()
-            except EOFError:
-                # I-2 (v0.5.7): Ctrl-D at the "delete all" confirmation must
-                # not detonate the loop; treat as "no" and cancel the action.
-                confirm = ""
+            # I-4 (v0.7.3): route through safe_input per project contract #2.
+            from bob._tty import safe_input
+            confirm = safe_input(
+                f"  {t('manage_logs.confirm_all', count=len(all_logs))} [y/N] "
+            ).strip().lower()
             if confirm != "y":
                 print(f"  {t('manage_logs.cancelled')}")
             else:

@@ -338,15 +338,26 @@ class AuditReport:
         if posture_annotation:
             risk_str = f"{risk_str}  ({posture_annotation})"
 
+        # M-5 (v0.7.3): the 6 field labels accept i18n via labels= dict.
+        # Defaults match the v0.7.2 English output exactly so legacy
+        # callers (tests / mocks that pre-date the i18n extraction)
+        # produce the same .txt output as before.
+        ok_lbl   = labels.get("ok",      "OK")
+        warn_lbl = labels.get("warning", "Warning")
+        alert_lbl = labels.get("alert",  "Alert")
+        score_lbl = labels.get("score",  "Score")
+        risk_lbl  = labels.get("risk",   "Risk")
+        ctx_lbl   = labels.get("context", "Context")
+
         self._writeln("")
         self._writeln(_SEPARATOR)
         self._writeln(f"[{labels.get('summary', 'AUDIT SUMMARY')}]")
-        self._writeln(f"OK      : {ok_count}")
-        self._writeln(f"Warning : {warn_count}")
-        self._writeln(f"Alert   : {alert_count}")
-        self._writeln(f"Score   : {score}/10")
-        self._writeln(f"Risk    : {risk_str}")
-        self._writeln(f"Context : {context_str}")
+        self._writeln(f"{ok_lbl:<8}: {ok_count}")
+        self._writeln(f"{warn_lbl:<8}: {warn_count}")
+        self._writeln(f"{alert_lbl:<8}: {alert_count}")
+        self._writeln(f"{score_lbl:<8}: {score}/10")
+        self._writeln(f"{risk_lbl:<8}: {risk_str}")
+        self._writeln(f"{ctx_lbl:<8}: {context_str}")
         self._writeln("")
 
         if breakdown:

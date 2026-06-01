@@ -94,7 +94,7 @@ class TestCSVHeaders:
         rows = _parse_csv(build_csv_output(engine, _make_sys_info()))
         assert set(rows[0].keys()) >= {
             "host", "timestamp", "score", "risk", "alerts", "warnings",
-            "level", "section", "message", "fix_cmd", "note",
+            "level", "nature", "message", "fix_cmd", "note",
         }
 
 
@@ -140,7 +140,7 @@ class TestCSVRows:
         from bob.csv_output import build_csv_output
         engine = _make_engine(alerts=1, warnings=0)
         rows = _parse_csv(build_csv_output(engine, _make_sys_info()))
-        assert rows[0]["section"] == "ssh_audit"
+        assert rows[0]["nature"] == "ssh_audit"
 
     def test_empty_note_is_empty_string(self):
         from bob.csv_output import build_csv_output
@@ -408,7 +408,7 @@ class TestCSVHardening:
         f.nature = None
         engine.findings.append(f)
         rows = _parse_csv(build_csv_output(engine, _make_sys_info()))
-        assert rows[0]["section"] == ""
+        assert rows[0]["nature"] == ""
 
     def test_none_message_is_empty_string(self):
         from bob.csv_output import build_csv_output
@@ -484,7 +484,7 @@ class TestCSVRobustness:
         ))
         rows = _parse_csv(build_csv_output(engine, _make_sys_info()))
         assert rows[0]["message"] == "éàü — sécurité 🔥"
-        assert rows[0]["section"] == "réseau"
+        assert rows[0]["nature"] == "réseau"
 
     def test_score_value_is_string_in_parsed_csv(self):
         """csv.DictReader always returns strings — score must be parseable as int."""
@@ -509,3 +509,22 @@ class TestCSVRobustness:
         assert len(rows) == 5000
         assert rows[0]["message"] == "finding 0"
         assert rows[4999]["message"] == "finding 4999"
+
+
+# ---------------------------------------------------------------------------
+# I-3 (v0.7.3): "section" column renamed to "nature" — pin the new contract
+# ---------------------------------------------------------------------------
+
+class TestCsvColumnNatureRename:
+    """I-3 (v0.7.3): pre-v0.7.3 the CSV had a column labelled ``section``
+    that actually carried ``Finding.nature``. v0.7.3 renamed the header to
+    match the content. This is a breaking change for external consumers
+    parsing the ``section`` column — see CHANGELOG."""
+
+    def test_header_carries_nature_not_section(self):
+        from bob.csv_output import build_csv_output
+        out = build_csv_output(_make_engine(), _make_sys_info())
+        # First line is the header.
+        header = out.splitlines()[0]
+        assert "nature" in header.split(",")
+        assert "section" not in header.split(",")

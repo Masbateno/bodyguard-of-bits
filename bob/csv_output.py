@@ -23,7 +23,14 @@ _HEADERS = [
     "alerts",
     "warnings",
     "level",
-    "section",
+    # I-3 (v0.7.3): column renamed from "section" → "nature" to match the
+    # actual data it carries (Finding.nature: "action" / "improvement" /
+    # "structural" / ""). Pre-v0.7.3 the column was labelled "section"
+    # because of a historic misalignment between the producer and the
+    # _HEADERS list; external CSV consumers parsing "section" received
+    # nature strings, not audit section names. **Breaking change** for
+    # those consumers — see CHANGELOG.
+    "nature",
     "message",
     "fix_cmd",
     "note",
@@ -37,7 +44,7 @@ def build_csv_output(
     """Return a CSV string with one row per finding.
 
     If the audit produced no findings (perfect score), a single summary row
-    with empty level / section / message is returned so that the file is
+    with empty level / nature / message is returned so that the file is
     always non-empty and importable.
     """
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -55,13 +62,13 @@ def build_csv_output(
     writer.writeheader()
 
     if not engine.findings:
-        writer.writerow({**meta, "level": "", "section": "", "message": "", "fix_cmd": "", "note": ""})
+        writer.writerow({**meta, "level": "", "nature": "", "message": "", "fix_cmd": "", "note": ""})
     else:
         for f in engine.findings:
             writer.writerow({
                 **meta,
                 "level":   f.level.value,
-                "section": f.nature   or "",
+                "nature":  f.nature   or "",
                 "message": f.message  or "",
                 "fix_cmd": f.cmd      or "",
                 "note":    f.note     or "",

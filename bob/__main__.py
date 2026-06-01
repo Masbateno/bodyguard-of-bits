@@ -292,16 +292,9 @@ def _run(argv=None) -> int:
             # of LOW when the firewall is structurally broken even if the
             # weighted-average score stays high. See bob.scoring.ScoreEngine
             # docstring "posture escalation".
-            # NB: engine.domain_scores maps domain → dict (NOT int), so we
-            #     extract the "score" key explicitly.
-            _fw_domain = engine.domain_scores.get("firewall")
-            engine.set_posture(
-                firewall_inactive=not fw_active,
-                iptables_input_accept=any(
-                    f.key == "iptables_nft.input_accept" for f in engine.findings
-                ),
-                firewall_domain_score=_fw_domain["score"] if _fw_domain else None,
-            )
+            # M-10 (v0.7.3): single source of truth via set_posture_from_engine.
+            from bob.scoring import set_posture_from_engine
+            set_posture_from_engine(engine, fw_active=fw_active)
 
             from bob.scoring import FindingLevel as _FL
             _active_keys = {

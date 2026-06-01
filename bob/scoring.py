@@ -678,3 +678,41 @@ def unpack_posture_escalation(engine: ScoreEngine) -> tuple[RiskLevel | None, st
         return floor, key
     except (TypeError, ValueError):
         return None, ""
+
+
+def set_posture_from_engine(engine: "ScoreEngine", fw_active: bool) -> None:
+    """M-10 (v0.7.3): consolidated call site for the posture-escalation
+    setup duplicated in ``bob/__main__.py`` (the audit summary path) and
+    ``bob/watch.py`` (the watch-mode iteration path).
+
+    The two pre-v0.7.3 sites computed ``_fw = engine.domain_scores.get(
+    "firewall")`` then called ``engine.set_posture(firewall_inactive=...,
+    iptables_input_accept=..., firewall_domain_score=...)``. The helper
+    centralises the dict-vs-int guard on the firewall domain score (Phase
+    1 4ed2e3b lesson) so a future contributor adding a new entry point
+    can't accidentally pass the wrong shape.
+
+    Args:
+        engine: A finalised ``ScoreEngine`` whose ``apply()`` calls are
+                done and ``domain_score_override`` has been applied.
+        fw_active: True if UFW was detected as active in the current audit.
+                   Anything else (UFW disabled or detection failure)
+                   triggers the ``firewall_inactive`` posture floor.
+    """
+    _fw_domain = engine.domain_scores.get("firewall")
+    # Guard against the v0.7.0 Phase 1 4ed2e3b regression class: when
+    # domain_scores contains a dict, extract the .score key; when it's
+    # a legacy bare int, use it directly; when missing, pass None.
+    if isinstance(_fw_domain, dict):
+        _fw_score = _fw_domain.get("score")
+    elif isinstance(_fw_domain, int):
+        _fw_score = _fw_domain
+    else:
+        _fw_score = None
+    engine.set_posture(
+        firewall_inactive=not fw_active,
+        iptables_input_accept=any(
+            f.key == "iptables_nft.input_accept" for f in engine.findings
+        ),
+        firewall_domain_score=_fw_score,
+    )

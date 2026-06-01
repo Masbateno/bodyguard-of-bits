@@ -467,8 +467,14 @@ def _inline_format(text: str) -> str:
     text = html.escape(text)
 
     def _replace_link(m: re.Match) -> str:
-        # label and href are already html.escape()'d via the parent escape pass.
-        return f'<a href="{_safe_url(m.group(2))}">{m.group(1)}</a>'
+        # M-6 (v0.7.3): undo the parent ``html.escape`` on the URL before
+        # passing it to ``_safe_url``, otherwise the URL gets escaped twice
+        # (parent ``html.escape`` + ``_safe_url``'s ``html.escape(quote=True)``)
+        # and characters like ``&`` end up as ``&amp;amp;`` in the rendered
+        # ``href="..."``. The label part stays escape-once because the
+        # ``<a>...</a>`` element's text content is the right place for it.
+        raw_url = html.unescape(m.group(2))
+        return f'<a href="{_safe_url(raw_url)}">{m.group(1)}</a>'
 
     text = _LINK_RE.sub(_replace_link, text)
 
@@ -561,6 +567,21 @@ def send_html_email(
     # Use recipient as From if not specified (SMTP workaround)
     if not from_email:
         from_email = recipient
+
+    # M-11 (v0.7.3): defensive CRLF stripping on every MIME header value to
+    # close email header injection if a future caller passes a tainted
+    # subject / recipient / from_email. ``email.MIMEText`` already encodes
+    # well-formed values safely, but an embedded ``\r\nBcc:`` would be
+    # accepted on some MTAs. No current caller is tainted (all values are
+    # BOB-internal) but defence-in-depth is cheap here.
+    def _strip_crlf(s: str) -> str:
+        if not isinstance(s, str):
+            return s
+        return s.replace("\r", "").replace("\n", "")
+
+    from_email = _strip_crlf(from_email)
+    recipient  = _strip_crlf(recipient)
+    subject    = _strip_crlf(subject)
 
     # Create MIME multipart message
     msg = MIMEMultipart("alternative")

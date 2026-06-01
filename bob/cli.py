@@ -230,6 +230,18 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             config.lang = value
             lang_explicit = True
 
+        # M-2 (v0.7.3): also accept the space-separated form `--lang VALUE`
+        # so it matches the convention used by every other value-taking
+        # option (--log-days, --target, --min-level, etc.). Pre-v0.7.3 a
+        # user typing ``bob --lang fr`` got "Unknown option: 'fr'".
+        elif arg == "--lang" and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            i += 1
+            value = argv[i]
+            if not value:
+                raise CLIError("--lang requires a language code (e.g. en, fr)")
+            config.lang = value
+            lang_explicit = True
+
         elif arg in ("-l", "--log-days") and i + 1 < len(argv):
             i += 1
             value = argv[i]
@@ -289,7 +301,13 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
 
         elif arg in ("-e", "--explain") and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
             i += 1
-            config.explain_key = argv[i].strip()
+            value = argv[i].strip()
+            # M-3 (v0.7.3): reject an empty key supplied as a separate arg
+            # (``bob -e ""``) — pre-v0.7.3 it silently fell through to the
+            # interactive picker after consuming the arg.
+            if not value:
+                raise CLIError("--explain requires a key (e.g. ssh.password_auth) — use --explain alone for interactive mode")
+            config.explain_key = value
 
         elif arg in ("-e", "--explain"):
             # No key provided → launch interactive picker
@@ -340,7 +358,11 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
                 raise CLIError("--webhook= requires a URL")
             config.webhook_url = value
 
-        elif arg in ("-w", "--webhook") and i + 1 < len(argv):
+        elif arg in ("-w", "--webhook") and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            # M-4 (v0.7.3): reject a value that starts with '-' so a typo
+            # like ``bob -w --quiet`` doesn't silently parse as
+            # webhook_url="--quiet". Pre-v0.7.3 the URL validation would
+            # have caught it downstream with a confusing scheme error.
             i += 1
             config.webhook_url = argv[i].strip()
 
@@ -410,7 +432,11 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
                 raise CLIError("--ignore= requires a finding key (e.g. ssh.permit_root_login)")
             config.ignore_key = value
 
-        elif arg == "--ignore" and i + 1 < len(argv):
+        elif arg == "--ignore" and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            # M-4 (v0.7.3): reject a value that starts with '-' so a typo
+            # like ``bob --ignore --quiet`` doesn't silently set
+            # ignore_key="--quiet" (which then fails the v0.7.1 M-5
+            # canonical-key regex with a confusing message).
             i += 1
             config.ignore_key = argv[i].strip()
 
@@ -454,7 +480,10 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
                 raise CLIError("--output-dir= requires a directory path")
             config.output_dir = value
 
-        elif arg == "--output-dir" and i + 1 < len(argv):
+        elif arg == "--output-dir" and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            # M-4 (v0.7.3): reject a value that starts with '-' so
+            # ``bob --output-dir --quiet`` doesn't silently set
+            # output_dir="--quiet" and create a confusing directory.
             i += 1
             config.output_dir = argv[i].strip()
 
