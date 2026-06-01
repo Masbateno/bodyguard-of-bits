@@ -35,3 +35,61 @@ jobs:
 
       - name: Verify entry point
         run: python -c "from bob.__main__ import main; print('entry point OK')"
+
+      - name: Smoke — plugin sandbox runner end-to-end
+        # Catches the v0.7.0b3 class of bug: a sandbox refactor that's
+        # correct on the maintainer's primary Python (3.12) but breaks
+        # on other CPython versions because of internal dict/builtins
+        # fast-path differences. The b3 ship used MappingProxyType as
+        # __builtins__ — CPython on 3.10/3.11/3.13/3.14 raised
+        # `SystemError: Objects/dictobject.c:1490: bad argument to
+        # internal function` for every plugin run because non-dict
+        # mappings break exec()'s C fast paths.
+        #
+        # The pytest matrix above DID catch b3, but only because some
+        # tests happened to instantiate SandboxRunner with non-trivial
+        # plugins. This step makes the gate explicit and labeled.
+        #
+        # NB: the smoke script is written to a real .py file rather
+        # than piped via heredoc because ``multiprocessing.spawn`` re-
+        # imports the main script in the child process, and heredoc-
+        # piped scripts have ``__file__ == "<stdin>"`` which fails the
+        # child's ``runpy.run_path``.
+        run: |
+          cat > /tmp/sandbox_smoke.py <<'PY_EOF'
+          import sys, tempfile
+          from pathlib import Path
+          from bob._sandbox import SandboxRunner
+
+          PLUGIN = """
+          from bob.scoring import CheckResult
+          CHECK_NAME = "CI SMOKE PLUGIN"
+          def run_check(t=None):
+              # Exercise the import allowlist (re/json/pathlib are all allowed).
+              import re, json, pathlib
+              r = CheckResult()
+              r.ok(message="plugin executed inside sandbox")
+              return r
+          """
+
+          if __name__ == "__main__":
+              with tempfile.TemporaryDirectory() as td:
+                  p = Path(td) / "ci_smoke.py"
+                  p.write_text(PLUGIN)
+                  runner = SandboxRunner(timeout_seconds=10.0)
+                  result = runner.run(p)
+                  messages = [f.message for f in result.findings]
+                  levels = [f.level.value for f in result.findings]
+                  print(f"Python {sys.version_info[:3]} sandbox smoke: {list(zip(levels, messages))}")
+                  assert "ok" in levels, (
+                      f"FAIL: sandbox runner produced no OK finding on Python "
+                      f"{sys.version_info[:3]}. Findings: {list(zip(levels, messages))}. "
+                      f"This is the v0.7.0b3 regression signature."
+                  )
+                  for m in messages:
+                      assert "SystemError" not in m, (
+                          f"FAIL: SystemError surfaced in sandbox output: {m!r}"
+                      )
+              print("OK: sandbox runner end-to-end smoke passed")
+          PY_EOF
+          python /tmp/sandbox_smoke.py
