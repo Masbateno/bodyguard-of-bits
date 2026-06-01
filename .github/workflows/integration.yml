@@ -11,7 +11,12 @@ name: Integration (multi-distro)
 
 on:
   push:
-    branches: [main]
+    # Fire on main + release-branch pushes so the smoke-plugin guard
+    # (added v0.7.0b5) actually runs during beta cycles, not just after
+    # v*.x merges back to main. Without this, the new integration-level
+    # plugin smoke would be dormant for the entire v0.7.x development
+    # window — which is exactly the window the v0.7.0b3 regression hit.
+    branches: [main, "v*.x"]
   pull_request:
     branches: [main]
   workflow_dispatch:
