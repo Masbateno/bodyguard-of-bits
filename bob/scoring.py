@@ -703,7 +703,14 @@ def set_posture_from_engine(engine: "ScoreEngine", fw_active: bool) -> None:
     # Guard against the v0.7.0 Phase 1 4ed2e3b regression class: when
     # domain_scores contains a dict, extract the .score key; when it's
     # a legacy bare int, use it directly; when missing, pass None.
-    if isinstance(_fw_domain, dict):
+    # M-8 (v0.7.4): ``isinstance(bool, int)`` is True (bool is a subclass
+    # of int) — without the explicit bool reject, a ``firewall: True`` in
+    # domain_scores would slip through here and then raise TypeError in
+    # ``set_posture``'s explicit-bool guard. Normalise to None so the
+    # posture check still runs.
+    if isinstance(_fw_domain, bool):
+        _fw_score = None
+    elif isinstance(_fw_domain, dict):
         _fw_score = _fw_domain.get("score")
     elif isinstance(_fw_domain, int):
         _fw_score = _fw_domain

@@ -851,20 +851,80 @@ class TestArgvHardeningV073:
             parse_args(["-e", ""])
 
     def test_webhook_space_form_rejects_dash_value(self):
-        """M-4: ``bob -w --quiet`` now errors at parse time instead of
-        silently setting webhook_url="--quiet"."""
+        """M-4 / M-2 v0.7.4: ``bob -w --quiet`` now errors at parse time
+        with a clearer "requires a value" message (pre-v0.7.4: "Unknown
+        option" because the value-form check rejected --quiet and the
+        elif fell through)."""
         from bob.cli import parse_args, CLIError
-        with pytest.raises(CLIError, match="Unknown option"):
+        with pytest.raises(CLIError, match="requires a value"):
             parse_args(["-w", "--quiet"])
 
     def test_ignore_space_form_rejects_dash_value(self):
-        """M-4: ``bob --ignore --quiet`` rejected at parse time."""
+        """M-4 / M-2 v0.7.4: ``bob --ignore --quiet`` → "requires a value"."""
         from bob.cli import parse_args, CLIError
-        with pytest.raises(CLIError, match="Unknown option"):
+        with pytest.raises(CLIError, match="requires a value"):
             parse_args(["--ignore", "--quiet"])
 
     def test_output_dir_space_form_rejects_dash_value(self):
-        """M-4: ``bob --output-dir --quiet`` rejected."""
+        """M-4 / M-2 v0.7.4: ``bob --output-dir --quiet`` → "requires a value"."""
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match="requires a value"):
+            parse_args(["--output-dir", "--quiet"])
+
+
+# ---------------------------------------------------------------------------
+# M-2 (v0.7.4): missing-value UX — distinguish "unknown option" from
+# "known option, value missing"
+# ---------------------------------------------------------------------------
+
+class TestValueMissingUX_V074:
+    """Pin the v0.7.4 M-2 fix: bare value-taking option errors clearly."""
+
+    def test_log_days_short_missing_value(self):
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match=r"-l requires a value"):
+            parse_args(["-l"])
+
+    def test_log_days_long_missing_value(self):
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match=r"--log-days requires a value"):
+            parse_args(["--log-days"])
+
+    def test_target_missing_value(self):
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match=r"--target requires a value"):
+            parse_args(["--target"])
+
+    def test_output_missing_value(self):
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match=r"--output requires a value"):
+            parse_args(["--output"])
+
+    def test_min_level_missing_value(self):
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match=r"--min-level requires a value"):
+            parse_args(["--min-level"])
+
+    def test_format_missing_value(self):
+        from bob.cli import parse_args, CLIError
+        with pytest.raises(CLIError, match=r"--format requires a value"):
+            parse_args(["--format"])
+
+    def test_unknown_option_still_unknown(self):
+        """Truly unknown options still say "Unknown option"."""
         from bob.cli import parse_args, CLIError
         with pytest.raises(CLIError, match="Unknown option"):
-            parse_args(["--output-dir", "--quiet"])
+            parse_args(["--bogus-flag"])
+
+    def test_explain_alone_still_interactive(self):
+        """``-e/--explain`` has a documented no-arg form (interactive picker)
+        and must NOT be rejected as requires-a-value."""
+        from bob.cli import parse_args
+        assert parse_args(["--explain"]).explain_key == "__interactive__"
+        assert parse_args(["-e"]).explain_key == "__interactive__"
+
+    def test_watch_alone_still_default_loop(self):
+        """``--watch`` has a documented no-arg form (default loop) and must
+        NOT be rejected as requires-a-value."""
+        from bob.cli import parse_args
+        assert parse_args(["--watch"]).watch_mode is True

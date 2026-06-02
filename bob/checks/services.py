@@ -29,24 +29,34 @@ from pathlib import Path
 from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, _run
 from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
+from bob.sysinfo import _is_private_or_loopback_ipv4, _is_private_or_loopback_ipv6
 
 logger = logging.getLogger(__name__)
 
-# Private / local address ranges for OPEN_LOCAL detection in _classify_exposure.
-# Covers: RFC-1918 (10/8, 172.16-31/12, 192.168/16), loopback (127/8),
-# CGNAT (100.64-127/10), IPv6 loopback (::1), ULA (fc00::/7), link-local (fe80::/10).
-_PRIVATE_ADDR = re.compile(
-    r"(?:"
-    r"192\.168\."
-    r"|10\."
-    r"|172\.(?:1[6-9]|2\d|3[01])\."
-    r"|127\."
-    r"|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\."
-    r"|::1(?:[/\s]|$)"
-    r"|fe80:"
-    r"|(?:fc|fd)[0-9a-fA-F]{2}:"
-    r")"
-)
+# I-5 (v0.7.4): private-IP detection delegates to sysinfo helpers (single
+# source of truth, per v0.5.6 architectural unification). Pre-v0.7.4 this
+# module shipped a duplicate hand-rolled regex that drifted from sysinfo.
+_IPV4_TOKEN_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?:/\d+)?")
+_IPV6_TOKEN_RE = re.compile(r"(?<![\w:])([0-9a-fA-F:]*::[0-9a-fA-F:]*)(?:/\d+)?")
+
+
+def _line_has_private_or_loopback(line: str) -> bool:
+    """Return True if ``line`` references an IP within a private/loopback range.
+
+    Used by _classify_exposure to distinguish OPEN_LOCAL from OPEN_WORLD.
+    Delegates to sysinfo._is_private_or_loopback_ipv4 / _ipv6 so the
+    CGNAT / ULA / link-local definitions remain unified across the codebase.
+    """
+    for m in _IPV4_TOKEN_RE.finditer(line):
+        if _is_private_or_loopback_ipv4(m.group(1)):
+            return True
+    for m in _IPV6_TOKEN_RE.finditer(line):
+        # Strip zone-id (`fe80::1%eth0`) before passing to the helper;
+        # IPv6Address rejects the `%` suffix.
+        token = m.group(1).split("%", 1)[0]
+        if _is_private_or_loopback_ipv6(token):
+            return True
+    return False
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -590,7 +600,7 @@ def _classify_exposure(port: str, ufw_rules: str) -> Exposure:
             return Exposure.DENY
         elif "ALLOW" in line_upper:
             # Check if rule has a source restriction to a private range
-            if _PRIVATE_ADDR.search(line):
+            if _line_has_private_or_loopback(line):
                 return Exposure.OPEN_LOCAL
             else:
                 return Exposure.OPEN_WORLD

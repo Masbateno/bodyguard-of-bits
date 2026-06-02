@@ -438,7 +438,7 @@ def run_checks(
         print_section(t("sections.logs"))
 
     logs_snapshot = LogsSnapshot.from_system(log_days=config.log_days)
-    display_geoip_notice(geoip2_status(), t, output)
+    display_geoip_notice(geoip2_status(), t, output, quiet=config.quiet)
     logs_result, logs_report = check_logs(logs_snapshot, audited_ports=audited_ports, t=t)
     engine.apply(logs_result)
     display_log_results(logs_result, logs_snapshot, logs_report, config, t, report)
@@ -464,7 +464,10 @@ def run_checks(
     engine.apply(docker_result)
     display_result(docker_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
-    if docker_snapshot.exposed_ports:
+    # I-1 (v0.7.4): gate the exposed-ports block on --quiet to honour the
+    # `bob -q` empty-stdout contract. Pre-v0.7.4 this block printed even in
+    # quiet mode whenever Docker containers exposed ports.
+    if docker_snapshot.exposed_ports and not config.quiet:
         output.print_dim(t("docker.exposed_ports") + " :")
         for port in docker_snapshot.exposed_ports:
             safe_name = output.sanitize(port.container_name, max_len=128)

@@ -62,7 +62,7 @@ class Report(Protocol):
     path: Path | None
     enabled: bool
 
-    def write_header(self, info: "SystemInfo") -> None: ...
+    def write_header(self, info: "SystemInfo", labels: dict[str, str] | None = None) -> None: ...
     def write_group(self, title: str) -> None: ...
     def write_section(self, title: str) -> None: ...
     def write_finding(self, level: str, message: str, detail: str = "") -> None: ...
@@ -216,9 +216,18 @@ class AuditReport:
     # Write methods
     # ------------------------------------------------------------------
 
-    def write_header(self, info: SystemInfo) -> None:
-        """Write the report header with ASCII art banner and system info."""
+    def write_header(self, info: SystemInfo, labels: dict[str, str] | None = None) -> None:
+        """Write the report header with ASCII art banner and system info.
+
+        M-5 (v0.7.4): the system-info labels can be overridden via the
+        optional ``labels`` dict (keys: ``system_information``, ``system``,
+        ``host``, ``kernel``, ``firewall``, ``user``, ``language``,
+        ``port_config``). Pre-v0.7.4 these were hardcoded English even when
+        ``--french`` was active. Defaults preserve the pre-v0.7.4 English
+        wording so untouched callers see no behaviour change.
+        """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _L = labels or {}
 
         # ASCII art — BOB in Doom block style, plain text, no colour
         _BOX_INNER = 60
@@ -245,14 +254,14 @@ class AuditReport:
         self._writeln("")
 
         self._writeln(_SEPARATOR)
-        self._writeln("[SYSTEM INFORMATION]")
-        self._writeln(f"System      : {info.os_name}")
-        self._writeln(f"Host        : {info.hostname}")
-        self._writeln(f"Kernel      : {info.kernel}")
-        self._writeln(f"Firewall    : ufw {info.ufw_version}")
-        self._writeln(f"User        : {info.user}")
-        self._writeln(f"Language    : {info.language}")
-        self._writeln(f"Port config : {info.config_path}")
+        self._writeln(f"[{_L.get('system_information', 'SYSTEM INFORMATION')}]")
+        self._writeln(f"{_L.get('system',      'System'     ):<12}: {info.os_name}")
+        self._writeln(f"{_L.get('host',        'Host'       ):<12}: {info.hostname}")
+        self._writeln(f"{_L.get('kernel',      'Kernel'     ):<12}: {info.kernel}")
+        self._writeln(f"{_L.get('firewall',    'Firewall'   ):<12}: ufw {info.ufw_version}")
+        self._writeln(f"{_L.get('user',        'User'       ):<12}: {info.user}")
+        self._writeln(f"{_L.get('language',    'Language'   ):<12}: {info.language}")
+        self._writeln(f"{_L.get('port_config', 'Port config'):<12}: {info.config_path}")
         self._writeln("")
         self._writeln(_SEPARATOR)
         self._writeln("")

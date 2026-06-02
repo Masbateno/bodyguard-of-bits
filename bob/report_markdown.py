@@ -87,8 +87,16 @@ class MarkdownReport:
     # Write methods
     # ------------------------------------------------------------------
 
-    def write_header(self, info: SystemInfo) -> None:
-        """Write the report header with system info."""
+    def write_header(self, info: SystemInfo, labels: dict[str, str] | None = None) -> None:
+        """Write the report header with system info.
+
+        M-5 (v0.7.4): ``labels`` accepted for Protocol parity with
+        AuditReport.write_header; currently ignored — the Markdown report
+        uses fixed structural English labels ("# BOB Report" etc.) for
+        external-tool interoperability. May be honoured in a future
+        version if user demand surfaces.
+        """
+        _ = labels  # intentionally unused for now
         now = self.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
         self._writeln("# BOB Report")

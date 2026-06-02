@@ -161,6 +161,31 @@ class CLIError(ValueError):
     """Raised when an unrecognised or malformed argument is encountered."""
 
 
+# M-2 (v0.7.4): options that take a value AND have no valid no-arg form.
+# When such an option is the LAST argv element (or is immediately followed
+# by another flag), the parser would previously fall through to "Unknown
+# option" — confusing, since the option *is* known. We now raise an
+# explicit "requires a value" error. ``-e/--explain`` and ``--watch``
+# are intentionally absent — they have a documented no-arg behaviour
+# (interactive picker / default 30 s loop respectively).
+_VALUE_TAKING_OPTS = frozenset({
+    "--lang",
+    "-l", "--log-days",
+    "--target",
+    "--output",
+    "--min-level",
+    "--ignore",
+    "--check",
+    "--skip",
+    "--output-dir",
+    "--format",
+    "-p", "--profile",
+    "-w", "--webhook",
+    "--webhook-format",
+    "--webhook-secret",
+})
+
+
 def parse_args(argv: list[str] | None = None) -> AuditConfig:
     """
     Parse command-line arguments and return a populated AuditConfig.
@@ -530,6 +555,12 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
                 config.html_mode = True
 
         else:
+            # M-2 (v0.7.4): distinguish "value-taking option with missing
+            # value" from "unknown option". Pre-v0.7.4 `bob -l` (no value)
+            # fell through to "Unknown option: '-l'" — confusing, since
+            # ``-l`` is well-known and only its argument is missing.
+            if arg in _VALUE_TAKING_OPTS:
+                raise CLIError(f"{arg} requires a value")
             raise CLIError(f"Unknown option: {arg!r}")
 
         i += 1

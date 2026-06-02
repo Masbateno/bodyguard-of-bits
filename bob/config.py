@@ -257,8 +257,12 @@ class UserConfig:
         Raises:
             ValueError: If the URL does not start with http:// or https://.
         """
+        # I-4 (v0.7.4): scheme match is case-insensitive (RFC 3986), mirroring
+        # the v0.7.3 I-5 fix in webhook.py::send_webhook. Without this,
+        # `bob --webhook HTTPS://...` succeeded at send time but the persist
+        # path raised ValueError (swallowed by __main__) → silent config drop.
         url = url.strip()
-        if url and not url.startswith(("http://", "https://")):
+        if url and not url.lower().startswith(("http://", "https://")):
             raise ValueError(f"Webhook URL must start with http:// or https://: {url!r}")
         if url:
             self.set("webhook_url", url)

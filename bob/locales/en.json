@@ -10,7 +10,11 @@
     "nftables": "nftables",
     "user": "User",
     "date": "Date",
-    "not_installed": "not installed"
+    "not_installed": "not installed",
+    "system_information": "SYSTEM INFORMATION",
+    "firewall": "Firewall",
+    "language": "Language",
+    "port_config": "Port config"
   },
   "groups": {
     "firewall_network": "FIREWALL & NETWORK",
@@ -390,6 +394,7 @@
     "apply_prompt": "Apply this fix? [y/N]",
     "applied": "Applied",
     "manual": "manual — apply the command manually",
+    "skipped_unsafe_shell": "unsafe shell syntax in command",
     "auto_mode_banner": "AUTO-FIX MODE — {count} fix(es) will be applied automatically",
     "auto_summary_title": "AUTO-FIX SUMMARY",
     "manual_items_title": "Manual actions required (no automatic fix available):",
@@ -652,7 +657,30 @@
     "key_appeared": "New finding: {finding}",
     "key_resolved": "Resolved: {finding}",
     "variable_deductions_increased": "Variable deductions +{delta} pt(s) (logs, network traffic)",
-    "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)"
+    "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)",
+    "no_baseline_yet": "No previous baseline found — run a full audit first to establish a baseline."
+  },
+  "cli": {
+    "list": {
+      "header": "Available --check / --skip sections ({count} total):",
+      "prefix_matching": "Prefix matching: 'kernel' matches kernel_hardening and kernel_modules.",
+      "always_on_header": "Always-on sections ({count} total — these always run, --skip has no effect on them):",
+      "usage_header": "Usage:",
+      "usage_check": "  sudo bob --check=ssh,hardening",
+      "usage_skip": "  sudo bob --skip=clamav,rootkit"
+    },
+    "ignore": {
+      "invalid_key": "Invalid key {requested} — expected canonical <prefix>.<finding_id> snake_case (e.g. ssh.permit_root_login).",
+      "invalid_key_hint": "Run 'bob --explain list' to see the available keys.",
+      "added": "Ignored key added: {requested}",
+      "added_file": "File: {path}",
+      "already_present": "Key already present: {requested}"
+    },
+    "baseline": {
+      "deleted": "Baseline deleted: {path}",
+      "delete_error": "Error: could not delete baseline: {error}",
+      "not_found": "No baseline found at {path}"
+    }
   },
   "breakdown": {
     "section_title": "SCORE BREAKDOWN",
@@ -902,7 +930,40 @@
     "disk": "Disk Health",
     "firewall": "Firewall & Services"
   },
+  "plugin": {
+    "sandbox": {
+      "timeout": "Plugin {plugin} timed out after {seconds}s and was killed",
+      "no_result": "Plugin {plugin} produced no result (exit code {exit_code})",
+      "bad_payload": "Plugin {plugin} returned unexpected payload type: {payload_type}",
+      "error": "Plugin {plugin} error: {error}",
+      "rejected": "Plugin {plugin} rejected: {error}",
+      "runner_error": "Plugin {plugin} runner error: {error}",
+      "missing_run_check": "Plugin {plugin} missing run_check",
+      "bad_return": "Plugin {plugin} returned {actual_type}, not CheckResult",
+      "crashed": "Plugin {plugin} crashed: {error}"
+    }
+  },
   "explain": {
+    "ui": {
+      "list_header": "Available --explain keys:",
+      "unknown_key": "No explanation available for: {requested}",
+      "unknown_hint": "Run 'sudo bob --explain list' to see all available keys.",
+      "why_title": "WHY IT IS A RISK",
+      "how_title": "HOW TO FIX",
+      "uniform_profiles_note": "This finding applies equally to all profiles.",
+      "scoring_title": "SCORING",
+      "scoring_domain": "Domain",
+      "scoring_tool_cap": "Tool cap",
+      "scoring_tool_cap_value": "max {cap} pt total for '{prefix}' deductions in this domain",
+      "scoring_impact": "Impact",
+      "scoring_impact_value": "run 'sudo bob --breakdown' to see this key's current score contribution",
+      "label_key": "Key",
+      "label_title": "Title",
+      "label_cis": "CIS",
+      "picker_header": "bob --explain    ↑↓: move   Enter: view   q: quit",
+      "detail_header": "↑↓ / PgUp/PgDn: scroll   Esc: back",
+      "picker_footer": "{n_keys} keys across {n_groups} groups"
+    },
     "ssh": {
       "password_auth": {
         "title": "Password authentication enabled (PasswordAuthentication yes)",

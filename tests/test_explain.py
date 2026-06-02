@@ -252,13 +252,17 @@ def _capture_run_explain(key, t):
 
 class TestRunExplainUnknownKey:
     def test_unknown_key_prints_not_available(self):
+        # I-2 (v0.7.4): "No explanation available for" was extracted to
+        # explain.ui.unknown_key in the locales. The test now checks the
+        # locale key surfaces, not the English literal.
         out = _capture_run_explain("firewall.unknown_key", _identity_t)
-        assert "No explanation available for" in out
+        assert "explain.ui.unknown_key" in out
 
     def test_unknown_key_mentions_list(self):
+        # I-2 (v0.7.4): "Run 'sudo bob --explain list' ..." was extracted to
+        # explain.ui.unknown_hint.
         out = _capture_run_explain("firewall.unknown_key", _identity_t)
-        # Test behaviour (shows real keys) not exact wording
-        assert any(k in out for k in EXPLAIN_KEYS) or "list" in out.lower()
+        assert "explain.ui.unknown_hint" in out or "list" in out.lower()
 
 
 # ---------------------------------------------------------------------------

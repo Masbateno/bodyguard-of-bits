@@ -208,68 +208,78 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
 
     ``log_report`` is a ``LogReportData`` or ``None`` (when no log file was
     found or the log was empty — fall back to generic finding display).
+
+    I-1 (v0.7.4): all ``print_*`` calls are gated by ``config.quiet`` so
+    ``bob -q`` produces empty stdout. ``report.write_*`` calls always run so
+    the .log file (and machine-readable formats) remain complete.
     """
     from bob.checks.logs import get_ip_geo
     from bob.output import print_ok, print_warn, print_info, print_dim
 
+    quiet = config.quiet
+
     if log_report is None:
-        display_result(logs_result, report, config.verbose, quiet=config.quiet)
+        display_result(logs_result, report, config.verbose, quiet=quiet)
         return
 
-    print_dim(
-        f"{t('logs.period')} : {log_report.log_days} {t('logs.days_unit')} "
-        f"— {log_report.days_available} {t('logs.days_available')}"
-    )
-    print()
+    if not quiet:
+        print_dim(
+            f"{t('logs.period')} : {log_report.log_days} {t('logs.days_unit')} "
+            f"— {log_report.days_available} {t('logs.days_available')}"
+        )
+        print()
 
     total = log_report.total
     if total == 0:
-        print_ok(t("logs.empty"))
+        if not quiet:
+            print_ok(t("logs.empty"))
         return
 
-    # Verdict line — one clear sentence before the details
-    if log_report.brute_hits:
-        print_warn(t("logs.verdict_warn", total=total, days=log_report.log_days))
-    else:
-        print_ok(t("logs.verdict_ok", total=total, days=log_report.log_days))
+    if not quiet:
+        # Verdict line — one clear sentence before the details
+        if log_report.brute_hits:
+            print_warn(t("logs.verdict_warn", total=total, days=log_report.log_days))
+        else:
+            print_ok(t("logs.verdict_ok", total=total, days=log_report.log_days))
 
-    # Bruteforce findings
-    from bob.scoring import FindingLevel
-    for finding in logs_result.findings:
-        if finding.level == FindingLevel.WARN:
-            print_warn(finding.message)
+        # Bruteforce findings
+        from bob.scoring import FindingLevel
+        for finding in logs_result.findings:
+            if finding.level == FindingLevel.WARN:
+                print_warn(finding.message)
 
-    # Top IP
-    if log_report.top_ips:
-        top_ip, top_count = log_report.top_ips[0]
-        geo = get_ip_geo(top_ip, lang=config.lang)
-        geo_str = f" ({geo})" if geo else ""
-        print_info(
-            f"{t('logs.top_ips')} : {top_ip}{geo_str} "
-            f"— {top_count} {t('logs.attempts')}"
-        )
+        # Top IP
+        if log_report.top_ips:
+            top_ip, top_count = log_report.top_ips[0]
+            geo = get_ip_geo(top_ip, lang=config.lang)
+            geo_str = f" ({geo})" if geo else ""
+            print_info(
+                f"{t('logs.top_ips')} : {top_ip}{geo_str} "
+                f"— {top_count} {t('logs.attempts')}"
+            )
 
-    # Top port
-    if log_report.top_ports:
-        top_port, top_count = log_report.top_ports[0]
-        print_info(
-            f"{t('logs.top_ports')} : {top_port} "
-            f"— {top_count} {t('logs.attempts')}"
-        )
+        # Top port
+        if log_report.top_ports:
+            top_port, top_count = log_report.top_ports[0]
+            print_info(
+                f"{t('logs.top_ports')} : {top_port} "
+                f"— {top_count} {t('logs.attempts')}"
+            )
 
-    # local_dominance INFO (local IP generating most blocked traffic)
-    for finding in logs_result.findings:
-        if finding.level == FindingLevel.INFO and getattr(finding, "key", "") == "logs.local_dominance":
-            print_info(finding.message)
+        # local_dominance INFO (local IP generating most blocked traffic)
+        from bob.scoring import FindingLevel as _FL
+        for finding in logs_result.findings:
+            if finding.level == _FL.INFO and getattr(finding, "key", "") == "logs.local_dominance":
+                print_info(finding.message)
 
-    # Service hits
-    if log_report.svc_hits:
+        # Service hits
+        if log_report.svc_hits:
+            print()
+            print_warn(t("logs.svc_hits") + " :")
+            for pp, count in log_report.svc_hits.items():
+                print_dim(f"  → {pp} — {count} {t('logs.attempts')}")
+
         print()
-        print_warn(t("logs.svc_hits") + " :")
-        for pp, count in log_report.svc_hits.items():
-            print_dim(f"  → {pp} — {count} {t('logs.attempts')}")
-
-    print()
 
     # Detailed report
     if config.detailed:
@@ -635,8 +645,14 @@ def build_risk_context_entries(snapshots, lang: str, t,
 # GeoIP availability notice
 # ---------------------------------------------------------------------------
 
-def display_geoip_notice(geo_status: str, t, output) -> None:
-    """Print a one-time notice if GeoIP2 is unavailable or has no database."""
+def display_geoip_notice(geo_status: str, t, output, *, quiet: bool = False) -> None:
+    """Print a one-time notice if GeoIP2 is unavailable or has no database.
+
+    I-1 (v0.7.4): ``quiet=True`` suppresses output to honour ``bob -q``
+    empty-stdout contract.
+    """
+    if quiet:
+        return
     if geo_status == "unavailable":
         msg = t("logs.geoip2_unavailable")
         cmd = t("logs.geoip2_unavailable_cmd")
@@ -662,10 +678,15 @@ def display_geoip_notice(geo_status: str, t, output) -> None:
 # ---------------------------------------------------------------------------
 
 def display_ports_overview(ports_snapshot, config, t, report, output) -> None:
-    """Print the listening ports count and optional ss table."""
+    """Print the listening ports count and optional ss table.
+
+    I-1 (v0.7.4): when ``config.quiet`` is set, the section is still written
+    to the .log report but stdout stays empty (honours ``bob -q`` contract).
+    """
     from bob.output import print_section
     from bob.checks.ports import EPHEMERAL_THRESHOLD
-    print_section(t("sections.ports_overview"))
+    if not config.quiet:
+        print_section(t("sections.ports_overview"))
     report.write_section(t("sections.ports_overview"))
 
     # Exclude ephemeral UDP ports from count and display
@@ -675,7 +696,8 @@ def display_ports_overview(ports_snapshot, config, t, report, output) -> None:
     ]
     visible_raw = {lp.raw_line for lp in visible_ports}
 
-    output.print_info(t("ports.listening_count", count=len(visible_ports)))
+    if not config.quiet:
+        output.print_info(t("ports.listening_count", count=len(visible_ports)))
     report.write_finding("INFO", t("ports.listening_count", count=len(visible_ports)))
 
     if ports_snapshot.ss_output:
@@ -688,13 +710,15 @@ def display_ports_overview(ports_snapshot, config, t, report, output) -> None:
         filtered_output = "\n".join(filtered_lines)
         report.write_raw("")
         report.write_raw(filtered_output)
-        if config.verbose:
-            output.print_dim(t("ports.listening_detail"))
-            print()
-            print(filtered_output)
-        else:
-            output.print_dim(t("ports.listening_verbose_hint"))
-    print()
+        if not config.quiet:
+            if config.verbose:
+                output.print_dim(t("ports.listening_detail"))
+                print()
+                print(filtered_output)
+            else:
+                output.print_dim(t("ports.listening_verbose_hint"))
+    if not config.quiet:
+        print()
 
 
 # ---------------------------------------------------------------------------

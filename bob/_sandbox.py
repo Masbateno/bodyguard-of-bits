@@ -739,12 +739,16 @@ class SandboxRunner:
         )
         sys.stderr.flush()
 
-    def run(self, plugin_path) -> CheckResult:
+    def run(self, plugin_path, t=None) -> CheckResult:
         """Validate + execute the plugin, returning its CheckResult.
 
         Raises ``SandboxRejected`` for static failures (missing run_check,
         syntax error, unreadable file). Runtime errors / timeout produce a
         WARN CheckResult.
+
+        M-4 (v0.7.4): the optional ``t`` parameter localises the runtime-error
+        WARN messages so French audits don't surface English plugin errors.
+        Defaults to None (English fallback) for back-compat.
         """
         plugin_path = Path(plugin_path)
 
@@ -771,14 +775,14 @@ class SandboxRunner:
         # --- Legacy bypass (Q5') --------------------------------------------
         if self._legacy_active():
             self._emit_legacy_warning()
-            return self._run_legacy(plugin_path, source)
+            return self._run_legacy(plugin_path, source, t=t)
 
         # --- Sandboxed run via spawn'd child --------------------------------
-        return self._run_sandboxed(plugin_path)
+        return self._run_sandboxed(plugin_path, t=t)
 
     # -----------------------------------------------------------------------
 
-    def _run_sandboxed(self, plugin_path: Path) -> CheckResult:
+    def _run_sandboxed(self, plugin_path: Path, t=None) -> CheckResult:
         ctx = mp.get_context("spawn")
         q: Any = ctx.Queue()
         proc = ctx.Process(
@@ -798,10 +802,14 @@ class SandboxRunner:
                     proc.join(timeout=1.0)
                 r = CheckResult()
                 r.warn(
-                    message=(
+                    message=_sandbox_msg(
+                        t, "plugin.sandbox.timeout",
                         f"Plugin {plugin_path.name!r} timed out after "
-                        f"{self.timeout_seconds}s and was killed"
+                        f"{self.timeout_seconds}s and was killed",
+                        plugin=repr(plugin_path.name),
+                        seconds=self.timeout_seconds,
                     ),
+                    key="plugin.sandbox.timeout",
                     nature="structural",
                 )
                 return r
@@ -816,10 +824,14 @@ class SandboxRunner:
                 )
                 r = CheckResult()
                 r.warn(
-                    message=(
+                    message=_sandbox_msg(
+                        t, "plugin.sandbox.no_result",
                         f"Plugin {plugin_path.name!r} produced no result "
-                        f"(exit code {proc.exitcode})"
+                        f"(exit code {proc.exitcode})",
+                        plugin=repr(plugin_path.name),
+                        exit_code=proc.exitcode,
                     ),
+                    key="plugin.sandbox.no_result",
                     nature="structural",
                 )
                 return r
@@ -838,10 +850,14 @@ class SandboxRunner:
                     return payload
                 r = CheckResult()
                 r.warn(
-                    message=(
+                    message=_sandbox_msg(
+                        t, "plugin.sandbox.bad_payload",
                         f"Plugin {plugin_path.name!r} returned unexpected "
-                        f"payload type: {type(payload).__name__}"
+                        f"payload type: {type(payload).__name__}",
+                        plugin=repr(plugin_path.name),
+                        payload_type=type(payload).__name__,
                     ),
+                    key="plugin.sandbox.bad_payload",
                     nature="structural",
                 )
                 return r
@@ -849,7 +865,13 @@ class SandboxRunner:
             # status == "error"
             r = CheckResult()
             r.warn(
-                message=f"Plugin {plugin_path.name!r} error: {payload}",
+                message=_sandbox_msg(
+                    t, "plugin.sandbox.error",
+                    f"Plugin {plugin_path.name!r} error: {payload}",
+                    plugin=repr(plugin_path.name),
+                    error=payload,
+                ),
+                key="plugin.sandbox.error",
                 nature="structural",
             )
             return r
@@ -865,7 +887,7 @@ class SandboxRunner:
 
     # -----------------------------------------------------------------------
 
-    def _run_legacy(self, plugin_path: Path, source: str) -> CheckResult:
+    def _run_legacy(self, plugin_path: Path, source: str, t=None) -> CheckResult:
         """Q5' bypass — no sandbox, plugin runs in this process."""
         namespace: dict[str, Any] = {
             "__name__": "__bob_plugin_legacy__",
@@ -877,7 +899,12 @@ class SandboxRunner:
             if not callable(run_check):
                 r = CheckResult()
                 r.warn(
-                    message=f"Plugin {plugin_path.name!r} missing run_check",
+                    message=_sandbox_msg(
+                        t, "plugin.sandbox.missing_run_check",
+                        f"Plugin {plugin_path.name!r} missing run_check",
+                        plugin=repr(plugin_path.name),
+                    ),
+                    key="plugin.sandbox.missing_run_check",
                     nature="structural",
                 )
                 return r
@@ -885,10 +912,14 @@ class SandboxRunner:
             if not isinstance(result, CheckResult):
                 r = CheckResult()
                 r.warn(
-                    message=(
+                    message=_sandbox_msg(
+                        t, "plugin.sandbox.bad_return",
                         f"Plugin {plugin_path.name!r} returned "
-                        f"{type(result).__name__}, not CheckResult"
+                        f"{type(result).__name__}, not CheckResult",
+                        plugin=repr(plugin_path.name),
+                        actual_type=type(result).__name__,
                     ),
+                    key="plugin.sandbox.bad_return",
                     nature="structural",
                 )
                 return r
@@ -896,7 +927,30 @@ class SandboxRunner:
         except Exception as exc:  # noqa: BLE001
             r = CheckResult()
             r.warn(
-                message=f"Plugin {plugin_path.name!r} crashed: {exc}",
+                message=_sandbox_msg(
+                    t, "plugin.sandbox.crashed",
+                    f"Plugin {plugin_path.name!r} crashed: {exc}",
+                    plugin=repr(plugin_path.name),
+                    error=exc,
+                ),
+                key="plugin.sandbox.crashed",
                 nature="structural",
             )
             return r
+
+
+# M-4 (v0.7.4): tiny i18n helper for sandbox WARN messages. Resolves
+# ``locale_key`` via ``t`` if provided AND the lookup succeeds; otherwise
+# falls back to the English ``fallback`` string. Keeps the call sites tight.
+def _sandbox_msg(t, locale_key: str, fallback: str, **fmt: Any) -> str:
+    if t is None:
+        return fallback
+    try:
+        translated = t(locale_key, **fmt)
+    except Exception:  # noqa: BLE001 — never let i18n abort a sandbox error path
+        return fallback
+    # Unknown keys: bob.i18n.t returns ``"[key]"`` or ``key`` verbatim — both
+    # are useless as user-facing messages, fall back to English.
+    if translated in (locale_key, f"[{locale_key}]"):
+        return fallback
+    return translated

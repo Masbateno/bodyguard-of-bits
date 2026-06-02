@@ -211,8 +211,14 @@ def _build_v1(
         )
 
     # Domain sub-scores (always included)
+    # M-7 (v0.7.4): prefer ``engine.domain_scores`` (populated by
+    # apply_domain_score_override) over a fresh compute_domain_scores()
+    # call so JSON and terminal display read from the same source of
+    # truth. Falls back to a fresh compute if the cache hasn't been
+    # populated yet (defensive — every production code path goes through
+    # apply_domain_score_override before JSON emit).
     from bob.domain_scores import compute_domain_scores, DOMAINS
-    _ds, _ = compute_domain_scores(engine)
+    _ds = engine.domain_scores or compute_domain_scores(engine)[0]
     data["domain_scores"] = {
         domain: {"score": _ds[domain]["score"], "label": _ds[domain]["label"]}
         for domain in DOMAINS
@@ -414,8 +420,9 @@ def _build_v2(
         ]
 
     # Domain sub-scores (always included, includes deductions count in v2)
+    # M-7 (v0.7.4): use cache when available — see _build_v1 for rationale.
     from bob.domain_scores import compute_domain_scores, DOMAINS
-    _ds, _ = compute_domain_scores(engine)
+    _ds = engine.domain_scores or compute_domain_scores(engine)[0]
     data["domain_scores"] = {
         domain: {
             "score":      _ds[domain]["score"],

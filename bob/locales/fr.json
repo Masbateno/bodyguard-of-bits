@@ -10,7 +10,11 @@
     "nftables": "nftables",
     "user": "Utilisateur",
     "date": "Date",
-    "not_installed": "non installé"
+    "not_installed": "non installé",
+    "system_information": "INFORMATIONS SYSTÈME",
+    "firewall": "Pare-feu",
+    "language": "Langue",
+    "port_config": "Config ports"
   },
   "groups": {
     "firewall_network": "PARE-FEU & RÉSEAU",
@@ -274,6 +278,7 @@
     "apply_prompt": "Appliquer cette correction ? [y/N]",
     "applied": "Appliqué",
     "manual": "manuel — appliquez la commande manuellement",
+    "skipped_unsafe_shell": "syntaxe shell non sûre dans la commande",
     "auto_mode_banner": "MODE AUTO-FIX — {count} correction(s) seront appliquées automatiquement",
     "auto_summary_title": "RÉCAPITULATIF AUTO-FIX",
     "manual_items_title": "Actions manuelles requises (aucune correction automatique disponible) :",
@@ -652,7 +657,30 @@
     "key_appeared": "Nouveau finding : {finding}",
     "key_resolved": "Résolu : {finding}",
     "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
-    "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)"
+    "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)",
+    "no_baseline_yet": "Aucune baseline précédente trouvée — exécutez d'abord un audit complet pour établir une baseline."
+  },
+  "cli": {
+    "list": {
+      "header": "Sections --check / --skip disponibles ({count} au total) :",
+      "prefix_matching": "Correspondance par préfixe : 'kernel' couvre kernel_hardening et kernel_modules.",
+      "always_on_header": "Sections toujours actives ({count} au total — elles s'exécutent en permanence, --skip n'a aucun effet) :",
+      "usage_header": "Utilisation :",
+      "usage_check": "  sudo bob --check=ssh,hardening",
+      "usage_skip": "  sudo bob --skip=clamav,rootkit"
+    },
+    "ignore": {
+      "invalid_key": "Clé invalide {requested} — attendu : <prefix>.<finding_id> en snake_case canonique (ex. ssh.permit_root_login).",
+      "invalid_key_hint": "Exécutez 'bob --explain list' pour voir les clés disponibles.",
+      "added": "Clé ignorée ajoutée : {requested}",
+      "added_file": "Fichier : {path}",
+      "already_present": "Clé déjà présente : {requested}"
+    },
+    "baseline": {
+      "deleted": "Baseline supprimée : {path}",
+      "delete_error": "Erreur : impossible de supprimer la baseline : {error}",
+      "not_found": "Aucune baseline trouvée à {path}"
+    }
   },
   "breakdown": {
     "section_title": "DÉTAIL DU SCORE",
@@ -902,7 +930,40 @@
     "disk": "Santé des disques",
     "firewall": "Pare-feu & Services"
   },
+  "plugin": {
+    "sandbox": {
+      "timeout": "Le plugin {plugin} a dépassé le délai de {seconds}s et a été interrompu",
+      "no_result": "Le plugin {plugin} n'a produit aucun résultat (code de sortie {exit_code})",
+      "bad_payload": "Le plugin {plugin} a renvoyé un type de payload inattendu : {payload_type}",
+      "error": "Erreur du plugin {plugin} : {error}",
+      "rejected": "Plugin {plugin} rejeté : {error}",
+      "runner_error": "Erreur d'exécuteur du plugin {plugin} : {error}",
+      "missing_run_check": "Le plugin {plugin} n'a pas de fonction run_check",
+      "bad_return": "Le plugin {plugin} a renvoyé {actual_type} au lieu d'un CheckResult",
+      "crashed": "Le plugin {plugin} a planté : {error}"
+    }
+  },
   "explain": {
+    "ui": {
+      "list_header": "Clés --explain disponibles :",
+      "unknown_key": "Aucune explication disponible pour : {requested}",
+      "unknown_hint": "Exécutez 'sudo bob --explain list' pour voir toutes les clés disponibles.",
+      "why_title": "POURQUOI C'EST UN RISQUE",
+      "how_title": "COMMENT CORRIGER",
+      "uniform_profiles_note": "Cette découverte s'applique de la même manière à tous les profils.",
+      "scoring_title": "NOTATION",
+      "scoring_domain": "Domaine",
+      "scoring_tool_cap": "Plafond outil",
+      "scoring_tool_cap_value": "max {cap} pt au total pour les déductions '{prefix}' dans ce domaine",
+      "scoring_impact": "Impact",
+      "scoring_impact_value": "exécutez 'sudo bob --breakdown' pour voir la contribution actuelle de cette clé au score",
+      "label_key": "Clé",
+      "label_title": "Titre",
+      "label_cis": "CIS",
+      "picker_header": "bob --explain    ↑↓ : déplacer   Entrée : afficher   q : quitter",
+      "detail_header": "↑↓ / PgUp/PgDn : défiler   Esc : retour",
+      "picker_footer": "{n_keys} clés réparties dans {n_groups} groupes"
+    },
     "ssh": {
       "password_auth": {
         "title": "Authentification par mot de passe activée (PasswordAuthentication yes)",

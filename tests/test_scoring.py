@@ -693,3 +693,46 @@ class TestUnpackPostureEscalation:
         floor, key = unpack_posture_escalation(_OversizedEngine())
         assert floor is None
         assert key == ""
+
+
+# ---------------------------------------------------------------------------
+# M-8 (v0.7.4): set_posture_from_engine rejects bool-typed firewall score
+# ---------------------------------------------------------------------------
+
+class TestSetPostureFromEngineBoolGuard_V074:
+    """``isinstance(True, int)`` is True (bool subclass-of-int). The helper
+    must normalise a bool firewall_domain_score to None so set_posture's
+    explicit-bool TypeError guard doesn't fire."""
+
+    def test_bool_firewall_score_normalised_to_none(self):
+        """A ``firewall: True`` entry should not crash set_posture."""
+        from bob.scoring import ScoreEngine, set_posture_from_engine
+        engine = ScoreEngine()
+        # Simulate a buggy cache producing bool instead of int/dict.
+        engine.set_domain_scores(
+            {"firewall": True, "ssh": {"score": 10, "label": "SSH", "deductions": 0}},
+            frozenset({"firewall", "ssh"}),
+        )
+        # Should not raise (would have raised TypeError pre-M-8 when set_posture
+        # received firewall_domain_score=True).
+        set_posture_from_engine(engine, fw_active=True)
+
+    def test_int_firewall_score_still_works(self):
+        """Regression: legacy int path remains valid."""
+        from bob.scoring import ScoreEngine, set_posture_from_engine
+        engine = ScoreEngine()
+        engine.set_domain_scores(
+            {"firewall": 7, "ssh": {"score": 10, "label": "SSH", "deductions": 0}},
+            frozenset({"firewall", "ssh"}),
+        )
+        set_posture_from_engine(engine, fw_active=True)  # no raise
+
+    def test_dict_firewall_score_still_works(self):
+        """Regression: standard dict path remains valid."""
+        from bob.scoring import ScoreEngine, set_posture_from_engine
+        engine = ScoreEngine()
+        engine.set_domain_scores(
+            {"firewall": {"score": 5, "label": "Firewall", "deductions": 2}},
+            frozenset({"firewall"}),
+        )
+        set_posture_from_engine(engine, fw_active=True)  # no raise

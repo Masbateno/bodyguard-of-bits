@@ -427,6 +427,18 @@ class TestUserConfigWebhook:
         with pytest.raises(ValueError, match="must start with http"):
             cfg.set_webhook_url("ftp://invalid.com")
 
+    def test_set_webhook_url_accepts_uppercase_scheme(self, tmp_path):
+        # I-4 (v0.7.4): scheme match is case-insensitive (RFC 3986). Mirrors
+        # the v0.7.3 I-5 fix in webhook.py::send_webhook.
+        from bob.config import UserConfig
+        cfg = UserConfig.load(path=tmp_path / "config.conf")
+        cfg.set_webhook_url("HTTPS://EXAMPLE.com/webhook")
+        assert cfg.get_webhook_url() == "HTTPS://EXAMPLE.com/webhook"
+        cfg.set_webhook_url("HTTP://example.com/webhook")
+        assert cfg.get_webhook_url() == "HTTP://example.com/webhook"
+        cfg.set_webhook_url("Https://example.com/webhook")
+        assert cfg.get_webhook_url() == "Https://example.com/webhook"
+
     def test_set_empty_deletes_key(self, tmp_path):
         from bob.config import UserConfig
         cfg = UserConfig.load(path=tmp_path / "config.conf")

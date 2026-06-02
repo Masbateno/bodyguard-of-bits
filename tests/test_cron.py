@@ -602,6 +602,27 @@ class TestBuildScriptContent:
         assert 'export AUDIT_EMAIL=' in script
         assert 'export AUDIT_LOG=' in script
 
+    def test_pythonpath_export_avoids_trailing_colon(self):
+        """M-3 (v0.7.4): the generated PYTHONPATH export must NOT produce
+        ``PATH:`` (with a trailing colon) when ``$PYTHONPATH`` is unset.
+
+        Cron jobs run with a minimal env, so PYTHONPATH is typically unset.
+        ``export PYTHONPATH=path:"$PYTHONPATH"`` produced ``PATH:`` →
+        Python interprets the trailing colon as "also search CWD" — a
+        long-standing footgun (root's CWD becomes /root/, so anything
+        in /root/foo.py shadows stdlib).
+        """
+        script = build_script_content("a@b.c", "/var/log/bob")
+        # The fix uses ``${PYTHONPATH:+:$PYTHONPATH}`` which expands to
+        # an empty string when PYTHONPATH is unset, and to ``:value`` when set.
+        assert 'export PYTHONPATH=' in script
+        # The vulnerable pattern (must NOT appear):
+        assert 'export PYTHONPATH=' not in script.replace(
+            'export PYTHONPATH=', '###'
+        ) or ':"$PYTHONPATH"' not in script
+        # The safe pattern (must appear):
+        assert '${PYTHONPATH:+:$PYTHONPATH}' in script
+
 
 # ---------------------------------------------------------------------------
 # apply_cron_schedule — patches the cron file in place

@@ -176,6 +176,31 @@ class TestCSVMetadata:
         risks = {row["risk"] for row in rows}
         assert len(risks) == 1  # all rows have same risk
 
+    def test_risk_is_score_level_not_effective_level(self):
+        # I-6 (v0.7.4): CSV `risk` uses engine.level (score-derived) to match
+        # JSON v1 `risk` contract. Pre-v0.7.4 used engine.effective_level
+        # (posture-escalated), causing CSV/JSON v1 divergence on the same audit.
+        from bob.csv_output import build_csv_output
+        from bob.scoring import Finding, FindingLevel, RiskLevel, ScoreEngine
+
+        engine = ScoreEngine()
+        engine.findings.append(
+            Finding(level=FindingLevel.WARN, message="placeholder", nature="firewall")
+        )
+        # Force posture escalation: LOW by score but EFFECTIVE=CRITICAL
+        engine.set_posture(
+            firewall_inactive=True,
+            iptables_input_accept=False,
+            firewall_domain_score=10,
+        )
+        assert engine.level == RiskLevel.LOW
+        assert engine.effective_level != RiskLevel.LOW
+
+        rows = _parse_csv(build_csv_output(engine, _make_sys_info()))
+        # CSV row risk must equal score-derived level, not posture-escalated
+        assert rows[0]["risk"] == RiskLevel.LOW.value
+        assert rows[0]["risk"] != engine.effective_level.value
+
     def test_timestamp_is_iso(self):
         from bob.csv_output import build_csv_output
         engine = _make_engine()

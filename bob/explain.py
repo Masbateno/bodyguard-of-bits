@@ -334,7 +334,7 @@ def run_explain(key: str, t) -> None:
 
     # ---- list mode ---------------------------------------------------------
     if key == "list":
-        print("Available --explain keys:")
+        print(t("explain.ui.list_header"))
         for group_label, keys in _EXPLAIN_GROUPS:
             print()
             print(f"  ── {group_label} {'─' * max(0, 46 - len(group_label))}─")
@@ -356,19 +356,22 @@ def run_explain(key: str, t) -> None:
     key_unknown = title_val in (_title_key, f"[{_title_key}]")
 
     if key_unknown:
-        print(f"No explanation available for: {key!r}")
+        print(t("explain.ui.unknown_key", requested=repr(key)))
         print()
-        print("Run 'sudo bob --explain list' to see all available keys.")
+        print(t("explain.ui.unknown_hint"))
         return
 
     cis_val = get_cis_ref(norm)
+    _key_label   = t("explain.ui.label_key")
+    _title_label = t("explain.ui.label_title")
+    _cis_label   = t("explain.ui.label_cis")
 
     print()
     print(_DIVIDER_WIDE)
-    print(f"  Key:   {norm}")
-    print(f"  Title: {title_val}")
+    print(f"  {_key_label}:   {norm}")
+    print(f"  {_title_label}: {title_val}")
     if cis_val:
-        print(f"  CIS:   {cis_val}")
+        print(f"  {_cis_label}:   {cis_val}")
     print(_DIVIDER_WIDE)
 
     if _has_profile_variants(norm, t):
@@ -394,22 +397,22 @@ def run_explain(key: str, t) -> None:
             print(_DIVIDER_SHORT)
             print(pwhy)
             print()
-            print("HOW TO FIX")
+            print(t("explain.ui.how_title"))
             print(_DIVIDER_SHORT)
             print(phow)
             print()
     else:
         # Uniform risk across all profiles
         print()
-        print("WHY IT IS A RISK")
+        print(t("explain.ui.why_title"))
         print(_DIVIDER_SHORT)
         print(why_val)
         print()
-        print("HOW TO FIX")
+        print(t("explain.ui.how_title"))
         print(_DIVIDER_SHORT)
         print(how_val)
         print()
-        _note = "\u24d8  This finding applies equally to all profiles."
+        _note = "\u24d8  " + t("explain.ui.uniform_profiles_note")
         if sys.stdout.isatty():
             print(f"  \033[33m{_note}\033[0m")
         else:
@@ -431,12 +434,18 @@ def _explain_scoring(key: str, t) -> None:
     prefix = key.split(".", 1)[0]
     tool_cap = TOOL_CAPS.get(prefix)
 
-    print("SCORING")
+    print(t("explain.ui.scoring_title"))
     print("\u2500" * 40)
-    print(f"  Domain   : {domain_label}")
+    print(f"  {t('explain.ui.scoring_domain')}   : {domain_label}")
     if tool_cap is not None:
-        print(f"  Tool cap : max {tool_cap} pt total for '{prefix}' deductions in this domain")
-    print(f"  Impact   : run 'sudo bob --breakdown' to see this key's current score contribution")
+        print(
+            f"  {t('explain.ui.scoring_tool_cap')} : "
+            + t("explain.ui.scoring_tool_cap_value", cap=tool_cap, prefix=prefix)
+        )
+    print(
+        f"  {t('explain.ui.scoring_impact')}   : "
+        + t("explain.ui.scoring_impact_value")
+    )
     print()
 
 
@@ -475,7 +484,10 @@ def _detail_screen(stdscr, key: str, t) -> None:
     why_val   = t(f"explain.{norm}.why")
     how_val   = t(f"explain.{norm}.how")
     _cis = get_cis_ref(norm)
-    cis_line  = f"  CIS:   {_cis}" if _cis else ""
+    _key_label   = t("explain.ui.label_key")
+    _title_label = t("explain.ui.label_title")
+    _cis_label   = t("explain.ui.label_cis")
+    cis_line  = f"  {_cis_label}:   {_cis}" if _cis else ""
 
     def _build_lines(w: int) -> list[tuple[str, int]]:
         """Return (text, attr) pairs for each display line."""
@@ -488,8 +500,8 @@ def _detail_screen(stdscr, key: str, t) -> None:
         normal      = 0
         bold        = _c.A_BOLD
 
-        lines.append((f"  Key:   {norm}", dim))
-        lines.append((f"  Title: {title_val}", h_attr))
+        lines.append((f"  {_key_label}:   {norm}", dim))
+        lines.append((f"  {_title_label}: {title_val}", h_attr))
         if cis_line:
             lines.append((cis_line, dim))
         lines.append(("  " + "─" * min(56, w - 4), dim))
@@ -515,7 +527,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
                     for wrapped in textwrap.wrap(para, w - 4) or [""]:
                         lines.append((f"  {wrapped}", normal))
                 lines.append(("", normal))
-                lines.append(("  HOW TO FIX", bold))
+                lines.append(("  " + t("explain.ui.how_title"), bold))
                 lines.append(("  " + "─" * 10, dim))
                 for para in phow.split("\n"):
                     for wrapped in textwrap.wrap(para, w - 4) or [""]:
@@ -523,7 +535,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 lines.append(("", normal))
         else:
             lines.append(("", normal))
-            lines.append(("  WHY IT IS A RISK", bold))
+            lines.append(("  " + t("explain.ui.why_title"), bold))
             lines.append(("  " + "─" * 10, dim))
             for para in why_val.split("\n"):
                 for wrapped in textwrap.wrap(para, w - 4) or [""]:
@@ -535,7 +547,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 for wrapped in textwrap.wrap(para, w - 4) or [""]:
                     lines.append((f"  {wrapped}", normal))
             lines.append(("", normal))
-            lines.append(("  \u24d8  This finding applies equally to all profiles.", yellow_attr))
+            lines.append(("  \u24d8  " + t("explain.ui.uniform_profiles_note"), yellow_attr))
             lines.append(("", normal))
         return lines
 
@@ -550,7 +562,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
         stdscr.erase()
 
         # ── header ──────────────────────────────────────────────────────────
-        header = f"  {norm}    ↑↓ / PgUp/PgDn: scroll   Esc: back  "
+        header = f"  {norm}    " + t("explain.ui.detail_header") + "  "
         hdr_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
         try:
             stdscr.addstr(0, 0, header.ljust(w - 1)[: w - 1], hdr_attr)
@@ -632,7 +644,7 @@ def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
         stdscr.erase()
 
         # ── header ──────────────────────────────────────────────────────────
-        header = "  bob --explain    ↑↓: move   Enter: view   q: quit  "
+        header = "  " + t("explain.ui.picker_header") + "  "
         hdr_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
         try:
             stdscr.addstr(0, 0, header.ljust(w - 1)[: w - 1], hdr_attr)
@@ -675,7 +687,11 @@ def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
 
         # ── footer ───────────────────────────────────────────────────────────
         n_keys = len(key_indices)
-        footer = f"  {n_keys} keys across {len(_EXPLAIN_GROUPS)} groups "
+        footer = "  " + t(
+            "explain.ui.picker_footer",
+            n_keys=n_keys,
+            n_groups=len(_EXPLAIN_GROUPS),
+        ) + " "
         try:
             stdscr.addstr(h - 1, 0, footer[: w - 1], curses.A_DIM)
         except curses.error:

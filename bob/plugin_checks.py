@@ -166,17 +166,28 @@ class PluginCheck:
         strings (the original contract has always documented ``t`` as "safe
         to ignore").
 
+        M-4 (v0.7.4): ``t`` is now forwarded into the runner so the
+        sandbox-side WARN messages (timeout / no_result / bad_payload /
+        error) are translated. The plugin's *own* messages still come
+        directly from its run_check body.
+
         Returns the plugin's CheckResult on success, or a WARN-only
         CheckResult on any runtime error / timeout / sandbox rejection so a
-        single buggy plugin can never abort the audit.
+        single buggy plugin can never abort the audit. Each WARN carries a
+        stable ``key=`` so ``bob --ignore plugin.sandbox.timeout`` works.
         """
         runner = _get_runner()
         try:
-            return runner.run(self.path)
+            return runner.run(self.path, t=t)
         except SandboxRejected as exc:
             r = CheckResult()
             r.warn(
-                message=f"Plugin {self.path.name!r} rejected: {exc}",
+                message=_warn_msg(
+                    t, "plugin.sandbox.rejected",
+                    f"Plugin {self.path.name!r} rejected: {exc}",
+                    plugin=repr(self.path.name), error=exc,
+                ),
+                key="plugin.sandbox.rejected",
                 nature="structural",
             )
             return r
@@ -186,10 +197,28 @@ class PluginCheck:
             )
             r = CheckResult()
             r.warn(
-                message=f"Plugin {self.path.name!r} runner error: {exc}",
+                message=_warn_msg(
+                    t, "plugin.sandbox.runner_error",
+                    f"Plugin {self.path.name!r} runner error: {exc}",
+                    plugin=repr(self.path.name), error=exc,
+                ),
+                key="plugin.sandbox.runner_error",
                 nature="structural",
             )
             return r
+
+
+# M-4 (v0.7.4): mirror of _sandbox._sandbox_msg for the wrapper layer.
+def _warn_msg(t, locale_key: str, fallback: str, **fmt) -> str:
+    if t is None:
+        return fallback
+    try:
+        translated = t(locale_key, **fmt)
+    except Exception:  # noqa: BLE001
+        return fallback
+    if translated in (locale_key, f"[{locale_key}]"):
+        return fallback
+    return translated
 
 
 # ---------------------------------------------------------------------------

@@ -64,8 +64,13 @@ def save_recurrence(data: dict[str, int], path: Path | None = None) -> None:
         )
         chown_to_sudo_user(dest)
     except OSError:
-        # The atomic write may have left a .tmp file — best-effort cleanup.
-        dest.with_name(dest.name + ".tmp").unlink(missing_ok=True)
+        # M-1 (v0.7.4): pre-v0.7.2 atomic_write used a deterministic
+        # ``<name>.tmp`` suffix that this handler tried to clean up. Since
+        # v0.7.2 M-7 tmp names are randomised by ``tempfile.mkstemp``, so
+        # the literal ``<name>.tmp`` virtually never exists; the real tmp
+        # leftovers are already cleaned by ``_atomic.atomic_write``'s own
+        # ``except BaseException``. Silently swallow the original OSError.
+        pass
 
 
 def update_recurrence(

@@ -48,11 +48,17 @@ def build_csv_output(
     always non-empty and importable.
     """
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # I-6 (v0.7.4): `risk` is the score-derived level (not posture-escalated),
+    # matching JSON v1's `risk` field which was restored to `engine.level` by
+    # v0.7.1 I-3 to preserve the v0.6.x wire-format. Pre-v0.7.4 CSV used
+    # `engine.effective_level` (posture-escalated), causing CSV and JSON v1
+    # to disagree on the same audit when posture escalation fires.
+    # **Breaking change** for CSV consumers reading posture-escalated risk.
     meta = {
         "host":      sys_info.hostname,
         "timestamp": ts,
         "score":     engine.score,
-        "risk":      engine.effective_level.value,
+        "risk":      engine.level.value,
         "alerts":    engine.alert_count,
         "warnings":  engine.warn_count,
     }

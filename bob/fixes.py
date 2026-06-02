@@ -105,7 +105,7 @@ def run_fixes(engine, config, t) -> None:
 
         if answer == "y":
             if _has_shell_ops(cmd):
-                print(f"  ✖ {t('fixes.manual')} (unsafe shell syntax in command)")
+                print(f"  ✖ {t('fixes.manual')} ({t('fixes.skipped_unsafe_shell')})")
                 skipped_cmds += 1
                 print()
                 continue

@@ -98,32 +98,31 @@ def _run(argv=None) -> int:
         return EXIT_OK
 
     if config.list_checks:
+        # I-3 (v0.7.4): --check=list now honours --lang for i18n.
+        i18n.init(lang=config.lang)
         from bob.runner import _ALWAYS_ON_SECTIONS as _AO_SECTIONS
         sections = sorted(_ALL_SECTIONS)
         col = max(len(s) for s in sections) + 2
         cols = max(1, 76 // col)
-        print(f"Available --check / --skip sections ({len(sections)} total):\n")
+        print(i18n.t("cli.list.header", count=len(sections)) + "\n")
         for i, name in enumerate(sections):
             end = "\n" if (i + 1) % cols == 0 or i == len(sections) - 1 else ""
             print(f"  {name:<{col}}", end=end)
         print()
-        print("Prefix matching: 'kernel' matches kernel_hardening and kernel_modules.")
+        print(i18n.t("cli.list.prefix_matching"))
         # M-1 (v0.7.0 Phase 2.1): list the always-on sections that --check
         # accepts as input (since M-7 in v0.7.0) so the help text matches
         # the validator's accepted vocabulary.
         always_on = sorted(_AO_SECTIONS)
         print()
-        print(
-            f"Always-on sections ({len(always_on)} total — these always run, "
-            f"--skip has no effect on them):"
-        )
+        print(i18n.t("cli.list.always_on_header", count=len(always_on)))
         for i, name in enumerate(always_on):
             end = "\n" if (i + 1) % cols == 0 or i == len(always_on) - 1 else ""
             print(f"  {name:<{col}}", end=end)
         print()
-        print("Usage:")
-        print("  sudo bob --check=ssh,hardening")
-        print("  sudo bob --skip=clamav,rootkit")
+        print(i18n.t("cli.list.usage_header"))
+        print(i18n.t("cli.list.usage_check"))
+        print(i18n.t("cli.list.usage_skip"))
         return EXIT_OK
 
     if config.ignore_key:
@@ -135,18 +134,19 @@ def _run(argv=None) -> int:
         # and the next audit didn't ignore anything.
         if not is_valid_ignore_key(config.ignore_key):
             print(
-                f"✖ Invalid key {config.ignore_key!r} — expected canonical "
-                f"<prefix>.<finding_id> snake_case (e.g. ssh.permit_root_login).\n"
-                f"  Run 'bob --explain list' to see the available keys.",
+                "✖ "
+                + i18n.t("cli.ignore.invalid_key", requested=repr(config.ignore_key))
+                + "\n  "
+                + i18n.t("cli.ignore.invalid_key_hint"),
                 file=sys.stderr,
             )
             return EXIT_ERROR
         added = add_ignore_key(config.ignore_key)
         if added:
-            print(f"✔ Ignored key added: {config.ignore_key}")
-            print(f"  File: {_ignore_file_path()}")
+            print("✔ " + i18n.t("cli.ignore.added", requested=config.ignore_key))
+            print("  " + i18n.t("cli.ignore.added_file", path=_ignore_file_path()))
         else:
-            print(f"ℹ  Key already present: {config.ignore_key}")
+            print("ℹ  " + i18n.t("cli.ignore.already_present", requested=config.ignore_key))
         return EXIT_OK
 
     if config.install_completion:
@@ -167,15 +167,17 @@ def _run(argv=None) -> int:
 
     if config.reset_baseline:
         require_root()
+        # I-3 (v0.7.4): --reset-baseline output now honours --lang.
+        i18n.init(lang=config.lang)
         if BASELINE_PATH.exists():
             try:
                 BASELINE_PATH.unlink()
-                print(f"Baseline deleted: {BASELINE_PATH}")
+                print(i18n.t("cli.baseline.deleted", path=BASELINE_PATH))
             except OSError as exc:
-                print(f"Error: could not delete baseline: {exc}", file=sys.stderr)
+                print(i18n.t("cli.baseline.delete_error", error=exc), file=sys.stderr)
                 return EXIT_ERROR
         else:
-            print(f"No baseline found at {BASELINE_PATH}")
+            print(i18n.t("cli.baseline.not_found", path=BASELINE_PATH))
         return EXIT_OK
 
     require_root()
@@ -242,7 +244,18 @@ def _run(argv=None) -> int:
             engine   = ScoreEngine()
             engine.ignore_keys = load_ignore_keys()
             sys_info = collect_system_info(VERSION, config.lang)
-            report.write_header(sys_info)
+            # M-5 (v0.7.4): pass localised labels so `--french` reports have
+            # a French header block (pre-v0.7.4: hardcoded English).
+            report.write_header(sys_info, labels={
+                "system_information": t("banner.system_information"),
+                "system":             t("banner.system"),
+                "host":               t("banner.host"),
+                "kernel":             t("banner.kernel"),
+                "firewall":           t("banner.firewall"),
+                "user":               t("banner.user"),
+                "language":           t("banner.language"),
+                "port_config":        t("banner.port_config"),
+            })
 
             if not config.quiet:
                 not_installed = t("banner.not_installed")
@@ -425,7 +438,7 @@ def _run(argv=None) -> int:
         # stdout restored — display post-audit views with full output (no quiet filter)
         if config.diff_mode:
             if not prev_baseline:
-                print("No previous baseline found — run a full audit first to establish a baseline.")
+                print(t("compare.no_baseline_yet"))
             else:
                 _delta = compute_delta(prev_baseline, curr_baseline)
                 display_delta(_delta, t, output)
