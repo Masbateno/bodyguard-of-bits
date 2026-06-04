@@ -6,6 +6,134 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.8.0] — 2026-06-04
+
+**Minor major — drift batch + framing actions + silent-feature-gap audit.**
+
+Closes the v0.7.x cycle (4 hardening patches v0.7.1 → v0.7.4) and opens v0.8.x. Three work axes in the same bump: (1) a drift batch that re-syncs every doc/packaging surface that fell behind since v0.6.2, (2) two framing actions against the "BOB sur-claims" misreading (a "What BOB is / is NOT" callout and a hypotheses header line in the summary box), (3) an 8-tier silent-feature-gap audit that closes "feature documented but partially implemented" gaps surfaced post-v0.7.4.
+
+### Drift batch (11 items — anti-drift)
+
+The 5 patch cycles v0.7.1 → v0.7.4 accumulated silent doc/packaging drift: 5 surfaces silently let their version fall behind. The drift batch re-syncs everything in a single commit + adds a 5th CI guard to prevent recurrence.
+
+- **1. CHANGELOG FR backfill** — `CHANGELOG_FR.md` + `DOCUMENTS/CHANGELOG_FULL_FR.md` stopped at v0.7.0b2. 5 missing entries (v0.7.0 final + v0.7.1 + v0.7.2 + v0.7.3 + v0.7.4). FR readers saw the project "frozen" at a beta while PyPI shipped v0.7.4. Backfilled via translation of the EN equivalents.
+- **2. Man pages** — `man/bob.1`, `man/bob.conf.5`, `man/bob-profile.5` carried `.TH BOB n "2026-05-29" "BOB 0.6.2"`. Bumped to `"2026-06-04" "BOB 0.8.0"`.
+- **3. Shields.io badges** — `DOCUMENTS/README_TECH.md` + `DOCUMENTS/README_TECH_FR.md` displayed `version-v0.7.4-brightgreen`. Bumped to `v0.8.0`.
+- **4. `debian/changelog`** — all historical entries were `UNRELEASED`. v0.8.0 opens with `(0.8.0-1) UNRELEASED; urgency=medium`; older entries preserved.
+- **5. `packaging/rpm/bob.spec`** — `Version: 0.7.4` → `0.8.0` + new `%changelog` v0.8.0-1 entry at top.
+- **6. `DOCUMENTS/TESTING.md`** — per-version table backfilled (v0.6.2 + v0.7.0 + v0.7.0b1-b4 + v0.7.1-4 were already added in drift batch; v0.8.0 row added).
+- **7. `README.md` + `README_FR.md` Install section** — drift with `README_TECH.md`: the user-facing READMEs just said `pipx install` + `sudo bob` without explaining the sudo restricted PATH. Synced on the 4-substep `README_TECH.md` flow (Prerequisites / Install / Enable sudo + bash completion / Uninstall) with tone adapted (READMEs = general audience, kept absolute-path requirement for `sudo bob --install-completion`).
+- **8. `tests/test_runner.py`** — smoke on `bob/runner.py::_sec()` orchestrator (highest out-degree module, 665L, no dedicated test). 3-5 smoke tests catch a Python 3.15+/16 drift in local pytest instead of the 30-min CI cycle.
+- **9. 5th CI guard `tests/test_doc_version_consistency.py`** — `man/.TH × 3 + debian/changelog top + shields × 2 + rpm spec Version + CHANGELOG{,_FULL}{,_FR}.md top row` all match `pyproject.toml::version`. Would have caught items 1-5 above pre-tag-push. Pattern borrowed from `test_version_consistency.py` (v0.7.0b2 lesson), scope broadened to 7 surfaces.
+- **10. Orphan `bob/checks/__init__.py::__version__ = "1.14.0"` removal** — v0.1.0 copy-paste, never consumed. Free cleanup, zero risk.
+- **11. `BOB_DEBUG` documented in `SECURITY.md`** — env var trap door (`bob/__main__.py:471`) previously undocumented alongside `BOB_SHARE` / `BOB_WEBHOOK_ALLOW_INSECURE` / `BOB_SANDBOX_LEGACY`.
+
+### Framing actions (anti-sur-claim)
+
+External ChatGPT critique 2026-06-02 on a v0.7.4 audit: "relevant as technical diagnostic tool but not reliable as an absolute security scoring system". The correct diagnostic was about **framing** (BOB doesn't say strongly enough that it audits under hypotheses), not about the engine. Two Tier 1 actions shipped:
+
+- **A1 — `summary.context_disclaimer` footer line** ([bob/display.py:581](../bob/display.py) + new locale key `summary.context_disclaimer`): `print_audit_summary` now appends one extra `ℹ` line just after the existing `summary.scope_line1` / `scope_line2` notes : *"Verdict conditioned by the profile and network context above. BOB is a hardening auditor, not a threat-modeling engine — interpret accordingly."* The profile + network context are already shown in the summary box (rows `Profile` + `Network context`), so the disclaimer rides on those; it does NOT re-emit a templated `Hypotheses: profile=X | context=Y | posture=Z` header. Pre-v0.8.0 the box showed `Score 8/10 + LOW` without any reminder that this verdict was *conditioned*. A screenshot reader could conclude "all is well" without seeing the context. 1 print + 1 locale key per language. 0 schema change.
+- **A2 — "What BOB is / is NOT" section** ([README.md](../README.md) + [README_FR.md](../README_FR.md) + [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md)): new short callout (~15 lines) that explicitly claims BOB **is** a configuration hardening auditor with contextual modulation by profile + posture, and **is NOT**: threat-modeling engine, active network exposure scanner, autonomous verdict system. The score reflects configuration hygiene under the chosen profile, not absolute security posture. Human interpretation required to translate the verdict into "is my machine Internet-exploitable".
+
+Combined cost A1+A2: ~75 lines (~10 code + ~65 doc). Gain: pre-empts 80% of "BOB sur-claim" critiques. Backwards-compatible.
+
+### Silent feature-gap audit (8 tiers — "documented but partially implemented" gaps)
+
+Post-drift sweep looking for the pattern identified by Tier 1 (51 explain entries for documented WARN/ALERT findings with no explain backfill). 8 tiers of gaps surfaced, 7 shipped in v0.8.0, 2 deferred to v0.8.1.
+
+#### Tier 1 — Explain backfill (+51 entries)
+
+51 runtime-emitted WARN/ALERT findings had their `bob/locales/*.json` line but no `bob/explain.py::EXPLAIN_KEYS` entry — so `bob --explain <key>` returned "No explanation available". Full backfill via 15 new prefixes: `backup, ddns, docker, fail2ban, firewall_stack, iptables_nft, log_rotation, logs, mac_policy, network_context, ntp, ports, rootkit, services, smtp`. Each entry follows the canonical `<prefix>.<finding_id>` snake_case pattern (pinned by `tests/test_explain_naming_convention.py`). EXPLAIN_KEYS baseline: 117 keys / 30 prefixes (v0.7.0 baseline) → **168 keys / 45 prefixes** (v0.8.0 baseline).
+
+#### Tier 1bis — SSH `_BadDirective.cmd_template` (+8 directives)
+
+8 SSH directives listed in `bob/checks/ssh/_directives.py::_BAD_DIRECTIVES` (PermitEmptyPasswords / X11Forwarding / IgnoreRhosts / HostbasedAuthentication / PermitUserEnvironment / StrictModes / AllowTcpForwarding / PubkeyAuthentication) emitted their findings without `cmd=`, so `bob --fix --apply` dumped "manual fix required" even when the fix was a simple `sed -i 's/.../...\/g' /etc/ssh/sshd_config`. `_BadDirective` dataclass gains a `cmd_template: str = ""` field; each directive ships its sed-line. `_apply_bad_directive` propagates the template into the finding kwargs.
+
+#### Tier 2 — Modern services (+6 entries, 32 → 38)
+
+`bob/data/services.json` listed 32 services since v0.5.x, mostly historical infrastructure (sshd, apache, nginx, mysql, etc.). 6 modern services common on 2025+ hosts had no detection entry: **Tailscale** (WireGuard mesh VPN), **Caddy** (web server with auto-TLS), **AdGuard Home** (DNS ad-blocker), **Vaultwarden Password Manager** (Bitwarden-compatible self-hosted), **Ollama** (local LLM runtime), **Authelia** (SSO auth portal). 6 full-schema entries added (id+label+packages+services+ports+risk+config_key+detection with binary / snap / config_files).
+
+#### Tier 3 — `warn_with_deduction` backfill (4 findings)
+
+4 findings emitted bare `result.warn(...)` (zero scoring impact) while documented as `nature="improvement"` (ergo deserved a score deduction). Backfill to `warn_with_deduction`:
+
+- `services.state.installed_inactive_critical` ([bob/checks/services.py](../bob/checks/services.py)) — critical service installed but inactive (e.g. fail2ban installed but disabled): +1pt.
+- `services.state.active_disabled` ([bob/checks/services.py](../bob/checks/services.py)) — service active but disabled at boot (drift between current state and persistent state): +1pt.
+- `firewall.policy_unknown` ([bob/checks/firewall.py](../bob/checks/firewall.py)) — UFW policy undetermined (parse failure or corrupted state): +2pts.
+- `virt.snap_network` ([bob/checks/virtualization.py](../bob/checks/virtualization.py)) — snap virtualization tool with network exposure (LXD/Docker via snap): +1pt per occurrence, capped at 2pts cumulative to avoid over-penalizing multi-snap-virt hosts.
+
+#### Tier 4 — `service_risk` locale backfill (5 services)
+
+5 services had their ID in `bob/data/services.json` (detected by runtime) but zero `service_risk.<id>.{level,exposure,threat}` coverage in `bob/locales/{en,fr}.json` — so the audit displayed `[risk unavailable]` in the services panorama. EN+FR backfill for: **SMTP**, **NFS**, **Jenkins**, **OpenVPN**, **Squid**.
+
+#### Tier 7 — Profile key rename (`hardening.auto_updates_missing` → `updates.unattended_not_configured`)
+
+The `bob/data/profiles/desktop.conf` + `workstation.conf` profiles overrode the severity of `hardening.auto_updates_missing` — but that key has not been emitted since v0.4.x (the runtime emits `updates.unattended_not_configured` instead). So users overriding auto-updates severity on desktop/workstation saw the override silently no-op. Renamed both profiles + updated docstring in `bob/profiles.py` + tests `tests/test_profiles.py` (18 occurrences renamed).
+
+#### Tier 9 — Format parity Markdown + HTML (`Finding.detail` + `Finding.note`)
+
+`bob/markdown_output.py` + `bob/html_output.py` sinks ignored `Finding.detail` and `Finding.note` fields while terminal + JSON + text surfaced them. So an audit exported to Markdown or HTML lost explanatory context. New locale keys `markdown_output.{note,detail}_label` + `html_output.{note,detail}_label`; both sinks now render these fields uniformly. HTML CSS: new `.finding-detail` + `.finding-note` (font-size .82rem, dim color).
+
+#### Tier 5 (false positive — no action)
+
+An initial scan flagged 6 apparently-orphan `_detail` keys, but investigation showed all were consumed under different suffixes (e.g. `<base>_enabled`, `<base>_profiles`). No action.
+
+#### Tier 6 → v0.8.1 (deferred)
+
+Profile severity coverage audit: 94% of findings use the default severity, ~20-30 keys are candidates for profile overrides (e.g. `ssh.password_auth` should be WARN on server profile but OK on desktop). Listing to complete before remediation.
+
+#### Tier 10 → v0.8.1 (deferred)
+
+i18n 27 hardcoded EN exception messages in `bob/webhook.py` + `bob/config.py` (e.g. `raise ValueError("URL must start with http(s)://")`). User-facing error path in EN locale even on FR audits.
+
+### New test guards (4 files)
+
+From drift batch (item 8 + 9) + silent-feature-gap audit:
+
+- **`tests/test_runner.py`** — smoke on `bob/runner.py::_sec()` orchestrator. Drift batch item 8.
+- **`tests/test_explain_coverage.py`** — every runtime actionable key has its `EXPLAIN_KEYS` entry. Would have caught the 51 T1 gaps.
+- **`tests/test_fix_coverage.py`** — every actionable finding has either `cmd=`, or sits in the `_MANUAL_BY_DESIGN` whitelist with inline rationale, or in `_HELPER_DISPATCH_SITES` for non-literal keys emitted from helpers (e.g. `weak_algo` helper emits 3 different keys; `services` helper emits dynamic `services.exposed.<id>`). 3 tests: whitelist sanity, helper-template presence, actionable coverage.
+- **`tests/test_doc_version_consistency.py`** — drift batch item 9. 5th CI guard.
+
+### What is NOT shipped
+
+D-1..D-4 from the `project_v08x_deferred` contract (frozen 2026-05-30 at v0.7.x Phase 2 kickoff) remains open for v0.8.x continuation:
+- **D-1**: section renumber + `emit_section()` naming uniformization
+- **D-2**: fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS`
+- **D-3**: retire obsolete `EXPLAIN_KEY_ALIASES` (cycle by cycle)
+- **D-4**: granular sub-checks (e.g. `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + `.client`)
+
+`BOB_SANDBOX_LEGACY=1` trap-door removal (Phase 3 v0.7.0 deferred) also postponed to v0.8.x continuation.
+
+### Numbers
+
+- **~6008 tests** (5521 → ~6008, +487 net). 0 regression.
+- 51 new `EXPLAIN_KEYS` entries (Tier 1)
+- 8 new `_BadDirective.cmd_template` (Tier 1bis)
+- 6 new services in `services.json` (Tier 2)
+- 4 backfilled `warn_with_deduction` findings (Tier 3)
+- 5 `service_risk.*` locale backfills (Tier 4)
+- 4 new test guards (test_runner / test_explain_coverage / test_fix_coverage / test_doc_version_consistency)
+- 2 framing actions (A1 hypotheses line + A2 What BOB is/is NOT)
+- ~1873 EN locale strings (~1827 baseline + 46 new)
+- 174 CIS references (138 baseline + 36 new)
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`.
+
+User-facing behavioural shifts:
+- **Summary box** now ends with a `Verdict conditioned by the profile and network context above. BOB is a hardening auditor, not a threat-modeling engine` footer note on every audit (A1) — pre-empts the "BOB says 10/10 = my host is safe online" misread
+- **8 SSH directives** drop the "manual fix required" footer and ship cmd= instead (T1bis) — `bob --fix --apply` is now actionable on PermitEmptyPasswords / X11Forwarding / IgnoreRhosts / HostbasedAuthentication / PermitUserEnvironment / StrictModes / AllowTcpForwarding / PubkeyAuthentication
+- **4 findings** that were OK at 10/10 now deduct points (T3) — score may drop 1-3pts on hosts with services inactive+critical / services active+disabled / firewall policy unknown / snap network virt
+- **6 modern services** (Tailscale/Caddy/AdGuard Home/Vaultwarden/Ollama/Authelia) gain full detection + risk classification (T2) — hosts running them see their findings surface in the services panorama
+- **Markdown + HTML** exports now surface `Finding.detail` and `Finding.note` (T9) — more informative reports without schema change
+- **desktop/workstation profiles**: the `unattended_not_configured` severity override actually works now (T7)
+
+v0.6.x remains EOL (declared in v0.7.2).
+
+---
+
 ## [v0.7.4] — 2026-06-02
 
 **Fourth v0.7.x hardening patch — second deep-audit pass.**

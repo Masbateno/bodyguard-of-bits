@@ -6,6 +6,375 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.8.0] — 04-06-2026
+
+**Mineure majeure — drift batch + actions framing + audit silent-feature-gap.**
+
+Clôture le cycle v0.7.x (4 patches hardening v0.7.1 → v0.7.4) et ouvre v0.8.x. Trois axes de travail dans le même bump : (1) un drift batch qui resynchronise toutes les surfaces doc/packaging désynchronisées depuis v0.6.2, (2) deux actions framing anti-sur-claim (encart "What BOB is / is NOT" + ligne d'hypothèses dans summary box), (3) un audit silent-feature-gap en 8 tiers qui ferme des gaps "feature documentée mais partiellement implémentée" identifiés post-v0.7.4.
+
+### Drift batch (11 items — anti-désynchronisation)
+
+Les 5 cycles patches v0.7.1 → v0.7.4 ont accumulé une drift doc/packaging silencieuse : 5 surfaces ont laissé fuir leur version. Le drift batch resynchronise tout en un seul commit + ajoute un 5e CI guard pour empêcher la récidive.
+
+- **1. CHANGELOG FR backfill** — `CHANGELOG_FR.md` + `DOCUMENTS/CHANGELOG_FULL_FR.md` s'arrêtaient à v0.7.0b2. 5 entrées manquantes (v0.7.0 final + v0.7.1 + v0.7.2 + v0.7.3 + v0.7.4). Les lecteurs FR voyaient le projet "gelé" à une beta alors que PyPI shippait v0.7.4. Comblé via traduction des entrées EN équivalentes.
+- **2. Man pages** — `man/bob.1`, `man/bob.conf.5`, `man/bob-profile.5` portaient `.TH BOB n "2026-05-29" "BOB 0.6.2"`. Bumpés à `"2026-06-04" "BOB 0.8.0"`.
+- **3. Shields.io badges** — `DOCUMENTS/README_TECH.md` + `DOCUMENTS/README_TECH_FR.md` affichaient `version-v0.7.4-brightgreen` (à jour avec PyPI mais désync avec ce commit). Bumpés à `v0.8.0`.
+- **4. `debian/changelog`** — toutes les entrées historiques étaient `UNRELEASED`. v0.8.0 ouvre avec `(0.8.0-1) UNRELEASED; urgency=medium` ; entrées antérieures préservées.
+- **5. `packaging/rpm/bob.spec`** — `Version: 0.7.4` → `0.8.0` + nouvelle entrée `%changelog` v0.8.0-1 en tête.
+- **6. `DOCUMENTS/TESTING.md`** — table per-version backfillée (v0.6.2 + v0.7.0 + v0.7.0b1-b4 + v0.7.1-4 étaient déjà ajoutés dans le drift batch ; v0.8.0 row ajouté).
+- **7. `README.md` + `README_FR.md` Install section** — drift avec `README_TECH.md` : les README user-facing disaient juste `pipx install` + `sudo bob` sans expliquer le PATH restreint sudo. Synced sur le flow 4-substep de README_TECH.md (Prerequisites / Install / Enable sudo + bash completion / Uninstall) avec ton adapté (README = grand public, conservation du chemin absolu requis pour `sudo bob --install-completion`).
+- **8. `tests/test_runner.py`** — smoke sur l'orchestrateur `_sec()` de `bob/runner.py` (le module à plus haute out-degree, 665L, sans test dédié). 3-5 smoke tests catch un drift Python 3.15+/16 en pytest local au lieu du cycle CI 30min.
+- **9. 5e CI guard `tests/test_doc_version_consistency.py`** — `man/.TH × 3 + debian/changelog top + shields × 2 + rpm spec Version + CHANGELOG{,_FULL}{,_FR}.md top row` tous matchent `pyproject.toml::version`. Aurait caught les items 1-5 ci-dessus pre-tag-push. Pattern emprunté à `test_version_consistency.py` (leçon v0.7.0b2), scope élargi aux 7 surfaces.
+- **10. Retrait orphan `bob/checks/__init__.py::__version__ = "1.14.0"`** — copy-paste v0.1.0 jamais consumé. Free cleanup, zero risk.
+- **11. Documentation `BOB_DEBUG` dans `SECURITY.md`** — env var trap door (`bob/__main__.py:471`) précédemment non-documentée à côté de `BOB_SHARE` / `BOB_WEBHOOK_ALLOW_INSECURE` / `BOB_SANDBOX_LEGACY`.
+
+### Actions framing (anti-sur-claim)
+
+Critique externe ChatGPT 2026-06-02 sur un audit v0.7.4 : "pertinent comme outil de diagnostic technique mais pas fiable comme système de notation de sécurité absolue". Le diagnostic correct portait sur le **framing** (BOB ne dit pas assez fort qu'il audit sous hypothèses), pas sur le moteur. Deux actions Tier 1 shippées :
+
+- **A1 — ligne footer `summary.context_disclaimer`** ([bob/display.py:581](../bob/display.py) + nouvelle clé locale `summary.context_disclaimer`) : `print_audit_summary` ajoute désormais une ligne `ℹ` supplémentaire juste après les notes existantes `summary.scope_line1` / `scope_line2` : *« Verdict conditionné par le profil et le contexte réseau ci-dessus. BOB est un auditeur de configuration hardening, pas un moteur d'analyse de menaces — à interpréter en conséquence. »* Le profil + contexte réseau sont déjà affichés dans la box du summary (lignes `Profil d'audit` + `Contexte réseau`), donc le disclaimer s'appuie dessus ; il ne re-émet PAS un en-tête templatisé `Hypothèses : profil=X | contexte=Y | posture=Z`. Pre-v0.8.0 la box affichait `Score 8/10 + FAIBLE` sans aucun rappel que ce verdict était *conditionné*. Un lecteur de capture d'écran pouvait conclure "tout va bien" sans voir le contexte. 1 print + 1 clé locale par langue. 0 schema change.
+- **A2 — section "What BOB is / is NOT"** ([README.md](../README.md) + [README_FR.md](../README_FR.md) + [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md)) : nouvel encart court (~15 lignes) qui clame explicitement que BOB **est** un auditeur de configuration hardening avec modulation contextuelle par profile + posture, et **n'est pas** : threat-modeling engine, scanner d'exposition réseau actif, system de verdict autonome. Le score reflète l'hygiène de configuration sous le profile choisi, pas la posture de sécurité absolue. Interprétation humaine requise pour traduire le verdict en "ma machine est-elle exploitable depuis Internet".
+
+Coût combiné A1+A2 : ~75 lignes (~10 code + ~65 doc). Gain : pré-empte 80% des critiques type "BOB sur-claim". Rétro-compatible total.
+
+### Audit silent feature-gap (8 tiers — gaps "documentée mais partiellement implémentée")
+
+Sweep post-drift cherchant le pattern identifié par le Tier 1 (51 explain entries pour des findings WARN/ALERT documentés mais sans explain backfill). 8 tiers de gaps surfacés, 7 shippés en v0.8.0, 2 déférés à v0.8.1.
+
+#### Tier 1 — Explain backfill (+51 entrées)
+
+51 findings WARN/ALERT émis par le runtime avaient leur ligne `bob/locales/*.json` mais aucune entrée dans `bob/explain.py::EXPLAIN_KEYS` — donc `bob --explain <key>` renvoyait "No explanation available". Backfill complet via les 15 nouveaux préfixes : `backup, ddns, docker, fail2ban, firewall_stack, iptables_nft, log_rotation, logs, mac_policy, network_context, ntp, ports, rootkit, services, smtp`. Chaque entrée respecte le pattern canonique `<prefix>.<finding_id>` snake_case (pinné par `tests/test_explain_naming_convention.py`). Baseline EXPLAIN_KEYS : 117 clés / 30 préfixes (v0.7.0 baseline) → **168 clés / 45 préfixes** (v0.8.0 baseline).
+
+#### Tier 1bis — SSH `_BadDirective.cmd_template` (+8 directives)
+
+8 SSH directives `_BadDirective` listées dans `bob/checks/ssh/_directives.py::_BAD_DIRECTIVES` (PermitEmptyPasswords / X11Forwarding / IgnoreRhosts / HostbasedAuthentication / PermitUserEnvironment / StrictModes / AllowTcpForwarding / PubkeyAuthentication) émettaient leurs findings sans `cmd=`, donc `bob --fix --apply` dumpait "manual fix required" même quand la fix était une simple `sed -i 's/.../...\/g' /etc/ssh/sshd_config`. Dataclass `_BadDirective` gagne un field `cmd_template: str = ""` ; chaque directive ship maintenant son sed-line. `_apply_bad_directive` propage le template dans le finding kwargs.
+
+#### Tier 2 — Services modernes (+6 entrées, 32 → 38)
+
+`bob/data/services.json` listait 32 services depuis v0.5.x, principalement infrastructure historique (sshd, apache, nginx, mysql, etc.). 6 services modernes communs sur les hosts 2025+ n'avaient pas d'entrée de détection : **Tailscale** (mesh VPN WireGuard), **Caddy** (web server avec TLS auto), **AdGuard Home** (DNS ad-blocker), **Vaultwarden Password Manager** (Bitwarden-compatible self-hosted), **Ollama** (local LLM runtime), **Authelia** (auth portal SSO). 6 entrées schema complètes ajoutées (id+label+packages+services+ports+risk+config_key+detection avec binary / snap / config_files).
+
+#### Tier 3 — `warn_with_deduction` backfill (4 findings)
+
+4 findings émettaient un bare `result.warn(...)` (zéro impact scoring) alors qu'ils étaient documentés `nature="improvement"` (ergo méritaient une déduction de score). Backfill `warn_with_deduction` :
+
+- `services.state.installed_inactive_critical` ([bob/checks/services.py](../bob/checks/services.py)) — service critique installé mais inactif (ex. fail2ban installé mais désactivé) : +1pt.
+- `services.state.active_disabled` ([bob/checks/services.py](../bob/checks/services.py)) — service actif mais désactivé au boot (drift entre état courant et état persistant) : +1pt.
+- `firewall.policy_unknown` ([bob/checks/firewall.py](../bob/checks/firewall.py)) — politique UFW indéterminée (parse failure ou état corrompu) : +2pts.
+- `virt.snap_network` ([bob/checks/virtualization.py](../bob/checks/virtualization.py)) — snap virtualization tool avec exposition réseau (LXD/Docker via snap) : +1pt par occurrence, capped 2pts cumulative pour ne pas sur-pénaliser les hosts multi-snap-virt.
+
+#### Tier 4 — `service_risk` locales backfill (5 services)
+
+5 services avaient leur ID dans `bob/data/services.json` (donc détectés par le runtime) mais zéro couverture `service_risk.<id>.{level,exposure,threat}` dans `bob/locales/{en,fr}.json` — donc l'audit affichait `[risque indisponible]` dans le panorama services. Backfill EN+FR pour : **SMTP**, **NFS**, **Jenkins**, **OpenVPN**, **Squid**.
+
+#### Tier 7 — Profile key rename (`hardening.auto_updates_missing` → `updates.unattended_not_configured`)
+
+Les profils `bob/data/profiles/desktop.conf` + `workstation.conf` overridaient la sévérité de la clé `hardening.auto_updates_missing` — mais cette clé n'était plus jamais émise depuis v0.4.x (le runtime émet `updates.unattended_not_configured` à la place). Donc les users overridant la sévérité auto-updates sur desktop/workstation voyaient l'override silencieusement no-op. Rename des deux profils + mise à jour docstring `bob/profiles.py` + tests `tests/test_profiles.py` (18 occurrences renamed).
+
+#### Tier 9 — Format parity Markdown + HTML (`Finding.detail` + `Finding.note`)
+
+Les sinks `bob/markdown_output.py` + `bob/html_output.py` ignoraient les fields `Finding.detail` et `Finding.note` alors que terminal + JSON + text les surfaceaient. Donc un audit exporté en Markdown ou HTML perdait du contexte explicatif. Nouvelles clés locale `markdown_output.{note,detail}_label` + `html_output.{note,detail}_label` ; les deux sinks rendent maintenant ces fields uniformément. CSS HTML : nouveaux `.finding-detail` + `.finding-note` (font-size .82rem, color dim).
+
+#### Tier 5 (false positive — no action)
+
+Un scan initial avait flaggé 6 clés `_detail` apparemment orphelines, mais investigation a montré qu'elles étaient toutes consommées par des suffixes différents (ex. `<base>_enabled`, `<base>_profiles`). Aucune action.
+
+#### Tier 6 → v0.8.1 (déféré)
+
+Audit couverture sévérité profiles : 94% des findings utilisent la sévérité par défaut, ~20-30 clés sont candidates pour overrides profiles (ex. `ssh.password_auth` devrait être WARN en server profile mais OK en desktop). Listing à compléter avant remediation.
+
+#### Tier 10 → v0.8.1 (déféré)
+
+i18n 27 messages d'exception EN hardcoded dans `bob/webhook.py` + `bob/config.py` (ex. `raise ValueError("URL must start with http(s)://")`). Path d'erreur utilisateur en locale EN même en audit FR.
+
+### Nouveaux test guards (4 fichiers)
+
+Issus du drift batch (item 8 + 9) + de l'audit silent-feature-gap :
+
+- **`tests/test_runner.py`** — smoke sur `bob/runner.py::_sec()` orchestrateur. Drift batch item 8.
+- **`tests/test_explain_coverage.py`** — chaque clé actionable du runtime a son entrée `EXPLAIN_KEYS`. Aurait caught les 51 gaps T1.
+- **`tests/test_fix_coverage.py`** — chaque finding actionable a soit `cmd=`, soit est dans la whitelist `_MANUAL_BY_DESIGN` avec rationale inline, soit est dans `_HELPER_DISPATCH_SITES` pour les clés non-littérales émises depuis helpers (ex. `weak_algo` helper émet 3 keys différentes ; `services` helper émet `services.exposed.<id>` dynamiques). 3 tests : whitelist sanity, helper-template présence, actionable coverage.
+- **`tests/test_doc_version_consistency.py`** — drift batch item 9. 5e CI guard.
+
+### Ce qui n'est PAS shippé
+
+D-1..D-4 du contrat `project_v08x_deferred` (figé 2026-05-30 lors du kickoff Phase 2 v0.7.x) reste ouvert pour la continuation v0.8.x :
+- **D-1** : renumber sections + uniformisation noms `emit_section()`
+- **D-2** : fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS`
+- **D-3** : retrait `EXPLAIN_KEY_ALIASES` obsolètes (cycle par cycle)
+- **D-4** : sub-checks granulaires (ex. `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + `.client`)
+
+Retrait trap door `BOB_SANDBOX_LEGACY=1` (Phase 3 v0.7.0 deferred) également reporté à v0.8.x continuation.
+
+### Numbers
+
+- **~6008 tests** (5521 → ~6008, +487 net). 0 régression.
+- 51 nouvelles entrées `EXPLAIN_KEYS` (Tier 1)
+- 8 nouvelles `_BadDirective.cmd_template` (Tier 1bis)
+- 6 nouveaux services `services.json` (Tier 2)
+- 4 findings backfill `warn_with_deduction` (Tier 3)
+- 5 services `service_risk.*` locale backfill (Tier 4)
+- 4 nouveaux test guards (test_runner / test_explain_coverage / test_fix_coverage / test_doc_version_consistency)
+- 2 actions framing (A1 ligne hypothèses + A2 section What BOB is/is NOT)
+- ~1873 EN locale strings (~1827 baseline + 46 nouvelles)
+- 174 références CIS (138 baseline + 36 nouvelles)
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`.
+
+Shifts comportementaux user-facing :
+- **Summary box** se termine maintenant par une note footer `Verdict conditionné par le profil et le contexte réseau ci-dessus. BOB est un auditeur de configuration hardening, pas un moteur d'analyse de menaces` sur chaque audit (A1) — pré-empte la mésinterprétation "BOB dit 10/10 = mon host est safe sur internet"
+- **8 directives SSH** drop le footer "manual fix required" et shippent cmd= à la place (T1bis) — `bob --fix --apply` désormais actionable sur PermitEmptyPasswords / X11Forwarding / IgnoreRhosts / HostbasedAuthentication / PermitUserEnvironment / StrictModes / AllowTcpForwarding / PubkeyAuthentication
+- **4 findings** qui étaient OK à 10/10 déduisent maintenant des points (T3) — score peut baisser de 1-3pts sur hosts avec services inactif+critique / services actif+disabled / firewall policy unknown / snap network virt
+- **6 services modernes** (Tailscale/Caddy/AdGuard Home/Vaultwarden/Ollama/Authelia) gagnent détection + classification risque complète (T2) — hosts qui les exécutent voient leurs trouvailles surface dans le panorama services
+- **Markdown + HTML** exports surfacent maintenant `Finding.detail` et `Finding.note` (T9) — rapports plus informatifs sans changement de schema
+- **Profils desktop/workstation** : l'override sévérité `unattended_not_configured` fonctionne enfin (T7)
+
+v0.6.x reste EOL (déclaré en v0.7.2).
+
+---
+
+## [v0.7.4] — 02-06-2026
+
+**Quatrième patch hardening v0.7.x — deuxième passe deep-audit.**
+
+Audit sub-agent deep sur le codebase v0.7.3 a fait surfacer 0 Critique + 6 Important + 8 Mineur findings. v0.7.4 ship les 14 (pattern bundle-aggressive, zéro défer ce cycle).
+
+### Ce qui est fixé
+
+#### Important
+
+- **I-1 — fuites de sortie `--quiet`** : le block Docker `exposed_ports` ([bob/runner.py:467](../bob/runner.py)), `display_ports_overview`, `display_geoip_notice` et `display_log_results` printaient sur stdout même avec `-q`. `bob -q | cat` pouvait être non-vide quand geoip2 était indisponible, Docker exposait des ports, ou l'analyse logs surfaceait du contenu. Contract break. Chaque helper gate maintenant les print_* sur `config.quiet` ; `report.write_*` tournent toujours pour que le rapport `.log` reste affecté. `display_geoip_notice` reçoit un paramètre keyword-only `quiet: bool = False` (back-compat default).
+- **I-2 — labels UI `--explain` i18n** ([bob/explain.py](../bob/explain.py) + nouvelle namespace locale `explain.ui.*`) : `WHY IT IS A RISK`, `HOW TO FIX`, `SCORING`, `Domain`, `Tool cap`, `Impact`, headers curses picker/detail, list-mode header `Available --explain keys:`, error path `No explanation available for: {requested}` / `Run 'sudo bob --explain list' …` — tous hardcoded EN sur audits FR. 18 nouvelles keys sous `explain.ui.*` dans les deux locales.
+- **I-3 — flows CLI `__main__` i18n** ([bob/__main__.py](../bob/__main__.py) + nouvelles `cli.list.*` / `cli.ignore.*` / `cli.baseline.*` / `compare.no_baseline_yet` keys) : header `--check=list` + note prefix-matching + always-on header + bloc usage, validation invalid-key `--ignore=KEY` + canonical-hint + feedback success/already-present, `--reset-baseline` deleted/not-found/error, message `--diff` no-baseline-yet — tous hardcoded EN. Routés maintenant via `t()` avec le lang de l'audit.
+- **I-4 — symétrie scheme webhook entre `webhook.py` et `config.py::set_webhook_url`** ([bob/config.py:261](../bob/config.py)) : v0.7.3 I-5 avait rendu `webhook.py::send_webhook` case-insensitive (`url.lower()`) ; la sister persistance `UserConfig.set_webhook_url` restait case-sensitive. Résultat : `bob --webhook HTTPS://...` envoyait OK au runtime puis silencieusement échouait à persist (`ValueError` swallowed par `__main__.py`, laissant config sauvegardée inchangée, donc next cron audit posté nowhere). Mirror le fix v0.7.3.
+- **I-5 — duplicate private-IP matcher `bob/checks/services.py`** ([bob/checks/services.py:38](../bob/checks/services.py)) : l'unification architectural v0.5.6 de détection private-IP avait retiré une regex hand-rolled dans `bob/checks/logs.py` et documenté que `sysinfo._is_private_or_loopback_ipv4/_ipv6` est la single source of truth. Un duplicate `_PRIVATE_ADDR` regex était oublié dans `services.py::_classify_exposure`. v0.7.4 replace la regex par token extraction + délégation aux helpers sysinfo. Behaviour-preserved : tous tests existants 192.168 / 10.0 / 172.16 / 100.64 (CGNAT) / fc00:: (ULA) passent ; IPv6 zone-id (`fe80::1%eth0`) est strippé avant le helper call.
+- **I-6 — CSV `risk` aligné JSON v1 (BREAKING)** ([bob/csv_output.py:55](../bob/csv_output.py)) : pre-v0.7.4 CSV `risk` utilisait `engine.effective_level.value` (posture-escalated) tandis que JSON v1 `risk` était restored à `engine.level.value` (score-only) par v0.7.1 I-3 pour préserver le contrat wire-format v0.6.x. Consumers comparant CSV + JSON v1 sur le même audit posture-escalated voyaient `risk` values différentes. v0.7.4 aligne CSV avec la sémantique score-only JSON v1 — **wire-format break** pour consumers CSV qui se reposaient sur la valeur escalated (migrer à `posture_escalation.score_level` JSON v2). User-decision : option A (rename + break) choisie explicitement per la stance contract-preservation v0.7.1.
+
+#### Mineur
+
+- **M-1 — `recurrence.py` dead `.tmp` cleanup retiré** ([bob/recurrence.py:67](../bob/recurrence.py)) : pre-v0.7.2 `_atomic.atomic_write` utilisait un suffix déterministe `name + ".tmp"` ; le handler tentait d'`unlink_missing_ok` ce path exact en cas de failure. Depuis v0.7.2 M-7 (`tempfile.mkstemp` random names), `recurrence.json.tmp` n'existe virtuellement jamais et le handler no-op silencieusement. `_atomic.atomic_write` clean déjà ses propres tmp leftovers via son block `except BaseException`. Ligne dead retirée.
+- **M-2 — UX value-missing CLI** ([bob/cli.py:533](../bob/cli.py)) : pre-v0.7.4 `bob -l` (no value) tombait dans `Error: Unknown option: '-l'` — confusing, vu que `-l` EST connu et seule sa value est missing. Chaque value-taking elif était gated par `i + 1 < len(argv)` ; quand l'option était le dernier argv element, l'elif missait et le parser tombait dans le catch-all `Unknown option`. Nouveau `_VALUE_TAKING_OPTS` frozenset module-level énumère les value-taking flags ; le else-branch check `arg in _VALUE_TAKING_OPTS` et raise un `<flag> requires a value` plus clair. `-e/--explain` et `--watch` intentionnellement absents du set parce qu'ils ont no-arg forms documentées (interactive picker, default 30 s loop). Pins : 9 nouveaux tests.
+- **M-3 — footgun trailing-colon `PYTHONPATH` wrapper cron** ([bob/cron/_io.py:45](../bob/cron/_io.py)) : pre-v0.7.4 le wrapper install-cron-generated exportait `PYTHONPATH=path:"$PYTHONPATH"`. Sous cron `$PYTHONPATH` est typiquement unset, donc la value resultante était `path:` — un trailing colon. Python interprète un trailing colon comme "search also CWD" (footgun long-standing) ; CWD root devient `/root`, donc un write à `/root/foo.py` shadowerait stdlib au prochain cron run. BOB ship le pitch hardening donc ce gap mattait. Fix via `path${PYTHONPATH:+:$PYTHONPATH}` — pas de trailing colon quand unset, sémantiquement identique quand set.
+- **M-4 — `_sandbox.py` + `plugin_checks.py` WARN messages i18n + `key=`** ([bob/_sandbox.py:800](../bob/_sandbox.py) + [bob/plugin_checks.py:175](../bob/plugin_checks.py)) : 9 sandbox error WARN paths émettaient messages EN hardcoded ET pas de `key=`, donc `bob --ignore plugin.sandbox.timeout` n'avait pas de key à matcher (user n'avait aucun moyen de silencer les plugin failures répétées). Nouvelle namespace locale `plugin.sandbox.*` (9 keys). Chaque WARN porte maintenant `key="plugin.sandbox.<reason>"`. `t` threaded depuis `PluginCheck.run(t)` via `SandboxRunner.run(plugin_path, t)` → `_run_sandboxed(t)` / `_run_legacy(t)` ; absent `t` falls back EN via helper per-module `_sandbox_msg` / `_warn_msg` (back-compat avec callers legacy).
+- **M-5 — labels banner `report.py::write_header` i18n** ([bob/report.py:219](../bob/report.py)) : le rapport `.log` `--detailed` commence avec EN hardcoded `[SYSTEM INFORMATION]` + `System` / `Host` / `Kernel` / `Firewall` / `User` / `Language` / `Port config`. Même Frenglish gap que v0.7.3 M-5 a fermé pour `write_summary`. `write_header` accepte maintenant un dict `labels=` optionnel ; `__main__.py` passe les values `t()` bound de l'audit depuis la namespace `banner.*` (3 keys réutilisées : `system` / `host` / `kernel` / `user` ; 4 nouvelles : `system_information` / `firewall` / `language` / `port_config`). Defaults préservent le wording EN pre-v0.7.4 pour back-compat. `MarkdownReport.write_header` accepte `labels=` pour Protocol parity mais l'ignore (rapports Markdown utilisent labels structurels fixes pour interop external-tool).
+- **M-6 — parenthétique Frenglish `fixes.py`** ([bob/fixes.py:108](../bob/fixes.py)) : `print(f"  ✖ {t('fixes.manual')} (unsafe shell syntax in command)")` — `fixes.manual` était traduit, la parenthétique hardcoded EN. Nouvelle key `fixes.skipped_unsafe_shell` dans les deux locales.
+- **M-7 — `json_output` utilise cache `engine.domain_scores`** ([bob/json_output.py:215](../bob/json_output.py) + [bob/json_output.py:418](../bob/json_output.py)) : les builders JSON v1 + v2 re-ranient `compute_domain_scores(engine)` pour assembler le block `domain_scores`, tandis que l'engine portait déjà les values cachées de `apply_domain_score_override`. Équivalent aujourd'hui ; future drift risk entre terminal display (lit cache) et JSON (recomputait) éliminée. Cache-first avec fresh-compute fallback pour engines sans override appliqué (défensif).
+- **M-8 — `set_posture_from_engine` reject bool subclass-of-int** ([bob/scoring.py:706](../bob/scoring.py)) : `isinstance(True, int)` is True (bool subclass de int). Une entry `firewall: True` dans `domain_scores` slipperait past le branch `elif isinstance(int)` et forward `firewall_domain_score=True` à `set_posture`, qui raise alors TypeError depuis son guard explicit-bool. Le docstring du helper claim "centralise the dict-vs-int guard so a future contributor adding a new entry point can't accidentally pass the wrong shape" — ce fix v0.7.4 complète cette promesse. Bool normalisé à None maintenant (skip posture floor au lieu de crash).
+
+### Ce qui n'est PAS shippé
+
+Chaque candidat triagé shippé ce cycle. Pattern bundle-aggressive v0.7.3 appliqué sans exception (zéro défer, zéro v0.7.5 forced).
+
+### Numbers
+
+- **5521 tests** (5502 → 5521, +19 net). 0 régression.
+- 1 pin parité CSV/JSON v1 risk (I-6)
+- 1 pin symétrie scheme webhook (I-4)
+- 4 pins display-quiet (I-1 `display_geoip_notice`)
+- 9 pins UX value-missing CLI (M-2 incluant `--explain` / `--watch` no-arg sanity)
+- 1 pin cron PYTHONPATH safe-form (M-3)
+- 3 pins `set_posture_from_engine` bool/int/dict normalisation (M-8)
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`.
+
+Shifts comportementaux user-facing :
+- **Colonne CSV `risk` désormais score-derived** (BREAKING pour consumers CSV posture-aware — migrer à `posture_escalation.score_level` JSON v2 pour la valeur escalated)
+- `--explain`, `--check=list`, `--ignore=KEY`, `--reset-baseline`, `--diff` no-baseline désormais full FR en locale FR
+- `bob -l` (et autres value-taking flags) errent maintenant avec `requires a value` au lieu de `Unknown option`
+- Webhook URL scheme matching case-insensitive sur persist aussi (pas seulement send)
+- Wrappers cron regénérés via `sudo bob --install-cron` ne produisent plus de trailing-colon `PATH:`
+- Header rapport `.log` `--detailed` en FR désormais full FR
+
+v0.6.x reste EOL (déclaré en v0.7.2).
+
+---
+
+## [v0.7.3] — 02-06-2026
+
+**Troisième patch hardening v0.7.x — full deep-audit pass.**
+
+Audit sub-agent deep sur le codebase v0.7.2 a fait surfacer 0 Critique + 6 Important + 13 Mineur findings. Après cross-check de chaque finding dans le code, v0.7.3 ship 14 fixes (6I + 8M) et skip explicitement 5 mineurs avec rationale clair.
+
+### Ce qui est fixé
+
+#### Important
+
+- **I-1 — locale FR "finding" → "découverte"** : v0.7.2 M-4 extraction avait laissé "finding" anglais dans 2 entries FR (`html_output.no_findings` / `findings_count`). Maintenant consistent avec le reste du codebase.
+- **I-2 — `completion.py` SUDO_USER non validé** ([bob/completion.py:36-37](../bob/completion.py)) : `pwd.getpwnam(sudo_user)` raisait `KeyError` non géré sur value malformée/spoofée. Guardé maintenant via même regex pattern + `try/except KeyError` que `sysinfo.get_user_home`.
+- **I-3 — colonne CSV `section` → `nature` (BREAKING)** ([bob/csv_output.py:26](../bob/csv_output.py)) : pre-v0.7.3 le CSV avait une colonne `section` qui portait en fait `Finding.nature`. Tests baked the mislabel. Consumers CSV externes parsant `section` recevaient nature strings. Header renommé pour matcher le contenu. CSV n'a pas de `schema_version` field donc wire-format break.
+- **I-4 — `manage_logs.py` 3 `input()` bruts → `safe_input()`** ([bob/manage_logs.py:104, 365, 388](../bob/manage_logs.py)) : violait convention projet #2 (chaque prompt interactif via `bob._tty.safe_input`). Ligne 104 retient `input()` brut pour readline integration ; 365/388 sans excuse.
+- **I-5 — scheme URL webhook case-insensitive** ([bob/webhook.py:206](../bob/webhook.py)) : `HTTPS://example.com` rejeté à tort. RFC 3986 permet toute casse ; normalisé via `url.lower()` pour le scheme check.
+- **I-6 — convergence guard level markdown/html** ([bob/markdown_output.py:131-138](../bob/markdown_output.py)) : les 2 extractions M-4 v0.7.2 utilisaient idiomes différents pour le fallback `effective_level`. Convergé sur l'idiom html plus sûr.
+
+#### Mineur
+
+- **M-2 — forme `--lang VALUE` espace-séparée acceptée** ([bob/cli.py:236-243](../bob/cli.py)) : pre-v0.7.3 seul `--lang=VALUE` accepté ; autres options value-taking supportaient les 2 formes.
+- **M-3 — `bob -e ""` empty key rejeté** ([bob/cli.py:308-313](../bob/cli.py)) : pre-v0.7.3 arg vide silencieusement consommé.
+- **M-4 — argv hardening sur `-w` / `--ignore` / `--output-dir`** ([bob/cli.py](../bob/cli.py)) : le check space-form exige maintenant que next arg ne commence pas par `-`, donc typos comme `bob -w --quiet` errent au parse-time au lieu de silencieusement setter `webhook_url="--quiet"`.
+- **M-5 — labels champs `report.py` i18n** ([bob/report.py:333-360](../bob/report.py)) : 6 labels EN hardcoded ("OK", "Warning", "Alert", "Score", "Risk", "Context") dans rapport `.txt` on-disk maintenant traduits via dict `labels=`. Nouvelles keys sous `report.field_*` + `report.summary_title` en `en.json` + `fr.json`.
+- **M-6 — fix double-escape URL chars `_inline_format`** ([bob/report_markdown.py:469-481](../bob/report_markdown.py)) : URLs contenant `&` `<` `>` `"` double-escapées (parent `html.escape` + `_safe_url`'s `html.escape(quote=True)`), produisant `&amp;amp;` dans `href="..."`. Fixé via `html.unescape(m.group(2))` avant `_safe_url`. Latent (pas de BOB-emitted Markdown trigger ça aujourd'hui) mais réel.
+- **M-10 — extract helper `set_posture_from_engine`** ([bob/scoring.py:683-720](../bob/scoring.py)) : setup posture-escalation dupliqué dans `bob/__main__.py` (audit summary) et `bob/watch.py` (boucle watch) consolidé en un seul helper. Ajoute aussi le guard dict-vs-int sur `domain_scores["firewall"]` (leçon Phase 1 4ed2e3b).
+- **M-11 — `send_html_email` CRLF stripping défensif** ([bob/report_markdown.py:565-578](../bob/report_markdown.py)) : `\r\n` strippés des headers `recipient`, `subject`, `from_email`. Défense en profondeur contre callers tainted futurs ; callers actuels internes BOB.
+- **M-12 — label risk html_output traduit** ([bob/html_output.py:140-152](../bob/html_output.py)) : pre-v0.7.3 le badge risk du summary header affichait `LOW`/`HIGH` quel que soit le locale. Maintenant les 2 surfaces utilisent le même contrat i18n. Nouvelles keys `html_output.risk_low/medium/high/critical` en `en.json` + `fr.json` (FR : `FAIBLE`/`MOYEN`/`ÉLEVÉ`/`CRITIQUE`).
+
+### Skippés per `feedback-conservative-refactor` (5)
+
+- M-1 f-string sans interpolation (registry.py)
+- M-7 timestamp CSV sur every row (by-design self-contained CSV)
+- M-8 `formatter.py` zéro in-tree consumers (documented stub future-API)
+- M-9 `_atomic.py` `BaseException` width (intentionnel — catches Ctrl+C pour tmp cleanup)
+- M-13 EXPLAIN_KEYS list→frozenset (perf cosmétique)
+
+### Numbers
+
+5490 → **5502 tests** (+12 net) : 1 pin CSV rename, 3 pins case-insensitivity webhook scheme, 6 pins CLI argv hardening, 2 pins traduction HTML risk-level. 0 régression.
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`.
+
+Seuls shifts comportementaux user-facing : rename colonne CSV (consumers externes doivent update), rapports audit `.txt` FR ont désormais labels champs FR (plus de mixed-language), rapports HTML ont badges risque FR en locale FR. Webhook URL scheme matching case-insensitive.
+
+---
+
+## [v0.7.2] — 01-06-2026
+
+**Deuxième patch hardening v0.7.x — clôture les 6 mineurs déférés par v0.7.1 + formalise EOL v0.6.x.**
+
+### Ce qui est fixé
+
+- **M-4 extraction i18n sur exports Markdown / HTML** — `bob/markdown_output.py` + `bob/html_output.py` routent maintenant chaque string user-facing via fonction `t(key, **kwargs)` optionnelle ; quand `t=None` (callers legacy / tests), un dict fallback EN `_FALLBACK_LABELS` dans chaque module fournit les strings v0.7.1 unchanged. Callers `__main__.py` passent le `t` + `lang` bound de l'audit pour que les exports héritent du locale opérateur. Nouvelles entries locale : 24 keys sous `markdown_output.*` + 22 keys sous `html_output.*` dans `en.json` + `fr.json`.
+- **M-6 sysinfo accepte IPv6 public IP** — `bob/sysinfo.py:199` regex `^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$` remplacée par validation `ipaddress.ip_address()` ; hosts v6-only reportent maintenant leur adresse publique réelle au lieu de string vide.
+- **M-7 collision tmp-file `_atomic.py` sous writers concurrents** — `tmp = path.with_suffix(path.suffix + ".tmp")` remplacé par `tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))`. Deux invocations `bob` concurrentes (cron + manuel + watch loop coïncident) ne racent plus sur le même tmp path.
+- **M-8 `SCHEMA_*_KEYS` wirés comme invariants enforced** — `bob/json_output.py` exporte les frozensets `SCHEMA_V1_REQUIRED_KEYS` / `SCHEMA_V1_FULL_KEYS` / `SCHEMA_V2_REQUIRED_KEYS` / `SCHEMA_V2_FULL_KEYS`. Nouvelle classe test `TestSchemaConstantsPinActualOutput` assert chaque frozenset matche ce que le producer émet.
+- **M-9 `--json-full --json-v1` help text** — `bob/cli.py:604` mentionne maintenant explicitement la combinaison.
+- **M-10 paths détection posture `display.py` dédupés** — extrait `_compute_posture_annotation(engine, t) -> tuple` helper remplaçant le pattern dupliqué pendant le hotfix v0.7.0.
+- **v0.6.x officiellement déclaré EOL dans `SECURITY.md` + `SECURITY_FR.md`** + GitHub Release v0.6.2 notes porte un banner EOL prominent.
+
+### Numbers
+
+5479 → **5490 tests** (+11 net) : 4 SCHEMA_*_KEYS pin tests (M-8), 3 pins routing i18n Markdown (M-4), 4 pins routing i18n HTML (M-4 + `lang` attr). 0 régression.
+
+### Skippés
+
+- M-11 (import Iterator cosmétique) NON shippé per `feedback-conservative-refactor` — skip-forever item.
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`. Webhook `BOB_WEBHOOK_ALLOW_INSECURE=1` (v0.7.1 I-5) reste la seule env var opt-in.
+
+---
+
+## [v0.7.1] — 01-06-2026
+
+**Premier patch hardening v0.7.x — follow-up same-day à v0.7.0 final.**
+
+Audit sub-agent deep sur le codebase v0.7.0 complet a surfacé 0C + 5I + 11M findings ; v0.7.1 ship 4 important + 3 minor (le reste déféré à v0.7.2).
+
+### Ce qui est fixé
+
+- **I-1 drift contrat watch-mode** — `bob --watch` créait un `ScoreEngine()` neuf par iteration mais n'appelait jamais `engine.set_posture(...)` et ne settait jamais `engine.ignore_keys = load_ignore_keys()`. Résultat : un host dont UFW vient de tomber continuait à afficher "risque FAIBLE" en watch mode alors que le prochain audit non-watch escalait correctement en HIGH. Fixé en propageant ignore list + règles posture v0.7.0 per iteration, et affichant `engine.effective_level.value` next to le score bar.
+- **I-2 drift signature `MarkdownReport.write_summary`** — `display.print_audit_summary` (appelé uniquement sur `AuditReport` aujourd'hui) passe `posture_annotation=...` à `report.write_summary`. Le Protocol `Report` et l'impl `MarkdownReport.write_summary` n'acceptaient PAS le kwarg. Bug ne fire pas aujourd'hui mais c'est une mine. Fixé en ajoutant `posture_annotation: str = ""` aux deux.
+- **I-3 break wire-format `risk` JSON v1** — v0.7.0 Phase 1 avait silencieusement shifté `risk` dans le schema v1 JSON de `engine.level.value` (score-derived) à `engine.effective_level.value` (posture-escalated). Cassait le contrat documenté "v1 layout matches v0.6.x EXACTLY". v0.7.1 revert le shift ; consumers v1 restent gelés à la sémantique v0.6.x. Consumers nécessitant la valeur escalated migrent à v2's `posture_escalation.score_level`.
+- **I-5 URL webhook plaintext acceptée** — `send_webhook(url, ...)` acceptait `http://` et `https://`. Payload audit contient hostname + public_ip + score + alerts — leak posture audit en plaintext sur tout path réseau. v0.7.1 rejette `http://` par défaut ; opt out via nouvelle env var `BOB_WEBHOOK_ALLOW_INSECURE=1`.
+- **M-1 import non utilisé** — `from typing import Any` dans `bob/plugin_checks.py` resté après le retrait T3 Step 3.
+- **M-2 `_atomic.py` ne fsync pas** — docstring promettait persistance crash-safe mais l'impl skippait `fsync(fd)` avant close ET `fsync(dir_fd)` après rename. Fsync sur les 2 fds maintenant.
+- **M-5 `--ignore=KEY` ne validait pas le pattern** — `add_ignore_key("anything goes here")` silencieusement accepté, writer YAML splittait sur whitespace et truncait au premier mot. v0.7.1 valide contre le pattern canonique EXPLAIN_KEYS AVANT le write ; bad keys retournent `EXIT_ERROR=3` avec hint.
+
+### Numbers
+
+5466 → 5479 tests (+13 net) : 5 pins ignore-validation, 1 atomic fsync spy, 2 pins webhook http rejection, 3 pins MarkdownReport signature parity, 2 pins watch-mode propagation. JSON contract test renamed + body inverted (`test_v1_risk_pins_score_only_level_not_effective_level`).
+
+### Déféré à v0.7.2
+
+I-4, M-4, M-6, M-7, M-8, M-9, M-10, M-11.
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`. Aucun changement contrat CLI ; consumers v1 JSON peuvent voir `risk` revert de posture-escalated à score-derived (intentionnel — c'est le fix I-3).
+
+---
+
+## [v0.7.0] — 01-06-2026
+
+**Bump majeur — ouvre la branche stable v0.7.x.**
+
+Roll-up du cycle beta b1+b2+b3+b4 (15+ commits) avec 3 phases thématiques et 4 garde-fous release-engineering ajoutés en vol.
+
+### Phase 1 (Foundation T1)
+
+Python 3.14 ajouté à la matrix CI ; nouvelle API `ScoreEngine.set_posture()` + property `effective_level` + block `posture_escalation` calculant `max(score_level, posture_floor)` ; nouvelle EXPLAIN key `risk.escalated_posture` ; box-score annote "(majoré par posture : X)" quand posture floor actif.
+
+### Phase 2 (Schema v2 T2)
+
+`build_json_data(..., schema_version="2")` est le nouveau défaut, flag `--json-v1` préserve le layout legacy v0.6.x. v2 fixe l'inconsistance type `network_context` (P1), renomme `timestamp`→`timestamp_utc`, ajoute `info_count` + block `posture_escalation` + `deductions_raw`/`open_ports_all` en mode complet + `domain_scores[d].deductions`. Nouveau fichier `tests/test_json_schema_v2.py`. **Baseline audit EXPLAIN_KEYS** = 117 keys / 30 préfixes / 100% conformance pinné par `tests/test_explain_naming_convention.py`.
+
+### Phase 2.1 hotfix
+
+Audit sub-agent pre-T3 a surfacé 5 important + 6 minors ; 5/5 important + 4/6 minors shippés. I-1+I-4 propagation `effective_level` aux 3 sinks ratés + champ `level_score_only` dans `history.jsonl`. I-2 extraction helper `bob.scoring.unpack_posture_escalation`. I-3 `set_posture` rejette bool explicitement avec TypeError clair. M-1 `--check=list` liste les 10 sections always-on. M-3 `report.write_summary` (.txt) surface annotation posture.
+
+### Phase 3 (Plugin Sandbox Runner T3)
+
+Nouveau `bob/_sandbox.py` (~900 LoC) implémente runner plugin restreint : isolation processus via `multiprocessing.get_context("spawn")`, timeout wall-clock 5s + `RLIMIT_AS=256MiB` + `RLIMIT_CPU=10s`, allowlist d'import, `__builtins__` restreints (`_ImmutableBuiltins`), wrapper `open()` rejetant write modes ET refusant reads sur `/etc/shadow` / `~/.ssh/id_*` / `/dev/mem` etc., méthodes write `pathlib.Path` monkey-patchées, strip extensif d'attributs `os` (84 attrs dangereux), CheckResult shippé via round-trip dict JSON-safe à travers la queue (pas de pickle d'objets plugin-contrôlés → pas de RCE parent via `__reduce__` malicieux). `BOB_SANDBOX_LEGACY=1` trap door déprécié avec log CRITICAL + write stderr per-run. Threat model recadré honnête dans `SECURITY.md` — **le sandboxing Python in-process N'EST PAS une frontière de sécurité** (consensus PEP 416) ; le sandbox catch les accidents + attaques naïves ; le profil AppArmor shippé est la vraie frontière.
+
+### 4 guards release-engineering ajoutés en vol
+
+(1) **integration-first** caught Phase 1 4ed2e3b crash dict-vs-int avant la première beta ; (2) **smoke-after-commit** caught classe discovery packaging v0.6.2 ; (3) **version-consistency** test caught drift `__version__` v0.7.0b1 dans b2 ; (4) **smoke-plugin-on-CI** ajouté après ship pattern v0.7.0b3.
+
+### Numbers
+
+5391 → **5466 tests** à travers le cycle v0.7.0, 0 régression. Sub-agent adversarial review pattern proven 2 fois (Phase 2.1 + T3 Step 4).
+
+### Déféré à v0.8.0
+
+D-1 sections renumber, D-2 fusion `_ALL_SECTIONS`+`_ALWAYS_ON_SECTIONS`, D-3 retrait aliases EXPLAIN_KEYS obsolètes, D-4 sub-checks granulaires, retrait trap door `BOB_SANDBOX_LEGACY=1`.
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`. Users avec plugins dans `~/.config/bob/checks.d/` ont le sandbox automatiquement ; users sans plugins voient la nouvelle posture escalation + sortie JSON schema v2. Branche v0.6.x officiellement EOL.
+
+---
+
+## [v0.7.0b4] — 01-06-2026
+
+**Hotfix compatibilité CI pour v0.7.0b3.** Aucun changement threat-model ou behavior audit — mais le ship b3 utilisait `types.MappingProxyType` comme `__builtins__` restreints du sandbox, et CPython rejette les mappings non-dict comme builtins `exec()` sur toute version Python de la matrix CI SAUF 3.12.3 : chaque run plugin sur 3.10/3.11/3.13/3.14 raisait `SystemError`. Détecté par la matrix de test `publish.yml` immédiatement après le push tag b3. **Fix** : revert `_build_restricted_builtins` pour retourner le dict subclass `_ImmutableBuiltins` original shippé en b2. Bloque le path naturel-Python mais bypassable via `dict.__setitem__(bins, "eval", real_eval)` — même finding I-1 sub-agent que b3 tentait de fermer. Trade-off : I-1 unbound-bypass passe de "fermé" à "known limitation". Documenté + nouveau test pinning. **4e bug release-engineering sur la branche v0.7.x.** Nouveau guard pour v0.7.0 final : step smoke-CI loadant un plugin bénin sur chaque version Python matrix avant le tag. 5466 tests.
+
+---
+
+## [v0.7.0b3] — 31-05-2026
+
+**Hardening sandbox + recadrage threat-model** suite à l'audit adversarial sub-agent T3 Phase 3 (3C + 5I + 7M).
+
+### PoCs confirmés
+
+- **C-1** : `from pathlib import os` smuggleait module `os` live au-delà de l'allowlist d'import ; strip list manquait `posix_spawn` / `open` / `write` / `chmod` / `unlink` / `environ` / `chdir`.
+- **C-2** : RCE processus parent via pickle `mp.Queue` : plugin obtenait `eval` réel via `json.dumps.__globals__["__builtins__"]`, construisait classe avec `__reduce__` malicieux, attachait à `findings[0].template_vars`, le `q.get()` parent unpicklait et lançait `os.system` sous sudo.
+- **Échappement architectural** : `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` puis `real_import("subprocess")` — bypass tout hook en 5 lignes, consensus communauté Python depuis PEP 416 retiré (2012).
+
+### Décision stratégique : Option B — défense en profondeur honnête + AppArmor real boundary
+
+### Hardening shippé
+
+- `_OS_DANGEROUS_ATTRS` étendu de 21 → 84 entries (closes C-1)
+- `_serialize_check_result` / `_deserialize_check_result` round-trip dict JSON-safe à travers la queue (closes C-2)
+- `_ImmutableBuiltins` dict subclass remplacée par `types.MappingProxyType` (closes I-1 — proxy read-only C-level)
+- `q.close()` + `q.join_thread()` dans `try/finally` (I-2)
+- deny-list read-path sur `open()` bloque `/etc/shadow` / `~/.ssh/id_*` / `/dev/mem` / `/proc/kcore` (I-5)
+- `_apply_resource_limits` set `RLIMIT_CPU = 10s` en plus de `RLIMIT_AS = 256MiB` (M-4)
+- warning `BOB_SANDBOX_LEGACY=1` via `logger.critical` + stderr write, re-émis per-run (M-6 + M-7)
+- helper AST `bob._sandbox.has_run_check(source)` partagé (I-3)
+
+### Numbers
+
+5458 → 5465 tests, 0 régression. SECURITY.md réécrit avec threat model honnête : **"In-process Python sandboxing n'est pas une frontière de sécurité"**.
+
+**Quiconque tourne des plugins de sources non confiance doit enforcer le profil AppArmor BOB** — code review reste mandatoire.
+
+---
+
 ## [v0.7.0b2] — 31-05-2026
 
 **Hotfix release-engineering pour v0.7.0b1.** Aucun changement de code, contrat JSON, EXPLAIN_KEYS, CLI ou comportement d'audit vs v0.7.0b1 — mais le wheel publié sous cette version reportait `BOB v0.6.2` dans toutes les sorties (bannière terminal, `--version`, champ `"version"` JSON, payload webhook, header du rapport).

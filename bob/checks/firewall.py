@@ -171,10 +171,14 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
     elif status.incoming_policy == "deny":
         result.ok(message=_t("firewall.policy_ok"), key="firewall.policy_ok")
     else:
-        result.warn(
-            message=_t("firewall.policy_unknown"),
-            nature="improvement",
+        # v0.8.0 drift batch: unknown firewall policy = unverified posture.
+        # +2pts because we cannot prove the system is protected.
+        result.warn_with_deduction(
             key="firewall.policy_unknown",
+            message=_t("firewall.policy_unknown"),
+            points=2,
+            nature="improvement",
+            cmd="sudo ufw default deny incoming",
         )
 
     return result
@@ -356,6 +360,7 @@ def _check_ipv6_coverage(
                 key="rules.ipv6_missing",
                 message=t("rules.ipv6_missing"),
                 points=1,
+                cmd="sudo sed -i 's/^IPV6=no/IPV6=yes/' /etc/default/ufw && sudo ufw reload",
             )
         # else: IPv6 is disabled in /etc/default/ufw — no warning
     elif ipv4_count > 0:

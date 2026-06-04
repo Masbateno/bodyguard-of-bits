@@ -28,18 +28,66 @@ Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre 
 
 ---
 
+## Ce que BOB est — et ce qu'il n'est pas
+
+**BOB est** un auditeur de durcissement (hardening). Il évalue l'hygiène de configuration vs les benchmarks CIS et les bonnes pratiques établies, **modulée par le profil d'audit actif et le contexte réseau détecté**. Le score reflète *l'hygiène de configuration sous les hypothèses affichées* — pas un verdict de sécurité absolu.
+
+**BOB n'est pas :**
+
+- un scanner de vulnérabilités — il ne sonde pas de bases CVE, ne fingerprinte pas les versions logicielles vs des exploits connus, et ne teste pas les chemins d'exploitation (utilisez OpenVAS, Nessus, etc.) ;
+- un moteur d'analyse de menaces (threat modeling) — il n'énumère pas les chemins d'attaque, ne teste pas la joignabilité depuis l'extérieur de l'hôte, et ne simule pas les scénarios de compromission (utilisez des scanners externes, du red-team tooling, des équipes sécurité) ;
+- un système de verdict autonome — un score propre signifie *"hygiéniquement configuré pour le profil choisi dans le contexte réseau détecté"*, pas *"impossible à compromettre"*. Une interprétation humaine est requise pour traduire le verdict en risque opérationnel.
+
+**Conséquences concrètes :**
+
+- Un score 10/10 sur un poste de travail en LAN ne signifie **pas** un 10/10 sur le même hôte déplacé sur un cloud public — re-auditer avec le profil approprié.
+- Un finding marqué `improvement` au lieu de `action` reflète le contexte réseau (ex. l'authentification SSH par mot de passe est une hygiène acceptable sur un hôte LAN-only, mais à durcir avant d'exposer l'hôte directement sur internet).
+- Le profil d'audit (`server` / `workstation` / `container`) encode le modèle de menace. Changer de profil change le verdict — c'est par design.
+- La détection de contexte réseau (NAT / IP publique / état des interfaces) est **heuristique**, pas un probing actif de joignabilité. Elle indique ce que BOB infère depuis le système local, pas ce qu'un attaquant observerait de l'extérieur.
+
+Un mode CIS strict (sans modulation contextuelle) est prévu sur la roadmap.
+
+---
+
 ## Installation
 
 > **Sécurité d'exécution** : BOB est en lecture seule. Il n'exécute que des commandes inoffensives (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) et n'écrit qu'à `~/.config/bob` et son répertoire de logs. Le mode optionnel `--fix --apply` demande confirmation avant chaque correction ; rien d'autre ne modifie l'état du système. Un audit typique se termine en moins de 5 secondes.
 
-```
-pipx install bodyguard-of-bits
-sudo bob
+### Prérequis
+
+`pipx` (installateur d'apps Python isolées) :
+
+```bash
+sudo apt install pipx && pipx ensurepath
 ```
 
-Complétion bash :
+> Ouvrez un nouveau terminal après `pipx ensurepath` pour que le changement de `PATH` soit pris en compte.
+
+### Installer BOB
+
+```bash
+pipx install bodyguard-of-bits
 ```
-sudo bob --install-completion
+
+---
+
+## Activer `sudo bob` + complétion bash
+
+pipx installe le binaire `bob` dans `~/.local/bin/`, qui **n'est pas** dans le `PATH` restreint de sudo. Lancez `--install-completion` une fois avec le chemin absolu — il crée le lien symbolique `/usr/local/bin/bob` et installe le script de complétion bash :
+
+```bash
+sudo ~/.local/bin/bob --install-completion
+source /etc/bash_completion.d/bob
+```
+
+Après cette étape, `sudo bob` fonctionne normalement et `bob --<TAB>` complète les options.
+
+---
+
+## Désinstaller
+
+```bash
+pipx uninstall bodyguard-of-bits
 ```
 
 ---
@@ -101,7 +149,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 | **Pare-feu** | Règles UFW, iptables/nftables (quand UFW inactif), cohérence IPv6, exposition des ports |
 | **SSH** | Durcissement sshd_config — PermitRootLogin, qualité des clés, timeouts, forwarding |
 | **Durcissement noyau** | Paramètres sysctl, modules noyau, Secure Boot, firmware/microcode |
-| **Services** | 32 services connus avec classification du risque ; détection du contournement pare-feu Docker |
+| **Services** | 38 services connus avec classification du risque ; détection du contournement pare-feu Docker |
 | **Permissions fichiers** | Audit SUID/SGID, fichiers sensibles, sudoers |
 | **Comptes utilisateurs** | Comptes expirés, politique de mots de passe, login.defs, PAM |
 | **Mises à jour & détection** | Mises à jour apt, règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
@@ -113,7 +161,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ## Mapping des benchmarks CIS
 
-137 entrées : **99 CIS Ubuntu 22.04 · 4 CIS Docker · 34 bonnes pratiques**.
+174 entrées : **107 CIS Ubuntu 22.04 · 7 CIS Docker · 60 bonnes pratiques**.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  

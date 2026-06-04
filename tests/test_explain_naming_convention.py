@@ -45,10 +45,23 @@ _FILE_PERMS_MULTI_RE = re.compile(
     r"^file_perms\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$"
 )
 
+# Multi-segment services exception (v0.8.0 drift batch): the services check
+# uses a two-tier taxonomy `services.<category>.<finding_id>` where
+# <category> ∈ {exposure, state} groups findings about port exposure vs.
+# systemd unit state. Renaming to flat form would break the wire-format
+# JSON output and the existing locale namespace structure.
+_SERVICES_MULTI_RE = re.compile(
+    r"^services\.(exposure|state)\.[a-z][a-z0-9_]*$"
+)
+
 
 def _is_canonical(key: str) -> bool:
-    """Single-dot or file_perms multi-segment exception."""
-    return bool(_SINGLE_DOT_RE.match(key) or _FILE_PERMS_MULTI_RE.match(key))
+    """Single-dot, file_perms multi-segment, or services category exception."""
+    return bool(
+        _SINGLE_DOT_RE.match(key)
+        or _FILE_PERMS_MULTI_RE.match(key)
+        or _SERVICES_MULTI_RE.match(key)
+    )
 
 
 class TestExplainKeysCanonicalFormat:
@@ -114,10 +127,15 @@ class TestExplainKeysUnique:
 class TestExplainPrefixDiscipline:
     """Prefix vocabulary is finite and reflects the audit sections."""
 
-    # The known set of prefixes as of v0.7.0. New additions to this set
-    # require explicit thought — DO NOT silently widen by adding here
-    # without updating the EXPLAIN_KEYS audit in DOCUMENTS/README_TECH.md.
+    # The known set of prefixes. v0.7.0 audit baseline = 30 ; v0.8.0
+    # drift batch added the 15 prefixes whose WARN/ALERT findings were
+    # silently uncovered by --explain pre-backfill (see DOCUMENTS/SNAPSHOT
+    # and tests/test_explain_coverage.py for the backfill rationale).
+    # New additions to this set require explicit thought — DO NOT silently
+    # widen by adding here without updating the EXPLAIN_KEYS audit in
+    # DOCUMENTS/README_TECH.md.
     KNOWN_PREFIXES = frozenset({
+        # v0.7.0 baseline (30)
         "ssh", "clamav", "samba", "file_perms", "updates", "hardening",
         "kernel_modules", "rules", "ipv6", "password_policy",
         "user_accounts", "cron_audit", "services_state", "disk", "memory",
@@ -125,6 +143,10 @@ class TestExplainPrefixDiscipline:
         "umask", "prerequisites", "firewall", "ssl_certs",
         "systemd_timers", "firmware", "docker_audit", "kernel_hardening",
         "suid_audit", "risk",
+        # v0.8.0 drift batch additions (15)
+        "iptables_nft", "mac_policy", "firewall_stack", "docker",
+        "services", "rootkit", "ports", "ntp", "fail2ban", "ddns",
+        "log_rotation", "logs", "smtp", "backup", "network_context",
     })
 
     @pytest.mark.parametrize("key", EXPLAIN_KEYS)
@@ -176,19 +198,23 @@ class TestExplainAuditInvariants:
     regression guards."""
 
     def test_total_keys_match_audit_count(self):
-        """v0.7.0 audit count = 117. Drifts here require a Phase 2 doc
-        update in DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
-        assert len(EXPLAIN_KEYS) == 117, (
-            f"EXPLAIN_KEYS length drifted from the v0.7.0 audit baseline 117 "
+        """v0.7.0 baseline = 117. v0.8.0 drift batch backfilled 51 missing
+        WARN/ALERT findings → 168. Drifts beyond require a doc update in
+        DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
+        assert len(EXPLAIN_KEYS) == 168, (
+            f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."
         )
 
     def test_prefix_count_does_not_drift_silently(self):
-        """30 distinct prefixes at v0.7.0 — drift requires updating
+        """v0.7.0 baseline = 30 distinct prefixes ; v0.8.0 drift batch
+        added 15 (iptables_nft, mac_policy, firewall_stack, docker, services,
+        rootkit, ports, ntp, fail2ban, ddns, log_rotation, logs, smtp,
+        backup, network_context) → 45. Further drift requires updating
         KNOWN_PREFIXES + the audit doc."""
         prefixes = {k.split(".", 1)[0] for k in EXPLAIN_KEYS}
-        assert len(prefixes) == 30, (
-            f"Prefix count drifted from v0.7.0 audit baseline 30 to "
+        assert len(prefixes) == 45, (
+            f"Prefix count drifted from v0.8.0 baseline 45 to "
             f"{len(prefixes)}. Update KNOWN_PREFIXES + audit doc."
         )

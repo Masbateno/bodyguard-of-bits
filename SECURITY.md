@@ -75,7 +75,20 @@ BOB is **not**:
   - an active defense tool (BOB does not block traffic, kill processes,
     or modify firewall rules on its own — the `--fix` mode prompts the
     user for each command);
-  - a forensics tool (no chain-of-custody, no immutable evidence storage).
+  - a forensics tool (no chain-of-custody, no immutable evidence storage);
+  - a vulnerability scanner (no CVE database probing, no exploit testing,
+    no version-fingerprinting against known issues — use OpenVAS, Nessus,
+    Wazuh, etc.);
+  - a threat-modeling engine (no attacker-path enumeration, no active
+    reachability probing from outside the host, no compromise-scenario
+    simulation — use external scanners or red-team tooling);
+  - an autonomous verdict system. BOB's score reflects **configuration
+    hygiene under the active audit profile and detected network context**
+    — not an absolute security verdict. A clean score means "hygienically
+    configured for the chosen profile in the detected context", not
+    "impossible to compromise". Human interpretation is required to
+    translate the verdict into operational risk. See README.md
+    "What BOB is — and is not" for the user-facing scope statement.
 
 ### Adversary model
 
@@ -202,6 +215,18 @@ against accidents and naïve attacks; it does not replace trust.
 plugin in the parent process — surfaces a CRITICAL log entry + flashy
 stderr WARNING on every run. Deprecated immediately; will be removed
 in v0.8.0.
+
+## Environment variables
+
+BOB reads the following environment variables. All are opt-in; none are
+required for normal operation.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `BOB_SHARE` | unset | Override the auto-detected package data dir (`bob/data/`). Used by distro packagers when the data files ship outside the Python package tree. |
+| `BOB_WEBHOOK_ALLOW_INSECURE=1` | unset | Allow `http://` webhook URLs (default rejects them). The audit payload leaks hostname + public IP + score + alerts in plaintext — only use on a trusted private network or for local lab testing. |
+| `BOB_SANDBOX_LEGACY=1` | unset | Run plugins in the parent process instead of the spawn'd sandbox child. **Deprecated**, will be removed in v0.8.0. Loud STDERR + CRITICAL log warning on every run. |
+| `BOB_DEBUG=1` | unset | Print the full Python traceback on `EXIT_ERROR=3` exits. Without it, errors print a one-line summary + the hint to set this variable. Useful for diagnosing crashes; never required in production. |
 
 ## Network surface
 

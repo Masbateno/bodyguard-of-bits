@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.6.2-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.8.0-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -23,14 +23,14 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Score contextuel** — détection du contexte réseau (IP publique directe vs NAT) ; pénalités doublées sur les machines exposées sur internet ; pare-feu inactif plafonne le score à 3/10
 - **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; findings répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
 - **Profils d'audit** — `server` (défaut), `desktop`, `container` ; alias `workstation` conservé ; profil actif affiché dans la boîte de synthèse
-- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 137 entrées (99 CIS formels, 34 best-practice, 4 Docker)
+- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 174 entrées (107 CIS formels, 60 best-practice, 7 Docker)
 - **5 en-têtes de groupes thématiques** — sortie organisée en : FIREWALL & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / DÉTECTION & SANTÉ
 - **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible (intégration CI)
 
 ### Réseau & pare-feu
 
-- **32 services réseau connus** détectés avec analyse d'exposition UFW et contexte de risque à deux axes (exposition + menace) pour les services critiques et élevés ; services CRITICAL/HIGH installés mais inactifs émettent ⚠ + bloc de contexte de risque
-- **Panorama des services** — tableau compact des 32 services après l'audit : SERVICE / STATUT / PORT(S) / UFW ; services non installés affichés en grisé
+- **38 services réseau connus** détectés avec analyse d'exposition UFW et contexte de risque à deux axes (exposition + menace) pour les services critiques et élevés ; services CRITICAL/HIGH installés mais inactifs émettent ⚠ + bloc de contexte de risque
+- **Panorama des services** — tableau compact des 38 services après l'audit : SERVICE / STATUT / PORT(S) / UFW ; services non installés affichés en grisé
 - **Audit iptables/nftables** — quand UFW est inactif : détecte le backend actif (iptables vs nftables) ; vérifie les politiques par défaut INPUT et FORWARD ; contrôle la présence du conntrack stateful ; WARN −1 pt par politique permissive
 - **Docker** — détection du contournement iptables et liste des ports exposés par les containers en cours d'exécution
 - **Virtualisation** — détecte les hyperviseurs actifs (libvirt/KVM, VirtualBox, VMware, LXD/LXC) et les paquets Snap réseau susceptibles de créer des interfaces bridge et de contourner UFW
@@ -264,6 +264,73 @@ Quand un service est détecté sur un port non standard (ex. SSH sur 2222), le s
 ```bash
 sudo bob -r
 ```
+
+---
+
+## Plugins de check — `~/.config/bob/checks.d/*.py`
+
+BOB supporte des checks d'audit personnalisés écrits en Python. Posez un fichier `*.py` dans `~/.config/bob/checks.d/` et BOB le picke au run suivant. Chaque plugin est exécuté dans un **sous-processus sandboxé** (introduit en v0.7.0 T3) — RLIMIT_AS 256 MiB, RLIMIT_CPU 10 s wall clock, allowlist d'import restreinte, écritures filesystem refusées, lectures bloquées sur chemins sensibles (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). Un plugin défaillant **ne peut pas** interrompre l'audit, et toute sortie est ANSI-sanitisée.
+
+> **Note threat model :** le sandboxing Python in-process est de la défense en profondeur, pas une frontière de sécurité dure (consensus PEP 416). Utilisez le profil AppArmor shippé pour une vraie isolation. Voir SECURITY_FR.md → section "Plugin checks".
+
+### Contrat
+
+Chaque fichier plugin doit exposer une fonction :
+
+```python
+def run_check(t=None) -> CheckResult:
+    ...
+```
+
+`t` est le callable i18n bound (rarement nécessaire dans un plugin — écrivez vos messages directement en français ou anglais). La valeur de retour est un `bob.scoring.CheckResult`. Optionnellement, définissez un `CHECK_NAME` au niveau module pour surcharger le titre de section dans le rapport.
+
+### Exemple minimal fonctionnel
+
+Sauvegardez ceci en `~/.config/bob/checks.d/motd_check.py` :
+
+```python
+"""Vérifie que /etc/motd contient une bannière."""
+from pathlib import Path
+from bob.scoring import CheckResult
+
+CHECK_NAME = "VÉRIFICATION BANNIÈRE MOTD"
+
+def run_check(t=None) -> CheckResult:
+    result = CheckResult()
+    motd = Path("/etc/motd")
+    if motd.exists() and motd.read_text().strip():
+        result.ok(message="Bannière MOTD personnalisée présente")
+    else:
+        result.info(
+            message="Aucune bannière MOTD configurée",
+            key="custom.motd_empty",
+        )
+    return result
+```
+
+### Méthodes de résultat
+
+`CheckResult` expose les mêmes méthodes d'émission que les checks built-in :
+
+- `result.ok(message=...)` — coche verte, pas d'impact score
+- `result.info(message=..., key=...)` — notice neutre, pas de déduction
+- `result.warn(message=..., key=..., points=..., nature=...)` — avertissement jaune
+- `result.alert(message=..., key=..., points=..., nature=...)` — alerte rouge
+- `result.warn_with_deduction(...)` / `result.alert_with_deduction(...)` — helpers combinés
+
+Utilisez `key=` pour que votre finding puisse être silencé avec `bob --ignore custom.ma_cle` si besoin. Choisissez des chaînes `key` sous un préfixe `custom.*` pour éviter les collisions avec les clés built-in (le test invariant `_KNOWN_PREFIXES` rejette les préfixes inconnus pour les EXPLAIN_KEYS built-in mais pas pour la sortie plugin).
+
+### Ce que les plugins NE peuvent PAS faire
+
+Dans le sandbox enfant :
+
+- Pas de subprocess (`subprocess.run`, `os.popen`, `os.exec*` — tous strippés ou refusés).
+- Pas d'écriture filesystem (`open(... 'w')`, `os.write`, `Path.write_*`, les méthodes write de `pathlib.Path` sont monkey-patchées).
+- Pas de lecture sur `/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, `/proc/kcore`, et chemins sensibles similaires.
+- Pas d'`__import__` de modules arbitraires — uniquement une allowlist (bob.scoring, pathlib, json, etc.).
+- Pas d'I/O réseau.
+
+Si un plugin tente l'une des opérations ci-dessus, il raise dans le sandbox enfant, le parent enregistre un finding WARN `plugin.sandbox.error`, et l'audit continue intact.
 
 ---
 

@@ -269,7 +269,8 @@
     "implicit_policy": "Service(s) à risque élevé s'appuient sur la politique par défaut UFW plutôt que des règles explicites. C'est correct si la politique est deny, mais une règle explicite est plus robuste.",
     "implicit_svcs": "Service(s) concerné(s)",
     "scope_line1": "Ce score couvre le pare-feu, les services, SSH, le contrôle d'accès, les mises à jour, le durcissement système et les outils de détection.",
-    "scope_line2": "La sécurité applicative, l'accès physique et les autres vecteurs d'attaque ne sont pas couverts par cet audit."
+    "scope_line2": "La sécurité applicative, l'accès physique et les autres vecteurs d'attaque ne sont pas couverts par cet audit.",
+    "context_disclaimer": "Verdict conditionné par le profil et le contexte réseau ci-dessus. BOB est un auditeur de configuration hardening, pas un moteur d'analyse de menaces — à interpréter en conséquence."
   },
   "fixes": {
     "title": "CORRECTIONS DISPONIBLES",
@@ -564,6 +565,61 @@
       "level": "CRITIQUE",
       "exposure": "Pas d'authentification, UDP activé par défaut — activement exploité pour des attaques DDoS par amplification (facteur jusqu'à 50 000x)",
       "threat": "Empoisonnement du cache et exfiltration de données, vecteur DDoS par amplification contre des tiers, interruption de service"
+    },
+    "tailscale_vpn": {
+      "level": "FAIBLE",
+      "exposure": "VPN mesh chiffré basé sur WireGuard ; utilise du NAT punching, donc le daemon n'expose typiquement pas de port d'écoute stable sur internet. Le plan de contrôle authentifie via votre identity provider (Google, GitHub, OIDC, etc.).",
+      "threat": "Un attaquant qui phishe votre compte identity provider ou vole une session authentifiée peut rejoindre votre tailnet et atteindre chaque node. Activez les ACLs et tags Tailscale pour limiter le rayon d'impact ; exigez WebAuthn/2FA sur l'IdP."
+    },
+    "caddy_web_server": {
+      "level": "MOYEN",
+      "exposure": "Reverse proxy HTTP/HTTPS et serveur de sites statiques — exposé internet par design. Émet du TLS via Let's Encrypt automatiquement.",
+      "threat": "Des blocs de site mal configurés peuvent leak des panels admin ou des services backend ; des versions obsolètes ou des handlers vulnérables peuvent être exploités. Auditez les cibles reverse-proxy, restreignez l'endpoint admin (port 2019) à localhost, et restez à jour."
+    },
+    "adguard_home_dns_sinkhole": {
+      "level": "MOYEN",
+      "exposure": "Serveur DNS network-wide avec UI d'admin web. Le DNS est joignable par les clients (LAN) mais l'UI admin (3000/tcp) ne devrait JAMAIS être exposée sur internet.",
+      "threat": "Une UI admin exposée permet à un attaquant de désactiver le filtrage, rediriger DNS vers des resolvers malveillants, ou lire les query logs pour inventorier les appareils du réseau. Bindez l'UI admin à localhost ou une interface privée et frontez-la avec de l'auth."
+    },
+    "vaultwarden_password_manager": {
+      "level": "CRITIQUE",
+      "exposure": "Gestionnaire de mots de passe self-hosted — détient par design chaque credential que le foyer / l'équipe confie à un tiers. Exposé internet si utilisé pour la sync mobile depuis l'extérieur du LAN.",
+      "threat": "La compromission du compte (phish du mot de passe maître ou fuite du admin token) donne accès en clair à chaque credential stocké — y compris les seeds TOTP. Obligatoire : admin token fort rotaté trimestriellement, accès TLS-only, fail2ban sur /api/accounts/, backups off-site chiffrés réguliers du dossier data/."
+    },
+    "ollama_local_llm": {
+      "level": "MOYEN",
+      "exposure": "Daemon d'inférence LLM local. Écoute par défaut sur 127.0.0.1:11434 mais les opérateurs bindent fréquemment à 0.0.0.0 pour partager l'inférence sur le LAN — exposant accidentellement l'API à quiconque sur le réseau.",
+      "threat": "Une API ouverte donne à tout client LAN une inférence gratuite (épuisement compute), peut extraire les fichiers modèles chargés (certains sont licence-restricted), et historiquement l'API a eu des CVE de path-traversal permettant la lecture arbitraire de fichiers. Gardez bindé à loopback ou à une interface privée de confiance ; n'exposez jamais sur internet."
+    },
+    "authelia_sso_auth_proxy": {
+      "level": "CRITIQUE",
+      "exposure": "Portail d'authentification placé devant plusieurs services downstream — c'est LA frontière d'auth. Exposé internet par design (les utilisateurs mobiles doivent s'authentifier de partout).",
+      "threat": "La compromission de l'instance Authelia (via CVE, mot de passe admin faible, ou prise de contrôle du storage backend) défait l'authentification pour chaque service protégé simultanément. Tournez sur un hôte dédié, restreignez l'accès au storage backend, activez WebAuthn-first, et surveillez la télémétrie des login échoués."
+    },
+    "smtp_server_postfix_exim": {
+      "level": "ÉLEVÉ",
+      "exposure": "Listener TCP/25 acceptant les soumissions de mail. Un SMTP exposé sur internet attire des tentatives constantes de relais spam, du bruteforce de credentials SASL, et du scanning par réputation. Les configs postfix par défaut sur Debian/Ubuntu bindent typiquement sur 127.0.0.1 uniquement — ce finding se déclenche quand ce défaut a été changé.",
+      "threat": "L'abus en relais ouvert blocklist votre IP en quelques heures, cassant le mail sortant pour les utilisateurs légitimes. L'auth SASL sans rate limiting est une cible de spray de credentials au ralenti. Les MTA mal configurés ont historiquement été utilisés pour des campagnes de spam à grande échelle et des canaux d'exfiltration."
+    },
+    "nfs_server": {
+      "level": "ÉLEVÉ",
+      "exposure": "TCP/UDP 2049 + portmapper (TCP/UDP 111) + ports dynamiques statd / lockd. NFSv3 utilise l'authentification basée sur hôte (les règles d'export ne vérifient que l'IP source), trivialement bypassable si l'attaquant peut spoofer la source ou se trouve sur le même segment non fiable.",
+      "threat": "Accès lecture/écriture à chaque share exporté pour quiconque matche la règle d'export. Les exports `no_root_squash` permettent à un root distant d'écrire n'importe quel fichier (y compris /etc/sudoers en montant /). NFSv4 avec Kerberos atténue mais est rarement activé hors environnement entreprise."
+    },
+    "jenkins": {
+      "level": "CRITIQUE",
+      "exposure": "UI admin web sur TCP/8080 par défaut — fréquemment exposée internet parce que les opérateurs se connectent depuis la maison. Jenkins au premier boot requiert un token de déverrouillage unique, et les opérateurs laissent régulièrement l'instance résultante avec des credentials admin faibles ou `Allow anonymous read`.",
+      "threat": "Jenkins est la cible prime de mouvement latéral sur la plupart des réseaux : il détient les clés de signature, credentials de déploiement, tokens de container registry, accès lecture au source code, et la capacité d'exécuter du code arbitraire via les build steps. Un Jenkins compromis possède typiquement chaque système downstream sur lequel il déploie."
+    },
+    "openvpn": {
+      "level": "MOYEN",
+      "exposure": "UDP/1194 par défaut — doit être joignable depuis les appareils clients, donc l'exposition internet est par design. Protocole bien audité mais des CVE passés (CVE-2024-37305 buffer overflow, CVE-2024-28882 memory leak) nécessitent un patching rapide.",
+      "threat": "La compromission du concentrateur VPN donne à l'attaquant un accès réseau à tout ce qui est joignable depuis le subnet VPN — typiquement le LAN d'entreprise ou le subnet homelab. Durcissement obligatoire : TLS-Auth ou TLS-Crypt (HMAC sur le canal de contrôle), PKI fort (pas de clés statiques partagées), 2FA via PAM, OpenSSL à jour."
+    },
+    "squid_proxy": {
+      "level": "MOYEN",
+      "exposure": "Proxy forward HTTP/HTTPS TCP/3128. Devrait être bindé à une interface privée avec des ACLs explicites (`acl localnet src 192.168.1.0/24` etc.). La config par défaut sur de nombreuses distros écoute sur toutes les interfaces et accepte tout client.",
+      "threat": "Un proxy forward ouvert est rapidement découvert et abusé : vol de bande passante (votre IP, leurs téléchargements), bypass de géo-restrictions taggé à votre IP, couche d'anonymisation pour des attaques contre des tiers (faisant atterrir votre IP sur des blocklists d'abus). Le tunneling HTTPS CONNECT route du TCP arbitraire, donc un Squid ouvert est effectivement un proxy SOCKS ouvert."
     }
   },
   "virt": {
@@ -1119,6 +1175,34 @@
         "title": "Entrées en double dans known_hosts",
         "why": "Plusieurs entrées pour le même hôte avec des clés différentes peuvent créer de la confusion et permettre à SSH d'accepter silencieusement une clé obsolète ou compromise. Cela indique également que le fichier n'a pas été maintenu.",
         "how": "1. Supprimez toutes les entrées pour l'hôte concerné :\n   ssh-keygen -R <nom_hôte>\n2. Reconnectez-vous pour ajouter une entrée propre\n3. Nettoyez périodiquement known_hosts des entrées obsolètes"
+      },
+      "host_key_dsa": {
+        "title": "Clé hôte SSH utilise DSA (obsolète et considérée comme non sûre)",
+        "why": "Les clés hôte DSA sont limitées à 1024 bits et utilisent un algorithme de signature vulnérable aux attaques par réutilisation de nonce. OpenSSH a abandonné le support des clés hôte DSA par défaut depuis la version 7.0 (2015) — les clients modernes refusent de se connecter à un serveur ne présentant qu'une clé hôte DSA. La présence de la clé signifie que l'hôte a été soit upgradé depuis une très vieille installation, soit que quelqu'un a intentionnellement ré-activé DSA. Dans les deux cas, la posture cryptographique est faible.",
+        "how": "1. Générer une clé hôte moderne (ed25519, le choix recommandé pour les nouvelles clés) :\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n2. Vérifier que sshd_config n'inclut PAS la clé DSA (supprimer ou commenter) :\n   HostKey /etc/ssh/ssh_host_dsa_key   # <-- supprimer cette ligne\n3. Supprimer les fichiers de clé DSA :\n   sudo rm /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub\n4. Redémarrer sshd :\n   sudo systemctl restart ssh\nNote : les clients SSH existants verront un avertissement 'host key changed' la première fois après le retrait de la clé. Communiquez le changement aux utilisateurs légitimes.",
+        "server": {
+          "why": "Sur tout serveur, les clés hôte DSA ne devraient pas exister en 2026. Générer ed25519 (et éventuellement RSA-4096 pour la compatibilité client legacy), supprimer DSA, redémarrer sshd."
+        },
+        "desktop": {
+          "why": "Les serveurs SSH desktop sont moins courants mais la même hygiène s'applique. Remplacez DSA par ed25519 si SSH est joignable."
+        },
+        "container": {
+          "why": "Le SSH conteneurisé génère typiquement des clés fraîches au premier boot. Si DSA est présent dans une image container, régénérez avec ed25519 au moment du build de l'image."
+        }
+      },
+      "not_active": {
+        "title": "Le serveur SSH est installé mais le service sshd ne tourne pas",
+        "why": "Le paquet openssh-server est installé mais sshd n'est pas actif — les opérateurs ne peuvent pas se connecter via SSH. Que cela soit un problème dépend de l'intention. Sur un serveur, SSH est typiquement le canal d'administration principal — l'avoir dormant après un reboot signifie qu'un accès console est requis pour récupérer l'accès. Sur un desktop sans gestion à distance, un sshd inactif est l'état sûr et le paquet pourrait simplement être désinstallé.",
+        "how": "Si SSH EST voulu (typique pour les serveurs) :\n1. Démarrer et activer le service :\n   sudo systemctl enable --now ssh\n2. Vérifier qu'il écoute :\n   ss -tlnp | grep :22\n3. Confirmer que l'authentification fonctionne depuis un client connu.\nSi SSH N'est PAS voulu (typique pour les desktops non administrés) :\n1. Arrêter et désactiver proprement :\n   sudo systemctl disable --now ssh\n2. Optionnel — supprimer entièrement le paquet :\n   sudo apt remove --purge openssh-server",
+        "server": {
+          "why": "Sur un serveur, un sshd inactif signifie typiquement qu'une session de maintenance n'a pas été inversée. Ré-activer ; sans SSH, la prochaine intervention à distance requiert un accès console matériel."
+        },
+        "desktop": {
+          "why": "Sur un desktop où SSH n'est pas utilisé, l'état sûr est de désinstaller openssh-server complètement plutôt que de le laisser installé-mais-désactivé — cela évite que la surface d'attaque réapparaisse après un futur reboot ou update."
+        },
+        "container": {
+          "why": "La plupart des images container ne devraient PAS faire tourner SSH (utiliser docker exec / kubectl exec / podman exec à la place). Si sshd est installé mais inactif dans un container, envisagez de le retirer de l'image."
+        }
       }
     },
     "file_perms": {
@@ -1172,6 +1256,128 @@
         "container": {
           "why": "Dans un environnement conteneurisé, les mises à jour sont gérées au niveau de l'image — pas via unattended-upgrades. Si votre pipeline reconstruit régulièrement l'image depuis une base mise à jour, cette détection ne s'applique pas. Vérifiez que votre CI/CD inclut le rafraîchissement de l'image de base.",
           "how": "Reconstruire l'image depuis une base mise à jour plutôt que de lancer apt dans le container :\n   # Mettez à jour le tag FROM dans votre Dockerfile, puis :\n   docker build --pull -t <votre-image> .\n   docker compose up -d\nPour le système hôte (si unattended-upgrades est nécessaire là) :\n   sudo apt install unattended-upgrades\n   sudo dpkg-reconfigure -plow unattended-upgrades"
+        }
+      },
+      "apt_cache_stale": {
+        "title": "Cache APT obsolète (apt update n'a pas tourné récemment)",
+        "why": "`apt-get -s upgrade` reporte par rapport au cache local de paquets, pas à ce qui est réellement disponible dans les dépôts upstream. Quand le cache a plusieurs jours, le message 'aucune mise à jour en attente' reflète une vue obsolète de ce qui est en fait corrigeable — le système peut avoir des dizaines de mises à jour de sécurité en attente upstream qui n'ont pas encore été annoncées localement. C'est le même mode d'échec qui a produit de faux verdicts 'système à jour' sur les VMs Ubuntu fraîches (test terrain cross-distro v0.4.4).",
+        "how": "1. Rafraîchir le cache maintenant :\n   sudo apt update\n2. Planifier les updates quotidiens du cache lui-même (PAS l'upgrade — voir unattended_not_configured pour ça) :\n   # les distros systemd activent généralement apt-daily.timer :\n   systemctl status apt-daily.timer\n   sudo systemctl enable --now apt-daily.timer\n3. Vérifier que le cache est frais :\n   stat /var/cache/apt/pkgcache.bin   # mtime devrait être dans le dernier jour",
+        "server": {
+          "why": "Sur un serveur, un cache obsolète cache les patches de sécurité en attente. apt-daily.timer devrait être activé — vérifiez qu'il se déclenche réellement (la raison la plus fréquente de caches obsolètes est un timer laissé désactivé par un script de durcissement)."
+        },
+        "desktop": {
+          "why": "Les desktops sont souvent hors ligne pendant de longues périodes (laptops, kiosks). Après être revenu en ligne, lancez `apt update` une fois avant de faire confiance à tout verdict 'à jour'."
+        },
+        "container": {
+          "why": "Les caches container vieillissent avec l'image. Reconstruisez l'image régulièrement ou incluez `apt update && apt upgrade` dans l'étape de build pour éviter de livrer des catalogues obsolètes."
+        }
+      },
+      "dist_upgrade_inconsistent": {
+        "title": "apt-get upgrade et apt-get dist-upgrade reportent des comptes de mises à jour différents",
+        "why": "`apt-get -s upgrade` est conservateur — il refuse d'installer tout paquet qui nécessiterait d'installer une nouvelle dépendance ou d'en supprimer une existante. `apt-get -s dist-upgrade` est plus agressif et résout ces changements de dépendances. Quand les deux ne sont pas d'accord, cela signifie généralement que des updates de noyau, des bumps de version de bibliothèques ou des paquets transitivement tirés sont en attente mais non visibles dans la sortie conservatrice. L'utilisateur voit 'aucune mise à jour' depuis apt-get upgrade et rate des patches de sécurité réels que dist-upgrade aurait appliqués.",
+        "how": "1. Inspecter ce que dist-upgrade ferait :\n   sudo apt-get -s dist-upgrade\n2. Si la différence est principalement liée au noyau, appliquer via apt full-upgrade :\n   sudo apt full-upgrade\n   sudo reboot   # requis après upgrade noyau\n3. Pour unattended-upgrades, basculer la liste des paquets de la sémantique `upgrade` à `dist-upgrade` :\n   sudo nano /etc/apt/apt.conf.d/50unattended-upgrades\n   Unattended-Upgrade::OnlyOnACPower \"false\";   # pour les laptops si besoin\n4. Re-vérifier :\n   sudo apt update && sudo apt full-upgrade --dry-run",
+        "server": {
+          "why": "Sur un serveur, `apt upgrade` conservateur masque les updates de noyau et de bibliothèques que dist-upgrade appliquerait. Utilisez full-upgrade pour le patching de routine et redémarrez pendant les fenêtres de maintenance."
+        },
+        "desktop": {
+          "why": "Les utilisateurs desktop lancent souvent `apt upgrade` par habitude. Lancez périodiquement `apt full-upgrade` pour attraper les updates de noyau et de bibliothèques en attente que la variante conservatrice saute."
+        },
+        "container": {
+          "why": "Les containers n'appliquent normalement pas d'upgrades runtime — reconstruisez l'image de base pour récupérer les nouvelles versions de paquets."
+        }
+      }
+    },
+    "log_rotation": {
+      "journald_volatile": {
+        "title": "systemd-journald est configuré en stockage volatile (logs perdus au reboot)",
+        "why": "Le `Storage=auto` par défaut de systemd-journald devient volatile quand /var/log/journal/ n'existe pas — les logs vivent en RAM et sont effacés à chaque reboot. Les investigations forensiques après incident dépendent de l'historique des logs ; si le journal est volatile, les preuves liées au restart (messages de boot, tentatives de login, crashs de services) ont disparu au moment où la machine revient. Le journal remplit aussi la RAM plutôt que le disque, ce qui est un problème de performance sous fort volume de logs.",
+        "how": "1. Créer le répertoire de journal persistant :\n   sudo mkdir -p /var/log/journal\n2. systemd-journald le détectera automatiquement au prochain démarrage. Pour prendre en compte le changement immédiatement :\n   sudo systemd-tmpfiles --create --prefix /var/log/journal\n   sudo systemctl restart systemd-journald\n3. Vérifier que le stockage persistant est maintenant actif :\n   journalctl --header | grep 'Storage'\n4. Confirmer que les nouveaux logs survivent à un reboot :\n   sudo reboot   # puis 'journalctl --since=yesterday'",
+        "server": {
+          "why": "Sur un serveur, journal volatile = aucune preuve forensique après un reboot. Toujours tourner en stockage persistant. Même une seule boucle de boot efface le journal précédent."
+        },
+        "desktop": {
+          "why": "Les desktops redémarrent souvent ; un journal volatile rend le dépannage des problèmes de services beaucoup plus difficile. Activez la persistance."
+        },
+        "container": {
+          "why": "Les journaux container dépendent de la gestion des logs du runtime. Adressez au niveau du runtime (Docker, podman, kubelet) — la persistance du journal hôte est un sujet hôte."
+        }
+      },
+      "logrotate_missing": {
+        "title": "logrotate est absent ou n'a aucune config active",
+        "why": "Sans logrotate, les fichiers de logs dans /var/log/ grossissent sans limite. Sur des systèmes avec des services verbeux (serveurs web, floods de auth log depuis du bruteforce SSH, stack traces d'applications) le disque peut se remplir en quelques jours, mettant l'hôte hors ligne. La cause la plus fréquente est une install distro custom où le paquet logrotate a été exclu, ou un install récemment purgé qui a emporté la config.",
+        "how": "1. Installer logrotate :\n   sudo apt install logrotate\n2. Vérifier que le répertoire de rotation par défaut a des règles :\n   ls /etc/logrotate.d/\n3. (Optionnel) Re-créer les règles pour tout paquet qui aurait dû en livrer une :\n   sudo dpkg-reconfigure <paquet>\n4. Tester la rotation manuellement :\n   sudo logrotate -d /etc/logrotate.conf   # dry-run avec sortie verbeuse\n   sudo logrotate -f /etc/logrotate.conf   # forcer la rotation maintenant",
+        "server": {
+          "why": "Sur un serveur, l'absence de logrotate est une panne au ralenti qui attend de se déclencher — le disque se remplit, l'hôte crashe. Installer + vérifier que l'entrée cron quotidienne existe."
+        },
+        "desktop": {
+          "why": "Sur un desktop, l'impact disque est plus lent mais réel. Vérifier que logrotate est installé ; si vous êtes serré sur le disque, settez des politiques de rotation plus strictes."
+        },
+        "container": {
+          "why": "Les containers reposent typiquement sur le runtime pour gérer la sortie des logs (driver json-file, driver journald, etc.), pas sur logrotate. Si logrotate manque dans un container long-running, c'est une déviation de la pratique standard — mais le fix est rarement 'installer logrotate', c'est 'utiliser le driver de logs du runtime'."
+        }
+      }
+    },
+    "logs": {
+      "brute_found": {
+        "title": "Les logs UFW montrent des signes d'une tentative bruteforce active",
+        "why": "L'analyseur de logs UFW de BOB a détecté une ou plusieurs IPs source frappant un port unique avec une fréquence élevée — une signature bruteforce. Que la source soit automatisée (scanner botnet) ou ciblée (un acteur s'intéressant spécifiquement à cet hôte) ne change pas l'action : la tentative bruteforce indique que le service est exposé à des clients en lesquels vous ne pouvez pas avoir confiance, et le rate limiting ou la restriction géographique est en retard. Le finding se déclenche habituellement sur SSH mais peut aussi remonter sur SMTP, IMAP, panels d'admin web et tout autre service authentifié.",
+        "how": "Réponse en couches :\n1. Installer fail2ban si absent et activer la jail pour le service ciblé (sshd est le plus courant) :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # vérifier que la jail pertinente a enabled=true\n2. Restreindre le service aux IPs connues au niveau pare-feu :\n   sudo ufw allow from <ip-de-confiance> to any port 22\n   sudo ufw delete allow 22   # si une règle plus large existait\n3. Pour SSH spécifiquement, désactiver l'authentification par mot de passe (forcer pubkey uniquement) :\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh",
+        "server": {
+          "why": "Sur un serveur public, les tentatives bruteforce sont constantes. fail2ban + SSH key-only est la base. Sans l'un ou l'autre, la compromission de compte est une question de temps."
+        },
+        "desktop": {
+          "why": "Du bruteforce sur un desktop signifie typiquement que la machine est exposée d'une manière dont elle ne devrait pas l'être (SSH port-forwardé sur un routeur résidentiel, Wi-Fi public). Fermez l'exposition plutôt que de vous reposer uniquement sur fail2ban."
+        },
+        "container": {
+          "why": "L'exposition container passe par l'hôte. Adressez à la couche UFW + fail2ban de l'hôte ; restreignez l'adresse de publish du container."
+        }
+      }
+    },
+    "smtp": {
+      "exposed": {
+        "title": "Le listener SMTP est joignable depuis l'extérieur de l'hôte (non bindé à 127.0.0.1)",
+        "why": "La plupart des services SMTP (postfix, sendmail, exim) sont configurés pour accepter les soumissions de mail local pour les notifications système. Quand le listener bind à 0.0.0.0 ou à une interface publique au lieu de 127.0.0.1, la machine devient un candidat pour de l'abus de relais (spammers rebondissant à travers) et pour des tentatives bruteforce directes contre l'authentification SASL. SMTP sur l'internet ouvert est l'une des surfaces d'attaque les plus bruyantes ; les bots sondent constamment chaque IP avec 25/tcp ouvert.",
+        "how": "1. Déterminer sur quelle interface le daemon SMTP bind :\n   ss -tlnp | grep :25\n2. Restreindre à localhost — pour postfix :\n   sudo postconf -e 'inet_interfaces = loopback-only'\n   sudo systemctl restart postfix\n   # pour sendmail / exim, éditer la config (sendmail.cf / exim4.conf) similairement\n3. Si du mail sortant est nécessaire mais pas l'entrant, c'est la posture correcte — les apps locales soumettent via 127.0.0.1, le sortant passe par un relais.\n4. Si l'entrant SMTP est intentionnel (rôle de serveur de mail), resserrer l'authentification (SASL avec creds forts, TLS-only) et envisager du rate-limiting au pare-feu.",
+        "server": {
+          "why": "Sur un serveur, un SMTP exposé sur internet qui n'est pas intentionnellement un serveur de mail invite à l'abus de relais et au bruteforce de credentials. Binder à loopback sauf si cette machine est vraiment un hôte de mail public."
+        },
+        "desktop": {
+          "why": "Sur un desktop, l'exposition SMTP est presque toujours accidentelle (postfix installé par un méta-paquet et configuré pour toutes les interfaces par défaut). Binder à loopback."
+        },
+        "container": {
+          "why": "Les containers mail devraient binder au réseau container uniquement et être joignables via un reverse-proxy ou relais explicite, pas directement publiés."
+        }
+      }
+    },
+    "backup": {
+      "no_backup": {
+        "title": "Aucune solution de backup détectée (timeshift, restic, borg, etc.)",
+        "why": "Sans outil de backup, la récupération depuis un ransomware, une panne matérielle, une suppression accidentelle ou une corruption de filesystem est impossible. Le coût d'une seule mauvaise journée dépasse largement le coût de toute solution de backup. Le check n'est pas 'le backup est-il récent' — BOB ne peut pas évaluer cela — mais 'un outil de backup est-il seulement installé', ce qui est une question de configuration de base.",
+        "how": "Choisir un outil correspondant à votre cible de stockage :\n1. Snapshots locaux (laptop, workstation unique) — timeshift est le plus simple :\n   sudo apt install timeshift\n   sudo timeshift --create --comments 'baseline initiale'\n2. Off-site / chiffré (serveur, cible NAS) — restic ou borg :\n   sudo apt install restic\n   restic init -r <emplacement-backup>\n   restic backup -r <emplacement-backup> /etc /home\n3. Quel que soit l'outil : planifier via systemd timer ou cron, et TESTER une restauration au moins une fois. Les backups non testés ne sont pas des backups.",
+        "server": {
+          "why": "Sur un serveur, pas de backup signifie qu'une seule panne disque ou un ransomware réussi est un incident non récupérable. Choisissez restic / borg avec cible off-site et vérifiez la restauration trimestriellement."
+        },
+        "desktop": {
+          "why": "Sur un desktop, même un snapshot timeshift basique vous permet de revenir en arrière après un update raté. La barre est basse ; installez quelque chose."
+        },
+        "container": {
+          "why": "Les hôtes container ont besoin d'un backup niveau hôte ; les volumes de données ont besoin d'un backup explicite de volume. Les containers eux-mêmes devraient être reconstructibles depuis les images — c'est la donnée qui compte."
+        }
+      }
+    },
+    "network_context": {
+      "sensitive_remote": {
+        "title": "Service sensible joignable depuis l'internet public (risque criticité élevée)",
+        "why": "Un service noté élevé ou critique dans le registre de services BOB (ssh, samba, telnet…) a un listener TCP ouvert ET le contexte réseau indique que l'hôte est adressable publiquement (pas de NAT, pas de pare-feu LAN-only). La combinaison signifie que le service est à un scan de bot d'être ciblé — et pour les services à haut risque comme ssh, samba ou rdp, la menace active est le bruteforcing de creds, l'exploitation de CVE connues, et le mouvement latéral après compromission.",
+        "how": "Appliquer par ordre d'impact :\n1. Sortir le service entièrement de l'internet public (VPN, WireGuard, jump host) :\n   sudo apt install wireguard\n   # configurer WG, puis binder le service sensible uniquement à l'interface wg\n2. Si l'exposition publique est vraiment requise, durcir le service :\n   - SSH : auth par clé uniquement, no root login, fail2ban, port knocking ou changer le port 22 (la sécurité par obscurité aide contre le bruit des bots même si ce n'est pas de la vraie protection).\n   - Samba : restreindre aux IPs source au UFW + 'hosts allow' dans smb.conf ; SMB sur internet est une CVE qui attend d'être exploitée.\n   - Telnet/RDP : ne pas exposer. Migrer vers ssh/RDP-over-VPN.\n3. Ajouter un alerting externe sur connexions inattendues.",
+        "server": {
+          "why": "Sur un serveur public, les services sensibles sur l'internet ouvert sont le vecteur d'entrée principal pour la plupart des compromissions. Mettre les services admin derrière un VPN et ne garder exposé que les ports publics réels de l'application."
+        },
+        "desktop": {
+          "why": "Un desktop avec un port sensible sur l'internet public est presque toujours une mauvaise configuration (un port-forward que quelqu'un a ajouté il y a des années et oublié). Auditez la table de port-forward de votre routeur et fermez ce que vous n'utilisez pas activement."
+        },
+        "container": {
+          "why": "Les ports container publiés à 0.0.0.0 héritent de l'exposition publique de l'hôte. Binder à 127.0.0.1 ou à une interface privée, ou mettre le container derrière un VPN."
         }
       }
     },
@@ -1234,6 +1440,582 @@
         "container": {
           "why": "Identique à rp_filter_disabled — paramètre du noyau hôte non modifiable depuis un container standard. Appliquez sur l'hôte.",
           "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n   sudo sysctl --system"
+        }
+      },
+      "tcp_syncookies_disabled": {
+        "title": "Protection SYN flood désactivée (tcp_syncookies = 0)",
+        "why": "Sans SYN cookies, une attaque par SYN flood (un attaquant envoie un débit élevé de paquets SYN sans compléter la poignée de main) peut saturer la file de connexions du noyau et empêcher les clients légitimes de se connecter — un déni de service classique. Les SYN cookies permettent au noyau de répondre au SYN sans allouer d'état tant que la poignée de main n'est pas complète, neutralisant l'attaque. Le coût sur le trafic normal est négligeable.",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w net.ipv4.tcp_syncookies=1\n2. Rendre permanent :\n   echo 'net.ipv4.tcp_syncookies=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "server": {
+          "why": "Sur un serveur exposé, les SYN cookies sont essentiels — tout service TCP en écoute est une cible de SYN flood. Les scanners de masse et les scripts DoS sondent les serveurs en permanence ; sans SYN cookies, même un flood modéré peut mettre un service hors ligne. Le correctif n'a aucun coût fonctionnel."
+        },
+        "desktop": {
+          "why": "Sur un desktop derrière NAT, le risque pratique de SYN flood est faible (le routeur absorbe les paquets externes). Activer les SYN cookies ne coûte rien et constitue une bonne défense en profondeur si la machine se retrouve un jour sur un réseau plus exposé."
+        },
+        "container": {
+          "why": "Paramètre sysctl réseau hôte — non configurable depuis un container standard. Appliquer sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.tcp_syncookies=1\n   echo 'net.ipv4.tcp_syncookies=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+        }
+      },
+      "accept_source_route_enabled": {
+        "title": "Routage source IP accepté (accept_source_route = 1)",
+        "why": "Le routage source permet à l'émetteur du paquet de spécifier le chemin que celui-ci doit emprunter sur le réseau. Accepter ces paquets ouvre la porte à l'usurpation d'IP et au contournement de routage : un attaquant peut forger l'IP source et forcer les réponses à transiter par un chemin qu'il contrôle, contournant ainsi les règles de pare-feu basées sur l'adresse source. Il n'y a quasiment aucun usage légitime du routage source sur les réseaux modernes.",
+        "how": "1. Désactiver immédiatement (IPv4) :\n   sudo sysctl -w net.ipv4.conf.all.accept_source_route=0\n   sudo sysctl -w net.ipv4.conf.default.accept_source_route=0\n2. Désactiver aussi pour IPv6 :\n   sudo sysctl -w net.ipv6.conf.all.accept_source_route=0\n   sudo sysctl -w net.ipv6.conf.default.accept_source_route=0\n3. Rendre permanent :\n   echo 'net.ipv4.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   echo 'net.ipv6.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n4. Appliquer :\n   sudo sysctl --system",
+        "server": {
+          "why": "Sur un serveur, accepter les paquets source-routés permet aux attaquants de contourner les contrôles d'accès IP et de forger des réponses vers des sources usurpées. Les infrastructures standard n'ont jamais besoin de routage source — le désactiver n'a aucun impact fonctionnel et ferme un vecteur d'usurpation IP connu de longue date."
+        },
+        "desktop": {
+          "why": "Sur un desktop, les risques du routage source sont réduits par NAT mais restent pertinents sur les réseaux non fiables (Wi-Fi public, LANs d'hôtels). Le désactiver ne coûte rien et est universellement recommandé."
+        },
+        "container": {
+          "why": "Paramètre du noyau hôte — non configurable depuis un container standard.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.accept_source_route=0\n   echo 'net.ipv4.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+        }
+      },
+      "accept_redirects_v6_enabled": {
+        "title": "Redirections ICMP IPv6 acceptées (net.ipv6.conf.all.accept_redirects = 1)",
+        "why": "Comme la variante IPv4 : un attaquant sur le réseau local peut envoyer des messages ICMPv6 redirect forgés pour modifier la table de routage IPv6 du noyau, déroutant le trafic via une machine qu'il contrôle (man-in-the-middle / hijack de routage). Avec le déploiement croissant d'IPv6, ce vecteur d'attaque s'applique désormais à la plupart des systèmes modernes. Les hôtes qui ne sont pas routeurs n'ont aucune raison d'accepter les redirections.",
+        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv6.conf.all.accept_redirects=0\n   sudo sysctl -w net.ipv6.conf.default.accept_redirects=0\n2. Rendre permanent :\n   echo 'net.ipv6.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   echo 'net.ipv6.conf.default.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "server": {
+          "why": "Sur un serveur avec IPv6 activé, accepter les redirections ICMPv6 permet à un attaquant du segment local d'empoisonner la table de routage et de réaliser un MITM sur le trafic sortant. Les serveurs ne sont pas des routeurs — désactiver l'acceptation des redirections n'a aucun impact fonctionnel."
+        },
+        "desktop": {
+          "why": "L'acceptation des redirections ICMPv6 est risquée sur les réseaux IPv6 non fiables (Wi-Fi public avec IPv6, LANs invités d'entreprise). Désactiver sur un desktop est une bonne pratique sans coût fonctionnel."
+        },
+        "container": {
+          "why": "Paramètre du noyau hôte — appliquer sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv6.conf.all.accept_redirects=0\n   echo 'net.ipv6.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+        }
+      },
+      "send_redirects_enabled": {
+        "title": "Redirections ICMP envoyées par l'hôte (send_redirects = 1)",
+        "why": "Seuls les routeurs devraient envoyer des redirections ICMP (pour signaler aux hôtes une meilleure passerelle). Un hôte non-routeur qui en envoie fournit à un attaquant du segment local du matériel pour injecter des redirections forgées et dérouter le trafic des hôtes voisins via lui-même ou une passerelle contrôlée — un montage MITM. Désactiver send_redirects sur les systèmes non-routeurs ferme ce vecteur.",
+        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   sudo sysctl -w net.ipv4.conf.default.send_redirects=0\n2. Rendre permanent :\n   echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   echo 'net.ipv4.conf.default.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system\nNote : si cette machine est réellement un routeur (multi-interface, fait de l'IP forwarding), conservez send_redirects=1 — le désactiver empêcherait l'optimisation de routage légitime.",
+        "server": {
+          "why": "Un serveur standard n'est pas un routeur. Envoyer des redirections ICMP depuis celui-ci est inutile et offre à un attaquant du même LAN un pied dans la porte pour manipuler le routage. Désactivez sauf si la machine assure réellement des fonctions de routage."
+        },
+        "desktop": {
+          "why": "Un desktop n'est jamais un routeur. Envoyer des redirections ICMP n'a aucun cas d'usage et expose le réseau local à des attaques MITM basées sur les redirections. Désactivez en toute sécurité."
+        },
+        "container": {
+          "why": "Paramètre du noyau hôte — non configurable depuis un container standard.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+        }
+      },
+      "protected_hardlinks_disabled": {
+        "title": "Protection des liens durs désactivée (fs.protected_hardlinks = 0)",
+        "why": "Sans protection des liens durs, un utilisateur non privilégié peut créer un hardlink vers tout fichier sur lequel il a un accès en lecture — y compris les binaires SUID ou les fichiers dans les répertoires privilégiés. Cela permet plusieurs schémas d'escalade de privilèges locale où une vulnérabilité dans un programme SUID peut être déclenchée contre un fichier sensible via un hardlink dans /tmp. Avec la protection activée, le noyau n'autorise les hardlinks que lorsque l'utilisateur possède la source ou y a un accès en écriture.",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_hardlinks=1\n2. Rendre permanent :\n   echo 'fs.protected_hardlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "server": {
+          "why": "Sur un serveur avec plusieurs utilisateurs ou tout service non privilégié, la protection des liens durs bloque un schéma d'escalade de privilèges locale bien connu. Les distributions modernes l'activent par défaut — si elle est désactivée, c'est qu'on l'a explicitement éteinte."
+        },
+        "desktop": {
+          "why": "Sur un desktop mono-utilisateur, le risque d'élévation locale est plus faible mais réel (tout service user-space compromis pourrait tenter l'exploitation). L'activation n'a aucun coût fonctionnel — les distributions modernes le mettent par défaut."
+        },
+        "container": {
+          "why": "Paramètre du noyau hôte — s'applique à l'ensemble du système, pas au namespace du container. Appliquer sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w fs.protected_hardlinks=1\n   echo 'fs.protected_hardlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+        }
+      },
+      "protected_symlinks_disabled": {
+        "title": "Protection des liens symboliques désactivée (fs.protected_symlinks = 0)",
+        "why": "Sans protection des symlinks, une attaque TOCTOU (time-of-check-to-time-of-use) classique devient faisable : un utilisateur non privilégié crée un symlink dans un répertoire world-writable (typiquement /tmp) pointant sur un fichier sensible, puis attend qu'un processus privilégié suive le symlink — écrasant ou lisant la cible avec les permissions du processus privilégié. Avec la protection activée, le noyau refuse de suivre les symlinks dans les répertoires sticky-bit sauf si le propriétaire du symlink correspond à celui du répertoire ou au propriétaire du processus.",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_symlinks=1\n2. Rendre permanent :\n   echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "server": {
+          "why": "Sur un serveur avec activité multi-utilisateurs ou tâches planifiées tournant en root, la protection des symlinks bloque la famille d'exploits TOCTOU sur /tmp (source récurrente de CVEs depuis vingt ans). Les distributions modernes l'activent par défaut."
+        },
+        "desktop": {
+          "why": "Sur un desktop, le risque pratique est réduit mais la course de symlink sur /tmp reste un schéma d'attaque connu utilisable par tout script local malveillant. L'activation n'a aucun coût fonctionnel — les distributions modernes le mettent par défaut."
+        },
+        "container": {
+          "why": "Paramètre du noyau hôte — s'applique au filesystem entier de l'hôte, pas au namespace du container. Appliquer sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w fs.protected_symlinks=1\n   echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+        }
+      }
+    },
+    "iptables_nft": {
+      "no_backend": {
+        "title": "Aucun backend pare-feu présent (ni iptables, ni nftables)",
+        "why": "Sans iptables ni nftables installé et actif, le noyau n'a aucune règle pare-feu — tous les ports joignables depuis le réseau sont entièrement exposés. UFW (ou tout autre front-end userspace) repose en dernier ressort sur l'un de ces backends pour écrire les règles dans le noyau. L'absence des deux signifie que le système tourne sans aucun filtre de paquets.",
+        "how": "1. Installer iptables (ou nftables) :\n   sudo apt install iptables\n2. Après installation, configurer UFW (ou un autre front-end) et l'activer :\n   sudo apt install ufw && sudo ufw enable\n3. Vérifier que les règles sont chargées :\n   sudo iptables -L -n  # ou : sudo nft list ruleset",
+        "server": {
+          "why": "Un serveur sans backend pare-feu est entièrement exposé au réseau — aucun filtrage noyau, aucun deny par défaut, aucune possibilité de restreindre un service. C'est l'une des pires postures possibles pour toute machine connectée."
+        },
+        "desktop": {
+          "why": "Même derrière NAT, un desktop sans iptables/nftables n'a aucune défense contre les attaques du réseau local (autres appareils, voisins malveillants sur Wi-Fi partagé). Installer un backend + UFW est universellement recommandé."
+        },
+        "container": {
+          "why": "Les containers héritent généralement du filtrage de paquets de l'hôte. Ce finding suggère que l'hôte n'a pas de pare-feu — corrigez sur l'hôte.",
+          "how": "Installer sur le système hôte :\n   sudo apt install iptables ufw\n   sudo ufw enable"
+        }
+      },
+      "input_accept": {
+        "title": "Politique par défaut INPUT = ACCEPT (chaque paquet non filtré entre)",
+        "why": "La politique de la chaîne INPUT est le dernier filet de sécurité du pare-feu quand aucune règle explicite ne matche un paquet entrant. Quand elle est à ACCEPT, tout port n'ayant pas de règle DROP/REJECT spécifique est ouvert au réseau — le défaut est permissif. Le pattern sûr est policy=DROP combiné à des règles ACCEPT explicites pour les services autorisés, de sorte que tout ce qui n'est pas en whitelist est bloqué automatiquement.",
+        "how": "1. Appliquer le default-deny immédiatement. Avant de basculer la policy, assurez-vous d'avoir des règles ACCEPT explicites pour loopback et pour tout service dont vous dépendez (notamment SSH) — sinon vous vous bloquez l'accès :\n   sudo iptables -A INPUT -i lo -j ACCEPT\n   sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # garder SSH joignable\n   sudo iptables -P INPUT DROP\n2. Sauvegarder les règles pour qu'elles persistent au redémarrage (iptables-persistent sur Debian/Ubuntu) :\n   sudo apt install iptables-persistent\n   sudo netfilter-persistent save\n3. Pour les systèmes nftables, utilisez :\n   sudo nft chain inet filter input '{ policy drop; }'",
+        "server": {
+          "why": "Sur un serveur, INPUT=ACCEPT signifie que chaque nouveau socket ouvert est joignable depuis n'importe quelle source jusqu'à ce que vous ajoutiez manuellement une règle DROP. Une politique de default-deny est obligatoire sur tout serveur en production. Oublier un DROP explicite aujourd'hui, c'est oublier un port ouvert demain."
+        },
+        "desktop": {
+          "why": "Sur un desktop derrière NAT, l'exposition externe est atténuée par le routeur, mais les attaques du segment local (autres appareils sur le même Wi-Fi) atteignent la machine. Le default-deny est le pattern de durcissement standard même pour des clients."
+        },
+        "container": {
+          "why": "La policy iptables est définie par l'hôte ou par le runtime container ; à l'intérieur d'un container par défaut vous ne pouvez pas la changer. Ajustez la network policy du container au niveau runtime, ou réglez la policy hôte."
+        }
+      },
+      "forward_accept": {
+        "title": "Politique par défaut FORWARD = ACCEPT (comportement routeur par défaut)",
+        "why": "La chaîne FORWARD gère les paquets routés À TRAVERS l'hôte (non destinés aux processus locaux). FORWARD=ACCEPT signifie que le noyau forwarde tout paquet par défaut si l'IP forwarding est aussi activé — transformant la machine en hop de routage pour n'importe quoi qui le demande. Combiné à une configuration réseau mal gérée, cela peut servir à pontaire des segments ou à exfiltrer du trafic via l'hôte. Le défaut sûr pour un non-routeur est policy=DROP.",
+        "how": "1. Mettre la policy FORWARD à DROP :\n   sudo iptables -P FORWARD DROP\n   # ou avec nftables :\n   sudo nft chain inet filter forward '{ policy drop; }'\n2. Rendre persistant (iptables-persistent sur Debian/Ubuntu) :\n   sudo netfilter-persistent save\n3. Si cette machine fait effectivement du routage (hôte libvirt avec virbr0, hôte Docker, gateway KVM, …), gardez FORWARD=ACCEPT mais assurez-vous que le pare-feu applicatif (UFW, règles libvirt) fournit le filtrage — et revisitez explicitement les chaînes de routage avec 'sudo iptables -L FORWARD -n'.",
+        "server": {
+          "why": "Un serveur applicatif standard ne devrait pas forwarder de trafic — FORWARD=DROP est le défaut sûr. L'exception concerne les hôtes de virtualisation ou de containers (libvirt, Docker, KVM, LXC) qui routent légitimement le trafic des invités — dans ce cas la policy est intentionnellement permissive mais les chaînes de règles doivent compenser."
+        },
+        "desktop": {
+          "why": "Un desktop n'est virtuellement jamais un routeur. Laisser FORWARD=ACCEPT est une surface d'attaque inutile et peut être abusé si le desktop est ponté ou partage sa connexion réseau. DROP est sûr."
+        },
+        "container": {
+          "why": "Les containers ne devraient pas être des hôtes de forwarding. La policy FORWARD est configurée au niveau hôte ; corrigez là.",
+          "how": "Appliquer sur l'hôte du container :\n   sudo iptables -P FORWARD DROP\n   sudo netfilter-persistent save"
+        }
+      },
+      "no_loopback": {
+        "title": "INPUT en default-deny sans règle ACCEPT loopback",
+        "why": "Quand la policy INPUT est DROP, l'interface loopback (127.0.0.1 / lo) est également droppée sauf si une règle ACCEPT explicite existe. De nombreux services locaux s'appuient sur loopback : postgres écoutant sur localhost, applications web parlant à un backend local, daemons système communiquant sur 127.0.0.1. Sans l'exception loopback, ils cassent silencieusement — et vous pouvez ne pas vous en apercevoir avant qu'un processus local précis échoue.",
+        "how": "1. Insérer une règle ACCEPT loopback en tête de INPUT :\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   # ou avec nftables :\n   sudo nft insert rule inet filter input iif \"lo\" accept\n2. Rendre persistant :\n   sudo netfilter-persistent save\n3. Vérifier que loopback fonctionne (curl sur un service local en écoute sur 127.0.0.1).",
+        "server": {
+          "why": "Presque chaque serveur fait tourner au moins un service binding sur 127.0.0.1 (PostgreSQL, Redis, sockets fcgi, interfaces supervisord). L'oubli de la règle loopback les casse silencieusement et provoque de longues sessions de debug. C'est l'omission la plus fréquente quand une nouvelle policy default-deny est appliquée."
+        },
+        "desktop": {
+          "why": "De nombreuses applications desktop (navigateurs, IDEs, dev tools, system trays) parlent à des services locaux via loopback. Sans la règle ACCEPT explicite, elles échouent silencieusement. Ajoutez la règle loopback avant de durcir INPUT."
+        },
+        "container": {
+          "why": "Le loopback À L'INTÉRIEUR d'un container est géré par son propre namespace réseau et n'est pas affecté par les règles iptables hôte. Ce finding s'applique à la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   sudo netfilter-persistent save"
+        }
+      },
+      "no_conntrack": {
+        "title": "INPUT en default-deny sans règle ACCEPT ESTABLISHED,RELATED",
+        "why": "Avec INPUT policy=DROP, les paquets de retour des connexions sortantes (navigateur web récupérant une page, apt téléchargeant des updates, client ssh recevant la réponse du serveur) sont droppés en même temps que tout le reste sauf si une règle explicite accepte les états conntrack ESTABLISHED et RELATED. Le résultat est que la machine peut ouvrir des connexions sortantes mais ne recevra jamais aucune réponse — coupant effectivement tout usage réseau côté client.",
+        "how": "1. Insérer la règle conntrack près du début de INPUT (juste après loopback) :\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   # ou avec nftables :\n   sudo nft insert rule inet filter input ct state established,related accept\n2. Rendre persistant :\n   sudo netfilter-persistent save\n3. Vérifier que l'usage sortant fonctionne (curl https://example.com).",
+        "server": {
+          "why": "Un serveur avec INPUT=DROP mais sans ACCEPT conntrack ne peut pas compléter ses propres requêtes HTTP sortantes, ses mises à jour de paquets, ni ses résolutions DNS. Le correctif est obligatoire pour toute configuration INPUT en default-deny."
+        },
+        "desktop": {
+          "why": "Sans la règle conntrack, chaque requête sortante (navigation web, downloads, gestion de paquets) semble bloquer et timeout parce que les réponses sont droppées silencieusement. C'est la cause la plus fréquente du \"après avoir activé le pare-feu, internet est cassé\"."
+        },
+        "container": {
+          "why": "Les namespaces réseau des containers ont leur propre gestion conntrack. Ce finding concerne la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo netfilter-persistent save"
+        }
+      }
+    },
+    "mac_policy": {
+      "apparmor_inactive": {
+        "title": "AppArmor installé mais le service n'est pas démarré",
+        "why": "AppArmor applique un contrôle d'accès obligatoire (MAC) — restreignant quels fichiers, sockets réseau et capacités chaque programme peut utiliser, en plus des permissions Unix standard. Quand le service est arrêté, chaque profil confiné (Firefox, snap apps, cups, ntpd, sshd sur de nombreuses distros…) tourne sans confinement — un programme compromis peut faire tout ce que son compte utilisateur peut faire. AppArmor est l'une des rares défenses contre le mouvement latéral post-exploitation sur les systèmes de la famille Debian.",
+        "how": "1. Activer et démarrer le service :\n   sudo systemctl enable --now apparmor\n2. Vérifier le statut :\n   sudo aa-status\n3. Si le démarrage échoue, consultez le journal pour les erreurs :\n   sudo journalctl -u apparmor -b",
+        "server": {
+          "why": "Sur un serveur, un AppArmor inactif supprime le confinement par-service qui limite ce que nginx, mariadb ou n'importe quel autre daemon peut faire en cas de compromission. Le réactiver est un correctif en une commande sans coût fonctionnel sur les distros standard."
+        },
+        "desktop": {
+          "why": "Sur un desktop, AppArmor confine les applications non fiables (navigateurs, snaps, flatpaks) qui sont le vecteur d'entrée le plus probable pour des malwares. Le réactiver ne coûte rien et réduit significativement le rayon d'impact après une exploitation réussie."
+        },
+        "container": {
+          "why": "Les profils AppArmor dans les containers dépendent du service AppArmor de l'hôte. Adressez ce problème sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo systemctl enable --now apparmor\n   sudo aa-status"
+        }
+      },
+      "apparmor_no_enforce": {
+        "title": "AppArmor actif mais aucun profil en mode enforce",
+        "why": "Les profils AppArmor ont deux modes : enforce (refuse les opérations non autorisées) et complain (les journalise mais autorise). Quand tous les profils sont en mode complain — ou qu'aucun n'est en enforce — AppArmor journalise les violations de policy mais ne bloque jamais rien. La valeur défensive tombe à quasi-zéro : un attaquant exploitant un processus confiné n'est pas arrêté, seulement observé (et seulement si vous lisez les logs).",
+        "how": "1. Lister les profils et leur mode :\n   sudo aa-status\n2. Basculer tous les profils installés en enforce :\n   sudo aa-enforce /etc/apparmor.d/*\n3. Re-vérifier que les profils sont chargés :\n   sudo aa-status\nNote : passez en revue chaque profil d'abord — un profil mal écrit en mode enforce peut casser l'app. Les profils distro standard pour nginx, mysql, snap apps, etc. sont sûrs à enforce. Les profils personnalisés doivent être testés en complain d'abord.",
+        "server": {
+          "why": "AppArmor en complain-only sur un serveur fournit de la télémétrie mais aucune protection. Auditez chaque profil installé, puis enforce. La plupart des profils fournis par la distro sont testés et sûrs à enforce immédiatement."
+        },
+        "desktop": {
+          "why": "Même sur un desktop, les profils en mode complain ne font rien en pratique — quasi aucun utilisateur ne lit les logs AppArmor. Enforce les profils standard Firefox / snap / flatpak pour vraiment bénéficier de la couche MAC."
+        },
+        "container": {
+          "why": "Le mode des profils AppArmor du container est contrôlé par l'hôte ou par le runtime container. Adressez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo aa-enforce /etc/apparmor.d/*\n   sudo aa-status"
+        }
+      },
+      "apparmor_no_profiles": {
+        "title": "AppArmor actif mais aucun profil chargé",
+        "why": "AppArmor sans profils n'est qu'un module noyau en sommeil — il ne fait rien. Les causes courantes sont une distro fraîchement installée qui n'a pas livré le paquet apparmor-profiles, ou une installation Kali / minimale où le set de policy a été omis. Installer le pack de profils standard ajoute des dizaines de confinements pour les services courants (cups, ntpd, mysqld, snap apps, libreoffice…) sans aucun travail personnalisé.",
+        "how": "1. Installer les paquets de profils AppArmor :\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n2. (Optionnel) installer les profils snap / firefox supplémentaires :\n   sudo apt install snapd-confine-profiles\n3. Recharger AppArmor pour les charger :\n   sudo systemctl reload apparmor\n4. Vérifier que les profils sont chargés :\n   sudo aa-status",
+        "server": {
+          "why": "Un serveur AppArmor-actif avec zéro profils signifie que les daemons tournent sans restriction MAC. Installer le pack de profils standard donne immédiatement du confinement pour les services courants (nginx, mariadb, postfix…)."
+        },
+        "desktop": {
+          "why": "Sur un desktop sans profils, les navigateurs et snap apps tournent sans confinement. Les paquets de profils standard coûtent quelques Mo et confinent les vecteurs d'attaque les plus probables."
+        },
+        "container": {
+          "why": "Les profils AppArmor des containers sont chargés par l'hôte. Adressez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n   sudo systemctl reload apparmor"
+        }
+      },
+      "no_enforce": {
+        "title": "Aucun contrôle d'accès obligatoire actif sur le système",
+        "why": "Ni SELinux (famille Red Hat / Fedora) ni AppArmor (famille Debian / Ubuntu) n'est en enforce — le système tourne entièrement sur le DAC Unix standard (contrôle d'accès discrétionnaire). Le DAC seul donne à chaque programme la puissance complète de son compte utilisateur. Compromettre un seul daemon signifie que l'attaquant peut faire tout ce que l'utilisateur du daemon peut faire. Les couches MAC comme AppArmor ou SELinux appliquent des restrictions par-programme que le DAC ne peut pas exprimer, et elles constituent la défense pratique contre le mouvement latéral post-exploitation.",
+        "how": "Choisissez la couche MAC correspondant à votre distro :\nDebian / Ubuntu / Mint / Kali → activer AppArmor :\n   sudo apt install apparmor apparmor-profiles apparmor-profiles-extra\n   sudo systemctl enable --now apparmor\n   sudo aa-enforce /etc/apparmor.d/*\nFedora / RHEL / CentOS / Rocky → activer SELinux :\n   sudo setenforce 1\n   sudo sed -i 's/SELINUX=permissive/SELINUX=enforcing/' /etc/selinux/config\n   sudo systemctl reboot",
+        "server": {
+          "why": "Un serveur sans aucune couche MAC est à une CVE de la compromission complète du système. AppArmor ou SELinux est un durcissement obligatoire pour tout serveur en production."
+        },
+        "desktop": {
+          "why": "Sans MAC, un exploit contre votre navigateur ou toute application user-space hérite de tous vos privilèges utilisateur. Activer AppArmor sur la famille Debian est un gain en une commande sans coût fonctionnel."
+        },
+        "container": {
+          "why": "Le MAC des containers dépend de l'hôte. Activez AppArmor ou SELinux sur l'hôte pour appliquer le confinement à tous les containers.",
+          "how": "Appliquer sur le système hôte, puis assurez-vous que le runtime container est autorisé à appliquer des profils par-container (Docker, containerd, podman le supportent tous par défaut une fois le MAC hôte activé)."
+        }
+      },
+      "no_mac": {
+        "title": "Aucun framework MAC n'est même installé",
+        "why": "Identique à 'no_enforce' mais pire : non seulement aucune couche MAC ne tourne, aucune n'est installée. Le système n'a que les permissions Unix standard pour l'isolation. Sur Linux moderne c'est inhabituel — AppArmor comme SELinux sont largement packagés. Le cas le plus courant est une installation minimale dépouillée (Alpine, distro custom, image de base container utilisée comme hôte).",
+        "how": "Installez le framework approprié pour votre distro :\nDebian / Ubuntu / Mint → AppArmor :\n   sudo apt install apparmor apparmor-profiles apparmor-profiles-extra\n   sudo systemctl enable --now apparmor\nFedora / RHEL / CentOS → SELinux :\n   sudo dnf install selinux-policy-targeted policycoreutils\n   sudo setenforce 1\nRedémarrez si SELinux vient d'être activé — le relabeling au premier boot peut prendre plusieurs minutes.",
+        "server": {
+          "why": "Un serveur sans framework MAC installé opère sur l'isolation DAC-only. Installer AppArmor ou SELinux est le durcissement de base avant tout déploiement en production."
+        },
+        "desktop": {
+          "why": "La plupart des distros desktop livrent AppArmor par défaut ; trouver aucun MAC installé est typiquement le signe d'une installation minimale. Ajoutez le framework + pack de profils."
+        },
+        "container": {
+          "why": "Les hôtes de containers sans MAC n'offrent aucune frontière de sécurité par-container au-delà des namespaces. Installez AppArmor sur l'hôte comme base.",
+          "how": "Appliquer sur l'hôte du container :\n   sudo apt install apparmor apparmor-profiles\n   sudo systemctl enable --now apparmor"
+        }
+      },
+      "selinux_disabled": {
+        "title": "SELinux est désactivé au niveau boot (aucun enforcement MAC)",
+        "why": "Sur les distros de la famille Red Hat, SELinux désactivé (pas juste permissive) signifie que le noyau ne charge même pas la policy. Chaque processus tourne sans restrictions MAC — les services normalement étroitement confinés (httpd, sshd, mariadb) tournent comme si SELinux n'existait pas. Un service compromis peut lire tout fichier que son utilisateur peut lire, écrire partout où l'utilisateur peut écrire, et se connecter à tout endpoint réseau. Ré-activer SELinux sur un système longtemps désactivé nécessite un relabel du filesystem et un redémarrage.",
+        "how": "1. Éditer /etc/selinux/config et changer :\n   SELINUX=disabled\n   en :\n   SELINUX=enforcing\n   (ou SELINUX=permissive d'abord pour une période de transition — voir note ci-dessous)\n2. Forcer un relabel filesystem au prochain boot :\n   sudo touch /.autorelabel\n3. Redémarrer :\n   sudo systemctl reboot\nNote : si SELinux est désactivé depuis longtemps, mettez SELINUX=permissive d'abord et tournez en permissive pendant quelques jours pour faire surfacer et corriger les problèmes de policy des apps customs, puis basculez en enforcing une fois le journal d'audit propre.",
+        "server": {
+          "why": "Sur un serveur de la famille Red Hat, SELinux est la couche MAC dominante et un serveur SELinux-disabled perd des années de travail de confinement par-service (httpd_t, mysqld_t, ssh_t, etc.). Le ré-activer est une étape obligatoire de toute passe de durcissement en production."
+        },
+        "desktop": {
+          "why": "SELinux sur un desktop confine les services (cups, NetworkManager…) qui sont des cibles d'attaque courantes. Le ré-activer coûte le temps de relabel mais fournit une protection significative."
+        },
+        "container": {
+          "why": "SELinux sur l'hôte applique les labels container (svirt_*) qui isolent les containers entre eux et de l'hôte. Le ré-activer sur l'hôte ré-active cette couche.",
+          "how": "Appliquer sur le système hôte en suivant la même procédure que sur une machine bare-metal (éditer /etc/selinux/config, touch /.autorelabel, redémarrer)."
+        }
+      }
+    },
+    "firewall_stack": {
+      "iptables_bypass": {
+        "title": "Règle iptables ACCEPT brute dans INPUT contourne le filtrage UFW",
+        "why": "UFW écrit ses règles dans des chaînes dédiées (ufw-before-input, ufw-input, ufw-after-input). Une règle ACCEPT brute directement dans la chaîne INPUT prend effet AVANT que les chaînes ufw-* ne soient atteintes, donc les paquets matchant cette règle entrent quelles que soient les règles UFW deny qui devraient les rejeter. Le résultat est un contournement silencieux d'UFW — `ufw status` montre le pare-feu actif et configuré, alors que le trafic du port contourné circule librement. Ces règles proviennent typiquement de tweaks iptables manuels ou d'un paquet précédemment installé.",
+        "how": "1. Lister les règles fautives :\n   sudo iptables -L INPUT -n --line-numbers\n2. Supprimer chaque règle ACCEPT brute (remplacez N par le numéro de ligne) :\n   sudo iptables -D INPUT N\n3. Si la règle a été ajoutée par un paquet ou un script de démarrage, trouvez et désactivez la source — sinon elle réapparaîtra après reboot :\n   sudo grep -r 'iptables -A INPUT' /etc/\n4. Sauvegarder le ruleset nettoyé :\n   sudo netfilter-persistent save",
+        "server": {
+          "why": "Sur un serveur, une règle ACCEPT brute en INPUT signifie qu'une partie de votre posture pare-feu est invisible au pilotage UFW — `ufw allow` et `ufw deny` ne peuvent pas l'affecter. Le port exposé reste ouvert quoi que dise la config UFW documentée."
+        },
+        "desktop": {
+          "why": "Sur un desktop, le même problème s'applique : UFW présente le système comme protégé alors que la règle de contournement garde un port joignable. Auditez et supprimez toute règle brute que vous n'avez pas ajoutée intentionnellement."
+        },
+        "container": {
+          "why": "Les règles de la chaîne INPUT vivent sur l'hôte. Inspectez les iptables hôte et réconciliez avec UFW là.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -L INPUT -n --line-numbers\n   sudo iptables -D INPUT N   # pour chaque règle fautive"
+        }
+      },
+      "iptables_forward_bypass": {
+        "title": "Règle iptables ACCEPT brute dans FORWARD contourne UFW (aucun daemon de routage détecté)",
+        "why": "Même pattern qu'iptables_bypass mais sur la chaîne FORWARD. Les règles ACCEPT en FORWARD autorisent le trafic routé (paquets transitant par l'hôte) à passer sans être filtré par la chaîne ufw-forward d'UFW. Docker, libvirt et WireGuard ajoutent légitimement de telles règles — mais ces daemons ne sont PAS détectés sur ce système, donc la règle est inattendue. Cela signifie typiquement qu'un paquet supprimé a laissé des règles orphelines, ou qu'une session de debug manuelle a été oubliée.",
+        "how": "1. Lister les règles FORWARD :\n   sudo iptables -L FORWARD -n --line-numbers\n2. Supprimer chaque règle ACCEPT inattendue :\n   sudo iptables -D FORWARD N\n3. Trouver la source et la désactiver (similaire à iptables_bypass) :\n   sudo grep -r 'iptables -A FORWARD' /etc/\n4. Sauvegarder le ruleset nettoyé :\n   sudo netfilter-persistent save",
+        "server": {
+          "why": "Sur un serveur non-routeur, les règles FORWARD ACCEPT ne devraient pas exister. Si elles existent, elles exposent tout trafic du réseau voisin à un transit libre à travers l'hôte — un vecteur de routage qui peut être abusé pour du traffic relay ou du NAT puncturing."
+        },
+        "desktop": {
+          "why": "Un desktop ne devrait jamais forwarder de trafic. Les règles orphelines FORWARD ACCEPT proviennent typiquement d'un client VPN ou d'un runtime container supprimé. Supprimez-les une fois confirmé que rien de légitime ne les utilise."
+        },
+        "container": {
+          "why": "La chaîne FORWARD est gérée au niveau hôte. Supprimez les règles orphelines sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -L FORWARD -n --line-numbers\n   sudo iptables -D FORWARD N"
+        }
+      },
+      "nftables_parallel": {
+        "title": "Ruleset nftables actif en parallèle d'UFW (backend iptables)",
+        "why": "UFW écrit ses règles dans le backend iptables. Si nftables est aussi actif avec son propre ruleset, deux stacks pare-feu évaluent chaque paquet — et l'ordre d'évaluation dépend de la version du noyau, de l'ordre de chargement des modules et de la couche de compatibilité netfilter. Le résultat est un traitement non-déterministe des paquets : un port qu'`ufw allow` ouvre peut être silencieusement droppé par une règle nftables, ou inversement. Les symptômes sont des pannes de connectivité intermittentes ressemblant à des bugs réseau alors qu'il s'agit de bugs pare-feu.",
+        "how": "1. Inspecter le ruleset nftables :\n   sudo nft list ruleset\n2. Décidez quelle stack vous voulez garder :\n   - Garder UFW → flush nftables et désactiver son service :\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Basculer sur nftables → désinstaller UFW et reconfigurer les règles nativement en nftables :\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persister le choix fait (netfilter-persistent pour iptables/UFW, nftables.conf pour nft).",
+        "server": {
+          "why": "Sur un serveur, deux stacks pare-feu en parallèle produisent des bugs de connectivité intermittents très difficiles à diagnostiquer. Choisissez une stack et supprimez l'autre ; la cohérence est plus importante que le choix spécifique."
+        },
+        "desktop": {
+          "why": "Sur un desktop, les stacks parallèles surgissent généralement comme 'parfois ce service est joignable, parfois non'. Choisissez-en une et tenez-vous-y."
+        },
+        "container": {
+          "why": "La stack pare-feu est au niveau hôte ; cela affecte tous les containers. Réconciliez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo nft list ruleset\n   sudo nft flush ruleset           # si on garde UFW\n   sudo systemctl disable --now nftables"
+        }
+      },
+      "ip_forward_enabled": {
+        "title": "IP forwarding activé mais aucun daemon de routage détecté (Docker / libvirt / WireGuard absents)",
+        "why": "net.ipv4.ip_forward=1 transforme l'hôte en routeur IP — il forwarde les paquets entre interfaces selon sa table de routage. Docker, libvirt/KVM et WireGuard l'activent légitimement pour le trafic guest / VPN, mais aucun de ces daemons ne tourne. Un forwarding IP inexpliqué signifie généralement qu'un paquet VPN ou de virtualisation supprimé a laissé le sysctl activé, ou qu'il a été activé manuellement pour du debug et jamais re-désactivé. Un hôte de forwarding inutilisé peut être abusé comme relais de routage si la chaîne FORWARD est permissive.",
+        "how": "1. Désactiver IP forwarding immédiatement :\n   sudo sysctl -w net.ipv4.ip_forward=0\n2. Rendre permanent — éditer /etc/sysctl.conf ou un fichier sous /etc/sysctl.d/ et mettre :\n   net.ipv4.ip_forward=0\n3. Re-appliquer les paramètres sysctl :\n   sudo sysctl --system\nNote : si vous installez plus tard Docker, libvirt ou WireGuard, ces paquets ré-activeront automatiquement le forwarding. Le correctif ci-dessus ne concerne que l'état actuel.",
+        "server": {
+          "why": "Sur un serveur non-routeur, ip_forward=1 sans daemon est une surface d'attaque dormante. Soit installez le daemon qui explique pourquoi le forwarding est nécessaire, soit désactivez-le."
+        },
+        "desktop": {
+          "why": "Un desktop n'est virtuellement jamais un routeur. Le forwarding activé sans daemon VPN ou de virtualisation est un état résiduel — désactivez-le."
+        },
+        "container": {
+          "why": "ip_forward est un paramètre noyau hôte ; il ne peut pas être changé depuis un container par défaut. Appliquer sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.ip_forward=0\n   echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
+        }
+      }
+    },
+    "docker": {
+      "iptables_bypass": {
+        "title": "Docker est configuré pour écrire ses propres règles iptables (`iptables=true`), contournant UFW",
+        "why": "Le comportement par défaut de Docker est d'insérer ses propres règles ACCEPT dans les chaînes DOCKER et DOCKER-USER, évaluées AVANT les chaînes UFW. Tout flag `-p` d'un container expose son port directement au monde — les règles deny UFW pour ce port ne font silencieusement rien. Les opérateurs découvrent régulièrement ce comportement uniquement quand une base de données ou un panel d'admin de production est joignable depuis l'internet public alors qu'UFW le reporte comme bloqué. La mitigation est soit de mettre `iptables=false` dans /etc/docker/daemon.json (et accepter que l'exposition des ports Docker soit désormais manuelle) soit de binder les containers explicitement à 127.0.0.1 / une interface privée.",
+        "how": "Choisir une approche :\nOption A — garder le pilotage iptables de Docker mais binder les containers à localhost ou une interface spécifique :\n   docker run -p 127.0.0.1:8080:8080 my-app\n   # ou via docker-compose :\n   ports:\n     - \"127.0.0.1:8080:8080\"\nOption B — désactiver complètement le pilotage iptables de Docker et écrire vous-même les règles :\n   sudo nano /etc/docker/daemon.json\n   {\"iptables\": false}\n   sudo systemctl restart docker\n   # NOTE : les containers n'auront plus de réseau sortant jusqu'à ce que vous ajoutiez des règles NAT manuellement.\nOption C — laisser le pilotage iptables de Docker actif mais ajouter des règles UFW explicites dans la chaîne DOCKER-USER (plus avancé, voir docs Docker).",
+        "server": {
+          "why": "Sur un serveur, c'est l'un des incidents de sécurité Docker les plus courants — un container destiné à être LAN-only finit exposé sur internet. Auditez chaque `docker run -p` ou déclaration `ports:` et bindez à une interface spécifique (127.0.0.1 ou IP privée) sauf si le container est explicitement censé être public."
+        },
+        "desktop": {
+          "why": "Sur un desktop derrière NAT, le risque externe est atténué mais l'exposition réseau local est réelle (votre container est joignable depuis tout autre appareil du Wi-Fi). Bindez à 127.0.0.1 pour les services de développement."
+        },
+        "container": {
+          "why": "Ce finding concerne la configuration du daemon Docker, qui vit sur l'hôte. Adressez sur l'hôte."
+        }
+      },
+      "exposed_port": {
+        "title": "Un container Docker expose un port (UFW est contourné ; reste joignable LAN)",
+        "why": "Le container publie un port via `-p HOST_PORT:CONTAINER_PORT` ou une déclaration `ports:`. Comme Docker pilote iptables (voir docker.iptables_bypass), ce port est joignable depuis au moins le LAN et possiblement l'internet public selon l'adresse de publish (défaut 0.0.0.0 = toutes interfaces). Les règles deny UFW pour ce port n'ont aucun effet. Que cela soit un problème dépend de ce que le container offre : un dashboard auto-hébergé, une UI d'admin de base de données, ou un redis sans authentification sont autant d'incidents d'exposition Docker classiques.",
+        "how": "1. Auditer ce que le container expose :\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. Si le service est interne uniquement, restreindre l'adresse de publish :\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost seulement\n   docker run -p 192.168.1.10:8080:8080 ... # IP LAN spécifique seulement\n3. Si le container doit être joignable mais seulement depuis des clients spécifiques, ajouter une règle iptables dans la chaîne DOCKER-USER :\n   sudo iptables -I DOCKER-USER -s <ip-de-confiance> -j ACCEPT\n   sudo iptables -A DOCKER-USER -j DROP",
+        "server": {
+          "why": "Sur un serveur, chaque port Docker exposé est potentiellement internet-facing. Traitez chaque déclaration `-p` comme une décision de port public, pas de port local."
+        },
+        "desktop": {
+          "why": "Sur un desktop, les ports exposés sont joignables depuis d'autres appareils du même LAN — ok pour le développement avec des appareils de confiance, risqué sur Wi-Fi partagé."
+        },
+        "container": {
+          "why": "L'exposition de ports est configurée au moment du lancement du container sur l'hôte. Adressez là."
+        }
+      },
+      "exposed_bypass_ufw": {
+        "title": "Un port de container Docker est exposé ET le pilotage iptables de Docker contourne UFW",
+        "why": "Deux problèmes combinés : le container publie un port (`-p`) et Docker est configuré pour écrire des règles iptables qui contournent UFW. Le résultat est que le port est entièrement joignable sur quelle que soit l'adresse de publish spécifiée (défaut 0.0.0.0 = chaque interface, y compris publique), avec UFW totalement incapable de le bloquer. C'est le pire pattern d'exposition Docker — visible dans la nature à chaque fois qu'un dev pousse un container 'juste pour tester' sur un VPS à IP publique. Les CVE de l'application exposée sont désormais publiques.",
+        "how": "Deux correctifs simultanés nécessaires :\n1. Restreindre l'adresse de publish du container fautif :\n   - Arrêter et recréer le container avec -p 127.0.0.1:HOST_PORT:CONTAINER_PORT\n   - Ou éditer docker-compose.yml : 'ports: [\"127.0.0.1:HOST_PORT:CONTAINER_PORT\"]'\n2. Décider l'intégration Docker / UFW (voir docker.iptables_bypass pour le détail) :\n   - Binding explicite (plus simple) : garder iptables=true, toujours spécifier l'adresse de publish\n   - Ou désactiver l'iptables Docker (avancé) : /etc/docker/daemon.json {\"iptables\": false}\n3. Re-vérifier avec :\n   sudo iptables -L DOCKER-USER -n\n   ss -tlnp | grep <port>",
+        "server": {
+          "why": "Sur un serveur exposé sur internet, cette combinaison signifie qu'un container est exposé alors qu'UFW dit le contraire. Corriger immédiatement — rotater toute credential qui aurait pu être exposée."
+        },
+        "desktop": {
+          "why": "Même derrière NAT, cette combinaison expose le container à tout le réseau local y compris les appareils non fiables sur Wi-Fi partagé. Le correctif est le même que sur un serveur."
+        },
+        "container": {
+          "why": "L'exposition de ports et la config du daemon Docker sont au niveau hôte. Adressez sur l'hôte."
+        }
+      }
+    },
+    "services": {
+      "exposure": {
+        "open_local": {
+          "title": "Port de service joignable depuis le LAN (règle UFW autorise le sous-réseau local)",
+          "why": "La règle UFW pour ce port autorise le trafic depuis le réseau local (ex. `ALLOW from 192.168.1.0/24`). Le service est donc joignable depuis tout appareil de ce sous-réseau — ok quand le LAN est entièrement de confiance (bureau personnel, VLAN entreprise), risqué sur Wi-Fi partagé où des appareils non fiables coexistent (Wi-Fi public, conférences, chambres d'hôtel). Le finding est informationnel sur un LAN de confiance et une vraie préoccupation sur un LAN non fiable.",
+          "how": "Décider selon le réseau sur lequel se trouve cette machine :\n1. LAN de confiance (maison, VLAN corp) → garder la règle ; le finding est informationnel.\n2. LAN non fiable (Wi-Fi partagé, segment IoT) → resserrer la règle :\n   sudo ufw delete allow from 192.168.1.0/24 to any port <port>\n   sudo ufw allow from <ip-de-confiance> to any port <port>\n3. Service interne uniquement qui ne devrait jamais faire face à un client externe → binder le daemon à 127.0.0.1 plutôt que se reposer sur le pare-feu :\n   # dans la config du daemon (sshd_config, postgresql.conf, redis.conf…) :\n   bind 127.0.0.1\n   listen_addresses = 'localhost'",
+          "server": {
+            "why": "Sur un serveur, un port open-local exposant des outils d'admin (UIs de bases de données, dashboards de monitoring, ssh) mérite une décision explicite — le LAN est-il vraiment fiable ? Restreindre à des IPs spécifiques quand c'est possible."
+          },
+          "desktop": {
+            "why": "Sur un desktop, le niveau de confiance du LAN change en permanence (maison / café / hôtel). Envisagez de binder les services à 127.0.0.1 plutôt que de vous reposer sur la whitelist LAN."
+          },
+          "container": {
+            "why": "L'exposition de ports container est au niveau hôte. Ajustez UFW sur l'hôte ou restreignez l'adresse de publish du container."
+          }
+        }
+      },
+      "state": {
+        "active_disabled": {
+          "title": "Le service tourne actuellement mais n'est pas activé pour démarrer au boot",
+          "why": "Le service est actif dans la session en cours mais son unit systemd n'est pas enabled, donc un reboot l'arrête définitivement. Les opérateurs rencontrent souvent ce problème après un dépannage (`systemctl start` fonctionne, le problème disparaît, l'opérateur oublie le `systemctl enable`). Le prochain reboot de maintenance — possiblement non assisté, possiblement pendant un incident — drop silencieusement le service. Que cela importe dépend de ce que fait le service ; pour les services de sécurité critiques (fail2ban, auditd, clamav, apparmor) c'est un vrai risque.",
+          "how": "1. Confirmer que le service est bien ce que vous voulez au boot :\n   sudo systemctl is-active <service>\n   sudo systemctl is-enabled <service>\n2. Activer la persistance :\n   sudo systemctl enable <service>\n3. Vérifier au prochain reboot ou via systemd-analyze :\n   sudo systemd-analyze verify <service>.service",
+          "server": {
+            "why": "Sur un serveur, les services non enabled au boot ne survivent que jusqu'au prochain reboot — qui sur un serveur de prod est le mauvais moment pour découvrir que fail2ban ou auditd a disparu."
+          },
+          "desktop": {
+            "why": "Sur un desktop, les reboots sont plus fréquents (cycles de veille laptop, mises à jour kernel). Un service de sécurité actif maintenant mais non enabled est parti après le prochain shutdown."
+          },
+          "container": {
+            "why": "Les containers n'utilisent typiquement pas l'enablement au boot systemd (ils lancent une seule commande). Ce finding s'applique aux services niveau hôte — adressez là."
+          }
+        },
+        "installed_inactive_critical": {
+          "title": "Un service à criticité élevée est installé mais ni actif ni enabled",
+          "why": "Des paquets fournissant une protection à fort impact (fail2ban, auditd, clamav, apparmor, rkhunter…) sont installés sur le système mais ne tournent pas et ne démarreront pas au boot. Ils consomment de l'espace disque sans fournir de défense — le paquet est présent mais le service est dormant. La cause la plus fréquente est une installation avortée / un échec de first-run où l'unit systemd a été masqué ou disabled et jamais ré-enabled. La valeur défensive du paquet est nulle dans cet état.",
+          "how": "1. Vérifier pourquoi le service est inactif (le journal dit habituellement pourquoi il a échoué à démarrer) :\n   sudo systemctl status <service>\n   sudo journalctl -u <service> -b\n2. Si l'unit est masqué, unmask-le d'abord :\n   sudo systemctl unmask <service>\n3. Enable et démarrer :\n   sudo systemctl enable --now <service>\n4. Re-vérifier :\n   sudo systemctl status <service>\nNote : si le service ne démarre pas (erreur de config, fichier de données manquant, port déjà utilisé), corrigez la cause sous-jacente — le laisser disabled silencieusement est pire que désinstaller.",
+          "server": {
+            "why": "Sur un serveur, un outil de sécurité installé mais dormant est une documentation trompeuse — il suggère que la protection existe alors qu'elle n'existe pas. Soit fixer l'activation, soit désinstaller le paquet et documenter le choix explicitement."
+          },
+          "desktop": {
+            "why": "Sur un desktop, un clamav ou apparmor dormant n'offre aucune protection. Re-activez, ou désinstallez si vous avez décidé de ne pas l'utiliser (et souvenez-vous pourquoi)."
+          },
+          "container": {
+            "why": "Les containers n'exécutent généralement pas plusieurs services à longue durée. Si un outil de sécurité est installé mais inactif dans un container, soit lancez-le en sidecar/init, soit supprimez le paquet."
+          }
+        }
+      }
+    },
+    "rootkit": {
+      "db_outdated": {
+        "title": "Base de signatures rkhunter obsolète (pas de rkhunter --update récent)",
+        "why": "rkhunter détecte les rootkits connus en comparant binaires, propriétés de fichiers et patterns de processus à une base de signatures. La base doit être rafraîchie régulièrement — le paysage des rootkits évolue et de nouveaux patterns sont publiés. Une base obsolète signifie que les rootkits récemment identifiés passent inaperçus et l'outil produit un faux sentiment de sécurité : le scan reporte 'propre' parce qu'il ne sait pas quoi chercher.",
+        "how": "1. Rafraîchir la base maintenant :\n   sudo rkhunter --update\n2. Re-lancer un scan pour confirmer la base fraîche :\n   sudo rkhunter --check --skip-keypress\n3. Automatiser les updates via cron (quotidien suffit) :\n   echo '0 4 * * * root rkhunter --update --quiet' | sudo tee /etc/cron.d/rkhunter-update",
+        "server": {
+          "why": "Sur un serveur, une base rootkit obsolète est l'un des modes d'échec silencieux — l'outil continue de reporter propre tout en ratant les menaces récentes. Ajoutez le job cron une fois et oubliez-le."
+        },
+        "desktop": {
+          "why": "Les reboots et cycles de veille desktop interrompent souvent les updates planifiés. Un cron hebdomadaire suffit ; vérifiez occasionnellement la date de la base avec `rkhunter --versioncheck`."
+        },
+        "container": {
+          "why": "rkhunter tourne typiquement sur l'hôte, pas dans les containers individuels. Adressez sur l'hôte."
+        }
+      },
+      "no_scan": {
+        "title": "rkhunter est installé mais aucun scan complété n'a été trouvé dans les logs",
+        "why": "rkhunter ne détecte les rootkits que lorsqu'il tourne effectivement. Un rkhunter installé-mais-jamais-exécuté fournit zéro protection : aucun scan n'a comparé l'état actuel du système à la base de signatures. La cause la plus fréquente est install + first-run-failure où l'utilisateur a installé le paquet mais le scan initial a crashé (répertoire /var/log/rkhunter manquant, erreur de permission, config custom rejetée). Un deuxième cas fréquent est paquet installé par un méta-paquet sans runs planifiés (pas d'entrée cron).",
+        "how": "1. Lancer un scan maintenant pour vérifier que rkhunter fonctionne sur ce système :\n   sudo rkhunter --check --skip-keypress\n2. Si le scan réussit, le log sous /var/log/rkhunter.log prouve qu'il a tourné.\n3. Planifier des scans quotidiens via cron :\n   echo '30 4 * * * root rkhunter --check --skip-keypress --quiet --rwo' | sudo tee /etc/cron.d/rkhunter-scan\n4. (Optionnel) configurer des alertes email sur findings — éditez /etc/rkhunter.conf et settez MAIL-ON-WARNING.",
+        "server": {
+          "why": "Sur un serveur, un rkhunter inactif est une documentation trompeuse — il a l'air installé mais ne produit jamais de findings. Planifiez le scan quotidien."
+        },
+        "desktop": {
+          "why": "Sur un desktop, les scans hebdomadaires sont généralement suffisants ; quotidien convient si le bruit de log supplémentaire ne dérange pas."
+        },
+        "container": {
+          "why": "rkhunter tourne sur l'hôte. Planifiez sur l'hôte."
+        }
+      },
+      "scan_old": {
+        "title": "Dernier scan rkhunter trop ancien pour être significatif",
+        "why": "rkhunter est installé et a tourné par le passé, mais le dernier scan est plus vieux que le seuil de fraîcheur (typiquement 30 jours). Le système a connu un mois entier de changements (mises à jour de paquets, upgrades noyau, nouvelles applications) que le dernier scan rkhunter n'a jamais vus. La couverture de détection se dégrade rapidement quand l'écart entre scans grandit — les binaires nouvellement installés ne peuvent pas être comparés à une baseline qui les précède.",
+        "how": "1. Lancer un scan frais immédiatement :\n   sudo rkhunter --check --skip-keypress\n2. Si une entrée cron existe mais ne se déclenche pas, vérifier les erreurs :\n   sudo journalctl -t cron --since '7 days ago' | grep rkhunter\n3. Re-planifier via /etc/cron.d/rkhunter-scan (voir rootkit.no_scan pour la ligne cron).",
+        "server": {
+          "why": "Sur un serveur, un scan rkhunter vieux de plusieurs mois ne fournit aucune visibilité actuelle. Re-planifier et vérifier que le cron se déclenche réellement (la raison la plus fréquente de scans obsolètes est une entrée cron cassée, pas une manquante)."
+        },
+        "desktop": {
+          "why": "Sur un desktop, les lapses sont normaux (laptop éteint pendant des semaines, etc.). Lancez un scan frais après une longue période hors-ligne avant de faire confiance au résultat précédent."
+        },
+        "container": {
+          "why": "rkhunter sur l'hôte surveille le filesystem hôte. Planifiez sur l'hôte."
+        }
+      }
+    },
+    "ports": {
+      "uncovered": {
+        "title": "Port en écoute sans règle UFW et la policy par défaut le laisse passer",
+        "why": "Un service est bindé à une interface réseau et accepte des connexions sur un port spécifique, mais UFW n'a ni règle ALLOW explicite ni règle DENY explicite pour ce port. La joignabilité du port dépend entièrement de la policy default-incoming d'UFW : quand elle est ALLOW, le port est grand ouvert ; quand elle est DENY, le default deny l'attrape. Le finding se déclenche quand le default n'attrape pas le port — signifiant que le service est joignable sans que personne n'ait explicitement décidé qu'il devrait l'être.",
+        "how": "Deux actions possibles selon l'intention :\n1. Le port DEVRAIT être joignable (c'est un service légitime) → ajouter une règle ALLOW explicite avec la portée source la plus petite acceptable :\n   sudo ufw allow from 192.168.1.0/24 to any port <port>\n2. Le port NE devrait PAS être joignable (le service est interne uniquement) → soit binder le daemon à 127.0.0.1 (mieux), soit ajouter un DENY explicite :\n   sudo ufw deny <port>\n3. Re-vérifier :\n   sudo ufw status verbose\n   ss -tlnp | grep ':<port>'",
+        "server": {
+          "why": "Sur un serveur, chaque port en écoute non matché est effectivement non documenté. Rendez la décision explicite : ALLOW depuis des clients spécifiques, ou DENY, ou binding sur localhost."
+        },
+        "desktop": {
+          "why": "Sur un desktop, les ports en écoute non matchés proviennent souvent de services de dev local (un IDE sur 5173, une app node sur 3000). Ils devraient typiquement binder à 127.0.0.1."
+        },
+        "container": {
+          "why": "L'exposition de ports container passe par l'UFW de l'hôte. Adressez là ou restreignez l'adresse de publish du container."
+        }
+      },
+      "uncovered_netbios": {
+        "title": "Ports NetBIOS / Samba en écoute sans restriction UFW LAN-only",
+        "why": "Les ports 137/udp (NetBIOS Name Service), 138/udp (NetBIOS Datagram), 139/tcp (NetBIOS Session) et 445/tcp (SMB) sont des protocoles fondamentaux de partage de fichiers Windows. Ils ne devraient être joignables QUE depuis un LAN de confiance — jamais depuis l'internet public, jamais depuis des voisins non fiables. SMB sur un réseau ouvert est la surface d'attaque WannaCry / EternalBlue. UFW n'a pas de règle LAN-only explicite pour ces ports aujourd'hui, donc ils peuvent être joignables au-delà de leur portée prévue.",
+        "how": "1. Restreindre les ports à votre sous-réseau LAN :\n   sudo ufw allow from 192.168.1.0/24 to any port 137 proto udp\n   sudo ufw allow from 192.168.1.0/24 to any port 138 proto udp\n   sudo ufw allow from 192.168.1.0/24 to any port 139 proto tcp\n   sudo ufw allow from 192.168.1.0/24 to any port 445 proto tcp\n2. Re-vérifier que Samba bind correctement :\n   ss -tlnp | grep -E ':(139|445)\\b'\n3. (Recommandé) resserrer aussi 'hosts allow' dans smb.conf pour matcher le sous-réseau LAN — défense en profondeur.",
+        "server": {
+          "why": "Sur un serveur fournissant SMB, la règle doit restreindre aux clients qui devraient effectivement monter les shares. Autoriser 0.0.0.0 signifie que tout hôte internet peut tenter une auth SMB — une surface très bruyante et très risquée."
+        },
+        "desktop": {
+          "why": "Le Samba desktop (dossier partagé avec le réseau maison) appartient strictement au LAN. Restreignez au sous-réseau que vous utilisez à la maison."
+        },
+        "container": {
+          "why": "Le Samba conteneurisé publie ses ports via l'hôte. Restreignez au niveau UFW sur l'hôte."
+        }
+      }
+    },
+    "ntp": {
+      "not_enabled": {
+        "title": "Synchronisation NTP non activée (aucune source de temps configurée)",
+        "why": "Sans NTP, l'horloge système dérive au rythme de l'oscillateur matériel — typiquement des dizaines de secondes par jour, parfois plus. Les conséquences en cascade sont plus grandes qu'elles ne paraissent : la validation des certificats TLS échoue quand le décalage d'horloge dépasse quelques minutes, les tickets Kerberos cessent d'être acceptés, les timestamps des logs ne s'alignent plus avec la réalité (la forensics devient plus difficile), les jobs planifiés se déclenchent au mauvais moment, et les systèmes distribués perdent leur consensus. NTP est l'une des configurations de base les moins chères sur un système Linux.",
+        "how": "Sur les distros à base systemd (Debian/Ubuntu/Fedora — cas courant) :\n1. Activer et démarrer systemd-timesyncd :\n   sudo systemctl enable --now systemd-timesyncd\n2. Vérifier qu'il a capté une source de temps :\n   timedatectl status\n   timedatectl show-timesync\nAlternative — chrony complet (plus précis, souvent préféré sur serveur) :\n   sudo apt install chrony\n   sudo systemctl enable --now chrony\n   chronyc tracking",
+        "server": {
+          "why": "Sur un serveur, la dérive d'horloge casse TLS, certificats, jobs planifiés et coordination des systèmes distribués. Activer NTP n'est pas négociable en production."
+        },
+        "desktop": {
+          "why": "La plupart des distros desktop activent NTP par défaut ; ce finding signifie généralement une désactivation délibérée ou un conflit chrony/timesyncd. Vérifiez et ré-activez."
+        },
+        "container": {
+          "why": "Les containers héritent normalement de l'horloge de l'hôte. Le finding signifie généralement que l'HÔTE n'a pas de NTP configuré — corrigez sur l'hôte."
+        }
+      },
+      "not_synchronized": {
+        "title": "Le service NTP tourne mais l'horloge n'est pas synchronisée à une source",
+        "why": "systemd-timesyncd / chronyd est actif mais il n'a pas (encore) verrouillé sur une source de temps utilisable. Les causes incluent : UDP/123 sortant bloqué par un pare-feu (typique sur les réseaux durcis), pas d'accès internet sur l'hôte, ntp.conf / timesyncd.conf vide ou mal configuré, ou tous les serveurs configurés sont injoignables. Le service apparaît sain dans `systemctl status` mais l'horloge n'est en fait pas ajustée — la dérive continue.",
+        "how": "1. Vérifier ce que le service essaie :\n   timedatectl status\n   timedatectl show-timesync\n   # ou pour chrony :\n   chronyc sources\n   chronyc tracking\n2. Vérifier que UDP/123 sortant est autorisé (l'échec silencieux le plus fréquent) :\n   sudo ufw status | grep 123\n3. Remplacer le pool par défaut par un serveur que vous contrôlez ou pool.ntp.org explicitement :\n   sudo nano /etc/systemd/timesyncd.conf\n   [Time]\n   NTP=pool.ntp.org\n   sudo systemctl restart systemd-timesyncd\n4. Re-vérifier après quelques minutes :\n   timedatectl status",
+        "server": {
+          "why": "Sur un serveur, un service NTP non synchronisé est pire que pas de NTP parce que la documentation ment — le service tourne mais l'horloge ne converge pas. Corrigez le problème de réseau ou de config."
+        },
+        "desktop": {
+          "why": "Sur un desktop, la cause est souvent un Wi-Fi captif bloquant NTP, ou un pare-feu d'entreprise. Soit acceptez la dérive (desktop, éphémère), soit utilisez le serveur NTP d'entreprise."
+        },
+        "container": {
+          "why": "L'horloge container vient de l'hôte. Corrigez NTP sur l'hôte d'abord ; les horloges container suivront automatiquement."
+        }
+      }
+    },
+    "fail2ban": {
+      "no_jails": {
+        "title": "fail2ban tourne mais aucune jail n'est configurée (aucune protection active)",
+        "why": "La valeur défensive de fail2ban provient de ses jails — chaque jail surveille un log spécifique (sshd, postfix, nginx) et bannit les IPs qui atteignent un seuil d'échecs. Un daemon fail2ban sans jail activée est l'équivalent d'une caméra de surveillance qui n'enregistre rien : le service tourne mais ne surveille rien et ne bannit personne. La cause la plus fréquente est une config par défaut où chaque jail est `enabled = false` et l'opérateur n'a jamais ré-activé celle qui compte (typiquement sshd).",
+        "how": "1. Activer la jail sshd (la base pour la protection SSH) :\n   sudo nano /etc/fail2ban/jail.local\n   [sshd]\n   enabled = true\n2. Redémarrer fail2ban pour que la jail soit prise en compte :\n   sudo systemctl restart fail2ban\n3. Vérifier que la jail est active :\n   sudo fail2ban-client status\n   sudo fail2ban-client status sshd",
+        "server": {
+          "why": "Sur un serveur, la surface bruteforce SSH est constante — les bots scannent chaque IP publique cherchant des credentials ssh faibles. fail2ban-sans-jails offre zéro protection contre cela. La jail sshd doit être activée."
+        },
+        "desktop": {
+          "why": "Sur un desktop dont SSH n'est pas exposé sur internet, fail2ban est moins critique. Soit activez la jail sshd quand même en défense en profondeur, soit désinstallez fail2ban si vous n'exposez pas SSH."
+        },
+        "container": {
+          "why": "fail2ban est typiquement exécuté sur l'hôte qui possède le point d'entrée SSH, pas dans des containers. Activer sur l'hôte."
+        }
+      },
+      "service_inactive": {
+        "title": "fail2ban est installé mais le service ne tourne pas",
+        "why": "Sans le daemon, aucun log n'est surveillé, aucune IP n'est bannie, et la protection promise par fail2ban n'existe pas. Le paquet est installé mais inerte. Les causes courantes sont un échec de démarrage (typiquement un jail.local malformé — fail2ban refuse de démarrer sur erreurs de syntaxe), le service masqué, ou un arrêt délibéré pendant une session de maintenance jamais inversé.",
+        "how": "1. Vérifier pourquoi le service est inactif :\n   sudo systemctl status fail2ban\n   sudo journalctl -u fail2ban -b\n2. Si une erreur de config est reportée, corriger :\n   sudo fail2ban-client -t   # vérification syntaxe config\n3. Unmask si nécessaire puis démarrer :\n   sudo systemctl unmask fail2ban\n   sudo systemctl enable --now fail2ban\n4. Vérifier :\n   sudo fail2ban-client status",
+        "server": {
+          "why": "Un serveur avec fail2ban installé mais inactif a le pire des deux mondes : la documentation prétend une protection qui n'existe pas. Soit démarrer le service, soit désinstaller et documenter le choix."
+        },
+        "desktop": {
+          "why": "Idem serveur — installé mais inactif est trompeur. Décidez : démarrez-le, ou désinstallez-le."
+        },
+        "container": {
+          "why": "fail2ban surveille les logs hôte et gère les iptables hôte. Adressez sur l'hôte."
+        }
+      }
+    },
+    "ddns": {
+      "found": {
+        "title": "Un client DDNS est installé — votre IP peut être publiée sur un nom DNS public",
+        "why": "Les clients Dynamic DNS (ddclient, no-ip, inadyn…) publient périodiquement votre IP publique courante sur un nom d'hôte chez un fournisseur (yourdomain.no-ip.org, mydevice.duckdns.org…). Le nom d'hôte est ensuite résoluble depuis n'importe où sur internet — quiconque le connaît peut atteindre votre IP publique, même si elle change. DDNS en soi n'est pas une vulnérabilité, mais cela transforme 'exposition IP' en 'exposition nom persistante'. Chaque service que vous publiez devient effectivement ciblé sur internet une fois le nom DDNS connu d'un scanner.",
+        "how": "Décider si DDNS est intentionnel :\n1. Intentionnel (accès distant aux services maison, cible de backup off-site, etc.) → auditer chaque port joignable sur l'IP publique :\n   sudo ufw status\n   ss -tlnp\n   Traitez votre nom DDNS comme un actif public et durcissez chaque service exposé en conséquence.\n2. Non intentionnel ou résiduel (ex. d'un ancien routeur ou setup de test) → désactiver le client :\n   sudo systemctl disable --now ddclient   # ou tout client qui tourne\n   sudo apt remove --purge ddclient",
+        "server": {
+          "why": "Sur un serveur exposant intentionnellement des services à internet, DDNS est un choix de design — mais chaque port derrière lui doit être durci comme s'il était sur une IP publique statique. Documentez quels ports sont intentionnellement exposés et durcissez-les explicitement."
+        },
+        "desktop": {
+          "why": "Sur un desktop, DDNS est généralement un reliquat d'expériences d'accès distant ou d'un setup VPN abandonné. Confirmez qu'il est voulu ; sinon, désactivez et supprimez le client."
+        },
+        "container": {
+          "why": "Les clients DDNS tournent généralement sur l'hôte, pas dans les containers. Adressez sur l'hôte."
+        }
+      },
+      "warn": {
+        "title": "DDNS détecté et expose un ou plusieurs ports sur l'internet public",
+        "why": "Le client DDNS publie votre IP publique sous un nom ET un ou plusieurs ports ouverts sont joignables sur cette IP. Quiconque résout le nom DDNS atteint ces services — les bots énumèrent régulièrement les fournisseurs DDNS cherchant des panels d'admin exposés, des shares SMB, du RDP, du ssh avec credentials par défaut, des serveurs Plex sans auth, etc. La combinaison DDNS + port ouvert est l'un des patterns 'comment je me suis fait hacker' les plus courants sur les connexions résidentielles.",
+        "how": "1. Lister les ports exposés vers lesquels le nom DDNS pointe :\n   sudo ufw status\n   ss -tlnp\n2. Pour chaque port :\n   - Est-il censé être public ? → durcir le service (creds forts, TLS, rate limiting, IP whitelist quand faisable).\n   - Est-il accidentel ? → fermer :\n     sudo ufw deny <port>\n     # ou unbind le service de l'interface publique\n3. Re-tester depuis l'extérieur du réseau :\n   curl -v http://<votre-nom-ddns>:<port>",
+        "server": {
+          "why": "Sur un serveur, chaque port joignable via DDNS est un service public. Inventoriez-les, durcissez-les, et supprimez tout ce qui n'est pas explicitement voulu."
+        },
+        "desktop": {
+          "why": "Sur un desktop, ce finding est généralement la cause d'un véritable incident — un appareil maison est devenu joignable depuis internet. Fermez tout ce dont vous n'avez pas besoin."
+        },
+        "container": {
+          "why": "Les ports container publiés via l'hôte deviennent aussi joignables via DDNS. Fermez au niveau UFW de l'hôte ou unpublish depuis le container."
         }
       }
     },
@@ -1535,6 +2317,34 @@
         "container": {
           "why": "Identique à scan_very_old — les scans ClamAV périodiques dans les containers ne sont pas standard. Privilégiez l'analyse d'image (Trivy, Snyk) intégrée dans votre pipeline CI/CD."
         }
+      },
+      "db_not_found": {
+        "title": "ClamAV est installé mais sa base de données virale est absente",
+        "why": "ClamAV détecte les malwares en comparant les fichiers à une base de signatures (/var/lib/clamav/{main,daily,bytecode}.cvd). Sans la base, le scanner ne peut reconnaître rien — chaque scan retourne 'propre'. La cause la plus fréquente est install + first-run failure : le service freshclam a échoué à télécharger les signatures initiales (rate-limited par les mirrors publics, réseau bloqué, /var/lib/clamav non-writable, ou outage du serveur de signatures au moment de l'install) et n'a jamais été relancé.",
+        "how": "1. Lancer freshclam manuellement pour télécharger la base :\n   sudo systemctl stop clamav-freshclam\n   sudo freshclam --verbose\n2. Redémarrer le service :\n   sudo systemctl start clamav-freshclam\n3. Vérifier que les fichiers de base existent :\n   ls -lh /var/lib/clamav/\n4. Déclencher un scan pour valider end-to-end :\n   sudo clamscan --version\n   sudo clamscan /tmp/",
+        "server": {
+          "why": "Sur un serveur, clamav sans base est trompeur — l'install a l'air complet mais fournit zéro détection. Corriger le téléchargement freshclam avant de traiter clamav comme une défense fonctionnelle."
+        },
+        "desktop": {
+          "why": "Sur un desktop, la cause la plus probable est un Wi-Fi captif ou un mirror rate-limited au moment de l'install. Relancer freshclam une fois sur une connexion propre."
+        },
+        "container": {
+          "why": "Si ClamAV tourne dans un container, assurez-vous que le volume de base est initialisé. S'il tourne sur l'hôte, corrigez freshclam sur l'hôte."
+        }
+      },
+      "freshclam_missing": {
+        "title": "ClamAV est installé mais le service updater freshclam ne tourne pas",
+        "why": "freshclam est le daemon (ou job cron) qui maintient la base de signatures à jour — sans lui, la base stagne à la version dernièrement récupérée. Les signatures ClamAV sont mises à jour plusieurs fois par jour ; un freshclam à l'arrêt signifie que le scanner est aveugle à tout ce qui a été signalé dans les dernières heures ou jours. La cause la plus fréquente est le service masqué ou désactivé à la main (souvent pendant une session de debug) et oublié.",
+        "how": "1. Vérifier que le service existe et son statut :\n   sudo systemctl status clamav-freshclam\n2. Unmask si nécessaire :\n   sudo systemctl unmask clamav-freshclam\n3. Enable et démarrer :\n   sudo systemctl enable --now clamav-freshclam\n4. Confirmer que freshclam récupère les updates :\n   sudo journalctl -u clamav-freshclam -n 30",
+        "server": {
+          "why": "Sur un serveur, un freshclam à l'arrêt signifie que le clamav de prod rate chaque signature publiée depuis le dernier fetch. Enable le service ; il n'a pas de coût ressources significatif."
+        },
+        "desktop": {
+          "why": "Sur un desktop, idem — clamav ne vaut que par les signatures les plus récentes. Ré-enable freshclam."
+        },
+        "container": {
+          "why": "Si ClamAV tourne dans un container, freshclam devrait être dans l'arbre de processus du container (ou les signatures partagées depuis l'hôte via volume). Sur l'hôte, ré-enable là."
+        }
       }
     },
     "auditd": {
@@ -1611,6 +2421,20 @@
         "title": "L'interface bridge de virtualisation peut contourner la politique FORWARD d'UFW",
         "why": "Les hyperviseurs tels que libvirt/KVM, VirtualBox et VMware créent des interfaces bridge Linux (virbr0, vboxnet*, etc.) et injectent leurs propres règles iptables directement dans la chaîne FORWARD. Ces règles peuvent autoriser le trafic entre les VMs et l'hôte — ou entre les VMs et internet — indépendamment de la politique FORWARD d'UFW. UFW ne gère que ses propres règles et ne peut pas empêcher ces règles de pont d'autoriser le trafic transféré.",
         "how": "Auditer les règles FORWARD insérées par le pont :\n  sudo iptables -L FORWARD -v --line-numbers | grep virbr0\n\nC'est un comportement attendu sur un hôte de virtualisation — vérifier que seul le trafic VM légitime est transféré.\n\nPour isoler les VMs d'internet tout en conservant l'accès hôte, configurer le réseau libvirt en mode isolé :\n  virsh net-edit default  # définir <forward mode='none'/> pour les réseaux isolés\n\nSi vous n'utilisez plus de machines virtuelles :\n  sudo systemctl disable --now libvirtd"
+      },
+      "snap_network": {
+        "title": "Outil de virtualisation snap détecté (multipass, lxd-snap) — revue de surface réseau nécessaire",
+        "why": "Les outils de virtualisation packagés en snap (multipass, lxd) installent leurs propres interfaces bridge et injectent des règles dans la chaîne FORWARD similaires à libvirt/KVM, mais via le modèle de confinement snap plutôt que le gestionnaire de paquets système. Ils sont faciles à installer et faciles à oublier — le bridge persiste à travers les upgrades snap, et la politique FORWARD d'UFW de l'hôte ne contrôle pas le trafic inter-VM ou VM-vers-internet sur ces bridges. La 'version snap' est aussi plus difficile à découvrir avec les audits de paquets standard (dpkg -l les rate).",
+        "how": "1. Inventorier les outils virt installés via snap :\n   snap list | grep -Ei 'multipass|lxd'\n2. Inspecter les interfaces bridge et leurs règles iptables :\n   ip link show | grep -Ei 'lxd|mpqemubr'\n   sudo iptables -L FORWARD -v | grep -Ei 'lxd|mpqemubr'\n3. Si vous n'utilisez plus l'outil, le supprimer (et le bridge se nettoie) :\n   sudo snap remove --purge multipass\n   sudo snap remove --purge lxd\n4. Si vous le gardez, documenter le bridge dans votre posture pare-feu et accepter qu'UFW ne contrôle pas sa chaîne FORWARD.",
+        "server": {
+          "why": "Sur un serveur, un outil virt snap inutilisé est de la surface d'attaque dormante et un bridge oublié. Auditer et supprimer si inutilisé."
+        },
+        "desktop": {
+          "why": "Sur un desktop, multipass / lxd via snap est courant pour les workflows dev. Soyez juste conscient que le bridge se trouve hors de la vue d'UFW ; traitez les VMs comme des endpoints de confiance."
+        },
+        "container": {
+          "why": "Snap est rarement disponible dans les containers ; ce finding est un sujet hôte."
+        }
       }
     },
     "auth_log": {
@@ -2114,7 +2938,9 @@
     "section_informational": "Informationnels",
     "section_ok": "OK",
     "risk_unknown": "inconnu",
-    "footer": "_Généré par [BOB](https://github.com/Masbateno/bodyguard-of-bits). Les commandes affichées sont des suggestions — vérifiez avant d'exécuter._"
+    "footer": "_Généré par [BOB](https://github.com/Masbateno/bodyguard-of-bits). Les commandes affichées sont des suggestions — vérifiez avant d'exécuter._",
+    "note_label": "Remarque",
+    "detail_label": "Détail"
   },
   "html_output": {
     "title_prefix": "BOB",
@@ -2142,6 +2968,8 @@
     "risk_low": "FAIBLE",
     "risk_medium": "MOYEN",
     "risk_high": "ÉLEVÉ",
-    "risk_critical": "CRITIQUE"
+    "risk_critical": "CRITIQUE",
+    "note_label": "Remarque",
+    "detail_label": "Détail"
   }
 }

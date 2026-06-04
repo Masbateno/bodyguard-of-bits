@@ -54,7 +54,10 @@ BOB **n'est pas** :
   - un daemon qui écoute sur un port réseau (aucune surface d'attaque entrante) ;
   - un agent distant (aucune connexion command-and-control à distance) ;
   - un outil de défense active (BOB ne bloque pas de trafic, ne tue pas de processus, ne modifie pas de règles pare-feu de lui-même — le mode `--fix` demande confirmation à l'utilisateur pour chaque commande) ;
-  - un outil de forensics (pas de chain-of-custody, pas de stockage de preuves immuable).
+  - un outil de forensics (pas de chain-of-custody, pas de stockage de preuves immuable) ;
+  - un scanner de vulnérabilités (pas de sondage de bases CVE, pas de test d'exploitation, pas de fingerprinting de versions logicielles vs problèmes connus — utilisez OpenVAS, Nessus, Wazuh, etc.) ;
+  - un moteur d'analyse de menaces / threat-modeling (pas d'énumération de chemins d'attaque, pas de probing actif de joignabilité depuis l'extérieur de l'hôte, pas de simulation de scénarios de compromission — utilisez des scanners externes ou du red-team tooling) ;
+  - un système de verdict autonome. Le score BOB reflète **l'hygiène de configuration sous le profil d'audit actif et le contexte réseau détecté** — pas un verdict de sécurité absolu. Un score propre signifie « hygiéniquement configuré pour le profil choisi dans le contexte détecté », pas « impossible à compromettre ». Une interprétation humaine est requise pour traduire le verdict en risque opérationnel. Voir README_FR.md « Ce que BOB est — et ce qu'il n'est pas » pour la déclaration de périmètre côté utilisateur.
 
 ### Modèle d'adversaire
 
@@ -89,6 +92,17 @@ Le mode `--fix` affiche les commandes de remédiation et ne les exécute qu'apr�
 Les plugins Python custom sont chargés avec **limites de taille et sanitization ANSI** sur leur sortie, mais ils **NE SONT PAS sandboxés** : un plugin tourne avec les mêmes privilèges que BOB lui-même (typiquement root). Faites confiance à vos sources de plugins comme à tout autre code que vous exécuteriez sous `sudo`.
 
 Une future version majeure pourra introduire un runner de plugins en mode restreint (pas d'écriture filesystem, pas de subprocess), mais c'est hors périmètre pour la ligne 0.6.x.
+
+## Variables d'environnement
+
+BOB lit les variables d'environnement suivantes. Toutes sont opt-in ; aucune n'est requise pour un fonctionnement normal.
+
+| Variable | Défaut | Effet |
+|---|---|---|
+| `BOB_SHARE` | non défini | Force le chemin du dossier de données du package (`bob/data/`). Utilisé par les packageurs distro lorsque les données sont livrées hors de l'arbre Python. |
+| `BOB_WEBHOOK_ALLOW_INSECURE=1` | non défini | Autorise les URLs `http://` pour les webhooks (rejet par défaut). La charge utile fuite hostname + IP publique + score + alertes en clair — à n'utiliser que sur réseau privé de confiance ou en lab local. |
+| `BOB_SANDBOX_LEGACY=1` | non défini | Exécute les plugins dans le processus parent au lieu du sandbox enfant (spawn). **Déprécié**, retrait prévu en v0.8.0. Log CRITICAL + WARNING STDERR voyant à chaque exécution. |
+| `BOB_DEBUG=1` | non défini | Affiche la trace Python complète sur sortie `EXIT_ERROR=3`. Sans, une seule ligne résumé + un hint pour activer la variable s'affichent. Utile pour diagnostiquer les crashs ; jamais requis en production. |
 
 ## Surface réseau
 

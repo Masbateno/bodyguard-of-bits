@@ -578,6 +578,11 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
     print()
     print(f"  ℹ {t('summary.scope_line1')}")
     print(f"  ℹ {t('summary.scope_line2')}")
+    # A1 (v0.8.0 drift batch): explicit framing of the verdict — BOB is a
+    # hardening auditor whose score is conditioned by the profile and
+    # network context shown above, not an autonomous threat-modeling
+    # engine. Pre-emptive against "BOB says all good = all good" reads.
+    print(f"  ℹ {t('summary.context_disclaimer')}")
 
     # M-3 (v0.7.0 Phase 2.1): propagate posture annotation to the on-disk
     # .txt report so it stays in sync with the terminal summary box.

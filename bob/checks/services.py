@@ -293,10 +293,14 @@ def _check_single_service(
     # Inactive and disabled
     if snap.state == ServiceState.INACTIVE_DISABLED:
         if snap.service.is_high_or_critical:
-            result.warn(
-                message=_t("services.state.installed_inactive_critical", label=snap.label),
-                nature="improvement",
+            # v0.8.0 drift batch: dormant critical security service = no
+            # actual defence. +1pt to score so the finding actually moves
+            # the verdict (previously bare warn = visible but no impact).
+            result.warn_with_deduction(
                 key="services.state.installed_inactive_critical",
+                message=_t("services.state.installed_inactive_critical", label=snap.label),
+                points=1,
+                nature="improvement",
             )
         else:
             result.info(
@@ -307,10 +311,13 @@ def _check_single_service(
 
     # Active but not enabled at boot
     if snap.state == ServiceState.ACTIVE_DISABLED:
-        result.warn(
-            message=_t("services.state.active_disabled", label=snap.label),
-            nature="improvement",
+        # v0.8.0 drift batch: running but not enabled = lost at next reboot.
+        # +1pt so it counts in the score.
+        result.warn_with_deduction(
             key="services.state.active_disabled",
+            message=_t("services.state.active_disabled", label=snap.label),
+            points=1,
+            nature="improvement",
         )
 
     # Active and enabled — OK

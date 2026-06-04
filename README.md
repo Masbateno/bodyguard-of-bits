@@ -28,18 +28,66 @@ If you already run Lynis, BOB is not a replacement — it's a different lens, on
 
 ---
 
+## What BOB is — and is not
+
+**BOB is** a hardening auditor. It evaluates configuration hygiene against CIS benchmarks and established best practices, **modulated by the active audit profile and detected network context**. The score reflects *configuration hygiene under the stated assumptions* — not an absolute security verdict.
+
+**BOB is not:**
+
+- a vulnerability scanner — it does not probe CVE databases, fingerprint software versions for known exploits, or test exploitation paths (use OpenVAS, Nessus, etc.);
+- a threat-modeling engine — it does not enumerate attacker paths, test reachability from outside the host, or simulate compromise scenarios (use external scanners, red-team tooling, security teams);
+- an autonomous verdict system — a clean score means *"hygienically configured for the chosen profile in the detected network context"*, not *"impossible to compromise"*. Human interpretation is required to translate the verdict into operational risk.
+
+**Concrete consequences:**
+
+- A 10/10 score on a desktop in a LAN does **not** mean a 10/10 on the same host moved to a public cloud — re-audit with the appropriate profile.
+- A finding flagged as `improvement` rather than `action` reflects the network context (e.g. SSH password auth is acceptable hygiene on a LAN-only host, but should be tightened before exposing the host directly to the internet).
+- The audit profile (`server` / `workstation` / `container`) encodes the threat model. Changing profile changes the verdict — that is the design.
+- BOB's network-context detection (NAT / public IP / interface state) is **heuristic**, not active reachability probing. It tells you what BOB infers from the local system, not what an attacker would observe from outside.
+
+A pure CIS-strict mode (no contextual modulation) is on the roadmap.
+
+---
+
 ## Install
 
 > **Safety**: BOB is audit-only. It executes only read-only commands (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) and never writes outside `~/.config/bob` and its log directory. The optional `--fix --apply` mode prompts before each remediation; nothing else modifies system state. A typical audit completes in under 5 seconds.
 
-```
-pipx install bodyguard-of-bits
-sudo bob
+### Prerequisites
+
+`pipx` (the isolated Python app installer):
+
+```bash
+sudo apt install pipx && pipx ensurepath
 ```
 
-Bash completion:
+> Open a new terminal after `pipx ensurepath` so the `PATH` change takes effect.
+
+### Install BOB
+
+```bash
+pipx install bodyguard-of-bits
 ```
-sudo bob --install-completion
+
+---
+
+## Enable `sudo bob` + bash completion
+
+pipx installs the `bob` binary into `~/.local/bin/`, which is **not** in sudo's restricted `PATH`. Run `--install-completion` once with the absolute path — it creates the symlink `/usr/local/bin/bob` and installs the bash completion script:
+
+```bash
+sudo ~/.local/bin/bob --install-completion
+source /etc/bash_completion.d/bob
+```
+
+After this step, `sudo bob` works normally and `bob --<TAB>` completes options.
+
+---
+
+## Uninstall
+
+```bash
+pipx uninstall bodyguard-of-bits
 ```
 
 ---
@@ -101,7 +149,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 | **Firewall** | UFW rules, iptables/nftables (when UFW inactive), IPv6 consistency, port exposure |
 | **SSH** | sshd_config hardening — PermitRootLogin, key strength, timeouts, forwarding |
 | **Kernel hardening** | sysctl parameters, kernel modules, Secure Boot, firmware/microcode |
-| **Services** | 32 known services with risk classification; Docker firewall bypass detection |
+| **Services** | 38 known services with risk classification; Docker firewall bypass detection |
 | **File permissions** | SUID/SGID audit, sensitive files, sudoers |
 | **User accounts** | Expired accounts, password policy, login.defs, PAM |
 | **System updates & detection** | apt updates, auditd rules, Fail2ban, ClamAV, AppArmor/SELinux, AIDE/Tripwire integrity, rkhunter, SMART, firmware/microcode |
@@ -113,7 +161,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 ## CIS benchmark mapping
 
-137 entries: **99 CIS Ubuntu 22.04 · 4 CIS Docker · 34 best-practice**.
+174 entries: **107 CIS Ubuntu 22.04 · 7 CIS Docker · 60 best-practice**.
 
 Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
 Full reference text is shown in `--verbose` mode.  

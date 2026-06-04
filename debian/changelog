@@ -1,3 +1,248 @@
+bodyguard-of-bits (0.8.0-1) UNRELEASED; urgency=medium
+
+  * Minor major — drift batch + framing actions + silent-feature-gap
+    audit pass. Closes the v0.7.x cycle (4 hardening patches v0.7.1
+    through v0.7.4) and opens v0.8.x.
+  * Drift batch (11 items, anti-drift). CHANGELOG_FR +
+    CHANGELOG_FULL_FR backfill of v0.7.0-v0.7.4 (5 entries previously
+    missing — FR readers saw the project "frozen" at v0.7.0b2 while
+    PyPI was on v0.7.4). Man pages ".TH" lines bumped (bob.1 /
+    bob.conf.5 / bob-profile.5) to current version + date.
+    README_TECH{,_FR}.md shields.io version badge bumped.
+    debian/changelog backfilled with all v0.7.x + v0.6.x entries.
+    RPM %changelog mirrors. TESTING.md per-version table backfilled.
+    README.md + README_FR.md Install section synced with the
+    4-substep README_TECH.md flow (Prereq / Install / Enable sudo +
+    bash completion / Uninstall).
+  * Framing actions (anti-sur-claim). A1: summary box "Hypotheses:
+    profile=X | context=Y | posture=Z" header line — pure UI, makes
+    the *conditioning* of the score visible alongside the verdict.
+    A2: new "What BOB is / is NOT" section in README{,_FR} +
+    SECURITY{,_FR} — BOB audits configuration hardening under a
+    profile, is NOT a threat-modeling engine, NOT an active
+    reachability scanner, NOT an autonomous verdict system.
+  * Silent feature-gap audit (8 tiers, post-drift sweep). T1:
+    +51 --explain entries for previously-uncovered WARN/ALERT
+    findings (15 new EXPLAIN prefixes; baseline 117 keys / 30
+    prefixes → 168 keys / 45 prefixes). T1bis: +8 SSH directives
+    gain cmd_template field so bob --fix --apply suggests cmd=
+    instead of "manual fix required" (PermitEmptyPasswords,
+    X11Forwarding, IgnoreRhosts, HostbasedAuthentication,
+    PermitUserEnvironment, StrictModes, AllowTcpForwarding,
+    PubkeyAuthentication). T2: services.json 32 → 38 with 6 modern
+    services (Tailscale, Caddy, AdGuard Home, Vaultwarden, Ollama,
+    Authelia). T3: warn_with_deduction backfill on
+    services.state.installed_inactive_critical (+1pt),
+    services.state.active_disabled (+1pt), firewall.policy_unknown
+    (+2pts), virt.snap_network (capped 2pts cumulative). T4:
+    5 service_risk locales backfill (SMTP / NFS / Jenkins / OpenVPN
+    / Squid had IDs but zero service_risk.X.{level,exposure,threat}
+    entries). T7: profiles/{desktop,workstation}.conf rename
+    hardening.auto_updates_missing → updates.unattended_not_configured
+    (the override didn't match the actually-emitted key). T9:
+    Markdown + HTML format parity for Finding.detail and
+    Finding.note (terminal+JSON+text-only previously).
+  * New test guards (4 files). test_runner.py (smoke on _sec()
+    orchestrator — runner.py was the highest out-degree module
+    without a dedicated test). test_explain_coverage.py (each
+    actionable finding key has an --explain entry).
+    test_fix_coverage.py (each actionable finding has cmd= OR is in
+    _MANUAL_BY_DESIGN whitelist with inline rationale OR
+    _HELPER_DISPATCH_SITES for non-literal keys). 5th CI guard
+    test_doc_version_consistency.py (man + shields + debian top +
+    rpm Version + 4 CHANGELOG top entries must match pyproject.toml
+    — pattern from the v0.7.0b2 release-engineering lesson,
+    broader scope).
+  * Orphan __version__ = "1.14.0" removed from bob/checks/__init__.py
+    (copy-paste from v0.1.0, unused). BOB_DEBUG env var documented in
+    SECURITY.md trap-door inventory (was undocumented).
+  * Deferred to v0.8.1: Tier 6 (profile severity coverage audit), Tier
+    10 (i18n 27 hardcoded English exception messages in webhook.py +
+    config.py). D-1..D-4 contract (sections renumber / fusion
+    _ALL_SECTIONS+_ALWAYS_ON_SECTIONS / EXPLAIN_KEY_ALIASES retraits /
+    sub-checks granulaires) remains open for v0.8.x continuation.
+  * Tests: 5521 → ~6008 (+487 net). 0 regression. Upgrade:
+    `pipx upgrade bodyguard-of-bits`.
+  * v0.6.x remains EOL (declared in v0.7.2).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 04 Jun 2026 12:00:00 +0200
+
+bodyguard-of-bits (0.7.4-1) UNRELEASED; urgency=low
+
+  * Fourth v0.7.x hardening patch — second deep-audit pass after
+    v0.7.3. Bundle-aggressive (6 important + 8 minor shipped,
+    zero defer this cycle).
+  * I-1 --quiet output leaks: Docker exposed_ports block,
+    display_geoip_notice, display_ports_overview and
+    display_log_results all printed to stdout regardless of -q.
+    Contract break — bob -q | cat could be non-empty when
+    geoip2 was unavailable or Docker exposed ports. All four
+    sites now honour config.quiet; .log report unchanged.
+  * I-2 --explain UI labels i18n: WHY IT IS A RISK / HOW TO
+    FIX / SCORING / Domain / Tool cap / Impact / curses
+    picker/detail headers — all hardcoded English. 18 new
+    explain.ui.* keys in EN+FR.
+  * I-3 __main__ CLI flows i18n: --check=list / --ignore=KEY /
+    --reset-baseline / --diff no-baseline — all routed
+    through t(). New cli.list.* / cli.ignore.* /
+    cli.baseline.* + compare.no_baseline_yet keys.
+  * I-4 webhook scheme symmetry: config.py::set_webhook_url
+    now case-insensitive (url.lower()) — mirrors the v0.7.3
+    I-5 fix on webhook.py::send_webhook. Pre-fix:
+    `bob --webhook HTTPS://...` sent OK at runtime then
+    silently failed to persist (ValueError swallowed →
+    next cron audit posted nowhere).
+  * I-5 services.py _PRIVATE_ADDR regex retired: delegates
+    to sysinfo._is_private_or_loopback_ipv4/_ipv6. Restores
+    the v0.5.6 single-source-of-truth architectural invariant.
+  * I-6 CSV `risk` aligned to JSON v1 (BREAKING):
+    engine.effective_level → engine.level (score-only).
+    Wire-format break for CSV consumers reading
+    posture-escalated risk; migrate to JSON v2
+    posture_escalation.score_level.
+  * M-1 recurrence.py dead .tmp cleanup removed
+    (random tmp names since v0.7.2 M-7).
+  * M-2 CLI value-missing UX: `bob -l` → "-l requires a
+    value" instead of "Unknown option". New
+    _VALUE_TAKING_OPTS frozenset. -e/--explain and --watch
+    intentionally absent (no-arg forms documented).
+  * M-3 cron wrapper PYTHONPATH=path:"$PYTHONPATH" →
+    path${PYTHONPATH:+:$PYTHONPATH} (trailing-colon
+    footgun = Python search CWD under cron).
+  * M-4 _sandbox.py + plugin_checks.py: 9 WARN paths gain
+    stable key="plugin.sandbox.<reason>" + optional i18n
+    via threaded t. 9 new plugin.sandbox.* locale keys.
+    `bob --ignore plugin.sandbox.timeout` now functional.
+  * M-5 report.py::write_header accepts labels= dict
+    (v0.7.3 M-5 pattern). 4 new banner.* keys.
+  * M-6 fixes.py:108 Frenglish "(unsafe shell syntax in
+    command)" → new fixes.skipped_unsafe_shell key.
+  * M-7 json_output v1/v2 use engine.domain_scores cache
+    instead of re-running compute_domain_scores().
+  * M-8 set_posture_from_engine rejects bool subclass-of-int
+    (isinstance(True, int) is True).
+  * Tests: 5502 → 5521 (+19 net), 0 regression.
+  * v0.6.x remains EOL (declared in v0.7.2).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 02 Jun 2026 14:00:00 +0200
+
+bodyguard-of-bits (0.7.3-1) UNRELEASED; urgency=low
+
+  * Third v0.7.x hardening patch — full deep-audit pass
+    (sub-agent + 14 fixes + 5 justified skips).
+  * I-1 FR locale "finding" → "découverte" (v0.7.2 M-4
+    extraction had left English in 2 FR entries).
+  * I-2 completion.py SUDO_USER not validated:
+    pwd.getpwnam(sudo_user) raised unhandled KeyError on
+    malformed/spoofed value. Guarded via regex + try/except.
+  * I-3 CSV column `section` → `nature` (BREAKING wire
+    format). Pre-v0.7.3 the column was labelled `section`
+    but carried Finding.nature values.
+  * I-4 manage_logs.py 3 bare input() → safe_input()
+    (lines 365/388 migrated; 104 kept for readline).
+  * I-5 webhook URL scheme case-insensitive (RFC 3986).
+  * I-6 markdown/html level guard idiom convergence.
+  * M-2 --lang VALUE space-separated form accepted.
+  * M-3 `bob -e ""` empty key rejected at parse.
+  * M-4 argv hardening on -w / --ignore / --output-dir.
+  * M-5 report.py field labels i18n (OK/Warning/Alert/
+    Score/Risk/Context). New report.field_* keys.
+  * M-6 _inline_format double-escape URL chars fix.
+  * M-10 set_posture_from_engine helper extract.
+  * M-11 send_html_email CRLF stripping defensive.
+  * M-12 html_output risk label translated (FR badges).
+  * Tests: 5490 → 5502 (+12 net), 0 regression.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 02 Jun 2026 09:00:00 +0200
+
+bodyguard-of-bits (0.7.2-1) UNRELEASED; urgency=low
+
+  * Second v0.7.x hardening patch — closes the 6 minors
+    deferred by v0.7.1 + formalises v0.6.x EOL.
+  * M-4 i18n extraction on Markdown / HTML exports
+    (24+22 new locale keys with t=None fallback).
+  * M-6 sysinfo accepts IPv6 public IP
+    (ipaddress.ip_address() replaces IPv4-only regex).
+  * M-7 _atomic.py tmp-file collision under concurrent
+    writers (tempfile.mkstemp).
+  * M-8 SCHEMA_*_KEYS wired as enforced invariants.
+  * M-9 --json-full --json-v1 help text.
+  * M-10 display.py posture-detection paths deduped
+    (_compute_posture_annotation helper).
+  * v0.6.x officially declared EOL in SECURITY.md +
+    SECURITY_FR.md + v0.6.2 GitHub Release banner.
+  * Tests: 5479 → 5490 (+11 net), 0 regression.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 01 Jun 2026 22:00:00 +0200
+
+bodyguard-of-bits (0.7.1-1) UNRELEASED; urgency=low
+
+  * First v0.7.x hardening patch — same-day follow-up to
+    v0.7.0 final. 4 important + 3 minor shipped.
+  * I-1 watch-mode contract drift: bob --watch created a
+    fresh ScoreEngine() per iteration but never called
+    engine.set_posture(...) and never set ignore_keys.
+  * I-2 MarkdownReport.write_summary signature drift
+    (posture_annotation kwarg added to Protocol + impl).
+  * I-3 JSON v1 `risk` field wire-format break (v0.7.0
+    silently shifted from engine.level to
+    engine.effective_level — reverted to preserve v0.6.x
+    layout contract).
+  * I-5 webhook plaintext URL accepted (http:// now
+    rejected by default; opt-out via
+    BOB_WEBHOOK_ALLOW_INSECURE=1).
+  * M-1 unused `from typing import Any` removed.
+  * M-2 _atomic.py: explicit fsync(fd) before close +
+    fsync(dir_fd) after rename.
+  * M-5 --ignore=KEY validates against canonical
+    EXPLAIN_KEYS pattern before write.
+  * Tests: 5466 → 5479 (+13 net), 0 regression.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 01 Jun 2026 18:00:00 +0200
+
+bodyguard-of-bits (0.7.0-1) UNRELEASED; urgency=medium
+
+  * Major bump — opens the v0.7.x stable branch. Rolls
+    up b1+b2+b3+b4 beta cycle with three thematic phases.
+  * Phase 1 (T1 Foundation): Python 3.14 added to CI
+    matrix; new ScoreEngine.set_posture() + effective_level
+    property + posture_escalation block computing
+    max(score_level, posture_floor); new EXPLAIN key
+    risk.escalated_posture; box-score annotates
+    "(raised by posture: X)" when posture floor active.
+  * Phase 2 (T2 Schema v2): build_json_data(...,
+    schema_version="2") is the new default; --json-v1
+    flag preserves the v0.6.x layout exactly; v2 fixes
+    network_context type inconsistency, renames timestamp
+    → timestamp_utc, adds info_count + posture_escalation
+    block + deductions_raw/open_ports_all in full mode +
+    domain_scores[d].deductions. EXPLAIN_KEYS baseline =
+    117 keys / 30 prefixes / 100% conformance.
+  * Phase 3 (T3 Plugin Sandbox Runner): new bob/_sandbox.py
+    (~900 LoC) — process isolation via mp spawn, 5s wall
+    timeout + RLIMIT_AS=256MiB + RLIMIT_CPU=10s, import
+    allowlist, restricted __builtins__, open() wrapper
+    rejecting writes + denying reads on sensitive paths,
+    extensive os module attribute strip (84 attrs),
+    JSON-safe dict round-trip through mp.Queue.
+    Threat model recadré honest in SECURITY.md —
+    in-process Python sandboxing is NOT a security
+    boundary (PEP 416 consensus); the shipped AppArmor
+    profile is the real boundary.
+  * Four release-engineering guards added in flight:
+    integration-first, smoke-after-commit,
+    version-consistency, smoke-plugin-on-CI.
+  * 5391 → 5466 tests across the v0.7.0 cycle,
+    0 regression.
+  * Deferred to v0.8.0: D-1 sections renumbering,
+    D-2 fusion _ALL_SECTIONS + _ALWAYS_ON_SECTIONS,
+    D-3 retrait aliases EXPLAIN_KEYS obsolètes,
+    D-4 sub-checks granulaires, removal of
+    BOB_SANDBOX_LEGACY=1 trap door.
+  * v0.6.x branch officially EOL.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 01 Jun 2026 12:00:00 +0200
+
 bodyguard-of-bits (0.6.2-1) UNRELEASED; urgency=high
 
   * CRITICAL packaging hotfix. Every wheel shipped since v0.6.0

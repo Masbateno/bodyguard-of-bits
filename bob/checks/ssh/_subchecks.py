@@ -152,6 +152,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             points=3,
             nature="improvement",
             detail=_t("ssh.permit_root_login_detail"),
+            cmd="sudo sed -i 's/^#*PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
         )
         found_issue = True
     elif prl == "no":
@@ -179,6 +180,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
                 message=_t("ssh.password_auth"),
                 points=2,
                 detail=_t("ssh.password_auth_detail"),
+                cmd="sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
             )
             found_issue = True
         else:
@@ -210,6 +212,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             key="ssh.max_auth_tries",
             message=_t("ssh.max_auth_tries", value=max_tries),
             points=1,
+            cmd="sudo sed -i 's/^#*MaxAuthTries .*/MaxAuthTries 3/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
         )
         found_issue = True
 
@@ -319,6 +322,7 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 points=2,
                 nature="improvement",
                 detail=_t("ssh.dsa_key_detail"),
+                cmd=f"sudo rm -f {shlex.quote(str(ki.path))} {shlex.quote(str(ki.path) + '.pub')} && sudo systemctl restart ssh",
             )
         elif ki.key_type == "rsa" and ki.rsa_bits is not None and ki.rsa_bits < 2048:
             result.warn_with_deduction(
@@ -451,6 +455,9 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
     for entry in entries:
         k, v = entry.key, entry.value.lower()
 
+        client_config = (snapshot.user_home or Path("/root")) / ".ssh" / "config"
+        client_config_q = shlex.quote(str(client_config))
+
         if k == "stricthostkeychecking" and v == "no":
             result.alert_with_deduction(
                 key="ssh.client_strict_host_no",
@@ -458,6 +465,7 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
                 points=3,
                 nature="improvement",
                 detail=_t("ssh.client_strict_host_no_detail"),
+                cmd=f"sed -i '/^[[:space:]]*StrictHostKeyChecking[[:space:]]\\+no/d' {client_config_q}",
             )
             found_issue = True
 
@@ -468,6 +476,7 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
                 points=3,
                 nature="improvement",
                 detail=_t("ssh.client_known_hosts_devnull_detail"),
+                cmd=f"sed -i '/^[[:space:]]*UserKnownHostsFile[[:space:]].*\\/dev\\/null/d' {client_config_q}",
             )
             found_issue = True
 
@@ -477,6 +486,7 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
                 message=_t("ssh.client_forward_agent"),
                 points=1,
                 detail=_t("ssh.client_forward_agent_detail"),
+                cmd=f"sed -i '/^[[:space:]]*ForwardAgent[[:space:]]\\+yes/d' {client_config_q}",
             )
             found_issue = True
 
@@ -503,12 +513,15 @@ def _check_known_hosts(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
 
     # deprecated key types
     deprecated = [e for e in entries if e.key_type in ("ssh-dss", "ssh-rsa1")]
+    known_hosts_path = (snapshot.user_home or Path("/root")) / ".ssh" / "known_hosts"
+    known_hosts_q = shlex.quote(str(known_hosts_path))
     for e in deprecated:
         result.warn_with_deduction(
             key="ssh.known_hosts_deprecated",
             message=_t("ssh.known_hosts_deprecated",
                        line=e.line_no, type=e.key_type),
             points=1,
+            cmd=f"sed -i '{e.line_no}d' {known_hosts_q}",
         )
         found_issue = True
 

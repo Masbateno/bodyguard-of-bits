@@ -55,7 +55,7 @@ def write_profile(directory: Path, name: str, content: str) -> Path:
 
 def make_result(**overrides) -> CheckResult:
     """Return a CheckResult with a single warn finding + keyed deduction."""
-    key = overrides.get("key", "hardening.auto_updates_missing")
+    key = overrides.get("key", "updates.unattended_not_configured")
     result = CheckResult()
     result.warn(message="something is wrong", key=key)
     result.add_deduction(
@@ -108,9 +108,12 @@ class TestLoadBuiltinProfiles:
         p = load_profile("server")
         assert p.skip_sections == set()
 
-    def test_desktop_overrides_auto_updates(self):
+    def test_desktop_overrides_unattended_updates(self):
+        # v0.8.0 drift batch (Tier 7): the override target was renamed from
+        # the fictitious "hardening.auto_updates_missing" to the real key
+        # actually emitted by check_updates() — `updates.unattended_not_configured`.
         p = load_profile("desktop")
-        assert p.override_for("hardening.auto_updates_missing") == "info"
+        assert p.override_for("updates.unattended_not_configured") == "info"
 
     def test_desktop_overrides_rp_filter(self):
         p = load_profile("desktop")
@@ -162,7 +165,7 @@ class TestLoadBuiltinProfiles:
 
     def test_container_inherits_desktop_overrides(self):
         p = load_profile("container")
-        assert p.override_for("hardening.auto_updates_missing") == "info"
+        assert p.override_for("updates.unattended_not_configured") == "info"
 
     @pytest.mark.parametrize("section", [
         "kernel_modules", "secure_boot", "auditd", "fail2ban",
@@ -208,10 +211,10 @@ name = desktop
 description = custom override
 
 [overrides]
-hardening.auto_updates_missing = warn
+updates.unattended_not_configured = warn
 """)
         p = load_profile("desktop")
-        assert p.override_for("hardening.auto_updates_missing") == "warn"
+        assert p.override_for("updates.unattended_not_configured") == "warn"
 
     def test_extends_chain_resolved(self, tmp_path, monkeypatch):
         monkeypatch.setattr("bob.profiles._USER_PROFILES_DIR", tmp_path)
@@ -341,7 +344,7 @@ class TestApplyProfileNoOverrides:
         result.warn(message="no key finding")  # key="" by default
         profile = AuditProfile(
             name="test",
-            overrides={"hardening.auto_updates_missing": "info"},
+            overrides={"updates.unattended_not_configured": "info"},
         )
         apply_profile(result, profile)
         assert result.findings[0].level == FindingLevel.WARN
@@ -349,19 +352,19 @@ class TestApplyProfileNoOverrides:
 
 class TestApplyProfileDowngrade:
     def test_warn_downgraded_to_info(self):
-        result = make_result(key="hardening.auto_updates_missing")
+        result = make_result(key="updates.unattended_not_configured")
         profile = AuditProfile(
             name="desktop",
-            overrides={"hardening.auto_updates_missing": "info"},
+            overrides={"updates.unattended_not_configured": "info"},
         )
         apply_profile(result, profile)
         assert result.findings[0].level == FindingLevel.INFO
 
     def test_deduction_removed_when_downgraded_to_info(self):
-        result = make_result(key="hardening.auto_updates_missing", points=1)
+        result = make_result(key="updates.unattended_not_configured", points=1)
         profile = AuditProfile(
             name="desktop",
-            overrides={"hardening.auto_updates_missing": "info"},
+            overrides={"updates.unattended_not_configured": "info"},
         )
         apply_profile(result, profile)
         assert sum(d.points for d in result.deductions) == 0
@@ -378,11 +381,11 @@ class TestApplyProfileDowngrade:
 
     def test_multiple_findings_only_matching_key_modified(self):
         result = CheckResult()
-        result.warn(message="msg1", key="hardening.auto_updates_missing")
+        result.warn(message="msg1", key="updates.unattended_not_configured")
         result.warn(message="msg2", key="hardening.rp_filter_disabled")
         profile = AuditProfile(
             name="test",
-            overrides={"hardening.auto_updates_missing": "info"},
+            overrides={"updates.unattended_not_configured": "info"},
         )
         apply_profile(result, profile)
         assert result.findings[0].level == FindingLevel.INFO
@@ -611,14 +614,14 @@ class TestApplyProfileNatureCleared:
     def test_downgrade_to_info_clears_nature_improvement(self):
         result = CheckResult()
         result.warn(message="warn finding", nature="improvement",
-                    key="hardening.auto_updates_missing")
+                    key="updates.unattended_not_configured")
         profile = AuditProfile(
             name="desktop",
-            overrides={"hardening.auto_updates_missing": "info"},
+            overrides={"updates.unattended_not_configured": "info"},
         )
         apply_profile(result, profile)
         finding = next(f for f in result.findings
-                       if f.key == "hardening.auto_updates_missing")
+                       if f.key == "updates.unattended_not_configured")
         assert finding.level == FindingLevel.INFO
         assert finding.nature == ""
 
@@ -654,12 +657,12 @@ class TestApplyProfileNatureCleared:
         """Skipping one finding does not change nature of surviving findings."""
         result = CheckResult()
         result.warn(message="skip this", nature="improvement",
-                    key="hardening.auto_updates_missing")
+                    key="updates.unattended_not_configured")
         result.warn(message="keep this", nature="improvement",
                     key="hardening.rp_filter_disabled")
         profile = AuditProfile(
             name="test",
-            overrides={"hardening.auto_updates_missing": "skip"},
+            overrides={"updates.unattended_not_configured": "skip"},
         )
         apply_profile(result, profile)
         remaining = [f for f in result.findings]
@@ -673,7 +676,7 @@ class TestApplyProfileNatureCleared:
         result.warn(message="no key", nature="improvement")
         profile = AuditProfile(
             name="test",
-            overrides={"hardening.auto_updates_missing": "info"},
+            overrides={"updates.unattended_not_configured": "info"},
         )
         apply_profile(result, profile)
         assert result.findings[0].nature == "improvement"

@@ -55,7 +55,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
 | `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 116-key canonical list in 29 groups, profile variants (19 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
-| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (137 entries: 99 formal CIS, 34 best-practice, 4 Docker) |
+| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (174 entries: 107 formal CIS, 60 best-practice, 7 Docker) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 7-domain attribution (`backup` → `disk`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
 | `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 5 built-in compound-risk rules |
@@ -213,8 +213,8 @@ bob/
 │   ├── systemd_timers.py   # SystemdTimersSnapshot + check_systemd_timers() — timer security
 │   └── firmware.py         # FirmwareSnapshot + check_firmware() — fwupd + microcode
 ├── data/
-│   ├── services.json            # Declarative registry of the 32 services
-│   ├── cis_refs.json            # CIS benchmark references — 137 entries {ref, code}
+│   ├── services.json            # Declarative registry of the 38 services
+│   ├── cis_refs.json            # CIS benchmark references — 174 entries {ref, code}
 │   └── bob.bash-completion  # Bash completion script
 └── locales/
     ├── en.json          # English translation keys

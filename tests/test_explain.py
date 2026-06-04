@@ -158,8 +158,12 @@ class TestExplainKeyFreezePolicy:
 
 class TestExplainKeysList:
     def test_has_one_hundred_twelve_keys(self):
-        # v0.7.0: +1 (risk.escalated_posture) → 117
-        assert len(EXPLAIN_KEYS) == 117
+        # v0.7.0: +1 (risk.escalated_posture) → 117 baseline.
+        # v0.8.0 drift batch backfills 51 missing entries — see
+        # tests/test_explain_coverage.py for progress tracking. The
+        # baseline ensures we never lose entries; new additions are
+        # tracked by the coverage guard, not by an exact-count pin.
+        assert len(EXPLAIN_KEYS) >= 117
 
     def test_all_keys_are_strings(self):
         for k in EXPLAIN_KEYS:

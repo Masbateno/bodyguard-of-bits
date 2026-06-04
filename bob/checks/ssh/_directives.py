@@ -74,6 +74,11 @@ class _BadDirective:
     safe_values: tuple[str, ...] = ()   # alternative: anything not in this set is bad
     nature: str = ""     # "" → defaults to "improvement" for warn, "action" for alert
     detail_key: str = "" # optional separate i18n key for `detail=`
+    # v0.8.0 drift batch: shell remediation passed as ``cmd=`` to the
+    # actionable call. Empty string means "no auto-fix" — the finding is
+    # then surfaced manually and ``tests/test_fix_coverage.py`` requires
+    # the key to be on the manual-by-design whitelist.
+    cmd_template: str = ""
 
     def __post_init__(self) -> None:
         if bool(self.bad_values) == bool(self.safe_values):
@@ -96,36 +101,42 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         bad_values=("yes",),
         level="alert", key="ssh.permit_empty_passwords",
         points=5, nature="improvement",
+        cmd_template="sudo sed -i 's/^#*PermitEmptyPasswords yes/PermitEmptyPasswords no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
     _BadDirective(
         name="x11forwarding", default="no",
         bad_values=("yes",),
         level="warn", key="ssh.x11_forwarding",
         points=1,
+        cmd_template="sudo sed -i 's/^#*X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
     _BadDirective(
         name="ignorerhosts", default="yes",
         bad_values=("no",),
         level="warn", key="ssh.ignore_rhosts_disabled",
         points=2,
+        cmd_template="sudo sed -i 's/^#*IgnoreRhosts no/IgnoreRhosts yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
     _BadDirective(
         name="hostbasedauthentication", default="no",
         bad_values=("yes",),
         level="alert", key="ssh.host_based_auth",
         points=3, nature="improvement",
+        cmd_template="sudo sed -i 's/^#*HostbasedAuthentication yes/HostbasedAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
     _BadDirective(
         name="permituserenvironment", default="no",
         bad_values=("yes",),
         level="warn", key="ssh.permit_user_env",
         points=1,
+        cmd_template="sudo sed -i 's/^#*PermitUserEnvironment yes/PermitUserEnvironment no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
     _BadDirective(
         name="strictmodes", default="yes",
         bad_values=("no",),
         level="warn", key="ssh.strict_modes_disabled",
         points=2,
+        cmd_template="sudo sed -i 's/^#*StrictModes no/StrictModes yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
     _BadDirective(
         # "local" is acceptable (more restrictive than "yes", documented in
@@ -134,6 +145,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         safe_values=("no", "local"),
         level="warn", key="ssh.allow_tcp_forwarding",
         points=1, detail_key="ssh.allow_tcp_forwarding_detail",
+        cmd_template="sudo sed -i 's/^#*AllowTcpForwarding yes/AllowTcpForwarding no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
     _BadDirective(
         name="pubkeyauthentication", default="yes",
@@ -141,6 +153,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         level="alert", key="ssh.pubkey_auth_disabled",
         points=3, nature="improvement",
         detail_key="ssh.pubkey_auth_disabled_detail",
+        cmd_template="sudo sed -i 's/^#*PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),
 )
 
@@ -160,6 +173,11 @@ def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t
         kwargs["detail"] = _t(rule.detail_key)
     if rule.nature:
         kwargs["nature"] = rule.nature
+    # v0.8.0 drift batch: ship cmd= so ``bob --fix --apply`` actually
+    # has something to run for the 8 sshd_config directives covered by
+    # this table. Empty cmd_template intentionally omits cmd=.
+    if rule.cmd_template:
+        kwargs["cmd"] = rule.cmd_template
     if rule.level == "alert":
         result.alert_with_deduction(**kwargs)
     else:

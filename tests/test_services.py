@@ -232,13 +232,17 @@ class TestInactiveDisabled:
         result = check_services([snap])
         assert total_deductions(result) == 0
 
-    def test_no_deduction_for_critical_inactive(self):
+    def test_one_pt_deduction_for_critical_inactive(self):
+        """v0.8.0 drift batch (Tier 3): critical service dormant = real
+        defensive gap, +1pt so the finding actually moves the score.
+        Pre-v0.8.0 behaviour was 0 deduction (warn-only); Tier 3 audit
+        concluded that was inconsistent with the warn level."""
         snap = make_snapshot(
             service=make_service(risk="critical"),
             state=ServiceState.INACTIVE_DISABLED,
         )
         result = check_services([snap])
-        assert total_deductions(result) == 0
+        assert total_deductions(result) == 1
 
     def test_no_port_check_for_inactive(self):
         """No port exposure findings for inactive_disabled services — early return for all risk levels."""

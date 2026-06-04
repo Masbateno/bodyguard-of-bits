@@ -73,6 +73,8 @@ _FALLBACK_LABELS = {
     "html_output.risk_medium":         "MEDIUM",
     "html_output.risk_high":           "HIGH",
     "html_output.risk_critical":       "CRITICAL",
+    "html_output.note_label":          "Note",
+    "html_output.detail_label":        "Detail",
 }
 
 
@@ -127,6 +129,8 @@ _CSS = """\
     .meta-grid{display:grid;grid-template-columns:auto 1fr;gap:.25rem .75rem;
                font-size:.9rem;margin-bottom:1.5rem}
     .meta-grid dt{font-weight:600;color:#6c757d}
+    .finding-detail{margin-top:.25rem;font-size:.82rem;color:#495057}
+    .finding-note{margin-top:.25rem;font-size:.82rem;color:#6c757d;font-style:italic}
     footer{margin-top:2rem;font-size:.8rem;color:#6c757d}
 """
 
@@ -234,9 +238,26 @@ def build_html_output(
         a(f"<table><thead><tr><th>{_h(t('html_output.col_message'))}</th>"
           f"<th>{_h(t('html_output.col_fix_command'))}</th></tr></thead><tbody>")
         for f in group:
-            msg = _h(f.message or "")
+            # v0.8.0 drift batch (Tier 9): surface note + detail in the
+            # message cell so HTML/Markdown reports carry the same
+            # operator-relevant context as terminal + JSON output.
+            # Pre-v0.8.0, note and detail were silently dropped from
+            # these reports.
+            msg_html = _h(f.message or "")
+            if f.detail:
+                msg_html += (
+                    f'<div class="finding-detail"><em>'
+                    f'{_h(t("html_output.detail_label"))}: '
+                    f'{_h(f.detail)}</em></div>'
+                )
+            if f.note:
+                msg_html += (
+                    f'<div class="finding-note"><em>'
+                    f'{_h(t("html_output.note_label"))}: '
+                    f'{_h(f.note)}</em></div>'
+                )
             cmd = f"<code>{_h(f.cmd)}</code>" if f.cmd else ""
-            a(f"<tr><td>{msg}</td><td>{cmd}</td></tr>")
+            a(f"<tr><td>{msg_html}</td><td>{cmd}</td></tr>")
         a("</tbody></table>")
 
     # Footer is rendered as raw HTML (contains an anchor); avoid double-escape.

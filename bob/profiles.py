@@ -16,7 +16,7 @@ description = Desktop/workstation — relaxed hardening requirements
 
 [overrides]
 # key = target_level   (info | warn | alert | skip)
-hardening.auto_updates_missing = info
+updates.unattended_not_configured = info
 hardening.rp_filter_disabled   = info
 
 [skip_sections]

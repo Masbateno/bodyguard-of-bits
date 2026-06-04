@@ -148,11 +148,26 @@ def check_virtualization(snapshot: VirtSnapshot, t: TranslationFunc | None = Non
             key="virt.bypass_risk",
         )
 
+    # v0.8.0 drift batch: snap-installed virt tools add bridge interfaces
+    # invisible to UFW's FORWARD chain. +1pt per detected snap, capped at
+    # 2pts cumulative so a host with multiple snap-virt tools doesn't get
+    # disproportionately penalised.
+    snap_deductions = 0
     for snap_pkg in snapshot.snap_net:
-        result.warn(
-            t("virt.snap_network", pkg=snap_pkg),
-            key="virt.snap_network",
-        )
+        if snap_deductions < 2:
+            result.warn_with_deduction(
+                key="virt.snap_network",
+                message=t("virt.snap_network", pkg=snap_pkg),
+                points=1,
+                nature="improvement",
+            )
+            snap_deductions += 1
+        else:
+            result.warn(
+                t("virt.snap_network", pkg=snap_pkg),
+                key="virt.snap_network",
+                nature="improvement",
+            )
 
     return result
 

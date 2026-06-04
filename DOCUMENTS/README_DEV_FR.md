@@ -55,7 +55,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `compare.py` | Rapport comparatif — `AuditBaseline` (avec `finding_keys`), `AuditDelta` (avec `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Chargeur de plugins — `PluginCheck`, `load_plugin_checks()`, sanitisation ANSI |
 | `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 116 clés canoniques dans 29 groupes, variantes par profil (19 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
-| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (137 entrées : 99 CIS formels, 34 best-practice, 4 Docker) |
+| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (174 entrées : 107 CIS formels, 60 best-practice, 7 Docker) |
 | `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 7 domaines (`backup` → `disk`) |
 | `webhook.py` | Envoi webhook — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, auto-détection format |
 | `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 5 règles de risque composé intégrées |
@@ -213,8 +213,8 @@ bob/
 │   ├── systemd_timers.py   # SystemdTimersSnapshot + check_systemd_timers() — sécurité timers
 │   └── firmware.py         # FirmwareSnapshot + check_firmware() — fwupd + microcode
 ├── data/
-│   ├── services.json            # Registre déclaratif des 32 services
-│   ├── cis_refs.json            # Références CIS — 137 entrées {ref, code}
+│   ├── services.json            # Registre déclaratif des 38 services
+│   ├── cis_refs.json            # Références CIS — 174 entrées {ref, code}
 │   └── bob.bash-completion  # Script d'autocomplétion bash
 └── locales/
     ├── en.json          # Clés de traduction anglais

@@ -117,6 +117,95 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "hardening.rp_filter_loose",
         "hardening.redirects_enabled",
         "hardening.log_martians_disabled",
+        "hardening.tcp_syncookies_disabled",
+        "hardening.accept_source_route_enabled",
+        "hardening.accept_redirects_v6_enabled",
+        "hardening.send_redirects_enabled",
+        "hardening.protected_hardlinks_disabled",
+        "hardening.protected_symlinks_disabled",
+    ]),
+    ("iptables / nftables", [
+        "iptables_nft.no_backend",
+        "iptables_nft.input_accept",
+        "iptables_nft.forward_accept",
+        "iptables_nft.no_loopback",
+        "iptables_nft.no_conntrack",
+    ]),
+    ("MAC policy (AppArmor / SELinux)", [
+        "mac_policy.apparmor_inactive",
+        "mac_policy.apparmor_no_enforce",
+        "mac_policy.apparmor_no_profiles",
+        "mac_policy.no_enforce",
+        "mac_policy.no_mac",
+        "mac_policy.selinux_disabled",
+    ]),
+    ("Firewall stack integrity", [
+        "firewall_stack.iptables_bypass",
+        "firewall_stack.iptables_forward_bypass",
+        "firewall_stack.nftables_parallel",
+        "firewall_stack.ip_forward_enabled",
+    ]),
+    ("Docker", [
+        "docker.iptables_bypass",
+        "docker.exposed_port",
+        "docker.exposed_bypass_ufw",
+    ]),
+    ("Network services", [
+        "services.exposure.open_local",
+        "services.state.active_disabled",
+        "services.state.installed_inactive_critical",
+    ]),
+    ("Rootkit detection", [
+        "rootkit.db_outdated",
+        "rootkit.no_scan",
+        "rootkit.scan_old",
+    ]),
+    ("Listening ports", [
+        "ports.uncovered",
+        "ports.uncovered_netbios",
+    ]),
+    ("NTP / time sync", [
+        "ntp.not_enabled",
+        "ntp.not_synchronized",
+    ]),
+    ("ClamAV (additional)", [
+        "clamav.db_not_found",
+        "clamav.freshclam_missing",
+    ]),
+    ("fail2ban", [
+        "fail2ban.no_jails",
+        "fail2ban.service_inactive",
+    ]),
+    ("DDNS / external exposure", [
+        "ddns.found",
+        "ddns.warn",
+    ]),
+    ("SSH (additional)", [
+        "ssh.host_key_dsa",
+        "ssh.not_active",
+    ]),
+    ("Updates (additional)", [
+        "updates.apt_cache_stale",
+        "updates.dist_upgrade_inconsistent",
+    ]),
+    ("Log rotation / journald", [
+        "log_rotation.journald_volatile",
+        "log_rotation.logrotate_missing",
+    ]),
+    ("UFW log analysis", [
+        "logs.brute_found",
+    ]),
+    ("SMTP", [
+        "smtp.exposed",
+    ]),
+    ("Backup", [
+        "backup.no_backup",
+    ]),
+    ("Virtualisation (additional)", [
+        "virt.snap_network",
+    ]),
+    ("Network context", [
+        "network_context.sensitive_remote",
     ]),
     ("Kernel Modules", [
         "kernel_modules.risky_fs",

@@ -738,5 +738,89 @@
         "/etc/squid/squid.conf"
       ]
     }
+  },
+  {
+    "id": "tailscale",
+    "label": "Tailscale VPN",
+    "packages": ["tailscale"],
+    "services": ["tailscaled"],
+    "ports": ["41641/udp"],
+    "risk": "low",
+    "config_key": "auto",
+    "detection": {
+      "binary": ["/usr/bin/tailscale", "/usr/sbin/tailscaled"],
+      "snap": [],
+      "config_files": ["/etc/default/tailscaled"]
+    }
+  },
+  {
+    "id": "caddy",
+    "label": "Caddy Web Server",
+    "packages": ["caddy"],
+    "services": ["caddy"],
+    "ports": ["80/tcp", "443/tcp"],
+    "risk": "medium",
+    "config_key": "ask",
+    "detection": {
+      "binary": ["/usr/bin/caddy"],
+      "snap": [],
+      "config_files": ["/etc/caddy/Caddyfile"]
+    }
+  },
+  {
+    "id": "adguard_home",
+    "label": "AdGuard Home (DNS sinkhole)",
+    "packages": [],
+    "services": ["AdGuardHome"],
+    "ports": ["53/udp", "53/tcp", "3000/tcp"],
+    "risk": "medium",
+    "config_key": "ask",
+    "detection": {
+      "binary": ["/opt/AdGuardHome/AdGuardHome", "/usr/local/bin/AdGuardHome"],
+      "snap": [],
+      "config_files": ["/opt/AdGuardHome/AdGuardHome.yaml"]
+    }
+  },
+  {
+    "id": "vaultwarden",
+    "label": "Vaultwarden Password Manager",
+    "packages": [],
+    "services": ["vaultwarden"],
+    "ports": ["8000/tcp", "3012/tcp"],
+    "risk": "high",
+    "config_key": "ask",
+    "detection": {
+      "binary": ["/usr/bin/vaultwarden", "/usr/local/bin/vaultwarden"],
+      "snap": [],
+      "config_files": ["/etc/vaultwarden.env"]
+    }
+  },
+  {
+    "id": "ollama",
+    "label": "Ollama (local LLM)",
+    "packages": [],
+    "services": ["ollama"],
+    "ports": ["11434/tcp"],
+    "risk": "medium",
+    "config_key": "ask",
+    "detection": {
+      "binary": ["/usr/local/bin/ollama", "/usr/bin/ollama"],
+      "snap": [],
+      "config_files": ["/etc/systemd/system/ollama.service"]
+    }
+  },
+  {
+    "id": "authelia",
+    "label": "Authelia (SSO/auth proxy)",
+    "packages": [],
+    "services": ["authelia"],
+    "ports": ["9091/tcp"],
+    "risk": "high",
+    "config_key": "ask",
+    "detection": {
+      "binary": ["/usr/bin/authelia", "/usr/local/bin/authelia"],
+      "snap": [],
+      "config_files": ["/etc/authelia/configuration.yml"]
+    }
   }
 ]

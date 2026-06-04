@@ -166,6 +166,7 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
                 key="firewall_stack.ip_forward_enabled",
                 message=_t("firewall_stack.ip_forward_enabled"),
                 points=1,
+                cmd="sudo sysctl -w net.ipv4.ip_forward=0 && echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf",
             )
             found_issue = True
 

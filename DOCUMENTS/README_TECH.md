@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.6.2-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.8.0-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -23,14 +23,14 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 43 check
 - **Contextual scoring** — network context detection (direct public IP vs NAT); penalties doubled on internet-exposed machines; firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `container`; `workstation` alias kept; active profile shown in the summary box
-- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 137 entries (99 formal CIS, 34 best-practice, 4 Docker)
+- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 174 entries (107 formal CIS, 60 best-practice, 7 Docker)
 - **5 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / DETECTION & HEALTH
 - **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target (CI-ready)
 
 ### Network & firewall
 
-- **32 known network services** detected with UFW exposure analysis and two-axis risk context (exposure + threat) for critical and high-risk services; installed but inactive CRITICAL/HIGH services emit ⚠ + risk context block
-- **Services panorama** — compact table of all 32 known services after the audit: SERVICE / STATUS / PORT(S) / UFW; non-installed services shown dimmed
+- **38 known network services** detected with UFW exposure analysis and two-axis risk context (exposure + threat) for critical and high-risk services; installed but inactive CRITICAL/HIGH services emit ⚠ + risk context block
+- **Services panorama** — compact table of all 38 known services after the audit: SERVICE / STATUS / PORT(S) / UFW; non-installed services shown dimmed
 - **iptables/nftables audit** — when UFW is inactive: detects active backend (iptables vs nftables); checks INPUT and FORWARD default policies; verifies conntrack stateful filtering; WARN −1 pt per permissive policy
 - **Docker analysis** — iptables bypass detection and list of ports exposed by running containers
 - **Virtualisation analysis** — detects active hypervisors (libvirt/KVM, VirtualBox, VMware, LXD/LXC) and Snap network packages that may create bridge interfaces and bypass UFW
@@ -264,6 +264,73 @@ When a service is detected on a non-standard port (e.g. SSH on port 2222), the s
 ```bash
 sudo bob --reconfigure
 ```
+
+---
+
+## Plugin checks — `~/.config/bob/checks.d/*.py`
+
+BOB supports custom audit checks written in Python. Drop a `*.py` file under `~/.config/bob/checks.d/` and BOB picks it up at the next run. Each plugin is executed inside a **sandboxed subprocess** (introduced in v0.7.0 T3) — RLIMIT_AS 256 MiB, RLIMIT_CPU 10 s wall clock, restricted import allowlist, denied filesystem writes, blocked reads on sensitive paths (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). A misbehaving plugin **cannot** abort the audit, and any output is ANSI-sanitised.
+
+> **Threat model note:** in-process Python sandboxing is defence-in-depth, not a hard security boundary (PEP 416 consensus). Use the shipped AppArmor profile for actual isolation. See SECURITY.md → "Plugin checks" section.
+
+### Contract
+
+Each plugin file must expose a function:
+
+```python
+def run_check(t=None) -> CheckResult:
+    ...
+```
+
+`t` is the bound i18n callable (rarely needed in a plugin — write your messages in English directly). The return value is a `bob.scoring.CheckResult`. Optionally, define a module-level `CHECK_NAME` to override the section title in the report.
+
+### Minimal working example
+
+Save this as `~/.config/bob/checks.d/motd_check.py`:
+
+```python
+"""Check that /etc/motd contains a banner."""
+from pathlib import Path
+from bob.scoring import CheckResult
+
+CHECK_NAME = "MOTD BANNER CHECK"
+
+def run_check(t=None) -> CheckResult:
+    result = CheckResult()
+    motd = Path("/etc/motd")
+    if motd.exists() and motd.read_text().strip():
+        result.ok(message="Custom MOTD banner present")
+    else:
+        result.info(
+            message="No MOTD banner configured",
+            key="custom.motd_empty",
+        )
+    return result
+```
+
+### Result methods
+
+`CheckResult` exposes the same emit methods used by built-in checks:
+
+- `result.ok(message=...)` — green checkmark, no score impact
+- `result.info(message=..., key=...)` — neutral notice, no deduction
+- `result.warn(message=..., key=..., points=..., nature=...)` — yellow warning
+- `result.alert(message=..., key=..., points=..., nature=...)` — red alert
+- `result.warn_with_deduction(...)` / `result.alert_with_deduction(...)` — combined helpers
+
+Use `key=` so your finding can be silenced with `bob --ignore custom.my_key` if needed. Choose `key` strings under a `custom.*` prefix so they cannot collide with BOB's built-in keys (the `_KNOWN_PREFIXES` invariant test rejects unknown prefixes for built-in EXPLAIN_KEYS but not for plugin output).
+
+### What plugins CANNOT do
+
+Inside the sandbox child:
+
+- No subprocess (`subprocess.run`, `os.popen`, `os.exec*` — all stripped or denied).
+- No filesystem writes (`open(... 'w')`, `os.write`, `Path.write_*`, `pathlib.Path` write methods are monkey-patched).
+- No reads on `/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, `/proc/kcore`, similar sensitive paths.
+- No `__import__` of arbitrary modules — only an allowlist (bob.scoring, pathlib, json, etc.).
+- No network I/O.
+
+If a plugin attempts any of the above, it raises in the sandbox child, the parent records a `plugin.sandbox.error` WARN finding, and the audit continues unaffected.
 
 ---
 
@@ -682,19 +749,22 @@ sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
 
 The `findings[*].key` and `deductions[*].key` are part of the `--explain` key set — they will not change without a major schema bump.
 
-### EXPLAIN_KEYS audit (v0.7.0 baseline)
+### EXPLAIN_KEYS audit (v0.8.0 baseline)
 
-As of v0.7.0, the `--explain` key set contains **117 keys** across **30 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
+As of v0.8.0, the `--explain` key set contains **168 keys** across **45 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
 
 - **Pattern:** `<prefix>.<finding_id>` (single dot, snake_case)
-- **Exception:** `file_perms.<path>.<finding_id>` (path-segment middles, resolved by `bob.explain.normalize_key`)
+- **Exceptions:** `file_perms.<path>.<finding_id>` (path-segment middles) and `services.{exposure,state}.<finding_id>` (two-tier taxonomy), both resolved by `bob.explain.normalize_key`
 - **No removal:** once published, a key stays callable for the lifetime of the major `schema_version`
 - **Aliases:** key renames go through `EXPLAIN_KEY_ALIASES` for backward compatibility
 - **Additions:** new keys may be added in any minor release
+- **Coverage guard:** every WARN/ALERT finding emitted by `bob/checks/*.py` must have an `EXPLAIN_KEYS` entry or be listed in `tests/test_explain_coverage.py::_KNOWN_GAPS` (currently empty — v0.8.0 drift batch backfilled 51 missing entries)
 
-Prefix vocabulary (alphabetically): `auditd, auth_log, clamav, cron_audit, disk, docker_audit, file_integrity, file_perms, firewall, firmware, hardening, ipv6, kernel_hardening, kernel_modules, memory, password_policy, prerequisites, risk, rules, samba, secure_boot, services_state, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
+Prefix vocabulary (alphabetically): `auditd, auth_log, backup, clamav, cron_audit, ddns, disk, docker, docker_audit, fail2ban, file_integrity, file_perms, firewall, firewall_stack, firmware, hardening, iptables_nft, ipv6, kernel_hardening, kernel_modules, log_rotation, logs, mac_policy, memory, network_context, ntp, password_policy, ports, prerequisites, risk, rootkit, rules, samba, secure_boot, services, services_state, smtp, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
 
 Adding a new prefix in a future release fails `TestExplainPrefixDiscipline::test_key_prefix_is_known` until the maintainer explicitly updates `KNOWN_PREFIXES` — surfacing the addition as a deliberate decision in code review.
+
+Baseline history: v0.7.0 audit = 117 keys / 30 prefixes / 100 % naming conformance. v0.8.0 drift batch (this release) added 51 explain entries for previously-uncovered WARN/ALERT findings, introducing 15 new prefixes (`backup, ddns, docker, fail2ban, firewall_stack, iptables_nft, log_rotation, logs, mac_policy, network_context, ntp, ports, rootkit, services, smtp`).
 
 ---
 
