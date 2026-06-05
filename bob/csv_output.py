@@ -32,6 +32,16 @@ _HEADERS = [
     # those consumers — see CHANGELOG.
     "nature",
     "message",
+    # T11 (v0.8.1): ``detail`` joins the per-finding columns to reach parity
+    # with terminal / text / Markdown / HTML / JSON which all surface
+    # ``Finding.detail`` (the secondary explanation often shown after the
+    # main message, e.g. "Restrict SUID dumps to root: …"). Pre-v0.8.1 CSV
+    # dropped this field silently so monitoring pipelines lost the
+    # explanatory context. Additive column — CSV has no schema_version
+    # field but the new column appears AFTER ``message`` and BEFORE
+    # ``fix_cmd`` so column-by-name consumers (DictReader) are unaffected;
+    # column-by-index readers must re-index.
+    "detail",
     "fix_cmd",
     "note",
 ]
@@ -68,7 +78,8 @@ def build_csv_output(
     writer.writeheader()
 
     if not engine.findings:
-        writer.writerow({**meta, "level": "", "nature": "", "message": "", "fix_cmd": "", "note": ""})
+        writer.writerow({**meta, "level": "", "nature": "", "message": "",
+                         "detail": "", "fix_cmd": "", "note": ""})
     else:
         for f in engine.findings:
             writer.writerow({
@@ -76,6 +87,7 @@ def build_csv_output(
                 "level":   f.level.value,
                 "nature":  f.nature   or "",
                 "message": f.message  or "",
+                "detail":  f.detail   or "",
                 "fix_cmd": f.cmd      or "",
                 "note":    f.note     or "",
             })

@@ -409,7 +409,13 @@
   },
   "config": {
     "found": "Configuration found: {path}",
-    "reconfigure_hint": "To reset it: bob --reconfigure"
+    "reconfigure_hint": "To reset it: bob --reconfigure",
+    "error": {
+      "invalid_email": "Invalid email address: {email}",
+      "invalid_config_key": "Invalid config key: {config_key}",
+      "invalid_webhook_url": "Webhook URL must start with http:// or https://: {url}",
+      "invalid_webhook_format": "Webhook format must be 'auto', 'generic', or 'slack': {fmt}"
+    }
   },
   "report": {
     "next_1": "Address all alerts first.",
@@ -535,11 +541,6 @@
       "level": "MEDIUM",
       "exposure": "Peer-to-peer file sync — web UI bound to localhost by default, sync protocol may be externally reachable",
       "threat": "File access and modification, directory traversal if misconfigured, data synchronisation interception"
-    },
-    "ollama_llm_server": {
-      "level": "MEDIUM",
-      "exposure": "Local LLM API server — no authentication by default, designed for local or trusted network use",
-      "threat": "Unauthorised model inference, resource exhaustion, potential data exfiltration via model prompts"
     },
     "telnet_server": {
       "level": "CRITICAL",
@@ -730,12 +731,39 @@
       "invalid_key_hint": "Run 'bob --explain list' to see the available keys.",
       "added": "Ignored key added: {requested}",
       "added_file": "File: {path}",
-      "already_present": "Key already present: {requested}"
+      "already_present": "Key already present: {requested}",
+      "removed": "Ignored key removed: {requested}",
+      "not_present": "Key not present in the ignore list: {requested}"
     },
     "baseline": {
       "deleted": "Baseline deleted: {path}",
       "delete_error": "Error: could not delete baseline: {error}",
       "not_found": "No baseline found at {path}"
+    },
+    "error": {
+      "prefix": "Error: ",
+      "fatal_prefix": "Fatal error: ",
+      "webhook_failed_prefix": "Warning: webhook failed: ",
+      "warning_prefix": "Warning: ",
+      "bob_debug_hint": "  Set BOB_DEBUG=1 for full traceback."
+    },
+    "runner": {
+      "check_no_match": "--check {tok} matches no known section — {suggestion}",
+      "check_no_match_fatal": "--check matched no known sections. Run 'bob --check=list' to see available checks.",
+      "skip_no_effect": "--skip {tok} has no effect (always-on section)",
+      "skip_no_match": "--skip {tok} matches no known section — {suggestion}",
+      "suggest_did_you_mean": "Did you mean: {matches}",
+      "suggest_run_list": "Run 'bob --check=list' to see all check names."
+    }
+  },
+  "webhook": {
+    "error": {
+      "scheme_invalid": "Webhook URL must start with https:// (or http:// with BOB_WEBHOOK_ALLOW_INSECURE=1): {url}",
+      "plain_http_insecure": "Webhook URL is plain http:// — audit payload would be sent unencrypted. Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override: {url}",
+      "http_status": "HTTP {code} from webhook: {reason}",
+      "connection_failed": "Webhook connection failed: {reason}",
+      "request_error": "Webhook request error: {exc}",
+      "non_2xx_status": "Webhook returned non-2xx status: {status}"
     }
   },
   "breakdown": {

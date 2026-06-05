@@ -240,6 +240,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             points=1,
             detail=_t("samba.server_signing_disabled_detail"),
             cmd='echo "server signing = mandatory" | sudo tee -a /etc/samba/smb.conf',
+            nature="action",
         )
     elif snapshot.server_signing == "mandatory":
         result.ok(
@@ -261,6 +262,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             points=1,
             detail=_t("samba.map_to_guest_detail"),
             cmd='echo "map to guest = never" | sudo tee -a /etc/samba/smb.conf',
+            nature="action",
         )
 
     # --- Guest shares ---
@@ -282,6 +284,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("samba.guest_readonly", share=share.name),
             points=1,
             detail=_t("samba.guest_readonly_detail", share=share.name, path=share.path),
+            nature="improvement",
         )
 
     # --- Bind interfaces only ---

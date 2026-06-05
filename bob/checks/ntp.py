@@ -142,6 +142,7 @@ def check_ntp(snapshot: NtpSnapshot, t: TranslationFunc | None = None) -> CheckR
             points=1,
             detail=_t("ntp.not_synchronized_detail"),
             cmd="sudo timedatectl set-ntp true",
+            nature="improvement",
         )
         return result
 
@@ -153,5 +154,6 @@ def check_ntp(snapshot: NtpSnapshot, t: TranslationFunc | None = None) -> CheckR
         points=1,
         detail=_t("ntp.not_enabled_detail"),
         cmd="sudo systemctl enable --now systemd-timesyncd",
+        nature="improvement",
     )
     return result

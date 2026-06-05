@@ -182,6 +182,7 @@ def check_umask(snapshot: UmaskSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("umask.world_writable", umask=umask, source=source),
             points=2,
             cmd=cmd,
+            nature="action",
         )
     elif umask == "002":
         result.warn_with_deduction(
@@ -189,6 +190,7 @@ def check_umask(snapshot: UmaskSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("umask.group_writable", umask=umask, source=source),
             points=1,
             cmd=cmd,
+            nature="improvement",
         )
     elif umask in ("022", "027", "077"):
         result.ok(

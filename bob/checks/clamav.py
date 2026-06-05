@@ -175,6 +175,7 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
             points=1,
             detail=_t("clamav.freshclam_missing_detail"),
             cmd="sudo apt install clamav",
+            nature="action",
         )
 
     # --- Virus database ---
@@ -185,6 +186,7 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
             points=1,
             detail=_t("clamav.db_not_found_detail"),
             cmd="sudo freshclam",
+            nature="action",
         )
     elif snapshot.db_age_days >= _DB_ALERT_DAYS:
         result.alert_with_deduction(
@@ -202,6 +204,7 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
             points=1,
             detail=_t("clamav.db_outdated_detail"),
             cmd="sudo freshclam",
+            nature="improvement",
         )
     else:
         result.ok(
@@ -235,6 +238,7 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
                 points=1,
                 detail=_t("clamav.scan_very_old_detail"),
                 cmd="sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log",
+                nature="improvement",
             )
         elif scan_age_days is not None and scan_age_days >= _SCAN_WARN_DAYS:
             result.warn_with_deduction(
@@ -243,6 +247,7 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
                 points=1,
                 detail=_t("clamav.scan_old_detail"),
                 cmd="sudo clamscan -r /home --infected --log=/var/log/clamav/clamscan.log",
+                nature="improvement",
             )
         else:
             result.ok(

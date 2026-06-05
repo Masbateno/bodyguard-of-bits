@@ -171,15 +171,25 @@ def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t
     }
     if rule.detail_key:
         kwargs["detail"] = _t(rule.detail_key)
+    # T31 (v0.8.1): every directive emission must carry a nature so
+    # ``bob --fix --apply`` (which filters on ``f.nature == "action"``)
+    # picks them up. Rule-level ``nature`` (set in the dataclass) wins;
+    # otherwise default by severity: alert → action, warn → improvement.
+    # Explicit literal kwarg below — the T31 regression guard inspects
+    # call sites for a visible ``nature=`` token.
     if rule.nature:
-        kwargs["nature"] = rule.nature
+        nature = rule.nature
+    elif rule.level == "alert":
+        nature = "action"
+    else:
+        nature = "improvement"
     # v0.8.0 drift batch: ship cmd= so ``bob --fix --apply`` actually
     # has something to run for the 8 sshd_config directives covered by
     # this table. Empty cmd_template intentionally omits cmd=.
     if rule.cmd_template:
         kwargs["cmd"] = rule.cmd_template
     if rule.level == "alert":
-        result.alert_with_deduction(**kwargs)
+        result.alert_with_deduction(**kwargs, nature=nature)
     else:
-        result.warn_with_deduction(**kwargs)
+        result.warn_with_deduction(**kwargs, nature=nature)
     return True

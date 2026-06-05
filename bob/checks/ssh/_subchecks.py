@@ -181,6 +181,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
                 points=2,
                 detail=_t("ssh.password_auth_detail"),
                 cmd="sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+                nature="action",
             )
             found_issue = True
         else:
@@ -213,6 +214,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             message=_t("ssh.max_auth_tries", value=max_tries),
             points=1,
             cmd="sudo sed -i 's/^#*MaxAuthTries .*/MaxAuthTries 3/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+            nature="improvement",
         )
         found_issue = True
 
@@ -266,6 +268,7 @@ def _check_weak_algo(
         key=t_key,
         message=_t(t_key, **{param: joined}),
         points=points,
+        nature="improvement",
     )
     return True
 
@@ -329,6 +332,7 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 key="ssh.rsa_weak",
                 message=_t("ssh.rsa_weak", name=name, bits=ki.rsa_bits),
                 points=1,
+                nature="action",
             )
         elif ki.key_type == "rsa" and ki.rsa_bits is not None:
             result.ok(
@@ -342,6 +346,7 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 key="ssh.no_passphrase",
                 message=_t("ssh.no_passphrase", name=name),
                 points=1,
+                nature="action",
             )
 
         if (ki.permissions == 0o600
@@ -404,6 +409,7 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
                            type=entry.key_type,
                            bits=entry.rsa_bits),
                 points=1,
+                nature="action",
             )
             ak_found_issue = True
 
@@ -417,6 +423,7 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
                            a=seen_blobs[entry.blob_prefix],
                            b=entry.line_no),
                 points=1,
+                nature="improvement",
             )
             ak_found_issue = True
         else:
@@ -487,6 +494,7 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
                 points=1,
                 detail=_t("ssh.client_forward_agent_detail"),
                 cmd=f"sed -i '/^[[:space:]]*ForwardAgent[[:space:]]\\+yes/d' {client_config_q}",
+                nature="action",
             )
             found_issue = True
 
@@ -522,6 +530,7 @@ def _check_known_hosts(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                        line=e.line_no, type=e.key_type),
             points=1,
             cmd=f"sed -i '{e.line_no}d' {known_hosts_q}",
+            nature="improvement",
         )
         found_issue = True
 

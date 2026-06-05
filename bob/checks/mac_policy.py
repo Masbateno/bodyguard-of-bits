@@ -190,6 +190,7 @@ def check_mac_policy(
                 points=1,
                 detail=_t("mac_policy.apparmor_no_profiles_detail"),
                 cmd="sudo apt install apparmor-profiles apparmor-profiles-extra",
+                nature="action",
             )
         return result
 
@@ -216,6 +217,7 @@ def check_mac_policy(
                 points=1,
                 detail=_t("mac_policy.apparmor_no_enforce_detail"),
                 cmd="sudo aa-enforce /etc/apparmor.d/*",
+                nature="improvement",
             )
         return result
 
@@ -228,6 +230,7 @@ def check_mac_policy(
             points=1,
             detail=_t("mac_policy.apparmor_inactive_detail"),
             cmd="sudo systemctl enable --now apparmor",
+            nature="action",
         )
         return result
 
@@ -245,6 +248,7 @@ def check_mac_policy(
             points=1,
             detail=_t("mac_policy.no_enforce_detail"),
             cmd="sudo setenforce 1",
+            nature="improvement",
         )
         return result
 
@@ -257,6 +261,7 @@ def check_mac_policy(
             points=1,
             detail=_t("mac_policy.selinux_disabled_detail"),
             cmd="sudo setenforce 1",
+            nature="action",
         )
         return result
 
@@ -268,6 +273,7 @@ def check_mac_policy(
         points=1,
         detail=_t("mac_policy.no_mac_detail"),
         cmd="sudo apt install apparmor apparmor-utils && sudo systemctl enable --now apparmor",
+        nature="action",
     )
     return result
 

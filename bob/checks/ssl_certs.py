@@ -193,6 +193,7 @@ def check_ssl_certs(snapshot: SslCertsSnapshot, t: TranslationFunc | None = None
                 cmd="sudo certbot renew",
                 cmd_type="fix",
                 key="ssl_certs.expiring_critical",
+                nature="action",
             )
             if total_deduction < 4:
                 pts = min(2, 4 - total_deduction)

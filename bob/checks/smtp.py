@@ -178,6 +178,7 @@ def check_smtp(snapshot: SmtpSnapshot, t: TranslationFunc | None = None) -> Chec
             detail=_t("smtp.exposed_detail"),
             cmd=fix_cmd,
             note=fix_note,
+            nature="improvement",
         )
     else:
         result.info(

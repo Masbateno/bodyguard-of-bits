@@ -1,3 +1,76 @@
+bodyguard-of-bits (0.8.1-1) UNRELEASED; urgency=medium
+
+  * Minor maintenance + deep-hardening audit cycle. Closes 26 gap tiers
+    across 3 sub-agent audit passes (passes 6-8) plus an initial drift
+    + framing + silent-feature-gap sweep (T6/T10/T11/T26/T27/T31/T32/
+    T39/T57/T60/T74 + workstation alias retrait). 6198 tests verts
+    (5521 → 6198, +677 net), 0 regression.
+  * Initial cycle (12 tiers). T6 — profile severity coverage audit
+    (desktop +24 overrides, workstation +28 overrides, 30% coverage of
+    actionable warn/alert keys). T10 — i18n exceptions in webhook/config/
+    __main__ (14 new locale keys EN+FR + fallback dict pattern from
+    v0.7.2 M-4). workstation alias retrait BREAKING — the v0.1.0 alias
+    that silently redirected `bob -p workstation` to the desktop profile
+    has been retired so workstation.conf is now a first-class business-
+    context profile (keeps backup/auditd/mac_policy at WARN while
+    relaxing personal-use ergonomics). T11 — Finding.detail field parity
+    across CSV + JSON v1/v2 (additive, no schema break). T26 — explain
+    dispatch for services.exposed.<id> via existing service_risk.* locale
+    content (38 services auto-explainable, zero per-service maintenance).
+    T27 — webhook payload detail + note parity (generic + Slack). T31/T37
+    — nature backfill 90 warn/alert sites so bob --fix --apply actually
+    picks up the actionable findings. T32 — profile typo validation with
+    logger.warning on unknown override keys + canonical exposure set.
+    T39 — orphan service_risk.ollama_llm_server cleanup. T57 — --unignore
+    CLI path + remove_ignore_key helper + 2 locale keys. T60 —
+    _t_or_hardcoded helper wires cli.error.* prefixes through main()
+    catch-all without breaking pre-init paths. T74 — webhook URL credential
+    redaction (redact_url_credentials helper strips user:pass@ before
+    printing on stdout / on-disk log / WebhookError messages).
+  * Audit pass 6 (5 findings). I-1 ignore.yml comment preservation in
+    remove_ignore_key (walk lines instead of canonical rewrite). M-1 T32
+    regex accepts digit-containing keys (fail2ban.* / ipv6.*) + file_perms.*
+    permissive prefix for f-string emit sites. M-2 services.exposure.<id>
+    bogus overrides rejected, canonical Exposure enum set added. M-3
+    service_label_to_subkey transform consolidated in bob/registry.py
+    (single source of truth across explain.py + 2 display.py sites).
+    M-4 --unignore documented in man/bob.1 + mutual-exclusion guard with
+    --ignore (CLIError on combined use).
+  * Audit pass 7 (3 findings). I-1 remove_ignore_key regex match loader
+    grammar (multi-space, tab between - and key: now removable). I-2 FR
+    colon typography drift on T10/T60 error prefixes — colon-space now
+    embedded in locale values (FR "Erreur : ", EN "Error: ") so no more
+    "Avertissement : échec du webhook: …" double-colon mixed style. M-1
+    man/bob.1 --show-ignored description rewrite (was claiming "list keys
+    and exit", actually displays muted findings inline during the audit).
+  * Audit pass 8 (5 findings). I-1 _KEY_LINE_RE unified — drop \s*$
+    anchor so loader sees inline-commented entries; the pass 7 sibling
+    regex was dead code masked by the defensive load_ignore_keys guard.
+    I-2 runner.py 3 hardcoded "Warning:" prefix sites i18n'd via new
+    cli.error.warning_prefix + cli.runner.* namespace (6 new locale keys
+    EN+FR). M-1 --webhook-secret phantom removed from _VALUE_TAKING_OPTS
+    (1-line dead code cleanup, fixes inconsistent error messages between
+    --opt val / --opt=val forms for the same input). M-2 _ufw_inactive
+    variants narrowed to (no_rule, loopback_no_rule) only — the runtime
+    emits these variants ONLY for those 2 exposures, the pass-6 permissive
+    registration leaked the same false-positive class M-2 was meant to
+    close. M-3 t() trailing-whitespace contract test pin (defends I-2
+    pass 7 against future locale-normaliser script that might .strip()
+    values).
+  * Plus: 5th CI guard tests/conftest.py autouse fixture
+    _ensure_i18n_initialised_for_tests mirrors the production invariant
+    (i18n.init before runner.py is reached) in test environment, with
+    opt-out for test_i18n.py which exercises the pre-init bracketed-
+    fallback contract.
+  * v0.6.x remains EOL (declared in v0.7.2). Upgrade:
+    `pipx upgrade bodyguard-of-bits`. workstation profile shifts
+    behaviour (users on `bob -p workstation` see different severity
+    output for backup / auditd / mac_policy — drop a copy of desktop.conf
+    at ~/.config/bob/profiles/workstation.conf to restore v0.8.0
+    semantics).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 05 Jun 2026 18:00:00 +0200
+
 bodyguard-of-bits (0.8.0-1) UNRELEASED; urgency=medium
 
   * Minor major — drift batch + framing actions + silent-feature-gap

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.8.0
+Version:        0.8.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,69 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Jun 05 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.1-1
+- Minor maintenance + deep-hardening audit cycle. Closes 26 gap
+  tiers across 3 sub-agent audit passes (passes 6-8) + an initial
+  drift / framing / silent-feature-gap sweep (T6/T10/T11/T26/T27/
+  T31/T32/T39/T57/T60/T74 + workstation alias retrait).
+- T6 — profile severity coverage audit (desktop +24 overrides,
+  workstation +28 overrides, 30% coverage of actionable warn/alert
+  keys). T10 — i18n exceptions in webhook/config/__main__ (14 new
+  locale keys EN+FR + fallback dict pattern from v0.7.2 M-4).
+- **workstation alias retrait — BREAKING.** The v0.1.0 alias that
+  silently redirected `bob -p workstation` to the desktop profile
+  has been retired so workstation.conf is now a first-class
+  business-context profile (backup / auditd / mac_policy at WARN
+  while relaxing personal-use ergonomics). Users on the alias see
+  different severity output for those 3 finding families. Migration:
+  drop a copy of desktop.conf at ~/.config/bob/profiles/
+  workstation.conf to restore v0.8.0 semantics.
+- T11 — Finding.detail field parity across CSV + JSON v1/v2
+  (additive, no schema break). T26 — explain dispatch for
+  services.exposed.<id> via existing service_risk.* locale content
+  (38 services auto-explainable, zero per-service maintenance).
+  T27 — webhook payload detail + note parity (generic + Slack).
+  T31/T37 — nature backfill on 90 warn/alert sites so
+  `bob --fix --apply` actually picks up the actionable findings
+  (filtered by f.nature == "action"). T32 — profile typo validation
+  with logger.warning on unknown override keys. T39 — orphan
+  service_risk.ollama_llm_server cleanup. T57 — --unignore CLI
+  path + remove_ignore_key helper + 2 locale keys. T60 —
+  _t_or_hardcoded helper wires cli.error.* prefixes through main()
+  catch-all. T74 — webhook URL credential redaction
+  (redact_url_credentials strips user:pass@ before display).
+- Audit pass 6 (5 findings shipped). I-1 ignore.yml comment
+  preservation in remove_ignore_key. M-1 T32 regex accepts digit-
+  containing keys + file_perms.* permissive prefix. M-2 services.
+  exposure canonical Exposure-enum set + bogus svc_id rejection.
+  M-3 service_label_to_subkey transform consolidated in registry.py
+  (single source of truth across explain.py + 2 display.py sites).
+  M-4 --unignore documented in man/bob.1 + mutual-exclusion guard
+  with --ignore.
+- Audit pass 7 (3 findings shipped). I-1 remove_ignore_key regex
+  match loader grammar (multi-space, tab now removable). I-2 FR
+  colon typography drift on T10/T60 error prefixes — colon-space
+  now embedded in locale values (FR "Erreur : ", EN "Error: ") so
+  no more double-colon mixed style. M-1 man/bob.1 --show-ignored
+  description rewrite to match actual behaviour.
+- Audit pass 8 (5 findings shipped). I-1 _KEY_LINE_RE unified — drop
+  \s*$ anchor so loader sees inline-commented entries; pass 7 sibling
+  regex was dead code masked by defensive load_ignore_keys guard.
+  I-2 runner.py 3 hardcoded Warning: prefix sites i18n'd via
+  cli.error.warning_prefix + cli.runner.* (6 new locale keys EN+FR).
+  M-1 --webhook-secret phantom removed from _VALUE_TAKING_OPTS.
+  M-2 _ufw_inactive variants narrowed to (no_rule, loopback_no_rule).
+  M-3 t() trailing-whitespace contract test pin (defends I-2 pass 7
+  against future locale-normaliser scripts).
+- Plus: tests/conftest.py autouse `_ensure_i18n_initialised_for_tests`
+  mirrors production invariant (i18n.init before runner.py) in test
+  environment, with opt-out for test_i18n.py.
+- Tests: 5521 → **6198** (+677 net). 0 regression. ~190 dedicated
+  v0.8.1 tests across test_t10_exception_i18n / test_t11_t26_v081 /
+  test_t27_t31_t32_v081 / test_t39_t57_t60_v081 / test_t74_v081 /
+  test_v081_audit_fixes / test_v081_audit_pass7 / test_v081_audit_pass8.
+  v0.6.x remains EOL. Upgrade: `pipx upgrade bodyguard-of-bits`.
+
 * Thu Jun 04 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.0-1
 - Minor major — drift batch + framing actions + silent-feature-gap
   audit pass. Closes the v0.7.x cycle (4 hardening patches

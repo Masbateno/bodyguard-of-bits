@@ -275,6 +275,7 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
                 message=_t("file_perms.sudoers_nopasswd_all", line=display),
                 detail=_t("file_perms.sudoers_nopasswd_all_detail"),
                 key="file_perms.sudoers_nopasswd_all",
+                nature="action",
             )
         result.add_deduction(
             reason=_t("file_perms.sudoers_nopasswd_all_reason"),

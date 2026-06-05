@@ -127,6 +127,7 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
             points=1,
             detail=_t("log_rotation.logrotate_missing_detail"),
             cmd="sudo apt install logrotate",
+            nature="improvement",
         )
     else:
         if snapshot.logrotate_rule_count <= 0:
@@ -166,6 +167,7 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
                 points=1,
                 detail=_t("log_rotation.journald_volatile_detail"),
                 cmd='sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles --create --prefix /var/log/journal && sudo systemctl kill --kill-who=main --signal=SIGUSR1 systemd-journald',
+                nature="improvement",
             )
         elif is_persistent:
             result.ok(
@@ -181,6 +183,7 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
                 points=1,
                 detail=_t("log_rotation.journald_volatile_detail"),
                 cmd='sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles --create --prefix /var/log/journal && sudo systemctl kill --kill-who=main --signal=SIGUSR1 systemd-journald',
+                nature="improvement",
             )
 
         # SystemMaxUse / SystemKeepFree — INFO only

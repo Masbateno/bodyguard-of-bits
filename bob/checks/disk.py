@@ -163,6 +163,7 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
                 detail=_t("disk.smart_failed_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
+                nature="action",
             )
             found_issue = True
         else:
@@ -185,6 +186,7 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
                 detail=_t("disk.reallocated_sectors_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
+                nature="action",
             )
             found_issue = True
 
@@ -201,6 +203,7 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
                 detail=_t("disk.pending_sectors_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
+                nature="action",
             )
             found_issue = True
 
@@ -217,6 +220,7 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
                 detail=_t("disk.uncorrectable_errors_detail"),
                 cmd=f"sudo smartctl -a {shlex.quote(sr.device)}",
                 cmd_type="check",
+                nature="action",
             )
             found_issue = True
 
@@ -235,6 +239,7 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
                 detail=_t("disk.partition_critical_detail", mountpoint=part.mountpoint),
                 cmd=f"du -x -h --max-depth=1 {shlex.quote(part.mountpoint)} 2>/dev/null | sort -rh | head -20",
                 cmd_type="check",
+                nature="action",
             )
             found_issue = True
         elif part.used_pct >= _INFO_USAGE_PCT:

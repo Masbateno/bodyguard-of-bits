@@ -236,6 +236,7 @@ def check_ports(
                 points=1,
                 context=network_context,
                 cmd=f"sudo ufw allow from 192.168.1.0/24 to any port {lport.port} proto {lport.proto}",
+                nature="action",
             )
             continue
 

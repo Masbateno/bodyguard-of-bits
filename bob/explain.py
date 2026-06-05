@@ -409,6 +409,113 @@ def _has_profile_variants(key: str, t) -> bool:
     return probe not in (bare_key, bracketed_key)
 
 
+def _service_label_to_subkey(label: str) -> str:
+    """M-3 (v0.8.1 audit) backward-compat alias for
+    ``bob.registry.service_label_to_subkey``.
+
+    Pre-M-3 this module-level helper held the canonical transform. The
+    audit surfaced that ``display.py`` had two inline duplicates of the
+    same logic so the "single source of truth" claim was false. The
+    canonical implementation now lives in ``bob/registry.py`` next to the
+    Service dataclass that owns the label semantics; this module-level
+    alias remains so the T26 ``--explain`` dispatch + the dedicated
+    ``tests/test_t11_t26_v081.py::TestT26LabelTransformIsCanonical``
+    coverage continues to resolve.
+    """
+    from bob.registry import service_label_to_subkey
+    return service_label_to_subkey(label)
+
+
+def _render_dynamic_service_explain(norm: str, t) -> bool:
+    """T26 (v0.8.1): render ``bob --explain services.exposed.<id>`` from the
+    existing ``service_risk.<label_transform>.*`` locale block.
+
+    Returns True if the dispatch succeeded (the caller must then return).
+    Returns False when the service ID is unknown OR the matching
+    ``service_risk.<subkey>.level`` locale entry is missing — caller falls
+    back to the regular ``unknown_key`` error path.
+
+    The lookup chain:
+
+      1. Extract ``<svc_id>`` from ``services.exposed.<svc_id>`` (everything
+         after the ``services.exposed.`` prefix).
+      2. Resolve ``<svc_id>`` to ``Service.label`` via the service registry.
+      3. Apply ``_service_label_to_subkey(label)`` to obtain the
+         ``service_risk.*`` subkey (e.g. ``ssh`` → ``ssh_server``).
+      4. Lookup ``service_risk.<subkey>.{level,exposure,threat}`` in locale.
+
+    The rendered output mirrors the regular WHY/HOW shape so the operator
+    sees a consistent ``--explain`` layout across static + dynamic keys.
+    """
+    svc_id = norm[len("services.exposed."):]
+    if not svc_id:
+        return False
+    # Resolve the service label from the registry — failures fall back to
+    # the unknown-key path. Lazy import avoids the registry → display →
+    # explain circular reference that older versions of the codebase hit.
+    try:
+        from bob.registry import ServiceRegistry
+        registry = ServiceRegistry.load()
+        service  = registry.get(svc_id)
+    except Exception:
+        return False
+    if service is None:
+        return False
+
+    subkey       = _service_label_to_subkey(service.label)
+    level_key    = f"service_risk.{subkey}.level"
+    exposure_key = f"service_risk.{subkey}.exposure"
+    threat_key   = f"service_risk.{subkey}.threat"
+
+    level_val    = t(level_key)
+    # Detect missing locale entry — t() returns "[key]" (real i18n) or the
+    # bare key (test stubs). Either way means the lookup failed.
+    if level_val in (level_key, f"[{level_key}]"):
+        return False
+
+    exposure_val = t(exposure_key)
+    threat_val   = t(threat_key)
+
+    # Render synthetic explain output mirroring the uniform-profiles shape
+    cis_val = get_cis_ref(norm)
+    _key_label   = t("explain.ui.label_key")
+    _title_label = t("explain.ui.label_title")
+    _cis_label   = t("explain.ui.label_cis")
+
+    # The title is constructed from the service label + risk level so the
+    # operator sees both context elements at a glance.
+    synthetic_title = f"{service.label} — {level_val}"
+
+    # Use ``risk_context.*`` labels (already EN+FR translated, consumed by
+    # ``display.py::display_risk_context``) instead of ``explain.ui.why/how``
+    # since the synthetic dispatch surfaces service exposure + threat
+    # (descriptive) rather than risk-cause + remediation-steps (the static
+    # explain shape). Same labels the operator already sees in the audit
+    # output's "Service network analysis" section, keeping the vocabulary
+    # consistent across both surfaces.
+    _exposure_label = t("risk_context.exposure")
+    _threat_label   = t("risk_context.threat")
+
+    print()
+    print(_DIVIDER_WIDE)
+    print(f"  {_key_label}:   {norm}")
+    print(f"  {_title_label}: {synthetic_title}")
+    if cis_val:
+        print(f"  {_cis_label}:   {cis_val}")
+    print(_DIVIDER_WIDE)
+    print()
+    print(_exposure_label.upper())
+    print(_DIVIDER_SHORT)
+    print(exposure_val)
+    print()
+    print(_threat_label.upper())
+    print(_DIVIDER_SHORT)
+    print(threat_val)
+    print()
+    _explain_scoring(norm, t)
+    return True
+
+
 def run_explain(key: str, t) -> None:
     """
     Print a structured explanation for *key*.
@@ -443,6 +550,19 @@ def run_explain(key: str, t) -> None:
     # t() returns "[key]" in production or the bare key in test stubs
     _title_key = f"explain.{norm}.title"
     key_unknown = title_val in (_title_key, f"[{_title_key}]")
+
+    # T26 (v0.8.1): dynamic dispatch for ``services.exposed.<svc_id>``.
+    # The runtime emits ``services.exposed.<id>`` for each service in
+    # bob/data/services.json. Pre-T26 the 38 service IDs had no
+    # ``--explain`` coverage even though their risk content already
+    # existed under ``service_risk.<label_transform>.{level,exposure,
+    # threat}`` (added by v0.8.0 T4). T26 routes the lookup to that
+    # content so any registered service becomes ``--explain``-able
+    # without per-service maintenance.
+    if key_unknown and norm.startswith("services.exposed."):
+        rendered = _render_dynamic_service_explain(norm, t)
+        if rendered:
+            return
 
     if key_unknown:
         print(t("explain.ui.unknown_key", requested=repr(key)))

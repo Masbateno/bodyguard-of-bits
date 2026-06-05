@@ -130,6 +130,7 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
             points=1,
             detail=_t("fail2ban.service_inactive_detail"),
             cmd="sudo systemctl enable --now fail2ban",
+            nature="action",
         )
         return result
 
@@ -142,6 +143,7 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
             detail=_t("fail2ban.no_jails_detail"),
             cmd="sudo fail2ban-client status",
             cmd_type="check",
+            nature="action",
         )
         return result
 

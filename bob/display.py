@@ -149,9 +149,11 @@ def display_risk_context(label: str, lang: str, t, report,
                          context_note: str | None = None,
                          is_local: bool = False) -> None:
     """Display two-axis risk context for a high/critical service."""
-    svc_id = (label.lower()
-              .replace(" ", "_").replace("/", "_")
-              .replace("(", "").replace(")", ""))
+    # M-3 (v0.8.1 audit): centralised transform in ``bob.registry`` to
+    # close the 3-way drift between this site, ``print_audit_summary``
+    # below, and ``bob.explain._render_dynamic_service_explain``.
+    from bob.registry import service_label_to_subkey
+    svc_id = service_label_to_subkey(label)
     exposure = t(f"service_risk.{svc_id}.exposure")
     threat   = t(f"service_risk.{svc_id}.threat")
     level    = t(f"service_risk.{svc_id}.level")
@@ -627,9 +629,9 @@ def build_risk_context_entries(snapshots, lang: str, t,
     for snap in snapshots:
         if not snap.is_active and not (snap.installed and snap.service.is_high_or_critical):
             continue
-        svc_id = (snap.service.label.lower()
-                  .replace(" ", "_").replace("/", "_")
-                  .replace("(", "").replace(")", ""))
+        # M-3 (v0.8.1 audit): centralised transform in ``bob.registry``.
+        from bob.registry import service_label_to_subkey
+        svc_id = service_label_to_subkey(snap.service.label)
         exposure = t(f"service_risk.{svc_id}.exposure")
         threat   = t(f"service_risk.{svc_id}.threat")
         level    = t(f"service_risk.{svc_id}.level")

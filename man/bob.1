@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-06-04" "BOB 0.8.0" "User Commands"
+.TH BOB 1 "2026-06-05" "BOB 0.8.1" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -298,10 +298,23 @@ Persistently ignore finding
 across all future audits. Stored in
 .IR ~/.config/bob/ignore.yml .
 .TP
+.B \-\-unignore=\fIKEY\fR
+Remove
+.I KEY
+from the ignored-finding list and exit. Mirror of
+.B \-\-ignore=KEY \fR;
+preserves any operator comments + custom YAML structure in
+.IR ~/.config/bob/ignore.yml
+(v0.8.1+). Mutually exclusive with
+.BR \-\-ignore .
+.TP
 .B \-\-show\-ignored
-List the persistently-ignored finding keys (contents of
-.IR ~/.config/bob/ignore.yml )
-and exit. Useful to audit what has been muted before a security review.
+During the audit, display previously-ignored findings as dimmed lines
+instead of suppressing them silently. Useful to review what is currently
+muted without consulting
+.IR ~/.config/bob/ignore.yml
+directly. The audit still runs end-to-end \(em this flag does NOT exit
+early or dump the ignore file's contents.
 .
 .SH EXIT CODES
 Stable public API. These codes do not change within a major version; new

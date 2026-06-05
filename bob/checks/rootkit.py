@@ -197,6 +197,7 @@ def check_rootkit(snapshot: RootkitSnapshot, t: TranslationFunc | None = None) -
                 points=1,
                 detail=_t("rootkit.db_outdated_detail"),
                 cmd="sudo rkhunter --update",
+                nature="improvement",
             )
 
     # Last scan check
@@ -208,6 +209,7 @@ def check_rootkit(snapshot: RootkitSnapshot, t: TranslationFunc | None = None) -
             points=1,
             detail=_t("rootkit.no_scan_detail"),
             cmd=f"sudo {tool} --checkall" if tool == "rkhunter" else f"sudo {tool}",
+            nature="improvement",
         )
         return result
 
@@ -220,6 +222,7 @@ def check_rootkit(snapshot: RootkitSnapshot, t: TranslationFunc | None = None) -
             points=1,
             detail=_t("rootkit.scan_old_detail"),
             cmd=f"sudo {tool} --checkall" if tool == "rkhunter" else f"sudo {tool}",
+            nature="improvement",
         )
         return result
 

@@ -56,6 +56,44 @@ VALID_CONFIG_KEYS = frozenset({"fixed", "auto", "ask"})
 # Port format: "number/proto" e.g. "22/tcp", "5353/udp"
 _PORT_RE = re.compile(r"^\d{1,5}/(tcp|udp)$")
 
+
+# ---------------------------------------------------------------------------
+# Label transform (single source of truth)
+# ---------------------------------------------------------------------------
+
+def service_label_to_subkey(label: str) -> str:
+    """Apply the canonical service-label → ``service_risk.*`` subkey transform.
+
+    Single source of truth used by:
+      * ``bob/display.py::display_risk_context`` (terminal panorama display)
+      * ``bob/display.py::print_audit_summary`` (summary box service rows)
+      * ``bob/explain.py::_render_dynamic_service_explain`` (T26 v0.8.1
+        ``bob --explain services.exposed.<id>`` dynamic dispatch)
+
+    M-3 (v0.8.1 audit) consolidation: the transform was previously inlined
+    in all three sites (display.py:152-154, display.py:630-632, explain.py
+    helper). The T26 docstring claimed display.py was the "single source
+    of truth" but it had two duplicates of its own. Any change to the
+    transform (e.g. a new service label containing ``&`` or ``+``) would
+    silently diverge ``--explain`` from the audit's "Service network
+    analysis" block. Centralised here so future contributors update one
+    function instead of three.
+
+    Examples:
+        ``"SSH Server"``        → ``"ssh_server"``
+        ``"Samba (Windows file sharing)"``
+                                → ``"samba_windows_file_sharing"``
+        ``"MySQL / MariaDB"``   → ``"mysql___mariadb"``
+        ``"AdGuard Home (DNS sinkhole)"``
+                                → ``"adguard_home_dns_sinkhole"``
+    """
+    return (label.lower()
+                 .replace(" ", "_")
+                 .replace("/", "_")
+                 .replace("(", "")
+                 .replace(")", ""))
+
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------

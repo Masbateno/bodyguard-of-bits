@@ -121,6 +121,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             message=_t("kernel_hardening.aslr_disabled"),
             points=1,
             cmd=_fix_cmd("kernel.randomize_va_space", 2),
+            nature="action",
         )
 
     # --- ptrace scope ---
@@ -135,6 +136,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             message=_t("kernel_hardening.ptrace_unrestricted"),
             points=1,
             cmd=_fix_cmd("kernel.yama.ptrace_scope", 1),
+            nature="action",
         )
 
     # --- SUID dumpable ---
@@ -157,6 +159,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             points=1,
             detail=_t("kernel_hardening.suid_dump_all_detail"),
             cmd=_fix_cmd("fs.suid_dumpable", 0),
+            nature="action",
         )
 
     # --- kptr_restrict (INFO only) ---

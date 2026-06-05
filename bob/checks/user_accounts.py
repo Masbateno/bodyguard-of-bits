@@ -196,6 +196,7 @@ def check_user_accounts(snapshot: UserAccountsSnapshot, *, t: TranslationFunc | 
             points=_MAX_DEDUCTION_UID_ZERO,
             detail=_t("user_accounts.uid_zero_detail"),
             cmd="sudo passwd -l " + " ".join(uid_zero),
+            nature="action",
         )
         has_finding = True
 
@@ -210,6 +211,7 @@ def check_user_accounts(snapshot: UserAccountsSnapshot, *, t: TranslationFunc | 
             points=_MAX_DEDUCTION_EMPTY_PASSWORD,
             detail=_t("user_accounts.empty_password_detail"),
             cmd="sudo passwd " + " ".join(empty_pw),
+            nature="action",
         )
         has_finding = True
 

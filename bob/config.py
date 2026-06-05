@@ -42,6 +42,29 @@ _EMAILS_FILENAME = "emails"
 # Minimal email sanity check — rejects obvious non-addresses before persisting
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
+# T10 (v0.8.1): English fallback for ValueError messages emitted by
+# EmailStore.add() and UserConfig.set() / set_webhook_url() /
+# set_webhook_format(). Mirrors the v0.7.2 M-4 pattern used in
+# markdown_output.py / html_output.py — public API accepts an optional
+# ``t`` parameter; when absent, ``_fallback_t`` substitutes the English
+# strings below. Production caller (bob/__main__.py) passes the audit's
+# bound ``t`` so the error messages match the operator's locale.
+_FALLBACK_LABELS = {
+    "config.error.invalid_email":           "Invalid email address: {email}",
+    "config.error.invalid_config_key":      "Invalid config key: {config_key}",
+    "config.error.invalid_webhook_url":     "Webhook URL must start with http:// or https://: {url}",
+    "config.error.invalid_webhook_format":  "Webhook format must be 'auto', 'generic', or 'slack': {fmt}",
+}
+
+
+def _fallback_t(key: str, **kwargs) -> str:
+    """English fallback when no ``t`` callable is wired."""
+    template = _FALLBACK_LABELS.get(key, key)
+    try:
+        return template.format(**kwargs)
+    except (KeyError, IndexError):
+        return template
+
 # ---------------------------------------------------------------------------
 # Email store
 # ---------------------------------------------------------------------------
@@ -76,13 +99,22 @@ class EmailStore:
         """Return all saved emails in insertion order."""
         return list(self._emails)
 
-    def add(self, email: str) -> None:
-        """Add email if not already present and persist to disk."""
+    def add(self, email: str, t=None) -> None:
+        """Add email if not already present and persist to disk.
+
+        Args:
+            email: Email address to add (whitespace-stripped first).
+            t:     Optional translation function ``t(key, **kwargs) -> str``
+                   used to format the ValueError message. When ``None``,
+                   the English fallback dict ``_FALLBACK_LABELS`` is used.
+        """
+        if t is None:
+            t = _fallback_t
         email = email.strip()
         if not email:
             return
         if not _EMAIL_RE.match(email):
-            raise ValueError(f"Invalid email address: {email!r}")
+            raise ValueError(t("config.error.invalid_email", email=repr(email)))
         if email not in self._emails:
             self._emails.append(email)
             self._save()
@@ -182,20 +214,28 @@ class UserConfig:
         """
         return self._data.get(key)
 
-    def set(self, key: str, value: str) -> None:
+    def set(self, key: str, value: str, t=None) -> None:
         """
         Store a key=value pair and persist to disk immediately.
 
         Args:
             key:   Configuration key (must be a valid identifier, e.g. "ssh_port").
             value: String value to store.
+            t:     Optional translation function ``t(key, **kwargs) -> str``
+                   used to format the ValueError message. When ``None``,
+                   the English fallback dict ``_FALLBACK_LABELS`` is used.
 
         Raises:
             ValueError: If key is not a valid identifier.
             OSError:    If the config file cannot be written.
         """
+        if t is None:
+            t = _fallback_t
         if not key.isidentifier():
-            raise ValueError(f"Invalid config key: {key!r}")
+            # Note: kwarg name is ``config_key`` not ``key`` — the latter would
+            # shadow the first positional of ``t(key, **kwargs)`` and raise
+            # TypeError "got multiple values for argument 'key'".
+            raise ValueError(t("config.error.invalid_config_key", config_key=repr(key)))
         self._data[key] = value
         self._save()
         logger.debug("Config set: %s=%s", key, value)
@@ -250,20 +290,28 @@ class UserConfig:
         """Return the saved webhook URL, or empty string if not set."""
         return self._data.get("webhook_url", "")
 
-    def set_webhook_url(self, url: str) -> None:
+    def set_webhook_url(self, url: str, t=None) -> None:
         """
         Persist the webhook URL.
+
+        Args:
+            url: The webhook URL (case-insensitive scheme check).
+            t:   Optional translation function ``t(key, **kwargs) -> str``
+                 used to format the ValueError message. When ``None``, the
+                 English fallback dict is used.
 
         Raises:
             ValueError: If the URL does not start with http:// or https://.
         """
+        if t is None:
+            t = _fallback_t
         # I-4 (v0.7.4): scheme match is case-insensitive (RFC 3986), mirroring
         # the v0.7.3 I-5 fix in webhook.py::send_webhook. Without this,
         # `bob --webhook HTTPS://...` succeeded at send time but the persist
         # path raised ValueError (swallowed by __main__) → silent config drop.
         url = url.strip()
         if url and not url.lower().startswith(("http://", "https://")):
-            raise ValueError(f"Webhook URL must start with http:// or https://: {url!r}")
+            raise ValueError(t("config.error.invalid_webhook_url", url=repr(url)))
         if url:
             self.set("webhook_url", url)
         else:
@@ -273,15 +321,23 @@ class UserConfig:
         """Return the saved webhook format ('auto', 'generic', or 'slack'), default 'auto'."""
         return self._data.get("webhook_format", "auto")
 
-    def set_webhook_format(self, fmt: str) -> None:
+    def set_webhook_format(self, fmt: str, t=None) -> None:
         """
         Persist the webhook format.
+
+        Args:
+            fmt: One of 'auto', 'generic', 'slack'.
+            t:   Optional translation function ``t(key, **kwargs) -> str``
+                 used to format the ValueError message. When ``None``, the
+                 English fallback dict is used.
 
         Raises:
             ValueError: If fmt is not one of 'auto', 'generic', 'slack'.
         """
+        if t is None:
+            t = _fallback_t
         if fmt not in ("auto", "generic", "slack"):
-            raise ValueError(f"Webhook format must be 'auto', 'generic', or 'slack': {fmt!r}")
+            raise ValueError(t("config.error.invalid_webhook_format", fmt=repr(fmt)))
         self.set("webhook_format", fmt)
 
     # ------------------------------------------------------------------

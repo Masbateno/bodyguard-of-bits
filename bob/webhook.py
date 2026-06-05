@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -38,6 +39,14 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _TIMEOUT_SECONDS = 10
+
+# T74 (v0.8.1): regex that captures the ``user[:pass]@`` segment of an
+# absolute URL. Used by ``redact_url_credentials`` to scrub embedded
+# credentials before the URL is printed to stdout / written to the on-disk
+# log report / surfaced inside a WebhookError message. Anchored on the
+# ``://`` boundary so query-string values containing ``@`` (e.g. an email
+# in a token=foo@bar.com fragment) are NOT touched.
+_URL_USERINFO_RE = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@]+@")
 
 # ALERT → red, WARN → orange, clean → green
 _SLACK_COLOR_ALERT = "#d00000"
@@ -54,6 +63,74 @@ _SLACK_FINDINGS_MAX = 2500
 
 class WebhookError(RuntimeError):
     """Raised when the HTTP POST fails or returns a non-2xx status."""
+
+
+# ---------------------------------------------------------------------------
+# URL credential redaction (T74 v0.8.1)
+# ---------------------------------------------------------------------------
+
+def redact_url_credentials(url: str) -> str:
+    """Replace ``user:pass@`` credentials in *url* with ``[REDACTED]@``.
+
+    Used to scrub embedded credentials before the URL is printed to stdout
+    (operator terminal), written to the on-disk ``.log`` audit report,
+    surfaced inside a ``WebhookError`` message, piped to a monitoring
+    pipeline, or recorded in cron's ``journalctl`` trail. The original URL
+    is still used for the actual HTTPS POST — only the displayed form is
+    sanitised, so authentication still works.
+
+    Pre-T74 (v0.8.1), an operator who stored a webhook with embedded
+    credentials (a common pattern for Slack / Discord / Mattermost /
+    custom HMAC-signed endpoints) leaked the credential in cleartext on
+    every successful POST line and on every URL-validation error message.
+
+    Examples:
+        ``https://user:secret@hooks.slack.com/services/T123``
+                                → ``https://[REDACTED]@hooks.slack.com/services/T123``
+        ``https://hooks.slack.com/services/T123``  (no credentials)
+                                → ``https://hooks.slack.com/services/T123``
+        ``not-a-url``                → ``not-a-url`` (no change)
+    """
+    return _URL_USERINFO_RE.sub(r"\g<scheme>[REDACTED]@", url, count=1)
+
+
+# ---------------------------------------------------------------------------
+# T10 (v0.8.1): i18n fallback for exception messages
+#
+# Mirrors the v0.7.2 M-4 pattern used in ``markdown_output.py`` /
+# ``html_output.py`` — an optional ``t`` callable can be threaded into
+# ``send_webhook``; when absent, ``_fallback_t`` substitutes the English
+# strings below so legacy callers (CLI tests, ad-hoc scripts) keep working
+# without an i18n wiring. The production caller in ``bob/__main__.py``
+# passes the audit's bound ``t`` so the WebhookError messages match the
+# locale chosen by the operator.
+# ---------------------------------------------------------------------------
+
+_FALLBACK_LABELS = {
+    "webhook.error.scheme_invalid":
+        "Webhook URL must start with https:// (or http:// with BOB_WEBHOOK_ALLOW_INSECURE=1): {url}",
+    "webhook.error.plain_http_insecure":
+        "Webhook URL is plain http:// — audit payload would be sent unencrypted. "
+        "Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override: {url}",
+    "webhook.error.http_status":      "HTTP {code} from webhook: {reason}",
+    "webhook.error.connection_failed": "Webhook connection failed: {reason}",
+    "webhook.error.request_error":     "Webhook request error: {exc}",
+    "webhook.error.non_2xx_status":    "Webhook returned non-2xx status: {status}",
+}
+
+
+def _fallback_t(key: str, **kwargs) -> str:
+    """English fallback when no ``t`` callable is wired.
+
+    Returns the English template for *key* with ``str.format(**kwargs)``
+    applied. Unknown keys return the key itself so a missing localisation
+    is immediately visible to the developer.
+    """
+    template = _FALLBACK_LABELS.get(key, key)
+    try:
+        return template.format(**kwargs)
+    except (KeyError, IndexError):
+        return template
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +190,15 @@ def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
                 "level":   f.level.name,
                 "key":     f.key,
                 "message": f.message,
+                # T27 (v0.8.1): close the format-parity pattern around
+                # ``Finding.detail`` + ``Finding.note``. v0.8.0 T9 closed
+                # Markdown + HTML; v0.8.1 T11 closed CSV + JSON v1/v2;
+                # this entry closes the last sink — the webhook payload
+                # consumed by monitoring stacks (Grafana, Loki, custom
+                # endpoints). Empty strings ride through cleanly for
+                # findings without secondary context.
+                "detail":  f.detail or "",
+                "note":    f.note   or "",
             }
             for f in engine.findings
             if f.level in (FindingLevel.ALERT, FindingLevel.WARN)
@@ -143,11 +229,20 @@ def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         f"{engine.alert_count} alert(s), {engine.warn_count} warning(s)"
     )
 
-    finding_lines = [
-        ("🚨 " if f.level == FindingLevel.ALERT else "⚠️  ") + f.message
-        for f in engine.findings
-        if f.level in (FindingLevel.ALERT, FindingLevel.WARN)
-    ]
+    # T27 (v0.8.1): include Finding.detail inline so Slack readers see the
+    # full context, not just the headline. The detail is concatenated on the
+    # same line with a separator so the existing _SLACK_FINDINGS_MAX
+    # truncation logic still works. Findings without a detail render
+    # unchanged (no trailing separator).
+    finding_lines = []
+    for f in engine.findings:
+        if f.level not in (FindingLevel.ALERT, FindingLevel.WARN):
+            continue
+        prefix = "🚨 " if f.level == FindingLevel.ALERT else "⚠️  "
+        line   = prefix + f.message
+        if f.detail:
+            line += f" — {f.detail}"
+        finding_lines.append(line)
     findings_text = "\n".join(finding_lines)
     if len(findings_text) > _SLACK_FINDINGS_MAX:
         findings_text = findings_text[:_SLACK_FINDINGS_MAX] + "\n…"
@@ -179,6 +274,7 @@ def send_webhook(
     version:  str,
     fmt:      str = "auto",
     timeout:  int = _TIMEOUT_SECONDS,
+    t=None,
 ) -> int:
     """
     POST the audit result as JSON to *url*.
@@ -190,6 +286,9 @@ def send_webhook(
         version: BOB version string.
         fmt:     Payload format: 'auto' (default), 'generic', or 'slack'.
         timeout: HTTP request timeout in seconds.
+        t:       Optional translation function ``t(key, **kwargs) -> str``
+                 used to format WebhookError messages. When ``None`` (legacy
+                 callers / tests), an English fallback dict is used.
 
     Returns:
         HTTP status code returned by the server.
@@ -198,6 +297,8 @@ def send_webhook(
         WebhookError: If the URL is invalid, the connection fails, or the
                       server returns a non-2xx status code.
     """
+    if t is None:
+        t = _fallback_t
     # I-5 (v0.7.1): reject plain http:// by default — the BOB payload contains
     # hostname + public_ip + score + alerts which leaks audit posture in
     # plaintext over the network. SECURITY.md "Network surface" documents
@@ -208,13 +309,16 @@ def send_webhook(
     # start with http(s)://" error instead of falling through; the lowered
     # form is what gets normalised below.
     url_lower = url.lower()
+    # T74 (v0.8.1): scrub any embedded ``user:pass@`` segment before the URL
+    # appears in the exception message. The original (unredacted) URL is
+    # still used for the HTTPS POST below — only the operator-facing form
+    # is sanitised. ``repr()`` wraps the redacted URL in quotes so it stays
+    # visually distinguishable from surrounding prose.
+    _safe_url = repr(redact_url_credentials(url))
     if not url_lower.startswith(("http://", "https://")):
-        raise WebhookError(f"Webhook URL must start with https:// (or http:// with BOB_WEBHOOK_ALLOW_INSECURE=1): {url!r}")
+        raise WebhookError(t("webhook.error.scheme_invalid", url=_safe_url))
     if url_lower.startswith("http://") and os.environ.get("BOB_WEBHOOK_ALLOW_INSECURE") != "1":
-        raise WebhookError(
-            f"Webhook URL is plain http:// — audit payload would be sent unencrypted. "
-            f"Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override: {url!r}"
-        )
+        raise WebhookError(t("webhook.error.plain_http_insecure", url=_safe_url))
 
     effective_fmt = detect_format(url, fmt)
     if effective_fmt == "slack":
@@ -234,13 +338,13 @@ def send_webhook(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             status: int = resp.status
     except urllib.error.HTTPError as exc:
-        raise WebhookError(f"HTTP {exc.code} from webhook: {exc.reason}") from exc
+        raise WebhookError(t("webhook.error.http_status", code=exc.code, reason=exc.reason)) from exc
     except urllib.error.URLError as exc:
-        raise WebhookError(f"Webhook connection failed: {exc.reason}") from exc
+        raise WebhookError(t("webhook.error.connection_failed", reason=exc.reason)) from exc
     except OSError as exc:
-        raise WebhookError(f"Webhook request error: {exc}") from exc
+        raise WebhookError(t("webhook.error.request_error", exc=exc)) from exc
 
     if not (200 <= status < 300):
-        raise WebhookError(f"Webhook returned non-2xx status: {status}")
+        raise WebhookError(t("webhook.error.non_2xx_status", status=status))
 
     return status

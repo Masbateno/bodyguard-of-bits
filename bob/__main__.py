@@ -33,7 +33,7 @@ from bob.output import print_banner
 from bob.profiles import load_profile
 from bob.registry import ServiceRegistry
 from bob.history import display_history, save_score
-from bob.ignore import add_ignore_key, is_valid_ignore_key, load_ignore_keys, _ignore_file_path
+from bob.ignore import add_ignore_key, is_valid_ignore_key, load_ignore_keys, remove_ignore_key, _ignore_file_path
 from bob.recurrence import load_recurrence, save_recurrence, update_recurrence
 from bob.runner import (
     _ALL_SECTIONS, _section_enabled as _se, init_report, run_checks,
@@ -64,11 +64,36 @@ def require_root() -> None:
         raise PermissionError("This script must be run as root: sudo bob")
 
 
+def _t_or_hardcoded(key: str, fallback: str) -> str:
+    """T60 (v0.8.1): translate *key* if i18n was already initialised, else
+    return *fallback*. Used by the entry-point paths that may fire BEFORE
+    or AFTER ``i18n.init`` (parse_args error path, ``main()`` catch-all).
+
+    Wires the ``cli.error.*`` locale entries that exist since T10 v0.8.1
+    but couldn't be plugged in directly because the catch-all is reached
+    via two routes: one where i18n is fully wired (any post-init exception)
+    and one where it isn't (parse_args before init, or i18n.init failed).
+    The hardcoded English string is the same as the EN fallback so users
+    on a partial-init path see consistent wording.
+    """
+    if i18n._initialized:
+        return i18n.t(key)
+    return fallback
+
+
 def _run(argv=None) -> int:
     try:
         config = parse_args(argv)
     except CLIError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        # T60: i18n is NOT initialised at this point — parse_args runs
+        # before i18n.init(). The hardcoded "Error: " stays as fallback.
+        # I-2 pass 7 (v0.8.1 audit): trailing colon-space is now embedded
+        # in the locale value (``cli.error.prefix`` = ``"Erreur : "`` /
+        # ``"Error: "``) so French typography (space-colon-space) ships
+        # consistently. Pre-fix the hardcoded ``: `` after ``t()`` produced
+        # ``"Erreur: …"`` (wrong French) and ``"Avertissement : échec du
+        # webhook: …"`` (double-colon mixed-style).
+        print(f"{_t_or_hardcoded('cli.error.prefix', 'Error: ')}{exc}", file=sys.stderr)
         return EXIT_ERROR
 
     if config.show_version:
@@ -149,6 +174,29 @@ def _run(argv=None) -> int:
             print("ℹ  " + i18n.t("cli.ignore.already_present", requested=config.ignore_key))
         return EXIT_OK
 
+    # T57 (v0.8.1) — --unignore=KEY: remove from ignore.yml and exit
+    if config.unignore_key:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        if not is_valid_ignore_key(config.unignore_key):
+            # Reuse the same invalid-key feedback as --ignore — the canonical
+            # pattern is identical, the user's mental model shouldn't shift.
+            print(
+                "✖ "
+                + i18n.t("cli.ignore.invalid_key", requested=repr(config.unignore_key))
+                + "\n  "
+                + i18n.t("cli.ignore.invalid_key_hint"),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        removed = remove_ignore_key(config.unignore_key)
+        if removed:
+            print("✔ " + i18n.t("cli.ignore.removed", requested=config.unignore_key))
+            print("  " + i18n.t("cli.ignore.added_file", path=_ignore_file_path()))
+        else:
+            print("ℹ  " + i18n.t("cli.ignore.not_present", requested=config.unignore_key))
+        return EXIT_OK
+
     if config.install_completion:
         if os.geteuid() != 0:
             self_path = Path(sys.argv[0]).resolve()
@@ -186,7 +234,14 @@ def _run(argv=None) -> int:
 
     _filter_error = validate_check_filters(config)
     if _filter_error:
-        print(f"Error: {_filter_error}", file=sys.stderr)
+        # T10 (v0.8.1): i18n the "Error:" prefix so a French audit emits
+        # "Erreur :" instead of mixed-language output. The trailing message
+        # may itself be EN today (CLIError messages aren't translated yet)
+        # but at least the prefix matches the locale.
+        # I-2 pass 7 (v0.8.1 audit): colon-space is now embedded in the
+        # locale value — drop the hardcoded ``: `` to honour FR typography
+        # convention (``"Erreur : message"`` not ``"Erreur: message"``).
+        print(f"{t('cli.error.prefix')}{_filter_error}", file=sys.stderr)
         return EXIT_ERROR
 
     _machine_mode = config.json_mode or config.csv_mode or config.markdown_mode or config.html_mode
@@ -324,21 +379,35 @@ def _run(argv=None) -> int:
                 # Persist URL if supplied via CLI flag (keeps it for future runs)
                 if config.webhook_url and config.webhook_url != user_config.get_webhook_url():
                     try:
-                        user_config.set_webhook_url(config.webhook_url)
+                        user_config.set_webhook_url(config.webhook_url, t=t)
                     except ValueError:
                         pass  # invalid URL — will be caught by send_webhook below
                 _webhook_fmt = config.webhook_format if config.webhook_format != "auto" \
                     else user_config.get_webhook_format()
                 try:
-                    from bob.webhook import send_webhook
+                    from bob.webhook import redact_url_credentials, send_webhook
                     _status = send_webhook(
                         _webhook_url, engine, sys_info, VERSION,
                         fmt=_webhook_fmt,
+                        t=t,
                     )
                     if not config.quiet:
-                        output.print_info(f"Webhook: POST → {_webhook_url} [{_status}]")
+                        # T74 (v0.8.1): scrub embedded credentials before
+                        # printing the URL to stdout + the on-disk .log
+                        # report. Slack/Discord/Mattermost URLs frequently
+                        # embed API tokens as user:pass.
+                        _display_url = redact_url_credentials(_webhook_url)
+                        output.print_info(f"Webhook: POST → {_display_url} [{_status}]")
                 except Exception as _exc:  # noqa: BLE001
-                    print(f"Warning: webhook failed: {_exc}", file=sys.stderr)
+                    # T10 (v0.8.1): translate the "Warning: webhook failed" prefix.
+                    # The exception message itself is already translated by
+                    # send_webhook via the t threaded above.
+                    # I-2 pass 7 (v0.8.1 audit): colon-space embedded in the
+                    # locale value (FR ``"Avertissement : échec du webhook : "``,
+                    # EN ``"Warning: webhook failed: "``). Pre-fix the hardcoded
+                    # ``: `` after the FR value produced a visible double
+                    # ``: `` mixed-style line.
+                    print(f"{t('cli.error.webhook_failed_prefix')}{_exc}", file=sys.stderr)
             # ------------------------------------------------------------------------
 
             curr_baseline = build_baseline(engine, ports_snapshot, snapshots)
@@ -466,13 +535,27 @@ def main(argv=None) -> int:
         # bug reports are actionable. Without the hint, users get "Fatal
         # error: 'NoneType' object has no attribute 'X'" and no way to
         # diagnose. The env var keeps everyday output clean.
+        # T60 (v0.8.1): translate the prefix + the BOB_DEBUG hint when i18n
+        # is already initialised. ``_t_or_hardcoded`` falls back to the EN
+        # baseline when the exception fires before init or init itself
+        # failed — the user always sees a consistent message.
         import os
-        print(f"Fatal error: {exc}", file=sys.stderr)
+        # I-2 pass 7 (v0.8.1 audit): colon-space embedded in the locale
+        # value so the FR rendering ships ``"Erreur fatale : "`` and the
+        # hardcoded ``: `` after the prefix is dropped.
+        fatal_prefix = _t_or_hardcoded("cli.error.fatal_prefix", "Fatal error: ")
+        print(f"{fatal_prefix}{exc}", file=sys.stderr)
         if os.environ.get("BOB_DEBUG"):
             import traceback
             traceback.print_exc(file=sys.stderr)
         else:
-            print("  Set BOB_DEBUG=1 for full traceback.", file=sys.stderr)
+            print(
+                _t_or_hardcoded(
+                    "cli.error.bob_debug_hint",
+                    "  Set BOB_DEBUG=1 for full traceback.",
+                ),
+                file=sys.stderr,
+            )
         return EXIT_ERROR
 
 

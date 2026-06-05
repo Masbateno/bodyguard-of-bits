@@ -167,6 +167,7 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
             message=_t("firewall.policy_open"),
             points=3,
             cmd="sudo ufw default deny incoming",
+            nature="action",
         )
     elif status.incoming_policy == "deny":
         result.ok(message=_t("firewall.policy_ok"), key="firewall.policy_ok")
@@ -253,6 +254,7 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
                 message=t("rules.duplicate_found", rule=clean),
                 points=1,
                 cmd=f"sudo ufw --force delete {del_index}",
+                nature="action",
             )
             is_dup = True
             found_duplicate = True
@@ -268,6 +270,7 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
                             message=t("rules.duplicate_found", rule=clean),
                             points=1,
                             cmd=f"sudo ufw --force delete {real_index}",
+                            nature="action",
                         )
                         is_dup = True
                         found_duplicate = True
@@ -361,6 +364,7 @@ def _check_ipv6_coverage(
                 message=t("rules.ipv6_missing"),
                 points=1,
                 cmd="sudo sed -i 's/^IPV6=no/IPV6=yes/' /etc/default/ufw && sudo ufw reload",
+                nature="improvement",
             )
         # else: IPv6 is disabled in /etc/default/ufw — no warning
     elif ipv4_count > 0:
@@ -392,6 +396,7 @@ def check_ufw_logging(status: FirewallStatus, t: TranslationFunc | None = None) 
             message=_t("firewall.logging_off"),
             points=2,
             cmd="sudo ufw logging low",
+            nature="action",
         )
     elif level in ("low", "medium"):
         result.ok(

@@ -254,6 +254,7 @@ def check_ddns(
         key="ddns.warn",
         message=_t("ddns.warn", ports=ports_str),
         points=1,
+        nature="improvement",
     )
 
     # Expose the ports list for programmatic access (compare.py baseline diff,

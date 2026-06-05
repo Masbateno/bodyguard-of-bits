@@ -156,6 +156,7 @@ def check_secure_boot(snapshot: SecureBootSnapshot, t: TranslationFunc | None = 
             reason=_t("secure_boot.setup_mode_reason"),
             points=1,
             detail=_t("secure_boot.setup_mode_detail"),
+            nature="action",
         )
         return result
 
@@ -167,6 +168,7 @@ def check_secure_boot(snapshot: SecureBootSnapshot, t: TranslationFunc | None = 
             reason=_t("secure_boot.disabled_reason"),
             points=1,
             detail=_t("secure_boot.disabled_detail"),
+            nature="improvement",
         )
     else:
         result.info(

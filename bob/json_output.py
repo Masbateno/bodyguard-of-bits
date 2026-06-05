@@ -243,6 +243,12 @@ def _populate_v1_full_blocks(
             "level":         f.level.value,
             "message":       f.message,
             "nature":        f.nature,
+            # T11 (v0.8.1): ``detail`` was already in CSV/MD/HTML/text but the
+            # JSON sinks dropped it silently. Additive field — consumers
+            # parsing JSON by field-name (the canonical access pattern) are
+            # unaffected; new field appears for every finding emitting a
+            # ``Finding.detail`` (most action/improvement findings do).
+            "detail":        f.detail,
             "cmd":           f.cmd,
             "note":          f.note,
             "template_vars": f.template_vars,
@@ -451,6 +457,12 @@ def _populate_v2_full_blocks(
             "level":         f.level.value,
             "message":       f.message,
             "nature":        f.nature,
+            # T11 (v0.8.1): ``detail`` was already in CSV/MD/HTML/text but the
+            # JSON sinks dropped it silently. Additive field — consumers
+            # parsing JSON by field-name (the canonical access pattern) are
+            # unaffected; new field appears for every finding emitting a
+            # ``Finding.detail`` (most action/improvement findings do).
+            "detail":        f.detail,
             "cmd":           f.cmd,
             "note":          f.note,
             "template_vars": f.template_vars,

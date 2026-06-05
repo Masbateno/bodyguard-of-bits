@@ -172,6 +172,7 @@ def check_memory(
                 f"echo 'vm.swappiness={recommended_swappiness}' | "
                 f"sudo tee /etc/sysctl.d/99-swappiness.conf"
             ),
+            nature="improvement",
         )
 
     # --- Unjustified swap: RAM still mostly free AND swappiness is above
@@ -203,6 +204,7 @@ def check_memory(
                 f"sudo tee /etc/sysctl.d/99-swappiness.conf"
             ),
             key="memory.swappiness_unjustified",
+            nature="improvement",
         )
 
     # --- Suboptimal swappiness (default 60 on a server with RAM to spare) ---

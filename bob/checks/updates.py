@@ -260,6 +260,7 @@ def check_updates(
             detail=_t("updates.apt_cache_stale_detail"),
             cmd="sudo apt update",
             key="updates.apt_cache_stale",
+            nature="improvement",
         )
 
     # --- Cross-check dist-upgrade vs apt list --upgradable ------------------
@@ -280,6 +281,7 @@ def check_updates(
             detail=_t("updates.dist_upgrade_inconsistent_detail"),
             cmd="sudo apt update && sudo apt list --upgradable",
             key="updates.dist_upgrade_inconsistent",
+            nature="improvement",
         )
 
     # --- Security packages pending ------------------------------------------
@@ -295,6 +297,7 @@ def check_updates(
             points=2,
             detail=_t("updates.security_pending_detail"),
             cmd="sudo apt-get upgrade",
+            nature="action",
         )
 
     # --- Regular packages pending -------------------------------------------
@@ -318,6 +321,7 @@ def check_updates(
                 points=1,
                 detail=_t("updates.unattended_not_configured_detail"),
                 cmd="sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
+                nature="improvement",
             )
         else:
             # Workstation profile, or system up to date — informational only

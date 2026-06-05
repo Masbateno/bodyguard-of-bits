@@ -127,11 +127,22 @@ def validate_check_filters(config: "AuditConfig") -> str | None:
         return any(s == tok or s.startswith(tok) for s in _ALWAYS_ON_SECTIONS)
 
     def _suggest(tok: str) -> str:
+        from bob import i18n
         all_known = _ALL_SECTIONS + _ALWAYS_ON_SECTIONS
         matches = difflib.get_close_matches(tok, all_known, n=3, cutoff=0.5)
         if matches:
-            return f"Did you mean: {', '.join(matches)}"
-        return "Run 'bob --check=list' to see all check names."
+            return i18n.t("cli.runner.suggest_did_you_mean",
+                          matches=", ".join(matches))
+        return i18n.t("cli.runner.suggest_run_list")
+
+    # I-2 pass 8 (v0.8.1 audit): the validate_check_filters warning sites
+    # (3 hardcoded "Warning:" prefixes) were left un-i18n'd when T10
+    # i18n'd the cli.error.* family in __main__.py. The runner runs after
+    # ``i18n.init`` (called at __main__.py:184) so accessing ``i18n.t``
+    # directly is safe here. We use the locale prefix value, which since
+    # I-2 pass 7 includes its own trailing ``": "`` / ``" : "`` for
+    # consistent FR typography.
+    from bob import i18n
 
     if config.check_only:
         bad = sorted(
@@ -140,11 +151,16 @@ def validate_check_filters(config: "AuditConfig") -> str | None:
         )
         if bad:
             for tok in bad:
-                print(f"Warning: --check '{tok}' matches no known section — {_suggest(tok)}", file=sys.stderr)
+                print(
+                    f"{i18n.t('cli.error.warning_prefix')}"
+                    + i18n.t("cli.runner.check_no_match",
+                             tok=repr(tok), suggestion=_suggest(tok)),
+                    file=sys.stderr,
+                )
             # Fatal only when NO token matches anything — always-on tokens
             # still count as "something will run".
             if len(bad) == len(config.check_only):
-                return "--check matched no known sections. Run 'bob --check=list' to see available checks."
+                return i18n.t("cli.runner.check_no_match_fatal")
 
     if config.skip_checks:
         for tok in sorted(config.skip_checks):
@@ -154,11 +170,17 @@ def validate_check_filters(config: "AuditConfig") -> str | None:
                 # --skip on an always-on section is a no-op: warn the user
                 # rather than silently swallow their intent.
                 print(
-                    f"Warning: --skip '{tok}' has no effect (always-on section)",
+                    f"{i18n.t('cli.error.warning_prefix')}"
+                    + i18n.t("cli.runner.skip_no_effect", tok=repr(tok)),
                     file=sys.stderr,
                 )
                 continue
-            print(f"Warning: --skip '{tok}' matches no known section — {_suggest(tok)}", file=sys.stderr)
+            print(
+                f"{i18n.t('cli.error.warning_prefix')}"
+                + i18n.t("cli.runner.skip_no_match",
+                         tok=repr(tok), suggestion=_suggest(tok)),
+                file=sys.stderr,
+            )
 
     return None
 

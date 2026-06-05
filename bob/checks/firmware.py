@@ -151,6 +151,7 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
                 points=1,
                 detail=_t("firmware.fwupd_updates_detail"),
                 cmd="sudo fwupdmgr update",
+                nature="action",
             )
         elif not snapshot.fwupd_error:
             result.ok(

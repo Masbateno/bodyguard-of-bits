@@ -155,6 +155,7 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
             points=1,
             detail=_t("auditd.service_inactive_detail"),
             cmd="sudo systemctl enable --now auditd",
+            nature="improvement",
         )
         return result
 
@@ -185,6 +186,7 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
                 points=1,
                 detail=_t("auditd.no_rules_detail"),
                 cmd=_no_rules_cmd,
+                nature="improvement",
             )
         return result
 
@@ -207,6 +209,7 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
                 points=1,
                 detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str),
                 cmd=_suggest_rules_cmd(missing),
+                nature="improvement",
             )
         return result
 

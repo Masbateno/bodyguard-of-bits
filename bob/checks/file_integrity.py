@@ -171,6 +171,7 @@ def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | N
             points=1,
             detail=_t("file_integrity.no_db_detail", tool=tool),
             cmd=init_cmd,
+            nature="improvement",
         )
         return result
 
@@ -183,6 +184,7 @@ def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | N
             points=1,
             detail=_t("file_integrity.no_check_detail", tool=tool),
             cmd=check_cmd,
+            nature="improvement",
         )
         return result
 
@@ -197,6 +199,7 @@ def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | N
             points=1,
             detail=_t("file_integrity.check_old_detail"),
             cmd=check_cmd,
+            nature="improvement",
         )
         return result
 

@@ -120,8 +120,14 @@ def load_profile(name: str) -> AuditProfile:
     """
     if name in ("default", "server", ""):
         return _DEFAULT_PROFILE
-    if name == "workstation":          # backward-compat alias
-        name = "desktop"
+    # T6 (v0.8.1): the v0.1.0 alias ``workstation → desktop`` was retired —
+    # ``workstation.conf`` is now a first-class profile with its own
+    # severity overrides (business-context semantics: keeps backup / auditd /
+    # mac_policy at WARN while relaxing personal-use ergonomics matching
+    # ``desktop``). Users who depended on the alias (workstation = desktop)
+    # see different severity outputs on backup.no_backup / auditd.* /
+    # mac_policy.apparmor_no_enforce / file_integrity stays INFO.
+    # See CHANGELOG v0.8.1 for migration.
 
     path = _find_profile_file(name)
     if path is None:
@@ -133,6 +139,105 @@ def load_profile(name: str) -> AuditProfile:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Profile %r failed to load (%s) — using default", name, exc)
         return _DEFAULT_PROFILE
+
+
+@functools.lru_cache(maxsize=1)
+def _recognised_override_keys() -> set[str] | None:
+    """T32 (v0.8.1): the catalogue of finding keys a profile is allowed to
+    override. Used by ``_load_from_path`` to warn the operator about typos
+    in ``[overrides]`` entries.
+
+    The catalogue is the union of three sources:
+
+      * ``bob.explain.EXPLAIN_KEYS`` — the 168 statically-emitted keys.
+      * ``services.exposed.<id>`` and ``services.exposure.<id>`` for every
+        service in ``bob/data/services.json`` (the dynamic per-service
+        keys emitted by ``bob/checks/services.py``).
+      * Helper-dispatched literal keys harvested from the check modules
+        (e.g. ``ssh.weak_macs`` lives in a helper call site, not in
+        EXPLAIN_KEYS but emitted at runtime).
+
+    Cached with ``maxsize=1`` so repeated profile loads in the same process
+    pay the disk + AST cost exactly once. Returns ``None`` if any source
+    fails to import — the caller falls back to the pre-T32 "accept anything"
+    behaviour rather than spamming false-positive warnings.
+    """
+    try:
+        from bob.explain import EXPLAIN_KEYS
+        recognised: set[str] = set(EXPLAIN_KEYS)
+    except Exception:
+        return None
+    try:
+        from bob.registry import ServiceRegistry
+        registry = ServiceRegistry.load()
+        # M-2 (v0.8.1 audit): the runtime emits ``services.exposed.<svc_id>``
+        # for every registered service (legitimate dynamic key) but
+        # ``services.exposure.*`` keys are **exposure-enum-typed**
+        # (open_world / open_local / loopback / deny / no_rule /
+        # loopback_no_rule / not_listening + ``_ufw_inactive`` variants),
+        # not service-id-typed. Pre-fix the catalogue registered
+        # ``services.exposure.{svc.id}`` (e.g. ``services.exposure.ollama``)
+        # which silently accepted bogus overrides as "valid".
+        for svc in registry.all():
+            recognised.add(f"services.exposed.{svc.id}")
+    except Exception:
+        # Non-fatal — the EXPLAIN_KEYS subset is enough to flag obvious
+        # typos like ``ssh.totally_not_a_key``.
+        pass
+    # M-2 (v0.8.1 audit): canonical ``services.exposure.*`` set, matching
+    # the emit sites in ``bob/checks/services.py`` lines 353-355,390-403.
+    # The base values come from the ``Exposure`` enum + the two static
+    # explicit keys.
+    for _exp_value in (
+        "open_world", "open_local", "loopback",
+        "deny", "no_rule", "loopback_no_rule", "not_listening",
+    ):
+        recognised.add(f"services.exposure.{_exp_value}")
+    # M-2 pass 8 (v0.8.1 audit): the ``_ufw_inactive`` variants are
+    # emitted ONLY when ``exposure in (NO_RULE, LOOPBACK_NO_RULE)`` —
+    # see services.py:352-355. Pre-pass-8 the registration was permissive
+    # across all 7 exposure values, so a profile override on e.g.
+    # ``services.exposure.open_world_ufw_inactive = info`` was silently
+    # accepted as valid (zero typo warning, zero runtime effect) — the
+    # exact false-positive UX failure the original M-2 was meant to
+    # close. Narrowed to the 2 exposures the runtime actually emits.
+    for _exp_value in ("no_rule", "loopback_no_rule"):
+        recognised.add(f"services.exposure.{_exp_value}_ufw_inactive")
+    # Harvest literal key="..." emit sites that aren't in EXPLAIN_KEYS
+    # (helper-dispatched keys, dynamic states, etc.) so the typo detector
+    # doesn't false-positive on them.
+    # M-1 (v0.8.1 audit): the regex now accepts digit-containing segments
+    # (the pre-M-1 form ``[a-z_]+`` rejected real keys like
+    # ``fail2ban.ssh_jail_active`` / ``ipv6.ufw_disabled_no_listeners`` /
+    # ``ipv6.port_no_v6_rule``). Profile overrides on these keys triggered
+    # spurious "not recognised" warnings even though the runtime emits
+    # them as canonical literals. Aligns with the canonical pattern used
+    # by ``bob/ignore.py::_CANONICAL_KEY_RE``.
+    import re
+    from pathlib import Path
+    checks_dir = Path(__file__).parent / "checks"
+    try:
+        for f in checks_dir.rglob("*.py"):
+            try:
+                src = f.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for m in re.finditer(
+                r'key=["\']([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)["\']', src
+            ):
+                recognised.add(m.group(1))
+    except Exception:
+        pass
+    # M-1 (v0.8.1 audit) supplemental: ``bob/checks/file_perms.py`` emits
+    # f-string keys of the form ``file_perms.<filename>.world_writable``
+    # / ``.too_permissive`` / ``.no_owner`` etc. (lines 223,240,259). The
+    # literal harvest can't see them; whitelist ``file_perms.*`` as a
+    # permissive prefix mirror to how ``services.exposed.<id>`` is handled
+    # above. The cost of a permissive prefix here is acceptable because
+    # the namespace is narrow + every actionable check key already starts
+    # with a real ``file_perms.<filename>`` segment by construction.
+    recognised.add("file_perms.*")
+    return recognised
 
 
 @functools.lru_cache(maxsize=32)
@@ -187,6 +292,15 @@ def _load_from_path(path: Path, depth: int) -> AuditProfile:
     # [overrides] section — child values win over parent
     overrides = dict(base_overrides)
     if cp.has_section("overrides"):
+        # T32 (v0.8.1): build the set of recognised override keys once per
+        # load so we can warn the operator about typos. Pre-T32 the loader
+        # silently accepted any dotted-identifier key, so ``ssh.totally_not_a_key
+        # = info`` and ``non_existant_section.foo = warn`` rode through
+        # without any signal — users believed their policy applied but the
+        # override never matched any emitted finding. The validation is
+        # advisory (logger.warning, not raise) so existing profiles with
+        # legacy entries from removed checks don't break loading.
+        recognised = _recognised_override_keys()
         for key, value in cp.items("overrides"):
             if value is None:
                 continue
@@ -198,6 +312,23 @@ def _load_from_path(path: Path, depth: int) -> AuditProfile:
                     name, value, key,
                 )
                 continue
+            # T32 typo detection — warn but still apply (compat-preserving)
+            # M-1 (v0.8.1 audit): ``file_perms.*`` is registered as a
+            # permissive prefix (see ``_recognised_override_keys``) because
+            # the runtime emits f-string keys like
+            # ``file_perms.passwd.world_writable`` that the literal harvest
+            # can't see. Match the prefix here so legitimate file_perms
+            # overrides don't trigger spurious warnings.
+            if recognised is not None and key not in recognised:
+                if not (
+                    "file_perms.*" in recognised
+                    and key.startswith("file_perms.")
+                ):
+                    logger.warning(
+                        "Profile %r: override key %r is not recognised (typo or removed check?) — "
+                        "the override will be loaded but will never match an emitted finding",
+                        name, key,
+                    )
             overrides[key] = value
 
     # [skip_sections] section

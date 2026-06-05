@@ -235,6 +235,7 @@ def check_backup(
             points=1,
             detail=_t("backup.no_backup_detail"),
             cmd="sudo apt install borgbackup borgmatic",
+            nature="improvement",
         )
     else:
         result.info(

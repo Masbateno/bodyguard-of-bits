@@ -6,6 +6,166 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.8.1] — 05-06-2026
+
+**Maintenance mineure + cycle audit deep-hardening.**
+
+Ferme **26 tiers de gaps** sur 3 passes d'audit sub-agent (6/7/8) + un sweep initial drift / framing / silent-feature-gap. 5521 → **6198 tests**, +677 net, 0 régression. ~190 tests dédiés v0.8.1.
+
+### Cycle initial (12 tiers)
+
+#### T6 — audit couverture sévérité profiles
+
+`bob/data/profiles/desktop.conf` +24 overrides → 36 au total ; `workstation.conf` +28 overrides → 31 distincts de desktop. Couverture ~30% des 107 actionable warn/alert keys. Domaines couverts : clamav (5 keys), rootkit.db_outdated, auditd.* (3), secure_boot.*, file_integrity.*, log_rotation.*, backup.no_backup, mac_policy.apparmor_no_enforce, password_policy.weak_minlen, firewall_stack.ip_forward_enabled, services.exposure.open_local, ssh.* secondaires.
+
+#### T10 — i18n exceptions webhook + config + __main__
+
+14 nouvelles locale keys EN+FR sous `webhook.error.*` × 6 / `config.error.*` × 4 / `cli.error.*` × 4. Pattern fallback dict miroir v0.7.2 M-4 : `_FALLBACK_LABELS` + `_fallback_t` dans chaque module ; signatures `send_webhook(..., t=None)` etc. acceptent un t optionnel. Pre-fix : 9 exception messages EN hardcoded, users FR voyaient mixed-language.
+
+#### Retrait alias workstation (BREAKING)
+
+`bob/profiles.py:123-124` — l'alias v0.1.0 qui silencieusement redirigeait `bob -p workstation` vers `desktop` est retiré. workstation.conf est maintenant un profile **first-class**. **BREAKING** : users sur l'alias voient sévérités différentes pour `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` (restent à WARN sur workstation, INFO sur desktop).
+
+**Migration** : copier `desktop.conf` vers `~/.config/bob/profiles/workstation.conf` pour restaurer la sémantique v0.8.0.
+
+#### T11 — parité field Finding.detail (CSV + JSON v1/v2)
+
+`bob/csv_output.py:25-44` column `detail` insérée entre `message` et `fix_cmd`. `bob/json_output.py:240-251 + 448-460` field `detail` dans finding dict v1 + v2. Additif, pas de schema break.
+
+#### T26 — dispatch explain services.exposed.<id>
+
+`bob/explain.py:433-510` nouveau `_render_dynamic_service_explain()` route lookup via `ServiceRegistry.get(svc_id)` + `service_risk.<subkey>.{level,exposure,threat}`. 38 services auto-explainables. Live UX : `bob --explain services.exposed.ssh` produit contenu CRITICAL/EXPOSURE/THREAT du SSH Server.
+
+#### T27 — payload webhook detail + note parity
+
+Generic payload embarque `detail` + `note` per finding ; Slack inline concatène le `detail` après ` — ` séparateur. Ferme format-parity pattern.
+
+#### T31/T37 — nature backfill 90 sites
+
+90 sites `warn/alert(_with_deduction)` sans `nature=` classifiés : 69 action + 59 improvement + 1 structural. Pre-fix `bob/fixes.py:32-34` filtre `nature == "action"` donc 88% des findings actionnables étaient silencieusement skipped par `--fix --apply`. Post-fix 100%.
+
+Edge case ssh/_directives.py refactoré pour propager nature via kwargs dict explicit. 5 reverts pour aligner avec tests existants : risky_fs/risky_net (improvement), ntp.not_synchronized/not_enabled (improvement), smtp.exposed (improvement), rules.duplicate_found (action), rules.ipv6_missing (improvement).
+
+#### T32 — validation typo profiles
+
+`_recognised_override_keys` build catalogue (lru_cache(maxsize=1)) : EXPLAIN_KEYS ∪ `services.exposed.<id>` ∪ literal `key="..."` harvest. À la load, `[overrides]` keys absentes émettent `logger.warning(...)`. Compat-preserving.
+
+**Self-catch notable** : T32 a chopé `ssh.x11_use_localhost` que J'AI moi-même ajouté en T6 — orphan dans desktop+workstation. Le mécanisme fait son boulot sur mes propres erreurs.
+
+#### T39 — orphan service_risk.ollama_llm_server cleanup
+
+Block locale retiré. Service Ollama réel a subkey `ollama_local_llm` (entry valide depuis v0.8.0 T2).
+
+#### T57 — CLI --unignore
+
+`bob/ignore.py:127-184` nouveau `remove_ignore_key()`. Wire CLI + 2 locale keys + mutual-exclusion guard avec `--ignore` (ajouté pass 6 M-4).
+
+#### T60 — helper _t_or_hardcoded
+
+`bob/__main__.py:67-83` returne `t(key)` si i18n initialisé, sinon `fallback`. Wire 3 sites pre/post-init (parse_args CLIError, main() catch-all). Pre-T60 : `Fatal error: …` + `Set BOB_DEBUG=1...` hardcoded EN même en audit FR.
+
+#### T74 — redaction credentials URL webhook
+
+`bob/webhook.py:60-66` regex ancré sur `://` boundary + `redact_url_credentials(url)` public helper. Wire `send_webhook` WebhookError sites + `__main__.py:386` success print. Original URL reste pour POST réel ; seul l'affichage opérateur est sanitisé.
+
+### Audit pass 6 (5 findings shipped)
+
+#### I-1 — preservation comments ignore.yml
+
+`remove_ignore_key` re-écrivait en canonical form, détruisait silencieusement commentaires opérateur (`# Per ticket SECOPS-1234`).
+
+Fix : line-walk in-place. Drop seulement `- key: <removed>`, préserve reste verbatim.
+
+#### M-1 — T32 regex digits + file_perms.*
+
+Regex `[a-z_]+` rejetait segments avec chiffres → `fail2ban.ssh_jail_active`, `ipv6.*` déclenchaient spurious warnings. Fix : `[a-z][a-z0-9_]*` + `file_perms.*` permissive prefix.
+
+#### M-2 — services.exposure canonical set
+
+Pre-fix registrait `services.exposure.{svc.id}` (bogus — runtime émet `services.exposure.{exposure_value}`). Fix : retrait + ajout canonical set de 7 base values × 2 (avec `_ufw_inactive` — narrowed pass 8 M-2 plus tard).
+
+#### M-3 — service_label_to_subkey consolidation
+
+T26 docstring claimait "single source of truth" mais display.py avait 2 copies inline. Fix : extract vers `bob/registry.py:60-92`, les 3 sites délèguent via import.
+
+#### M-4 — --unignore docs + mutual-exclusion
+
+Man page entry + CLIError guard.
+
+### Audit pass 7 (3 findings shipped)
+
+#### I-1 — remove_ignore_key regex match loader grammar
+
+`startswith("- key:")` (un espace) ≠ loader regex (`\s+`). Files yamllint-style avec 2 spaces silencieusement un-removable → misleading "Key not present".
+
+Fix : nouveau sibling regex `_KEY_LINE_MATCH_RE` (sans `\s*$` anchor). Cf. pass 8 I-1 pour unification définitive.
+
+#### I-2 — FR colon typography drift
+
+T10 + T60 ont laissé `:` ASCII hardcodé après `t()`. Convention FR = ` : `. Plus `cli.error.webhook_failed_prefix` contenait déjà ` : ` dans valeur FR → double-colon mixed style.
+
+Fix : colon-space embarqué dans valeurs locale (EN `"Error: "`, FR `"Erreur : "`). 4 sites print drop le `: ` hardcodé. Drift introduit par mon propre T10.
+
+#### M-1 — --show-ignored man description
+
+Man page claimait "list keys and exit", code fait l'opposé (display inline pendant audit). Fix : réécriture du paragraphe.
+
+### Audit pass 8 (5 findings shipped)
+
+#### I-1 — _KEY_LINE_RE unification
+
+Le pass 7 sibling regex pour inline comments était unreachable (defensive guard `load_ignore_keys` short-circuit avant). Méta-régression dans mon fix pass 7.
+
+Fix : drop `\s*$` anchor de `_KEY_LINE_RE` itself, retirer `_KEY_LINE_MATCH_RE`. Loader + remover share single relaxed regex.
+
+#### I-2 — runner.py 3 Warning sites un-i18n'd
+
+T10 a loupé `runner.py:143,157,161`. Fix : `cli.error.warning_prefix` (FR `"Avertissement : "`) + namespace `cli.runner.*` (6 nouvelles keys × 2 langues).
+
+#### M-1 — --webhook-secret phantom
+
+`bob/cli.py:193` listait `--webhook-secret` dans `_VALUE_TAKING_OPTS` mais aucun handler n'existait. Errors inconsistents entre `--opt val` et `--opt=val`. Fix : retrait 1-line.
+
+#### M-2 — _ufw_inactive narrowed
+
+Mon M-2 pass 6 registrait `_ufw_inactive` pour les 7 exposures, runtime n'émet QUE pour `(no_rule, loopback_no_rule)`. Méta-régression dans mon fix pass 6. Fix : narrow.
+
+#### M-3 — t() trailing whitespace contract
+
+8 tests parametrized pin que `t()` ne strip pas trailing whitespace sur les 4 `cli.error.*_prefix` keys × {EN, FR}. Defends I-2 pass 7.
+
+### Plus — autouse fixture i18n init
+
+`tests/conftest.py` `_ensure_i18n_initialised_for_tests` mirror production invariant. Opt-out pour `test_i18n.py` (qui exerce bracketed-fallback contract).
+
+### Numbers
+
+- **6198 tests** (5521 → 6198, +677 net). 0 régression.
+- ~190 tests dédiés v0.8.1 sur 8 fichiers
+- 26 tiers de gaps fermés sur 3 cycles d'audit
+- 22 nouvelles locale keys EN+FR
+- 38 services explainable via T26 dispatch
+- 90 sites nature backfill T31
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`.
+
+Shifts comportementaux user-facing :
+- **Profile workstation distinct de desktop** (BREAKING)
+- **4 findings peuvent maintenant déduire des points** (T3 v0.8.0 + T31 v0.8.1) — score peut baisser 1-3pts
+- **`bob --fix --apply`** couvre 100% des actionable findings (était 12%)
+- **`bob --explain services.exposed.<svc>`** produit du contenu pour 38 services
+- **`bob --unignore=KEY`** existe (CLI symmetry avec `--ignore`)
+- **Webhook URLs credentials** affichées redacted
+- **FR audits cohérents** sur typographie colon
+- **Profile typos** émettent `logger.warning`
+- **`--show-ignored`** correctement documenté
+
+v0.6.x reste EOL (déclaré en v0.7.2).
+
+---
+
 ## [v0.8.0] — 04-06-2026
 
 **Mineure majeure — drift batch + actions framing + audit silent-feature-gap.**

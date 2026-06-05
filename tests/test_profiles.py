@@ -87,10 +87,33 @@ class TestLoadBuiltinProfiles:
         p = load_profile("desktop")
         assert p.name == "desktop"
 
-    def test_workstation_alias_loads_desktop(self):
-        """'workstation' is a backward-compat alias for 'desktop'."""
-        p = load_profile("workstation")
-        assert p.name == "desktop"
+    def test_workstation_is_now_distinct_from_desktop(self):
+        """T6 (v0.8.1) BREAKING: ``workstation`` is no longer an alias for
+        ``desktop``. The v0.1.0 alias was retired so ``workstation.conf`` can
+        provide its own business-context severity semantics (backup / auditd
+        / mac_policy kept at WARN while ``desktop`` relaxes them).
+
+        Pre-v0.8.1: ``bob -p workstation`` returned the ``desktop`` profile.
+        Post-v0.8.1: returns the distinct ``workstation`` profile.
+        """
+        ws = load_profile("workstation")
+        desk = load_profile("desktop")
+        # First-class profile, not aliased
+        assert ws.name == "workstation"
+        # workstation keeps backup / auditd / mac_policy at WARN (default)
+        # whereas desktop relaxes them to INFO
+        assert ws.overrides.get("backup.no_backup") is None, \
+            "workstation must NOT relax backup.no_backup (business data loss risk)"
+        assert ws.overrides.get("auditd.no_rules") is None, \
+            "workstation must NOT relax auditd.no_rules (corporate forensics)"
+        assert ws.overrides.get("mac_policy.apparmor_no_enforce") is None, \
+            "workstation must NOT relax mac_policy.apparmor_no_enforce (endpoint hardening)"
+        # Desktop relaxes all three
+        assert desk.overrides.get("backup.no_backup") == "info"
+        assert desk.overrides.get("auditd.no_rules") == "info"
+        assert desk.overrides.get("mac_policy.apparmor_no_enforce") == "info"
+        # The two profiles must differ (sanity check that we're not aliasing again)
+        assert ws.overrides != desk.overrides
 
     def test_container_profile_loads(self):
         p = load_profile("container")

@@ -204,6 +204,7 @@ def check_kernel_modules(
                 points=1,
                 detail=_t("kernel_modules.risky_fs_detail"),
                 cmd=_unload_cmd(risky_fs),
+                nature="improvement",
             )
 
         risky_net = sorted(loaded & _RISKY_NET)
@@ -216,6 +217,7 @@ def check_kernel_modules(
                 points=1,
                 detail=_t("kernel_modules.risky_net_detail"),
                 cmd=_unload_cmd(risky_net),
+                nature="improvement",
             )
 
         if not result.findings:

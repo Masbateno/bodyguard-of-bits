@@ -179,6 +179,7 @@ def check_iptables_nftables(
                 if snapshot.backend == "iptables"
                 else 'sudo nft chain inet filter input \'{ policy drop; }\''
             ),
+            nature="action",
         )
     elif snapshot.input_policy in ("DROP", "REJECT"):
         result.ok(
@@ -197,6 +198,7 @@ def check_iptables_nftables(
                     if snapshot.backend == "iptables"
                     else 'sudo nft insert rule inet filter input iif "lo" accept'
                 ),
+                nature="action",
             )
 
         if not snapshot.has_conntrack_rule:
@@ -209,6 +211,7 @@ def check_iptables_nftables(
                     if snapshot.backend == "iptables"
                     else "sudo nft insert rule inet filter input ct state established,related accept"
                 ),
+                nature="action",
             )
     else:
         result.info(
@@ -227,6 +230,7 @@ def check_iptables_nftables(
                 if snapshot.backend == "iptables"
                 else 'sudo nft chain inet filter forward \'{ policy drop; }\''
             ),
+            nature="action",
         )
     elif snapshot.forward_policy in ("DROP", "REJECT"):
         result.ok(

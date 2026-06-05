@@ -134,6 +134,13 @@ class AuditConfig:
     ignore_key: str = ""
     """--ignore=KEY: add a finding key to ignore.yml and exit."""
 
+    unignore_key: str = ""
+    """T57 (v0.8.1): --unignore=KEY — remove a finding key from ignore.yml
+    and exit. Mirror of --ignore=KEY: same validation, same canonical-key
+    pattern check, same atomic write contract. Closes the symmetry gap
+    where users could add ignored keys via CLI but had to edit
+    ``~/.config/bob/ignore.yml`` by hand to remove them."""
+
     show_ignored: bool = False
     """--show-ignored: display ignored findings in grey alongside normal output."""
 
@@ -175,6 +182,7 @@ _VALUE_TAKING_OPTS = frozenset({
     "--output",
     "--min-level",
     "--ignore",
+    "--unignore",
     "--check",
     "--skip",
     "--output-dir",
@@ -182,7 +190,13 @@ _VALUE_TAKING_OPTS = frozenset({
     "-p", "--profile",
     "-w", "--webhook",
     "--webhook-format",
-    "--webhook-secret",
+    # M-1 pass 8 (v0.8.1 audit): ``--webhook-secret`` was listed here but
+    # never wired into the parse loop and no ``webhook_secret`` field
+    # exists on AuditConfig. Pre-fix, ``bob --webhook-secret foo`` raised
+    # the misleading "--webhook-secret requires a value" error from the
+    # value-taking missing-value path while ``bob --webhook-secret=foo``
+    # fell through to "Unknown option" — inconsistent error messages for
+    # the same phantom option. Dead entry removed.
 })
 
 
@@ -465,6 +479,18 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             i += 1
             config.ignore_key = argv[i].strip()
 
+        # T57 (v0.8.1) — --unignore: removal counterpart to --ignore
+        elif arg.startswith("--unignore="):
+            value = arg.split("=", 1)[1].strip()
+            if not value:
+                raise CLIError("--unignore= requires a finding key (e.g. ssh.permit_root_login)")
+            config.unignore_key = value
+
+        elif arg == "--unignore" and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            # Same value-starts-with-dash guard as --ignore (v0.7.3 M-4 pattern).
+            i += 1
+            config.unignore_key = argv[i].strip()
+
         elif arg == "--show-ignored":
             config.show_ignored = True
 
@@ -602,6 +628,15 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
     if config.json_mode and config.fix and config.apply:
         raise CLIError("--json is incompatible with --fix --apply (fix mode is interactive)")
 
+    # M-4 (v0.8.1 audit) — ``--ignore`` and ``--unignore`` are mutually
+    # exclusive. Pre-fix, ``bob --ignore=X --unignore=Y`` was accepted
+    # silently: __main__.py's --ignore handler short-circuits (return
+    # EXIT_OK) and the --unignore was dropped without any feedback. Now
+    # surfaces as a clear CLIError consistent with the other v0.7.x
+    # mutual-exclusion guards above.
+    if config.ignore_key and config.unignore_key:
+        raise CLIError("--ignore and --unignore are mutually exclusive")
+
     # Mutually exclusive operating modes
     exclusive_modes = [
         (config.manage_logs,  "--manage-logs"),
@@ -685,6 +720,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("-B, --breakdown",       "Run audit silently and print full score computation path")
     opt("    --reset-baseline",  "Delete the stored audit baseline and exit")
     opt("    --ignore=KEY",      "Add a finding key to the ignore list (~/.config/bob/ignore.yml) and exit")
+    opt("    --unignore=KEY",    "Remove a finding key from the ignore list and exit")
     opt("    --show-ignored",    "Display suppressed findings in grey alongside normal output")
 
     opt("    --history",           "Display score history sparkline (last 10 audits) and exit")
