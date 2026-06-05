@@ -218,7 +218,9 @@ Shifts comportementaux user-facing :
 - **Profile overrides avec typos** émettent `logger.warning` au lieu de silencieusement no-op
 - **`--show-ignored`** rendering inline correctement documenté en man page (n'exit pas, ne dump pas le YAML)
 
-v0.6.x reste EOL (déclaré en v0.7.2).
+**v0.7.x is now end-of-life as of 2026-06-05** — formal declaration in [SECURITY.md](../SECURITY.md), mirroring the pattern that retired v0.6.x in v0.7.2. No security fixes will be backported to v0.7.x; users must `pipx upgrade bodyguard-of-bits` to v0.8.x for security patches. The v0.8.x line is largely backwards-compatible with v0.7.x via `__init__.py` re-exports + `--json-v1` for legacy JSON consumers, except for the workstation profile BREAKING shift described above (drop a copy of `desktop.conf` at `~/.config/bob/profiles/workstation.conf` to restore v0.7.x semantics on that profile).
+
+v0.6.x remains EOL (declared in v0.7.2).
 
 ---
 

@@ -8,15 +8,18 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version   | Supportée          |
 |-----------|--------------------|
-| 0.7.x     | ✅ courante         |
+| 0.8.x     | ✅ courante         |
+| 0.7.x     | ❌ fin de vie       |
 | 0.6.x     | ❌ fin de vie       |
 | 0.5.x     | ❌ fin de vie       |
 | 0.4.x     | ❌ fin de vie       |
 | < 0.4.0   | ❌ fin de vie       |
 
-Les correctifs sortent en `0.7.x+1`. Un breaking change bump le minor (`0.8.0`).
+Les correctifs sortent en `0.8.x+1`. Un breaking change bump le minor (`0.9.0`).
 
-**v0.6.x est en fin de vie depuis le 01-06-2026** (jour même du ship v0.7.0). Aucun correctif de sécurité ne sera backporté en v0.6.x. Les utilisateurs sur v0.6.x doivent `pipx upgrade bodyguard-of-bits` vers v0.7.x pour recevoir les patchs sécurité. La release v0.7.0 est rétro-compatible avec l'API publique v0.6.x via les re-exports `__init__.py` + le flag `--json-v1` pour les consumers JSON legacy — l'upgrade est transparent pour la majorité des utilisateurs.
+**v0.7.x est en fin de vie depuis le 05-06-2026** (jour du ship v0.8.1 où la déclaration EOL est formalisée, miroir du pattern qui avait retiré v0.6.x en v0.7.2). Aucun correctif de sécurité ne sera backporté en v0.7.x. Les utilisateurs sur v0.7.x doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les patchs sécurité. La ligne v0.8.x est largement rétro-compatible avec v0.7.x via les re-exports `__init__.py` + le flag `--json-v1` pour les consumers JSON legacy, mais **un BREAKING comportemental** atterrit en v0.8.1 : le profil d'audit `workstation` n'est plus un alias silencieux de `desktop` — c'est un profil first-class business-tier qui conserve `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` à WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file_integrity / log_rotation / secure_boot que `desktop`. Les utilisateurs de `bob -p workstation` qui veulent la sémantique pre-v0.8.1 peuvent copier `bob/data/profiles/desktop.conf` vers `~/.config/bob/profiles/workstation.conf`.
+
+**v0.6.x est en fin de vie depuis le 01-06-2026** (jour même du ship v0.7.0). Aucun correctif de sécurité ne sera backporté en v0.6.x. Les utilisateurs sur v0.6.x doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les patchs sécurité. La chaîne d'upgrade v0.7.x → v0.8.x est rétro-compatible avec l'API publique v0.6.x via les re-exports `__init__.py` + le flag `--json-v1` pour les consumers JSON legacy.
 
 v0.5.x a été déclarée EOL le jour même où v0.6.0 a été shippée (25-05-2026). La release v0.6.0 est rétro-compatible avec l'intégralité de l'API publique v0.5.x via les re-exports `__init__.py` — l'upgrade est un `pipx upgrade bodyguard-of-bits` sans changement de code requis côté utilisateur.
 

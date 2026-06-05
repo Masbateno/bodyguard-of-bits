@@ -9,20 +9,36 @@ are not backported.
 
 | Version   | Supported          |
 |-----------|--------------------|
-| 0.7.x     | ✅ current          |
+| 0.8.x     | ✅ current          |
+| 0.7.x     | ❌ end of life      |
 | 0.6.x     | ❌ end of life      |
 | 0.5.x     | ❌ end of life      |
 | 0.4.x     | ❌ end of life      |
 | < 0.4.0   | ❌ end of life      |
 
-Patches release as `0.7.x+1`. A breaking change bumps the minor (`0.8.0`).
+Patches release as `0.8.x+1`. A breaking change bumps the minor (`0.9.0`).
+
+**v0.7.x is end-of-life as of 2026-06-05** (the day v0.8.1 ships and the EOL is
+formally declared, mirroring the pattern that retired v0.6.x in v0.7.2). No
+security fixes will be backported to v0.7.x. Users on v0.7.x must
+`pipx upgrade bodyguard-of-bits` to v0.8.x to receive security patches. The
+v0.8.x line is largely backwards-compatible with v0.7.x via `__init__.py`
+re-exports + the `--json-v1` flag for legacy JSON consumers, but **one
+behavioural BREAKING change** lands in v0.8.1: the `workstation` audit profile
+is no longer a silent alias for `desktop` — it's a first-class business-tier
+profile that keeps `backup.no_backup` / `auditd.*` /
+`mac_policy.apparmor_no_enforce` at WARN while relaxing the same SSH / clamav /
+rootkit / file_integrity / log_rotation / secure_boot ergonomics as `desktop`.
+Users on `bob -p workstation` who want the pre-v0.8.1 semantics can drop a copy
+of `bob/data/profiles/desktop.conf` at
+`~/.config/bob/profiles/workstation.conf`.
 
 **v0.6.x is end-of-life as of 2026-06-01** (same day v0.7.0 shipped). No
 security fixes will be backported to v0.6.x. Users on v0.6.x must
-`pipx upgrade bodyguard-of-bits` to v0.7.x to receive security patches.
-The v0.7.0 release is backwards-compatible with the v0.6.x public API
-via `__init__.py` re-exports + the `--json-v1` flag for legacy JSON
-consumers — upgrading is transparent for the vast majority of users.
+`pipx upgrade bodyguard-of-bits` to v0.8.x to receive security patches.
+The v0.7.x → v0.8.x upgrade chain is backwards-compatible with the v0.6.x
+public API via `__init__.py` re-exports + the `--json-v1` flag for legacy
+JSON consumers.
 
 v0.5.x was declared EOL on the same day v0.6.0 shipped (2026-05-25). The
 v0.6.0 release is backwards-compatible with the full v0.5.x public API via

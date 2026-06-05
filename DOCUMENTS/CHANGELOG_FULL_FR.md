@@ -162,6 +162,8 @@ Shifts comportementaux user-facing :
 - **Profile typos** émettent `logger.warning`
 - **`--show-ignored`** correctement documenté
 
+**v0.7.x est désormais en fin de vie depuis le 05-06-2026** — déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md), miroir du pattern qui a retiré v0.6.x en v0.7.2. Aucun correctif de sécurité ne sera backporté en v0.7.x ; les utilisateurs doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour les patchs sécurité. La ligne v0.8.x est largement rétro-compatible avec v0.7.x via les re-exports `__init__.py` + `--json-v1` pour les consumers JSON legacy, sauf pour le shift BREAKING workstation décrit ci-dessus (copier `desktop.conf` vers `~/.config/bob/profiles/workstation.conf` pour restaurer la sémantique v0.7.x sur ce profil).
+
 v0.6.x reste EOL (déclaré en v0.7.2).
 
 ---
