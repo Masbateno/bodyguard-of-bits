@@ -128,6 +128,14 @@ class AuditConfig:
     webhook_format: str = "auto"
     """--webhook-format=FMT: payload format — 'auto' (default), 'generic', or 'slack'."""
 
+    test_webhook: bool = False
+    """v0.8.2: --test-webhook — POST a minimal smoke payload to the configured
+    webhook URL and exit. Validates the URL + scheme + reachability + receiver
+    HTTP status without running a full audit. Honours the same scheme rules as
+    a real audit POST (https-only by default; opt out via
+    ``BOB_WEBHOOK_ALLOW_INSECURE=1``). Useful for verifying a fresh
+    ``bob --webhook=URL`` setup before scheduling it via cron."""
+
     target: int = 0
     """--target=N: score target (1–10); shown in summary with gap or success indicator."""
 
@@ -407,6 +415,10 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
 
         elif arg.startswith("--webhook-format="):
             config.webhook_format = arg.split("=", 1)[1].strip()
+
+        # v0.8.2: --test-webhook smoke command
+        elif arg == "--test-webhook":
+            config.test_webhook = True
 
         elif arg.startswith("--target="):
             value = arg.split("=", 1)[1].strip()
@@ -707,6 +719,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     section("INTEGRATIONS — external reporting")
     opt("-w, --webhook=URL",     "POST audit result as JSON to URL after audit")
     opt("    --webhook-format=F","Webhook format: auto (default), generic, or slack")
+    opt("    --test-webhook",    "POST a minimal smoke payload to the configured webhook and exit (no audit)")
 
     section("CONFIGURATION — language and settings")
     opt("    --lang=CODE",       "Set interface language: en, fr (default: detected from $LANG, fallback en)")

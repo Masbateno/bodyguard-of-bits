@@ -64,21 +64,11 @@ def require_root() -> None:
         raise PermissionError("This script must be run as root: sudo bob")
 
 
-def _t_or_hardcoded(key: str, fallback: str) -> str:
-    """T60 (v0.8.1): translate *key* if i18n was already initialised, else
-    return *fallback*. Used by the entry-point paths that may fire BEFORE
-    or AFTER ``i18n.init`` (parse_args error path, ``main()`` catch-all).
-
-    Wires the ``cli.error.*`` locale entries that exist since T10 v0.8.1
-    but couldn't be plugged in directly because the catch-all is reached
-    via two routes: one where i18n is fully wired (any post-init exception)
-    and one where it isn't (parse_args before init, or i18n.init failed).
-    The hardcoded English string is the same as the EN fallback so users
-    on a partial-init path see consistent wording.
-    """
-    if i18n._initialized:
-        return i18n.t(key)
-    return fallback
+# v0.8.2: helper hoisted to ``bob/_i18n_safe.py`` so other entry points
+# (planned ``--test-webhook``, future stand-alone CLI paths) can share
+# the same gating logic without importing __main__. Local alias kept so
+# call sites read naturally + don't need to be retouched.
+from bob._i18n_safe import t_or_hardcoded as _t_or_hardcoded
 
 
 def _run(argv=None) -> int:
@@ -124,26 +114,42 @@ def _run(argv=None) -> int:
 
     if config.list_checks:
         # I-3 (v0.7.4): --check=list now honours --lang for i18n.
+        # v0.8.2: each section now displays a 1-line description sourced
+        # from the ``sections.descriptions.<name>`` locale namespace.
+        # Pre-v0.8.2 ``--check=list`` dumped raw section names with no
+        # context, leaving new users guessing what ``hardening`` vs
+        # ``kernel_hardening`` actually audit. The descriptions are short
+        # (< 80 chars) so the 2-column layout still fits standard 80-col
+        # terminals.
         i18n.init(lang=config.lang)
         from bob.runner import _ALWAYS_ON_SECTIONS as _AO_SECTIONS
         sections = sorted(_ALL_SECTIONS)
-        col = max(len(s) for s in sections) + 2
-        cols = max(1, 76 // col)
+        name_col = max(len(s) for s in sections) + 2
         print(i18n.t("cli.list.header", count=len(sections)) + "\n")
-        for i, name in enumerate(sections):
-            end = "\n" if (i + 1) % cols == 0 or i == len(sections) - 1 else ""
-            print(f"  {name:<{col}}", end=end)
+        for name in sections:
+            desc = i18n.t(f"sections.descriptions.{name}")
+            # Fallback when no description is wired (renders as the bare
+            # key in brackets). Skip rendering the description rather than
+            # show the raw ``[sections.descriptions.X]`` placeholder.
+            if desc.startswith("[") and desc.endswith("]"):
+                print(f"  {name}")
+            else:
+                print(f"  {name:<{name_col}}— {desc}")
         print()
         print(i18n.t("cli.list.prefix_matching"))
         # M-1 (v0.7.0 Phase 2.1): list the always-on sections that --check
         # accepts as input (since M-7 in v0.7.0) so the help text matches
         # the validator's accepted vocabulary.
         always_on = sorted(_AO_SECTIONS)
+        ao_col = max(len(s) for s in always_on) + 2 if always_on else 0
         print()
         print(i18n.t("cli.list.always_on_header", count=len(always_on)))
-        for i, name in enumerate(always_on):
-            end = "\n" if (i + 1) % cols == 0 or i == len(always_on) - 1 else ""
-            print(f"  {name:<{col}}", end=end)
+        for name in always_on:
+            desc = i18n.t(f"sections.descriptions.{name}")
+            if desc.startswith("[") and desc.endswith("]"):
+                print(f"  {name}")
+            else:
+                print(f"  {name:<{ao_col}}— {desc}")
         print()
         print(i18n.t("cli.list.usage_header"))
         print(i18n.t("cli.list.usage_check"))
@@ -196,6 +202,40 @@ def _run(argv=None) -> int:
         else:
             print("ℹ  " + i18n.t("cli.ignore.not_present", requested=config.unignore_key))
         return EXIT_OK
+
+    # v0.8.2 — --test-webhook smoke command
+    if config.test_webhook:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        t = i18n.t
+        # Resolve URL: --webhook=URL takes precedence; otherwise use the saved
+        # user config (same precedence as the real audit-time webhook path).
+        from bob.config import UserConfig
+        user_config = UserConfig.load()
+        _url = config.webhook_url or user_config.get_webhook_url()
+        if not _url:
+            print(
+                "✖ " + i18n.t("cli.test_webhook.no_url"),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        _fmt = config.webhook_format if config.webhook_format != "auto" \
+            else user_config.get_webhook_format()
+        try:
+            from bob.webhook import redact_url_credentials, test_webhook
+            _safe = redact_url_credentials(_url)
+            print("ℹ  " + i18n.t("cli.test_webhook.posting", url=_safe))
+            _status = test_webhook(_url, fmt=_fmt, t=t)
+            print("✔ " + i18n.t("cli.test_webhook.success", url=_safe, status=_status))
+            return EXIT_OK
+        except Exception as _exc:  # noqa: BLE001
+            # The WebhookError message is already locale-formatted via the
+            # threaded ``t``; we just need a translated prefix.
+            print(
+                f"✖ {i18n.t('cli.test_webhook.failed')}: {_exc}",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
 
     if config.install_completion:
         if os.geteuid() != 0:

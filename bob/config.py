@@ -49,6 +49,11 @@ _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 # ``t`` parameter; when absent, ``_fallback_t`` substitutes the English
 # strings below. Production caller (bob/__main__.py) passes the audit's
 # bound ``t`` so the error messages match the operator's locale.
+# v0.8.2: hand-rolled ``_fallback_t`` consolidated to
+# ``bob._i18n_safe.make_fallback_t`` (single source of truth across the 4
+# modules that grew this pattern — config/webhook/markdown_output/html_output).
+from bob._i18n_safe import make_fallback_t
+
 _FALLBACK_LABELS = {
     "config.error.invalid_email":           "Invalid email address: {email}",
     "config.error.invalid_config_key":      "Invalid config key: {config_key}",
@@ -56,14 +61,7 @@ _FALLBACK_LABELS = {
     "config.error.invalid_webhook_format":  "Webhook format must be 'auto', 'generic', or 'slack': {fmt}",
 }
 
-
-def _fallback_t(key: str, **kwargs) -> str:
-    """English fallback when no ``t`` callable is wired."""
-    template = _FALLBACK_LABELS.get(key, key)
-    try:
-        return template.format(**kwargs)
-    except (KeyError, IndexError):
-        return template
+_fallback_t = make_fallback_t(_FALLBACK_LABELS)
 
 # ---------------------------------------------------------------------------
 # Email store

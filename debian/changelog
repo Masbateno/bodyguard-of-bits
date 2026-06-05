@@ -1,3 +1,49 @@
+bodyguard-of-bits (0.8.2-1) UNRELEASED; urgency=low
+
+  * Conservative-bundle patch — 6 user-facing + DX items, no BREAKING.
+  * Bash completion v0.8.2: sync _SECTIONS + _EXPLAIN_KEYS lists with
+    runtime, add --unignore=KEY / --ignore=KEY / --explain KEY value
+    completions, add --json-v1 / --test-webhook to long_opts, retire
+    the stale workstation alias comment. Plus 21 sync-guard +
+    functional tests in tests/test_v082_bash_completion.py.
+  * i18n consolidation: new bob/_i18n_safe.py module exposes
+    make_fallback_t(labels) factory + t_or_hardcoded(key, fallback)
+    helper. Replaces 4 hand-rolled _fallback_t bodies + 1
+    _t_or_hardcoded across config/webhook/markdown_output/html_output/
+    __main__ — single source of truth, consistent format-or-keep-
+    template-on-error semantics across all 5 modules. Pre-v0.8.2 the
+    bodies had drifted (markdown skipped format, html conditioned on
+    kw, config/webhook always formatted).
+  * --test-webhook smoke command: POST a minimal tagged payload to the
+    configured webhook URL and exit. Reuses every URL-validation guard
+    from send_webhook (scheme + plain-http + BOB_WEBHOOK_ALLOW_INSECURE
+    escape hatch). Lets operators verify a fresh `bob --webhook=URL`
+    setup without running a full ~30s audit. 4 new locale keys EN+FR
+    under cli.test_webhook.*.
+  * --check=list with section descriptions: each of the 44 sections
+    (34 filterable + 10 always-on) gets a 1-line technical description
+    sourced from sections.descriptions.<name>. EN + FR added for all
+    44. Fallback to bare name when no description exists for forward-
+    compat.
+  * D-3 EXPLAIN_KEY_ALIASES deprecation warning: hitting a legacy
+    alias key in normalize_key() emits a one-shot logger.warning
+    pointing at the canonical name + v0.9.0 retrait timeline. The
+    warning is logger-only (no stdout) so machine-readable JSON / CSV
+    outputs aren't polluted. Operators see it in --detailed .log
+    reports + journald when run via cron.
+  * Locale linter: new scripts/lint_locales.py catches the drift
+    classes audit passes 7+8 surfaced — strict EN/FR key parity,
+    placeholder-set parity, trailing-whitespace contract for the
+    cli.error.*_prefix keys (I-2 pass 7 contract), empty/long value
+    sanity. Dev tool only, not shipped at runtime.
+  * Plus: t() trailing-whitespace contract test pin extended,
+    sections.descriptions namespace pinned for completeness, 25 new
+    dedicated tests in tests/test_v082_items.py.
+  * Tests: 6198 → 6244 (+46 net). 0 regression. v0.6.x and v0.7.x
+    remain EOL. Upgrade: `pipx upgrade bodyguard-of-bits`.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 06 Jun 2026 13:00:00 +0200
+
 bodyguard-of-bits (0.8.1-1) UNRELEASED; urgency=medium
 
   * Minor maintenance + deep-hardening audit cycle. Closes 26 gap tiers

@@ -6,6 +6,184 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.8.2] — 2026-06-06
+
+**Conservative-bundle patch — 6 user-facing + DX items, no BREAKING.**
+
+Cleans up DX debt from the v0.7.x / v0.8.0-v0.8.1 i18n + bash-completion + helper-text migrations. Closes the ``--test-webhook`` UX gap (the v0.7.0 webhook story shipped without a standalone smoke command). Sets up the v0.9.0 architectural cleanup (D-1 / D-2 / D-4 + ``BOB_SANDBOX_LEGACY`` retrait + parallel check execution + ``--diff <baseline.json>``) via the D-3 deprecation warning + the locale linter that catches the drift classes audit passes 7 + 8 surfaced.
+
+6198 → **6244 tests** (+46 net). 0 regression.
+
+### Bash completion v0.8.2
+
+[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — three improvements + a sync guard.
+
+- **Sync ``_SECTIONS`` + ``_EXPLAIN_KEYS`` with runtime**. The hand-curated section list was already in sync at ship time; the explain-keys list (168 entries) was inserted fresh from ``bob.explain.EXPLAIN_KEYS`` via the regenerate scaffold so subsequent drift surfaces in CI.
+- **``--unignore=KEY`` / ``--ignore=KEY`` / ``--explain KEY`` value completions**. v0.8.1 T57 added ``--unignore`` but didn't extend the completion script. v0.8.2 adds dedicated handlers for both the space and ``=`` forms, sourced from the canonical 168-key EXPLAIN_KEYS catalogue.
+- **``--json-v1`` + ``--test-webhook`` in ``long_opts``**. The first was a v0.7.0 Phase 2 ship; the second is new this cycle.
+- **Stale ``workstation`` alias comment retired**. Pre-v0.8.2 the ``--profile`` completion comment claimed *"workstation is a backward-compat alias loading desktop"*; the v0.8.1 retrait made that a lie. Now reads *"workstation is now a FIRST-CLASS profile distinct from desktop"*.
+
+[tests/test_v082_bash_completion.py](../tests/test_v082_bash_completion.py) ships 21 tests across 6 classes:
+
+- **Sync guards** — ``_SECTIONS`` matches ``bob.runner._ALL_SECTIONS`` exactly (set equality), ``_EXPLAIN_KEYS`` matches ``bob.explain.EXPLAIN_KEYS`` exactly. A new check section that ships without updating the completion script fails CI.
+- **Long-opt presence** — parametrized over ``--unignore=``, ``--json-v1``, ``--check=``, ``--skip=``, ``--ignore=``, ``--profile=``, ``--explain``, ``--breakdown`` — pin each is reachable via TAB on the option-name path.
+- **Functional bash invocation** — sources the script in a sub-bash, calls ``_bob`` with ``(cur, prev)`` matching the bash-completion dispatcher convention, asserts COMPREPLY contains expected candidates. Exercises ``--check=`` → sections, ``--check=ssh`` → ``ssh`` only, ``--check=`` short form (``--c`` → ``--check=``), ``--unignore`` → EXPLAIN_KEYS, ``--unignore=ssh`` → ssh.* keys, ``--ignore`` + ``--ignore=audit`` → auditd.* keys, ``--explain`` + ``--explain=firewall`` → firewall.* keys, ``--profile`` + short ``-p`` → 4 profile names.
+
+### i18n consolidation — bob/_i18n_safe.py
+
+Pre-v0.8.2, four modules each defined their own ``_fallback_t``:
+
+| Module                  | Behaviour                                          |
+| ----------------------- | -------------------------------------------------- |
+| ``config.py``           | Always tries ``.format(**kwargs)``, returns template on error |
+| ``webhook.py``          | Same as config.py                                  |
+| ``markdown_output.py``  | **Skips ``.format()`` entirely**                   |
+| ``html_output.py``      | **Format only if** ``kw`` is non-empty             |
+
+Same intent (fall back to English when no operator-bound translator is wired) — three subtly different implementations. The drift had grown over T10 v0.8.1 (config/webhook), T11 v0.8.1 (CSV/JSON parity reused html_output's pattern), and the v0.7.2 M-4 i18n extraction (markdown_output/html_output) without anyone reconciling the three bodies.
+
+[bob/_i18n_safe.py](../bob/_i18n_safe.py) — new module — exposes a single factory:
+
+```python
+from bob._i18n_safe import make_fallback_t
+_fallback_t = make_fallback_t(_FALLBACK_LABELS)
+```
+
+The factory body always tries ``.format(**kwargs)`` + returns the raw template on ``KeyError`` / ``IndexError``. Templates without ``{}`` placeholders pass through unchanged (so markdown_output's static labels behave byte-identical) and templates with placeholders interpolate (so webhook's ``{url}`` family interpolate as before).
+
+Plus ``t_or_hardcoded(key, fallback)`` hoisted out of ``__main__.py`` (T60 v0.8.1 introduced it as a local def) — gates ``i18n.t`` on the private ``_initialized`` flag, returns *fallback* when i18n hasn't loaded yet (parse_args error path, very-early crash in main() catch-all). Hoisted so future entry points (``--test-webhook``, planned standalone ``--unignore`` runner) can reuse without importing ``__main__``.
+
+Tests in [tests/test_v082_items.py::TestI18nSafe*](../tests/test_v082_items.py) pin every contract: known key → template, unknown key → key itself, kwargs interpolation, missing placeholder → raw template (defensive), static template + kwargs → unchanged. Plus cross-module ``TestI18nConsolidationModulesUseFactory`` asserts the 5 migrated modules actually import + call the factory (regression guard against a future revert).
+
+### --test-webhook smoke command
+
+[bob/webhook.py::test_webhook](../bob/webhook.py) — new public function. POSTs a minimal payload with ``test=true`` + ``tag="bob_smoke_test"`` fields (generic) or a Slack-formatted attachment (slack). Reuses every URL-validation guard from ``send_webhook``:
+
+- scheme must be ``http://`` or ``https://`` (case-insensitive since v0.7.3 I-5)
+- plain ``http://`` rejected unless ``BOB_WEBHOOK_ALLOW_INSECURE=1`` is set
+- ``WebhookError`` redaction via ``redact_url_credentials`` (T74 v0.8.1)
+- HTTP timeout = same ``_TIMEOUT_SECONDS = 10`` as ``send_webhook``
+
+Wired into the CLI at [bob/__main__.py:190-220](../bob/__main__.py#L190). The ``--test-webhook`` flag bypasses ``require_root()`` because the smoke is a network probe + JSON serialisation, no system inspection — no audit, no sudo. URL resolution mirrors the audit-time path:
+
+1. ``--webhook=URL`` from current invocation, else
+2. ``UserConfig.get_webhook_url()`` from ``~/.config/bob/config.conf``
+
+If neither is set the command exits non-zero with a translated "set one with ``bob --webhook=URL`` first" hint (4 new locale keys EN+FR under ``cli.test_webhook.*``).
+
+Result on success: ``✔ Webhook smoke test succeeded: <redacted-url> returned HTTP <status>``. Result on failure: ``✖ Webhook smoke test failed: <translated WebhookError>``. The translated error is plumbed through the same ``t=`` parameter ``send_webhook`` uses so FR users get FR error messages out of the box.
+
+Tests in [tests/test_v082_items.py::TestTestWebhookCli + TestTestWebhookSmokeFunction](../tests/test_v082_items.py) cover CLI parsing, default-False, invalid-scheme rejection, and payload-tag pin (asserts ``tag=bob_smoke_test`` survives the urllib send via a monkeypatched ``urlopen``).
+
+Pre-v0.8.2 the only way to validate a fresh ``bob --webhook=URL`` setup was to run a full audit (~30 s + needs sudo). The DX gap was particularly painful when configuring webhooks via cron — operators couldn't test their cron-side URL without waiting for the next scheduled audit + reading the .log report to confirm the POST landed.
+
+### --check=list with section descriptions
+
+[bob/__main__.py:115-152](../bob/__main__.py#L115) — the ``--check=list`` rendering loop now resolves a description per section via ``i18n.t(f"sections.descriptions.{name}")``. Missing description → fall back to the bare section name (forward-compat for a section added without locale wiring).
+
+44 descriptions ship in [bob/locales/en.json](../bob/locales/en.json) + [bob/locales/fr.json](../bob/locales/fr.json) under the new ``sections.descriptions.*`` namespace. One line per section, ≤ 80 chars typical, covers:
+
+- **34 filterable sections** (auditd, auth_log, backup, clamav, cron_audit, …, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts)
+- **10 always-on sections** (ddns, docker, firewall, firewall_stack, network_context, ports_analysis, rules, services, ufw_logging, virtualization)
+
+Tests in [tests/test_v082_items.py::TestCheckListDescriptionsCoverage](../tests/test_v082_items.py) pin two invariants:
+
+- Every section in ``_ALL_SECTIONS ∪ _ALWAYS_ON_SECTIONS`` has a description in both EN and FR — a new check that ships without locale wiring fails CI.
+- No orphan ``sections.descriptions.*`` entries for unknown sections — a section that gets renamed or dropped surfaces the stale locale entry.
+
+Pre-v0.8.2 ``bob --check=list`` dumped raw section names with no context:
+
+```
+ssh
+ssl_certs
+suid_audit
+systemd_timers
+```
+
+Post-v0.8.2:
+
+```
+ssh               — SSH hardening — sshd_config, host keys, ~/.ssh, authorized_keys
+ssl_certs         — TLS/SSL certificate expiry — Let's Encrypt, nginx, apache, postfix
+suid_audit        — SUID/SGID binaries — unexpected entries vs whitelist
+systemd_timers    — Systemd timers — risky patterns + permissions
+```
+
+Significantly better onboarding for ``--check=`` / ``--skip=`` flag users.
+
+### D-3 deprecation warning on EXPLAIN_KEY_ALIASES
+
+[bob/explain.py:368-432](../bob/explain.py#L368) — ``normalize_key()`` now emits a one-shot ``logger.warning`` when it resolves an alias.
+
+The warning carries the alias name, the canonical name, and the v0.9.0 retrait timeline:
+
+```
+DEPRECATION: explain key 'services_state.service_inactive' is a legacy alias for
+'services_state.enabled_inactive' — the alias is scheduled for retrait in v0.9.0.
+Migrate scripts, saved profiles, and ignore.yml entries to the canonical name.
+```
+
+Emitted via ``logger.warning`` (the Python ``logging`` module) so it surfaces in:
+
+- ``--detailed`` ``.log`` reports (via the BOB log handler)
+- journald when scheduled via cron (root-owned process inherits the journald sink)
+- Operator-visible streams without polluting machine-readable JSON / CSV / Markdown outputs
+
+A per-process ``_WARNED_ALIASES`` set ensures each alias warns at most once per process. A ``--watch`` mode session that resolves the same alias every iteration sees one warning, not 10/min. Tests pin the one-shot contract.
+
+This is the **bridge** to the v0.9.0 alias retrait that ``project_v08x_deferred.md`` (memory) describes — pre-v0.8.2 the alias was silent, so we had no signal to know how many users still relied on the legacy name. v0.8.2 starts the deprecation clock; v0.9.0 will retire the entry per the contract in ``SECURITY.md``.
+
+### Locale linter
+
+[scripts/lint_locales.py](../scripts/lint_locales.py) — dev tool, not shipped at runtime (``scripts/`` isn't in the wheel manifest). Catches the drift classes audit passes 7 + 8 surfaced — but as a fast standalone script you can run locally + in pre-commit:
+
+```
+$ python3 scripts/lint_locales.py
+✔ locale lint clean: 1941 EN keys × 1941 FR keys, 0 parity drift,
+  0 placeholder drift, 0 trailing-space violation, 0 length anomaly
+```
+
+Four lint classes:
+
+- **Strict EN/FR key parity** — every leaf key in en.json appears in fr.json and vice-versa. The existing T38 audit-pass check is duplicated here so contributors don't have to wait for ``pytest`` to surface drift.
+- **Placeholder set parity** — every ``{name}`` placeholder in an EN value matches the same set in the FR value. Protects ``str.format(**kwargs)`` from runtime ``KeyError`` (FR has a placeholder EN doesn't supply) and from silently dropping a contextual variable (EN has one, FR doesn't).
+- **Trailing whitespace contract** for the ``cli.error.*_prefix`` keys (I-2 pass 7 invariant). Promoted from runtime test guard to standalone tool so contributors editing the locale file see the violation immediately.
+- **Length sanity** — empty values + values > 1500 chars are flagged. Catches genuine copy-paste mistakes (entire README, accidentally pasted document) without false-positiving on the long ``explain.*.{why,how}`` paragraphs that are intentionally verbose technical descriptions.
+
+[tests/test_v082_items.py::TestLocaleLinterSmoke](../tests/test_v082_items.py) shells out to the script so a drift fails CI even when contributors skip the lint step. ``LANG=C`` enforced via the existing ``_force_posix_locale_for_tests`` autouse fixture.
+
+### v0.9.0 deferred items
+
+For semver-honest tracking — the following stay open for v0.9.0:
+
+- **D-1 / D-2 / D-4** from ``project_v08x_deferred`` — sections renumber + ``_ALL_SECTIONS`` / ``_ALWAYS_ON_SECTIONS`` fusion + granular sub-checks (the alias retrait + the section-naming uniformisation are BREAKING because they affect ``bob --check=ssh,firewall`` script syntax).
+- **``BOB_SANDBOX_LEGACY=1`` trap door retrait** — BREAKING for any user who set the env var; deferred to bundle with the other architectural cleanups.
+- **Parallel check execution** — ``concurrent.futures.ThreadPoolExecutor`` over the I/O-bound sections; touches threading invariants + error handling, deserves its own scoped beta.
+- **``--diff <baseline.json>``** — cross-machine baseline diff, additive feature, deferred to bundle with the renamed-key migration support from D-4.
+- **Tutorial / getting-started guide** — ``DOCUMENTS/TUTORIAL.md`` — substantive doc work, deferred to bundle with the v0.9.0 README refresh.
+
+### Numbers
+
+- **6244 tests** (6198 → 6244, +46 net). 0 regression.
+- 46 dedicated v0.8.2 tests across 2 files: ``test_v082_bash_completion.py`` (21) + ``test_v082_items.py`` (25).
+- 88 new locale entries (44 sections × 2 languages) + 8 ``cli.test_webhook.*`` keys.
+- 1941 EN + 1941 FR locale keys total, 0 drift.
+
+### Upgrade
+
+``pipx upgrade bodyguard-of-bits``.
+
+User-facing wins:
+
+- ``bob --check=list`` is now self-documenting (44 section descriptions).
+- ``bob --test-webhook`` works (smoke without full audit).
+- Bash completion of ``--unignore`` + ``--ignore`` + ``--explain`` keys suggests canonical EXPLAIN_KEYS entries (was generic / missing).
+- ``EXPLAIN_KEY_ALIASES`` use surfaces a deprecation warning in the log stream pointing at the v0.9.0 retrait timeline.
+
+**v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1). **v0.6.x remains EOL** (declared in v0.7.2).
+
+---
+
 ## [v0.8.1] — 2026-06-05
 
 **Minor maintenance + deep-hardening audit cycle.**

@@ -86,13 +86,15 @@ _FALLBACK_LABELS = {
 }
 
 
-def _fallback_t(key: str, **_kw) -> str:
-    """Default ``t`` function used when the caller doesn't pass one.
-
-    Returns the English fallback string for *key* if known, otherwise the
-    key itself so a missing localisation is immediately visible to the
-    developer (rather than silently producing empty output)."""
-    return _FALLBACK_LABELS.get(key, key)
+# v0.8.2: hand-rolled ``_fallback_t`` consolidated to the shared
+# ``bob._i18n_safe.make_fallback_t`` factory. Pre-v0.8.2 this module's
+# fallback skipped ``.format()`` entirely (all labels in
+# ``_FALLBACK_LABELS`` are static strings without ``{}``, so format
+# no-ops). Shared factory always tries format — byte-identical for the
+# current label set, defensive against any future label that introduces
+# a placeholder.
+from bob._i18n_safe import make_fallback_t
+_fallback_t = make_fallback_t(_FALLBACK_LABELS)
 
 
 def _md_escape(text: str) -> str:

@@ -78,18 +78,16 @@ _FALLBACK_LABELS = {
 }
 
 
-def _fallback_t(key: str, **kw) -> str:
-    """Default ``t`` function used when no caller-supplied translator is
-    available. Returns the English fallback or the key itself if missing
-    so a typo is immediately visible. Supports ``{count}``-style format
-    placeholders."""
-    val = _FALLBACK_LABELS.get(key, key)
-    if kw:
-        try:
-            return val.format(**kw)
-        except (KeyError, IndexError, ValueError):
-            return val
-    return val
+# v0.8.2: hand-rolled ``_fallback_t`` consolidated to the shared
+# ``bob._i18n_safe.make_fallback_t`` factory. Pre-v0.8.2 this module
+# gated ``.format()`` on ``if kw`` presence + caught ``ValueError`` on
+# top of the standard KeyError/IndexError. Shared factory always tries
+# format and catches the standard two — ValueError on bad ``{}`` syntax
+# is now propagated, which is arguably the right behaviour (corrupt
+# fallback strings should surface, not silently swallow). Existing
+# labels in ``_FALLBACK_LABELS`` above don't trigger ValueError.
+from bob._i18n_safe import make_fallback_t
+_fallback_t = make_fallback_t(_FALLBACK_LABELS)
 
 
 def _score_color(score: int) -> str:

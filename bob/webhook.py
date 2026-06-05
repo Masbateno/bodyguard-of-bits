@@ -119,18 +119,11 @@ _FALLBACK_LABELS = {
 }
 
 
-def _fallback_t(key: str, **kwargs) -> str:
-    """English fallback when no ``t`` callable is wired.
-
-    Returns the English template for *key* with ``str.format(**kwargs)``
-    applied. Unknown keys return the key itself so a missing localisation
-    is immediately visible to the developer.
-    """
-    template = _FALLBACK_LABELS.get(key, key)
-    try:
-        return template.format(**kwargs)
-    except (KeyError, IndexError):
-        return template
+# v0.8.2: hand-rolled ``_fallback_t`` body replaced by the shared factory
+# in ``bob._i18n_safe``. Behaviour preserved verbatim — same format-or-
+# return-template-on-error semantics, same kwarg contract.
+from bob._i18n_safe import make_fallback_t
+_fallback_t = make_fallback_t(_FALLBACK_LABELS)
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +327,97 @@ def send_webhook(
         method="POST",
     )
 
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status: int = resp.status
+    except urllib.error.HTTPError as exc:
+        raise WebhookError(t("webhook.error.http_status", code=exc.code, reason=exc.reason)) from exc
+    except urllib.error.URLError as exc:
+        raise WebhookError(t("webhook.error.connection_failed", reason=exc.reason)) from exc
+    except OSError as exc:
+        raise WebhookError(t("webhook.error.request_error", exc=exc)) from exc
+
+    if not (200 <= status < 300):
+        raise WebhookError(t("webhook.error.non_2xx_status", status=status))
+
+    return status
+
+
+def test_webhook(url: str, fmt: str = "auto", timeout: int = _TIMEOUT_SECONDS,
+                 t=None) -> int:
+    """v0.8.2 — POST a minimal smoke payload to *url* and return the HTTP status.
+
+    Reuses every URL-validation guard from :func:`send_webhook` (scheme + the
+    plain-http guard + ``BOB_WEBHOOK_ALLOW_INSECURE`` escape hatch) and goes
+    through the same urllib request path, so a passing smoke test proves the
+    real audit-time POST will reach the receiver. The payload is deliberately
+    tiny + clearly tagged as a smoke message so receivers can filter or
+    suppress it.
+
+    Used by ``bob --test-webhook`` to validate a fresh webhook configuration
+    without running a full audit (which is ~30s + needs sudo).
+
+    Args:
+        url:     Destination webhook URL.
+        fmt:     Payload format hint (mirrors ``send_webhook(fmt=)``).
+        timeout: HTTP request timeout in seconds.
+        t:       Optional translation function.
+
+    Returns:
+        HTTP status code returned by the server (200..299 on success).
+
+    Raises:
+        WebhookError: same conditions as :func:`send_webhook` (scheme invalid,
+                      plain http without escape hatch, connection failure,
+                      non-2xx response).
+    """
+    if t is None:
+        t = _fallback_t
+    url_lower = url.lower()
+    _safe_url = repr(redact_url_credentials(url))
+    if not url_lower.startswith(("http://", "https://")):
+        raise WebhookError(t("webhook.error.scheme_invalid", url=_safe_url))
+    if url_lower.startswith("http://") and os.environ.get("BOB_WEBHOOK_ALLOW_INSECURE") != "1":
+        raise WebhookError(t("webhook.error.plain_http_insecure", url=_safe_url))
+
+    # Minimal payload. Generic and Slack receivers handle a plain ``text`` /
+    # message dict well; the explicit ``test`` flag + ``bob_smoke_test`` tag
+    # lets receivers filter or dashboard them separately from real audit
+    # POSTs.
+    effective_fmt = detect_format(url, fmt)
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if effective_fmt == "slack":
+        payload = {
+            "text": (
+                f":wave: BOB webhook smoke test — "
+                f"if you see this, the URL is reachable and the receiver "
+                f"accepts POSTs."
+            ),
+            "attachments": [{
+                "color":  _SLACK_COLOR_OK,
+                "fields": [
+                    {"title": "Tag",       "value": "bob_smoke_test",  "short": True},
+                    {"title": "Timestamp", "value": timestamp,         "short": True},
+                ],
+            }],
+        }
+    else:
+        payload = {
+            "test":      True,
+            "tag":       "bob_smoke_test",
+            "timestamp": timestamp,
+            "message":   (
+                "BOB webhook smoke test — if you see this, the URL is "
+                "reachable and the receiver accepts POSTs."
+            ),
+        }
+
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req  = urllib.request.Request(
+        url, data=data,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             status: int = resp.status

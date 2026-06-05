@@ -36,10 +36,13 @@ match findings via `key`, locale-independent, across versions.
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
 
 from bob.cis_refs import get_cis_ref
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Available explain keys — organised by group
@@ -375,6 +378,14 @@ def normalize_key(key: str) -> str:
       2. Resolve via ``EXPLAIN_KEY_ALIASES`` if the result is a legacy name
          (e.g. an alias added when a key was renamed).
 
+    D-3 (v0.8.2): when an alias is hit, emit a one-time DEPRECATION warning
+    pointing at the canonical name + the planned v0.9.0 retrait timeline so
+    operators have explicit signal to migrate scripts / saved profiles /
+    ignore.yml entries before the retrait lands. The warning is logger-only
+    (not user-facing print) so machine-readable JSON / CSV consumers aren't
+    polluted; operators see it in the BOB log stream + via ``--detailed``
+    log files.
+
     Examples:
         'file_perms.shadow.world_writable'  →  'file_perms.world_writable'
         'ssh.password_auth'                 →  'ssh.password_auth'   (unchanged)
@@ -383,7 +394,41 @@ def normalize_key(key: str) -> str:
     m = _NORMALIZE_RE.match(key)
     if m:
         key = f"{m.group(1)}.{m.group(2)}"
-    return EXPLAIN_KEY_ALIASES.get(key, key)
+    if key in EXPLAIN_KEY_ALIASES:
+        canonical = EXPLAIN_KEY_ALIASES[key]
+        _warn_alias_deprecation(key, canonical)
+        return canonical
+    return key
+
+
+# D-3 (v0.8.2) — deprecation warning state. We emit at most one warning per
+# alias per process so a watch-mode session or a CI job listing every alias
+# doesn't spam the log stream. The set is process-local; subprocess /
+# multi-process audits each get their own warning (acceptable trade-off
+# for the simplicity of not threading state through the call chain).
+_WARNED_ALIASES: set[str] = set()
+
+
+def _warn_alias_deprecation(alias: str, canonical: str) -> None:
+    """Emit a one-time deprecation warning for *alias* → *canonical*.
+
+    Issued via ``logger.warning`` so it surfaces in the BOB log stream
+    (``--detailed`` ``.log`` reports + journald when run via cron) but
+    doesn't pollute the machine-readable JSON / CSV / Markdown outputs.
+
+    Retrait timeline: scheduled for v0.9.0. Operators upgrading from
+    v0.8.x have 1+ release cycles to migrate (mirrors the back-compat
+    contract documented in SECURITY.md).
+    """
+    if alias in _WARNED_ALIASES:
+        return
+    _WARNED_ALIASES.add(alias)
+    logger.warning(
+        "DEPRECATION: explain key %r is a legacy alias for %r — the alias "
+        "is scheduled for retrait in v0.9.0. Migrate scripts, saved "
+        "profiles, and ignore.yml entries to the canonical name.",
+        alias, canonical,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.8.1
+Version:        0.8.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,31 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Jun 06 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.2-1
+- Conservative-bundle patch — 6 user-facing + DX items, no BREAKING.
+- Bash completion v0.8.2 (sync _SECTIONS + _EXPLAIN_KEYS + add
+  --unignore=KEY / --ignore=KEY / --explain KEY completions + 21
+  sync-guard + functional tests).
+- i18n consolidation: bob/_i18n_safe.py module exposes
+  make_fallback_t(labels) + t_or_hardcoded(key, fallback). Replaces 4
+  hand-rolled _fallback_t bodies + 1 _t_or_hardcoded across
+  config/webhook/markdown_output/html_output/__main__. Single source of
+  truth, consistent format-or-keep-template semantics.
+- --test-webhook smoke command: POST a tagged minimal payload to the
+  configured webhook URL and exit. Reuses every URL-validation guard
+  from send_webhook. 4 new locale keys EN+FR.
+- --check=list section descriptions: 44 sections × 2 langues = 88
+  one-line technical descriptions sourced from
+  sections.descriptions.<name>.
+- D-3 EXPLAIN_KEY_ALIASES deprecation warning: one-shot logger.warning
+  on alias resolution pointing at the canonical name + v0.9.0 retrait
+  timeline. Logger-only so machine-readable outputs aren't polluted.
+- scripts/lint_locales.py: dev tool catching strict EN/FR key parity,
+  placeholder-set parity, trailing-whitespace contract (I-2 pass 7),
+  empty/long value sanity.
+- Tests: 6198 → 6244 (+46 net). 0 regression. v0.6.x and v0.7.x
+  remain EOL.
+
 * Fri Jun 05 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.1-1
 - Minor maintenance + deep-hardening audit cycle. Closes 26 gap
   tiers across 3 sub-agent audit passes (passes 6-8) + an initial

@@ -6,6 +6,110 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.8.2] — 06-06-2026
+
+**Patch conservative-bundle — 6 items user-facing + DX, pas de BREAKING.**
+
+Nettoie la dette DX des migrations i18n + bash-completion + helper-text v0.7.x / v0.8.0-v0.8.1. Ferme le gap UX `--test-webhook` (la story webhook v0.7.0 a shippé sans commande smoke standalone). Met en place le cleanup architectural v0.9.0 (D-1 / D-2 / D-4 + retrait `BOB_SANDBOX_LEGACY` + parallel checks + `--diff <baseline.json>`) via le warning de déprécation D-3 + le linter locale qui catch les classes de drift exposées par les passes audit 7 + 8.
+
+6198 → **6244 tests** (+46 net). 0 régression.
+
+### Bash completion v0.8.2
+
+[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — 3 améliorations + un guard de sync.
+
+- **Sync `_SECTIONS` + `_EXPLAIN_KEYS` avec runtime**. Liste sections déjà sync au ship time ; liste explain-keys (168 entries) insérée fresh depuis `bob.explain.EXPLAIN_KEYS` via le scaffold regenerate pour que tout drift ultérieur surface en CI.
+- **Completions value `--unignore=KEY` / `--ignore=KEY` / `--explain KEY`**. v0.8.1 T57 a ajouté `--unignore` mais n'a pas étendu le script completion. v0.8.2 ajoute handlers dédiés pour les formes space et `=`, sourcés du catalogue canonique 168-keys EXPLAIN_KEYS.
+- **`--json-v1` + `--test-webhook` dans `long_opts`**. Le premier était un ship Phase 2 v0.7.0 ; le second est nouveau ce cycle.
+- **Commentaire alias `workstation` stale retiré**. Pre-v0.8.2 le commentaire de la completion `--profile` claimait *"workstation est un alias backward-compat loading desktop"* ; le retrait v0.8.1 a rendu ça mensonger. Maintenant : *"workstation est désormais un profil FIRST-CLASS distinct de desktop"*.
+
+[tests/test_v082_bash_completion.py](../tests/test_v082_bash_completion.py) ship 21 tests sur 6 classes : guards de sync (parité set), présence long-opts (parametrized), invocations bash fonctionnelles (source le script dans sub-bash + assert COMPREPLY).
+
+### Consolidation i18n — bob/_i18n_safe.py
+
+Pre-v0.8.2, 4 modules définissaient chacun leur propre `_fallback_t` avec comportements drift (`markdown_output` skippait `.format()`, `html_output` conditionnait sur kwargs, `config`/`webhook` formataient toujours). Trois implémentations subtilement différentes pour la même intention.
+
+[bob/_i18n_safe.py](../bob/_i18n_safe.py) — nouveau module — expose une factory unique :
+
+```python
+from bob._i18n_safe import make_fallback_t
+_fallback_t = make_fallback_t(_FALLBACK_LABELS)
+```
+
+Le body factory essaie toujours `.format(**kwargs)` + retourne le template brut sur `KeyError` / `IndexError`. Templates sans `{}` passent through unchanged. Plus `t_or_hardcoded(key, fallback)` hoisted out de `__main__.py` (T60 v0.8.1 l'avait introduit comme def locale).
+
+Tests pin chaque contract + cross-module assertion que les 5 modules migrés importent + appellent la factory.
+
+### Commande smoke `--test-webhook`
+
+[bob/webhook.py::test_webhook](../bob/webhook.py) — nouvelle fonction publique. POST un payload minimal avec champs `test=true` + `tag="bob_smoke_test"` (generic) ou attachment Slack-formatted (slack). Réutilise chaque guard URL-validation de `send_webhook` : scheme + plain-http + escape hatch `BOB_WEBHOOK_ALLOW_INSECURE` + redaction `WebhookError` via `redact_url_credentials` (T74 v0.8.1).
+
+Wire dans CLI à [bob/__main__.py:190-220](../bob/__main__.py#L190). Le flag `--test-webhook` bypass `require_root()` parce que le smoke est une sonde réseau + sérialisation JSON, pas d'inspection système — pas d'audit, pas de sudo. Résolution URL mirror le path audit-time. 4 nouvelles clés locale EN+FR sous `cli.test_webhook.*`.
+
+Pre-v0.8.2 la seule façon de valider une config `bob --webhook=URL` fraîche était de lancer un audit complet (~30 s + sudo). Le gap DX était particulièrement douloureux pour les setups cron.
+
+### Descriptions sections `--check=list`
+
+[bob/__main__.py:115-152](../bob/__main__.py#L115) — la boucle rendering `--check=list` résout maintenant une description par section via `i18n.t(f"sections.descriptions.{name}")`. Description manquante → fallback au nom de section bare.
+
+44 descriptions shippent dans EN + FR sous nouveau namespace `sections.descriptions.*`. 1 ligne par section, ≤ 80 chars typique. Couvre les 34 sections filterables + 10 always-on.
+
+Tests pin la parité namespace ↔ runtime sections — nouvelle section sans locale wiring casse CI.
+
+### Warning déprécation D-3 sur EXPLAIN_KEY_ALIASES
+
+[bob/explain.py:368-432](../bob/explain.py#L368) — `normalize_key()` émet maintenant un `logger.warning` one-shot quand il résout un alias :
+
+```
+DEPRECATION: explain key 'services_state.service_inactive' is a legacy alias for
+'services_state.enabled_inactive' — the alias is scheduled for retrait in v0.9.0.
+Migrate scripts, saved profiles, and ignore.yml entries to the canonical name.
+```
+
+Logger-only (surface dans `--detailed` `.log` + journald cron) sans polluer les outputs machine-readable JSON / CSV / Markdown. Un set `_WARNED_ALIASES` per-process garantit qu'un watch-mode session ne spam pas le log. Tests pin la sémantique one-shot.
+
+C'est le **bridge** vers le retrait alias v0.9.0 décrit dans `SECURITY.md` (contrat back-compat).
+
+### Linter locale
+
+[scripts/lint_locales.py](../scripts/lint_locales.py) — outil dev, pas shipped au runtime. Catch les classes de drift exposées par les passes audit 7 + 8 :
+
+- **Parité strict clés EN/FR** — chaque leaf key en en.json apparaît en fr.json et vice-versa.
+- **Parité set placeholders** — chaque `{name}` en EN match le même set en FR. Protège `str.format(**kwargs)` des crashes KeyError.
+- **Contrat trailing-whitespace** pour les `cli.error.*_prefix` keys (invariant I-2 pass 7).
+- **Sanité length** — valeurs vides + > 1500 chars flagged. Threshold tuned pour pas false-positive sur les paragraphes techniques verbeux légitimes des `explain.*.{why,how}`.
+
+[tests/test_v082_items.py::TestLocaleLinterSmoke](../tests/test_v082_items.py) shell vers le script donc un drift casse CI même sans run direct.
+
+### Items déférés v0.9.0
+
+- **D-1 / D-2 / D-4** de `project_v08x_deferred` — renumber sections + fusion `_ALL_SECTIONS`/`_ALWAYS_ON_SECTIONS` + sub-checks granulaires (BREAKING — affectent syntaxe scripts `bob --check=ssh,firewall`).
+- **Retrait trap door `BOB_SANDBOX_LEGACY=1`** — BREAKING pour users avec env var set.
+- **Parallel check execution** — `concurrent.futures` sur sections I/O-bound, touche threading invariants.
+- **`--diff <baseline.json>`** — cross-machine baseline diff, additif, déféré pour bundler avec migration support de D-4.
+- **Tutorial / getting-started guide** — substantial doc work.
+
+### Numbers
+
+- **6244 tests** (6198 → 6244, +46 net). 0 régression.
+- 46 tests dédiés v0.8.2 sur 2 files : `test_v082_bash_completion.py` (21) + `test_v082_items.py` (25).
+- 88 nouvelles locale entries (44 sections × 2 langues) + 8 `cli.test_webhook.*` keys.
+- 1941 EN + 1941 FR locale keys total, 0 drift.
+
+### Upgrade
+
+`pipx upgrade bodyguard-of-bits`.
+
+Gains user-facing :
+- `bob --check=list` désormais self-documenting (44 descriptions sections)
+- `bob --test-webhook` fonctionne (smoke sans audit complet)
+- Bash completion de `--unignore` + `--ignore` + `--explain` keys suggère les EXPLAIN_KEYS canoniques
+- Usage `EXPLAIN_KEY_ALIASES` surface un warning de déprécation pointant vers timeline retrait v0.9.0
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1). **v0.6.x reste EOL** (déclaré v0.7.2).
+
+---
+
 ## [v0.8.1] — 05-06-2026
 
 **Maintenance mineure + cycle audit deep-hardening.**
