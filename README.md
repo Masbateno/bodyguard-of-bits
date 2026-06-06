@@ -312,6 +312,7 @@ On non-apt distributions (Fedora, RHEL, openSUSE, Arch), checks that rely on `ap
 
 ## See also
 
+- [Tutorial — getting started](DOCUMENTS/TUTORIAL.md)
 - [Full technical reference](DOCUMENTS/README_TECH.md)
 - [Changelog](CHANGELOG.md)
 - [Developer guide](DOCUMENTS/README_DEV.md)

@@ -312,6 +312,7 @@ Sur les distributions non-apt (Fedora, RHEL, openSUSE, Arch), les checks reposan
 
 ## Voir aussi
 
+- [Tutoriel — démarrer](DOCUMENTS/TUTORIAL_FR.md)
 - [Référence technique complète](DOCUMENTS/README_TECH.md)
 - [Journal des modifications](CHANGELOG_FR.md)
 - [Guide développeur](DOCUMENTS/README_DEV_FR.md)
