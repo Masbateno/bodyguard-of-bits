@@ -14,6 +14,18 @@ _bob() {
     local cur="$2"
     local prev="$3"
 
+    # v0.8.2 — defensive: when invoked through ``sudo``'s
+    # ``_command_offset`` dispatcher with ``=`` still in COMP_WORDBREAKS
+    # (some bash + bash-completion combinations don't strip it via
+    # ``_init_completion -s``), $prev arrives as the literal ``=`` instead
+    # of the option name (e.g. ``--check``). Walk back two positions in
+    # COMP_WORDS to recover the real option name so the value-completion
+    # branches below still match. Without this guard, ``sudo bob
+    # --check=s<TAB>`` silently returns zero candidates.
+    if [[ "${prev}" == "=" && -n "${COMP_CWORD:-}" && "${COMP_CWORD}" -ge 2 ]]; then
+        prev="${COMP_WORDS[COMP_CWORD-2]}"
+    fi
+
     # Authoritative list of filterable sections — keep in sync with
     # bob/runner.py::_ALL_SECTIONS (34 entries; matches `bob --check=list`).
     # Core checks (firewall, ports, services, logs) always run and are
