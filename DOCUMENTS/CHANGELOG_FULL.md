@@ -6,6 +6,95 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.8.4] — 2026-06-06
+
+**Final v0.8.x release — cleanup batch before the v0.9.0 BREAKING bundle.**
+
+### Dead code retirement — is_unit_enabled
+
+[bob/checks/_run.py](../bob/checks/_run.py) — ``is_unit_enabled(name, timeout)`` was added in v0.5.0 (refactor Phase 1 #7) as the symmetric mirror of ``is_unit_active`` and documented in the release-monitoring list as "no immediate consumer — to be reviewed each v0.5.x release". 7 months and 4 minor versions later (v0.5.x → v0.6.x → v0.7.x → v0.8.x), the grep is unchanged:
+
+- Zero consumers in ``bob/``
+- Zero references in ``tests/``
+- ``services.py::_detect_single_unit_state`` continues to use its own ``_run`` call as designed at v0.5.0 ship time
+
+The API-symmetry argument has not held — the function is removed. Historical CHANGELOG entries (v0.5.0 ship table + #7 detail section + both FR mirrors + FULL changelog detail) are preserved as-is. They accurately describe what shipped at the time; rewriting history would obscure the fact that the API existed and was deliberately retired after observation.
+
+This closes the v0.5.0 release-monitoring list (both entries decided):
+
+- ``is_unit_enabled`` — **DELETED** in v0.8.4 (7 months without consumer = sufficient signal that the symmetric-API hypothesis did not hold)
+- ``width=62`` parameter on ``bob.output.print_titled_box`` — **KEPT off-monitor** in v0.8.4 (4 call sites all use the default; 7 months of stability promotes the parameter from "speculative" to "stable de facto"; removing it would break the public API without gain)
+
+### New tutorial — DOCUMENTS/TUTORIAL{,_FR}.md
+
+End-to-end first-time-user walkthrough, 269 lines per locale (EN + FR parity), covering :
+
+1. What BOB does (one sentence) + what BOB is NOT (framing carryover from v0.8.0 A2)
+2. ``pipx install`` + the ``sudo bob`` PATH gotcha + ``--install-completion`` resolution
+3. First audit + reading the score (level, key, hypotheses footer)
+4. ``--explain KEY`` — picker / list / tab-completion
+5. ``--fix`` dry-run + ``--fix --apply`` contract
+6. Profile selection — server / desktop / workstation / container
+7. No-noise path — ``--ignore`` / ``--unignore`` / ``--show-ignored``
+8. Automation — ``--install-cron`` + ``--webhook=`` + ``--test-webhook`` smoke
+9. Baseline-driven workflows — ``--diff`` / ``--history`` / ``--watch``
+10. Machine consumers — JSON / CSV / Markdown / HTML + ``-q`` exit codes + ``--target=N``
+11. Common scenarios — silent CI mode, target floor, French audit
+12. Pointers to README_TECH / AUTOMATION / SECURITY / CHANGELOG
+
+Linked from [README.md](../README.md) + [README_FR.md](../README_FR.md) "See also" / "Voir aussi" sections as the first entry, so a first-time reader lands here before the technical reference.
+
+This was the ``tutorial`` item deferred from the v0.9.0 backlog. It moved into v0.8.4 because it is pure documentation with zero code surface — no reason to park documentation behind a BREAKING bundle.
+
+### Roadmap closure — compare-breakdown-diff killed
+
+[[project_future_compare_breakdown_diff]] (memory) — feature roadmap opened in v0.3.0 (2026-05-08) to add per-key deduction diff in ``bob compare``. Status at v0.8.4 ship time:
+
+- Open since v0.3.0
+- Zero user signal across 5 majeures (v0.4 / v0.5 / v0.6 / v0.7 / v0.8)
+- The existing ``deduction_delta`` global suffices for the real-world use case (not a single user complaint of the form "I see -5 between two audits but don't know where it came from")
+- Effort estimate: baseline schema BREAKING change + diff logic + UI compare = ~6-8h. Not justified without concrete demand.
+
+Pattern: if a feature stays dormant 5 majeures without signal, the market has spoken — kill rather than keep indefinitely. The memory is marked closed; reopening requires explicit user signal.
+
+### Numbers
+
+- **Tests 6246 → 6246** (no delta — the deleted helper had no test coverage to delete). 0 regression.
+- 1 production code file modified ([bob/checks/_run.py](../bob/checks/_run.py)) — 10 lines deleted.
+- 2 new docs ([DOCUMENTS/TUTORIAL.md](../DOCUMENTS/TUTORIAL.md) + [DOCUMENTS/TUTORIAL_FR.md](../DOCUMENTS/TUTORIAL_FR.md)) — 540 lines added total.
+- 2 README files updated for the new tutorial link.
+- 4 changelog surfaces + memory updates + TESTING.md + man pages + debian + rpm bumped.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+**v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1).
+**v0.6.x remains EOL** (declared in v0.7.2).
+
+### Next — v0.9.0 BREAKING bundle
+
+v0.8.x is **closed** — further v0.8.x patches will only ship for security regressions. The next active release is v0.9.0, scheduled as a single BREAKING bundle:
+
+- **D-1** sections renumber + ``emit_section()`` naming uniformity
+- **D-2** fusion ``_ALL_SECTIONS`` + ``_ALWAYS_ON_SECTIONS`` into a single tuple with an ``is_always_on`` flag
+- **D-4** sub-checks granulaires (rename keys — breaks ``~/.config/bob/ignore.yml`` entries on systems with custom suppression lists)
+- ``BOB_SANDBOX_LEGACY=1`` trap door **retrait** (documented in SECURITY.md as a back-compat env var for in-process plugin execution)
+- **Parallel checks** via ``concurrent.futures.ThreadPoolExecutor`` for independent domain audits (target: ~30s → 5-10s on multi-core)
+- **``--diff <baseline.json>``** cross-machine compare (additive to the local ``~/.config/bob/baseline.json`` flow)
+
+The bundle is grouped because each item alone is too small to ship a major bump for, while shipping them piecemeal would force users to absorb 6 BREAKING changes across 6 minor versions.
+
+### Lessons
+
+- **The release-monitoring policy worked** — 7 months of patient grep + a clear deletion criterion ("zero consumer + zero signal" = remove) produced a clean retirement with no surprises.
+- **Closing dormant features needs an explicit policy** — keeping ``project_future_compare_breakdown_diff`` indefinitely on the maybe-someday list cost cognitive overhead at every release planning. 5-major-dormancy → kill is a clean rule.
+- **Pure-docs work belongs in patch releases** — parking the tutorial behind v0.9.0's BREAKING bundle would have delayed it 2-3 weeks without code-coupling justification.
+
+---
+
 ## [v0.8.3] — 2026-06-06
 
 **HOTFIX — v0.8.2 audit path crashed with `UnboundLocalError` on every non `--test-webhook` invocation.**

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.8.3
+Version:        0.8.4
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,21 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Jun 06 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.4-1
+- Final v0.8.x release before the v0.9.0 BREAKING bundle.
+- Cleanup: remove dead is_unit_enabled() helper (added v0.5.0 for API
+  symmetry, zero consumer in 7 months — confirmed dead via grep).
+- New DOCUMENTS/TUTORIAL{,_FR}.md getting-started guide (269 lines × 2
+  locales, end-to-end first-time-user walkthrough). Linked from
+  README{,_FR}.md "See also".
+- Closes the v0.5.0 release-monitoring list (both entries decided).
+- Closes the compare-breakdown-diff feature roadmap (zero user signal
+  across 5 majeures since v0.3.0).
+- Tests 6246 → 6246 (no delta). 0 regression.
+- Next: v0.9.0 BREAKING bundle (D-1+D-2+D-4 + BOB_SANDBOX_LEGACY retrait
+  + parallel checks + --diff baseline.json cross-machine).
+- v0.7.x remains EOL since v0.8.1; v0.6.x remains EOL since v0.7.2.
+
 * Sat Jun 06 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.3-1
 - HOTFIX: v0.8.2 audit path crashed with UnboundLocalError on every
   non --test-webhook invocation. Root cause: the v0.8.2 --test-webhook

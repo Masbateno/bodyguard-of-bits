@@ -1,3 +1,31 @@
+bodyguard-of-bits (0.8.4-1) UNRELEASED; urgency=low
+
+  * Final v0.8.x release before the v0.9.0 BREAKING bundle.
+  * Cleanup: remove dead is_unit_enabled() helper from bob/checks/_run.py
+    (added v0.5.0 for API symmetry, never had a consumer in 7 months —
+    confirmed dead via grep over bob/ + tests/). Historical CHANGELOG
+    entries preserved as accurate records of what shipped at the time.
+  * New tutorial: DOCUMENTS/TUTORIAL{,_FR}.md — 269 lines × 2 locales
+    end-to-end first-time-user walkthrough (install → first audit →
+    fixes → profiles → ignore → cron + webhook → diff/history/watch →
+    machine formats → common scenarios → pointers to existing docs).
+    Linked from README{,_FR}.md "See also" as the first entry. Long
+    deferred from v0.9.0 backlog — moved into v0.8.4 because it is
+    pure docs with zero code surface.
+  * Closes the v0.5.0 release-monitoring list (both entries decided:
+    is_unit_enabled DELETED, width=62 KEPT off-monitor after 7 months
+    of stability). Closes the compare-breakdown-diff feature roadmap
+    (zero user signal across 5 majeures since v0.3.0 — killed in
+    project_future_compare_breakdown_diff.md memory).
+  * Tests 6246 → 6246 (no delta — the deleted helper had no test
+    coverage). 0 regression.
+  * Next: v0.9.0 BREAKING bundle (D-1 sections renumber + D-2 fusion
+    _ALL_SECTIONS + D-4 sub-checks granulaires + BOB_SANDBOX_LEGACY
+    retrait + parallel checks + --diff baseline.json cross-machine).
+  * v0.7.x remains EOL since v0.8.1; v0.6.x remains EOL since v0.7.2.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 06 Jun 2026 22:30:00 +0200
+
 bodyguard-of-bits (0.8.3-1) UNRELEASED; urgency=high
 
   * HOTFIX: v0.8.2 audit path crashed with UnboundLocalError on every

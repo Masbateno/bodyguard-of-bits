@@ -6,6 +6,95 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.8.4] — 06-06-2026
+
+**Dernière release v0.8.x — batch cleanup avant le bundle BREAKING v0.9.0.**
+
+### Retrait dead code — is_unit_enabled
+
+[bob/checks/_run.py](../bob/checks/_run.py) — `is_unit_enabled(name, timeout)` ajouté en v0.5.0 (refactor Phase 1 #7) comme miroir symétrique de `is_unit_active` et documenté dans la liste release-monitoring comme "no immediate consumer — to be reviewed each v0.5.x release". 7 mois et 4 minor versions plus tard (v0.5.x → v0.6.x → v0.7.x → v0.8.x), le grep est inchangé :
+
+- Zéro consumers dans `bob/`
+- Zéro références dans `tests/`
+- `services.py::_detect_single_unit_state` continue d'utiliser son propre appel `_run` comme conçu au ship time v0.5.0
+
+L'argument symétrie d'API n'a pas tenu — la fonction est retirée. Les entrées CHANGELOG historiques (table ship v0.5.0 + section détail #7 + mirrors FR + détail FULL changelog) sont préservées tel quel. Elles décrivent fidèlement ce qui a shippé à l'époque ; réécrire l'historique obscurcirait le fait que l'API a existé et a été délibérément retirée après observation.
+
+Cela ferme la liste release-monitoring v0.5.0 (les 2 entrées décidées) :
+
+- `is_unit_enabled` — **DELETED** en v0.8.4 (7 mois sans consumer = signal suffisant que l'hypothèse symétrie-API n'a pas tenu)
+- Paramètre `width=62` de `bob.output.print_titled_box` — **KEPT off-monitor** en v0.8.4 (4 call sites utilisent le défaut ; 7 mois de stabilité promeut le paramètre de "spéculatif" à "stable de facto" ; le retirer casserait l'API publique sans gain)
+
+### Nouveau tutoriel — DOCUMENTS/TUTORIAL{,_FR}.md
+
+Walkthrough end-to-end premier-utilisateur, 269 lignes par locale (parité EN + FR), couvrant :
+
+1. Ce que BOB fait (une phrase) + ce que BOB n'est PAS (framing carryover de v0.8.0 A2)
+2. `pipx install` + le gotcha PATH `sudo bob` + résolution `--install-completion`
+3. Premier audit + lecture du score (niveau, clé, footer hypothèses)
+4. `--explain KEY` — picker / list / tab-completion
+5. Contrat `--fix` dry-run + `--fix --apply`
+6. Sélection profile — server / desktop / workstation / container
+7. No-noise path — `--ignore` / `--unignore` / `--show-ignored`
+8. Automation — `--install-cron` + `--webhook=` + smoke `--test-webhook`
+9. Workflows baseline-driven — `--diff` / `--history` / `--watch`
+10. Consumers machine — JSON / CSV / Markdown / HTML + codes de sortie `-q` + `--target=N`
+11. Scénarios courants — mode silencieux CI, target floor, audit français
+12. Pointers vers README_TECH / AUTOMATION / SECURITY / CHANGELOG
+
+Linké depuis [README.md](../README.md) + [README_FR.md](../README_FR.md) sections "See also" / "Voir aussi" en première entrée, pour qu'un reader premier-fois atterrisse ici avant la référence technique.
+
+C'était l'item `tutorial` déféré du backlog v0.9.0. Il est déplacé dans v0.8.4 parce que c'est de la documentation pure avec zéro surface code — pas de raison de parker de la documentation derrière un bundle BREAKING.
+
+### Fermeture roadmap — compare-breakdown-diff killed
+
+[[project_future_compare_breakdown_diff]] (memory) — roadmap feature ouverte en v0.3.0 (2026-05-08) pour ajouter diff per-key des déductions dans `bob compare`. Statut au ship time v0.8.4 :
+
+- Ouvert depuis v0.3.0
+- Zéro signal user à travers 5 majeures (v0.4 / v0.5 / v0.6 / v0.7 / v0.8)
+- Le `deduction_delta` global existant suffit pour le cas d'usage réel (pas une seule plainte user de la forme "je vois -5 entre 2 audits mais je ne sais pas d'où ça vient")
+- Effort estimé : baseline schema change BREAKING + logique diff + UI compare = ~6-8h. Non justifié sans demande concrète.
+
+Pattern : si une feature reste dormante 5 majeures sans signal, le marché a parlé — tuer plutôt que conserver indéfiniment. Le memory est marqué closed ; rouvrir requiert un signal user explicite.
+
+### Numbers
+
+- **Tests 6246 → 6246** (pas de delta — le helper retiré n'avait pas de test coverage à supprimer). 0 régression.
+- 1 fichier code production modifié ([bob/checks/_run.py](../bob/checks/_run.py)) — 10 lignes supprimées.
+- 2 nouveaux docs ([DOCUMENTS/TUTORIAL.md](../DOCUMENTS/TUTORIAL.md) + [DOCUMENTS/TUTORIAL_FR.md](../DOCUMENTS/TUTORIAL_FR.md)) — 540 lignes ajoutées au total.
+- 2 README mis à jour pour le nouveau lien tutorial.
+- 4 surfaces changelog + memory updates + TESTING.md + man pages + debian + rpm bumpés.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
+**v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Suite — bundle BREAKING v0.9.0
+
+v0.8.x est **fermée** — les futurs patches v0.8.x ne shipperont que pour les régressions sécurité. La prochaine release active est v0.9.0, planifiée comme un seul bundle BREAKING :
+
+- **D-1** sections renumber + uniformité naming `emit_section()`
+- **D-2** fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` en un tuple unique avec un flag `is_always_on`
+- **D-4** sub-checks granulaires (rename keys — casse les entries `~/.config/bob/ignore.yml` sur les systèmes avec listes de suppression custom)
+- **Retrait** trap door `BOB_SANDBOX_LEGACY=1` (documenté dans SECURITY.md comme env var back-compat pour exécution plugin in-process)
+- **Parallel checks** via `concurrent.futures.ThreadPoolExecutor` pour les audits domain indépendants (cible : ~30s → 5-10s sur multi-core)
+- **`--diff <baseline.json>`** compare cross-machine (additif au flow `~/.config/bob/baseline.json` local)
+
+Le bundle est groupé parce que chaque item seul est trop petit pour ship un bump majeur, alors que les shipper piecemeal forcerait les users à absorber 6 changements BREAKING à travers 6 minor versions.
+
+### Leçons
+
+- **La politique release-monitoring a fonctionné** — 7 mois de grep patient + un critère de deletion clair ("zéro consumer + zéro signal" = remove) ont produit un retrait propre sans surprises.
+- **Fermer les features dormantes a besoin d'une politique explicite** — garder `project_future_compare_breakdown_diff` indéfiniment sur la liste maybe-someday coûtait du overhead cognitif à chaque planning de release. La règle 5-majeures-dormancy → kill est claire.
+- **Le travail pure-docs appartient aux patch releases** — parker le tutorial derrière le bundle BREAKING v0.9.0 l'aurait retardé de 2-3 semaines sans justification code-coupling.
+
+---
+
 ## [v0.8.3] — 06-06-2026
 
 **HOTFIX — le chemin audit de v0.8.2 crashait avec `UnboundLocalError` sur chaque invocation autre que `--test-webhook`.**
