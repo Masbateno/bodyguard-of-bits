@@ -16,12 +16,13 @@ Nettoie la dette DX des migrations i18n + bash-completion + helper-text v0.7.x /
 
 ### Bash completion v0.8.2
 
-[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — 3 améliorations + un guard de sync.
+[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — 4 améliorations + un guard de sync + un fix sudo-dispatcher.
 
 - **Sync `_SECTIONS` + `_EXPLAIN_KEYS` avec runtime**. Liste sections déjà sync au ship time ; liste explain-keys (168 entries) insérée fresh depuis `bob.explain.EXPLAIN_KEYS` via le scaffold regenerate pour que tout drift ultérieur surface en CI.
 - **Completions value `--unignore=KEY` / `--ignore=KEY` / `--explain KEY`**. v0.8.1 T57 a ajouté `--unignore` mais n'a pas étendu le script completion. v0.8.2 ajoute handlers dédiés pour les formes space et `=`, sourcés du catalogue canonique 168-keys EXPLAIN_KEYS.
 - **`--json-v1` + `--test-webhook` dans `long_opts`**. Le premier était un ship Phase 2 v0.7.0 ; le second est nouveau ce cycle.
 - **Commentaire alias `workstation` stale retiré**. Pre-v0.8.2 le commentaire de la completion `--profile` claimait *"workstation est un alias backward-compat loading desktop"* ; le retrait v0.8.1 a rendu ça mensonger. Maintenant : *"workstation est désormais un profil FIRST-CLASS distinct de desktop"*.
+- **Fix sudo-dispatcher `=`** (commit `2a62bf3`). Régression user-reportée : `sudo bob --check=s<TAB>` retournait zéro candidat alors que `bob --check=s<TAB>` (sans sudo) marchait. Root cause : le dispatcher sudo de bash-completion (`_command_offset`) invoke `_bob` avec `$prev` mis au littéral `=` au lieu du nom d'option quand `=` reste dans COMP_WORDBREAKS — toutes les combinaisons bash + bash-completion ne le strippent pas via `_init_completion -s`. Aucune des branches par-option `prev == "--check"` / `--ignore` / `--unignore` / `--explain` ne matchait, donc la fonction tombait sur le default long_opts qui ne s'applique pas à une valeur partielle comme `"s"`. Fix : guard défensif 3-lignes en tête de `_bob` qui détecte `prev == "="` et récupère le nom d'option réel en remontant deux positions dans COMP_WORDS. Restaure le value-narrowing pour chaque `--<option>=<partial>` sous sudo ET sans sudo.
 
 [tests/test_v082_bash_completion.py](../tests/test_v082_bash_completion.py) ship 21 tests sur 6 classes : guards de sync (parité set), présence long-opts (parametrized), invocations bash fonctionnelles (source le script dans sub-bash + assert COMPREPLY).
 

@@ -16,12 +16,13 @@ Cleans up DX debt from the v0.7.x / v0.8.0-v0.8.1 i18n + bash-completion + helpe
 
 ### Bash completion v0.8.2
 
-[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — three improvements + a sync guard.
+[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — four improvements + a sync guard + a sudo-dispatcher fix.
 
 - **Sync ``_SECTIONS`` + ``_EXPLAIN_KEYS`` with runtime**. The hand-curated section list was already in sync at ship time; the explain-keys list (168 entries) was inserted fresh from ``bob.explain.EXPLAIN_KEYS`` via the regenerate scaffold so subsequent drift surfaces in CI.
 - **``--unignore=KEY`` / ``--ignore=KEY`` / ``--explain KEY`` value completions**. v0.8.1 T57 added ``--unignore`` but didn't extend the completion script. v0.8.2 adds dedicated handlers for both the space and ``=`` forms, sourced from the canonical 168-key EXPLAIN_KEYS catalogue.
 - **``--json-v1`` + ``--test-webhook`` in ``long_opts``**. The first was a v0.7.0 Phase 2 ship; the second is new this cycle.
 - **Stale ``workstation`` alias comment retired**. Pre-v0.8.2 the ``--profile`` completion comment claimed *"workstation is a backward-compat alias loading desktop"*; the v0.8.1 retrait made that a lie. Now reads *"workstation is now a FIRST-CLASS profile distinct from desktop"*.
+- **Sudo-dispatcher ``=`` fix** (commit ``2a62bf3``). User-reported regression: ``sudo bob --check=s<TAB>`` returned zero candidates while ``bob --check=s<TAB>`` (no sudo) worked. Root cause: bash-completion's sudo dispatcher (``_command_offset``) invokes ``_bob`` with ``$prev`` set to the literal ``=`` instead of the option name when ``=`` remains in COMP_WORDBREAKS — not all bash + bash-completion combinations strip it via ``_init_completion -s``. None of the per-option ``prev == "--check"`` / ``--ignore`` / ``--unignore`` / ``--explain`` branches matched, so the function fell through to the long_opts default which can't apply to a partial value like ``"s"``. Fix: defensive 3-line guard at the top of ``_bob`` that detects ``prev == "="`` and recovers the real option name by walking back two positions in COMP_WORDS. Restores value-narrowing behaviour for every ``--<option>=<partial>`` completion under both ``sudo`` and non-``sudo`` invocations.
 
 [tests/test_v082_bash_completion.py](../tests/test_v082_bash_completion.py) ships 21 tests across 6 classes:
 
