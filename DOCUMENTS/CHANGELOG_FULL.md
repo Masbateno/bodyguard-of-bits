@@ -6,6 +6,72 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.8.3] — 2026-06-06
+
+**HOTFIX — v0.8.2 audit path crashed with `UnboundLocalError` on every non `--test-webhook` invocation.**
+
+### Root cause
+
+The v0.8.2 ``--test-webhook`` handler did ``from bob.config import UserConfig`` *inside* ``main()`` ([bob/__main__.py:213](../bob/__main__.py#L213)). Python's local-scope analyzer saw the local ``from`` statement and treated ``UserConfig`` as a function-local name for the entire ``main()`` body — even on code paths that never reached the local import. The audit path at ``user_config = UserConfig.load()`` (line 298 at ship time) then raised:
+
+```
+Fatal error: cannot access local variable 'UserConfig' where it is not associated with a value
+```
+
+on **every** regular ``bob`` invocation that didn't enter the ``--test-webhook`` branch. The same shadowing pattern existed for ``os`` and ``traceback`` inside the top-level ``except`` handler at line 585.
+
+### Why unit tests missed it
+
+The 6244-test v0.8.2 suite did not catch the bug because the tests either:
+
+- exercise the ``--test-webhook`` branch directly (which **does** pass through the local ``from`` import, so ``UserConfig`` is bound and resolves), or
+- exercise the audit path with ``UserConfig.load`` mocked, so the name resolves through the mock decorator without hitting the unbound local
+
+The integration ``smoke-plugin-on-CI`` guard caught it on the live ``bob --offline -v`` invocation — but only **after** ``v0.8.2`` was already published on PyPI.
+
+### Fix
+
+[bob/__main__.py](../bob/__main__.py) — three minimal changes:
+
+- Remove the redundant ``from bob.config import UserConfig`` inside ``main()`` (the module-level import at line 26 was already in scope before v0.8.2; the local re-import was added by the ``--test-webhook`` ship and shadowed it)
+- Remove the redundant ``import os`` inside the ``except`` handler at line 585 (the module-level ``import os`` at the top of the file was already in scope; the local re-import shadowed it for the rest of ``main()``, even though in this specific case the only ``os.<x>`` reference came **after** the local import, so the bug was latent rather than active)
+- Promote ``import traceback`` to a module-scope import (was only imported inside the ``BOB_DEBUG`` branch — module-scope is the correct location)
+
+### Regression guard
+
+[tests/test_v083_main_scope_guard.py](../tests/test_v083_main_scope_guard.py) — 2 tests, static analysis via ``ast``:
+
+- ``test_main_function_does_not_shadow_module_scope_imports``: for each name imported at ``bob.__main__`` module scope, scan ``main()`` and assert no local ``from``/``import`` statement re-binds the same name
+- ``test_user_config_resolves_at_module_scope``: direct guard that ``UserConfig`` survives import-time as a module-level binding (``hasattr(bob.__main__, "UserConfig")``)
+
+A future contributor who adds another defensive re-import inside ``main()`` fails the first test **before** the audit path crashes for users.
+
+### Numbers
+
+- **Tests 6244 → 6246** (+2 guard). 0 regression.
+- 1 production code file modified ([bob/__main__.py](../bob/__main__.py)).
+- 1 new test file ([tests/test_v083_main_scope_guard.py](../tests/test_v083_main_scope_guard.py)).
+- All 4 changelog surfaces + memory note + this section updated for traceability.
+
+### Upgrade
+
+**v0.8.2 is broken on PyPI** (audit path crashes on every regular invocation). Users on v0.8.2 must upgrade immediately:
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+**v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1).
+**v0.6.x remains EOL** (declared in v0.7.2).
+
+### Lessons
+
+- Unit tests that mock ``UserConfig.load`` mask name-binding bugs — the audit-path code path executes, but ``UserConfig`` resolves via the mock decorator's namespace patch, not via the function-local binding rules.
+- A function-local ``from X import Y`` is **legal** but turns ``Y`` into a function-local name for the **entire** function body, including code paths above the local import. When ``Y`` was already imported at module scope, the local statement shadows it everywhere and creates an ``UnboundLocalError`` trap.
+- Static guards (``ast.walk`` on a function body) catch the bug class without needing a runtime exercise — preferred over subprocess smoke tests for predictable, fast feedback.
+
+---
+
 ## [v0.8.2] — 2026-06-06
 
 **Conservative-bundle patch — 6 user-facing + DX items, no BREAKING.**

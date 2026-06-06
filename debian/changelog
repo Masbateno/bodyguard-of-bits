@@ -1,3 +1,28 @@
+bodyguard-of-bits (0.8.3-1) UNRELEASED; urgency=high
+
+  * HOTFIX: v0.8.2 audit path crashed with UnboundLocalError on every
+    non --test-webhook invocation. Root cause: the v0.8.2 --test-webhook
+    handler did `from bob.config import UserConfig` inside main(). Python's
+    local-scope analyzer treated UserConfig as a function-local name for
+    the entire body, so line 298 (audit path) raised
+    `UnboundLocalError: cannot access local variable 'UserConfig'` on
+    every regular `bob` invocation that didn't enter the --test-webhook
+    branch. The same shadowing pattern existed for `os` and `traceback`
+    inside the top-level except handler.
+  * Fix: removed the redundant local imports of UserConfig + os; promoted
+    `traceback` to a module-scope import. The module-level `from
+    bob.config import UserConfig` (line 26) is now the single binding.
+  * Regression guard: `tests/test_v083_main_scope_guard.py` (2 tests)
+    statically asserts main() does not shadow any name imported at module
+    scope. A future contributor who adds another defensive re-import
+    inside main() fails this test before the audit path crashes for
+    users.
+  * v0.8.2 marked broken on PyPI; users should upgrade to v0.8.3
+    immediately.
+  * Tests 6244 → 6246 (+2 guard). 0 regression.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 06 Jun 2026 21:00:00 +0200
+
 bodyguard-of-bits (0.8.2-1) UNRELEASED; urgency=low
 
   * Conservative-bundle patch — 6 user-facing + DX items, no BREAKING.

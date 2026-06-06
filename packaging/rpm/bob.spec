@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.8.2
+Version:        0.8.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,23 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Jun 06 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.3-1
+- HOTFIX: v0.8.2 audit path crashed with UnboundLocalError on every
+  non --test-webhook invocation. Root cause: the v0.8.2 --test-webhook
+  handler did `from bob.config import UserConfig` inside main(), which
+  shadowed the module-level binding for the entire function. Line 298
+  (audit path) raised `UnboundLocalError: cannot access local variable
+  'UserConfig'` on every regular `bob` invocation. Same shadowing
+  pattern existed for `os` and `traceback` inside the top-level except
+  handler.
+- Fix: removed the redundant local imports of UserConfig + os; promoted
+  `traceback` to a module-scope import.
+- Regression guard: tests/test_v083_main_scope_guard.py (2 tests)
+  statically asserts main() does not shadow any name imported at module
+  scope.
+- v0.8.2 broken on PyPI; users should upgrade to v0.8.3 immediately.
+- Tests 6244 → 6246 (+2 guard). 0 regression.
+
 * Sat Jun 06 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.2-1
 - Conservative-bundle patch — 6 user-facing + DX items, no BREAKING.
 - Bash completion v0.8.2 (sync _SECTIONS + _EXPLAIN_KEYS + add

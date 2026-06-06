@@ -13,6 +13,7 @@ import json as _json
 import logging
 import os
 import sys
+import traceback
 from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
@@ -210,7 +211,10 @@ def _run(argv=None) -> int:
         t = i18n.t
         # Resolve URL: --webhook=URL takes precedence; otherwise use the saved
         # user config (same precedence as the real audit-time webhook path).
-        from bob.config import UserConfig
+        # ``UserConfig`` is imported at module scope; do NOT re-import it inside
+        # this function — a local ``from`` statement would shadow the
+        # module-level binding and turn line 298 (audit path) into an
+        # UnboundLocalError when ``--test-webhook`` isn't set.
         user_config = UserConfig.load()
         _url = config.webhook_url or user_config.get_webhook_url()
         if not _url:
@@ -579,14 +583,17 @@ def main(argv=None) -> int:
         # is already initialised. ``_t_or_hardcoded`` falls back to the EN
         # baseline when the exception fires before init or init itself
         # failed — the user always sees a consistent message.
-        import os
+        # v0.8.3: ``os`` and ``traceback`` are already module-scope imports
+        # (see top of file). Re-importing them inside this except clause
+        # would shadow the module-level binding for the entire main() body
+        # and turn earlier ``os.<x>`` references into UnboundLocalError —
+        # see test_v083_main_scope_guard for the regression.
         # I-2 pass 7 (v0.8.1 audit): colon-space embedded in the locale
         # value so the FR rendering ships ``"Erreur fatale : "`` and the
         # hardcoded ``: `` after the prefix is dropped.
         fatal_prefix = _t_or_hardcoded("cli.error.fatal_prefix", "Fatal error: ")
         print(f"{fatal_prefix}{exc}", file=sys.stderr)
         if os.environ.get("BOB_DEBUG"):
-            import traceback
             traceback.print_exc(file=sys.stderr)
         else:
             print(
