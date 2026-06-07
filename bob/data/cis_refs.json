@@ -39,11 +39,11 @@
     "ref": "Best practice — Ensure regular full system scans are scheduled (weekly)",
     "code": null
   },
-  "cron_audit.pipe_to_shell": {
+  "cron.pipe_to_shell": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron (script integrity: verify sources before execution)",
     "code": "CIS:5.1"
   },
-  "cron_audit.world_writable": {
+  "cron.world_writable": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1.8 — Ensure cron is restricted to authorized users",
     "code": "CIS:5.1.8"
   },
@@ -79,19 +79,19 @@
     "ref": "CIS Docker 1.6 — 5.7 — Ensure that privileged ports are not mapped within containers (UFW-bypassing publish)",
     "code": "CIS Docker:5.7"
   },
-  "docker_audit.host_network": {
+  "docker_hardening.host_network": {
     "ref": "CIS Docker 1.6 — 5.13 — Ensure that the container's network is not set to host",
     "code": "CIS Docker:5.13"
   },
-  "docker_audit.privileged": {
+  "docker_hardening.privileged": {
     "ref": "CIS Docker 1.6 — 5.4 — Ensure that privileged containers are not used",
     "code": "CIS Docker:5.4"
   },
-  "docker_audit.root_containers": {
+  "docker_hardening.root_containers": {
     "ref": "CIS Docker 1.6 — 4.1 — Ensure that a user for the container has been created (non-root)",
     "code": "CIS Docker:4.1"
   },
-  "docker_audit.socket_mounted": {
+  "docker_hardening.socket_mounted": {
     "ref": "CIS Docker 1.6 — 5.31 — Ensure that the Docker socket is not mounted inside any container",
     "code": "CIS Docker:5.31"
   },
@@ -143,19 +143,19 @@
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy",
     "code": "CIS:3.5.1.7"
   },
-  "firewall_stack.iptables_bypass": {
+  "firewall_drivers.iptables_bypass": {
     "ref": "Best practice — Avoid raw iptables ACCEPT rules in INPUT that bypass UFW chains",
     "code": null
   },
-  "firewall_stack.iptables_forward_bypass": {
+  "firewall_drivers.iptables_forward_bypass": {
     "ref": "Best practice — Avoid raw iptables ACCEPT rules in FORWARD when no routing daemon is present",
     "code": null
   },
-  "firewall_stack.nftables_parallel": {
+  "firewall_drivers.nftables_parallel": {
     "ref": "Best practice — Avoid running iptables/UFW and nftables stacks in parallel",
     "code": null
   },
-  "firewall_stack.ip_forward_enabled": {
+  "firewall_drivers.ip_forward_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.2.1 — Ensure IP forwarding is disabled (net.ipv4.ip_forward)",
     "code": "CIS:3.2.1"
   },
@@ -323,23 +323,23 @@
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.8 — Ensure TCP SYN cookies is enabled (net.ipv4.tcp_syncookies)",
     "code": "CIS:3.3.8"
   },
-  "iptables_nft.forward_accept": {
+  "firewall_iptables.forward_accept": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (FORWARD chain ACCEPT)",
     "code": "CIS:3.5.1.1"
   },
-  "iptables_nft.input_accept": {
+  "firewall_iptables.input_accept": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (INPUT chain ACCEPT)",
     "code": "CIS:3.5.1.1"
   },
-  "iptables_nft.no_backend": {
+  "firewall_iptables.no_backend": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (no active firewall layer detected)",
     "code": "CIS:3.5"
   },
-  "iptables_nft.no_conntrack": {
+  "firewall_iptables.no_conntrack": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Configure firewall (no ESTABLISHED/RELATED conntrack rule detected)",
     "code": "CIS:3.5.1"
   },
-  "iptables_nft.no_loopback": {
+  "firewall_iptables.no_loopback": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.5 — Ensure ufw loopback traffic is configured",
     "code": "CIS:3.5.1.5"
   },
@@ -447,15 +447,15 @@
     "ref": "CIS Ubuntu 22.04 L1 — 5.4.1 — Ensure password creation requirements are configured (minlen ≥ 14)",
     "code": "CIS:5.4.1"
   },
-  "rules.duplicate_found": {
+  "firewall_rules.duplicate_found": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (rule hygiene and auditability)",
     "code": "CIS:3.5"
   },
-  "rules.ipv6_missing": {
+  "firewall_rules.ipv6_missing": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure ufw rules exist for all open ports (IPv4 and IPv6 parity)",
     "code": "CIS:3.5.1.4"
   },
-  "rules.open_any_found": {
+  "firewall_rules.open_any_found": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Ensure ufw is installed and configured with restrictive default policy",
     "code": "CIS:3.5.1"
   },
@@ -491,11 +491,7 @@
     "ref": "CIS Ubuntu 22.04 L2 — 1.4.1 — Ensure Secure Boot is enabled",
     "code": "CIS:1.4.1"
   },
-  "services_state.enabled_inactive": {
-    "ref": "Best practice — Ensure security services remain enabled and active after reboot",
-    "code": null
-  },
-  "services_state.service_inactive": {
+  "services_health.service_inactive": {
     "ref": "Best practice — Ensure security services remain enabled and active after reboot",
     "code": null
   },

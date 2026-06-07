@@ -658,7 +658,7 @@ class TestValidateCheckFiltersAlwaysOn:
 
     def test_check_multiple_always_on_returns_none(self, capsys):
         from bob.runner import validate_check_filters
-        config = AuditConfig(check_only=frozenset({"firewall", "ports_analysis", "ddns"}))
+        config = AuditConfig(check_only=frozenset({"firewall", "ports", "ddns"}))
         assert validate_check_filters(config) is None
         assert capsys.readouterr().err == ""
 

@@ -128,11 +128,11 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "hardening.protected_symlinks_disabled",
     ]),
     ("iptables / nftables", [
-        "iptables_nft.no_backend",
-        "iptables_nft.input_accept",
-        "iptables_nft.forward_accept",
-        "iptables_nft.no_loopback",
-        "iptables_nft.no_conntrack",
+        "firewall_iptables.no_backend",
+        "firewall_iptables.input_accept",
+        "firewall_iptables.forward_accept",
+        "firewall_iptables.no_loopback",
+        "firewall_iptables.no_conntrack",
     ]),
     ("MAC policy (AppArmor / SELinux)", [
         "mac_policy.apparmor_inactive",
@@ -143,10 +143,10 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "mac_policy.selinux_disabled",
     ]),
     ("Firewall stack integrity", [
-        "firewall_stack.iptables_bypass",
-        "firewall_stack.iptables_forward_bypass",
-        "firewall_stack.nftables_parallel",
-        "firewall_stack.ip_forward_enabled",
+        "firewall_drivers.iptables_bypass",
+        "firewall_drivers.iptables_forward_bypass",
+        "firewall_drivers.nftables_parallel",
+        "firewall_drivers.ip_forward_enabled",
     ]),
     ("Docker", [
         "docker.iptables_bypass",
@@ -215,9 +215,9 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "kernel_modules.risky_net",
     ]),
     ("Firewall Rules", [
-        "rules.duplicate_found",
-        "rules.open_any_found",
-        "rules.ipv6_missing",
+        "firewall_rules.duplicate_found",
+        "firewall_rules.open_any_found",
+        "firewall_rules.ipv6_missing",
     ]),
     ("IPv6", [
         "ipv6.ufw_disabled_listeners_present",
@@ -236,11 +236,11 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "user_accounts.no_shadow",
     ]),
     ("Cron", [
-        "cron_audit.pipe_to_shell",
-        "cron_audit.world_writable",
+        "cron.pipe_to_shell",
+        "cron.world_writable",
     ]),
     ("Services", [
-        "services_state.enabled_inactive",
+        "services_health.service_inactive",
     ]),
     ("Disk", [
         "disk.smart_failed",
@@ -302,10 +302,10 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "firmware.microcode_missing",
     ]),
     ("Docker", [
-        "docker_audit.privileged",
-        "docker_audit.root_containers",
-        "docker_audit.socket_mounted",
-        "docker_audit.host_network",
+        "docker_hardening.privileged",
+        "docker_hardening.root_containers",
+        "docker_hardening.socket_mounted",
+        "docker_hardening.host_network",
     ]),
     ("Kernel Hardening", [
         "kernel_hardening.aslr_disabled",
@@ -344,13 +344,28 @@ EXPLAIN_KEYS: list[str] = [k for _, keys in _EXPLAIN_GROUPS for k in keys]
 # ---------------------------------------------------------------------------
 
 EXPLAIN_KEY_ALIASES: dict[str, str] = {
-    # v0.5.5: services_state.py emits "services_state.service_inactive" but
-    # the EXPLAIN_KEYS entry and locale block are named "enabled_inactive"
-    # (different naming choices made independently — drift detected by the
-    # hardening audit). JSON output keeps emitting "service_inactive" to
-    # preserve the contract; `bob --explain` routes through the canonical
-    # name via this alias.
-    "services_state.service_inactive": "services_state.enabled_inactive",
+    # v0.9.0 D-3: cleared on retrait. The only entry that lived here from
+    # v0.5.5 through v0.8.x (``services_health.service_inactive`` →
+    # ``enabled_inactive``, originally ``services_state.*`` pre-v0.9.0 D-1)
+    # was a bridge over module-internal drift: the ``services_state.py``
+    # check emitted ``...service_inactive`` while the EXPLAIN_KEYS entry +
+    # locale block were named ``enabled_inactive``. v0.9.0 resolves the
+    # drift at the source — the EXPLAIN_KEYS entry was renamed to
+    # ``service_inactive`` to match the emitted key — so the alias is
+    # no longer needed.
+    #
+    # The dict is intentionally kept (as an empty dict) so a future rename
+    # has a one-line migration path: add the legacy → canonical mapping
+    # here, and ``normalize_key()`` below resolves it transparently. A new
+    # entry surfaces immediately in
+    # ``test_explain_naming_convention::test_aliases_do_not_collide`` and
+    # ``test_normalize_resolves_aliases``. See ``SECURITY.md`` for the
+    # rename / alias contract.
+    #
+    # The v0.8.2 one-shot DEPRECATION warning machinery
+    # (``_warn_alias_deprecation`` + ``_WARNED_ALIASES``) was removed in
+    # v0.9.0 with this retrait — re-introduce a logger-level warning on
+    # the next rename that needs operator migration signal.
 }
 
 
@@ -378,13 +393,11 @@ def normalize_key(key: str) -> str:
       2. Resolve via ``EXPLAIN_KEY_ALIASES`` if the result is a legacy name
          (e.g. an alias added when a key was renamed).
 
-    D-3 (v0.8.2): when an alias is hit, emit a one-time DEPRECATION warning
-    pointing at the canonical name + the planned v0.9.0 retrait timeline so
-    operators have explicit signal to migrate scripts / saved profiles /
-    ignore.yml entries before the retrait lands. The warning is logger-only
-    (not user-facing print) so machine-readable JSON / CSV consumers aren't
-    polluted; operators see it in the BOB log stream + via ``--detailed``
-    log files.
+    v0.9.0 D-3: the alias dict is empty; the lookup remains so a future
+    rename has a one-line migration path. No deprecation warning fires
+    on hit — re-introduce one when the next alias needs operator signal
+    (the v0.8.2 ``_warn_alias_deprecation`` machinery was removed with
+    the retrait of the sole v0.5.5–v0.8.x entry).
 
     Examples:
         'file_perms.shadow.world_writable'  →  'file_perms.world_writable'
@@ -395,40 +408,8 @@ def normalize_key(key: str) -> str:
     if m:
         key = f"{m.group(1)}.{m.group(2)}"
     if key in EXPLAIN_KEY_ALIASES:
-        canonical = EXPLAIN_KEY_ALIASES[key]
-        _warn_alias_deprecation(key, canonical)
-        return canonical
+        return EXPLAIN_KEY_ALIASES[key]
     return key
-
-
-# D-3 (v0.8.2) — deprecation warning state. We emit at most one warning per
-# alias per process so a watch-mode session or a CI job listing every alias
-# doesn't spam the log stream. The set is process-local; subprocess /
-# multi-process audits each get their own warning (acceptable trade-off
-# for the simplicity of not threading state through the call chain).
-_WARNED_ALIASES: set[str] = set()
-
-
-def _warn_alias_deprecation(alias: str, canonical: str) -> None:
-    """Emit a one-time deprecation warning for *alias* → *canonical*.
-
-    Issued via ``logger.warning`` so it surfaces in the BOB log stream
-    (``--detailed`` ``.log`` reports + journald when run via cron) but
-    doesn't pollute the machine-readable JSON / CSV / Markdown outputs.
-
-    Retrait timeline: scheduled for v0.9.0. Operators upgrading from
-    v0.8.x have 1+ release cycles to migrate (mirrors the back-compat
-    contract documented in SECURITY.md).
-    """
-    if alias in _WARNED_ALIASES:
-        return
-    _WARNED_ALIASES.add(alias)
-    logger.warning(
-        "DEPRECATION: explain key %r is a legacy alias for %r — the alias "
-        "is scheduled for retrait in v0.9.0. Migrate scripts, saved "
-        "profiles, and ignore.yml entries to the canonical name.",
-        alias, canonical,
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,61 @@
+bodyguard-of-bits (0.9.0-1) UNRELEASED; urgency=medium
+
+  * First v0.9.x release — BREAKING bundle that closes the v0.7.0 → v0.8.x
+    deferred architectural cleanup.
+  * BREAKING — 7 section renames with hard migration error path
+    (validate_check_filters emits a fatal "renamed in v0.9.0 — use X" on
+    --check / --skip tokens that match a legacy name):
+      cron_audit       → cron
+      docker_audit     → docker_hardening   (resolves collision with always-on docker)
+      services_state   → services_health    (resolves collision with always-on services)
+      ports_analysis   → ports
+      rules            → firewall_rules     (was too generic)
+      iptables_nft     → firewall_iptables  (unifies firewall_* namespace)
+      firewall_stack   → firewall_drivers   ("drivers" is what the check audits)
+    Finding key prefixes, locale namespaces, EXPLAIN_KEYS entries, CIS
+    refs, profile overrides, bash completion + tests all migrated. The
+    section header titles (locale-rendered) are unchanged; the breaking
+    surface is the script-visible token name only.
+  * BREAKING — --json-v1 retired (F-3). The v0.6.x legacy JSON schema
+    (default before v0.7.0) is removed: --json-v1 raises a CLI error
+    pointing at CHANGELOG.md for the field-by-field v1→v2 migration table.
+    SCHEMA_V1_REQUIRED_KEYS / SCHEMA_V1_FULL_KEYS constants + _build_v1
+    + _populate_v1_full_blocks helpers deleted. v2 has been the default
+    since v0.7.0 (4 majeures); v0.6.x was EOL since v0.7.2.
+  * BREAKING — BOB_SANDBOX_LEGACY=1 trap door retired (TD-1). Announced
+    for retrait in v0.7.0 + v0.8.0 SECURITY.md. Plugins always execute
+    in the spawn'd subprocess sandbox; setting the env var has no effect.
+    The flashy stderr WARNING + CRITICAL log machinery removed alongside.
+  * Cleanup — EXPLAIN_KEY_ALIASES retired (D-3). The v0.5.5 alias
+    (services_state.service_inactive → enabled_inactive, became
+    services_health.* after the D-1 rename) was a bridge over a
+    source-side drift; v0.9.0 resolves the drift at the source (renamed
+    the EXPLAIN_KEYS entry to .service_inactive to match what
+    services_state.py emits) and clears the alias dict + removes the
+    one-shot deprecation warning machinery added in v0.8.2.
+  * Internal — _ALL_SECTIONS + _ALWAYS_ON_SECTIONS fusion (D-2). New
+    _SECTIONS: tuple[_Section(name, always_on), ...] is the single
+    source of truth; the two legacy tuples are derived views built once
+    at import time for back-compat. External consumers (bob/__main__.py
+    + tests) keep using the legacy names unchanged.
+  * NEW — --diff [PATH] cross-machine compare (F-2). The --diff flag now
+    optionally takes a baseline file path; with the path form, --diff
+    loads the file in strict mode (missing/broken/v1-schema = CLI error)
+    instead of the silent v0.8.x "no baseline yet" fallback. Baselines
+    now record the source hostname; cross-machine compare surfaces an
+    INFO notice with recorded vs current hostnames. Bare --diff / -D
+    keeps the v0.8.x local-baseline behaviour.
+  * Bug fix — bash completion "bob --check=<TAB><TAB>" without sudo
+    returned zero candidates because some bash versions place the cursor
+    on the literal "=" token (cur="=" prev="--check"); the completion
+    function now normalises cur="=" → cur="" before the prefix-match
+    branches, restoring TAB×2 list display under non-sudo invocations.
+    Companion to the v0.8.2 sudo-dispatcher walk-back guard.
+  * Tests 6246 (v0.8.4) → 6210 (v0.9.0). Net -36: -53 v1 baseline +
+    deprecation-warning tests retired, +17 new F-2 tests.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 07 Jun 2026 12:00:00 +0200
+
 bodyguard-of-bits (0.8.4-1) UNRELEASED; urgency=low
 
   * Final v0.8.x release before the v0.9.0 BREAKING bundle.

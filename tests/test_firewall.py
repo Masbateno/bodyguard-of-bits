@@ -154,7 +154,7 @@ class TestIPv6Consistency:
     def test_ok_when_ipv6_consistent(self):
         result = check_rules("", _IPV4_AND_IPV6, _t)
         ok_messages = [f.message for f in result.findings if f.level == FindingLevel.OK]
-        assert any("rules.ipv6_ok" in m for m in ok_messages)
+        assert any("firewall_rules.ipv6_ok" in m for m in ok_messages)
 
     def test_no_ipv6_check_when_no_rules(self):
         """No IPv6 finding if there are no rules at all."""
@@ -233,27 +233,27 @@ class TestOrphanRules:
     def test_orphan_rule_key(self):
         result = check_rules("", _WITH_ORPHAN, _t, listening_ports=_LISTENING)
         keys = [f.key for f in result.findings]
-        assert "rules.orphan_rule" in keys
+        assert "firewall_rules.orphan_rule" in keys
 
     def test_orphan_rule_has_delete_cmd(self):
         result = check_rules("", _WITH_ORPHAN, _t, listening_ports=_LISTENING)
-        f = next(f for f in result.findings if f.key == "rules.orphan_rule")
+        f = next(f for f in result.findings if f.key == "firewall_rules.orphan_rule")
         assert "ufw delete allow 35839/udp" in (f.cmd or "")
 
     def test_no_orphan_when_all_covered(self):
         result = check_rules("", _ALL_COVERED, _t, listening_ports=_LISTENING)
         keys = [f.key for f in result.findings]
-        assert "rules.orphan_rule" not in keys
+        assert "firewall_rules.orphan_rule" not in keys
 
     def test_v6_mirror_not_flagged_as_orphan(self):
         result = check_rules("", _WITH_ORPHAN, _t, listening_ports=_LISTENING)
-        orphan_msgs = [f.message for f in result.findings if f.key == "rules.orphan_rule"]
+        orphan_msgs = [f.message for f in result.findings if f.key == "firewall_rules.orphan_rule"]
         assert all("(v6)" not in m for m in orphan_msgs)
 
     def test_no_orphan_check_when_listening_ports_none(self):
         result = check_rules("", _WITH_ORPHAN, _t, listening_ports=None)
         keys = [f.key for f in result.findings]
-        assert "rules.orphan_rule" not in keys
+        assert "firewall_rules.orphan_rule" not in keys
 
     def test_no_deduction_for_orphan(self):
         result = check_rules("", _WITH_ORPHAN, _t, listening_ports=_LISTENING)
@@ -263,7 +263,7 @@ class TestOrphanRules:
         numbered = "[ 1] Anywhere                   ALLOW IN    Anywhere\n"
         result = check_rules("", numbered, _t, listening_ports=set())
         keys = [f.key for f in result.findings]
-        assert "rules.orphan_rule" not in keys
+        assert "firewall_rules.orphan_rule" not in keys
 
     def test_bare_port_rule_flagged_when_nothing_listening(self):
         """Protocol-unspecified rule (e.g. '57621') must be flagged as orphan."""
@@ -273,8 +273,8 @@ class TestOrphanRules:
         )
         result = check_rules("", numbered, _t, listening_ports={"22/tcp"})
         keys = [f.key for f in result.findings]
-        assert "rules.orphan_rule" in keys
-        orphan = next(f for f in result.findings if f.key == "rules.orphan_rule")
+        assert "firewall_rules.orphan_rule" in keys
+        orphan = next(f for f in result.findings if f.key == "firewall_rules.orphan_rule")
         assert "57621" in (orphan.cmd or "")
 
     def test_bare_port_rule_not_flagged_when_tcp_listening(self):
@@ -282,11 +282,11 @@ class TestOrphanRules:
         numbered = "[ 1] 57621                      ALLOW IN    192.168.1.0/24\n"
         result = check_rules("", numbered, _t, listening_ports={"57621/tcp"})
         keys = [f.key for f in result.findings]
-        assert "rules.orphan_rule" not in keys
+        assert "firewall_rules.orphan_rule" not in keys
 
     def test_bare_port_rule_not_flagged_when_udp_listening(self):
         """Bare-port rule must not be flagged if port/udp is in listening_ports."""
         numbered = "[ 1] 57621                      ALLOW IN    192.168.1.0/24\n"
         result = check_rules("", numbered, _t, listening_ports={"57621/udp"})
         keys = [f.key for f in result.findings]
-        assert "rules.orphan_rule" not in keys
+        assert "firewall_rules.orphan_rule" not in keys

@@ -93,7 +93,7 @@ class TestDockerNotInstalled:
         # directly it should behave sensibly (scan_error=False, running=0 → OK).
         snap = DockerAuditSnapshot(docker_installed=False, running_count=0)
         result = check_docker_audit(snap)
-        assert _level(result, "docker_audit.no_containers") == FindingLevel.OK
+        assert _level(result, "docker_hardening.no_containers") == FindingLevel.OK
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ class TestDockerNotInstalled:
 class TestScanError:
     def test_scan_error_returns_info(self):
         result = check_docker_audit(_snap(scan_error=True))
-        assert _level(result, "docker_audit.scan_error") == FindingLevel.INFO
+        assert _level(result, "docker_hardening.scan_error") == FindingLevel.INFO
 
     def test_scan_error_no_deduction(self):
         result = check_docker_audit(_snap(scan_error=True))
@@ -121,7 +121,7 @@ class TestScanError:
 class TestNoContainers:
     def test_no_containers_returns_ok(self):
         result = check_docker_audit(_snap(running_count=0))
-        assert _level(result, "docker_audit.no_containers") == FindingLevel.OK
+        assert _level(result, "docker_hardening.no_containers") == FindingLevel.OK
 
     def test_no_containers_no_deduction(self):
         result = check_docker_audit(_snap(running_count=0))
@@ -139,7 +139,7 @@ class TestNoContainers:
 class TestPrivilegedContainers:
     def test_privileged_is_warn(self):
         result = check_docker_audit(_snap(privileged_containers=["web"]))
-        assert _level(result, "docker_audit.privileged") == FindingLevel.WARN
+        assert _level(result, "docker_hardening.privileged") == FindingLevel.WARN
 
     def test_privileged_deducts_1(self):
         result = check_docker_audit(_snap(privileged_containers=["web"]))
@@ -152,49 +152,49 @@ class TestPrivilegedContainers:
 
     def test_privileged_deduction_key(self):
         result = check_docker_audit(_snap(privileged_containers=["web"]))
-        assert "docker_audit.privileged" in _deduction_keys(result)
+        assert "docker_hardening.privileged" in _deduction_keys(result)
 
     def test_privileged_cmd_contains_container_name(self):
         result = check_docker_audit(_snap(privileged_containers=["myapp"]))
-        f = _finding(result, "docker_audit.privileged")
+        f = _finding(result, "docker_hardening.privileged")
         assert "myapp" in (f.cmd or "")
 
     def test_privileged_cmd_type_check(self):
         result = check_docker_audit(_snap(privileged_containers=["myapp"]))
-        f = _finding(result, "docker_audit.privileged")
+        f = _finding(result, "docker_hardening.privileged")
         assert f.cmd_type == "check"
 
     def test_privileged_cmd_contains_inspect(self):
         result = check_docker_audit(_snap(privileged_containers=["myapp"]))
-        f = _finding(result, "docker_audit.privileged")
+        f = _finding(result, "docker_hardening.privileged")
         assert "docker inspect" in (f.cmd or "")
 
     def test_privileged_message_contains_count(self):
         result = check_docker_audit(_snap(privileged_containers=["a", "b"]), t=_t_format)
-        f = _finding(result, "docker_audit.privileged")
+        f = _finding(result, "docker_hardening.privileged")
         assert "count=2" in (f.message or "")
 
     def test_privileged_message_contains_names(self):
         result = check_docker_audit(_snap(privileged_containers=["myapp"]), t=_t_format)
-        f = _finding(result, "docker_audit.privileged")
+        f = _finding(result, "docker_hardening.privileged")
         assert "myapp" in (f.message or "")
 
     def test_privileged_5_or_fewer_no_suffix(self):
         """Exactly 5 containers → no '+N more' suffix."""
         names = [f"c{i}" for i in range(5)]
         result = check_docker_audit(_snap(privileged_containers=names), t=_t_format)
-        f = _finding(result, "docker_audit.privileged")
+        f = _finding(result, "docker_hardening.privileged")
         assert "more" not in (f.message or "")
 
     def test_privileged_6_shows_plus_1_more(self):
         names = [f"c{i}" for i in range(6)]
         result = check_docker_audit(_snap(privileged_containers=names), t=_t_format)
-        f = _finding(result, "docker_audit.privileged")
+        f = _finding(result, "docker_hardening.privileged")
         assert "+1 more" in (f.message or "")
 
     def test_no_ok_when_privileged(self):
         result = check_docker_audit(_snap(privileged_containers=["web"]))
-        assert "docker_audit.ok" not in _keys(result)
+        assert "docker_hardening.ok" not in _keys(result)
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ class TestPrivilegedContainers:
 class TestSocketMounted:
     def test_socket_mounted_is_warn(self):
         result = check_docker_audit(_snap(socket_mounted_containers=["agent"]))
-        assert _level(result, "docker_audit.socket_mounted") == FindingLevel.WARN
+        assert _level(result, "docker_hardening.socket_mounted") == FindingLevel.WARN
 
     def test_socket_mounted_deducts_1(self):
         result = check_docker_audit(_snap(socket_mounted_containers=["agent"]))
@@ -216,26 +216,26 @@ class TestSocketMounted:
 
     def test_socket_mounted_deduction_key(self):
         result = check_docker_audit(_snap(socket_mounted_containers=["agent"]))
-        assert "docker_audit.socket_mounted" in _deduction_keys(result)
+        assert "docker_hardening.socket_mounted" in _deduction_keys(result)
 
     def test_socket_mounted_cmd_contains_container_name(self):
         result = check_docker_audit(_snap(socket_mounted_containers=["myagent"]))
-        f = _finding(result, "docker_audit.socket_mounted")
+        f = _finding(result, "docker_hardening.socket_mounted")
         assert "myagent" in (f.cmd or "")
 
     def test_socket_mounted_cmd_type_check(self):
         result = check_docker_audit(_snap(socket_mounted_containers=["myagent"]))
-        f = _finding(result, "docker_audit.socket_mounted")
+        f = _finding(result, "docker_hardening.socket_mounted")
         assert f.cmd_type == "check"
 
     def test_socket_mounted_cmd_contains_mounts(self):
         result = check_docker_audit(_snap(socket_mounted_containers=["myagent"]))
-        f = _finding(result, "docker_audit.socket_mounted")
+        f = _finding(result, "docker_hardening.socket_mounted")
         assert "Mounts" in (f.cmd or "")
 
     def test_no_ok_when_socket_mounted(self):
         result = check_docker_audit(_snap(socket_mounted_containers=["agent"]))
-        assert "docker_audit.ok" not in _keys(result)
+        assert "docker_hardening.ok" not in _keys(result)
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ class TestSocketMounted:
 class TestOkFinding:
     def test_ok_when_no_critical_issues(self):
         result = check_docker_audit(_snap())
-        assert _level(result, "docker_audit.ok") == FindingLevel.OK
+        assert _level(result, "docker_hardening.ok") == FindingLevel.OK
 
     def test_ok_no_deduction(self):
         result = check_docker_audit(_snap())
@@ -253,7 +253,7 @@ class TestOkFinding:
 
     def test_ok_message_contains_count(self):
         result = check_docker_audit(_snap(running_count=3), t=_t_format)
-        f = _finding(result, "docker_audit.ok")
+        f = _finding(result, "docker_hardening.ok")
         assert "count=3" in (f.message or "")
 
 
@@ -264,7 +264,7 @@ class TestOkFinding:
 class TestUsernsRemap:
     def test_userns_not_configured_is_info(self):
         result = check_docker_audit(_snap(userns_remap=False))
-        assert _level(result, "docker_audit.userns_not_configured") == FindingLevel.INFO
+        assert _level(result, "docker_hardening.userns_not_configured") == FindingLevel.INFO
 
     def test_userns_not_configured_no_deduction(self):
         result = check_docker_audit(_snap(userns_remap=False))
@@ -272,18 +272,18 @@ class TestUsernsRemap:
 
     def test_userns_not_configured_has_detail(self):
         result = check_docker_audit(_snap(userns_remap=False))
-        f = _finding(result, "docker_audit.userns_not_configured")
+        f = _finding(result, "docker_hardening.userns_not_configured")
         assert f.detail is not None
 
     def test_userns_not_configured_has_fix_cmd(self):
         result = check_docker_audit(_snap(userns_remap=False))
-        f = _finding(result, "docker_audit.userns_not_configured")
+        f = _finding(result, "docker_hardening.userns_not_configured")
         assert f.cmd is not None
         assert f.cmd_type == "fix"
 
     def test_userns_configured_is_ok(self):
         result = check_docker_audit(_snap(userns_remap=True))
-        assert _level(result, "docker_audit.userns_configured") == FindingLevel.OK
+        assert _level(result, "docker_hardening.userns_configured") == FindingLevel.OK
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +293,7 @@ class TestUsernsRemap:
 class TestRootContainers:
     def test_root_containers_is_info(self):
         result = check_docker_audit(_snap(root_containers=["web"]))
-        assert _level(result, "docker_audit.root_containers") == FindingLevel.INFO
+        assert _level(result, "docker_hardening.root_containers") == FindingLevel.INFO
 
     def test_root_containers_no_deduction(self):
         result = check_docker_audit(_snap(root_containers=["web"]))
@@ -301,24 +301,24 @@ class TestRootContainers:
 
     def test_root_containers_has_detail(self):
         result = check_docker_audit(_snap(root_containers=["web"]))
-        f = _finding(result, "docker_audit.root_containers")
+        f = _finding(result, "docker_hardening.root_containers")
         assert f.detail is not None
 
     def test_root_containers_message_contains_count(self):
         result = check_docker_audit(_snap(root_containers=["a", "b"]), t=_t_format)
-        f = _finding(result, "docker_audit.root_containers")
+        f = _finding(result, "docker_hardening.root_containers")
         assert "count=2" in (f.message or "")
 
     def test_root_containers_5_or_fewer_no_suffix(self):
         names = [f"c{i}" for i in range(5)]
         result = check_docker_audit(_snap(root_containers=names), t=_t_format)
-        f = _finding(result, "docker_audit.root_containers")
+        f = _finding(result, "docker_hardening.root_containers")
         assert "more" not in (f.message or "")
 
     def test_root_containers_6_shows_plus_1_more(self):
         names = [f"c{i}" for i in range(6)]
         result = check_docker_audit(_snap(root_containers=names), t=_t_format)
-        f = _finding(result, "docker_audit.root_containers")
+        f = _finding(result, "docker_hardening.root_containers")
         assert "+1 more" in (f.message or "")
 
 
@@ -329,7 +329,7 @@ class TestRootContainers:
 class TestHostNetworkContainers:
     def test_host_network_is_info(self):
         result = check_docker_audit(_snap(host_network_containers=["proxy"]))
-        assert _level(result, "docker_audit.host_network") == FindingLevel.INFO
+        assert _level(result, "docker_hardening.host_network") == FindingLevel.INFO
 
     def test_host_network_no_deduction(self):
         result = check_docker_audit(_snap(host_network_containers=["proxy"]))
@@ -337,12 +337,12 @@ class TestHostNetworkContainers:
 
     def test_host_network_has_detail(self):
         result = check_docker_audit(_snap(host_network_containers=["proxy"]))
-        f = _finding(result, "docker_audit.host_network")
+        f = _finding(result, "docker_hardening.host_network")
         assert f.detail is not None
 
     def test_host_network_message_contains_count(self):
         result = check_docker_audit(_snap(host_network_containers=["a", "b"]), t=_t_format)
-        f = _finding(result, "docker_audit.host_network")
+        f = _finding(result, "docker_hardening.host_network")
         assert "count=2" in (f.message or "")
 
 
@@ -364,15 +364,15 @@ class TestCombined:
             privileged_containers=["web"],
             socket_mounted_containers=["agent"],
         ))
-        assert "docker_audit.privileged" in _keys(result)
-        assert "docker_audit.socket_mounted" in _keys(result)
+        assert "docker_hardening.privileged" in _keys(result)
+        assert "docker_hardening.socket_mounted" in _keys(result)
 
     def test_no_ok_when_both_critical(self):
         result = check_docker_audit(_snap(
             privileged_containers=["web"],
             socket_mounted_containers=["agent"],
         ))
-        assert "docker_audit.ok" not in _keys(result)
+        assert "docker_hardening.ok" not in _keys(result)
 
     def test_all_findings_combined(self):
         """All possible findings fire simultaneously."""
@@ -383,11 +383,11 @@ class TestCombined:
             host_network_containers=["proxy"],
             userns_remap=False,
         ))
-        assert "docker_audit.privileged" in _keys(result)
-        assert "docker_audit.socket_mounted" in _keys(result)
-        assert "docker_audit.root_containers" in _keys(result)
-        assert "docker_audit.host_network" in _keys(result)
-        assert "docker_audit.userns_not_configured" in _keys(result)
+        assert "docker_hardening.privileged" in _keys(result)
+        assert "docker_hardening.socket_mounted" in _keys(result)
+        assert "docker_hardening.root_containers" in _keys(result)
+        assert "docker_hardening.host_network" in _keys(result)
+        assert "docker_hardening.userns_not_configured" in _keys(result)
         assert _deductions(result) == 2  # only privileged + socket_mounted
 
     def test_root_and_host_net_no_deduction(self):
@@ -403,9 +403,9 @@ class TestCombined:
             root_containers=["db"],
             userns_remap=False,
         ))
-        assert "docker_audit.ok" in _keys(result)
-        assert "docker_audit.root_containers" in _keys(result)
-        assert "docker_audit.userns_not_configured" in _keys(result)
+        assert "docker_hardening.ok" in _keys(result)
+        assert "docker_hardening.root_containers" in _keys(result)
+        assert "docker_hardening.userns_not_configured" in _keys(result)
 
 
 # ---------------------------------------------------------------------------

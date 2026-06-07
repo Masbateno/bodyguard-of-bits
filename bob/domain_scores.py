@@ -79,8 +79,8 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "hardening":        "hardening",
     "kernel_hardening": "hardening",
     "kernel_modules":   "hardening",
-    "cron_audit":       "hardening",
-    "services_state":   "hardening",
+    "cron":       "hardening",
+    "services_health":   "hardening",
     "user_accounts":    "file_perms",
     "password_policy":  "hardening",
     "memory":           "hardening",
@@ -103,7 +103,7 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "disk":             "disk",
     "fail2ban":         "ssh",
     "virt":             "hardening",
-    "docker_audit":     "hardening",
+    "docker_hardening":     "hardening",
 }
 
 

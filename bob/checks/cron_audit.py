@@ -252,11 +252,11 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
     if pipe_entries:
         count = len(pipe_entries)
         result.warn_with_deduction(
-            key="cron_audit.pipe_to_shell",
-            message=_t("cron_audit.pipe_to_shell", count=count),
-            reason=_t("cron_audit.pipe_to_shell_reason", count=count),
+            key="cron.pipe_to_shell",
+            message=_t("cron.pipe_to_shell", count=count),
+            reason=_t("cron.pipe_to_shell_reason", count=count),
             points=2,
-            detail=_t("cron_audit.pipe_to_shell_detail"),
+            detail=_t("cron.pipe_to_shell_detail"),
             nature="action",
         )
 
@@ -267,11 +267,11 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
         if count > 3:
             scripts += f" (+{count - 3})"
         result.warn_with_deduction(
-            key="cron_audit.world_writable",
-            message=_t("cron_audit.world_writable", count=count, scripts=scripts),
-            reason=_t("cron_audit.world_writable_reason", count=count),
+            key="cron.world_writable",
+            message=_t("cron.world_writable", count=count, scripts=scripts),
+            reason=_t("cron.world_writable_reason", count=count),
             points=1,
-            detail=_t("cron_audit.world_writable_detail"),
+            detail=_t("cron.world_writable_detail"),
             cmd=_chmod_cmd(writable_scripts),
             nature="action",
         )
@@ -280,15 +280,15 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
     if unexpected_users:
         users = ", ".join(unexpected_users)
         result.info(
-            message=_t("cron_audit.unexpected_users", users=users),
-            key="cron_audit.unexpected_users",
+            message=_t("cron.unexpected_users", users=users),
+            key="cron.unexpected_users",
         )
 
     # --- All clear ----------------------------------------------------------
     if not result.findings:
         result.ok(
-            message=_t("cron_audit.ok"),
-            key="cron_audit.ok",
+            message=_t("cron.ok"),
+            key="cron.ok",
         )
 
     return result

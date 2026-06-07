@@ -161,16 +161,16 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
 
     if snapshot.scan_error:
         result.info(
-            message=_t("docker_audit.scan_error"),
-            key="docker_audit.scan_error",
+            message=_t("docker_hardening.scan_error"),
+            key="docker_hardening.scan_error",
         )
         return result
 
     # No containers running — nothing critical to report
     if snapshot.running_count == 0:
         result.ok(
-            message=_t("docker_audit.no_containers"),
-            key="docker_audit.no_containers",
+            message=_t("docker_hardening.no_containers"),
+            key="docker_hardening.no_containers",
         )
         return result
 
@@ -183,18 +183,18 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         )
         first = snapshot.privileged_containers[0]
         result.warn_with_deduction(
-            key="docker_audit.privileged",
+            key="docker_hardening.privileged",
             message=_t(
-                "docker_audit.privileged",
+                "docker_hardening.privileged",
                 count=len(snapshot.privileged_containers),
                 containers=names + suffix,
             ),
             reason=_t(
-                "docker_audit.privileged_reason",
+                "docker_hardening.privileged_reason",
                 count=len(snapshot.privileged_containers),
             ),
             points=1,
-            detail=_t("docker_audit.privileged_detail"),
+            detail=_t("docker_hardening.privileged_detail"),
             cmd=f"docker inspect --format '{{{{.HostConfig.Privileged}}}}' {first}",
             cmd_type="check",
         )
@@ -204,18 +204,18 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         names = ", ".join(snapshot.socket_mounted_containers[:5])
         first = snapshot.socket_mounted_containers[0]
         result.warn_with_deduction(
-            key="docker_audit.socket_mounted",
+            key="docker_hardening.socket_mounted",
             message=_t(
-                "docker_audit.socket_mounted",
+                "docker_hardening.socket_mounted",
                 count=len(snapshot.socket_mounted_containers),
                 containers=names,
             ),
             reason=_t(
-                "docker_audit.socket_mounted_reason",
+                "docker_hardening.socket_mounted_reason",
                 count=len(snapshot.socket_mounted_containers),
             ),
             points=1,
-            detail=_t("docker_audit.socket_mounted_detail"),
+            detail=_t("docker_hardening.socket_mounted_detail"),
             cmd=f"docker inspect --format '{{{{json .Mounts}}}}' {first}",
             cmd_type="check",
         )
@@ -224,25 +224,25 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
     if not snapshot.privileged_containers and not snapshot.socket_mounted_containers:
         result.ok(
             message=_t(
-                "docker_audit.ok",
+                "docker_hardening.ok",
                 count=snapshot.running_count,
             ),
-            key="docker_audit.ok",
+            key="docker_hardening.ok",
         )
 
     # --- userns-remap (INFO only) ---
     if not snapshot.userns_remap:
         result.info(
-            message=_t("docker_audit.userns_not_configured"),
-            detail=_t("docker_audit.userns_not_configured_detail"),
+            message=_t("docker_hardening.userns_not_configured"),
+            detail=_t("docker_hardening.userns_not_configured_detail"),
             cmd='echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker',
             cmd_type="fix",
-            key="docker_audit.userns_not_configured",
+            key="docker_hardening.userns_not_configured",
         )
     else:
         result.ok(
-            message=_t("docker_audit.userns_configured"),
-            key="docker_audit.userns_configured",
+            message=_t("docker_hardening.userns_configured"),
+            key="docker_hardening.userns_configured",
         )
 
     # --- Root containers (INFO only) ---
@@ -254,12 +254,12 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         )
         result.info(
             message=_t(
-                "docker_audit.root_containers",
+                "docker_hardening.root_containers",
                 count=len(snapshot.root_containers),
                 containers=names + suffix,
             ),
-            detail=_t("docker_audit.root_containers_detail"),
-            key="docker_audit.root_containers",
+            detail=_t("docker_hardening.root_containers_detail"),
+            key="docker_hardening.root_containers",
         )
 
     # --- Host network containers (INFO only) ---
@@ -267,12 +267,12 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         names = ", ".join(snapshot.host_network_containers[:5])
         result.info(
             message=_t(
-                "docker_audit.host_network",
+                "docker_hardening.host_network",
                 count=len(snapshot.host_network_containers),
                 containers=names,
             ),
-            detail=_t("docker_audit.host_network_detail"),
-            key="docker_audit.host_network",
+            detail=_t("docker_hardening.host_network_detail"),
+            key="docker_hardening.host_network",
         )
 
     return result

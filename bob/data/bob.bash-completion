@@ -26,11 +26,25 @@ _bob() {
         prev="${COMP_WORDS[COMP_CWORD-2]}"
     fi
 
+    # v0.9.0 — companion guard: when ``=`` is in COMP_WORDBREAKS AND the
+    # user types ``--check=`` then TAB with no value typed after, some
+    # bash versions place the cursor ON the ``=`` itself instead of on
+    # a trailing empty word. The function then arrives as
+    # ``_bob bob "=" "--check"`` and ``compgen -- "="`` filters every
+    # section out because no section name starts with ``=``. Normalise
+    # ``cur="="`` to ``cur=""`` so the empty-prefix branch fires and
+    # the full list is shown on TAB×2. Without this guard,
+    # ``bob --check=<TAB><TAB>`` silently returns zero candidates in
+    # non-sudo invocations.
+    if [[ "${cur}" == "=" ]]; then
+        cur=""
+    fi
+
     # Authoritative list of filterable sections — keep in sync with
     # bob/runner.py::_ALL_SECTIONS (34 entries; matches `bob --check=list`).
     # Core checks (firewall, ports, services, logs) always run and are
     # intentionally absent from this list.
-    local _SECTIONS="auditd auth_log backup clamav cron_audit desktop_apps disk docker_audit fail2ban file_integrity file_perms firmware hardening iptables_nft ipv6 kernel_hardening kernel_modules log_rotation mac_policy memory ntp password_policy rootkit samba secure_boot services_state smtp ssh ssl_certs suid_audit systemd_timers umask updates user_accounts"
+    local _SECTIONS="auditd auth_log backup clamav cron desktop_apps disk docker_hardening fail2ban file_integrity file_perms firewall_iptables firmware hardening ipv6 kernel_hardening kernel_modules log_rotation mac_policy memory ntp password_policy rootkit samba secure_boot services_health smtp ssh ssl_certs suid_audit systemd_timers umask updates user_accounts"
 
     # Handle -l N (--log-days short form) — suggest common values
     if [[ "${prev}" == "-l" ]]; then
@@ -96,7 +110,7 @@ _bob() {
     # The list is kept hand-curated below; ``tests/test_bash_completion_*``
     # pin it against ``bob.explain.EXPLAIN_KEYS`` so a new check key + its
     # explain entry surface as a sync failure in CI.
-    local _EXPLAIN_KEYS="auditd.missing_sensitive_rules auditd.no_rules auditd.not_installed auditd.service_inactive auth_log.brute_force auth_log.public_login backup.no_backup clamav.db_not_found clamav.db_outdated clamav.db_very_outdated clamav.freshclam_missing clamav.scan_old clamav.scan_very_old cron_audit.pipe_to_shell cron_audit.world_writable ddns.found ddns.warn disk.partition_critical disk.pending_sectors disk.reallocated_sectors disk.smart_failed disk.uncorrectable_errors docker.exposed_bypass_ufw docker.exposed_port docker.iptables_bypass docker_audit.host_network docker_audit.privileged docker_audit.root_containers docker_audit.socket_mounted fail2ban.no_jails fail2ban.service_inactive file_integrity.check_old file_integrity.no_check file_integrity.no_db file_integrity.not_installed file_perms.ssh_host_key_perms file_perms.sudoers_nopasswd_all file_perms.too_permissive file_perms.world_writable firewall.inactive firewall.logging_off firewall.policy_open firewall.policy_unknown firewall_stack.ip_forward_enabled firewall_stack.iptables_bypass firewall_stack.iptables_forward_bypass firewall_stack.nftables_parallel firmware.fwupd_updates firmware.microcode_missing hardening.accept_redirects_v6_enabled hardening.accept_source_route_enabled hardening.log_martians_disabled hardening.protected_hardlinks_disabled hardening.protected_symlinks_disabled hardening.redirects_enabled hardening.rp_filter_disabled hardening.rp_filter_loose hardening.send_redirects_enabled hardening.tcp_syncookies_disabled iptables_nft.forward_accept iptables_nft.input_accept iptables_nft.no_backend iptables_nft.no_conntrack iptables_nft.no_loopback ipv6.port_no_v6_rule ipv6.ufw_disabled_listeners_present ipv6.ufw_enabled_kernel_disabled kernel_hardening.aslr_conservative kernel_hardening.aslr_disabled kernel_hardening.dmesg_exposed kernel_hardening.kptr_exposed kernel_hardening.ptrace_unrestricted kernel_hardening.suid_dump_all kernel_modules.risky_fs kernel_modules.risky_net log_rotation.journald_volatile log_rotation.logrotate_missing logs.brute_found mac_policy.apparmor_inactive mac_policy.apparmor_no_enforce mac_policy.apparmor_no_profiles mac_policy.no_enforce mac_policy.no_mac mac_policy.selinux_disabled memory.swappiness_ssd_wear memory.swappiness_unjustified network_context.sensitive_remote ntp.not_enabled ntp.not_synchronized password_policy.no_expiry password_policy.no_quality_module password_policy.weak_minlen ports.uncovered ports.uncovered_netbios prerequisites.ufw_missing risk.escalated_posture rootkit.db_outdated rootkit.no_scan rootkit.scan_old rules.duplicate_found rules.ipv6_missing rules.open_any_found samba.guest_readonly samba.guest_writable samba.map_to_guest samba.null_passwords samba.server_signing_disabled samba.smb1_enabled secure_boot.disabled secure_boot.setup_mode services.exposure.open_local services.state.active_disabled services.state.installed_inactive_critical services_state.enabled_inactive smtp.exposed ssh.allow_tcp_forwarding ssh.authorized_keys_dsa ssh.authorized_keys_duplicate ssh.authorized_keys_no_restrictions ssh.authorized_keys_perms ssh.authorized_keys_weak_key ssh.client_forward_agent ssh.client_known_hosts_devnull ssh.client_strict_host_no ssh.dir_perms ssh.dsa_key ssh.host_based_auth ssh.host_key_dsa ssh.ignore_rhosts_disabled ssh.known_hosts_deprecated ssh.known_hosts_duplicate ssh.login_grace_time ssh.max_auth_tries ssh.no_allow_users ssh.no_passphrase ssh.not_active ssh.password_auth ssh.permit_empty_passwords ssh.permit_root_login ssh.permit_user_env ssh.private_key_perms ssh.pubkey_auth_disabled ssh.rsa_weak ssh.strict_modes_disabled ssh.weak_ciphers ssh.weak_kex ssh.weak_macs ssh.x11_forwarding ssl_certs.expired ssl_certs.expiring_critical ssl_certs.expiring_soon suid_audit.unexpected_sgid suid_audit.unexpected_suid systemd_timers.pipe_to_shell systemd_timers.user_created_root systemd_timers.world_writable umask.group_writable umask.world_writable updates.apt_cache_stale updates.dist_upgrade_inconsistent updates.security_pending updates.unattended_not_configured user_accounts.empty_password user_accounts.expired_account user_accounts.no_shadow user_accounts.uid_zero virt.bypass_risk virt.snap_network"
+    local _EXPLAIN_KEYS="auditd.missing_sensitive_rules auditd.no_rules auditd.not_installed auditd.service_inactive auth_log.brute_force auth_log.public_login backup.no_backup clamav.db_not_found clamav.db_outdated clamav.db_very_outdated clamav.freshclam_missing clamav.scan_old clamav.scan_very_old cron.pipe_to_shell cron.world_writable ddns.found ddns.warn disk.partition_critical disk.pending_sectors disk.reallocated_sectors disk.smart_failed disk.uncorrectable_errors docker.exposed_bypass_ufw docker.exposed_port docker.iptables_bypass docker_hardening.host_network docker_hardening.privileged docker_hardening.root_containers docker_hardening.socket_mounted fail2ban.no_jails fail2ban.service_inactive file_integrity.check_old file_integrity.no_check file_integrity.no_db file_integrity.not_installed file_perms.ssh_host_key_perms file_perms.sudoers_nopasswd_all file_perms.too_permissive file_perms.world_writable firewall.inactive firewall.logging_off firewall.policy_open firewall.policy_unknown firewall_drivers.ip_forward_enabled firewall_drivers.iptables_bypass firewall_drivers.iptables_forward_bypass firewall_drivers.nftables_parallel firewall_iptables.forward_accept firewall_iptables.input_accept firewall_iptables.no_backend firewall_iptables.no_conntrack firewall_iptables.no_loopback firewall_rules.duplicate_found firewall_rules.ipv6_missing firewall_rules.open_any_found firmware.fwupd_updates firmware.microcode_missing hardening.accept_redirects_v6_enabled hardening.accept_source_route_enabled hardening.log_martians_disabled hardening.protected_hardlinks_disabled hardening.protected_symlinks_disabled hardening.redirects_enabled hardening.rp_filter_disabled hardening.rp_filter_loose hardening.send_redirects_enabled hardening.tcp_syncookies_disabled ipv6.port_no_v6_rule ipv6.ufw_disabled_listeners_present ipv6.ufw_enabled_kernel_disabled kernel_hardening.aslr_conservative kernel_hardening.aslr_disabled kernel_hardening.dmesg_exposed kernel_hardening.kptr_exposed kernel_hardening.ptrace_unrestricted kernel_hardening.suid_dump_all kernel_modules.risky_fs kernel_modules.risky_net log_rotation.journald_volatile log_rotation.logrotate_missing logs.brute_found mac_policy.apparmor_inactive mac_policy.apparmor_no_enforce mac_policy.apparmor_no_profiles mac_policy.no_enforce mac_policy.no_mac mac_policy.selinux_disabled memory.swappiness_ssd_wear memory.swappiness_unjustified network_context.sensitive_remote ntp.not_enabled ntp.not_synchronized password_policy.no_expiry password_policy.no_quality_module password_policy.weak_minlen ports.uncovered ports.uncovered_netbios prerequisites.ufw_missing risk.escalated_posture rootkit.db_outdated rootkit.no_scan rootkit.scan_old samba.guest_readonly samba.guest_writable samba.map_to_guest samba.null_passwords samba.server_signing_disabled samba.smb1_enabled secure_boot.disabled secure_boot.setup_mode services.exposure.open_local services.state.active_disabled services.state.installed_inactive_critical services_health.service_inactive smtp.exposed ssh.allow_tcp_forwarding ssh.authorized_keys_dsa ssh.authorized_keys_duplicate ssh.authorized_keys_no_restrictions ssh.authorized_keys_perms ssh.authorized_keys_weak_key ssh.client_forward_agent ssh.client_known_hosts_devnull ssh.client_strict_host_no ssh.dir_perms ssh.dsa_key ssh.host_based_auth ssh.host_key_dsa ssh.ignore_rhosts_disabled ssh.known_hosts_deprecated ssh.known_hosts_duplicate ssh.login_grace_time ssh.max_auth_tries ssh.no_allow_users ssh.no_passphrase ssh.not_active ssh.password_auth ssh.permit_empty_passwords ssh.permit_root_login ssh.permit_user_env ssh.private_key_perms ssh.pubkey_auth_disabled ssh.rsa_weak ssh.strict_modes_disabled ssh.weak_ciphers ssh.weak_kex ssh.weak_macs ssh.x11_forwarding ssl_certs.expired ssl_certs.expiring_critical ssl_certs.expiring_soon suid_audit.unexpected_sgid suid_audit.unexpected_suid systemd_timers.pipe_to_shell systemd_timers.user_created_root systemd_timers.world_writable umask.group_writable umask.world_writable updates.apt_cache_stale updates.dist_upgrade_inconsistent updates.security_pending updates.unattended_not_configured user_accounts.empty_password user_accounts.expired_account user_accounts.no_shadow user_accounts.uid_zero virt.bypass_risk virt.snap_network"
 
     if [[ "${cur}" == --ignore=* ]]; then
         COMPREPLY=( $(compgen -W "${_EXPLAIN_KEYS}" -- "${cur#--ignore=}") )
@@ -127,6 +141,23 @@ _bob() {
     if [[ "${cur}" == --explain=* ]]; then
         COMPREPLY=( $(compgen -W "list ${_EXPLAIN_KEYS}" -- "${cur#--explain=}") )
         COMPREPLY=( "${COMPREPLY[@]/#/--explain=}" )
+        return 0
+    fi
+
+    # v0.9.0 F-2 — Handle --diff=PATH and --diff PATH (path completion).
+    # The --diff flag now optionally takes a baseline JSON file path for
+    # cross-machine compare. Bare --diff keeps the v0.8.x behaviour
+    # (load ~/.config/bob/last_baseline.json) and shows no completions.
+    if [[ "${cur}" == --diff=* ]]; then
+        local _val="${cur#--diff=}"
+        COMPREPLY=( $(compgen -f -- "${_val}") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--diff=}" )
+        compopt -o filenames 2>/dev/null || true
+        return 0
+    fi
+    if [[ "${prev}" == "--diff" ]] || [[ "${prev}" == "-D" ]]; then
+        COMPREPLY=( $(compgen -f -- "${cur}") )
+        compopt -o filenames 2>/dev/null || true
         return 0
     fi
 
@@ -189,7 +220,7 @@ _bob() {
     local short_opts="-v -d -q -f -y -r -n -j -J -l -m -c -C -o -p -e -D -w -V -h -B"
 
     # All long options (single line — avoids multiline parsing issues on some bash versions)
-    local long_opts="--verbose --detailed --quiet --fix --apply --yes --reconfigure --no-color --no-colour --format= --json --json-full --json-v1 --output= --output-dir= --min-level= --log-days= --manage-logs --install-cron --manage-cron --install-completion --french --lang= --offline --profile= --reset-baseline --ignore= --unignore= --show-ignored --history --explain --diff --watch= --webhook= --webhook-format= --test-webhook --target= --html --check= --skip= --breakdown --version --help"
+    local long_opts="--verbose --detailed --quiet --fix --apply --yes --reconfigure --no-color --no-colour --format= --json --json-full --output= --output-dir= --min-level= --log-days= --manage-logs --install-cron --manage-cron --install-completion --french --lang= --offline --profile= --reset-baseline --ignore= --unignore= --show-ignored --history --explain --diff --watch= --webhook= --webhook-format= --test-webhook --target= --html --check= --skip= --breakdown --version --help"
 
     if [[ "${cur}" == --* ]]; then
         COMPREPLY=( $(compgen -W "${long_opts}" -- "${cur}") )

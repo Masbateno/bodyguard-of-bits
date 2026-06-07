@@ -701,43 +701,18 @@ def _worker_main(plugin_path: str, result_queue) -> None:
 # ---------------------------------------------------------------------------
 
 class SandboxRunner:
-    """Runs plugins under the sandbox (or in legacy mode when
-    ``BOB_SANDBOX_LEGACY=1``).
+    """Runs plugins under the spawn'd-subprocess sandbox.
 
-    The legacy mode check is re-evaluated **per ``run()`` call** so a
-    plugin author who toggles the env var mid-session gets the change
-    immediately. The flashy WARNING is also re-emitted at every run that
-    actually executes in legacy mode — by design, this should be loud
-    enough that nobody runs legacy-mode in production without noticing.
+    v0.9.0 TD-1: the ``BOB_SANDBOX_LEGACY=1`` trap door (announced for
+    retrait in v0.7.0 + v0.8.0 SECURITY.md notes) is removed. There is no
+    longer a way to opt out of the sandbox via env var; plugins always
+    execute in the spawn'd-subprocess context. If a plugin needs unrestricted
+    builtins, it must be reworked to use the sandbox-allowed API surface
+    or run outside ``bob`` entirely (e.g. as a separate cron job).
     """
 
     def __init__(self, timeout_seconds: float = 5.0):
         self.timeout_seconds = float(timeout_seconds)
-        # Probe legacy on construction for the first-time stderr warning,
-        # but the authoritative check happens per-run() so toggling the
-        # env var at runtime takes effect.
-        if self._legacy_active():
-            self._emit_legacy_warning()
-
-    @staticmethod
-    def _legacy_active() -> bool:
-        return os.environ.get("BOB_SANDBOX_LEGACY") == "1"
-
-    @staticmethod
-    def _emit_legacy_warning() -> None:
-        logger.critical(
-            "BOB SANDBOX DISABLED via BOB_SANDBOX_LEGACY=1 — "
-            "plugins run with no isolation and may execute arbitrary "
-            "code with the caller's privileges (root under sudo). "
-            "Unset BOB_SANDBOX_LEGACY for the secure default."
-        )
-        # Also write directly to stderr in case the user has filtered the
-        # logger config — this is a security-relevant event and must not
-        # be silenceable by accidental logging misconfiguration.
-        sys.stderr.write(
-            "\n⚠ ⚠ ⚠  BOB SANDBOX DISABLED via BOB_SANDBOX_LEGACY=1 ⚠ ⚠ ⚠\n"
-        )
-        sys.stderr.flush()
 
     def run(self, plugin_path, t=None) -> CheckResult:
         """Validate + execute the plugin, returning its CheckResult.
@@ -772,12 +747,8 @@ class SandboxRunner:
                 f"Plugin {plugin_path.name!r} missing required run_check function"
             )
 
-        # --- Legacy bypass (Q5') --------------------------------------------
-        if self._legacy_active():
-            self._emit_legacy_warning()
-            return self._run_legacy(plugin_path, source, t=t)
-
-        # --- Sandboxed run via spawn'd child --------------------------------
+        # v0.9.0 TD-1: the BOB_SANDBOX_LEGACY=1 bypass is removed. Plugins
+        # always run in the spawn'd-subprocess sandbox.
         return self._run_sandboxed(plugin_path, t=t)
 
     # -----------------------------------------------------------------------
@@ -887,56 +858,10 @@ class SandboxRunner:
 
     # -----------------------------------------------------------------------
 
-    def _run_legacy(self, plugin_path: Path, source: str, t=None) -> CheckResult:
-        """Q5' bypass — no sandbox, plugin runs in this process."""
-        namespace: dict[str, Any] = {
-            "__name__": "__bob_plugin_legacy__",
-            "__file__": str(plugin_path),
-        }
-        try:
-            exec(compile(source, str(plugin_path), "exec"), namespace)
-            run_check = namespace.get("run_check")
-            if not callable(run_check):
-                r = CheckResult()
-                r.warn(
-                    message=_sandbox_msg(
-                        t, "plugin.sandbox.missing_run_check",
-                        f"Plugin {plugin_path.name!r} missing run_check",
-                        plugin=repr(plugin_path.name),
-                    ),
-                    key="plugin.sandbox.missing_run_check",
-                    nature="structural",
-                )
-                return r
-            result = run_check(None)
-            if not isinstance(result, CheckResult):
-                r = CheckResult()
-                r.warn(
-                    message=_sandbox_msg(
-                        t, "plugin.sandbox.bad_return",
-                        f"Plugin {plugin_path.name!r} returned "
-                        f"{type(result).__name__}, not CheckResult",
-                        plugin=repr(plugin_path.name),
-                        actual_type=type(result).__name__,
-                    ),
-                    key="plugin.sandbox.bad_return",
-                    nature="structural",
-                )
-                return r
-            return result
-        except Exception as exc:  # noqa: BLE001
-            r = CheckResult()
-            r.warn(
-                message=_sandbox_msg(
-                    t, "plugin.sandbox.crashed",
-                    f"Plugin {plugin_path.name!r} crashed: {exc}",
-                    plugin=repr(plugin_path.name),
-                    error=exc,
-                ),
-                key="plugin.sandbox.crashed",
-                nature="structural",
-            )
-            return r
+    # v0.9.0 TD-1: ``_run_legacy`` removed alongside the BOB_SANDBOX_LEGACY=1
+    # trap door. Pre-v0.9.0 this method exec'd the plugin in the parent
+    # process namespace; in v0.9.0+ every plugin runs in the spawn'd
+    # subprocess via ``_run_sandboxed``.
 
 
 # M-4 (v0.7.4): tiny i18n helper for sandbox WARN messages. Resolves

@@ -32,7 +32,7 @@ class TestGetCisRef:
         assert ref.startswith("CIS")
 
     def test_known_iptables_nft_key(self):
-        ref = get_cis_ref("iptables_nft.input_accept")
+        ref = get_cis_ref("firewall_iptables.input_accept")
         assert ref is not None
         assert ref.startswith("CIS")
 
@@ -42,7 +42,7 @@ class TestGetCisRef:
         assert ref.startswith("CIS")
 
     def test_new_iptables_no_backend(self):
-        ref = get_cis_ref("iptables_nft.no_backend")
+        ref = get_cis_ref("firewall_iptables.no_backend")
         assert ref is not None
 
     def test_new_kernel_modules_reboot_pending(self):
@@ -69,7 +69,7 @@ class TestGetCisRef:
         assert get_cis_ref("") is None
 
     def test_services_state_service_inactive(self):
-        ref = get_cis_ref("services_state.service_inactive")
+        ref = get_cis_ref("services_health.service_inactive")
         assert ref is not None
 
     def test_mac_policy_apparmor_inactive(self):
@@ -89,7 +89,7 @@ class TestGetCisCode:
         assert _CODE_RE.match(code), f"Unexpected code format: {code!r}"
 
     def test_docker_entry_returns_docker_code(self):
-        code = get_cis_code("docker_audit.privileged")
+        code = get_cis_code("docker_hardening.privileged")
         assert code == "CIS Docker:5.4"
 
     def test_best_practice_entry_returns_none(self):
@@ -115,7 +115,7 @@ class TestGetCisCode:
         assert code == "CIS:4.1.4"
 
     def test_iptables_nft_forward_accept_code(self):
-        code = get_cis_code("iptables_nft.forward_accept")
+        code = get_cis_code("firewall_iptables.forward_accept")
         assert code == "CIS:3.5.1.1"
 
 

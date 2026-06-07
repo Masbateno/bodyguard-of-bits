@@ -56,14 +56,14 @@ class TestNoSystemctl:
     def test_no_systemctl_returns_info(self):
         snap = base_snapshot(systemctl_available=False)
         result = check_services_state(snap)
-        assert _has_finding(result, "services_state.no_systemctl", FindingLevel.INFO)
+        assert _has_finding(result, "services_health.no_systemctl", FindingLevel.INFO)
 
     def test_no_systemctl_returns_early(self):
         """No other findings when systemctl is unavailable, even with inactive listed."""
         snap = base_snapshot(systemctl_available=False, enabled_inactive=["ufw"])
         result = check_services_state(snap)
         assert len(result.findings) == 1
-        assert result.findings[0].key == "services_state.no_systemctl"
+        assert result.findings[0].key == "services_health.no_systemctl"
 
     def test_no_systemctl_no_deduction(self):
         snap = base_snapshot(systemctl_available=False)
@@ -78,7 +78,7 @@ class TestNoSystemctl:
 class TestAllOk:
     def test_empty_inactive_returns_ok(self):
         result = check_services_state(base_snapshot())
-        assert _has_finding(result, "services_state.ok", FindingLevel.OK)
+        assert _has_finding(result, "services_health.ok", FindingLevel.OK)
 
     def test_empty_inactive_no_deduction(self):
         result = check_services_state(base_snapshot())
@@ -87,7 +87,7 @@ class TestAllOk:
     def test_ok_not_emitted_when_findings_present(self):
         snap = base_snapshot(enabled_inactive=["ufw"])
         result = check_services_state(snap)
-        assert not _has_finding(result, "services_state.ok", FindingLevel.OK)
+        assert not _has_finding(result, "services_health.ok", FindingLevel.OK)
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ class TestInactiveServices:
     def test_ufw_inactive_produces_warn(self):
         snap = base_snapshot(enabled_inactive=["ufw"])
         result = check_services_state(snap)
-        assert _has_finding(result, "services_state.service_inactive", FindingLevel.WARN)
+        assert _has_finding(result, "services_health.service_inactive", FindingLevel.WARN)
 
     def test_one_inactive_deducts_1_point(self):
         snap = base_snapshot(enabled_inactive=["fail2ban"])
@@ -118,7 +118,7 @@ class TestInactiveServices:
     def test_deduction_key(self):
         snap = base_snapshot(enabled_inactive=["ufw"])
         result = check_services_state(snap)
-        assert "services_state.service_inactive" in _deduction_keys(result)
+        assert "services_health.service_inactive" in _deduction_keys(result)
 
     def test_one_finding_per_inactive_service(self):
         snap = base_snapshot(enabled_inactive=["ufw", "fail2ban"])
@@ -129,7 +129,7 @@ class TestInactiveServices:
     def test_nature_is_action(self):
         snap = base_snapshot(enabled_inactive=["ufw"])
         result = check_services_state(snap)
-        finding = _get_finding(result, "services_state.service_inactive")
+        finding = _get_finding(result, "services_health.service_inactive")
         assert finding is not None
         assert finding.nature == "action"
 
@@ -137,14 +137,14 @@ class TestInactiveServices:
         """The fix command must reference the affected service."""
         snap = base_snapshot(enabled_inactive=["fail2ban"])
         result = check_services_state(snap)
-        finding = _get_finding(result, "services_state.service_inactive")
+        finding = _get_finding(result, "services_health.service_inactive")
         assert finding is not None
         assert "fail2ban" in finding.cmd
 
     def test_cmd_is_non_empty(self):
         snap = base_snapshot(enabled_inactive=["ufw"])
         result = check_services_state(snap)
-        finding = _get_finding(result, "services_state.service_inactive")
+        finding = _get_finding(result, "services_health.service_inactive")
         assert finding is not None
         assert finding.cmd
 
@@ -158,7 +158,7 @@ class TestNonSecurityServicesIgnored:
         """A service not in SECURITY_SERVICES must not trigger a finding."""
         snap = base_snapshot(enabled_inactive=["nginx"])
         result = check_services_state(snap)
-        assert _has_finding(result, "services_state.ok", FindingLevel.OK)
+        assert _has_finding(result, "services_health.ok", FindingLevel.OK)
 
     def test_non_security_service_no_deduction(self):
         snap = base_snapshot(enabled_inactive=["nginx"])
@@ -177,7 +177,7 @@ class TestNonSecurityServicesIgnored:
         """Service names in SECURITY_SERVICES are lowercase; uppercase must not match."""
         snap = base_snapshot(enabled_inactive=["UFW", "FAIL2BAN"])
         result = check_services_state(snap)
-        assert _has_finding(result, "services_state.ok", FindingLevel.OK)
+        assert _has_finding(result, "services_health.ok", FindingLevel.OK)
         assert _deduction_points(result) == 0
 
 
@@ -231,14 +231,14 @@ class TestSecurityServicesSet:
         """Spot-check: ufw (the primary firewall) must be monitored."""
         snap = base_snapshot(enabled_inactive=["ufw"])
         assert _has_finding(
-            check_services_state(snap), "services_state.service_inactive", FindingLevel.WARN
+            check_services_state(snap), "services_health.service_inactive", FindingLevel.WARN
         )
 
     def test_fail2ban_is_monitored(self):
         """Spot-check: fail2ban must be monitored."""
         snap = base_snapshot(enabled_inactive=["fail2ban"])
         assert _has_finding(
-            check_services_state(snap), "services_state.service_inactive", FindingLevel.WARN
+            check_services_state(snap), "services_health.service_inactive", FindingLevel.WARN
         )
 
 
@@ -268,7 +268,7 @@ class TestEdgeCases:
         snap = ServicesStateSnapshot(systemctl_available=True, enabled_inactive=None)
         result = check_services_state(snap)
         assert isinstance(result.findings, list)
-        assert _has_finding(result, "services_state.ok", FindingLevel.OK)
+        assert _has_finding(result, "services_health.ok", FindingLevel.OK)
 
     def test_none_enabled_inactive_no_deduction(self):
         snap = ServicesStateSnapshot(systemctl_available=True, enabled_inactive=None)

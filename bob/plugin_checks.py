@@ -35,10 +35,9 @@ process — it executes only in the sandboxed child. This defeats top-level
 malicious code (no ``import subprocess`` at module load time can pwn the
 audit).
 
-For the migration window, ``BOB_SANDBOX_LEGACY=1`` opts out of the sandbox
-entirely and runs the plugin in the parent process with full builtins. A
-flashy WARNING is printed to stderr at runner instantiation. This trap door
-is deprecated immediately and will be removed in v0.8.0.
+v0.9.0 TD-1: the ``BOB_SANDBOX_LEGACY=1`` env-var trap door (announced
+for retrait in v0.7.0 + v0.8.0) is removed. Plugins always execute in
+the spawn'd sandbox child; setting the env var has no effect.
 
 See ``bob/_sandbox.py`` for the runner implementation and
 ``tests/plugins_adversarial/`` for the known-bad attack patterns the
@@ -119,8 +118,11 @@ def _extract_check_name_from_source(source: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Runner singleton — instantiated once so the BOB_SANDBOX_LEGACY warning
-# prints once at first plugin load rather than once per plugin.
+# Runner singleton — instantiated once so plugin discovery does not pay the
+# subprocess-spawn setup cost per plugin. v0.9.0 TD-1: the
+# BOB_SANDBOX_LEGACY=1 first-time-stderr warning that drove the original
+# singleton justification is gone with the trap door; the singleton is kept
+# for the spawn-cost reason alone.
 # ---------------------------------------------------------------------------
 
 _runner: SandboxRunner | None = None

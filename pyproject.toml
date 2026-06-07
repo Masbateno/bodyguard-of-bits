@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bodyguard-of-bits"
-version = "0.8.4"
+version = "0.9.0"
 description = "BOB — Bodyguard Of Bits: Linux hardening auditor with CIS benchmark mapping"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"

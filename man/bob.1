@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-06-06" "BOB 0.8.4" "User Commands"
+.TH BOB 1 "2026-06-07" "BOB 0.9.0" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -153,10 +153,27 @@ take precedence. See
 .
 .SS Comparison and history
 .TP
-.B \-\-diff
-Show only the delta vs the previous audit (new findings, resolved findings,
-score change). The baseline lives at
+.B \-\-diff [\fIPATH\fR]
+Show only the delta vs a baseline (new findings, resolved findings, score
+change). With no argument, loads the local auto-managed baseline at
 .IR ~/.config/bob/last_baseline.json .
+With a path argument
+.RB ( "\-\-diff " "\fIPATH\fR or " "\-\-diff=" "\fIPATH\fR)" ,
+compares against the file at that path \(em useful for
+.B cross-machine
+or
+.B historical
+comparison (audit on host A, save the baseline, copy to host B, run
+.B sudo bob \-\-diff
+.IR /path/to/A-baseline.json
+on host B). The path is read-only; the local auto-managed baseline is
+untouched.
+.IP
+The baseline records the source hostname; on cross-machine compare, an
+.B INFO
+notice surfaces with the recorded vs current hostnames so the operator
+knows they are looking at a non-local diff. Pre-v0.9.0 baselines lack
+the hostname field and the notice is suppressed.
 .TP
 .B \-\-reset\-baseline
 Wipe the comparison baseline file

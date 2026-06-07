@@ -172,8 +172,8 @@ def check_services_state(snapshot: ServicesStateSnapshot, *, t: TranslationFunc 
 
     if not snapshot.systemctl_available:
         result.info(
-            message=_t("services_state.no_systemctl"),
-            key="services_state.no_systemctl",
+            message=_t("services_health.no_systemctl"),
+            key="services_health.no_systemctl",
         )
         return result
 
@@ -195,26 +195,26 @@ def check_services_state(snapshot: ServicesStateSnapshot, *, t: TranslationFunc 
         # diagnostic from the cmd (it's not part of the fix) and move
         # it to `note` for guidance.
         result.warn(
-            message=_t("services_state.service_inactive", service=svc),
-            detail=_t("services_state.service_inactive_detail", service=svc),
+            message=_t("services_health.service_inactive", service=svc),
+            detail=_t("services_health.service_inactive_detail", service=svc),
             cmd=f"sudo systemctl restart {shlex.quote(svc)}",
             note=f"sudo journalctl -u {shlex.quote(svc)} -n 50",
             nature="action",
-            key="services_state.service_inactive",
+            key="services_health.service_inactive",
         )
         if deducted < _MAX_DEDUCTION:
             result.add_deduction(
-                reason=_t("services_state.service_inactive_reason", service=svc),
+                reason=_t("services_health.service_inactive_reason", service=svc),
                 points=1,
                 context="local",
-                key="services_state.service_inactive",
+                key="services_health.service_inactive",
             )
             deducted += 1
 
     if not result.findings:
         result.ok(
-            message=_t("services_state.ok"),
-            key="services_state.ok",
+            message=_t("services_health.ok"),
+            key="services_health.ok",
         )
 
     return result

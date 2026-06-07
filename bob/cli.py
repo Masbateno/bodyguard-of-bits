@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +62,10 @@ class AuditConfig:
     json_full: bool = False
     """-J / --json-full: export complete audit details as JSON (implies --json)."""
 
-    json_v1: bool = False
-    """--json-v1: opt-in to legacy v0.6.x JSON schema (schema_version="1").
-    Mutually exclusive with the v2 default — implies --json."""
+    # v0.9.0 F-3: ``--json-v1`` legacy schema (v0.6.x) retired. ``json_v1``
+    # field removed. ``__main__.py`` now passes ``schema_version="2"``
+    # unconditionally. A user who types ``--json-v1`` on the CLI hits the
+    # ``CLIError`` migration message in ``parse_args`` below.
 
     csv_mode: bool = False
     """--output csv: export audit findings as CSV to stdout."""
@@ -111,7 +113,15 @@ class AuditConfig:
     """-e / --explain=KEY: print a detailed explanation for a finding key and exit."""
 
     diff_mode: bool = False
-    """-D / --diff: run audit silently and show only changes since the last baseline."""
+    """-D / --diff[=PATH]: run audit silently and show only changes since a baseline."""
+
+    diff_baseline_path: Path | None = None
+    """v0.9.0 F-2 — explicit baseline path for --diff. When None (default),
+    --diff loads ``~/.config/bob/last_baseline.json`` as before. When set
+    (via ``--diff=PATH`` or ``--diff PATH``), --diff compares against the
+    file at that path, enabling cross-machine compare (audit on host A →
+    save → ``scp`` to host B → ``sudo bob --diff hostA-baseline.json`` on
+    host B). The path is read but never written to."""
 
     breakdown_mode: bool = False
     """-B / --breakdown: run audit silently and print the full score computation path."""
@@ -263,8 +273,14 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             config.json_full = True
 
         elif arg == "--json-v1":
-            config.json_mode = True
-            config.json_v1 = True
+            # v0.9.0 F-3: legacy v0.6.x schema retired. The v2 schema has
+            # been the default since v0.7.0 (4 majeures), and v0.6.x has
+            # been EOL since v0.7.2. Users on a v0.6.x JSON consumer must
+            # update the consumer to read the v2 layout — see
+            # ``DOCUMENTS/CHANGELOG_FULL.md`` v0.9.0 entry for the
+            # field-by-field mapping.
+            from bob import i18n
+            raise CLIError(i18n.t("cli.error.json_v1_retired"))
 
         elif arg == "--french":
             config.lang = "fr"
@@ -360,7 +376,31 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             # No key provided → launch interactive picker
             config.explain_key = "__interactive__"
 
+        elif arg.startswith("--diff="):
+            # v0.9.0 F-2: --diff=PATH — compare against an explicit baseline file
+            if config.diff_mode:
+                raise CLIError("--diff specified more than once")
+            value = arg.split("=", 1)[1].strip()
+            if not value:
+                raise CLIError("--diff= requires a path to a baseline JSON file")
+            config.diff_mode = True
+            config.diff_baseline_path = Path(value).expanduser()
+
+        elif arg in ("-D", "--diff") and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            # v0.9.0 F-2: --diff PATH (space-separated) — same as --diff=PATH.
+            # The peek-ahead requires the next token to not start with ``-`` so
+            # ``sudo bob --diff --watch`` keeps the bare-flag semantics.
+            if config.diff_mode:
+                raise CLIError("--diff specified more than once")
+            i += 1
+            value = argv[i].strip()
+            config.diff_mode = True
+            config.diff_baseline_path = Path(value).expanduser()
+
         elif arg in ("-D", "--diff"):
+            # Bare --diff / -D — load the local auto-managed baseline (v0.8.x behaviour)
+            if config.diff_mode:
+                raise CLIError("--diff specified more than once")
             config.diff_mode = True
 
         elif arg in ("-B", "--breakdown"):
@@ -693,7 +733,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     section("AUDIT — what to check and how")
     opt("-p, --profile=NAME",    "Audit profile: server (default), desktop, container")
     opt("-l N, --log-days=N",    "Analyse last N days of UFW logs (default: 7)")
-    opt("-D, --diff",            "Show only changes since last audit baseline")
+    opt("-D, --diff[=PATH]",     "Show only changes since last audit baseline; pass a file path to compare against an arbitrary baseline (cross-machine)")
     opt("    --watch[=N]",       "Re-run audit every N seconds (default: 60) — Ctrl+C to quit")
     opt("-o, --offline",         "Skip external IP lookup (no HTTP calls)")
     opt("    --target=N",        "Score target (1–10): show gap or success in summary")
@@ -708,7 +748,6 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("-n, --no-color",         "Disable colour output")
     opt("    --format=FORMAT",    "Output format: json | json-full | csv | markdown | html")
     opt("-j / -J",                "Shorthands: --format=json / --format=json-full")
-    opt("    --json-v1",          "Emit legacy v0.6.x JSON schema (combinable with --json-full / -J for the legacy full layout; v2 is default since v0.7.0)")
     opt("    --min-level=LEVEL",  "Only show findings at or above: warn  |  alert")
 
     section("FIXES — apply remediation suggestions")

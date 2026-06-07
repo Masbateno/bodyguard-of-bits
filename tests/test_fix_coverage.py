@@ -77,9 +77,9 @@ _MANUAL_BY_DESIGN = frozenset({
     "docker.iptables_bypass",                    # choice between option A/B/C documented in --explain
     "docker.exposed_port",                       # inspect each container, decide bind address
     "docker.exposed_bypass_ufw",                 # combine container restrict + daemon config
-    "firewall_stack.iptables_bypass",            # inspect rules, find source, remove cleanly
-    "firewall_stack.iptables_forward_bypass",    # idem (forward chain)
-    "firewall_stack.nftables_parallel",          # choice between UFW vs nftables, then purge other
+    "firewall_drivers.iptables_bypass",            # inspect rules, find source, remove cleanly
+    "firewall_drivers.iptables_forward_bypass",    # idem (forward chain)
+    "firewall_drivers.nftables_parallel",          # choice between UFW vs nftables, then purge other
     "services.exposure.open_local",              # LAN trust-level decision, multiple fix paths
     "services.state.active_disabled",            # service name is variable — `systemctl enable <SVC>`
     "services.state.installed_inactive_critical", # idem — name varies, may need config fix first
@@ -99,7 +99,7 @@ _MANUAL_BY_DESIGN = frozenset({
     "ssh.weak_kex",                              # idem (KexAlgorithms)
 
     # Per-instance content where the count + identity is variable:
-    "cron_audit.pipe_to_shell",                  # per-cron-job inspection + rewrite
+    "cron.pipe_to_shell",                  # per-cron-job inspection + rewrite
     "systemd_timers.pipe_to_shell",              # per-timer inspection + rewrite
 })
 

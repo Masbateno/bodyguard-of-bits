@@ -6,6 +6,197 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.9.0] — 07-06-2026
+
+**Première release v0.9.x — bundle BREAKING qui ferme le cleanup architectural déféré v0.7.0 → v0.8.x.**
+
+Cette release ship les items BREAKING déférés depuis v0.7.0 : renumber + uniformité naming sections (D-1), fusion `_ALL_SECTIONS`/`_ALWAYS_ON_SECTIONS` (D-2), retrait `EXPLAIN_KEY_ALIASES` (D-3), retrait trap door `BOB_SANDBOX_LEGACY` (TD-1), retrait schéma legacy `--json-v1` (F-3), compare cross-machine `--diff [PATH]` (F-2), plus un bug fix bash completion compagnon de v0.8.2.
+
+### D-1 BREAKING — 7 renames sections
+
+Pre-v0.9.0 les noms de sections avaient drifté à travers l'historique v0.5.x-v0.8.x : collisions entre filterables et always-on (`docker_audit` vs always-on `docker`, `services_state` vs always-on `services`), suffixes redondants incohérents entre siblings (`cron_audit` à côté de `auditd` qui n'a pas de `_audit`), et noms trop génériques qui peuvent vouloir dire n'importe quoi (`rules` standalone peut être ufw, iptables, audit, sudoers, …).
+
+Les 7 renames :
+
+| Ancien           | Nouveau            | Raison                                                                  |
+|------------------|--------------------|-------------------------------------------------------------------------|
+| `cron_audit`     | `cron`             | Drop suffix `_audit` redondant (cf. `auditd`, `samba`)                  |
+| `docker_audit`   | `docker_hardening` | Résout collision avec section always-on `docker`                        |
+| `services_state` | `services_health`  | Résout collision avec section always-on `services`                      |
+| `ports_analysis` | `ports`            | Drop suffix `_analysis` redondant                                       |
+| `rules`          | `firewall_rules`   | `rules` standalone trop générique                                       |
+| `iptables_nft`   | `firewall_iptables`| Unifie le namespace `firewall_*`                                        |
+| `firewall_stack` | `firewall_drivers` | "drivers" décrit ce que le check audit (iptables vs nftables)           |
+
+La migration touche les surfaces suivantes, toutes synchronisées dans cette release :
+
+- [bob/runner.py](../bob/runner.py) — tuple `_SECTIONS` (post-D-2) porte les nouveaux noms ; chaque site `_sec(...)` et `emit_section(...)` migré ; nouveau dict `_RENAMED_SECTIONS_V090` + le fatal-migration-error path dans `validate_check_filters`.
+- [bob/checks/*.py](../bob/checks/) — chaque site `key="<old>.X"` et `t("<old>.X")` migré dans `cron_audit.py`, `docker_audit.py`, `services_state.py`, `iptables_nftables.py`, `firewall_stack.py`, et les clés `rules.X` dans `firewall.py`. Noms de fichiers gardés tels quels — les chemins module internes ne sont pas API publique, les renommer forcerait du noisy git history sans bénéfice user.
+- [bob/explain.py](../bob/explain.py) — entries `EXPLAIN_KEYS` renommées (168 clés).
+- [bob/data/cis_refs.json](../bob/data/cis_refs.json) — 20 clés CIS reference renommées.
+- [bob/data/profiles/{container,desktop,workstation}.conf](../bob/data/profiles/) — overrides sévérité profile + skip list section du profile `container`.
+- [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — `_SECTIONS` list bumpée pour matcher `_ALL_SECTIONS`.
+- [bob/locales/{en,fr}.json](../bob/locales/en.json) — namespaces root, `sections.X`, `sections.descriptions.X`, et entries `explain.X` renommées sous les 7 prefixes. Deux nouvelles clés locale : `cli.runner.section_renamed` (message migration per-token) + `cli.runner.section_renamed_fatal` (pointer one-shot vers la table de migration).
+- [bob/scoring.py](../bob/scoring.py) + [bob/json_output.py](../bob/json_output.py) + [bob/domain_scores.py](../bob/domain_scores.py) — refs clé hardcoded migrées.
+- ~167 lignes à travers 14 fichiers tests updates par mechanical prefix migration.
+
+Le migration error path dans `validate_check_filters` fire AVANT le générique "no match / did you mean" path pour que les users voient le remplacement canonique précis (`cron_audit` → `cron`) au lieu d'une fuzzy `difflib` guess. Mirror path pour `--skip`. Les titres section headers (rendus locale, affichés pendant l'audit) sont inchangés ; la surface BREAKING est le nom de token script-visible uniquement.
+
+#### Fix sémantique validateur (effet de bord D-1)
+
+Après l'ajout de `firewall_iptables` / `firewall_rules` / `firewall_drivers` à `_ALL_SECTIONS`, le token `firewall` matche un filterable via la règle `startswith` existante, ce qui silenceait le warning "no effect" que les operateurs attendent légitimement pour `--skip=firewall` (la section always-on). La boucle skip-token dans `validate_check_filters` check maintenant **exact always-on matches** AVANT les prefix filterable matches. Même fix appliqué pour les prefixes `--check=docker` et `--check=services` qui ont maintenant aussi des companions filterables.
+
+### D-2 internal — fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS`
+
+Pre-v0.9.0, deux tuples parallèles (`_ALL_SECTIONS` pour filterable et `_ALWAYS_ON_SECTIONS` pour inconditionnel) devaient être maintenus en sync manuellement : ajouter une section voulait dire se rappeler quel tuple update, et la logique de validation + le rendering `bob --check=list` devaient unir les deux.
+
+Le nouveau [`_SECTIONS: tuple[_Section, ...]`](../bob/runner.py) est une source unique de vérité où chaque entry porte un flag boolean `always_on`. Les legacy `_ALL_SECTIONS` / `_ALWAYS_ON_SECTIONS` sont des vues dérivées construites une fois à import time. External consumers ([bob/__main__.py](../bob/__main__.py) + 3 fichiers tests) gardent les noms legacy — les vues dérivées sont des tuples immutables computés une fois à import. New code devrait consommer `_SECTIONS` directement pour accéder au flag `always_on`.
+
+### D-3 cleanup — `EXPLAIN_KEY_ALIASES` retiré
+
+Pre-v0.9.0, `EXPLAIN_KEY_ALIASES` portait un seul entry live (`services_state.service_inactive` → `services_state.enabled_inactive`, devenu `services_health.*` après le rename D-1) qui était un pont sur un drift source-side v0.5.5 : `services_state.py` émet `services_state.service_inactive` comme sa finding key, mais l'entry EXPLAIN_KEYS + le bloc locale étaient nommés `enabled_inactive`. Le D-3 warning de déprécation v0.8.2 a annoncé le retrait pour v0.9.0.
+
+v0.9.0 D-3 résout le drift à la source au lieu de le bridger :
+- L'entry EXPLAIN_KEYS a été renommée `services_health.enabled_inactive` → `services_health.service_inactive` pour matcher ce que `services_state.py` émet
+- Le namespace locale `explain.services_health.enabled_inactive` → `service_inactive` (EN + FR)
+- Entry [bob/data/cis_refs.json](../bob/data/cis_refs.json) renommée (duplicate causé par mon mass-pass de rename D-1 dédupliqué)
+- `EXPLAIN_KEY_ALIASES = {}` (dict gardé vide pour qu'un futur rename ait un migration path one-line)
+- Machinery `_warn_alias_deprecation` + `_WARNED_ALIASES` retirée
+- Les 4 tests deprecation v0.8.2 dans [tests/test_v082_items.py::TestExplainKeyAliasDeprecation](../tests/test_v082_items.py) retirés (le dict est vide, la machinery est gone)
+
+### TD-1 BREAKING — trap door `BOB_SANDBOX_LEGACY=1` retiré
+
+Pre-v0.9.0, l'env var bypassait le sandbox subprocess (spawn) et exécutait les plugins dans le processus parent avec builtins complets. Un WARNING stderr voyant + log CRITICAL firait à chaque audit qui entrait réellement en legacy mode, by design assez voyant pour que personne ne puisse l'utiliser en prod sans le remarquer.
+
+Le trap door a été annoncé pour retrait dans le ship v0.7.0 + [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.0. v0.9.0 TD-1 retire :
+
+- Helper static `SandboxRunner._legacy_active()`
+- Helper static `SandboxRunner._emit_legacy_warning()`
+- Méthode `SandboxRunner._run_legacy()` (path exec in-process)
+- Les branches `if self._legacy_active():` dans `__init__` et `run`
+
+Set l'env var n'a maintenant aucun effet ; les plugins s'exécutent toujours dans le subprocess spawn. [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md) mises à jour pour barrer l'entry et marquer la fenêtre de retrait.
+
+Deux retirement guards dans [tests/test_plugin_sandbox.py::TestLegacyTrapDoorRetired](../tests/test_plugin_sandbox.py) :
+
+- `test_legacy_env_var_has_no_effect` — set `BOB_SANDBOX_LEGACY=1`, run un plugin qui aurait réussi sous legacy mode (importe `subprocess`), asserte que l'import fail parce que le sandbox le bloque
+- `test_legacy_active_helper_removed` — `hasattr(SandboxRunner, "_legacy_active")` + `_run_legacy` doivent être False tous les deux
+
+### F-3 BREAKING — schéma legacy `--json-v1` retiré
+
+Pre-v0.9.0, `--json-v1` opt-in au layout JSON v0.6.x (`schema_version="1"`) pour les consumers qui n'avaient pas migré vers v2. v2 est le défaut depuis v0.7.0 (4 majeures) et v0.6.x est EOL depuis v0.7.2 (5 majeures) ; quiconque lit toujours v1 n'a pas updaté son pipeline depuis 6+ mois.
+
+v0.9.0 F-3 retire :
+
+- Constantes `SCHEMA_V1_REQUIRED_KEYS` + `SCHEMA_V1_FULL_KEYS` de [bob/json_output.py](../bob/json_output.py)
+- Helpers builders `_build_v1` + `_populate_v1_full_blocks` (~170 lignes)
+- Le dispatch `schema_version == "1"` dans `build_json_data()`
+- `SUPPORTED_SCHEMA_VERSIONS = frozenset({"2"})`
+- Field `AuditConfig.json_v1`
+- `--json-v1` de [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) `long_opts`
+- L'option `--json-v1` du help text
+
+Passer `--json-v1` raise maintenant un `CLIError` (locale key `cli.error.json_v1_retired`, EN + FR) pointant vers le guide de migration CHANGELOG. Tests pinant le contrat baseline v1 : [tests/test_json_schema.py](../tests/) supprimé entièrement (~330 lignes) ; 5 tests v1-spécifiques dans `test_t11_t26_v081.py` + `test_json_schema_v2.py` retirés ; 1 entry retirée de `test_v082_bash_completion.py::TestLongOptsPresence` parametrize.
+
+#### Table de migration field v1 → v2
+
+| Field v1            | Équivalent v2                                                       |
+|---------------------|---------------------------------------------------------------------|
+| `timestamp`         | `timestamp_utc` (renommé, signale encodage UTC — B-3 en v0.7.0)     |
+| `network_context`   | `network_context` dict dans les deux modes (était str en v1 short, dict en v1 full — fix A-2 P1) |
+| `firewall_stack`    | `firewall_drivers` (BREAKING via D-1 — renommé en v0.9.0)           |
+| —                   | `info_count` ajouté au top level (B-7 en v0.7.0)                    |
+| —                   | Bloc `posture_escalation` ajouté (A-4 en v0.7.0)                    |
+| —                   | `open_ports_all` (full only — B-5 en v0.7.0)                        |
+| —                   | `deductions_raw` (full only — B-4 en v0.7.0)                        |
+| `domain_scores[d]`  | `domain_scores[d]` inclut maintenant le count `deductions` (B-6)     |
+| `risk`              | inchangé — dérivé de `engine.level` (score-only)                    |
+| `posture_escalation.score_level` | nouveau — expose le baseline non-escaladé pour les consumers qui ont besoin des deux vues |
+
+### F-2 NEW — compare cross-machine `--diff [PATH]`
+
+Pre-v0.9.0, le flag `--diff` comparait l'audit courant contre le baseline local auto-managé à `~/.config/bob/last_baseline.json`. Utile pour "qu'est-ce qui a changé depuis mon dernier audit sur cet host", mais pas moyen de comparer contre un fichier baseline arbitraire (cross-machine, historique, prod-vs-staging).
+
+v0.9.0 F-2 ajoute un argument PATH optionnel :
+
+```bash
+sudo bob --diff                            # comportement v0.8.x : load baseline local auto-managé
+sudo bob --diff=/path/to/baseline.json     # NEW : compare contre fichier arbitraire
+sudo bob --diff /backup/server-A.json      # NEW : équivalent space-separated
+```
+
+Les deux syntaxes (`--diff=PATH` et `--diff PATH`) sont supportées, miroir de `--watch[=N]`. Le bare `--diff` / `-D` garde la sémantique v0.8.x. La forme space a un guard peek-ahead pour que `sudo bob --diff --verbose` garde `--verbose` comme le flag suivant, pas comme un path baseline.
+
+#### Implémentation
+
+- [bob/cli.py](../bob/cli.py) — nouveau field `AuditConfig.diff_baseline_path: Path | None` ; paths de parsing `--diff=PATH` et `--diff PATH`
+- [bob/compare.py](../bob/compare.py) — nouvelle exception `BaselineLoadError` ; `load_baseline(path, strict=True)` raise sur missing/broken file + sur `schema_version="1"` legacy. Défaut `strict=False` préserve le comportement silencieux v0.8.x pour bare `--diff`.
+- [bob/compare.py::AuditBaseline](../bob/compare.py) — nouveau field `hostname: str | None`. `build_baseline()` appelle `socket.gethostname()` pour le populer. Les baselines pre-v0.9.0 sans le field ne causent pas de notice au load.
+- [bob/__main__.py](../bob/__main__.py) — quand `config.diff_baseline_path` est set, appelle `load_baseline(path, strict=True)` ; sur `BaselineLoadError`, émet le message d'erreur locale-préfixé et exit avec `EXIT_ERROR`. Notice cross-machine : si le `hostname` enregistré diffère de `socket.gethostname()`, print `t("compare.cross_machine_notice", baseline_host=..., current_host=...)` avant l'affichage delta.
+- [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — nouvelle filename completion `--diff=PATH` et `--diff PATH` (`compgen -f -- "${val}"` + `compopt -o filenames`).
+- [man/bob.1](../man/bob.1) — section `.SS Comparison and history` mise à jour avec le nouvel argument optionnel + exemple usage cross-machine.
+
+#### Tests
+
+17 nouveaux tests dans [tests/test_v090_diff_baseline_path.py](../tests/test_v090_diff_baseline_path.py) :
+
+- `TestCLIDiffPathParsing` — bare `-D` / `--diff`, `--diff=PATH`, `--diff PATH`, peek-ahead does-not-consume-flag-token, value empty rejeté, `--diff` dupliqué rejeté
+- `TestLoadBaselineStrict` — file missing en strict raise avec path dans message, file missing non-strict return None, JSON invalide en strict raise, `schema_version="1"` en strict raise avec "v0.6.x" dans message, baselines v0.7.x–v0.8.x (sans field `schema_version`) load proprement sous strict
+- `TestHostnameCapture` — roundtrip save→load préserve hostname, baselines pre-v0.9.0 load avec `hostname=None`, `build_baseline` capture le vrai hostname
+
+### Bug fix — `bob --check=<TAB><TAB>` sans sudo
+
+Compagnon du walk-back guard sudo-dispatcher v0.8.2. v0.8.2 a fixé le cas où `sudo bob --check=<TAB>` retournait zéro candidat parce que le sudo dispatcher invokait `_bob` avec `$prev` mis au littéral `=`. Le cas compagnon : sous invocations non-sudo, certaines versions de bash placent le curseur de completion sur le token littéral `=` (donnant `cur="="`, `prev="--check"`) au lieu d'un trailing empty word ; la branche `prev=="--check"` existante runnait alors `compgen -W "list ${_SECTIONS}" -- "="` qui retourne zéro parce qu'aucun nom de section ne commence par `=`.
+
+Le fix est un companion guard 3-lignes en haut de `_bob` :
+
+```bash
+if [[ "${cur}" == "=" ]]; then
+    cur=""
+fi
+```
+
+Mirror du walk-back v0.8.2. Après ça, `bob --check=<TAB><TAB>` (non-sudo) restaure l'affichage de liste TAB×2. Vérifié sur 4 cas (sudo + non-sudo × empty-cur + cur="=") dans les tests fonctionnels bash completion existants.
+
+### Numbers
+
+- **Tests 6246 → 6210** (net −36) :
+  - −53 : fichier baseline v1 `test_json_schema.py` (~330 lignes) + 5 tests v1-spécifiques dans `test_t11_t26_v081.py` + `test_json_schema_v2.py` + 4 tests deprecation-warning v0.8.2 (retirés avec la machinery alias) + 1 entry parametrize `--json-v1`
+  - +17 : nouveaux tests F-2 dans `test_v090_diff_baseline_path.py`
+- 0 régression.
+- Code production : ~600 lignes changées à travers `bob/runner.py`, `bob/cli.py`, `bob/compare.py`, `bob/json_output.py`, `bob/_sandbox.py`, `bob/explain.py`, `bob/__main__.py`, `bob/scoring.py`, `bob/domain_scores.py`, `bob/data/bob.bash-completion`, et 6 fichiers `bob/checks/*.py`.
+- Locale : 167+ migrations clé dans `bob/locales/{en,fr}.json` + 3 nouvelles clés (`cli.runner.section_renamed`, `cli.runner.section_renamed_fatal`, `cli.error.json_v1_retired`, `compare.cross_machine_notice`) × 2 locales.
+
+### Upgrade
+
+```bash
+pipx upgrade bodyguard-of-bits
+```
+
+Les users avec scripts utilisant `--check=<nom_legacy>`, `--skip=<nom_legacy>`, `--json-v1`, ou `BOB_SANDBOX_LEGACY=1` doivent migrer per les tables ci-dessus :
+
+- **Scripts** : `s/--check=cron_audit/--check=cron/`, etc. Le migration error path pointera vers le remplacement canonique à la première invocation échouée si tu en rates.
+- **Consumers JSON** : rewrite pour lire le schéma v2. Les fields renommés et le nouveau bloc `posture_escalation` sont les points pratiques de migration.
+- **Authors de plugins reposant sur `BOB_SANDBOX_LEGACY=1`** : l'env var est ignorée. Rework le plugin pour utiliser la surface API sandbox-allowed, ou run hors de `bob` (ex. comme un cron job séparé).
+- **Entries `ignore.yml`** référençant les finding keys renommées (`cron_audit.pipe_to_shell` → `cron.pipe_to_shell`, etc.) doivent être migrées à la main. Pas d'auto-traduction ; les clés font silently no-op jusqu'à correction.
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
+**v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Déféré à v0.9.1
+
+- **D-4** sub-checks granulaires (ex. `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + `.client`) — requiert passe audit sub-agent pour identifier les candidats + écrire le guide de migration. Le quota sub-agent était le blocker au cut v0.9.0.
+- **Parallel checks** via `concurrent.futures.ThreadPoolExecutor` (cible : ~30 s → 5–10 s sur audits multi-core) — même blocker audit sub-agent (invariants threading + discovery race condition).
+
+### Leçons
+
+- **Mechanical prefix renames à scale** (167 lignes × 14 fichiers tests + 88 lignes × 6 fichiers source) sont mieux faits avec un single Python script sur `re.sub(rf'"{old}\.', f'"{new}.', text)`. La boucle d'itération 5-seconde catche le drift dans les strings multi-lignes que le hand-Edit raterait.
+- **Mass-rename dégât collatéral sur les migration maps documentées** — le même regex qui rename le codebase rename aussi la migration map elle-même (ex. `EXPLAIN_KEY_ALIASES`, `_RENAMED_SECTIONS_V090`) où les mappings old → new vivent comme string literals. Toujours ré-instaurer ces maps manuellement après la passe mécanique.
+- **Validateurs cross-cutting ont besoin de re-ordering** quand les namespaces sections fusionnent. L'ordering `_matches_filterable` / `_matches_always_on` tenait pour v0.5.x–v0.8.x parce que les namespaces étaient disjoints. Les renames D-1 v0.9.0 ont créé de l'overlap (`firewall` matchait les deux via prefix), et le test a surfacé la régression immédiatement.
+- **Mode strict pour les loaders explicit-path** — pour tout flag `--option PATH` qui load un file, le défaut silent-fallback est wrong quand le user a explicitement passé un path. v0.8.x `load_baseline()` retournait None sur erreur ; v0.9.0 ajoute `strict=True` pour le cas explicit-path, miroir de comment `open(path)` raise au lieu de retourner None sur missing.
+
+---
+
 ## [v0.8.4] — 06-06-2026
 
 **Dernière release v0.8.x — batch cleanup avant le bundle BREAKING v0.9.0.**

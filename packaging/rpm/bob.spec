@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.8.4
+Version:        0.9.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,32 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Jun 07 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.9.0-1
+- First v0.9.x release — BREAKING bundle that closes the v0.7.0 → v0.8.x
+  deferred architectural cleanup.
+- D-1 BREAKING: 7 section renames with hard migration error path
+  (cron_audit→cron, docker_audit→docker_hardening,
+  services_state→services_health, ports_analysis→ports,
+  rules→firewall_rules, iptables_nft→firewall_iptables,
+  firewall_stack→firewall_drivers). Finding key prefixes, locales,
+  EXPLAIN_KEYS, CIS refs, profile overrides, bash completion + tests
+  migrated.
+- F-3 BREAKING: --json-v1 retired. v2 schema is the only supported
+  format; the legacy v0.6.x v1 layout + _build_v1 / SCHEMA_V1_* are
+  deleted.
+- TD-1 BREAKING: BOB_SANDBOX_LEGACY=1 trap door retired (announced for
+  retrait in v0.7.0 + v0.8.0). Plugins always execute in the spawn'd
+  subprocess sandbox.
+- D-3 cleanup: EXPLAIN_KEY_ALIASES retired (drift resolved at source).
+- D-2 internal: _ALL_SECTIONS + _ALWAYS_ON_SECTIONS fused into
+  _SECTIONS tuple with always_on flag; back-compat derived views kept.
+- F-2 NEW: --diff [PATH] cross-machine + historical compare. Baseline
+  now records hostname; cross-machine compare emits a friendly notice.
+- Bug fix: bash completion bug3 cur="=" case (bob --check=<TAB><TAB>
+  without sudo) resolved alongside the v0.8.2 sudo-dispatcher fix.
+- Tests 6246 → 6210 (net -36: -53 v1 baseline + deprecation tests
+  retired, +17 F-2 tests).
+
 * Sat Jun 06 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.8.4-1
 - Final v0.8.x release before the v0.9.0 BREAKING bundle.
 - Cleanup: remove dead is_unit_enabled() helper (added v0.5.0 for API

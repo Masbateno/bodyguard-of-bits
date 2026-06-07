@@ -104,7 +104,7 @@ BOB lit les variables d'environnement suivantes. Toutes sont opt-in ; aucune n'e
 |---|---|---|
 | `BOB_SHARE` | non défini | Force le chemin du dossier de données du package (`bob/data/`). Utilisé par les packageurs distro lorsque les données sont livrées hors de l'arbre Python. |
 | `BOB_WEBHOOK_ALLOW_INSECURE=1` | non défini | Autorise les URLs `http://` pour les webhooks (rejet par défaut). La charge utile fuite hostname + IP publique + score + alertes en clair — à n'utiliser que sur réseau privé de confiance ou en lab local. |
-| `BOB_SANDBOX_LEGACY=1` | non défini | Exécute les plugins dans le processus parent au lieu du sandbox enfant (spawn). **Déprécié**, retrait prévu en v0.8.0. Log CRITICAL + WARNING STDERR voyant à chaque exécution. |
+| ~~`BOB_SANDBOX_LEGACY=1`~~ | retiré en v0.9.0 (TD-1) | Pre-v0.9.0, exécutait les plugins dans le processus parent au lieu du sandbox enfant (spawn). Retiré ; l'env var est ignorée. Les plugins s'exécutent toujours dans le sandbox enfant. |
 | `BOB_DEBUG=1` | non défini | Affiche la trace Python complète sur sortie `EXIT_ERROR=3`. Sans, une seule ligne résumé + un hint pour activer la variable s'affichent. Utile pour diagnostiquer les crashs ; jamais requis en production. |
 
 ## Surface réseau

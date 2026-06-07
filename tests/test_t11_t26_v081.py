@@ -111,25 +111,6 @@ class TestT11CsvDetail:
 # T11 — JSON v1: ``detail`` field present on every finding entry
 # ===========================================================================
 
-class TestT11JsonV1Detail:
-
-    def test_json_v1_findings_carry_detail(self, engine_with_detail, sys_info_stub, json_kwargs):
-        from bob.json_output import build_json_data
-        data = build_json_data(
-            engine_with_detail, sys_info_stub,
-            schema_version="1", **json_kwargs,
-        )
-        assert "findings" in data
-        assert len(data["findings"]) == 1
-        f = data["findings"][0]
-        assert "detail" in f, f"JSON v1 finding missing 'detail' field: {list(f.keys())}"
-        assert "Restricting SUID dumps" in f["detail"]
-
-
-# ===========================================================================
-# T11 — JSON v2: ``detail`` field present on every finding entry
-# ===========================================================================
-
 class TestT11JsonV2Detail:
 
     def test_json_v2_findings_carry_detail(self, engine_with_detail, sys_info_stub, json_kwargs):
@@ -146,34 +127,6 @@ class TestT11JsonV2Detail:
 
 # ===========================================================================
 # T11 — Cross-format parity: every textual sink agrees on the detail content
-# ===========================================================================
-
-class TestT11CrossFormatDetailParity:
-    """All 4 machine-readable sinks (CSV + JSON v1 + JSON v2 + the existing
-    Markdown / HTML closed in v0.8.0 T9) must surface the exact same
-    ``Finding.detail`` string. A drift between any two means a sink dropped
-    the field again."""
-
-    def test_csv_and_json_v1_agree_on_detail(self, engine_with_detail, sys_info_stub, json_kwargs):
-        from bob.csv_output import build_csv_output
-        from bob.json_output import build_json_data
-        csv_out = build_csv_output(engine_with_detail, sys_info_stub)
-        csv_row = next(csv.DictReader(io.StringIO(csv_out)))
-        v1 = build_json_data(engine_with_detail, sys_info_stub,
-                             schema_version="1", **json_kwargs)
-        assert csv_row["detail"] == v1["findings"][0]["detail"]
-
-    def test_json_v1_and_v2_agree_on_detail(self, engine_with_detail, sys_info_stub, json_kwargs):
-        from bob.json_output import build_json_data
-        v1 = build_json_data(engine_with_detail, sys_info_stub,
-                             schema_version="1", **json_kwargs)
-        v2 = build_json_data(engine_with_detail, sys_info_stub,
-                             schema_version="2", **json_kwargs)
-        assert v1["findings"][0]["detail"] == v2["findings"][0]["detail"]
-
-
-# ===========================================================================
-# T26 — services.exposed.<svc_id> dispatch
 # ===========================================================================
 
 class TestT26ServicesExposedDispatch:

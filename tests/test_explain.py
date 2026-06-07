@@ -114,12 +114,12 @@ class TestExplainKeyAliases:
 
     def test_services_state_alias_routes_to_canonical(self):
         """v0.5.5 C-4 regression: bob/checks/services_state.py emits the key
-        'services_state.service_inactive' but EXPLAIN_KEYS uses the canonical
-        name 'services_state.enabled_inactive'. The alias map must route
+        'services_health.service_inactive' but EXPLAIN_KEYS uses the canonical
+        name 'services_health.service_inactive'. The alias map must route
         --explain queries for the emitted key to the canonical one.
         """
         from bob.explain import normalize_key
-        assert normalize_key("services_state.service_inactive") == "services_state.enabled_inactive"
+        assert normalize_key("services_health.service_inactive") == "services_health.service_inactive"
 
 
 class TestExplainKeyFreezePolicy:
@@ -189,9 +189,9 @@ class TestExplainKeysList:
         # Phase A2 additions — new checks
         assert "kernel_modules.risky_fs" in EXPLAIN_KEYS
         assert "kernel_modules.risky_net" in EXPLAIN_KEYS
-        assert "cron_audit.pipe_to_shell" in EXPLAIN_KEYS
-        assert "cron_audit.world_writable" in EXPLAIN_KEYS
-        assert "services_state.enabled_inactive" in EXPLAIN_KEYS
+        assert "cron.pipe_to_shell" in EXPLAIN_KEYS
+        assert "cron.world_writable" in EXPLAIN_KEYS
+        assert "services_health.service_inactive" in EXPLAIN_KEYS
         # ClamAV keys
         assert "clamav.db_very_outdated" in EXPLAIN_KEYS
         assert "clamav.db_outdated" in EXPLAIN_KEYS
@@ -468,7 +468,7 @@ _PROFILE_VARIANT_KEYS = [
     "ipv6.ufw_disabled_listeners_present",
     "memory.swappiness_ssd_wear",
     "memory.swappiness_unjustified",
-    "services_state.enabled_inactive",
+    "services_health.service_inactive",
     "clamav.db_very_outdated",
     "clamav.db_outdated",
     "clamav.scan_very_old",
@@ -482,7 +482,7 @@ _UNIFORM_KEYS = [
     "ssh.password_auth",
     "ssh.permit_root_login",
     "file_perms.world_writable",
-    "rules.duplicate_found",
+    "firewall_rules.duplicate_found",
     "disk.smart_failed",
     "password_policy.no_quality_module",
     "user_accounts.uid_zero",

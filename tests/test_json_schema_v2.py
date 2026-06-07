@@ -53,8 +53,6 @@ from bob.scoring import CheckResult, ScoreEngine
 # ---------------------------------------------------------------------------
 
 from bob.json_output import (
-    SCHEMA_V1_FULL_KEYS,
-    SCHEMA_V1_REQUIRED_KEYS,
     SCHEMA_V2_FULL_KEYS,
     SCHEMA_V2_REQUIRED_KEYS,
 )
@@ -130,11 +128,6 @@ def _build_v2(engine: ScoreEngine, minimal_args: dict, full: bool = False) -> di
     """Build v2 output explicitly. Default schema_version is v2 in production
     after A-1 lands; we still pass it explicitly here for self-documentation."""
     return build_json_data(engine=engine, full=full, schema_version="2", **minimal_args)
-
-
-def _build_v1(engine: ScoreEngine, minimal_args: dict, full: bool = False) -> dict:
-    """Build v1 output for backward-compat tests (--json-v1 flag)."""
-    return build_json_data(engine=engine, full=full, schema_version="1", **minimal_args)
 
 
 # ===========================================================================
@@ -272,51 +265,6 @@ class TestSchemaV2PostureEscalationBlock:
 # A-5 — --json-v1 flag preserves v1 output exactly
 # ===========================================================================
 
-class TestJsonV1FlagBackwardCompat:
-    """Backward compatibility: legacy consumers can pin v1 explicitly."""
-
-    def test_v1_flag_emits_schema_version_1(self, engine_clean, minimal_args):
-        data = _build_v1(engine_clean, minimal_args)
-        assert data["schema_version"] == "1"
-
-    def test_v1_flag_network_context_still_string_in_short(
-            self, engine_clean, minimal_args):
-        """v1 quirk preserved: network_context is a string at top-level in
-        short mode."""
-        data = _build_v1(engine_clean, minimal_args, full=False)
-        assert isinstance(data["network_context"], str)
-
-    def test_v1_flag_no_posture_escalation_block(self, engine_clean, minimal_args):
-        """v1 had no posture_escalation field — must remain absent."""
-        data = _build_v1(engine_clean, minimal_args)
-        assert "posture_escalation" not in data
-
-    def test_v1_flag_no_info_count(self, engine_clean, minimal_args):
-        data = _build_v1(engine_clean, minimal_args)
-        assert "info_count" not in data
-        assert "infos" not in data
-
-    def test_v1_flag_timestamp_not_renamed(self, engine_clean, minimal_args):
-        data = _build_v1(engine_clean, minimal_args)
-        assert "timestamp" in data
-        assert "timestamp_utc" not in data
-
-    def test_v1_flag_no_deductions_raw(self, engine_clean, minimal_args):
-        data = _build_v1(engine_clean, minimal_args, full=True)
-        assert "deductions" in data
-        assert "deductions_raw" not in data
-
-    def test_v1_flag_no_open_ports_all(self, engine_clean, minimal_args):
-        data = _build_v1(engine_clean, minimal_args, full=True)
-        assert "open_ports" in data
-        assert "open_ports_all" not in data
-
-    def test_v1_flag_domain_scores_score_and_label_only(self, engine_clean, minimal_args):
-        data = _build_v1(engine_clean, minimal_args)
-        for entry in data["domain_scores"].values():
-            assert set(entry.keys()) == {"score", "label"}
-
-
 # ===========================================================================
 # Sub-scope B — naming cleanup additions
 # ===========================================================================
@@ -420,39 +368,6 @@ class TestSchemaConstantsPinActualOutput:
     without updating the corresponding SCHEMA_*_KEYS frozenset (or vice
     versa). The fix is always to update both together so the constants
     stay the contract documentation they claim to be."""
-
-    def test_v1_short_output_keys_match_required_constants(
-        self, engine_clean, minimal_args,
-    ):
-        from bob.json_output import build_json_data
-        data = build_json_data(engine=engine_clean, full=False,
-                               schema_version="1", **minimal_args)
-        assert set(data.keys()) == SCHEMA_V1_REQUIRED_KEYS, (
-            f"v1 short output ↔ SCHEMA_V1_REQUIRED_KEYS drift. "
-            f"emitted ∖ declared: {set(data.keys()) - SCHEMA_V1_REQUIRED_KEYS}, "
-            f"declared ∖ emitted: {SCHEMA_V1_REQUIRED_KEYS - set(data.keys())}"
-        )
-
-    def test_v1_full_output_keys_match_required_plus_full_constants(
-        self, engine_clean, minimal_args,
-    ):
-        from bob.json_output import build_json_data
-        data = build_json_data(engine=engine_clean, full=True,
-                               schema_version="1", **minimal_args)
-        # full mode = required ∪ full keys ; conditional keys (hardening/ipv6)
-        # depend on snapshot presence — they're omitted here.
-        expected_unconditional = SCHEMA_V1_REQUIRED_KEYS | (
-            SCHEMA_V1_FULL_KEYS - {"hardening", "ipv6"}
-        )
-        missing = expected_unconditional - set(data.keys())
-        # Unknown emitted keys = either documented (in REQUIRED ∪ FULL)
-        # or a contract violation.
-        unexpected = set(data.keys()) - (SCHEMA_V1_REQUIRED_KEYS | SCHEMA_V1_FULL_KEYS)
-        assert not missing, f"v1 full mode missing keys: {missing}"
-        assert not unexpected, (
-            f"v1 full mode has undocumented keys: {unexpected}. "
-            f"Add to SCHEMA_V1_FULL_KEYS or remove from producer."
-        )
 
     def test_v2_short_output_keys_match_required_constants(
         self, engine_clean, minimal_args,

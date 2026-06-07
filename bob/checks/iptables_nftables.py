@@ -149,8 +149,8 @@ def check_iptables_nftables(
 
     if snapshot.backend == "none":
         result.warn_with_deduction(
-            key="iptables_nft.no_backend",
-            message=_t("iptables_nft.no_backend"),
+            key="firewall_iptables.no_backend",
+            message=_t("firewall_iptables.no_backend"),
             points=3,
             nature="action",
             cmd="sudo apt install iptables",
@@ -160,19 +160,19 @@ def check_iptables_nftables(
     backend_label = "nftables" if snapshot.backend == "nftables" else "iptables"
     if ufw_installed:
         result.info(
-            message=_t("iptables_nft.ufw_inactive_context", backend=backend_label),
-            key="iptables_nft.ufw_inactive_context",
+            message=_t("firewall_iptables.ufw_inactive_context", backend=backend_label),
+            key="firewall_iptables.ufw_inactive_context",
         )
     result.info(
-        message=_t("iptables_nft.backend_detected", backend=backend_label),
-        key="iptables_nft.backend_detected",
+        message=_t("firewall_iptables.backend_detected", backend=backend_label),
+        key="firewall_iptables.backend_detected",
     )
 
     # --- INPUT default policy ---
     if snapshot.input_policy == "ACCEPT":
         result.alert_with_deduction(
-            key="iptables_nft.input_accept",
-            message=_t("iptables_nft.input_accept"),
+            key="firewall_iptables.input_accept",
+            message=_t("firewall_iptables.input_accept"),
             points=3,
             cmd=(
                 "sudo iptables -P INPUT DROP"
@@ -183,15 +183,15 @@ def check_iptables_nftables(
         )
     elif snapshot.input_policy in ("DROP", "REJECT"):
         result.ok(
-            message=_t("iptables_nft.input_ok", policy=snapshot.input_policy),
-            key="iptables_nft.input_ok",
+            message=_t("firewall_iptables.input_ok", policy=snapshot.input_policy),
+            key="firewall_iptables.input_ok",
         )
 
         # Sub-checks only relevant when INPUT is restrictive
         if not snapshot.has_loopback_rule:
             result.warn_with_deduction(
-                key="iptables_nft.no_loopback",
-                message=_t("iptables_nft.no_loopback"),
+                key="firewall_iptables.no_loopback",
+                message=_t("firewall_iptables.no_loopback"),
                 points=1,
                 cmd=(
                     "sudo iptables -I INPUT 1 -i lo -j ACCEPT"
@@ -203,8 +203,8 @@ def check_iptables_nftables(
 
         if not snapshot.has_conntrack_rule:
             result.warn_with_deduction(
-                key="iptables_nft.no_conntrack",
-                message=_t("iptables_nft.no_conntrack"),
+                key="firewall_iptables.no_conntrack",
+                message=_t("firewall_iptables.no_conntrack"),
                 points=1,
                 cmd=(
                     "sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
@@ -215,15 +215,15 @@ def check_iptables_nftables(
             )
     else:
         result.info(
-            message=_t("iptables_nft.input_unknown"),
-            key="iptables_nft.input_unknown",
+            message=_t("firewall_iptables.input_unknown"),
+            key="firewall_iptables.input_unknown",
         )
 
     # --- FORWARD default policy ---
     if snapshot.forward_policy == "ACCEPT":
         result.warn_with_deduction(
-            key="iptables_nft.forward_accept",
-            message=_t("iptables_nft.forward_accept"),
+            key="firewall_iptables.forward_accept",
+            message=_t("firewall_iptables.forward_accept"),
             points=1,
             cmd=(
                 "sudo iptables -P FORWARD DROP"
@@ -234,13 +234,13 @@ def check_iptables_nftables(
         )
     elif snapshot.forward_policy in ("DROP", "REJECT"):
         result.ok(
-            message=_t("iptables_nft.forward_ok", policy=snapshot.forward_policy),
-            key="iptables_nft.forward_ok",
+            message=_t("firewall_iptables.forward_ok", policy=snapshot.forward_policy),
+            key="firewall_iptables.forward_ok",
         )
     elif snapshot.forward_policy == "unknown":
         result.info(
-            message=_t("iptables_nft.forward_unknown"),
-            key="iptables_nft.forward_unknown",
+            message=_t("firewall_iptables.forward_unknown"),
+            key="firewall_iptables.forward_unknown",
         )
 
     return result

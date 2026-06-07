@@ -250,8 +250,8 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
         if clean in seen_clean:
             del_index = real_index if real_index else seen_clean[clean]
             result.alert_with_deduction(
-                key="rules.duplicate_found",
-                message=t("rules.duplicate_found", rule=clean),
+                key="firewall_rules.duplicate_found",
+                message=t("firewall_rules.duplicate_found", rule=clean),
                 points=1,
                 cmd=f"sudo ufw --force delete {del_index}",
                 nature="action",
@@ -266,8 +266,8 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
                     proto_less_clean = " ".join([m.group(1)] + tokens[1:])
                     if proto_less_clean in proto_less_rules:
                         result.alert_with_deduction(
-                            key="rules.duplicate_found",
-                            message=t("rules.duplicate_found", rule=clean),
+                            key="firewall_rules.duplicate_found",
+                            message=t("firewall_rules.duplicate_found", rule=clean),
                             points=1,
                             cmd=f"sudo ufw --force delete {real_index}",
                             nature="action",
@@ -279,7 +279,7 @@ def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
             seen_clean[clean] = real_index
 
     if not found_duplicate:
-        result.ok(message=t("rules.no_duplicates"), key="rules.no_duplicates")
+        result.ok(message=t("firewall_rules.no_duplicates"), key="firewall_rules.no_duplicates")
 
 
 def _check_open_any(lines: list[str], t, result: CheckResult) -> None:
@@ -290,19 +290,19 @@ def _check_open_any(lines: list[str], t, result: CheckResult) -> None:
             idx_match  = re.match(r"\[\s*(\d+)\]", line)
             real_index = int(idx_match.group(1)) if idx_match else None
             result.alert(
-                message=t("rules.open_any_found", rule=line.strip()),
+                message=t("firewall_rules.open_any_found", rule=line.strip()),
                 nature="action",
                 cmd=f"sudo ufw --force delete {real_index}" if real_index is not None else "",
-                key="rules.open_any_found",
+                key="firewall_rules.open_any_found",
             )
             result.add_deduction(
-                reason=t("rules.open_any_found", rule=""), points=2,
-                context="local", key="rules.open_any_found",
+                reason=t("firewall_rules.open_any_found", rule=""), points=2,
+                context="local", key="firewall_rules.open_any_found",
             )
             found_open_any = True
 
     if not found_open_any:
-        result.ok(message=t("rules.no_open_any"), key="rules.no_open_any")
+        result.ok(message=t("firewall_rules.no_open_any"), key="firewall_rules.no_open_any")
 
 
 def _check_orphan_rules(
@@ -336,9 +336,9 @@ def _check_orphan_rules(
 
     for port_proto in sorted(orphans):
         result.info(
-            message=t("rules.orphan_rule", port=port_proto),
+            message=t("firewall_rules.orphan_rule", port=port_proto),
             cmd=f"sudo ufw delete allow {port_proto}",
-            key="rules.orphan_rule",
+            key="firewall_rules.orphan_rule",
         )
 
 
@@ -360,15 +360,15 @@ def _check_ipv6_coverage(
     if ipv4_count > 0 and ipv6_count == 0:
         if ipv6_enabled:
             result.warn_with_deduction(
-                key="rules.ipv6_missing",
-                message=t("rules.ipv6_missing"),
+                key="firewall_rules.ipv6_missing",
+                message=t("firewall_rules.ipv6_missing"),
                 points=1,
                 cmd="sudo sed -i 's/^IPV6=no/IPV6=yes/' /etc/default/ufw && sudo ufw reload",
                 nature="improvement",
             )
         # else: IPv6 is disabled in /etc/default/ufw — no warning
     elif ipv4_count > 0:
-        result.ok(message=t("rules.ipv6_ok"), key="rules.ipv6_ok")
+        result.ok(message=t("firewall_rules.ipv6_ok"), key="firewall_rules.ipv6_ok")
 
 
 # ---------------------------------------------------------------------------

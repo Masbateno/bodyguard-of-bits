@@ -26,10 +26,8 @@
   "sections": {
     "prerequisites": "PREREQUISITES CHECK",
     "firewall": "FIREWALL STATUS",
-    "rules": "UFW RULES ANALYSIS",
     "services": "NETWORK SERVICES ANALYSIS",
     "services_panorama": "SERVICES PANORAMA",
-    "ports_analysis": "LISTENING PORTS ANALYSIS",
     "ports_overview": "LISTENING PORTS (OVERVIEW)",
     "logs": "UFW LOG ANALYSIS",
     "ddns": "EXTERNAL EXPOSURE (DDNS)",
@@ -38,8 +36,6 @@
     "fixes": "AVAILABLE FIXES",
     "risk_context": "RISK CONTEXT — DETECTED SERVICES",
     "virtualization": "VIRTUALISATION ANALYSIS",
-    "firewall_stack": "FIREWALL STACK ANALYSIS",
-    "iptables_nft": "IPTABLES / NFTABLES AUDIT",
     "network_context": "NETWORK CONTEXT",
     "hardening": "SYSTEM HARDENING ANALYSIS",
     "ipv6": "IPv6 CONSISTENCY CHECK",
@@ -49,8 +45,6 @@
     "updates": "SYSTEM UPDATES",
     "kernel_modules": "KERNEL MODULE AUDIT",
     "kernel_hardening": "KERNEL HARDENING",
-    "cron_audit": "CRON JOB AUDIT",
-    "services_state": "SERVICE STATE AUDIT",
     "user_accounts": "USER ACCOUNT AUDIT",
     "password_policy": "PASSWORD POLICY AUDIT",
     "memory": "MEMORY & SWAP",
@@ -68,7 +62,6 @@
     "mac_policy": "MAC POLICY (APPARMOR / SELINUX)",
     "backup": "BACKUP SOLUTION",
     "suid_audit": "SUID/SGID BINARY AUDIT",
-    "docker_audit": "DOCKER CONTAINER SECURITY AUDIT",
     "log_rotation": "LOG ROTATION & SYSTEM JOURNALING",
     "ufw_logging": "UFW LOGGING",
     "umask": "SYSTEM UMASK",
@@ -81,16 +74,13 @@
       "auth_log": "Authentication log — brute-force, public logins, anomaly detection",
       "backup": "Backup tool detection — timeshift, rsnapshot, borg, restic",
       "clamav": "ClamAV antivirus — service state, signature freshness, scan recency",
-      "cron_audit": "User + system cron jobs — risky patterns (pipe-to-shell, world-writable)",
       "desktop_apps": "Desktop applications inventory — Brave, VS Code, etc.",
       "disk": "Disk health via SMART — failing drives, reallocated sectors, partition fill",
-      "docker_audit": "Docker containers — privileged, root, socket-mounted, host network",
       "fail2ban": "Fail2ban intrusion prevention — service active, jails enabled",
       "file_integrity": "File integrity monitoring — AIDE / Tripwire baseline freshness",
       "file_perms": "Sensitive file permissions — /etc/{passwd,shadow,sudoers}, SSH host keys",
       "firmware": "Firmware updates — fwupd available, CPU microcode package",
       "hardening": "Kernel sysctl hardening — rp_filter, redirects, syncookies, hardlinks",
-      "iptables_nft": "iptables / nftables default policy + loopback rules",
       "ipv6": "IPv6 coherence — UFW IPv6 vs kernel state, per-port rules",
       "kernel_hardening": "Kernel-level hardening — ASLR, ptrace, SUID dumps, kptr_restrict",
       "kernel_modules": "Risky kernel modules loaded — exotic filesystems, network protocols",
@@ -102,7 +92,6 @@
       "rootkit": "Rootkit scanner — rkhunter signatures + scan history",
       "samba": "Samba — SMBv1 disabled, server signing, guest access",
       "secure_boot": "Secure Boot status — enabled, setup mode",
-      "services_state": "Services state coherence — installed-inactive, active-disabled",
       "smtp": "SMTP daemon exposure — Postfix / Exim binding, relay risk",
       "ssh": "SSH hardening — sshd_config, host keys, ~/.ssh, authorized_keys",
       "ssl_certs": "TLS/SSL certificate expiry — Let's Encrypt, nginx, apache, postfix",
@@ -114,14 +103,25 @@
       "ddns": "Dynamic-DNS clients — external exposure via DDNS",
       "docker": "Docker host — exposed ports, iptables bypass",
       "firewall": "UFW firewall — installed, active, default policy",
-      "firewall_stack": "Firewall stack coherence — nftables/iptables/ufw layering",
       "network_context": "Network context detection — LAN vs public vs offline",
-      "ports_analysis": "Listening ports — uncovered ports, UFW rule coverage",
-      "rules": "UFW rules analysis — duplicates, open-any, IPv6 coverage",
       "services": "Service network analysis — exposure per service, risk classification",
       "ufw_logging": "UFW logging — log level, blocked-attempt summary",
-      "virtualization": "Virtualisation — libvirt/KVM, Docker, snap bridge interfaces"
-    }
+      "virtualization": "Virtualisation — libvirt/KVM, Docker, snap bridge interfaces",
+      "cron": "User + system cron jobs — risky patterns (pipe-to-shell, world-writable)",
+      "docker_hardening": "Docker containers — privileged, root, socket-mounted, host network",
+      "services_health": "Services state coherence — installed-inactive, active-disabled",
+      "firewall_iptables": "iptables / nftables default policy + loopback rules",
+      "firewall_drivers": "Firewall stack coherence — nftables/iptables/ufw layering",
+      "firewall_rules": "UFW rules analysis — duplicates, open-any, IPv6 coverage",
+      "ports": "Listening ports — uncovered ports, UFW rule coverage"
+    },
+    "cron": "CRON JOB AUDIT",
+    "docker_hardening": "DOCKER CONTAINER SECURITY AUDIT",
+    "services_health": "SERVICE STATE AUDIT",
+    "firewall_iptables": "IPTABLES / NFTABLES AUDIT",
+    "firewall_drivers": "FIREWALL STACK ANALYSIS",
+    "firewall_rules": "UFW RULES ANALYSIS",
+    "ports": "LISTENING PORTS ANALYSIS"
   },
   "status": {
     "warn": "WARNING",
@@ -141,38 +141,6 @@
     "logging_ok": "UFW logging active (level: {level})",
     "logging_unknown": "UFW logging level could not be determined",
     "logging_verbose": "UFW logging level {level} — may generate high log volume"
-  },
-  "iptables_nft": {
-    "no_backend": "No firewall detected (iptables/nftables absent or inactive)",
-    "ufw_inactive_context": "UFW is installed but inactive — auditing the underlying {backend} layer",
-    "backend_detected": "Active backend: {backend}",
-    "input_accept": "Default INPUT policy: ACCEPT — all incoming traffic is allowed",
-    "input_ok": "Default INPUT policy: {policy} (recommended)",
-    "input_unknown": "Default INPUT policy: undetermined — manual verification recommended",
-    "no_loopback": "No loopback (lo) rule — local services may be unreachable",
-    "no_conntrack": "No ESTABLISHED/RELATED rule — return traffic for outgoing connections may be dropped",
-    "forward_accept": "Default FORWARD policy: ACCEPT — transit traffic is not filtered",
-    "forward_ok": "Default FORWARD policy: {policy} (recommended)",
-    "forward_unknown": "Default FORWARD policy: undetermined — manual verification recommended"
-  },
-  "rules": {
-    "no_duplicates": "No duplicate UFW rules detected",
-    "duplicate_found": "Duplicate UFW rule detected: {rule}",
-    "no_open_any": "No 'allow from any' rule without port restriction detected",
-    "open_any_found": "Rule allowing all incoming connections without port restriction: {rule}",
-    "ipv6_ok": "IPv6 configuration consistent with UFW rules",
-    "ipv6_missing": "UFW rules exist for IPv4 but no equivalent IPv6 rules found",
-    "ufw_status_detail": "UFW status (verbose):",
-    "orphan_rule": "UFW rule open with no listening service: {port}"
-  },
-  "firewall_stack": {
-    "no_issues": "No additional firewall rules interfering with UFW detected",
-    "iptables_bypass": "Raw iptables ACCEPT rule bypasses UFW in INPUT chain: {rule}",
-    "iptables_forward_bypass": "Raw iptables ACCEPT rule bypasses UFW in FORWARD chain: {rule}",
-    "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker/VPN routing",
-    "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",
-    "ip_forward_ok": "IP forwarding enabled — routing daemon detected (Docker, VPN or KVM)",
-    "ip_forward_enabled": "IP forwarding enabled without detected VPN/Docker — verify this is intentional"
   },
   "network_context": {
     "no_interfaces": "No network interfaces found",
@@ -761,7 +729,8 @@
     "key_resolved": "Resolved: {finding}",
     "variable_deductions_increased": "Variable deductions +{delta} pt(s) (logs, network traffic)",
     "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)",
-    "no_baseline_yet": "No previous baseline found — run a full audit first to establish a baseline."
+    "no_baseline_yet": "No previous baseline found — run a full audit first to establish a baseline.",
+    "cross_machine_notice": "ℹ Baseline was recorded on '{baseline_host}'; comparing against current host '{current_host}' (cross-machine diff)."
   },
   "cli": {
     "list": {
@@ -797,7 +766,8 @@
       "fatal_prefix": "Fatal error: ",
       "webhook_failed_prefix": "Warning: webhook failed: ",
       "warning_prefix": "Warning: ",
-      "bob_debug_hint": "  Set BOB_DEBUG=1 for full traceback."
+      "bob_debug_hint": "  Set BOB_DEBUG=1 for full traceback.",
+      "json_v1_retired": "--json-v1 was retired in v0.9.0. Schema v2 is the only supported format (v2 has been the default since v0.7.0). See CHANGELOG.md v0.9.0 for the field-by-field migration table from v0.6.x v1 to v2."
     },
     "runner": {
       "check_no_match": "--check {tok} matches no known section — {suggestion}",
@@ -805,7 +775,9 @@
       "skip_no_effect": "--skip {tok} has no effect (always-on section)",
       "skip_no_match": "--skip {tok} matches no known section — {suggestion}",
       "suggest_did_you_mean": "Did you mean: {matches}",
-      "suggest_run_list": "Run 'bob --check=list' to see all check names."
+      "suggest_run_list": "Run 'bob --check=list' to see all check names.",
+      "section_renamed": "--check/--skip token {old} was renamed in v0.9.0 — use {new} instead.",
+      "section_renamed_fatal": "One or more --check/--skip tokens used a legacy section name. See the warnings above for the canonical replacements; the migration table is in CHANGELOG.md under the v0.9.0 entry."
     }
   },
   "webhook": {
@@ -999,24 +971,6 @@
     "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing.",
     "whitelisted": "{count} SUID binary/binaries suppressed by user whitelist: {paths}"
   },
-  "docker_audit": {
-    "scan_error": "Docker daemon not reachable — container security check skipped",
-    "no_containers": "No running containers — nothing to audit",
-    "ok": "{count} running container(s) — no critical security issues found",
-    "privileged": "{count} container(s) running in privileged mode: {containers}",
-    "privileged_detail": "Privileged containers have full access to the host kernel and devices. This effectively disables container isolation. Replace with fine-grained capabilities (--cap-add) if elevated privileges are required.",
-    "privileged_reason": "{count} privileged container(s) running",
-    "socket_mounted": "{count} container(s) with Docker socket mounted: {containers}",
-    "socket_mounted_detail": "Mounting /var/run/docker.sock inside a container grants root-equivalent control over the host. Any process in the container can create new privileged containers or escape the sandbox.",
-    "socket_mounted_reason": "{count} container(s) with Docker socket mounted",
-    "userns_not_configured": "User namespace remapping not configured (userns-remap)",
-    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root.",
-    "userns_configured": "User namespace remapping enabled (userns-remap)",
-    "root_containers": "{count} container(s) running as root (UID 0): {containers}",
-    "root_containers_detail": "Running containers as root increases the blast radius of a container escape. Set a non-root USER in the Dockerfile or pass --user at runtime.",
-    "host_network": "{count} container(s) using host network namespace: {containers}",
-    "host_network_detail": "Containers in host network mode share the host's network stack and can bind to any port. Use bridge networking and publish only required ports."
-  },
   "kernel_modules": {
     "no_lsmod": "lsmod not available — kernel module check skipped",
     "risky_fs": "Risky filesystem module(s) loaded: {modules}",
@@ -1034,23 +988,6 @@
     "kernels_listed": "{count} kernel(s) installed: {installed} — no cleanup needed",
     "kernels_update_available": "Kernel update available ({candidate} in apt repository)",
     "kernels_up_to_date": "Kernel {version} — up to date in the apt repository"
-  },
-  "cron_audit": {
-    "pipe_to_shell": "{count} cron job(s) pipe remote content into a shell (curl/wget | sh)",
-    "pipe_to_shell_detail": "Piping remote downloads directly into a shell is a common supply-chain attack vector. Review and replace with explicit script downloads and integrity checks.",
-    "pipe_to_shell_reason": "{count} cron job(s) pipe remote content into a shell",
-    "world_writable": "{count} script(s) referenced in cron are world-writable: {scripts}",
-    "world_writable_detail": "World-writable scripts can be replaced by any local user, enabling privilege escalation. Restrict permissions immediately.",
-    "world_writable_reason": "{count} world-writable script(s) in cron",
-    "unexpected_users": "Unexpected user crontab(s) found: {users}",
-    "ok": "No risky patterns found in cron jobs"
-  },
-  "services_state": {
-    "no_systemctl": "systemctl not available — service state check skipped",
-    "service_inactive": "Security service enabled but not running: {service}",
-    "service_inactive_detail": "This service is set to start at boot but is currently stopped or failed. Check its logs and restart it.",
-    "service_inactive_reason": "Security service inactive: {service}",
-    "ok": "All monitored security services are active"
   },
   "output": {
     "recommendation_label": "What to do?",
@@ -1613,82 +1550,6 @@
         }
       }
     },
-    "iptables_nft": {
-      "no_backend": {
-        "title": "No firewall backend present (no iptables, no nftables)",
-        "why": "Without iptables or nftables installed and active, the kernel has no firewall rules at all — every port reachable from the network is fully exposed. UFW (or any other userspace firewall) ultimately relies on one of these backends to write rules into the kernel. Missing both means the system is operating without any packet filter whatsoever.",
-        "how": "1. Install iptables (or nftables) on the system:\n   sudo apt install iptables\n2. After install, configure UFW or another front-end and enable it:\n   sudo apt install ufw && sudo ufw enable\n3. Verify rules are loaded:\n   sudo iptables -L -n  # or: sudo nft list ruleset",
-        "server": {
-          "why": "A server with no firewall backend is fully exposed to the network — there is no kernel-level filtering, no default deny, no ability to restrict any service. This is one of the worst possible postures for any networked machine."
-        },
-        "desktop": {
-          "why": "Even behind NAT, a desktop without iptables/nftables has no defence against local-network attacks (peer devices, malicious neighbours on shared Wi-Fi). Installing a backend + UFW is universally recommended."
-        },
-        "container": {
-          "why": "Containers usually inherit packet filtering from the host. This finding suggests the host has no firewall — fix on the host system.",
-          "how": "Install on the host system:\n   sudo apt install iptables ufw\n   sudo ufw enable"
-        }
-      },
-      "input_accept": {
-        "title": "Default INPUT policy is ACCEPT (every unfiltered packet is allowed in)",
-        "why": "The INPUT chain policy is the firewall's final fallback when no explicit rule matches an incoming packet. When set to ACCEPT, every port that has no specific DROP/REJECT rule is open to the network — the default is permissive. The secure pattern is policy=DROP combined with explicit ACCEPT rules for permitted services, so anything not whitelisted is automatically blocked.",
-        "how": "1. Apply default-deny immediately. Before flipping the policy, make sure you have explicit ACCEPT rules for loopback and for any service you depend on (notably SSH) — otherwise you will lock yourself out:\n   sudo iptables -A INPUT -i lo -j ACCEPT\n   sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # keep SSH reachable\n   sudo iptables -P INPUT DROP\n2. Save the rules so they persist after reboot (iptables-persistent on Debian/Ubuntu):\n   sudo apt install iptables-persistent\n   sudo netfilter-persistent save\n3. For nftables-based systems, use:\n   sudo nft chain inet filter input '{ policy drop; }'",
-        "server": {
-          "why": "On a server, INPUT=ACCEPT means every newly opened socket is reachable from any source until you manually add a DROP rule for it. A default-deny policy is mandatory for any production server. Forgetting one explicit DROP today is forgetting one open port tomorrow."
-        },
-        "desktop": {
-          "why": "On a desktop behind NAT, external exposure is mitigated by the router, but local-segment attacks (other devices on the same Wi-Fi) still reach the machine. Default-deny is the standard hardening pattern even for clients."
-        },
-        "container": {
-          "why": "iptables policy is set by the host or by the container runtime; inside a default container you cannot change it. Adjust the container's network policy at the runtime level, or set the host policy."
-        }
-      },
-      "forward_accept": {
-        "title": "Default FORWARD policy is ACCEPT (router-like behaviour by default)",
-        "why": "The FORWARD chain handles packets routed THROUGH the host (not destined to local processes). FORWARD=ACCEPT means the kernel will forward any packet by default if IP forwarding is also enabled — turning the machine into a routing hop for anything that asks. Combined with a misconfigured network, this can be used to bridge segments or exfiltrate traffic via the host. The safe default for a non-router is policy=DROP.",
-        "how": "1. Set FORWARD policy to DROP:\n   sudo iptables -P FORWARD DROP\n   # or with nftables:\n   sudo nft chain inet filter forward '{ policy drop; }'\n2. Make it persistent (iptables-persistent on Debian/Ubuntu):\n   sudo netfilter-persistent save\n3. If this machine actually performs routing (libvirt host with virbr0, Docker host, KVM gateway, …), keep FORWARD=ACCEPT but ensure the application-layer firewall (UFW, libvirt rules) provides the filtering — and revisit the routing chains explicitly with 'sudo iptables -L FORWARD -n'.",
-        "server": {
-          "why": "A standard application server should not forward traffic — FORWARD=DROP is the safe default. The exception is virtualisation or container hosts (libvirt, Docker, KVM, LXC) which legitimately route guest traffic — in that case the policy is intentionally permissive but the rule chains must compensate."
-        },
-        "desktop": {
-          "why": "A desktop is virtually never a router. Letting FORWARD=ACCEPT is unnecessary attack surface and can be abused if the desktop is bridged or shares its network connection. DROP is safe."
-        },
-        "container": {
-          "why": "Containers should not be forwarding hosts. FORWARD policy is configured at the host level; address it there.",
-          "how": "Apply on the container host:\n   sudo iptables -P FORWARD DROP\n   sudo netfilter-persistent save"
-        }
-      },
-      "no_loopback": {
-        "title": "INPUT default-deny without a loopback ACCEPT rule",
-        "why": "When INPUT policy is DROP, the loopback interface (127.0.0.1 / lo) is also dropped unless an explicit ACCEPT rule exists. Many local services rely on loopback: postgres listening on localhost, web apps talking to a local backend, system daemons communicating over 127.0.0.1. Without the loopback exception, these break silently — and you may not notice until a specific local process fails.",
-        "how": "1. Insert a loopback ACCEPT rule at the top of INPUT:\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   # or with nftables:\n   sudo nft insert rule inet filter input iif \"lo\" accept\n2. Make persistent:\n   sudo netfilter-persistent save\n3. Verify loopback works (curl a local service that listens on 127.0.0.1).",
-        "server": {
-          "why": "Almost every server runs at least one service that binds to 127.0.0.1 (PostgreSQL, Redis, fcgi sockets, supervisord interfaces). Missing the loopback rule breaks them silently and causes long debugging sessions. It is the single most common omission when a fresh default-deny policy is applied."
-        },
-        "desktop": {
-          "why": "Many desktop applications (browsers, IDEs, dev tools, system trays) talk to local services over loopback. Without the explicit ACCEPT rule, these silently fail. Add the loopback rule before tightening INPUT."
-        },
-        "container": {
-          "why": "Loopback INSIDE a container is handled by the container's own network namespace and is unaffected by host iptables rules. This finding applies to the host's INPUT chain — fix on the host.",
-          "how": "Apply on the host system:\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   sudo netfilter-persistent save"
-        }
-      },
-      "no_conntrack": {
-        "title": "INPUT default-deny without an ESTABLISHED,RELATED ACCEPT rule",
-        "why": "With INPUT policy=DROP, return packets from outbound connections (web browser fetching a page, apt downloading updates, ssh client receiving server response) are dropped along with everything else unless an explicit rule accepts conntrack-tracked ESTABLISHED and RELATED states. The result is that the machine can open outbound connections but never receive any reply — effectively cutting off all client-side network usage.",
-        "how": "1. Insert the conntrack rule near the top of INPUT (right after loopback):\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   # or with nftables:\n   sudo nft insert rule inet filter input ct state established,related accept\n2. Make persistent:\n   sudo netfilter-persistent save\n3. Verify outbound usage works (curl https://example.com).",
-        "server": {
-          "why": "A server with INPUT=DROP but no conntrack ACCEPT cannot complete its own outbound HTTP requests, package updates, or DNS lookups. The fix is mandatory for any default-deny INPUT configuration."
-        },
-        "desktop": {
-          "why": "Without the conntrack rule, every outbound request (web browsing, downloads, package management) appears to hang and time out because the responses are silently dropped. It is the most common cause of \"after enabling firewall, internet broke\"."
-        },
-        "container": {
-          "why": "Container network namespaces have their own conntrack handling. This finding refers to the host INPUT chain — fix on the host.",
-          "how": "Apply on the host system:\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo netfilter-persistent save"
-        }
-      }
-    },
     "mac_policy": {
       "apparmor_inactive": {
         "title": "AppArmor installed but the service is not running",
@@ -1778,68 +1639,6 @@
         "container": {
           "why": "SELinux on the host applies container labels (svirt_*) that isolate containers from each other and from the host. Re-enabling on the host re-enables this layer.",
           "how": "Apply on the host system following the same procedure as on a bare-metal host (edit /etc/selinux/config, touch /.autorelabel, reboot)."
-        }
-      }
-    },
-    "firewall_stack": {
-      "iptables_bypass": {
-        "title": "Raw iptables ACCEPT rule in INPUT bypasses UFW filtering",
-        "why": "UFW writes its rules into dedicated chains (ufw-before-input, ufw-input, ufw-after-input). A raw ACCEPT rule sitting directly in the INPUT chain takes effect BEFORE the ufw-* chains are reached, so packets matching it are allowed in regardless of any UFW deny rule that would otherwise reject them. The result is a silent UFW bypass — `ufw status` shows the firewall as active and configured, while traffic for the bypassed port flows freely. These rules are typically left over from manual iptables tweaks or from a previously-installed package.",
-        "how": "1. List the offending rules:\n   sudo iptables -L INPUT -n --line-numbers\n2. Delete each raw ACCEPT rule (replace N with the line number):\n   sudo iptables -D INPUT N\n3. If the rule was added by a package or a startup script, find and disable the source — otherwise it will reappear after reboot:\n   sudo grep -r 'iptables -A INPUT' /etc/\n4. Save the cleaned ruleset:\n   sudo netfilter-persistent save",
-        "server": {
-          "why": "On a server, a raw INPUT ACCEPT rule means part of your firewall posture is invisible to UFW management — `ufw allow` and `ufw deny` cannot affect it. The exposed port stays open whatever the documented UFW config says."
-        },
-        "desktop": {
-          "why": "On a desktop, the same problem applies: UFW reports the system as protected while the bypass rule keeps a port reachable. Audit and remove any raw rule you did not add intentionally."
-        },
-        "container": {
-          "why": "INPUT chain rules live on the host. Inspect the host's iptables and reconcile with UFW there.",
-          "how": "Apply on the host system:\n   sudo iptables -L INPUT -n --line-numbers\n   sudo iptables -D INPUT N   # for each offending rule"
-        }
-      },
-      "iptables_forward_bypass": {
-        "title": "Raw iptables ACCEPT rule in FORWARD bypasses UFW filtering (no routing daemon detected)",
-        "why": "Same pattern as iptables_bypass but on the FORWARD chain. ACCEPT rules in FORWARD allow routed traffic (packets transiting through the host) to pass without being filtered by UFW's ufw-forward chain. Docker, libvirt and WireGuard legitimately add such rules — but those daemons are NOT detected on this system, so the rule is unexpected. It typically means a removed package left orphan rules behind, or a manual debugging session was forgotten.",
-        "how": "1. List the FORWARD rules:\n   sudo iptables -L FORWARD -n --line-numbers\n2. Delete each unexpected ACCEPT rule:\n   sudo iptables -D FORWARD N\n3. Find the source and disable it (similar to iptables_bypass):\n   sudo grep -r 'iptables -A FORWARD' /etc/\n4. Save the cleaned ruleset:\n   sudo netfilter-persistent save",
-        "server": {
-          "why": "On a non-routing server, FORWARD ACCEPT rules should not exist. If they do, they expose any neighbour-network traffic to free transit through the host — a routing vector that can be abused for traffic relay or NAT puncturing."
-        },
-        "desktop": {
-          "why": "A desktop should never forward traffic. Orphan FORWARD ACCEPT rules typically come from a removed VPN client or container runtime. Remove them once you have confirmed nothing legitimate still uses them."
-        },
-        "container": {
-          "why": "FORWARD chain is managed at the host level. Remove orphan rules on the host.",
-          "how": "Apply on the host system:\n   sudo iptables -L FORWARD -n --line-numbers\n   sudo iptables -D FORWARD N"
-        }
-      },
-      "nftables_parallel": {
-        "title": "nftables ruleset active in parallel with UFW (iptables backend)",
-        "why": "UFW writes its rules to the iptables backend. If nftables is also active with its own ruleset, two firewall stacks evaluate every packet — and the order of evaluation depends on kernel version, module load order, and the netfilter compatibility layer. The result is non-deterministic packet processing: a port `ufw allow` opens may be silently dropped by an nftables rule, or vice versa. Symptoms are intermittent connectivity failures that look like network bugs but are firewall ones.",
-        "how": "1. Inspect the nftables ruleset:\n   sudo nft list ruleset\n2. Decide which stack you want to keep:\n   - Keep UFW → flush nftables and disable its service:\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Switch to nftables → uninstall UFW and reconfigure rules natively in nftables:\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persist whichever choice you made (netfilter-persistent for iptables/UFW, nftables.conf for nft).",
-        "server": {
-          "why": "On a server, two parallel firewall stacks produce intermittent connectivity bugs that are very hard to diagnose. Pick one stack and remove the other; consistency is more important than the specific choice."
-        },
-        "desktop": {
-          "why": "On a desktop, parallel stacks usually surface as 'sometimes this service is reachable, sometimes it is not'. Pick one and stick with it."
-        },
-        "container": {
-          "why": "Firewall stack is host-level; this affects all containers. Reconcile on the host.",
-          "how": "Apply on the host system:\n   sudo nft list ruleset\n   sudo nft flush ruleset           # if keeping UFW\n   sudo systemctl disable --now nftables"
-        }
-      },
-      "ip_forward_enabled": {
-        "title": "IP forwarding enabled but no routing daemon detected (Docker / libvirt / WireGuard absent)",
-        "why": "net.ipv4.ip_forward=1 turns the host into an IP router — it will forward packets between interfaces according to its routing table. Docker, libvirt/KVM and WireGuard legitimately enable this for guest / VPN traffic, but none of those are running. Unexplained IP forwarding usually means a removed VPN or virtualisation package left the sysctl set, or it was enabled manually for debugging and never reverted. An unused forwarding host can be abused as a routing relay if the FORWARD chain is permissive.",
-        "how": "1. Disable IP forwarding immediately:\n   sudo sysctl -w net.ipv4.ip_forward=0\n2. Make it permanent — edit /etc/sysctl.conf or a file under /etc/sysctl.d/ and set:\n   net.ipv4.ip_forward=0\n3. Re-apply sysctl settings:\n   sudo sysctl --system\nNote: if you later install Docker, libvirt or WireGuard, those packages will re-enable forwarding automatically. The fix above is only for the current state.",
-        "server": {
-          "why": "On a non-routing server, ip_forward=1 with no daemon is dormant attack surface. Either install the daemon that explains why forwarding is needed, or disable forwarding."
-        },
-        "desktop": {
-          "why": "A desktop is virtually never a router. Forwarding enabled without a VPN or virtualisation daemon is leftover state — disable it."
-        },
-        "container": {
-          "why": "ip_forward is a host kernel setting; it cannot be changed from inside a default container. Apply on the host.",
-          "how": "Apply on the host system:\n   sudo sysctl -w net.ipv4.ip_forward=0\n   echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
         }
       }
     },
@@ -2129,51 +1928,6 @@
           "why": "Kernel module loading is restricted in containers. This finding is not actionable from within a container — address it on the host.",
           "how": "Apply on the host system:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n   sudo update-initramfs -u"
         }
-      }
-    },
-    "cron_audit": {
-      "pipe_to_shell": {
-        "title": "Pipe-to-shell pattern in system cron (curl/wget | sh)",
-        "why": "Fetching a script and piping it directly to a shell bypasses all integrity checks. If the remote server is compromised, the DNS is hijacked, or the connection is intercepted (plain HTTP), arbitrary code runs with the cron job's privileges — often root. There is no way to audit or version-control what will be executed at runtime.",
-        "how": "1. Identify the cron entry in /etc/cron.* or /etc/crontab\n2. Replace with a two-step approach:\n   a. Download to a file: curl -fsSL -o /tmp/script.sh https://...\n   b. Verify checksum: sha256sum -c /tmp/script.sha256\n   c. Execute: bash /tmp/script.sh\n3. Better: host the script locally, pin it in version control,\n   and reference the local copy from cron"
-      },
-      "world_writable": {
-        "title": "World-writable script referenced in system cron",
-        "why": "Any local user can modify a world-writable script. Because cron runs it on a schedule — often as root — overwriting the script is a trivial local privilege escalation: no exploit needed, just write access to the file. This is a classic persistence and escalation technique.",
-        "how": "1. Remove world-write permission:\n   sudo chmod o-w <path>\n2. Verify ownership is correct (should be root):\n   ls -la <path>\n3. Review the script content for unexpected modifications:\n   sudo cat <path>"
-      }
-    },
-    "services_state": {
-      "enabled_inactive": {
-        "title": "Security service enabled at boot but currently inactive",
-        "why": "A service configured to start at boot but currently stopped may have crashed, been misconfigured, or been deliberately disabled. If the service is a security control (firewall, intrusion detection, log daemon), its absence creates a window during which threats go undetected or unblocked. The system appears protected at startup but is not at runtime.",
-        "how": "1. Check why the service stopped:\n   sudo journalctl -u <service> -n 50\n2. Restart and verify:\n   sudo systemctl start <service>\n   sudo systemctl status <service>\n3. If the service crashes on start, investigate the config:\n   sudo systemctl status <service> --no-pager -l\n4. Ensure it remains enabled:\n   sudo systemctl enable <service>",
-        "server": {
-          "why": "A service enabled at boot but currently inactive on a server may indicate a crashed or misconfigured security control. It will restart at next boot, potentially exposing a port that appears closed right now. On a server, investigate and resolve immediately."
-        },
-        "desktop": {
-          "why": "On a desktop, an enabled-but-inactive service is typically a leftover from an old installation. While the risk is lower (no inbound exposure expected), it wastes startup time and may cause subtle issues. Disable unused services as a hygiene measure."
-        },
-        "container": {
-          "why": "In a container, systemd is often not the init system. If your container uses a lightweight init (s6, runit, supervisord), this finding may not apply. If systemd is present in the container, follow the server guidance."
-        }
-      }
-    },
-    "rules": {
-      "duplicate_found": {
-        "title": "Duplicate or redundant UFW rules",
-        "why": "Duplicate firewall rules do not improve security but add confusion and maintenance overhead. Redundant rules make the policy harder to audit and can cause unexpected behaviour when rules are later modified or deleted, since UFW processes rules in order.",
-        "how": "1. List rules with numbers:\n   sudo ufw status numbered\n2. Identify and delete the redundant rule:\n   sudo ufw delete <number>\n3. Verify the remaining ruleset:\n   sudo ufw status verbose"
-      },
-      "open_any_found": {
-        "title": "Open wildcard rule (ALLOW from Anywhere to Anywhere)",
-        "why": "A rule allowing all traffic from anywhere to anywhere negates the entire firewall for the affected port or protocol. This is equivalent to having no firewall at all — any external host can reach any open service.",
-        "how": "1. Identify the wildcard rule:\n   sudo ufw status numbered\n2. Delete it:\n   sudo ufw delete <number>\n3. Replace with specific rules covering only the required sources and ports:\n   sudo ufw allow from 192.168.1.0/24 to any port 22\n4. Confirm the default policy is deny:\n   sudo ufw default deny incoming"
-      },
-      "ipv6_missing": {
-        "title": "IPv4 rules present but no equivalent IPv6 rules",
-        "why": "If a service is reachable over both IPv4 and IPv6 but only IPv4 is covered, the IPv6 path is completely unfiltered. An attacker using IPv6 bypasses all the firewall rules that appear to protect the service. This asymmetry is a common blind spot.",
-        "how": "1. Ensure /etc/default/ufw has IPV6=yes\n2. UFW rules added without specifying a protocol apply to both IPv4 and IPv6 automatically:\n   sudo ufw allow 22/tcp  # creates both v4 and v6 rules\n3. Check which services listen on IPv6:\n   sudo ss -tlnp | grep ':::'\n4. Reload UFW:\n   sudo ufw reload"
       }
     },
     "ipv6": {
@@ -2616,28 +2370,6 @@
         "how": "1. Install the appropriate microcode package:\n   # Intel CPU:\n   sudo apt install intel-microcode\n   # AMD CPU:\n   sudo apt install amd64-microcode\n2. Reboot to apply:\n   sudo reboot\n3. Verify microcode is loaded:\n   grep microcode /proc/cpuinfo | head -1"
       }
     },
-    "docker_audit": {
-      "privileged": {
-        "title": "Docker container running in privileged mode",
-        "why": "A privileged container has full access to the host's devices and capabilities — it is effectively running as root on the host with all restrictions removed. Any process inside a privileged container can escape to the host, modify kernel parameters, mount host filesystems, and compromise the entire system.",
-        "how": "1. Identify the privileged container:\n   docker ps --quiet | xargs docker inspect --format '{{.Name}} privileged={{.HostConfig.Privileged}}'\n2. Remove the --privileged flag and grant only the specific capabilities needed:\n   docker run --cap-add NET_ADMIN (instead of --privileged)\n3. If the container genuinely needs privileged access, isolate it on a dedicated host\n4. Use seccomp profiles and AppArmor policies"
-      },
-      "root_containers": {
-        "title": "Docker containers running as root (no user namespace remapping)",
-        "why": "Containers running as UID 0 inside the container map directly to root on the host when user namespace remapping is not configured. A container escape vulnerability — of which Docker has had several — gives an attacker immediate root on the host.",
-        "how": "1. Add a non-root USER in your Dockerfile:\n   USER 1000:1000\n2. Or enable user namespace remapping globally:\n   sudo nano /etc/docker/daemon.json\n   { \"userns-remap\": \"default\" }\n   sudo systemctl restart docker\n3. Verify:\n   docker run alpine id  # should not return uid=0"
-      },
-      "socket_mounted": {
-        "title": "Docker socket mounted inside a container",
-        "why": "Mounting /var/run/docker.sock into a container gives it full control of the Docker daemon — and therefore the host. From inside the container, an attacker can start a new privileged container, mount the host filesystem, and escape with a single docker command. This is a complete container isolation bypass.",
-        "how": "1. Remove the socket mount from the container:\n   Remove -v /var/run/docker.sock:/var/run/docker.sock from docker run\n2. If the container needs to manage Docker (CI agents, Portainer), use:\n   - Docker-in-Docker (dind) with explicit isolation\n   - A Docker TCP socket with TLS authentication instead of the Unix socket\n3. Audit running containers:\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.Mounts}}' | grep docker.sock"
-      },
-      "host_network": {
-        "title": "Docker container using host network mode",
-        "why": "A container with --network=host shares the host's network namespace entirely. It can bind to any port on the host, listen on all interfaces, and access any network service running on localhost. Network-based container isolation does not exist for such containers.",
-        "how": "1. Remove --network=host and use explicit port publishing:\n   docker run -p 8080:80 myimage  (instead of --network=host)\n2. If host networking is required for performance (e.g. latency-sensitive apps), restrict capabilities and use AppArmor/seccomp profiles\n3. Audit host-networked containers:\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.HostConfig.NetworkMode}}' | grep host"
-      }
-    },
     "kernel_hardening": {
       "aslr_disabled": {
         "title": "ASLR (Address Space Layout Randomisation) is disabled",
@@ -2687,6 +2419,211 @@
         "title": "Risk level raised by posture (firewall structural gap)",
         "why": "BOB derives the displayed risk level from the global score combined with the posture state. Pre-v0.7.0 the level was score-only — a host with UFW inactive but otherwise clean (score 8/10) displayed 'LOW risk', misleading operators about the actual exposure. v0.7.0 introduces a posture floor: when the firewall is structurally broken (inactive, INPUT ACCEPT, or firewall domain ≤ 3/10), the level is lifted out of LOW to reflect that the host is reachable on any port regardless of the cleanliness of the rest. The base score still drives the value; posture only raises the floor.",
         "how": "1. Identify which posture trigger fired (look at the parenthetical annotation next to the risk level):\n   - 'firewall inactive' → enable UFW: sudo ufw enable\n   - 'iptables INPUT ACCEPT' → set deny default: sudo iptables -P INPUT DROP (or migrate to UFW)\n   - 'firewall domain low' → review the firewall section findings (rules, logging, default policy)\n2. Re-run the audit:\n   sudo bob\n3. The risk level returns to its score-derived value once the posture trigger no longer fires."
+      }
+    },
+    "cron": {
+      "pipe_to_shell": {
+        "title": "Pipe-to-shell pattern in system cron (curl/wget | sh)",
+        "why": "Fetching a script and piping it directly to a shell bypasses all integrity checks. If the remote server is compromised, the DNS is hijacked, or the connection is intercepted (plain HTTP), arbitrary code runs with the cron job's privileges — often root. There is no way to audit or version-control what will be executed at runtime.",
+        "how": "1. Identify the cron entry in /etc/cron.* or /etc/crontab\n2. Replace with a two-step approach:\n   a. Download to a file: curl -fsSL -o /tmp/script.sh https://...\n   b. Verify checksum: sha256sum -c /tmp/script.sha256\n   c. Execute: bash /tmp/script.sh\n3. Better: host the script locally, pin it in version control,\n   and reference the local copy from cron"
+      },
+      "world_writable": {
+        "title": "World-writable script referenced in system cron",
+        "why": "Any local user can modify a world-writable script. Because cron runs it on a schedule — often as root — overwriting the script is a trivial local privilege escalation: no exploit needed, just write access to the file. This is a classic persistence and escalation technique.",
+        "how": "1. Remove world-write permission:\n   sudo chmod o-w <path>\n2. Verify ownership is correct (should be root):\n   ls -la <path>\n3. Review the script content for unexpected modifications:\n   sudo cat <path>"
+      }
+    },
+    "docker_hardening": {
+      "privileged": {
+        "title": "Docker container running in privileged mode",
+        "why": "A privileged container has full access to the host's devices and capabilities — it is effectively running as root on the host with all restrictions removed. Any process inside a privileged container can escape to the host, modify kernel parameters, mount host filesystems, and compromise the entire system.",
+        "how": "1. Identify the privileged container:\n   docker ps --quiet | xargs docker inspect --format '{{.Name}} privileged={{.HostConfig.Privileged}}'\n2. Remove the --privileged flag and grant only the specific capabilities needed:\n   docker run --cap-add NET_ADMIN (instead of --privileged)\n3. If the container genuinely needs privileged access, isolate it on a dedicated host\n4. Use seccomp profiles and AppArmor policies"
+      },
+      "root_containers": {
+        "title": "Docker containers running as root (no user namespace remapping)",
+        "why": "Containers running as UID 0 inside the container map directly to root on the host when user namespace remapping is not configured. A container escape vulnerability — of which Docker has had several — gives an attacker immediate root on the host.",
+        "how": "1. Add a non-root USER in your Dockerfile:\n   USER 1000:1000\n2. Or enable user namespace remapping globally:\n   sudo nano /etc/docker/daemon.json\n   { \"userns-remap\": \"default\" }\n   sudo systemctl restart docker\n3. Verify:\n   docker run alpine id  # should not return uid=0"
+      },
+      "socket_mounted": {
+        "title": "Docker socket mounted inside a container",
+        "why": "Mounting /var/run/docker.sock into a container gives it full control of the Docker daemon — and therefore the host. From inside the container, an attacker can start a new privileged container, mount the host filesystem, and escape with a single docker command. This is a complete container isolation bypass.",
+        "how": "1. Remove the socket mount from the container:\n   Remove -v /var/run/docker.sock:/var/run/docker.sock from docker run\n2. If the container needs to manage Docker (CI agents, Portainer), use:\n   - Docker-in-Docker (dind) with explicit isolation\n   - A Docker TCP socket with TLS authentication instead of the Unix socket\n3. Audit running containers:\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.Mounts}}' | grep docker.sock"
+      },
+      "host_network": {
+        "title": "Docker container using host network mode",
+        "why": "A container with --network=host shares the host's network namespace entirely. It can bind to any port on the host, listen on all interfaces, and access any network service running on localhost. Network-based container isolation does not exist for such containers.",
+        "how": "1. Remove --network=host and use explicit port publishing:\n   docker run -p 8080:80 myimage  (instead of --network=host)\n2. If host networking is required for performance (e.g. latency-sensitive apps), restrict capabilities and use AppArmor/seccomp profiles\n3. Audit host-networked containers:\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.HostConfig.NetworkMode}}' | grep host"
+      }
+    },
+    "services_health": {
+      "service_inactive": {
+        "title": "Security service enabled at boot but currently inactive",
+        "why": "A service configured to start at boot but currently stopped may have crashed, been misconfigured, or been deliberately disabled. If the service is a security control (firewall, intrusion detection, log daemon), its absence creates a window during which threats go undetected or unblocked. The system appears protected at startup but is not at runtime.",
+        "how": "1. Check why the service stopped:\n   sudo journalctl -u <service> -n 50\n2. Restart and verify:\n   sudo systemctl start <service>\n   sudo systemctl status <service>\n3. If the service crashes on start, investigate the config:\n   sudo systemctl status <service> --no-pager -l\n4. Ensure it remains enabled:\n   sudo systemctl enable <service>",
+        "server": {
+          "why": "A service enabled at boot but currently inactive on a server may indicate a crashed or misconfigured security control. It will restart at next boot, potentially exposing a port that appears closed right now. On a server, investigate and resolve immediately."
+        },
+        "desktop": {
+          "why": "On a desktop, an enabled-but-inactive service is typically a leftover from an old installation. While the risk is lower (no inbound exposure expected), it wastes startup time and may cause subtle issues. Disable unused services as a hygiene measure."
+        },
+        "container": {
+          "why": "In a container, systemd is often not the init system. If your container uses a lightweight init (s6, runit, supervisord), this finding may not apply. If systemd is present in the container, follow the server guidance."
+        }
+      }
+    },
+    "firewall_iptables": {
+      "no_backend": {
+        "title": "No firewall backend present (no iptables, no nftables)",
+        "why": "Without iptables or nftables installed and active, the kernel has no firewall rules at all — every port reachable from the network is fully exposed. UFW (or any other userspace firewall) ultimately relies on one of these backends to write rules into the kernel. Missing both means the system is operating without any packet filter whatsoever.",
+        "how": "1. Install iptables (or nftables) on the system:\n   sudo apt install iptables\n2. After install, configure UFW or another front-end and enable it:\n   sudo apt install ufw && sudo ufw enable\n3. Verify rules are loaded:\n   sudo iptables -L -n  # or: sudo nft list ruleset",
+        "server": {
+          "why": "A server with no firewall backend is fully exposed to the network — there is no kernel-level filtering, no default deny, no ability to restrict any service. This is one of the worst possible postures for any networked machine."
+        },
+        "desktop": {
+          "why": "Even behind NAT, a desktop without iptables/nftables has no defence against local-network attacks (peer devices, malicious neighbours on shared Wi-Fi). Installing a backend + UFW is universally recommended."
+        },
+        "container": {
+          "why": "Containers usually inherit packet filtering from the host. This finding suggests the host has no firewall — fix on the host system.",
+          "how": "Install on the host system:\n   sudo apt install iptables ufw\n   sudo ufw enable"
+        }
+      },
+      "input_accept": {
+        "title": "Default INPUT policy is ACCEPT (every unfiltered packet is allowed in)",
+        "why": "The INPUT chain policy is the firewall's final fallback when no explicit rule matches an incoming packet. When set to ACCEPT, every port that has no specific DROP/REJECT rule is open to the network — the default is permissive. The secure pattern is policy=DROP combined with explicit ACCEPT rules for permitted services, so anything not whitelisted is automatically blocked.",
+        "how": "1. Apply default-deny immediately. Before flipping the policy, make sure you have explicit ACCEPT rules for loopback and for any service you depend on (notably SSH) — otherwise you will lock yourself out:\n   sudo iptables -A INPUT -i lo -j ACCEPT\n   sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # keep SSH reachable\n   sudo iptables -P INPUT DROP\n2. Save the rules so they persist after reboot (iptables-persistent on Debian/Ubuntu):\n   sudo apt install iptables-persistent\n   sudo netfilter-persistent save\n3. For nftables-based systems, use:\n   sudo nft chain inet filter input '{ policy drop; }'",
+        "server": {
+          "why": "On a server, INPUT=ACCEPT means every newly opened socket is reachable from any source until you manually add a DROP rule for it. A default-deny policy is mandatory for any production server. Forgetting one explicit DROP today is forgetting one open port tomorrow."
+        },
+        "desktop": {
+          "why": "On a desktop behind NAT, external exposure is mitigated by the router, but local-segment attacks (other devices on the same Wi-Fi) still reach the machine. Default-deny is the standard hardening pattern even for clients."
+        },
+        "container": {
+          "why": "iptables policy is set by the host or by the container runtime; inside a default container you cannot change it. Adjust the container's network policy at the runtime level, or set the host policy."
+        }
+      },
+      "forward_accept": {
+        "title": "Default FORWARD policy is ACCEPT (router-like behaviour by default)",
+        "why": "The FORWARD chain handles packets routed THROUGH the host (not destined to local processes). FORWARD=ACCEPT means the kernel will forward any packet by default if IP forwarding is also enabled — turning the machine into a routing hop for anything that asks. Combined with a misconfigured network, this can be used to bridge segments or exfiltrate traffic via the host. The safe default for a non-router is policy=DROP.",
+        "how": "1. Set FORWARD policy to DROP:\n   sudo iptables -P FORWARD DROP\n   # or with nftables:\n   sudo nft chain inet filter forward '{ policy drop; }'\n2. Make it persistent (iptables-persistent on Debian/Ubuntu):\n   sudo netfilter-persistent save\n3. If this machine actually performs routing (libvirt host with virbr0, Docker host, KVM gateway, …), keep FORWARD=ACCEPT but ensure the application-layer firewall (UFW, libvirt rules) provides the filtering — and revisit the routing chains explicitly with 'sudo iptables -L FORWARD -n'.",
+        "server": {
+          "why": "A standard application server should not forward traffic — FORWARD=DROP is the safe default. The exception is virtualisation or container hosts (libvirt, Docker, KVM, LXC) which legitimately route guest traffic — in that case the policy is intentionally permissive but the rule chains must compensate."
+        },
+        "desktop": {
+          "why": "A desktop is virtually never a router. Letting FORWARD=ACCEPT is unnecessary attack surface and can be abused if the desktop is bridged or shares its network connection. DROP is safe."
+        },
+        "container": {
+          "why": "Containers should not be forwarding hosts. FORWARD policy is configured at the host level; address it there.",
+          "how": "Apply on the container host:\n   sudo iptables -P FORWARD DROP\n   sudo netfilter-persistent save"
+        }
+      },
+      "no_loopback": {
+        "title": "INPUT default-deny without a loopback ACCEPT rule",
+        "why": "When INPUT policy is DROP, the loopback interface (127.0.0.1 / lo) is also dropped unless an explicit ACCEPT rule exists. Many local services rely on loopback: postgres listening on localhost, web apps talking to a local backend, system daemons communicating over 127.0.0.1. Without the loopback exception, these break silently — and you may not notice until a specific local process fails.",
+        "how": "1. Insert a loopback ACCEPT rule at the top of INPUT:\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   # or with nftables:\n   sudo nft insert rule inet filter input iif \"lo\" accept\n2. Make persistent:\n   sudo netfilter-persistent save\n3. Verify loopback works (curl a local service that listens on 127.0.0.1).",
+        "server": {
+          "why": "Almost every server runs at least one service that binds to 127.0.0.1 (PostgreSQL, Redis, fcgi sockets, supervisord interfaces). Missing the loopback rule breaks them silently and causes long debugging sessions. It is the single most common omission when a fresh default-deny policy is applied."
+        },
+        "desktop": {
+          "why": "Many desktop applications (browsers, IDEs, dev tools, system trays) talk to local services over loopback. Without the explicit ACCEPT rule, these silently fail. Add the loopback rule before tightening INPUT."
+        },
+        "container": {
+          "why": "Loopback INSIDE a container is handled by the container's own network namespace and is unaffected by host iptables rules. This finding applies to the host's INPUT chain — fix on the host.",
+          "how": "Apply on the host system:\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   sudo netfilter-persistent save"
+        }
+      },
+      "no_conntrack": {
+        "title": "INPUT default-deny without an ESTABLISHED,RELATED ACCEPT rule",
+        "why": "With INPUT policy=DROP, return packets from outbound connections (web browser fetching a page, apt downloading updates, ssh client receiving server response) are dropped along with everything else unless an explicit rule accepts conntrack-tracked ESTABLISHED and RELATED states. The result is that the machine can open outbound connections but never receive any reply — effectively cutting off all client-side network usage.",
+        "how": "1. Insert the conntrack rule near the top of INPUT (right after loopback):\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   # or with nftables:\n   sudo nft insert rule inet filter input ct state established,related accept\n2. Make persistent:\n   sudo netfilter-persistent save\n3. Verify outbound usage works (curl https://example.com).",
+        "server": {
+          "why": "A server with INPUT=DROP but no conntrack ACCEPT cannot complete its own outbound HTTP requests, package updates, or DNS lookups. The fix is mandatory for any default-deny INPUT configuration."
+        },
+        "desktop": {
+          "why": "Without the conntrack rule, every outbound request (web browsing, downloads, package management) appears to hang and time out because the responses are silently dropped. It is the most common cause of \"after enabling firewall, internet broke\"."
+        },
+        "container": {
+          "why": "Container network namespaces have their own conntrack handling. This finding refers to the host INPUT chain — fix on the host.",
+          "how": "Apply on the host system:\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo netfilter-persistent save"
+        }
+      }
+    },
+    "firewall_drivers": {
+      "iptables_bypass": {
+        "title": "Raw iptables ACCEPT rule in INPUT bypasses UFW filtering",
+        "why": "UFW writes its rules into dedicated chains (ufw-before-input, ufw-input, ufw-after-input). A raw ACCEPT rule sitting directly in the INPUT chain takes effect BEFORE the ufw-* chains are reached, so packets matching it are allowed in regardless of any UFW deny rule that would otherwise reject them. The result is a silent UFW bypass — `ufw status` shows the firewall as active and configured, while traffic for the bypassed port flows freely. These rules are typically left over from manual iptables tweaks or from a previously-installed package.",
+        "how": "1. List the offending rules:\n   sudo iptables -L INPUT -n --line-numbers\n2. Delete each raw ACCEPT rule (replace N with the line number):\n   sudo iptables -D INPUT N\n3. If the rule was added by a package or a startup script, find and disable the source — otherwise it will reappear after reboot:\n   sudo grep -r 'iptables -A INPUT' /etc/\n4. Save the cleaned ruleset:\n   sudo netfilter-persistent save",
+        "server": {
+          "why": "On a server, a raw INPUT ACCEPT rule means part of your firewall posture is invisible to UFW management — `ufw allow` and `ufw deny` cannot affect it. The exposed port stays open whatever the documented UFW config says."
+        },
+        "desktop": {
+          "why": "On a desktop, the same problem applies: UFW reports the system as protected while the bypass rule keeps a port reachable. Audit and remove any raw rule you did not add intentionally."
+        },
+        "container": {
+          "why": "INPUT chain rules live on the host. Inspect the host's iptables and reconcile with UFW there.",
+          "how": "Apply on the host system:\n   sudo iptables -L INPUT -n --line-numbers\n   sudo iptables -D INPUT N   # for each offending rule"
+        }
+      },
+      "iptables_forward_bypass": {
+        "title": "Raw iptables ACCEPT rule in FORWARD bypasses UFW filtering (no routing daemon detected)",
+        "why": "Same pattern as iptables_bypass but on the FORWARD chain. ACCEPT rules in FORWARD allow routed traffic (packets transiting through the host) to pass without being filtered by UFW's ufw-forward chain. Docker, libvirt and WireGuard legitimately add such rules — but those daemons are NOT detected on this system, so the rule is unexpected. It typically means a removed package left orphan rules behind, or a manual debugging session was forgotten.",
+        "how": "1. List the FORWARD rules:\n   sudo iptables -L FORWARD -n --line-numbers\n2. Delete each unexpected ACCEPT rule:\n   sudo iptables -D FORWARD N\n3. Find the source and disable it (similar to iptables_bypass):\n   sudo grep -r 'iptables -A FORWARD' /etc/\n4. Save the cleaned ruleset:\n   sudo netfilter-persistent save",
+        "server": {
+          "why": "On a non-routing server, FORWARD ACCEPT rules should not exist. If they do, they expose any neighbour-network traffic to free transit through the host — a routing vector that can be abused for traffic relay or NAT puncturing."
+        },
+        "desktop": {
+          "why": "A desktop should never forward traffic. Orphan FORWARD ACCEPT rules typically come from a removed VPN client or container runtime. Remove them once you have confirmed nothing legitimate still uses them."
+        },
+        "container": {
+          "why": "FORWARD chain is managed at the host level. Remove orphan rules on the host.",
+          "how": "Apply on the host system:\n   sudo iptables -L FORWARD -n --line-numbers\n   sudo iptables -D FORWARD N"
+        }
+      },
+      "nftables_parallel": {
+        "title": "nftables ruleset active in parallel with UFW (iptables backend)",
+        "why": "UFW writes its rules to the iptables backend. If nftables is also active with its own ruleset, two firewall stacks evaluate every packet — and the order of evaluation depends on kernel version, module load order, and the netfilter compatibility layer. The result is non-deterministic packet processing: a port `ufw allow` opens may be silently dropped by an nftables rule, or vice versa. Symptoms are intermittent connectivity failures that look like network bugs but are firewall ones.",
+        "how": "1. Inspect the nftables ruleset:\n   sudo nft list ruleset\n2. Decide which stack you want to keep:\n   - Keep UFW → flush nftables and disable its service:\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Switch to nftables → uninstall UFW and reconfigure rules natively in nftables:\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persist whichever choice you made (netfilter-persistent for iptables/UFW, nftables.conf for nft).",
+        "server": {
+          "why": "On a server, two parallel firewall stacks produce intermittent connectivity bugs that are very hard to diagnose. Pick one stack and remove the other; consistency is more important than the specific choice."
+        },
+        "desktop": {
+          "why": "On a desktop, parallel stacks usually surface as 'sometimes this service is reachable, sometimes it is not'. Pick one and stick with it."
+        },
+        "container": {
+          "why": "Firewall stack is host-level; this affects all containers. Reconcile on the host.",
+          "how": "Apply on the host system:\n   sudo nft list ruleset\n   sudo nft flush ruleset           # if keeping UFW\n   sudo systemctl disable --now nftables"
+        }
+      },
+      "ip_forward_enabled": {
+        "title": "IP forwarding enabled but no routing daemon detected (Docker / libvirt / WireGuard absent)",
+        "why": "net.ipv4.ip_forward=1 turns the host into an IP router — it will forward packets between interfaces according to its routing table. Docker, libvirt/KVM and WireGuard legitimately enable this for guest / VPN traffic, but none of those are running. Unexplained IP forwarding usually means a removed VPN or virtualisation package left the sysctl set, or it was enabled manually for debugging and never reverted. An unused forwarding host can be abused as a routing relay if the FORWARD chain is permissive.",
+        "how": "1. Disable IP forwarding immediately:\n   sudo sysctl -w net.ipv4.ip_forward=0\n2. Make it permanent — edit /etc/sysctl.conf or a file under /etc/sysctl.d/ and set:\n   net.ipv4.ip_forward=0\n3. Re-apply sysctl settings:\n   sudo sysctl --system\nNote: if you later install Docker, libvirt or WireGuard, those packages will re-enable forwarding automatically. The fix above is only for the current state.",
+        "server": {
+          "why": "On a non-routing server, ip_forward=1 with no daemon is dormant attack surface. Either install the daemon that explains why forwarding is needed, or disable forwarding."
+        },
+        "desktop": {
+          "why": "A desktop is virtually never a router. Forwarding enabled without a VPN or virtualisation daemon is leftover state — disable it."
+        },
+        "container": {
+          "why": "ip_forward is a host kernel setting; it cannot be changed from inside a default container. Apply on the host.",
+          "how": "Apply on the host system:\n   sudo sysctl -w net.ipv4.ip_forward=0\n   echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
+        }
+      }
+    },
+    "firewall_rules": {
+      "duplicate_found": {
+        "title": "Duplicate or redundant UFW rules",
+        "why": "Duplicate firewall rules do not improve security but add confusion and maintenance overhead. Redundant rules make the policy harder to audit and can cause unexpected behaviour when rules are later modified or deleted, since UFW processes rules in order.",
+        "how": "1. List rules with numbers:\n   sudo ufw status numbered\n2. Identify and delete the redundant rule:\n   sudo ufw delete <number>\n3. Verify the remaining ruleset:\n   sudo ufw status verbose"
+      },
+      "open_any_found": {
+        "title": "Open wildcard rule (ALLOW from Anywhere to Anywhere)",
+        "why": "A rule allowing all traffic from anywhere to anywhere negates the entire firewall for the affected port or protocol. This is equivalent to having no firewall at all — any external host can reach any open service.",
+        "how": "1. Identify the wildcard rule:\n   sudo ufw status numbered\n2. Delete it:\n   sudo ufw delete <number>\n3. Replace with specific rules covering only the required sources and ports:\n   sudo ufw allow from 192.168.1.0/24 to any port 22\n4. Confirm the default policy is deny:\n   sudo ufw default deny incoming"
+      },
+      "ipv6_missing": {
+        "title": "IPv4 rules present but no equivalent IPv6 rules",
+        "why": "If a service is reachable over both IPv4 and IPv6 but only IPv4 is covered, the IPv6 path is completely unfiltered. An attacker using IPv6 bypasses all the firewall rules that appear to protect the service. This asymmetry is a common blind spot.",
+        "how": "1. Ensure /etc/default/ufw has IPV6=yes\n2. UFW rules added without specifying a protocol apply to both IPv4 and IPv6 automatically:\n   sudo ufw allow 22/tcp  # creates both v4 and v6 rules\n3. Check which services listen on IPv6:\n   sudo ss -tlnp | grep ':::'\n4. Reload UFW:\n   sudo ufw reload"
       }
     }
   },
@@ -3051,5 +2988,72 @@
     "risk_critical": "CRITICAL",
     "note_label": "Note",
     "detail_label": "Detail"
+  },
+  "cron": {
+    "pipe_to_shell": "{count} cron job(s) pipe remote content into a shell (curl/wget | sh)",
+    "pipe_to_shell_detail": "Piping remote downloads directly into a shell is a common supply-chain attack vector. Review and replace with explicit script downloads and integrity checks.",
+    "pipe_to_shell_reason": "{count} cron job(s) pipe remote content into a shell",
+    "world_writable": "{count} script(s) referenced in cron are world-writable: {scripts}",
+    "world_writable_detail": "World-writable scripts can be replaced by any local user, enabling privilege escalation. Restrict permissions immediately.",
+    "world_writable_reason": "{count} world-writable script(s) in cron",
+    "unexpected_users": "Unexpected user crontab(s) found: {users}",
+    "ok": "No risky patterns found in cron jobs"
+  },
+  "docker_hardening": {
+    "scan_error": "Docker daemon not reachable — container security check skipped",
+    "no_containers": "No running containers — nothing to audit",
+    "ok": "{count} running container(s) — no critical security issues found",
+    "privileged": "{count} container(s) running in privileged mode: {containers}",
+    "privileged_detail": "Privileged containers have full access to the host kernel and devices. This effectively disables container isolation. Replace with fine-grained capabilities (--cap-add) if elevated privileges are required.",
+    "privileged_reason": "{count} privileged container(s) running",
+    "socket_mounted": "{count} container(s) with Docker socket mounted: {containers}",
+    "socket_mounted_detail": "Mounting /var/run/docker.sock inside a container grants root-equivalent control over the host. Any process in the container can create new privileged containers or escape the sandbox.",
+    "socket_mounted_reason": "{count} container(s) with Docker socket mounted",
+    "userns_not_configured": "User namespace remapping not configured (userns-remap)",
+    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root.",
+    "userns_configured": "User namespace remapping enabled (userns-remap)",
+    "root_containers": "{count} container(s) running as root (UID 0): {containers}",
+    "root_containers_detail": "Running containers as root increases the blast radius of a container escape. Set a non-root USER in the Dockerfile or pass --user at runtime.",
+    "host_network": "{count} container(s) using host network namespace: {containers}",
+    "host_network_detail": "Containers in host network mode share the host's network stack and can bind to any port. Use bridge networking and publish only required ports."
+  },
+  "services_health": {
+    "no_systemctl": "systemctl not available — service state check skipped",
+    "service_inactive": "Security service enabled but not running: {service}",
+    "service_inactive_detail": "This service is set to start at boot but is currently stopped or failed. Check its logs and restart it.",
+    "service_inactive_reason": "Security service inactive: {service}",
+    "ok": "All monitored security services are active"
+  },
+  "firewall_iptables": {
+    "no_backend": "No firewall detected (iptables/nftables absent or inactive)",
+    "ufw_inactive_context": "UFW is installed but inactive — auditing the underlying {backend} layer",
+    "backend_detected": "Active backend: {backend}",
+    "input_accept": "Default INPUT policy: ACCEPT — all incoming traffic is allowed",
+    "input_ok": "Default INPUT policy: {policy} (recommended)",
+    "input_unknown": "Default INPUT policy: undetermined — manual verification recommended",
+    "no_loopback": "No loopback (lo) rule — local services may be unreachable",
+    "no_conntrack": "No ESTABLISHED/RELATED rule — return traffic for outgoing connections may be dropped",
+    "forward_accept": "Default FORWARD policy: ACCEPT — transit traffic is not filtered",
+    "forward_ok": "Default FORWARD policy: {policy} (recommended)",
+    "forward_unknown": "Default FORWARD policy: undetermined — manual verification recommended"
+  },
+  "firewall_drivers": {
+    "no_issues": "No additional firewall rules interfering with UFW detected",
+    "iptables_bypass": "Raw iptables ACCEPT rule bypasses UFW in INPUT chain: {rule}",
+    "iptables_forward_bypass": "Raw iptables ACCEPT rule bypasses UFW in FORWARD chain: {rule}",
+    "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker/VPN routing",
+    "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",
+    "ip_forward_ok": "IP forwarding enabled — routing daemon detected (Docker, VPN or KVM)",
+    "ip_forward_enabled": "IP forwarding enabled without detected VPN/Docker — verify this is intentional"
+  },
+  "firewall_rules": {
+    "no_duplicates": "No duplicate UFW rules detected",
+    "duplicate_found": "Duplicate UFW rule detected: {rule}",
+    "no_open_any": "No 'allow from any' rule without port restriction detected",
+    "open_any_found": "Rule allowing all incoming connections without port restriction: {rule}",
+    "ipv6_ok": "IPv6 configuration consistent with UFW rules",
+    "ipv6_missing": "UFW rules exist for IPv4 but no equivalent IPv6 rules found",
+    "ufw_status_detail": "UFW status (verbose):",
+    "orphan_rule": "UFW rule open with no listening service: {port}"
   }
 }

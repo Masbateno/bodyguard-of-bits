@@ -26,10 +26,8 @@
   "sections": {
     "prerequisites": "VÉRIFICATION DES PRÉREQUIS",
     "firewall": "ÉTAT DU PARE-FEU",
-    "rules": "ANALYSE DES RÈGLES UFW",
     "services": "ANALYSE DES SERVICES RÉSEAU",
     "services_panorama": "PANORAMA DES SERVICES",
-    "ports_analysis": "ANALYSE DES PORTS EN ÉCOUTE",
     "ports_overview": "PORTS EN ÉCOUTE (VUE GÉNÉRALE)",
     "logs": "ANALYSE DES LOGS UFW",
     "ddns": "EXPOSITION EXTERNE (DDNS)",
@@ -38,8 +36,6 @@
     "fixes": "CORRECTIONS DISPONIBLES",
     "risk_context": "CONTEXTE DE RISQUE — SERVICES DÉTECTÉS",
     "virtualization": "ANALYSE DE VIRTUALISATION",
-    "firewall_stack": "ANALYSE DE LA PILE PARE-FEU",
-    "iptables_nft": "AUDIT IPTABLES / NFTABLES",
     "network_context": "CONTEXTE RÉSEAU",
     "hardening": "ANALYSE DU DURCISSEMENT SYSTÈME",
     "ipv6": "VÉRIFICATION DE COHÉRENCE IPv6",
@@ -49,8 +45,6 @@
     "updates": "MISES À JOUR SYSTÈME",
     "kernel_modules": "AUDIT DES MODULES NOYAU",
     "kernel_hardening": "DURCISSEMENT NOYAU",
-    "cron_audit": "AUDIT DES TÂCHES CRON",
-    "services_state": "AUDIT DE L'ÉTAT DES SERVICES",
     "user_accounts": "AUDIT DES COMPTES UTILISATEURS",
     "password_policy": "AUDIT DE LA POLITIQUE DES MOTS DE PASSE",
     "memory": "MÉMOIRE & SWAP",
@@ -68,7 +62,6 @@
     "mac_policy": "POLITIQUE MAC (APPARMOR / SELINUX)",
     "backup": "SOLUTION DE SAUVEGARDE",
     "suid_audit": "AUDIT BINAIRES SUID/SGID",
-    "docker_audit": "AUDIT SÉCURITÉ CONTENEURS DOCKER",
     "log_rotation": "ROTATION DES LOGS & JOURNALISATION SYSTÈME",
     "ufw_logging": "JOURNALISATION UFW",
     "umask": "UMASK SYSTÈME",
@@ -81,16 +74,13 @@
       "auth_log": "Journal d'authentification — bruteforce, connexions publiques, détection d'anomalies",
       "backup": "Détection d'outil de sauvegarde — timeshift, rsnapshot, borg, restic",
       "clamav": "Antivirus ClamAV — état du service, fraîcheur des signatures, récence du scan",
-      "cron_audit": "Tâches cron utilisateur + système — motifs risqués (pipe vers shell, world-writable)",
       "desktop_apps": "Inventaire des applications bureau — Brave, VS Code, etc.",
       "disk": "Santé disque via SMART — disques défaillants, secteurs réalloués, remplissage",
-      "docker_audit": "Containers Docker — privileged, root, socket monté, host network",
       "fail2ban": "Prévention d'intrusion Fail2ban — service actif, jails activées",
       "file_integrity": "Surveillance d'intégrité — fraîcheur baseline AIDE / Tripwire",
       "file_perms": "Permissions fichiers sensibles — /etc/{passwd,shadow,sudoers}, clés hôte SSH",
       "firmware": "Mises à jour firmware — fwupd disponible, paquet microcode CPU",
       "hardening": "Durcissement sysctl noyau — rp_filter, redirections, syncookies, hardlinks",
-      "iptables_nft": "Politique par défaut iptables / nftables + règles loopback",
       "ipv6": "Cohérence IPv6 — UFW IPv6 vs état noyau, règles par port",
       "kernel_hardening": "Durcissement noyau — ASLR, ptrace, dumps SUID, kptr_restrict",
       "kernel_modules": "Modules noyau à risque chargés — systèmes de fichiers exotiques, protocoles réseau",
@@ -102,7 +92,6 @@
       "rootkit": "Scanner rootkit — signatures rkhunter + historique des scans",
       "samba": "Samba — SMBv1 désactivé, signature serveur, accès invité",
       "secure_boot": "Statut Secure Boot — activé, mode setup",
-      "services_state": "Cohérence d'état services — installé-inactif, actif-disabled",
       "smtp": "Exposition démon SMTP — binding Postfix / Exim, risque de relais",
       "ssh": "Durcissement SSH — sshd_config, clés hôte, ~/.ssh, authorized_keys",
       "ssl_certs": "Expiration certificats TLS/SSL — Let's Encrypt, nginx, apache, postfix",
@@ -114,14 +103,25 @@
       "ddns": "Clients DNS dynamique — exposition externe via DDNS",
       "docker": "Hôte Docker — ports exposés, contournement iptables",
       "firewall": "Pare-feu UFW — installé, actif, politique par défaut",
-      "firewall_stack": "Cohérence pile pare-feu — superposition nftables/iptables/ufw",
       "network_context": "Détection contexte réseau — LAN vs public vs offline",
-      "ports_analysis": "Ports en écoute — ports non couverts, couverture règles UFW",
-      "rules": "Analyse règles UFW — doublons, open-any, couverture IPv6",
       "services": "Analyse réseau des services — exposition par service, classification risque",
       "ufw_logging": "Logging UFW — niveau de log, résumé tentatives bloquées",
-      "virtualization": "Virtualisation — libvirt/KVM, Docker, interfaces bridge snap"
-    }
+      "virtualization": "Virtualisation — libvirt/KVM, Docker, interfaces bridge snap",
+      "cron": "Tâches cron utilisateur + système — motifs risqués (pipe vers shell, world-writable)",
+      "docker_hardening": "Containers Docker — privileged, root, socket monté, host network",
+      "services_health": "Cohérence d'état services — installé-inactif, actif-disabled",
+      "firewall_iptables": "Politique par défaut iptables / nftables + règles loopback",
+      "firewall_drivers": "Cohérence pile pare-feu — superposition nftables/iptables/ufw",
+      "firewall_rules": "Analyse règles UFW — doublons, open-any, couverture IPv6",
+      "ports": "Ports en écoute — ports non couverts, couverture règles UFW"
+    },
+    "cron": "AUDIT DES TÂCHES CRON",
+    "docker_hardening": "AUDIT SÉCURITÉ CONTENEURS DOCKER",
+    "services_health": "AUDIT DE L'ÉTAT DES SERVICES",
+    "firewall_iptables": "AUDIT IPTABLES / NFTABLES",
+    "firewall_drivers": "ANALYSE DE LA PILE PARE-FEU",
+    "firewall_rules": "ANALYSE DES RÈGLES UFW",
+    "ports": "ANALYSE DES PORTS EN ÉCOUTE"
   },
   "status": {
     "warn": "ATTENTION",
@@ -141,38 +141,6 @@
     "logging_ok": "Journalisation UFW active (niveau : {level})",
     "logging_unknown": "Impossible de déterminer le niveau de journalisation UFW",
     "logging_verbose": "Niveau de journalisation UFW {level} — peut générer un volume élevé de logs"
-  },
-  "iptables_nft": {
-    "no_backend": "Aucun pare-feu détecté (iptables/nftables absent ou inactif)",
-    "ufw_inactive_context": "UFW est installé mais inactif — audit de la couche {backend} sous-jacente",
-    "backend_detected": "Backend actif : {backend}",
-    "input_accept": "Politique INPUT par défaut : ACCEPT — tout le trafic entrant est autorisé",
-    "input_ok": "Politique INPUT par défaut : {policy} (recommandé)",
-    "input_unknown": "Politique INPUT par défaut : indéterminée — vérification manuelle recommandée",
-    "no_loopback": "Aucune règle loopback (lo) — les services locaux peuvent être inaccessibles",
-    "no_conntrack": "Aucune règle ESTABLISHED/RELATED — les connexions sortantes peuvent être bloquées en retour",
-    "forward_accept": "Politique FORWARD par défaut : ACCEPT — le trafic de transit n'est pas filtré",
-    "forward_ok": "Politique FORWARD par défaut : {policy} (recommandé)",
-    "forward_unknown": "Politique FORWARD par défaut : indéterminée — vérification manuelle recommandée"
-  },
-  "rules": {
-    "no_duplicates": "Aucune règle UFW en doublon détectée",
-    "duplicate_found": "Règle UFW en doublon détectée : {rule}",
-    "no_open_any": "Aucune règle 'allow from any' sans restriction de port détectée",
-    "open_any_found": "Règle autorisant toutes les connexions entrantes sans restriction de port : {rule}",
-    "ipv6_ok": "Configuration IPv6 cohérente avec les règles UFW",
-    "ipv6_missing": "Des règles UFW existent en IPv4 mais aucune règle IPv6 équivalente n'a été trouvée",
-    "ufw_status_detail": "État UFW (verbose) :",
-    "orphan_rule": "Règle UFW ouverte sans service en écoute : {port}"
-  },
-  "firewall_stack": {
-    "no_issues": "Aucune règle de pare-feu supplémentaire interférant avec UFW détectée",
-    "iptables_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne INPUT : {rule}",
-    "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
-    "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker/VPN",
-    "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",
-    "ip_forward_ok": "Transfert IP activé — démon de routage détecté (Docker, VPN ou KVM)",
-    "ip_forward_enabled": "Transfert IP activé sans VPN/Docker détecté — vérifiez que c'est intentionnel"
   },
   "network_context": {
     "no_interfaces": "Aucune interface réseau trouvée",
@@ -761,7 +729,8 @@
     "key_resolved": "Résolu : {finding}",
     "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
     "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)",
-    "no_baseline_yet": "Aucune baseline précédente trouvée — exécutez d'abord un audit complet pour établir une baseline."
+    "no_baseline_yet": "Aucune baseline précédente trouvée — exécutez d'abord un audit complet pour établir une baseline.",
+    "cross_machine_notice": "ℹ Baseline enregistré sur « {baseline_host} » ; comparaison vs hôte courant « {current_host} » (diff cross-machine)."
   },
   "cli": {
     "list": {
@@ -797,7 +766,8 @@
       "fatal_prefix": "Erreur fatale : ",
       "webhook_failed_prefix": "Avertissement : échec du webhook : ",
       "warning_prefix": "Avertissement : ",
-      "bob_debug_hint": "  Définissez BOB_DEBUG=1 pour la trace complète."
+      "bob_debug_hint": "  Définissez BOB_DEBUG=1 pour la trace complète.",
+      "json_v1_retired": "--json-v1 a été retiré en v0.9.0. Le schéma v2 est le seul format supporté (v2 est le défaut depuis v0.7.0). Voir CHANGELOG_FR.md v0.9.0 pour la table de migration field-par-field de v0.6.x v1 vers v2."
     },
     "runner": {
       "check_no_match": "--check {tok} ne correspond à aucune section connue — {suggestion}",
@@ -805,7 +775,9 @@
       "skip_no_effect": "--skip {tok} sans effet (section toujours active)",
       "skip_no_match": "--skip {tok} ne correspond à aucune section connue — {suggestion}",
       "suggest_did_you_mean": "Vouliez-vous dire : {matches}",
-      "suggest_run_list": "Exécutez 'bob --check=list' pour voir tous les noms de check."
+      "suggest_run_list": "Exécutez 'bob --check=list' pour voir tous les noms de check.",
+      "section_renamed": "Le token --check/--skip {old} a été renommé en v0.9.0 — utilise {new} à la place.",
+      "section_renamed_fatal": "Un ou plusieurs tokens --check/--skip utilisent un nom de section legacy. Voir les warnings ci-dessus pour les remplacements canoniques ; la table de migration est dans CHANGELOG.md à l'entrée v0.9.0."
     }
   },
   "webhook": {
@@ -999,24 +971,6 @@
     "unexpected_sgid_detail": "Les binaires SGID s'exécutent avec les privilèges du groupe du fichier. Moins dangereux que SUID, mais méritent une vérification.",
     "whitelisted": "{count} binaire(s) SUID ignoré(s) par la liste blanche utilisateur : {paths}"
   },
-  "docker_audit": {
-    "scan_error": "Démon Docker inaccessible — vérification de sécurité des conteneurs ignorée",
-    "no_containers": "Aucun conteneur en cours d'exécution — rien à auditer",
-    "ok": "{count} conteneur(s) en cours d'exécution — aucun problème de sécurité critique",
-    "privileged": "{count} conteneur(s) en mode privilégié : {containers}",
-    "privileged_detail": "Les conteneurs privilégiés ont un accès complet au noyau et aux périphériques de l'hôte. Cela désactive effectivement l'isolation des conteneurs. Remplacez par des capacités ciblées (--cap-add) si des privilèges élevés sont nécessaires.",
-    "privileged_reason": "{count} conteneur(s) privilégié(s) en cours d'exécution",
-    "socket_mounted": "{count} conteneur(s) avec la socket Docker montée : {containers}",
-    "socket_mounted_detail": "Monter /var/run/docker.sock dans un conteneur donne un contrôle équivalent à root sur l'hôte. Tout processus du conteneur peut créer de nouveaux conteneurs privilégiés ou s'échapper du bac à sable.",
-    "socket_mounted_reason": "{count} conteneur(s) avec la socket Docker montée",
-    "userns_not_configured": "Remappage des espaces de noms utilisateurs non configuré (userns-remap)",
-    "userns_not_configured_detail": "Sans userns-remap, un processus conteneur s'exécutant en tant qu'UID 0 est mappé directement sur root de l'hôte. Activez userns-remap dans /etc/docker/daemon.json pour remapper les UID des conteneurs.",
-    "userns_configured": "Remappage des espaces de noms utilisateurs activé (userns-remap)",
-    "root_containers": "{count} conteneur(s) s'exécutant en tant que root (UID 0) : {containers}",
-    "root_containers_detail": "Exécuter des conteneurs en tant que root augmente le rayon d'explosion d'une évasion de conteneur. Définissez un utilisateur non-root dans le Dockerfile ou utilisez --user à l'exécution.",
-    "host_network": "{count} conteneur(s) utilisant l'espace de noms réseau de l'hôte : {containers}",
-    "host_network_detail": "Les conteneurs en mode réseau hôte partagent la pile réseau de l'hôte et peuvent se lier à n'importe quel port. Utilisez le réseau bridge et publiez uniquement les ports nécessaires."
-  },
   "kernel_modules": {
     "no_lsmod": "lsmod non disponible — vérification des modules noyau ignorée",
     "risky_fs": "Module(s) de système de fichiers à risque chargé(s) : {modules}",
@@ -1034,23 +988,6 @@
     "kernels_listed": "{count} noyau(x) installé(s) : {installed} — aucun nettoyage nécessaire",
     "kernels_update_available": "Mise à jour du noyau disponible ({candidate} dans le dépôt apt)",
     "kernels_up_to_date": "Noyau {version} — à jour dans le dépôt apt"
-  },
-  "cron_audit": {
-    "pipe_to_shell": "{count} tâche(s) cron envoie(nt) du contenu distant vers un shell (curl/wget | sh)",
-    "pipe_to_shell_detail": "Rediriger des téléchargements distants vers un shell est un vecteur d'attaque courant sur la chaîne d'approvisionnement. Examinez et remplacez par des téléchargements explicites avec vérification d'intégrité.",
-    "pipe_to_shell_reason": "{count} tâche(s) cron envoie(nt) du contenu distant vers un shell",
-    "world_writable": "{count} script(s) référencé(s) dans cron sont accessibles en écriture par tous : {scripts}",
-    "world_writable_detail": "Les scripts accessibles en écriture par tous peuvent être remplacés par n'importe quel utilisateur local, permettant une élévation de privilèges. Restreignez les permissions immédiatement.",
-    "world_writable_reason": "{count} script(s) accessibles en écriture par tous dans cron",
-    "unexpected_users": "Crontab(s) d'utilisateur(s) inattendu(s) trouvé(s) : {users}",
-    "ok": "Aucun motif risqué trouvé dans les tâches cron"
-  },
-  "services_state": {
-    "no_systemctl": "systemctl non disponible — vérification de l'état des services ignorée",
-    "service_inactive": "Service de sécurité activé mais non démarré : {service}",
-    "service_inactive_detail": "Ce service est configuré pour démarrer au boot mais est actuellement arrêté ou en échec. Vérifiez ses journaux et redémarrez-le.",
-    "service_inactive_reason": "Service de sécurité inactif : {service}",
-    "ok": "Tous les services de sécurité surveillés sont actifs"
   },
   "output": {
     "recommendation_label": "Que faire ?",
@@ -1613,82 +1550,6 @@
         }
       }
     },
-    "iptables_nft": {
-      "no_backend": {
-        "title": "Aucun backend pare-feu présent (ni iptables, ni nftables)",
-        "why": "Sans iptables ni nftables installé et actif, le noyau n'a aucune règle pare-feu — tous les ports joignables depuis le réseau sont entièrement exposés. UFW (ou tout autre front-end userspace) repose en dernier ressort sur l'un de ces backends pour écrire les règles dans le noyau. L'absence des deux signifie que le système tourne sans aucun filtre de paquets.",
-        "how": "1. Installer iptables (ou nftables) :\n   sudo apt install iptables\n2. Après installation, configurer UFW (ou un autre front-end) et l'activer :\n   sudo apt install ufw && sudo ufw enable\n3. Vérifier que les règles sont chargées :\n   sudo iptables -L -n  # ou : sudo nft list ruleset",
-        "server": {
-          "why": "Un serveur sans backend pare-feu est entièrement exposé au réseau — aucun filtrage noyau, aucun deny par défaut, aucune possibilité de restreindre un service. C'est l'une des pires postures possibles pour toute machine connectée."
-        },
-        "desktop": {
-          "why": "Même derrière NAT, un desktop sans iptables/nftables n'a aucune défense contre les attaques du réseau local (autres appareils, voisins malveillants sur Wi-Fi partagé). Installer un backend + UFW est universellement recommandé."
-        },
-        "container": {
-          "why": "Les containers héritent généralement du filtrage de paquets de l'hôte. Ce finding suggère que l'hôte n'a pas de pare-feu — corrigez sur l'hôte.",
-          "how": "Installer sur le système hôte :\n   sudo apt install iptables ufw\n   sudo ufw enable"
-        }
-      },
-      "input_accept": {
-        "title": "Politique par défaut INPUT = ACCEPT (chaque paquet non filtré entre)",
-        "why": "La politique de la chaîne INPUT est le dernier filet de sécurité du pare-feu quand aucune règle explicite ne matche un paquet entrant. Quand elle est à ACCEPT, tout port n'ayant pas de règle DROP/REJECT spécifique est ouvert au réseau — le défaut est permissif. Le pattern sûr est policy=DROP combiné à des règles ACCEPT explicites pour les services autorisés, de sorte que tout ce qui n'est pas en whitelist est bloqué automatiquement.",
-        "how": "1. Appliquer le default-deny immédiatement. Avant de basculer la policy, assurez-vous d'avoir des règles ACCEPT explicites pour loopback et pour tout service dont vous dépendez (notamment SSH) — sinon vous vous bloquez l'accès :\n   sudo iptables -A INPUT -i lo -j ACCEPT\n   sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # garder SSH joignable\n   sudo iptables -P INPUT DROP\n2. Sauvegarder les règles pour qu'elles persistent au redémarrage (iptables-persistent sur Debian/Ubuntu) :\n   sudo apt install iptables-persistent\n   sudo netfilter-persistent save\n3. Pour les systèmes nftables, utilisez :\n   sudo nft chain inet filter input '{ policy drop; }'",
-        "server": {
-          "why": "Sur un serveur, INPUT=ACCEPT signifie que chaque nouveau socket ouvert est joignable depuis n'importe quelle source jusqu'à ce que vous ajoutiez manuellement une règle DROP. Une politique de default-deny est obligatoire sur tout serveur en production. Oublier un DROP explicite aujourd'hui, c'est oublier un port ouvert demain."
-        },
-        "desktop": {
-          "why": "Sur un desktop derrière NAT, l'exposition externe est atténuée par le routeur, mais les attaques du segment local (autres appareils sur le même Wi-Fi) atteignent la machine. Le default-deny est le pattern de durcissement standard même pour des clients."
-        },
-        "container": {
-          "why": "La policy iptables est définie par l'hôte ou par le runtime container ; à l'intérieur d'un container par défaut vous ne pouvez pas la changer. Ajustez la network policy du container au niveau runtime, ou réglez la policy hôte."
-        }
-      },
-      "forward_accept": {
-        "title": "Politique par défaut FORWARD = ACCEPT (comportement routeur par défaut)",
-        "why": "La chaîne FORWARD gère les paquets routés À TRAVERS l'hôte (non destinés aux processus locaux). FORWARD=ACCEPT signifie que le noyau forwarde tout paquet par défaut si l'IP forwarding est aussi activé — transformant la machine en hop de routage pour n'importe quoi qui le demande. Combiné à une configuration réseau mal gérée, cela peut servir à pontaire des segments ou à exfiltrer du trafic via l'hôte. Le défaut sûr pour un non-routeur est policy=DROP.",
-        "how": "1. Mettre la policy FORWARD à DROP :\n   sudo iptables -P FORWARD DROP\n   # ou avec nftables :\n   sudo nft chain inet filter forward '{ policy drop; }'\n2. Rendre persistant (iptables-persistent sur Debian/Ubuntu) :\n   sudo netfilter-persistent save\n3. Si cette machine fait effectivement du routage (hôte libvirt avec virbr0, hôte Docker, gateway KVM, …), gardez FORWARD=ACCEPT mais assurez-vous que le pare-feu applicatif (UFW, règles libvirt) fournit le filtrage — et revisitez explicitement les chaînes de routage avec 'sudo iptables -L FORWARD -n'.",
-        "server": {
-          "why": "Un serveur applicatif standard ne devrait pas forwarder de trafic — FORWARD=DROP est le défaut sûr. L'exception concerne les hôtes de virtualisation ou de containers (libvirt, Docker, KVM, LXC) qui routent légitimement le trafic des invités — dans ce cas la policy est intentionnellement permissive mais les chaînes de règles doivent compenser."
-        },
-        "desktop": {
-          "why": "Un desktop n'est virtuellement jamais un routeur. Laisser FORWARD=ACCEPT est une surface d'attaque inutile et peut être abusé si le desktop est ponté ou partage sa connexion réseau. DROP est sûr."
-        },
-        "container": {
-          "why": "Les containers ne devraient pas être des hôtes de forwarding. La policy FORWARD est configurée au niveau hôte ; corrigez là.",
-          "how": "Appliquer sur l'hôte du container :\n   sudo iptables -P FORWARD DROP\n   sudo netfilter-persistent save"
-        }
-      },
-      "no_loopback": {
-        "title": "INPUT en default-deny sans règle ACCEPT loopback",
-        "why": "Quand la policy INPUT est DROP, l'interface loopback (127.0.0.1 / lo) est également droppée sauf si une règle ACCEPT explicite existe. De nombreux services locaux s'appuient sur loopback : postgres écoutant sur localhost, applications web parlant à un backend local, daemons système communiquant sur 127.0.0.1. Sans l'exception loopback, ils cassent silencieusement — et vous pouvez ne pas vous en apercevoir avant qu'un processus local précis échoue.",
-        "how": "1. Insérer une règle ACCEPT loopback en tête de INPUT :\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   # ou avec nftables :\n   sudo nft insert rule inet filter input iif \"lo\" accept\n2. Rendre persistant :\n   sudo netfilter-persistent save\n3. Vérifier que loopback fonctionne (curl sur un service local en écoute sur 127.0.0.1).",
-        "server": {
-          "why": "Presque chaque serveur fait tourner au moins un service binding sur 127.0.0.1 (PostgreSQL, Redis, sockets fcgi, interfaces supervisord). L'oubli de la règle loopback les casse silencieusement et provoque de longues sessions de debug. C'est l'omission la plus fréquente quand une nouvelle policy default-deny est appliquée."
-        },
-        "desktop": {
-          "why": "De nombreuses applications desktop (navigateurs, IDEs, dev tools, system trays) parlent à des services locaux via loopback. Sans la règle ACCEPT explicite, elles échouent silencieusement. Ajoutez la règle loopback avant de durcir INPUT."
-        },
-        "container": {
-          "why": "Le loopback À L'INTÉRIEUR d'un container est géré par son propre namespace réseau et n'est pas affecté par les règles iptables hôte. Ce finding s'applique à la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   sudo netfilter-persistent save"
-        }
-      },
-      "no_conntrack": {
-        "title": "INPUT en default-deny sans règle ACCEPT ESTABLISHED,RELATED",
-        "why": "Avec INPUT policy=DROP, les paquets de retour des connexions sortantes (navigateur web récupérant une page, apt téléchargeant des updates, client ssh recevant la réponse du serveur) sont droppés en même temps que tout le reste sauf si une règle explicite accepte les états conntrack ESTABLISHED et RELATED. Le résultat est que la machine peut ouvrir des connexions sortantes mais ne recevra jamais aucune réponse — coupant effectivement tout usage réseau côté client.",
-        "how": "1. Insérer la règle conntrack près du début de INPUT (juste après loopback) :\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   # ou avec nftables :\n   sudo nft insert rule inet filter input ct state established,related accept\n2. Rendre persistant :\n   sudo netfilter-persistent save\n3. Vérifier que l'usage sortant fonctionne (curl https://example.com).",
-        "server": {
-          "why": "Un serveur avec INPUT=DROP mais sans ACCEPT conntrack ne peut pas compléter ses propres requêtes HTTP sortantes, ses mises à jour de paquets, ni ses résolutions DNS. Le correctif est obligatoire pour toute configuration INPUT en default-deny."
-        },
-        "desktop": {
-          "why": "Sans la règle conntrack, chaque requête sortante (navigation web, downloads, gestion de paquets) semble bloquer et timeout parce que les réponses sont droppées silencieusement. C'est la cause la plus fréquente du \"après avoir activé le pare-feu, internet est cassé\"."
-        },
-        "container": {
-          "why": "Les namespaces réseau des containers ont leur propre gestion conntrack. Ce finding concerne la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo netfilter-persistent save"
-        }
-      }
-    },
     "mac_policy": {
       "apparmor_inactive": {
         "title": "AppArmor installé mais le service n'est pas démarré",
@@ -1778,68 +1639,6 @@
         "container": {
           "why": "SELinux sur l'hôte applique les labels container (svirt_*) qui isolent les containers entre eux et de l'hôte. Le ré-activer sur l'hôte ré-active cette couche.",
           "how": "Appliquer sur le système hôte en suivant la même procédure que sur une machine bare-metal (éditer /etc/selinux/config, touch /.autorelabel, redémarrer)."
-        }
-      }
-    },
-    "firewall_stack": {
-      "iptables_bypass": {
-        "title": "Règle iptables ACCEPT brute dans INPUT contourne le filtrage UFW",
-        "why": "UFW écrit ses règles dans des chaînes dédiées (ufw-before-input, ufw-input, ufw-after-input). Une règle ACCEPT brute directement dans la chaîne INPUT prend effet AVANT que les chaînes ufw-* ne soient atteintes, donc les paquets matchant cette règle entrent quelles que soient les règles UFW deny qui devraient les rejeter. Le résultat est un contournement silencieux d'UFW — `ufw status` montre le pare-feu actif et configuré, alors que le trafic du port contourné circule librement. Ces règles proviennent typiquement de tweaks iptables manuels ou d'un paquet précédemment installé.",
-        "how": "1. Lister les règles fautives :\n   sudo iptables -L INPUT -n --line-numbers\n2. Supprimer chaque règle ACCEPT brute (remplacez N par le numéro de ligne) :\n   sudo iptables -D INPUT N\n3. Si la règle a été ajoutée par un paquet ou un script de démarrage, trouvez et désactivez la source — sinon elle réapparaîtra après reboot :\n   sudo grep -r 'iptables -A INPUT' /etc/\n4. Sauvegarder le ruleset nettoyé :\n   sudo netfilter-persistent save",
-        "server": {
-          "why": "Sur un serveur, une règle ACCEPT brute en INPUT signifie qu'une partie de votre posture pare-feu est invisible au pilotage UFW — `ufw allow` et `ufw deny` ne peuvent pas l'affecter. Le port exposé reste ouvert quoi que dise la config UFW documentée."
-        },
-        "desktop": {
-          "why": "Sur un desktop, le même problème s'applique : UFW présente le système comme protégé alors que la règle de contournement garde un port joignable. Auditez et supprimez toute règle brute que vous n'avez pas ajoutée intentionnellement."
-        },
-        "container": {
-          "why": "Les règles de la chaîne INPUT vivent sur l'hôte. Inspectez les iptables hôte et réconciliez avec UFW là.",
-          "how": "Appliquer sur le système hôte :\n   sudo iptables -L INPUT -n --line-numbers\n   sudo iptables -D INPUT N   # pour chaque règle fautive"
-        }
-      },
-      "iptables_forward_bypass": {
-        "title": "Règle iptables ACCEPT brute dans FORWARD contourne UFW (aucun daemon de routage détecté)",
-        "why": "Même pattern qu'iptables_bypass mais sur la chaîne FORWARD. Les règles ACCEPT en FORWARD autorisent le trafic routé (paquets transitant par l'hôte) à passer sans être filtré par la chaîne ufw-forward d'UFW. Docker, libvirt et WireGuard ajoutent légitimement de telles règles — mais ces daemons ne sont PAS détectés sur ce système, donc la règle est inattendue. Cela signifie typiquement qu'un paquet supprimé a laissé des règles orphelines, ou qu'une session de debug manuelle a été oubliée.",
-        "how": "1. Lister les règles FORWARD :\n   sudo iptables -L FORWARD -n --line-numbers\n2. Supprimer chaque règle ACCEPT inattendue :\n   sudo iptables -D FORWARD N\n3. Trouver la source et la désactiver (similaire à iptables_bypass) :\n   sudo grep -r 'iptables -A FORWARD' /etc/\n4. Sauvegarder le ruleset nettoyé :\n   sudo netfilter-persistent save",
-        "server": {
-          "why": "Sur un serveur non-routeur, les règles FORWARD ACCEPT ne devraient pas exister. Si elles existent, elles exposent tout trafic du réseau voisin à un transit libre à travers l'hôte — un vecteur de routage qui peut être abusé pour du traffic relay ou du NAT puncturing."
-        },
-        "desktop": {
-          "why": "Un desktop ne devrait jamais forwarder de trafic. Les règles orphelines FORWARD ACCEPT proviennent typiquement d'un client VPN ou d'un runtime container supprimé. Supprimez-les une fois confirmé que rien de légitime ne les utilise."
-        },
-        "container": {
-          "why": "La chaîne FORWARD est gérée au niveau hôte. Supprimez les règles orphelines sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo iptables -L FORWARD -n --line-numbers\n   sudo iptables -D FORWARD N"
-        }
-      },
-      "nftables_parallel": {
-        "title": "Ruleset nftables actif en parallèle d'UFW (backend iptables)",
-        "why": "UFW écrit ses règles dans le backend iptables. Si nftables est aussi actif avec son propre ruleset, deux stacks pare-feu évaluent chaque paquet — et l'ordre d'évaluation dépend de la version du noyau, de l'ordre de chargement des modules et de la couche de compatibilité netfilter. Le résultat est un traitement non-déterministe des paquets : un port qu'`ufw allow` ouvre peut être silencieusement droppé par une règle nftables, ou inversement. Les symptômes sont des pannes de connectivité intermittentes ressemblant à des bugs réseau alors qu'il s'agit de bugs pare-feu.",
-        "how": "1. Inspecter le ruleset nftables :\n   sudo nft list ruleset\n2. Décidez quelle stack vous voulez garder :\n   - Garder UFW → flush nftables et désactiver son service :\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Basculer sur nftables → désinstaller UFW et reconfigurer les règles nativement en nftables :\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persister le choix fait (netfilter-persistent pour iptables/UFW, nftables.conf pour nft).",
-        "server": {
-          "why": "Sur un serveur, deux stacks pare-feu en parallèle produisent des bugs de connectivité intermittents très difficiles à diagnostiquer. Choisissez une stack et supprimez l'autre ; la cohérence est plus importante que le choix spécifique."
-        },
-        "desktop": {
-          "why": "Sur un desktop, les stacks parallèles surgissent généralement comme 'parfois ce service est joignable, parfois non'. Choisissez-en une et tenez-vous-y."
-        },
-        "container": {
-          "why": "La stack pare-feu est au niveau hôte ; cela affecte tous les containers. Réconciliez sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo nft list ruleset\n   sudo nft flush ruleset           # si on garde UFW\n   sudo systemctl disable --now nftables"
-        }
-      },
-      "ip_forward_enabled": {
-        "title": "IP forwarding activé mais aucun daemon de routage détecté (Docker / libvirt / WireGuard absents)",
-        "why": "net.ipv4.ip_forward=1 transforme l'hôte en routeur IP — il forwarde les paquets entre interfaces selon sa table de routage. Docker, libvirt/KVM et WireGuard l'activent légitimement pour le trafic guest / VPN, mais aucun de ces daemons ne tourne. Un forwarding IP inexpliqué signifie généralement qu'un paquet VPN ou de virtualisation supprimé a laissé le sysctl activé, ou qu'il a été activé manuellement pour du debug et jamais re-désactivé. Un hôte de forwarding inutilisé peut être abusé comme relais de routage si la chaîne FORWARD est permissive.",
-        "how": "1. Désactiver IP forwarding immédiatement :\n   sudo sysctl -w net.ipv4.ip_forward=0\n2. Rendre permanent — éditer /etc/sysctl.conf ou un fichier sous /etc/sysctl.d/ et mettre :\n   net.ipv4.ip_forward=0\n3. Re-appliquer les paramètres sysctl :\n   sudo sysctl --system\nNote : si vous installez plus tard Docker, libvirt ou WireGuard, ces paquets ré-activeront automatiquement le forwarding. Le correctif ci-dessus ne concerne que l'état actuel.",
-        "server": {
-          "why": "Sur un serveur non-routeur, ip_forward=1 sans daemon est une surface d'attaque dormante. Soit installez le daemon qui explique pourquoi le forwarding est nécessaire, soit désactivez-le."
-        },
-        "desktop": {
-          "why": "Un desktop n'est virtuellement jamais un routeur. Le forwarding activé sans daemon VPN ou de virtualisation est un état résiduel — désactivez-le."
-        },
-        "container": {
-          "why": "ip_forward est un paramètre noyau hôte ; il ne peut pas être changé depuis un container par défaut. Appliquer sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.ip_forward=0\n   echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
         }
       }
     },
@@ -2129,51 +1928,6 @@
           "why": "Le chargement de modules noyau est restreint dans les containers. Cette détection n'est pas réalisable depuis un container — traitez-la sur l'hôte.",
           "how": "Appliquer sur le système hôte :\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-net.conf\n   sudo update-initramfs -u"
         }
-      }
-    },
-    "cron_audit": {
-      "pipe_to_shell": {
-        "title": "Motif pipe-vers-shell dans cron système (curl/wget | sh)",
-        "why": "Télécharger un script et le passer directement à un shell contourne toutes les vérifications d'intégrité. Si le serveur distant est compromis, le DNS est détourné, ou la connexion est interceptée (HTTP simple), du code arbitraire s'exécute avec les privilèges de la tâche cron — souvent root. Il est impossible d'auditer ou de versionner ce qui sera exécuté au moment de l'exécution.",
-        "how": "1. Identifiez l'entrée cron dans /etc/cron.* ou /etc/crontab\n2. Remplacez par une approche en deux étapes :\n   a. Téléchargez dans un fichier : curl -fsSL -o /tmp/script.sh https://...\n   b. Vérifiez la somme de contrôle : sha256sum -c /tmp/script.sha256\n   c. Exécutez : bash /tmp/script.sh\n3. Mieux encore : hébergez le script localement, versionnez-le,\n   et référencez la copie locale depuis cron"
-      },
-      "world_writable": {
-        "title": "Script accessible en écriture par tous référencé dans cron système",
-        "why": "N'importe quel utilisateur local peut modifier un script accessible en écriture par tous. Comme cron l'exécute selon un planning — souvent en tant que root — écraser le script est une escalade de privilèges locale triviale : pas d'exploit nécessaire, juste un accès en écriture sur le fichier. C'est une technique classique de persistance et d'escalade.",
-        "how": "1. Supprimez la permission d'écriture globale :\n   sudo chmod o-w <chemin>\n2. Vérifiez que la propriété est correcte (doit appartenir à root) :\n   ls -la <chemin>\n3. Examinez le contenu du script pour détecter des modifications inattendues :\n   sudo cat <chemin>"
-      }
-    },
-    "services_state": {
-      "enabled_inactive": {
-        "title": "Service de sécurité activé au démarrage mais actuellement inactif",
-        "why": "Un service configuré pour démarrer au boot mais actuellement arrêté peut avoir planté, être mal configuré, ou avoir été délibérément désactivé. Si ce service est un contrôle de sécurité (pare-feu, détection d'intrusion, démon de logs), son absence crée une fenêtre pendant laquelle les menaces ne sont ni détectées ni bloquées. Le système semble protégé au démarrage mais ne l'est pas en runtime.",
-        "how": "1. Vérifiez pourquoi le service s'est arrêté :\n   sudo journalctl -u <service> -n 50\n2. Redémarrez et vérifiez :\n   sudo systemctl start <service>\n   sudo systemctl status <service>\n3. Si le service plante au démarrage, examinez la configuration :\n   sudo systemctl status <service> --no-pager -l\n4. Assurez-vous qu'il reste activé :\n   sudo systemctl enable <service>",
-        "server": {
-          "why": "Un service activé au démarrage mais actuellement inactif sur un serveur peut indiquer un contrôle de sécurité planté ou mal configuré. Il redémarrera au prochain boot, exposant potentiellement un port qui semble fermé maintenant. Sur un serveur, investiguez et résolvez immédiatement."
-        },
-        "desktop": {
-          "why": "Sur un desktop, un service actif-mais-inactif est généralement un vestige d'une ancienne installation. Le risque est plus faible (aucune exposition entrante attendue), mais il ralentit le démarrage et peut causer des problèmes subtils. Désactivez les services inutilisés."
-        },
-        "container": {
-          "why": "Dans un container, systemd n'est souvent pas le système d'init. Si votre container utilise un init léger (s6, runit, supervisord), cette détection peut ne pas s'appliquer. Si systemd est présent dans le container, suivez les recommandations serveur."
-        }
-      }
-    },
-    "rules": {
-      "duplicate_found": {
-        "title": "Règles UFW en double ou redondantes",
-        "why": "Les règles de pare-feu en double n'améliorent pas la sécurité mais ajoutent de la confusion et une charge de maintenance. Les règles redondantes rendent la politique difficile à auditer et peuvent provoquer des comportements inattendus lors de modifications ultérieures, car UFW traite les règles dans l'ordre.",
-        "how": "1. Listez les règles avec leurs numéros :\n   sudo ufw status numbered\n2. Identifiez et supprimez la règle redondante :\n   sudo ufw delete <numéro>\n3. Vérifiez l'ensemble des règles restantes :\n   sudo ufw status verbose"
-      },
-      "open_any_found": {
-        "title": "Règle générique ouverte (ALLOW de n'importe où vers n'importe où)",
-        "why": "Une règle autorisant tout le trafic de n'importe où vers n'importe où annule l'intégralité du pare-feu pour le port ou protocole concerné. C'est l'équivalent de ne pas avoir de pare-feu du tout — n'importe quel hôte externe peut atteindre n'importe quel service ouvert.",
-        "how": "1. Identifiez la règle générique :\n   sudo ufw status numbered\n2. Supprimez-la :\n   sudo ufw delete <numéro>\n3. Remplacez par des règles spécifiques couvrant uniquement les sources et ports requis :\n   sudo ufw allow from 192.168.1.0/24 to any port 22\n4. Confirmez que la politique par défaut est deny :\n   sudo ufw default deny incoming"
-      },
-      "ipv6_missing": {
-        "title": "Règles IPv4 présentes mais pas d'équivalent IPv6",
-        "why": "Si un service est accessible en IPv4 et IPv6 mais que seul l'IPv4 est couvert, le chemin IPv6 est entièrement non filtré. Un attaquant utilisant IPv6 contourne toutes les règles de pare-feu qui semblent protéger le service. Cette asymétrie est un angle mort courant.",
-        "how": "1. Vérifiez que /etc/default/ufw contient IPV6=yes\n2. Les règles UFW ajoutées sans préciser le protocole s'appliquent automatiquement à IPv4 et IPv6 :\n   sudo ufw allow 22/tcp  # crée des règles v4 et v6\n3. Vérifiez quels services écoutent en IPv6 :\n   sudo ss -tlnp | grep ':::'\n4. Rechargez UFW :\n   sudo ufw reload"
       }
     },
     "ipv6": {
@@ -2616,28 +2370,6 @@
         "how": "1. Installer le paquet microcode approprié :\n   # CPU Intel :\n   sudo apt install intel-microcode\n   # CPU AMD :\n   sudo apt install amd64-microcode\n2. Redémarrer pour appliquer :\n   sudo reboot\n3. Vérifier que le microcode est chargé :\n   grep microcode /proc/cpuinfo | head -1"
       }
     },
-    "docker_audit": {
-      "privileged": {
-        "title": "Conteneur Docker en mode privilégié",
-        "why": "Un conteneur privilégié a un accès complet aux périphériques et capacités de l'hôte — il s'exécute effectivement en root sur l'hôte sans aucune restriction. Tout processus dans un conteneur privilégié peut s'échapper vers l'hôte, modifier les paramètres noyau, monter les systèmes de fichiers hôte et compromettre tout le système.",
-        "how": "1. Identifier le conteneur privilégié :\n   docker ps -q | xargs docker inspect --format '{{.Name}} privileged={{.HostConfig.Privileged}}'\n2. Supprimer --privileged et n'accorder que les capacités spécifiques nécessaires :\n   docker run --cap-add NET_ADMIN (au lieu de --privileged)\n3. Si l'accès privilégié est vraiment nécessaire, isoler sur un hôte dédié\n4. Utiliser des profils seccomp et des politiques AppArmor"
-      },
-      "root_containers": {
-        "title": "Conteneurs Docker s'exécutant en tant que root (pas de remapping d'espace de noms utilisateur)",
-        "why": "Les conteneurs s'exécutant en UID 0 dans le conteneur se mappent directement sur root de l'hôte sans remapping d'espace de noms. Une vulnérabilité d'évasion de conteneur — dont Docker en a eu plusieurs — donne immédiatement root sur l'hôte à un attaquant.",
-        "how": "1. Ajouter un USER non-root dans votre Dockerfile :\n   USER 1000:1000\n2. Ou activer le remapping d'espace de noms globalement :\n   sudo nano /etc/docker/daemon.json\n   { \"userns-remap\": \"default\" }\n   sudo systemctl restart docker\n3. Vérifier :\n   docker run alpine id  # ne doit pas retourner uid=0"
-      },
-      "socket_mounted": {
-        "title": "Socket Docker monté dans un conteneur",
-        "why": "Monter /var/run/docker.sock dans un conteneur lui donne le contrôle total du démon Docker — et donc de l'hôte. Depuis l'intérieur du conteneur, un attaquant peut démarrer un nouveau conteneur privilégié, monter le système de fichiers hôte et s'échapper avec une seule commande docker. C'est un contournement complet de l'isolation des conteneurs.",
-        "how": "1. Supprimer le montage du socket du conteneur :\n   Supprimer -v /var/run/docker.sock:/var/run/docker.sock de docker run\n2. Si le conteneur doit gérer Docker (agents CI, Portainer), utiliser :\n   - Docker-in-Docker (dind) avec isolation explicite\n   - Un socket TCP Docker avec authentification TLS\n3. Auditer les conteneurs en cours :\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.Mounts}}' | grep docker.sock"
-      },
-      "host_network": {
-        "title": "Conteneur Docker utilisant le mode réseau hôte",
-        "why": "Un conteneur avec --network=host partage entièrement l'espace de noms réseau de l'hôte. Il peut se lier à n'importe quel port de l'hôte, écouter sur toutes les interfaces et accéder à tout service réseau sur localhost. L'isolation réseau des conteneurs n'existe pas pour de tels conteneurs.",
-        "how": "1. Supprimer --network=host et utiliser la publication de ports explicite :\n   docker run -p 8080:80 monimage  (au lieu de --network=host)\n2. Si le réseau hôte est requis pour la performance, restreindre les capacités et utiliser des profils AppArmor/seccomp\n3. Auditer les conteneurs en mode réseau hôte :\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.HostConfig.NetworkMode}}' | grep host"
-      }
-    },
     "kernel_hardening": {
       "aslr_disabled": {
         "title": "L'ASLR (randomisation de l'espace d'adressage) est désactivée",
@@ -2687,6 +2419,211 @@
         "title": "Niveau de risque majoré par la posture (faille structurelle pare-feu)",
         "why": "BOB dérive le niveau de risque affiché du score global combiné à l'état de la posture. Avant v0.7.0 le niveau était dérivé du seul score — un hôte UFW inactif mais par ailleurs propre (score 8/10) affichait 'risque FAIBLE', trompant les opérateurs sur l'exposition réelle. v0.7.0 introduit un plancher posture : quand le pare-feu est structurellement cassé (inactif, INPUT ACCEPT, ou domaine pare-feu ≤ 3/10), le niveau est sorti de FAIBLE pour refléter que l'hôte est joignable sur tout port indépendamment de la propreté du reste. Le score de base continue de piloter la valeur ; la posture ne fait qu'élever le plancher.",
         "how": "1. Identifier le déclencheur posture qui a fait remonter le niveau (cf. annotation entre parenthèses à côté du niveau de risque) :\n   - 'pare-feu inactif' → activer UFW : sudo ufw enable\n   - 'iptables INPUT ACCEPT' → politique deny par défaut : sudo iptables -P INPUT DROP (ou migrer vers UFW)\n   - 'domaine pare-feu faible' → relire les findings de la section pare-feu (règles, journalisation, politique par défaut)\n2. Relancer l'audit :\n   sudo bob\n3. Le niveau de risque revient à sa valeur dérivée du score quand le déclencheur posture ne fire plus."
+      }
+    },
+    "cron": {
+      "pipe_to_shell": {
+        "title": "Motif pipe-vers-shell dans cron système (curl/wget | sh)",
+        "why": "Télécharger un script et le passer directement à un shell contourne toutes les vérifications d'intégrité. Si le serveur distant est compromis, le DNS est détourné, ou la connexion est interceptée (HTTP simple), du code arbitraire s'exécute avec les privilèges de la tâche cron — souvent root. Il est impossible d'auditer ou de versionner ce qui sera exécuté au moment de l'exécution.",
+        "how": "1. Identifiez l'entrée cron dans /etc/cron.* ou /etc/crontab\n2. Remplacez par une approche en deux étapes :\n   a. Téléchargez dans un fichier : curl -fsSL -o /tmp/script.sh https://...\n   b. Vérifiez la somme de contrôle : sha256sum -c /tmp/script.sha256\n   c. Exécutez : bash /tmp/script.sh\n3. Mieux encore : hébergez le script localement, versionnez-le,\n   et référencez la copie locale depuis cron"
+      },
+      "world_writable": {
+        "title": "Script accessible en écriture par tous référencé dans cron système",
+        "why": "N'importe quel utilisateur local peut modifier un script accessible en écriture par tous. Comme cron l'exécute selon un planning — souvent en tant que root — écraser le script est une escalade de privilèges locale triviale : pas d'exploit nécessaire, juste un accès en écriture sur le fichier. C'est une technique classique de persistance et d'escalade.",
+        "how": "1. Supprimez la permission d'écriture globale :\n   sudo chmod o-w <chemin>\n2. Vérifiez que la propriété est correcte (doit appartenir à root) :\n   ls -la <chemin>\n3. Examinez le contenu du script pour détecter des modifications inattendues :\n   sudo cat <chemin>"
+      }
+    },
+    "docker_hardening": {
+      "privileged": {
+        "title": "Conteneur Docker en mode privilégié",
+        "why": "Un conteneur privilégié a un accès complet aux périphériques et capacités de l'hôte — il s'exécute effectivement en root sur l'hôte sans aucune restriction. Tout processus dans un conteneur privilégié peut s'échapper vers l'hôte, modifier les paramètres noyau, monter les systèmes de fichiers hôte et compromettre tout le système.",
+        "how": "1. Identifier le conteneur privilégié :\n   docker ps -q | xargs docker inspect --format '{{.Name}} privileged={{.HostConfig.Privileged}}'\n2. Supprimer --privileged et n'accorder que les capacités spécifiques nécessaires :\n   docker run --cap-add NET_ADMIN (au lieu de --privileged)\n3. Si l'accès privilégié est vraiment nécessaire, isoler sur un hôte dédié\n4. Utiliser des profils seccomp et des politiques AppArmor"
+      },
+      "root_containers": {
+        "title": "Conteneurs Docker s'exécutant en tant que root (pas de remapping d'espace de noms utilisateur)",
+        "why": "Les conteneurs s'exécutant en UID 0 dans le conteneur se mappent directement sur root de l'hôte sans remapping d'espace de noms. Une vulnérabilité d'évasion de conteneur — dont Docker en a eu plusieurs — donne immédiatement root sur l'hôte à un attaquant.",
+        "how": "1. Ajouter un USER non-root dans votre Dockerfile :\n   USER 1000:1000\n2. Ou activer le remapping d'espace de noms globalement :\n   sudo nano /etc/docker/daemon.json\n   { \"userns-remap\": \"default\" }\n   sudo systemctl restart docker\n3. Vérifier :\n   docker run alpine id  # ne doit pas retourner uid=0"
+      },
+      "socket_mounted": {
+        "title": "Socket Docker monté dans un conteneur",
+        "why": "Monter /var/run/docker.sock dans un conteneur lui donne le contrôle total du démon Docker — et donc de l'hôte. Depuis l'intérieur du conteneur, un attaquant peut démarrer un nouveau conteneur privilégié, monter le système de fichiers hôte et s'échapper avec une seule commande docker. C'est un contournement complet de l'isolation des conteneurs.",
+        "how": "1. Supprimer le montage du socket du conteneur :\n   Supprimer -v /var/run/docker.sock:/var/run/docker.sock de docker run\n2. Si le conteneur doit gérer Docker (agents CI, Portainer), utiliser :\n   - Docker-in-Docker (dind) avec isolation explicite\n   - Un socket TCP Docker avec authentification TLS\n3. Auditer les conteneurs en cours :\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.Mounts}}' | grep docker.sock"
+      },
+      "host_network": {
+        "title": "Conteneur Docker utilisant le mode réseau hôte",
+        "why": "Un conteneur avec --network=host partage entièrement l'espace de noms réseau de l'hôte. Il peut se lier à n'importe quel port de l'hôte, écouter sur toutes les interfaces et accéder à tout service réseau sur localhost. L'isolation réseau des conteneurs n'existe pas pour de tels conteneurs.",
+        "how": "1. Supprimer --network=host et utiliser la publication de ports explicite :\n   docker run -p 8080:80 monimage  (au lieu de --network=host)\n2. Si le réseau hôte est requis pour la performance, restreindre les capacités et utiliser des profils AppArmor/seccomp\n3. Auditer les conteneurs en mode réseau hôte :\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.HostConfig.NetworkMode}}' | grep host"
+      }
+    },
+    "services_health": {
+      "service_inactive": {
+        "title": "Service de sécurité activé au démarrage mais actuellement inactif",
+        "why": "Un service configuré pour démarrer au boot mais actuellement arrêté peut avoir planté, être mal configuré, ou avoir été délibérément désactivé. Si ce service est un contrôle de sécurité (pare-feu, détection d'intrusion, démon de logs), son absence crée une fenêtre pendant laquelle les menaces ne sont ni détectées ni bloquées. Le système semble protégé au démarrage mais ne l'est pas en runtime.",
+        "how": "1. Vérifiez pourquoi le service s'est arrêté :\n   sudo journalctl -u <service> -n 50\n2. Redémarrez et vérifiez :\n   sudo systemctl start <service>\n   sudo systemctl status <service>\n3. Si le service plante au démarrage, examinez la configuration :\n   sudo systemctl status <service> --no-pager -l\n4. Assurez-vous qu'il reste activé :\n   sudo systemctl enable <service>",
+        "server": {
+          "why": "Un service activé au démarrage mais actuellement inactif sur un serveur peut indiquer un contrôle de sécurité planté ou mal configuré. Il redémarrera au prochain boot, exposant potentiellement un port qui semble fermé maintenant. Sur un serveur, investiguez et résolvez immédiatement."
+        },
+        "desktop": {
+          "why": "Sur un desktop, un service actif-mais-inactif est généralement un vestige d'une ancienne installation. Le risque est plus faible (aucune exposition entrante attendue), mais il ralentit le démarrage et peut causer des problèmes subtils. Désactivez les services inutilisés."
+        },
+        "container": {
+          "why": "Dans un container, systemd n'est souvent pas le système d'init. Si votre container utilise un init léger (s6, runit, supervisord), cette détection peut ne pas s'appliquer. Si systemd est présent dans le container, suivez les recommandations serveur."
+        }
+      }
+    },
+    "firewall_iptables": {
+      "no_backend": {
+        "title": "Aucun backend pare-feu présent (ni iptables, ni nftables)",
+        "why": "Sans iptables ni nftables installé et actif, le noyau n'a aucune règle pare-feu — tous les ports joignables depuis le réseau sont entièrement exposés. UFW (ou tout autre front-end userspace) repose en dernier ressort sur l'un de ces backends pour écrire les règles dans le noyau. L'absence des deux signifie que le système tourne sans aucun filtre de paquets.",
+        "how": "1. Installer iptables (ou nftables) :\n   sudo apt install iptables\n2. Après installation, configurer UFW (ou un autre front-end) et l'activer :\n   sudo apt install ufw && sudo ufw enable\n3. Vérifier que les règles sont chargées :\n   sudo iptables -L -n  # ou : sudo nft list ruleset",
+        "server": {
+          "why": "Un serveur sans backend pare-feu est entièrement exposé au réseau — aucun filtrage noyau, aucun deny par défaut, aucune possibilité de restreindre un service. C'est l'une des pires postures possibles pour toute machine connectée."
+        },
+        "desktop": {
+          "why": "Même derrière NAT, un desktop sans iptables/nftables n'a aucune défense contre les attaques du réseau local (autres appareils, voisins malveillants sur Wi-Fi partagé). Installer un backend + UFW est universellement recommandé."
+        },
+        "container": {
+          "why": "Les containers héritent généralement du filtrage de paquets de l'hôte. Ce finding suggère que l'hôte n'a pas de pare-feu — corrigez sur l'hôte.",
+          "how": "Installer sur le système hôte :\n   sudo apt install iptables ufw\n   sudo ufw enable"
+        }
+      },
+      "input_accept": {
+        "title": "Politique par défaut INPUT = ACCEPT (chaque paquet non filtré entre)",
+        "why": "La politique de la chaîne INPUT est le dernier filet de sécurité du pare-feu quand aucune règle explicite ne matche un paquet entrant. Quand elle est à ACCEPT, tout port n'ayant pas de règle DROP/REJECT spécifique est ouvert au réseau — le défaut est permissif. Le pattern sûr est policy=DROP combiné à des règles ACCEPT explicites pour les services autorisés, de sorte que tout ce qui n'est pas en whitelist est bloqué automatiquement.",
+        "how": "1. Appliquer le default-deny immédiatement. Avant de basculer la policy, assurez-vous d'avoir des règles ACCEPT explicites pour loopback et pour tout service dont vous dépendez (notamment SSH) — sinon vous vous bloquez l'accès :\n   sudo iptables -A INPUT -i lo -j ACCEPT\n   sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # garder SSH joignable\n   sudo iptables -P INPUT DROP\n2. Sauvegarder les règles pour qu'elles persistent au redémarrage (iptables-persistent sur Debian/Ubuntu) :\n   sudo apt install iptables-persistent\n   sudo netfilter-persistent save\n3. Pour les systèmes nftables, utilisez :\n   sudo nft chain inet filter input '{ policy drop; }'",
+        "server": {
+          "why": "Sur un serveur, INPUT=ACCEPT signifie que chaque nouveau socket ouvert est joignable depuis n'importe quelle source jusqu'à ce que vous ajoutiez manuellement une règle DROP. Une politique de default-deny est obligatoire sur tout serveur en production. Oublier un DROP explicite aujourd'hui, c'est oublier un port ouvert demain."
+        },
+        "desktop": {
+          "why": "Sur un desktop derrière NAT, l'exposition externe est atténuée par le routeur, mais les attaques du segment local (autres appareils sur le même Wi-Fi) atteignent la machine. Le default-deny est le pattern de durcissement standard même pour des clients."
+        },
+        "container": {
+          "why": "La policy iptables est définie par l'hôte ou par le runtime container ; à l'intérieur d'un container par défaut vous ne pouvez pas la changer. Ajustez la network policy du container au niveau runtime, ou réglez la policy hôte."
+        }
+      },
+      "forward_accept": {
+        "title": "Politique par défaut FORWARD = ACCEPT (comportement routeur par défaut)",
+        "why": "La chaîne FORWARD gère les paquets routés À TRAVERS l'hôte (non destinés aux processus locaux). FORWARD=ACCEPT signifie que le noyau forwarde tout paquet par défaut si l'IP forwarding est aussi activé — transformant la machine en hop de routage pour n'importe quoi qui le demande. Combiné à une configuration réseau mal gérée, cela peut servir à pontaire des segments ou à exfiltrer du trafic via l'hôte. Le défaut sûr pour un non-routeur est policy=DROP.",
+        "how": "1. Mettre la policy FORWARD à DROP :\n   sudo iptables -P FORWARD DROP\n   # ou avec nftables :\n   sudo nft chain inet filter forward '{ policy drop; }'\n2. Rendre persistant (iptables-persistent sur Debian/Ubuntu) :\n   sudo netfilter-persistent save\n3. Si cette machine fait effectivement du routage (hôte libvirt avec virbr0, hôte Docker, gateway KVM, …), gardez FORWARD=ACCEPT mais assurez-vous que le pare-feu applicatif (UFW, règles libvirt) fournit le filtrage — et revisitez explicitement les chaînes de routage avec 'sudo iptables -L FORWARD -n'.",
+        "server": {
+          "why": "Un serveur applicatif standard ne devrait pas forwarder de trafic — FORWARD=DROP est le défaut sûr. L'exception concerne les hôtes de virtualisation ou de containers (libvirt, Docker, KVM, LXC) qui routent légitimement le trafic des invités — dans ce cas la policy est intentionnellement permissive mais les chaînes de règles doivent compenser."
+        },
+        "desktop": {
+          "why": "Un desktop n'est virtuellement jamais un routeur. Laisser FORWARD=ACCEPT est une surface d'attaque inutile et peut être abusé si le desktop est ponté ou partage sa connexion réseau. DROP est sûr."
+        },
+        "container": {
+          "why": "Les containers ne devraient pas être des hôtes de forwarding. La policy FORWARD est configurée au niveau hôte ; corrigez là.",
+          "how": "Appliquer sur l'hôte du container :\n   sudo iptables -P FORWARD DROP\n   sudo netfilter-persistent save"
+        }
+      },
+      "no_loopback": {
+        "title": "INPUT en default-deny sans règle ACCEPT loopback",
+        "why": "Quand la policy INPUT est DROP, l'interface loopback (127.0.0.1 / lo) est également droppée sauf si une règle ACCEPT explicite existe. De nombreux services locaux s'appuient sur loopback : postgres écoutant sur localhost, applications web parlant à un backend local, daemons système communiquant sur 127.0.0.1. Sans l'exception loopback, ils cassent silencieusement — et vous pouvez ne pas vous en apercevoir avant qu'un processus local précis échoue.",
+        "how": "1. Insérer une règle ACCEPT loopback en tête de INPUT :\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   # ou avec nftables :\n   sudo nft insert rule inet filter input iif \"lo\" accept\n2. Rendre persistant :\n   sudo netfilter-persistent save\n3. Vérifier que loopback fonctionne (curl sur un service local en écoute sur 127.0.0.1).",
+        "server": {
+          "why": "Presque chaque serveur fait tourner au moins un service binding sur 127.0.0.1 (PostgreSQL, Redis, sockets fcgi, interfaces supervisord). L'oubli de la règle loopback les casse silencieusement et provoque de longues sessions de debug. C'est l'omission la plus fréquente quand une nouvelle policy default-deny est appliquée."
+        },
+        "desktop": {
+          "why": "De nombreuses applications desktop (navigateurs, IDEs, dev tools, system trays) parlent à des services locaux via loopback. Sans la règle ACCEPT explicite, elles échouent silencieusement. Ajoutez la règle loopback avant de durcir INPUT."
+        },
+        "container": {
+          "why": "Le loopback À L'INTÉRIEUR d'un container est géré par son propre namespace réseau et n'est pas affecté par les règles iptables hôte. Ce finding s'applique à la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   sudo netfilter-persistent save"
+        }
+      },
+      "no_conntrack": {
+        "title": "INPUT en default-deny sans règle ACCEPT ESTABLISHED,RELATED",
+        "why": "Avec INPUT policy=DROP, les paquets de retour des connexions sortantes (navigateur web récupérant une page, apt téléchargeant des updates, client ssh recevant la réponse du serveur) sont droppés en même temps que tout le reste sauf si une règle explicite accepte les états conntrack ESTABLISHED et RELATED. Le résultat est que la machine peut ouvrir des connexions sortantes mais ne recevra jamais aucune réponse — coupant effectivement tout usage réseau côté client.",
+        "how": "1. Insérer la règle conntrack près du début de INPUT (juste après loopback) :\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   # ou avec nftables :\n   sudo nft insert rule inet filter input ct state established,related accept\n2. Rendre persistant :\n   sudo netfilter-persistent save\n3. Vérifier que l'usage sortant fonctionne (curl https://example.com).",
+        "server": {
+          "why": "Un serveur avec INPUT=DROP mais sans ACCEPT conntrack ne peut pas compléter ses propres requêtes HTTP sortantes, ses mises à jour de paquets, ni ses résolutions DNS. Le correctif est obligatoire pour toute configuration INPUT en default-deny."
+        },
+        "desktop": {
+          "why": "Sans la règle conntrack, chaque requête sortante (navigation web, downloads, gestion de paquets) semble bloquer et timeout parce que les réponses sont droppées silencieusement. C'est la cause la plus fréquente du \"après avoir activé le pare-feu, internet est cassé\"."
+        },
+        "container": {
+          "why": "Les namespaces réseau des containers ont leur propre gestion conntrack. Ce finding concerne la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo netfilter-persistent save"
+        }
+      }
+    },
+    "firewall_drivers": {
+      "iptables_bypass": {
+        "title": "Règle iptables ACCEPT brute dans INPUT contourne le filtrage UFW",
+        "why": "UFW écrit ses règles dans des chaînes dédiées (ufw-before-input, ufw-input, ufw-after-input). Une règle ACCEPT brute directement dans la chaîne INPUT prend effet AVANT que les chaînes ufw-* ne soient atteintes, donc les paquets matchant cette règle entrent quelles que soient les règles UFW deny qui devraient les rejeter. Le résultat est un contournement silencieux d'UFW — `ufw status` montre le pare-feu actif et configuré, alors que le trafic du port contourné circule librement. Ces règles proviennent typiquement de tweaks iptables manuels ou d'un paquet précédemment installé.",
+        "how": "1. Lister les règles fautives :\n   sudo iptables -L INPUT -n --line-numbers\n2. Supprimer chaque règle ACCEPT brute (remplacez N par le numéro de ligne) :\n   sudo iptables -D INPUT N\n3. Si la règle a été ajoutée par un paquet ou un script de démarrage, trouvez et désactivez la source — sinon elle réapparaîtra après reboot :\n   sudo grep -r 'iptables -A INPUT' /etc/\n4. Sauvegarder le ruleset nettoyé :\n   sudo netfilter-persistent save",
+        "server": {
+          "why": "Sur un serveur, une règle ACCEPT brute en INPUT signifie qu'une partie de votre posture pare-feu est invisible au pilotage UFW — `ufw allow` et `ufw deny` ne peuvent pas l'affecter. Le port exposé reste ouvert quoi que dise la config UFW documentée."
+        },
+        "desktop": {
+          "why": "Sur un desktop, le même problème s'applique : UFW présente le système comme protégé alors que la règle de contournement garde un port joignable. Auditez et supprimez toute règle brute que vous n'avez pas ajoutée intentionnellement."
+        },
+        "container": {
+          "why": "Les règles de la chaîne INPUT vivent sur l'hôte. Inspectez les iptables hôte et réconciliez avec UFW là.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -L INPUT -n --line-numbers\n   sudo iptables -D INPUT N   # pour chaque règle fautive"
+        }
+      },
+      "iptables_forward_bypass": {
+        "title": "Règle iptables ACCEPT brute dans FORWARD contourne UFW (aucun daemon de routage détecté)",
+        "why": "Même pattern qu'iptables_bypass mais sur la chaîne FORWARD. Les règles ACCEPT en FORWARD autorisent le trafic routé (paquets transitant par l'hôte) à passer sans être filtré par la chaîne ufw-forward d'UFW. Docker, libvirt et WireGuard ajoutent légitimement de telles règles — mais ces daemons ne sont PAS détectés sur ce système, donc la règle est inattendue. Cela signifie typiquement qu'un paquet supprimé a laissé des règles orphelines, ou qu'une session de debug manuelle a été oubliée.",
+        "how": "1. Lister les règles FORWARD :\n   sudo iptables -L FORWARD -n --line-numbers\n2. Supprimer chaque règle ACCEPT inattendue :\n   sudo iptables -D FORWARD N\n3. Trouver la source et la désactiver (similaire à iptables_bypass) :\n   sudo grep -r 'iptables -A FORWARD' /etc/\n4. Sauvegarder le ruleset nettoyé :\n   sudo netfilter-persistent save",
+        "server": {
+          "why": "Sur un serveur non-routeur, les règles FORWARD ACCEPT ne devraient pas exister. Si elles existent, elles exposent tout trafic du réseau voisin à un transit libre à travers l'hôte — un vecteur de routage qui peut être abusé pour du traffic relay ou du NAT puncturing."
+        },
+        "desktop": {
+          "why": "Un desktop ne devrait jamais forwarder de trafic. Les règles orphelines FORWARD ACCEPT proviennent typiquement d'un client VPN ou d'un runtime container supprimé. Supprimez-les une fois confirmé que rien de légitime ne les utilise."
+        },
+        "container": {
+          "why": "La chaîne FORWARD est gérée au niveau hôte. Supprimez les règles orphelines sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo iptables -L FORWARD -n --line-numbers\n   sudo iptables -D FORWARD N"
+        }
+      },
+      "nftables_parallel": {
+        "title": "Ruleset nftables actif en parallèle d'UFW (backend iptables)",
+        "why": "UFW écrit ses règles dans le backend iptables. Si nftables est aussi actif avec son propre ruleset, deux stacks pare-feu évaluent chaque paquet — et l'ordre d'évaluation dépend de la version du noyau, de l'ordre de chargement des modules et de la couche de compatibilité netfilter. Le résultat est un traitement non-déterministe des paquets : un port qu'`ufw allow` ouvre peut être silencieusement droppé par une règle nftables, ou inversement. Les symptômes sont des pannes de connectivité intermittentes ressemblant à des bugs réseau alors qu'il s'agit de bugs pare-feu.",
+        "how": "1. Inspecter le ruleset nftables :\n   sudo nft list ruleset\n2. Décidez quelle stack vous voulez garder :\n   - Garder UFW → flush nftables et désactiver son service :\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Basculer sur nftables → désinstaller UFW et reconfigurer les règles nativement en nftables :\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persister le choix fait (netfilter-persistent pour iptables/UFW, nftables.conf pour nft).",
+        "server": {
+          "why": "Sur un serveur, deux stacks pare-feu en parallèle produisent des bugs de connectivité intermittents très difficiles à diagnostiquer. Choisissez une stack et supprimez l'autre ; la cohérence est plus importante que le choix spécifique."
+        },
+        "desktop": {
+          "why": "Sur un desktop, les stacks parallèles surgissent généralement comme 'parfois ce service est joignable, parfois non'. Choisissez-en une et tenez-vous-y."
+        },
+        "container": {
+          "why": "La stack pare-feu est au niveau hôte ; cela affecte tous les containers. Réconciliez sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo nft list ruleset\n   sudo nft flush ruleset           # si on garde UFW\n   sudo systemctl disable --now nftables"
+        }
+      },
+      "ip_forward_enabled": {
+        "title": "IP forwarding activé mais aucun daemon de routage détecté (Docker / libvirt / WireGuard absents)",
+        "why": "net.ipv4.ip_forward=1 transforme l'hôte en routeur IP — il forwarde les paquets entre interfaces selon sa table de routage. Docker, libvirt/KVM et WireGuard l'activent légitimement pour le trafic guest / VPN, mais aucun de ces daemons ne tourne. Un forwarding IP inexpliqué signifie généralement qu'un paquet VPN ou de virtualisation supprimé a laissé le sysctl activé, ou qu'il a été activé manuellement pour du debug et jamais re-désactivé. Un hôte de forwarding inutilisé peut être abusé comme relais de routage si la chaîne FORWARD est permissive.",
+        "how": "1. Désactiver IP forwarding immédiatement :\n   sudo sysctl -w net.ipv4.ip_forward=0\n2. Rendre permanent — éditer /etc/sysctl.conf ou un fichier sous /etc/sysctl.d/ et mettre :\n   net.ipv4.ip_forward=0\n3. Re-appliquer les paramètres sysctl :\n   sudo sysctl --system\nNote : si vous installez plus tard Docker, libvirt ou WireGuard, ces paquets ré-activeront automatiquement le forwarding. Le correctif ci-dessus ne concerne que l'état actuel.",
+        "server": {
+          "why": "Sur un serveur non-routeur, ip_forward=1 sans daemon est une surface d'attaque dormante. Soit installez le daemon qui explique pourquoi le forwarding est nécessaire, soit désactivez-le."
+        },
+        "desktop": {
+          "why": "Un desktop n'est virtuellement jamais un routeur. Le forwarding activé sans daemon VPN ou de virtualisation est un état résiduel — désactivez-le."
+        },
+        "container": {
+          "why": "ip_forward est un paramètre noyau hôte ; il ne peut pas être changé depuis un container par défaut. Appliquer sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.ip_forward=0\n   echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
+        }
+      }
+    },
+    "firewall_rules": {
+      "duplicate_found": {
+        "title": "Règles UFW en double ou redondantes",
+        "why": "Les règles de pare-feu en double n'améliorent pas la sécurité mais ajoutent de la confusion et une charge de maintenance. Les règles redondantes rendent la politique difficile à auditer et peuvent provoquer des comportements inattendus lors de modifications ultérieures, car UFW traite les règles dans l'ordre.",
+        "how": "1. Listez les règles avec leurs numéros :\n   sudo ufw status numbered\n2. Identifiez et supprimez la règle redondante :\n   sudo ufw delete <numéro>\n3. Vérifiez l'ensemble des règles restantes :\n   sudo ufw status verbose"
+      },
+      "open_any_found": {
+        "title": "Règle générique ouverte (ALLOW de n'importe où vers n'importe où)",
+        "why": "Une règle autorisant tout le trafic de n'importe où vers n'importe où annule l'intégralité du pare-feu pour le port ou protocole concerné. C'est l'équivalent de ne pas avoir de pare-feu du tout — n'importe quel hôte externe peut atteindre n'importe quel service ouvert.",
+        "how": "1. Identifiez la règle générique :\n   sudo ufw status numbered\n2. Supprimez-la :\n   sudo ufw delete <numéro>\n3. Remplacez par des règles spécifiques couvrant uniquement les sources et ports requis :\n   sudo ufw allow from 192.168.1.0/24 to any port 22\n4. Confirmez que la politique par défaut est deny :\n   sudo ufw default deny incoming"
+      },
+      "ipv6_missing": {
+        "title": "Règles IPv4 présentes mais pas d'équivalent IPv6",
+        "why": "Si un service est accessible en IPv4 et IPv6 mais que seul l'IPv4 est couvert, le chemin IPv6 est entièrement non filtré. Un attaquant utilisant IPv6 contourne toutes les règles de pare-feu qui semblent protéger le service. Cette asymétrie est un angle mort courant.",
+        "how": "1. Vérifiez que /etc/default/ufw contient IPV6=yes\n2. Les règles UFW ajoutées sans préciser le protocole s'appliquent automatiquement à IPv4 et IPv6 :\n   sudo ufw allow 22/tcp  # crée des règles v4 et v6\n3. Vérifiez quels services écoutent en IPv6 :\n   sudo ss -tlnp | grep ':::'\n4. Rechargez UFW :\n   sudo ufw reload"
       }
     }
   },
@@ -3051,5 +2988,72 @@
     "risk_critical": "CRITIQUE",
     "note_label": "Remarque",
     "detail_label": "Détail"
+  },
+  "cron": {
+    "pipe_to_shell": "{count} tâche(s) cron envoie(nt) du contenu distant vers un shell (curl/wget | sh)",
+    "pipe_to_shell_detail": "Rediriger des téléchargements distants vers un shell est un vecteur d'attaque courant sur la chaîne d'approvisionnement. Examinez et remplacez par des téléchargements explicites avec vérification d'intégrité.",
+    "pipe_to_shell_reason": "{count} tâche(s) cron envoie(nt) du contenu distant vers un shell",
+    "world_writable": "{count} script(s) référencé(s) dans cron sont accessibles en écriture par tous : {scripts}",
+    "world_writable_detail": "Les scripts accessibles en écriture par tous peuvent être remplacés par n'importe quel utilisateur local, permettant une élévation de privilèges. Restreignez les permissions immédiatement.",
+    "world_writable_reason": "{count} script(s) accessibles en écriture par tous dans cron",
+    "unexpected_users": "Crontab(s) d'utilisateur(s) inattendu(s) trouvé(s) : {users}",
+    "ok": "Aucun motif risqué trouvé dans les tâches cron"
+  },
+  "docker_hardening": {
+    "scan_error": "Démon Docker inaccessible — vérification de sécurité des conteneurs ignorée",
+    "no_containers": "Aucun conteneur en cours d'exécution — rien à auditer",
+    "ok": "{count} conteneur(s) en cours d'exécution — aucun problème de sécurité critique",
+    "privileged": "{count} conteneur(s) en mode privilégié : {containers}",
+    "privileged_detail": "Les conteneurs privilégiés ont un accès complet au noyau et aux périphériques de l'hôte. Cela désactive effectivement l'isolation des conteneurs. Remplacez par des capacités ciblées (--cap-add) si des privilèges élevés sont nécessaires.",
+    "privileged_reason": "{count} conteneur(s) privilégié(s) en cours d'exécution",
+    "socket_mounted": "{count} conteneur(s) avec la socket Docker montée : {containers}",
+    "socket_mounted_detail": "Monter /var/run/docker.sock dans un conteneur donne un contrôle équivalent à root sur l'hôte. Tout processus du conteneur peut créer de nouveaux conteneurs privilégiés ou s'échapper du bac à sable.",
+    "socket_mounted_reason": "{count} conteneur(s) avec la socket Docker montée",
+    "userns_not_configured": "Remappage des espaces de noms utilisateurs non configuré (userns-remap)",
+    "userns_not_configured_detail": "Sans userns-remap, un processus conteneur s'exécutant en tant qu'UID 0 est mappé directement sur root de l'hôte. Activez userns-remap dans /etc/docker/daemon.json pour remapper les UID des conteneurs.",
+    "userns_configured": "Remappage des espaces de noms utilisateurs activé (userns-remap)",
+    "root_containers": "{count} conteneur(s) s'exécutant en tant que root (UID 0) : {containers}",
+    "root_containers_detail": "Exécuter des conteneurs en tant que root augmente le rayon d'explosion d'une évasion de conteneur. Définissez un utilisateur non-root dans le Dockerfile ou utilisez --user à l'exécution.",
+    "host_network": "{count} conteneur(s) utilisant l'espace de noms réseau de l'hôte : {containers}",
+    "host_network_detail": "Les conteneurs en mode réseau hôte partagent la pile réseau de l'hôte et peuvent se lier à n'importe quel port. Utilisez le réseau bridge et publiez uniquement les ports nécessaires."
+  },
+  "services_health": {
+    "no_systemctl": "systemctl non disponible — vérification de l'état des services ignorée",
+    "service_inactive": "Service de sécurité activé mais non démarré : {service}",
+    "service_inactive_detail": "Ce service est configuré pour démarrer au boot mais est actuellement arrêté ou en échec. Vérifiez ses journaux et redémarrez-le.",
+    "service_inactive_reason": "Service de sécurité inactif : {service}",
+    "ok": "Tous les services de sécurité surveillés sont actifs"
+  },
+  "firewall_iptables": {
+    "no_backend": "Aucun pare-feu détecté (iptables/nftables absent ou inactif)",
+    "ufw_inactive_context": "UFW est installé mais inactif — audit de la couche {backend} sous-jacente",
+    "backend_detected": "Backend actif : {backend}",
+    "input_accept": "Politique INPUT par défaut : ACCEPT — tout le trafic entrant est autorisé",
+    "input_ok": "Politique INPUT par défaut : {policy} (recommandé)",
+    "input_unknown": "Politique INPUT par défaut : indéterminée — vérification manuelle recommandée",
+    "no_loopback": "Aucune règle loopback (lo) — les services locaux peuvent être inaccessibles",
+    "no_conntrack": "Aucune règle ESTABLISHED/RELATED — les connexions sortantes peuvent être bloquées en retour",
+    "forward_accept": "Politique FORWARD par défaut : ACCEPT — le trafic de transit n'est pas filtré",
+    "forward_ok": "Politique FORWARD par défaut : {policy} (recommandé)",
+    "forward_unknown": "Politique FORWARD par défaut : indéterminée — vérification manuelle recommandée"
+  },
+  "firewall_drivers": {
+    "no_issues": "Aucune règle de pare-feu supplémentaire interférant avec UFW détectée",
+    "iptables_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne INPUT : {rule}",
+    "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
+    "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker/VPN",
+    "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",
+    "ip_forward_ok": "Transfert IP activé — démon de routage détecté (Docker, VPN ou KVM)",
+    "ip_forward_enabled": "Transfert IP activé sans VPN/Docker détecté — vérifiez que c'est intentionnel"
+  },
+  "firewall_rules": {
+    "no_duplicates": "Aucune règle UFW en doublon détectée",
+    "duplicate_found": "Règle UFW en doublon détectée : {rule}",
+    "no_open_any": "Aucune règle 'allow from any' sans restriction de port détectée",
+    "open_any_found": "Règle autorisant toutes les connexions entrantes sans restriction de port : {rule}",
+    "ipv6_ok": "Configuration IPv6 cohérente avec les règles UFW",
+    "ipv6_missing": "Des règles UFW existent en IPv4 mais aucune règle IPv6 équivalente n'a été trouvée",
+    "ufw_status_detail": "État UFW (verbose) :",
+    "orphan_rule": "Règle UFW ouverte sans service en écoute : {port}"
   }
 }

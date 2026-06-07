@@ -48,11 +48,11 @@ _EMITTING_METHODS: frozenset[str] = frozenset({
 _CATCH_ALL_BY_DESIGN: dict[str, str] = {
     # Firewall/network surface — semantically *is* the firewall domain.
     "firewall":        "Self-mapping: the catch-all IS firewall",
-    "rules":           "UFW rules analysis is part of firewall scoring",
+    "firewall_rules":           "UFW rules analysis is part of firewall scoring",
     "ports":           "Port exposure is part of firewall surface",
     "services":        "Service exposure is part of firewall surface",
-    "iptables_nft":    "iptables/nftables fallback is firewall stack",
-    "firewall_stack":  "Firewall stack consistency analysis",
+    "firewall_iptables":    "iptables/nftables fallback is firewall stack",
+    "firewall_drivers":  "Firewall stack consistency analysis",
     "network_context": "Network interfaces / connections inventory",
     "ipv6":            "IPv6 consistency relative to UFW",
     "docker":          "Docker network exposure (port mappings)",

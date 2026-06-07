@@ -71,25 +71,103 @@ from bob.checks.firmware import FirmwareSnapshot, check_firmware
 from bob.plugin_checks import load_plugin_checks
 
 
-_ALL_SECTIONS: tuple[str, ...] = (
-    "ipv6", "smtp", "ssh", "auth_log", "user_accounts", "password_policy",
-    "file_perms", "hardening", "kernel_hardening", "suid_audit", "docker_audit",
-    "log_rotation", "kernel_modules", "mac_policy", "cron_audit", "services_state",
-    "updates", "umask", "memory", "disk", "backup", "auditd", "secure_boot",
-    "fail2ban", "clamav", "file_integrity", "rootkit", "ntp", "systemd_timers",
-    "ssl_certs", "firmware", "iptables_nft", "samba", "desktop_apps",
+# v0.9.0 D-2: single source of truth for both filterable and always-on
+# sections. Pre-v0.9.0, two parallel tuples (``_ALL_SECTIONS`` for filterable
+# and ``_ALWAYS_ON_SECTIONS`` for unconditional sections) had to be kept in
+# sync manually: adding a section meant remembering which tuple to update,
+# and the validation logic plus the ``bob --check=list`` rendering had to
+# union the two. The unified ``_SECTIONS`` tuple carries an ``always_on``
+# flag per entry, and the back-compat derived views ``_ALL_SECTIONS`` /
+# ``_ALWAYS_ON_SECTIONS`` are computed from it for existing consumers
+# (``bob/__main__.py`` + tests + the bash-completion sync guard).
+#
+# M-7 (v0.7.0) context — always-on sections (``firewall``, ``ports``,
+# ``services``, ``firewall_rules``, ``ufw_logging``, ``firewall_drivers``,
+# ``network_context``, ``ddns``, ``docker``, ``virtualization``) are not
+# gated by ``_section_enabled``; ``--check``/``--skip`` warn but have no
+# effect on them. Pre-fix, ``--check=firewall`` raised a fatal
+# "matches no known section" error even though ``bob --check=list``
+# advertises these as "core checks always run".
+
+
+class _Section(NamedTuple):
+    """v0.9.0 D-2: single section descriptor unifying the v0.5.x-v0.8.x split."""
+    name:      str
+    always_on: bool
+
+
+_SECTIONS: tuple[_Section, ...] = (
+    # Filterable sections (gated by --check / --skip / profile)
+    _Section("ipv6",              False),
+    _Section("smtp",              False),
+    _Section("ssh",               False),
+    _Section("auth_log",          False),
+    _Section("user_accounts",     False),
+    _Section("password_policy",   False),
+    _Section("file_perms",        False),
+    _Section("hardening",         False),
+    _Section("kernel_hardening",  False),
+    _Section("suid_audit",        False),
+    _Section("docker_hardening",  False),
+    _Section("log_rotation",      False),
+    _Section("kernel_modules",    False),
+    _Section("mac_policy",        False),
+    _Section("cron",              False),
+    _Section("services_health",   False),
+    _Section("updates",           False),
+    _Section("umask",             False),
+    _Section("memory",            False),
+    _Section("disk",              False),
+    _Section("backup",            False),
+    _Section("auditd",            False),
+    _Section("secure_boot",       False),
+    _Section("fail2ban",          False),
+    _Section("clamav",            False),
+    _Section("file_integrity",    False),
+    _Section("rootkit",           False),
+    _Section("ntp",               False),
+    _Section("systemd_timers",    False),
+    _Section("ssl_certs",         False),
+    _Section("firmware",          False),
+    _Section("firewall_iptables", False),
+    _Section("samba",             False),
+    _Section("desktop_apps",      False),
+    # Always-on sections (run unconditionally; --check / --skip warn)
+    _Section("firewall",          True),
+    _Section("firewall_rules",    True),
+    _Section("ufw_logging",       True),
+    _Section("firewall_drivers",  True),
+    _Section("network_context",   True),
+    _Section("services",          True),
+    _Section("ports",             True),
+    _Section("ddns",              True),
+    _Section("docker",            True),
+    _Section("virtualization",    True),
 )
 
-# M-7 (v0.7.0): sections that run unconditionally — they are not gated by
-# `_section_enabled` and therefore `--check`/`--skip` have no effect on them.
-# Pre-fix, `--check=firewall` raised a fatal "matches no known section" error
-# even though `--check=list` itself advertises these as "core checks (firewall,
-# ports, services, logs) always run". `validate_check_filters` now recognises
-# these tokens as valid input and informs the user that --skip has no effect.
-_ALWAYS_ON_SECTIONS: tuple[str, ...] = (
-    "firewall", "rules", "ufw_logging", "firewall_stack", "network_context",
-    "services", "ports_analysis", "ddns", "docker", "virtualization",
-)
+# Back-compat derived views. Existing consumers (``bob/__main__.py``,
+# ``tests/test_cli.py``, ``tests/test_v082_items.py``,
+# ``tests/test_v082_bash_completion.py``) keep referring to these names —
+# the views are immutable tuples built once at import time. New code
+# should consume ``_SECTIONS`` directly to access the ``always_on`` flag.
+_ALL_SECTIONS:        tuple[str, ...] = tuple(s.name for s in _SECTIONS if not s.always_on)
+_ALWAYS_ON_SECTIONS:  tuple[str, ...] = tuple(s.name for s in _SECTIONS if s.always_on)
+
+# v0.9.0 D-1: section renames. When a user passes one of these legacy names
+# via ``--check`` or ``--skip``, the validator emits a hard migration error
+# pointing at the new canonical name. The map is read-only and consulted
+# only by ``validate_check_filters``; ``_section_enabled`` works exclusively
+# against ``_ALL_SECTIONS`` + ``_ALWAYS_ON_SECTIONS`` so the legacy names
+# cannot accidentally re-enable a section.
+_RENAMED_SECTIONS_V090: dict[str, str] = {
+    "cron_audit":      "cron",
+    "docker_audit":    "docker_hardening",
+    "services_state":  "services_health",
+    "ports_analysis":  "ports",
+    "rules":           "firewall_rules",
+    "iptables_nft":    "firewall_iptables",
+    "firewall_stack":  "firewall_drivers",
+}
 
 
 def _section_enabled(section: str, config: "AuditConfig", profile: "AuditProfile | None") -> bool:
@@ -144,6 +222,25 @@ def validate_check_filters(config: "AuditConfig") -> str | None:
     # consistent FR typography.
     from bob import i18n
 
+    # v0.9.0 D-1: detect legacy section names and fail loud with a clear
+    # migration hint. We surface the rename BEFORE the generic
+    # ``check_no_match`` warning so the user sees the precise instruction
+    # instead of a fuzzy "did you mean" guess that may or may not nail it.
+    if config.check_only:
+        renamed = sorted(
+            tok for tok in config.check_only if tok in _RENAMED_SECTIONS_V090
+        )
+        if renamed:
+            for tok in renamed:
+                new = _RENAMED_SECTIONS_V090[tok]
+                print(
+                    f"{i18n.t('cli.error.warning_prefix')}"
+                    + i18n.t("cli.runner.section_renamed",
+                             old=repr(tok), new=repr(new)),
+                    file=sys.stderr,
+                )
+            return i18n.t("cli.runner.section_renamed_fatal")
+
     if config.check_only:
         bad = sorted(
             tok for tok in config.check_only
@@ -163,12 +260,45 @@ def validate_check_filters(config: "AuditConfig") -> str | None:
                 return i18n.t("cli.runner.check_no_match_fatal")
 
     if config.skip_checks:
+        # v0.9.0 D-1: mirror the renaming guard for --skip so the user gets
+        # the same precise migration error.
+        renamed = sorted(
+            tok for tok in config.skip_checks if tok in _RENAMED_SECTIONS_V090
+        )
+        if renamed:
+            for tok in renamed:
+                new = _RENAMED_SECTIONS_V090[tok]
+                print(
+                    f"{i18n.t('cli.error.warning_prefix')}"
+                    + i18n.t("cli.runner.section_renamed",
+                             old=repr(tok), new=repr(new)),
+                    file=sys.stderr,
+                )
+            return i18n.t("cli.runner.section_renamed_fatal")
+
         for tok in sorted(config.skip_checks):
+            # v0.9.0 D-1: check always-on BEFORE filterable. After the section
+            # renumber (`firewall_iptables` / `firewall_rules` / `firewall_drivers`
+            # added to ``_ALL_SECTIONS``), the token ``firewall`` matches a
+            # filterable via the startswith rule, which would silence the
+            # "no effect" warning that operators legitimately expect for
+            # ``--skip=firewall``. Exact always-on matches now take precedence
+            # over prefix filterable matches.
+            if tok in _ALWAYS_ON_SECTIONS:
+                # --skip on an always-on section is a no-op: warn the user
+                # rather than silently swallow their intent.
+                print(
+                    f"{i18n.t('cli.error.warning_prefix')}"
+                    + i18n.t("cli.runner.skip_no_effect", tok=repr(tok)),
+                    file=sys.stderr,
+                )
+                continue
             if _matches_filterable(tok):
                 continue
             if _matches_always_on(tok):
-                # --skip on an always-on section is a no-op: warn the user
-                # rather than silently swallow their intent.
+                # Prefix-matched always-on (rare — only when the user types a
+                # prefix that ONLY appears in ``_ALWAYS_ON_SECTIONS``). Same
+                # warning, but reached via the fallback path.
                 print(
                     f"{i18n.t('cli.error.warning_prefix')}"
                     + i18n.t("cli.runner.skip_no_effect", tok=repr(tok)),
@@ -309,7 +439,7 @@ def run_checks(
     active_external_ports = ports_snapshot.active_external_ports
     all_listening_ports   = loopback_only_ports | active_external_ports
 
-    emit_section("rules")
+    emit_section("firewall_rules")
 
     rules_result = check_rules(
         ufw_verbose, ufw_numbered, t, fw_status.ipv6_ufw_enabled,
@@ -319,7 +449,7 @@ def run_checks(
     display_result(rules_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
     if config.verbose and ufw_verbose and not config.quiet:
-        output.print_dim(t("rules.ufw_status_detail"))
+        output.print_dim(t("firewall_rules.ufw_status_detail"))
         print()
         print(ufw_verbose)
 
@@ -332,8 +462,8 @@ def run_checks(
         display_result(ufw_logging_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
     # ---- CHECK 46 — iptables / nftables (UFW inactive only) ----
-    if not fw_status.active and _section_enabled("iptables_nft", config, profile):
-        emit_section("iptables_nft")
+    if not fw_status.active and _section_enabled("firewall_iptables", config, profile):
+        emit_section("firewall_iptables")
         ipt_snapshot  = IptablesNftSnapshot.from_system()
         ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, t=t)
         engine.apply(ipt_result)
@@ -342,7 +472,7 @@ def run_checks(
             print()
 
     # ---- CHECK 2b — Firewall stack analysis ----
-    emit_section("firewall_stack")
+    emit_section("firewall_drivers")
 
     stack_snapshot = FirewallStackSnapshot.from_system()
     stack_result   = check_firewall_stack(stack_snapshot, t=t)
@@ -441,7 +571,7 @@ def run_checks(
                                    all_listening_ports, config, t)
 
     # ---- CHECK 4 — Listening ports ----
-    emit_section("ports_analysis")
+    emit_section("ports")
 
     ports_result = check_ports(
         ports_snapshot,
@@ -565,7 +695,7 @@ def run_checks(
 
     # ---- CHECK 38 — Docker container security audit ----
     docker_audit_snapshot = DockerAuditSnapshot.from_system()
-    _sec("docker_audit", docker_audit_snapshot, check_docker_audit,
+    _sec("docker_hardening", docker_audit_snapshot, check_docker_audit,
          skip_if=lambda s: not s.docker_installed)
 
     # ---- CHECK 39 — Log rotation & system journaling ----
@@ -582,11 +712,11 @@ def run_checks(
 
     # ---- CHECK 15 — Cron job audit ----
     cron_audit_snapshot = CronAuditSnapshot.from_system()
-    _sec("cron_audit", cron_audit_snapshot, check_cron_audit)
+    _sec("cron", cron_audit_snapshot, check_cron_audit)
 
     # ---- CHECK 16 — Service state audit ----
     services_state_snapshot = ServicesStateSnapshot.from_system()
-    _sec("services_state", services_state_snapshot, check_services_state)
+    _sec("services_health", services_state_snapshot, check_services_state)
 
     # ---- CHECK 13 — System updates ----
     updates_snapshot = UpdatesSnapshot.from_system()

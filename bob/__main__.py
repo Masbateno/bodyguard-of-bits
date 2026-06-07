@@ -335,7 +335,24 @@ def _run(argv=None) -> int:
                     user_config=user_config,
                 )
 
-            prev_baseline   = load_baseline()
+            # v0.9.0 F-2: when --diff=PATH was passed, load the explicit
+            # baseline file in strict mode so a missing/broken file surfaces
+            # as a CLIError instead of the silent ``no baseline yet``
+            # message. Bare --diff keeps the soft v0.8.x behaviour.
+            if config.diff_baseline_path is not None:
+                from bob.compare import BaselineLoadError
+                try:
+                    prev_baseline = load_baseline(
+                        config.diff_baseline_path, strict=True,
+                    )
+                except BaselineLoadError as _exc:
+                    print(
+                        f"{t('cli.error.prefix')}{_exc}",
+                        file=sys.stderr,
+                    )
+                    return EXIT_ERROR
+            else:
+                prev_baseline   = load_baseline()
             prev_recurrence = load_recurrence()
             curr_baseline   = None
 
@@ -527,7 +544,7 @@ def _run(argv=None) -> int:
                 full=config.json_full, version=VERSION,
                 hardening_snapshot=hardening_snapshot,
                 ipv6_snapshot=ipv6_snapshot,
-                schema_version="1" if config.json_v1 else "2",
+                schema_version="2",
             )
             print(_json.dumps(data, ensure_ascii=False, indent=2))
 
@@ -553,6 +570,27 @@ def _run(argv=None) -> int:
             if not prev_baseline:
                 print(t("compare.no_baseline_yet"))
             else:
+                # v0.9.0 F-2: if the baseline came from an explicit
+                # --diff=PATH AND the recorded hostname differs from the
+                # current host, surface a one-line INFO so the operator
+                # knows they are looking at a cross-machine compare.
+                # ``hostname is None`` covers pre-v0.9.0 baselines (the
+                # field didn't exist) — we stay silent in that case.
+                if (
+                    config.diff_baseline_path is not None
+                    and prev_baseline.hostname
+                ):
+                    import socket as _sock
+                    try:
+                        _cur_host = _sock.gethostname()
+                    except OSError:
+                        _cur_host = ""
+                    if _cur_host and prev_baseline.hostname != _cur_host:
+                        print(t(
+                            "compare.cross_machine_notice",
+                            baseline_host=prev_baseline.hostname,
+                            current_host=_cur_host,
+                        ))
                 _delta = compute_delta(prev_baseline, curr_baseline)
                 display_delta(_delta, t, output)
 

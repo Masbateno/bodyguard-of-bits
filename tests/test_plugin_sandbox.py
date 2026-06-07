@@ -203,18 +203,23 @@ class TestAdversarialPluginsBlocked:
 
 
 # ===========================================================================
-# Q5' — BOB_SANDBOX_LEGACY=1 env var trap door
+# Q5' — BOB_SANDBOX_LEGACY=1 env var trap door (RETIRED in v0.9.0 TD-1)
 # ===========================================================================
+#
+# The legacy bypass was removed in v0.9.0 (announced for retrait in the
+# v0.7.0 ship + v0.8.0 SECURITY.md notes). Plugins now always run in the
+# spawn'd subprocess; setting BOB_SANDBOX_LEGACY=1 has no effect.
+#
+# Two retirement guards keep the retrait verifiable:
 
-class TestLegacyTrapDoor:
-    """When BOB_SANDBOX_LEGACY=1 is set, plugins run un-sandboxed (legacy
-    behaviour) but the runner must emit a flashy WARNING."""
 
-    def test_legacy_mode_runs_without_restrictions(
-            self, tmp_path, monkeypatch, capsys,
-    ):
-        # A plugin that simply imports subprocess — would be blocked under
-        # sandbox, but in legacy mode it's allowed.
+class TestLegacyTrapDoorRetired:
+    """v0.9.0 TD-1: the BOB_SANDBOX_LEGACY=1 trap door is gone."""
+
+    def test_legacy_env_var_has_no_effect(self, tmp_path, monkeypatch):
+        # A plugin that imports subprocess — blocked under the sandbox.
+        # Pre-v0.9.0 ``BOB_SANDBOX_LEGACY=1`` would have let it through;
+        # post-v0.9.0 the env var is ignored and the import still fails.
         plugin = tmp_path / "legacy_check.py"
         plugin.write_text(
             "from bob.scoring import CheckResult\n"
@@ -225,22 +230,30 @@ class TestLegacyTrapDoor:
             "    return r\n"
         )
         monkeypatch.setenv("BOB_SANDBOX_LEGACY", "1")
-        runner_legacy = SandboxRunner(timeout_seconds=5.0)
-        result = runner_legacy.run(plugin)
-        # Under legacy: the subprocess import worked
-        assert any(
+        runner = SandboxRunner(timeout_seconds=5.0)
+        result = runner.run(plugin)
+        # The plugin's subprocess import must fail — no OK finding with
+        # the legacy success marker; the sandbox emits a WARN instead.
+        assert not any(
             "subprocess" in f.message
             for f in result.findings
             if f.level == FindingLevel.OK
+        ), (
+            "BOB_SANDBOX_LEGACY=1 should be ignored in v0.9.0+ — if this "
+            "assertion fails, the trap door has resurfaced or a new bypass "
+            "was introduced."
         )
 
-    def test_legacy_mode_emits_warning(self, monkeypatch, capsys):
-        monkeypatch.setenv("BOB_SANDBOX_LEGACY", "1")
-        SandboxRunner(timeout_seconds=5.0)
-        captured = capsys.readouterr()
-        # Flashy WARNING must surface to stderr at instantiation
-        assert "SANDBOX" in captured.err.upper()
-        assert "LEGACY" in captured.err.upper()
+    def test_legacy_active_helper_removed(self):
+        """The static ``_legacy_active`` helper was deleted with the trap door."""
+        assert not hasattr(SandboxRunner, "_legacy_active"), (
+            "SandboxRunner._legacy_active resurfaced — the BOB_SANDBOX_LEGACY "
+            "trap door must remain retired."
+        )
+        assert not hasattr(SandboxRunner, "_run_legacy"), (
+            "SandboxRunner._run_legacy resurfaced — the BOB_SANDBOX_LEGACY "
+            "trap door must remain retired."
+        )
 
 
 # ===========================================================================

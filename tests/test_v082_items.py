@@ -194,58 +194,22 @@ class TestCheckListDescriptionsCoverage:
 
 
 # ===========================================================================
-# D-3 — EXPLAIN_KEY_ALIASES deprecation warning
+# D-3 — EXPLAIN_KEY_ALIASES (v0.8.2 warning machinery retired in v0.9.0)
 # ===========================================================================
-
-class TestExplainKeyAliasDeprecation:
-
-    def setup_method(self):
-        # Reset the warned set so each test sees a fresh deprecation budget
-        from bob import explain
-        explain._WARNED_ALIASES.clear()
-
-    def test_alias_resolution_still_returns_canonical(self):
-        from bob.explain import normalize_key, EXPLAIN_KEY_ALIASES
-        if not EXPLAIN_KEY_ALIASES:
-            pytest.skip("no aliases registered")
-        alias, canonical = next(iter(EXPLAIN_KEY_ALIASES.items()))
-        assert normalize_key(alias) == canonical
-
-    def test_alias_resolution_emits_deprecation_warning(self, caplog):
-        from bob.explain import normalize_key, EXPLAIN_KEY_ALIASES
-        if not EXPLAIN_KEY_ALIASES:
-            pytest.skip("no aliases registered")
-        alias = next(iter(EXPLAIN_KEY_ALIASES))
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, logger="bob.explain"):
-            normalize_key(alias)
-        warnings = [r for r in caplog.records if "DEPRECATION" in r.getMessage()]
-        assert warnings, "expected a DEPRECATION warning when an alias is resolved"
-        # The warning must reference v0.9.0 retrait timeline
-        assert any("v0.9.0" in r.getMessage() for r in warnings)
-
-    def test_warning_emitted_only_once_per_process(self, caplog):
-        from bob.explain import normalize_key, EXPLAIN_KEY_ALIASES
-        if not EXPLAIN_KEY_ALIASES:
-            pytest.skip("no aliases registered")
-        alias = next(iter(EXPLAIN_KEY_ALIASES))
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, logger="bob.explain"):
-            normalize_key(alias)
-            normalize_key(alias)
-            normalize_key(alias)
-        warnings = [r for r in caplog.records if "DEPRECATION" in r.getMessage()]
-        assert len(warnings) == 1, (
-            f"expected exactly 1 warning per alias per process, got {len(warnings)}"
-        )
-
-    def test_non_alias_key_does_not_warn(self, caplog):
-        from bob.explain import normalize_key
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, logger="bob.explain"):
-            normalize_key("ssh.password_auth")
-        warnings = [r for r in caplog.records if "DEPRECATION" in r.getMessage()]
-        assert not warnings
+#
+# The v0.8.2 ``TestExplainKeyAliasDeprecation`` class exercised the one-shot
+# ``_warn_alias_deprecation`` / ``_WARNED_ALIASES`` machinery that lived in
+# ``bob/explain.py`` to herald the v0.9.0 retrait of the sole live alias
+# (``services_state.service_inactive`` → ``enabled_inactive``, then
+# ``services_health.service_inactive`` → ``enabled_inactive`` after the
+# v0.9.0 D-1 section rename). v0.9.0 D-3 resolved the underlying drift at
+# the source (renamed the EXPLAIN_KEYS entry to ``service_inactive`` so it
+# matches what ``services_state.py`` emits) and removed both the alias
+# and the warning machinery. The remaining ``normalize_key`` lookup over
+# the empty ``EXPLAIN_KEY_ALIASES`` dict is exercised by
+# ``test_explain_naming_convention::test_normalize_resolves_aliases`` and
+# ``test_aliases_do_not_collide_with_canonical`` — both pass trivially on
+# the empty dict and immediately gain coverage when a new alias lands.
 
 
 # ===========================================================================

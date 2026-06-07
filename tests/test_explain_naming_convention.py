@@ -137,14 +137,14 @@ class TestExplainPrefixDiscipline:
     KNOWN_PREFIXES = frozenset({
         # v0.7.0 baseline (30)
         "ssh", "clamav", "samba", "file_perms", "updates", "hardening",
-        "kernel_modules", "rules", "ipv6", "password_policy",
-        "user_accounts", "cron_audit", "services_state", "disk", "memory",
+        "kernel_modules", "firewall_rules", "ipv6", "password_policy",
+        "user_accounts", "cron", "services_health", "disk", "memory",
         "auditd", "secure_boot", "file_integrity", "virt", "auth_log",
         "umask", "prerequisites", "firewall", "ssl_certs",
-        "systemd_timers", "firmware", "docker_audit", "kernel_hardening",
+        "systemd_timers", "firmware", "docker_hardening", "kernel_hardening",
         "suid_audit", "risk",
         # v0.8.0 drift batch additions (15)
-        "iptables_nft", "mac_policy", "firewall_stack", "docker",
+        "firewall_iptables", "mac_policy", "firewall_drivers", "docker",
         "services", "rootkit", "ports", "ntp", "fail2ban", "ddns",
         "log_rotation", "logs", "smtp", "backup", "network_context",
     })

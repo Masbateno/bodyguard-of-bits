@@ -122,8 +122,8 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
     # Rules in INPUT that are not jumping to a ufw-* chain bypass UFW entirely.
     for rule in snapshot.input_raw_accepts:
         result.warn_with_deduction(
-            key="firewall_stack.iptables_bypass",
-            message=_t("firewall_stack.iptables_bypass", rule=rule),
+            key="firewall_drivers.iptables_bypass",
+            message=_t("firewall_drivers.iptables_bypass", rule=rule),
             points=2,
             nature="action",
         )
@@ -135,14 +135,14 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
     if snapshot.forward_raw_accepts:
         if snapshot.docker_present or snapshot.wireguard_present or snapshot.libvirt_present:
             result.info(
-                message=_t("firewall_stack.forward_routing_ok"),
-                key="firewall_stack.forward_routing_ok",
+                message=_t("firewall_drivers.forward_routing_ok"),
+                key="firewall_drivers.forward_routing_ok",
             )
         else:
             for rule in snapshot.forward_raw_accepts:
                 result.warn_with_deduction(
-                    key="firewall_stack.iptables_forward_bypass",
-                    message=_t("firewall_stack.iptables_forward_bypass", rule=rule),
+                    key="firewall_drivers.iptables_forward_bypass",
+                    message=_t("firewall_drivers.iptables_forward_bypass", rule=rule),
                     points=1,
                     nature="action",
                 )
@@ -151,8 +151,8 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
     # --- nftables parallel to UFW ---
     if snapshot.nftables_active:
         result.warn_with_deduction(
-            key="firewall_stack.nftables_parallel",
-            message=_t("firewall_stack.nftables_parallel"),
+            key="firewall_drivers.nftables_parallel",
+            message=_t("firewall_drivers.nftables_parallel"),
             points=1,
             nature="action",
         )
@@ -161,11 +161,11 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
     # --- IP forwarding ---
     if snapshot.ip_forward:
         if snapshot.docker_present or snapshot.wireguard_present or snapshot.libvirt_present:
-            result.ok(message=_t("firewall_stack.ip_forward_ok"), key="firewall_stack.ip_forward_ok")
+            result.ok(message=_t("firewall_drivers.ip_forward_ok"), key="firewall_drivers.ip_forward_ok")
         else:
             result.warn_with_deduction(
-                key="firewall_stack.ip_forward_enabled",
-                message=_t("firewall_stack.ip_forward_enabled"),
+                key="firewall_drivers.ip_forward_enabled",
+                message=_t("firewall_drivers.ip_forward_enabled"),
                 points=1,
                 cmd="sudo sysctl -w net.ipv4.ip_forward=0 && echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf",
                 nature="improvement",
@@ -173,7 +173,7 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
             found_issue = True
 
     if not found_issue and not snapshot.forward_raw_accepts:
-        result.ok(message=_t("firewall_stack.no_issues"), key="firewall_stack.no_issues")
+        result.ok(message=_t("firewall_drivers.no_issues"), key="firewall_drivers.no_issues")
 
     return result
 

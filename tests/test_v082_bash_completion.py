@@ -111,7 +111,7 @@ class TestLongOptsPresence:
 
     @pytest.mark.parametrize("opt", [
         "--unignore=",        # v0.8.1 T57
-        "--json-v1",          # v0.7.0 Phase 2
+        # v0.9.0 F-3: --json-v1 retired with the v0.6.x legacy schema.
         "--check=",
         "--skip=",
         "--ignore=",
@@ -140,7 +140,7 @@ class TestCheckCompletion:
         assert "ssh" in result
         assert "auditd" in result
         # Always-on sections must NOT appear in filterable --check
-        assert "firewall_stack" not in result
+        assert "firewall_drivers" not in result
         assert "ports" not in result
 
     def test_check_equals_prefix_narrows_to_ssh(self):

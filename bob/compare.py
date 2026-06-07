@@ -78,6 +78,7 @@ class AuditBaseline:
     active_services: list[str]       = field(default_factory=list)
     finding_keys:    list[str] | None = None  # None = pre-v1.22 baseline (key absent)
     deduction_total: int | None = None        # None = pre-v0.2.3 baseline (field absent)
+    hostname:        str | None = None        # v0.9.0 F-2 — None = pre-v0.9.0 baseline
 
 
 @dataclass
@@ -159,6 +160,15 @@ def build_baseline(
     })
     deduction_total = sum(d.points for d in engine.breakdown)
 
+    # v0.9.0 F-2: capture hostname so cross-machine ``--diff PATH`` can
+    # surface a friendly ``baseline from <host>`` line. ``socket.gethostname``
+    # never raises and is consistent with what the report headers use.
+    import socket
+    try:
+        _host = socket.gethostname()
+    except OSError:
+        _host = ""
+
     return AuditBaseline(
         timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         score=engine.score,
@@ -169,6 +179,7 @@ def build_baseline(
         active_services=active_services,
         finding_keys=finding_keys,
         deduction_total=deduction_total,
+        hostname=_host or None,
     )
 
 
@@ -192,16 +203,76 @@ def save_baseline(baseline: AuditBaseline, path: Path | None = None) -> None:
         logger.debug("save_baseline: could not write %s: %s", dest, exc)
 
 
-def load_baseline(path: Path | None = None) -> AuditBaseline | None:
+class BaselineLoadError(ValueError):
+    """v0.9.0 F-2 — raised when an explicit baseline path cannot be loaded.
+
+    Distinguishes "explicit ``--diff PATH`` failed" (loud, user typed a path
+    so they expect a result) from "default baseline missing" (silent — the
+    auto-managed file may simply not exist yet on a first run).
     """
-    Load the previous baseline from disk.
+
+
+def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBaseline | None:
+    """
+    Load a baseline from disk.
+
+    Args:
+        path: explicit baseline file path. ``None`` (default) loads the
+            auto-managed ``~/.config/bob/last_baseline.json`` — the
+            behaviour established in v0.3.0 and used by the bare ``--diff``
+            flag in v0.8.x.
+        strict: when True, errors (missing file, invalid JSON, schema
+            mismatch) raise ``BaselineLoadError`` instead of returning None.
+            v0.9.0 F-2 wires this to True when the caller passed an
+            explicit ``--diff PATH`` so the user gets actionable feedback
+            instead of silent ``"No previous baseline yet"`` messaging.
 
     Returns:
-        AuditBaseline if the file exists and is valid, None otherwise.
+        AuditBaseline if the file exists and is valid, None otherwise
+        (when ``strict=False``).
+
+    Raises:
+        BaselineLoadError: when ``strict=True`` and the file cannot be
+            loaded or carries the v0.6.x ``schema_version="1"`` (retired
+            in v0.9.0 F-3).
     """
     src = path or (_CONFIG_DIR / _BASELINE_FILENAME)
     try:
         raw = json.loads(src.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        if strict:
+            raise BaselineLoadError(
+                f"Baseline file not found: {src} — check the path and "
+                f"that the file exists on this machine."
+            ) from exc
+        logger.debug("load_baseline: %s does not exist", src)
+        return None
+    except (OSError, ValueError) as exc:
+        if strict:
+            raise BaselineLoadError(
+                f"Baseline file {src} could not be read or parsed as "
+                f"JSON: {exc}"
+            ) from exc
+        logger.debug("load_baseline: could not read %s: %s", src, exc)
+        return None
+
+    # v0.9.0 F-2: reject the legacy v0.6.x schema explicitly. Pre-v0.9.0
+    # baselines emitted by `--json-v1` (retired in v0.9.0 F-3) carried
+    # ``schema_version="1"``; the v2 layout has no such field. We check
+    # for the marker only when present to avoid false positives.
+    schema_version = raw.get("schema_version") if isinstance(raw, dict) else None
+    if schema_version == "1":
+        msg = (
+            f"Baseline file {src} carries the legacy v0.6.x schema "
+            f"(schema_version=\"1\") which was retired in v0.9.0 F-3. "
+            f"Re-generate the baseline on a v0.9.0+ host."
+        )
+        if strict:
+            raise BaselineLoadError(msg)
+        logger.warning("load_baseline: %s", msg)
+        return None
+
+    try:
         return AuditBaseline(
             timestamp=str(raw.get("timestamp", "")),
             score=int(raw.get("score", 0)),
@@ -212,9 +283,14 @@ def load_baseline(path: Path | None = None) -> AuditBaseline | None:
             active_services=list(raw.get("active_services", [])),
             finding_keys=list(raw["finding_keys"]) if isinstance(raw.get("finding_keys"), list) else None,
             deduction_total=int(raw["deduction_total"]) if isinstance(raw.get("deduction_total"), int) else None,
+            hostname=(str(raw["hostname"]) if isinstance(raw.get("hostname"), str) and raw["hostname"] else None),
         )
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        logger.debug("load_baseline: could not read %s: %s", src, exc)
+    except (KeyError, TypeError, AttributeError, ValueError) as exc:
+        if strict:
+            raise BaselineLoadError(
+                f"Baseline file {src} has unexpected shape: {exc}"
+            ) from exc
+        logger.debug("load_baseline: could not unpack %s: %s", src, exc)
         return None
 
 

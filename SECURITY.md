@@ -227,10 +227,10 @@ If you are running BOB unconfined under `sudo`, **you must code-review
 your plugins before installing them**. The sandbox raises the bar
 against accidents and naïve attacks; it does not replace trust.
 
-`BOB_SANDBOX_LEGACY=1` opts out of the sandbox entirely and runs the
-plugin in the parent process — surfaces a CRITICAL log entry + flashy
-stderr WARNING on every run. Deprecated immediately; will be removed
-in v0.8.0.
+~~`BOB_SANDBOX_LEGACY=1`~~ (retired in v0.9.0 TD-1) used to opt out of
+the sandbox entirely and run the plugin in the parent process — surfaced
+a CRITICAL log entry + flashy stderr WARNING on every run. The env var
+is now ignored; plugins always execute in the spawn'd sandbox child.
 
 ## Environment variables
 
@@ -241,7 +241,7 @@ required for normal operation.
 |---|---|---|
 | `BOB_SHARE` | unset | Override the auto-detected package data dir (`bob/data/`). Used by distro packagers when the data files ship outside the Python package tree. |
 | `BOB_WEBHOOK_ALLOW_INSECURE=1` | unset | Allow `http://` webhook URLs (default rejects them). The audit payload leaks hostname + public IP + score + alerts in plaintext — only use on a trusted private network or for local lab testing. |
-| `BOB_SANDBOX_LEGACY=1` | unset | Run plugins in the parent process instead of the spawn'd sandbox child. **Deprecated**, will be removed in v0.8.0. Loud STDERR + CRITICAL log warning on every run. |
+| ~~`BOB_SANDBOX_LEGACY=1`~~ | retired in v0.9.0 (TD-1) | Pre-v0.9.0, ran plugins in the parent process instead of the spawn'd sandbox child. Removed; the env var is now ignored. Plugins always execute in the spawn'd sandbox child. |
 | `BOB_DEBUG=1` | unset | Print the full Python traceback on `EXIT_ERROR=3` exits. Without it, errors print a one-line summary + the hint to set this variable. Useful for diagnosing crashes; never required in production. |
 
 ## Network surface
