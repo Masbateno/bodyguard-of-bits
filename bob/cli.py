@@ -279,8 +279,18 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             # update the consumer to read the v2 layout — see
             # ``DOCUMENTS/CHANGELOG_FULL.md`` v0.9.0 entry for the
             # field-by-field mapping.
-            from bob import i18n
-            raise CLIError(i18n.t("cli.error.json_v1_retired"))
+            #
+            # v0.9.1 fix: parse_args runs BEFORE i18n.init(), so calling
+            # i18n.t() here surfaces a bracketed-fallback to the user
+            # (``Error: [cli.error.json_v1_retired]``) instead of the
+            # actual message. Hardcoded English matches the other
+            # CLIError raises in this file.
+            raise CLIError(
+                "--json-v1 was retired in v0.9.0. Schema v2 is the only "
+                "supported format (v2 has been the default since v0.7.0). "
+                "See CHANGELOG.md v0.9.0 entry for the field-by-field "
+                "migration table from v0.6.x v1 to v2."
+            )
 
         elif arg == "--french":
             config.lang = "fr"

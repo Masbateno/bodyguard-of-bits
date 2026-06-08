@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.9.0
+Version:        0.9.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,23 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Jun 08 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.9.1-1
+- Hotfix v0.9.0 F-3 message UX regression. The --json-v1 retrait error
+  path called i18n.t() from inside parse_args(), but parse_args runs
+  BEFORE i18n.init(), so the user saw the bracketed-fallback
+  "Error: [cli.error.json_v1_retired]" instead of the actionable
+  message. Reproduced cross-distro on Mint desktop / Debian / Kali /
+  Mint server (FR) / Ubuntu (FR) during the v0.9.0 field test campaign.
+- Fix: inline a plain English string in the CLIError raise. Matches
+  the convention used by every other CLIError in bob/cli.py. Removes
+  the unused locale keys cli.error.json_v1_retired (EN + FR).
+- Regression guards in tests/test_v091_cli_i18n_safety.py: AST scan
+  blocks i18n.t() inside parse_args(), direct guard pins actionable
+  message content.
+- Tests 6210 → 6212 (+2 guards). 0 regression.
+- v0.9.0 NOT yanked — F-3 only affects --json-v1 users (legacy v0.6.x
+  JSON consumers); the golden audit path is unaffected.
+
 * Sun Jun 07 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.9.0-1
 - First v0.9.x release — BREAKING bundle that closes the v0.7.0 → v0.8.x
   deferred architectural cleanup.

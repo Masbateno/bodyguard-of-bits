@@ -6,6 +6,110 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.9.1] — 08-06-2026
+
+**Hotfix de la régression UX message F-3 v0.9.0** surfacée par la campagne field test cross-distro.
+
+### Le bug — reproduit 5/5 distros × 2 locales
+
+Le ship F-3 v0.9.0 (retrait --json-v1) a ajouté ce raise à l'intérieur de `parse_args()` :
+
+```python
+elif arg == "--json-v1":
+    from bob import i18n
+    raise CLIError(i18n.t("cli.error.json_v1_retired"))
+```
+
+Mais `parse_args` tourne AVANT que `i18n.init()` soit appelée dans [bob/__main__.py](../bob/__main__.py) (l'init se passe après que les args CLI ont été parsés parce que la langue peut être contrôlée par `--lang=` / `--french`). Donc le lookup `i18n.t()` hit pré-init et surface le bracketed-fallback au user :
+
+```
+$ bob --json-v1
+i18n.t() called before i18n.init() — returning key 'cli.error.json_v1_retired'
+Error: [cli.error.json_v1_retired]
+```
+
+Au lieu du message actionnable que l'opérateur a besoin de savoir quoi faire.
+
+**Reproduction field test** : la campagne cross-distro v0.9.0 a fait tourner le bug sur cinq distributions (Linux Mint 22.3 desktop, Debian 13 server, Kali Rolling, Linux Mint 22.3 server locale FR, Ubuntu 26.04 LTS locale FR). Le bracketed-fallback fire déterministiquement 5/5 distros × 2 locales (EN + FR) parce que c'est le lookup lui-même qui fail avant qu'une traduction puisse se produire — la locale est non pertinente.
+
+### Le fix
+
+Inline un string EN dans le raise `CLIError` :
+
+```python
+elif arg == "--json-v1":
+    raise CLIError(
+        "--json-v1 was retired in v0.9.0. Schema v2 is the only "
+        "supported format (v2 has been the default since v0.7.0). "
+        "See CHANGELOG.md v0.9.0 entry for the field-by-field "
+        "migration table from v0.6.x v1 to v2."
+    )
+```
+
+Cela match la convention utilisée par **chaque autre** raise `CLIError` dans [bob/cli.py](../bob/cli.py) — le fichier a 18 autres raises CLIError et toutes utilisent des littéraux anglais (`"--watch=N requires an integer ≥ 10"`, `"--diff specified more than once"`, `"-l/--log-days requires an integer ≥ 1"`, …). Le ship F-3 v0.9.0 était le seul consumer `i18n.t()` à l'intérieur de `parse_args` et était incohérent avec le pattern établi. Le fix restaure la cohérence.
+
+Les clés locale désormais inutilisées `cli.error.json_v1_retired` (EN + FR) sont retirées de [bob/locales/{en,fr}.json](../bob/locales/en.json) puisqu'aucun call site ne les référence plus.
+
+### Guards de régression
+
+[tests/test_v091_cli_i18n_safety.py](../tests/test_v091_cli_i18n_safety.py) — 2 nouveaux tests :
+
+- **`test_parse_args_does_not_call_i18n_t`** — AST scan sur le body de la fonction `parse_args()`. Walk chaque node en cherchant les nodes `Call` où la fonction est `i18n.t` (`Attribute(value=Name(id='i18n'), attr='t')`). Le test fail quand N'IMPORTE QUEL appel de ce type existe à l'intérieur de `parse_args`. Un futur contributeur qui ajoute un autre appel `i18n.t()` dans ce scope fait échouer le test avant que le message d'erreur user-facing ne dégrade. Le message de test pointe aussi vers l'alternative recommandée (`bob._i18n_safe.t_or_hardcoded(key, fallback)`) qui fallback vers la baseline EN quand i18n n'est pas initialisée.
+- **`test_json_v1_retired_emits_actionable_message`** — guard direct qui appelle `parse_args(["--json-v1"])`, catche le `CLIError`, et asserte :
+  * Le message ne match PAS le pattern bracketed-fallback (`startswith("[")` + `endswith("]")`)
+  * Le message contient `"v0.9.0"` (pour que les users voient la fenêtre de retrait)
+  * Le message contient `"json-v1"` ou `"schema"` (pour que les users voient le flag retiré ou son remplacement)
+
+Les deux guards tournent en <1 ms — cheap à garder à HEAD pour toujours.
+
+### Pourquoi c'est une v0.9.1 et pas une v0.10.0
+
+Strictement parlant c'est un bug de code-correctness, pas un feature change. Le fix est un remplacement string inline de 6 lignes plus un guard de régression de 2 tests. Le bump de release surface (pyproject + manpage + CHANGELOG × 4 + memory) est le bulk du patch. v0.9.1 est le bon minor-bump parce que :
+
+- Le behaviour user-visible change pour le même input (`bob --json-v1` montre maintenant du texte actionnable)
+- Les clés locale `cli.error.json_v1_retired` sont retirées (un changement de wire surface contract pour quiconque scrape les fichiers locale programmatically, however unlikely)
+- Le ship rapide du fix débloque les opérateurs qui hit le message F-3 pendant la migration
+
+### v0.9.0 n'est PAS yanké
+
+Le bug F-3 n'affecte que les users qui passent explicitement le flag retiré `--json-v1` (consumers JSON legacy v0.6.x). Le chemin audit golden (`sudo bob`, tous formats v2 / CSV / markdown / HTML, `--diff`, `--explain`, …) n'est pas affecté. Les users sur v0.9.0 qui rencontrent le bracketed-fallback peuvent soit upgrade vers v0.9.1 soit arrêter d'utiliser `--json-v1` (le flag est retiré de toute façon, donc l'action corrective est la même).
+
+La procédure yank v0.8.2 ([[project_pypi_yank_procedure]]) est documentée et prête si un futur hotfix justifie réellement un yank — F-3 ne le justifie pas.
+
+### Autres gaps i18n observés pendant la campagne field test (non fixés en v0.9.1)
+
+Le field test a surfacé deux gaps i18n mineurs qui ne sont **PAS** fixés dans ce hotfix :
+
+1. **Messages `BaselineLoadError` hardcoded anglais** ([bob/compare.py](../bob/compare.py)). Même sur systèmes FR, `sudo bob --diff=/tmp/nonexistent.json` montre `Erreur : Baseline file not found: ...` (le prefix "Erreur :" est FR via la clé locale `cli.error.prefix`, mais le body du message lui-même est anglais). Contrairement à F-3, ce raise se passe APRÈS que `i18n.init()` tourne (c'est dans le chemin audit, pas parse_args), donc il POURRAIT être proprement i18n'd. **Déféré à v0.10.0+** — actionable, lisible, zéro signal user.
+
+2. **Bruit diff baseline cross-version sur les finding keys renommées D-1**. Observé sur Ubuntu 26.04 pendant le field test : un baseline écrit par v0.7.0 avait `iptables_nft.input_accept` / `iptables_nft.forward_accept`, et l'audit v0.9.0 émet `firewall_iptables.input_accept` / `firewall_iptables.forward_accept` (renommés en D-1). Le diff montre les 2 mêmes problèmes physiques sous-jacents comme *résolus* (vieille clé) ET *nouveaux* (nouvelle clé). C'est un comportement attendu documenté per le CHANGELOG v0.9.0 ("les entries ignore.yml référençant des finding keys renommées doivent être migrées à la main"), self-heal au 2ème audit post-upgrade, et a actuellement zéro signal user. **Déféré à v0.10.0+** — pourrait être résolu avec un baseline migration shim qui utilise `_RENAMED_SECTIONS_V090` comme reverse map au load time. À revisiter quand un user signale.
+
+### Numbers
+
+- **Tests 6210 → 6212** (+2 guards). 0 régression.
+- 1 fichier code production modifié ([bob/cli.py](../bob/cli.py)) — 5 lignes changées.
+- 2 fichiers locale modifiés ([bob/locales/{en,fr}.json](../bob/locales/en.json)) — 1 clé retirée chacun.
+- 1 nouveau fichier test ([tests/test_v091_cli_i18n_safety.py](../tests/test_v091_cli_i18n_safety.py)).
+- Toute la release surface (pyproject / manpages / shields / debian / rpm / CHANGELOG × 4 / TESTING / README_TECH × 2) bumpée.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
+**v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Leçons
+
+- **Les tests unitaires mock-heavy ratent les bugs i18n pré-init**. Les tests F-3 v0.9.0 assertaient que la clé locale existait (`test_v082_items.py`) mais n'exerçaient jamais l'invocation CLI end-to-end. La campagne field test l'a chopé au premier run user-facing. Leçon : les appels `i18n.t()` pré-init ont besoin d'un guard statique explicite (AST scan), pas une assertion runtime qui dépend de l'ordre d'init.
+- **Field test cross-distro = stress test cheap des assumptions locale**. La matrice 5-distros × 2-locales a surfacé ce bug déterministiquement — même root cause indépendamment de distro / locale. Cinq hosts suffisent ; le bug est dans le code path, pas l'environnement.
+- **L'anglais hardcoded dans CLIError est une convention projet, pas une dette technique**. `bob/cli.py` a 19 raises `CLIError` ; 18 utilisent des littéraux anglais on purpose parce que la couche parsing est locale-init-naive by design. Le ship F-3 v0.9.0 était la seule exception qui cassait le pattern. Restaurer le pattern est le fix correct le plus simple.
+- **Documenter les items "non fixés" dans le changelog**. Le gap BaselineLoadError EN et le diff noise cross-version sont des UX warts CONNUS surfacés par le field test. Les lister dans le changelog v0.9.1 évite le piège de "on a shippé un hotfix mais on n'a pas dit ce qu'on n'a délibérément pas fixé" — future-toi lit l'entry et sait ce qui reste sur la liste déférée.
+
+---
+
 ## [v0.9.0] — 07-06-2026
 
 **Première release v0.9.x — bundle BREAKING qui ferme le cleanup architectural déféré v0.7.0 → v0.8.x.**

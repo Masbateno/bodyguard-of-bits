@@ -766,8 +766,7 @@
       "fatal_prefix": "Erreur fatale : ",
       "webhook_failed_prefix": "Avertissement : échec du webhook : ",
       "warning_prefix": "Avertissement : ",
-      "bob_debug_hint": "  Définissez BOB_DEBUG=1 pour la trace complète.",
-      "json_v1_retired": "--json-v1 a été retiré en v0.9.0. Le schéma v2 est le seul format supporté (v2 est le défaut depuis v0.7.0). Voir CHANGELOG_FR.md v0.9.0 pour la table de migration field-par-field de v0.6.x v1 vers v2."
+      "bob_debug_hint": "  Définissez BOB_DEBUG=1 pour la trace complète."
     },
     "runner": {
       "check_no_match": "--check {tok} ne correspond à aucune section connue — {suggestion}",

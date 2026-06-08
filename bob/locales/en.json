@@ -766,8 +766,7 @@
       "fatal_prefix": "Fatal error: ",
       "webhook_failed_prefix": "Warning: webhook failed: ",
       "warning_prefix": "Warning: ",
-      "bob_debug_hint": "  Set BOB_DEBUG=1 for full traceback.",
-      "json_v1_retired": "--json-v1 was retired in v0.9.0. Schema v2 is the only supported format (v2 has been the default since v0.7.0). See CHANGELOG.md v0.9.0 for the field-by-field migration table from v0.6.x v1 to v2."
+      "bob_debug_hint": "  Set BOB_DEBUG=1 for full traceback."
     },
     "runner": {
       "check_no_match": "--check {tok} matches no known section — {suggestion}",

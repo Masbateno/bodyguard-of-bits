@@ -1,3 +1,43 @@
+bodyguard-of-bits (0.9.1-1) UNRELEASED; urgency=medium
+
+  * Hotfix for the v0.9.0 F-3 message UX regression: the ``--json-v1``
+    retrait error path called ``i18n.t("cli.error.json_v1_retired")``
+    from inside ``parse_args()``. But ``parse_args`` runs BEFORE
+    ``i18n.init()`` in ``bob/__main__.py``, so the lookup hit
+    ``i18n.t()`` pre-init and surfaced the bracketed-fallback
+    ``[cli.error.json_v1_retired]`` to the user instead of the real
+    actionable message. Reproduced cross-distro on Mint desktop /
+    Debian / Kali / Mint server (FR) / Ubuntu (FR) during the v0.9.0
+    field test campaign.
+  * Fix: inline a plain English string in the ``CLIError`` raise so
+    the message surfaces independently of i18n init state. Matches
+    the convention used by every other ``CLIError`` raise in
+    ``bob/cli.py``. The user sees:
+      "--json-v1 was retired in v0.9.0. Schema v2 is the only
+       supported format (v2 has been the default since v0.7.0). See
+       CHANGELOG.md v0.9.0 entry for the field-by-field migration
+       table from v0.6.x v1 to v2."
+  * The now-unused locale keys ``cli.error.json_v1_retired`` (EN + FR)
+    are removed.
+  * Regression guards in ``tests/test_v091_cli_i18n_safety.py``:
+    - ``test_parse_args_does_not_call_i18n_t``: AST scan over
+      ``parse_args()`` body; fails when any ``i18n.t(...)`` call lives
+      inside the function. Prevents the bug class from recurring.
+    - ``test_json_v1_retired_emits_actionable_message``: direct guard
+      that asserts the raised message contains "v0.9.0" and one of
+      "json-v1" / "schema", and is NOT a bracketed-fallback.
+  * Tests 6210 → 6212 (+2 guards). 0 regression.
+  * No other code changes — F-2 ``BaselineLoadError`` messages and
+    other ``CLIError`` raises were already English-hardcoded by
+    project convention, and the field test surfaced no other issue.
+  * v0.9.0 is NOT yanked from PyPI — the F-3 bug only affects users
+    who explicitly pass the retired ``--json-v1`` flag (legacy v0.6.x
+    JSON consumers); the golden audit path is unaffected. Users on
+    v0.9.0 hitting the bracketed-fallback can either upgrade to v0.9.1
+    or stop using ``--json-v1`` (the flag is retired either way).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 08 Jun 2026 12:00:00 +0200
+
 bodyguard-of-bits (0.9.0-1) UNRELEASED; urgency=medium
 
   * First v0.9.x release — BREAKING bundle that closes the v0.7.0 → v0.8.x
