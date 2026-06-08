@@ -159,15 +159,13 @@ _ALWAYS_ON_SECTIONS:  tuple[str, ...] = tuple(s.name for s in _SECTIONS if s.alw
 # only by ``validate_check_filters``; ``_section_enabled`` works exclusively
 # against ``_ALL_SECTIONS`` + ``_ALWAYS_ON_SECTIONS`` so the legacy names
 # cannot accidentally re-enable a section.
-_RENAMED_SECTIONS_V090: dict[str, str] = {
-    "cron_audit":      "cron",
-    "docker_audit":    "docker_hardening",
-    "services_state":  "services_health",
-    "ports_analysis":  "ports",
-    "rules":           "firewall_rules",
-    "iptables_nft":    "firewall_iptables",
-    "firewall_stack":  "firewall_drivers",
-}
+#
+# v0.9.2: extracted to ``bob/_v090_renames.py`` so ``bob.compare`` can also
+# consume it for the baseline migration shim without forming a circular
+# import (runner already imports from compare). Imported here under the
+# legacy name ``_RENAMED_SECTIONS_V090`` for back-compat with any out-of-tree
+# script that happened to reference it.
+from bob._v090_renames import SECTION_RENAMES_V090 as _RENAMED_SECTIONS_V090
 
 
 def _section_enabled(section: str, config: "AuditConfig", profile: "AuditProfile | None") -> bool:

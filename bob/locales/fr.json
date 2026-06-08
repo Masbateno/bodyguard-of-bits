@@ -730,7 +730,13 @@
     "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
     "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)",
     "no_baseline_yet": "Aucune baseline précédente trouvée — exécutez d'abord un audit complet pour établir une baseline.",
-    "cross_machine_notice": "ℹ Baseline enregistré sur « {baseline_host} » ; comparaison vs hôte courant « {current_host} » (diff cross-machine)."
+    "cross_machine_notice": "ℹ Baseline enregistré sur « {baseline_host} » ; comparaison vs hôte courant « {current_host} » (diff cross-machine).",
+    "baseline_load": {
+      "not_found": "Baseline introuvable : {path} — vérifie le chemin et que le fichier existe sur cette machine.",
+      "invalid_json": "Le fichier baseline {path} n'a pas pu être lu ou parsé comme JSON : {error}",
+      "v1_schema": "Le fichier baseline {path} porte le schéma legacy v0.6.x (schema_version=\"1\") qui a été retiré en v0.9.0 F-3. Régénère le baseline sur un host v0.9.0+.",
+      "bad_shape": "Le fichier baseline {path} a une forme inattendue : {error}"
+    }
   },
   "cli": {
     "list": {

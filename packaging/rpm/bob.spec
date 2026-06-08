@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.9.1
+Version:        0.9.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,26 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Jun 08 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.9.2-1
+- Closes the two i18n / UX gaps documented in the v0.9.1 CHANGELOG as
+  "deferred to v0.10.0+", both surfaced by the v0.9.0 cross-distro
+  field test campaign.
+- BaselineLoadError i18n: 4 new locale keys
+  compare.baseline_load.{not_found, invalid_json, v1_schema, bad_shape}
+  wired via bob._i18n_safe.t_or_hardcoded. FR systems now see the
+  message body translated (only the "Erreur :" prefix was FR pre-v0.9.2).
+- Cross-version baseline migration shim:
+  bob._v090_renames.remap_finding_key remaps legacy section prefixes
+  (iptables_nft.*, cron_audit.*, docker_audit.*, services_state.*,
+  rules.*, firewall_stack.*, ports_analysis.*) to their canonical D-1
+  counterparts at baseline load time. Kills the "same issue surfaces
+  as resolved + new" diff noise on the first audit post-upgrade.
+- Shared map extraction: SECTION_RENAMES_V090 extracted to
+  bob/_v090_renames.py so bob/compare.py can consume it without a
+  circular import. bob/runner.py keeps the legacy name as a back-compat
+  re-export.
+- Tests 6212 → 6242 (+30). 0 regression.
+
 * Mon Jun 08 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.9.1-1
 - Hotfix v0.9.0 F-3 message UX regression. The --json-v1 retrait error
   path called i18n.t() from inside parse_args(), but parse_args runs

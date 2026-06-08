@@ -6,6 +6,126 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.9.2] — 08-06-2026
+
+**Ferme les deux gaps i18n / UX documentés dans le CHANGELOG v0.9.1 comme "déférés à v0.10.0+"** — tous deux surfacés par la campagne field test cross-distro v0.9.0. Les deux sont purement additifs (pas de changement BREAKING wire-format, pas de risque pour le chemin audit golden), donc ils fit naturellement comme un patch v0.9.x plutôt que d'attendre v0.10.0.
+
+### BaselineLoadError i18n
+
+Pre-v0.9.2, les quatre sites raise `BaselineLoadError` dans [bob/compare.py](../bob/compare.py) utilisaient des messages anglais hardcoded même sur systèmes FR. Seul le prefix "Erreur :" était localisé (via la clé locale `cli.error.prefix` dans le path d'affichage erreur [bob/__main__.py](../bob/__main__.py)), le body du message lui-même restait anglais.
+
+Contrairement au problème F-3 v0.9.0 (qui firait avant `i18n.init()`), ces raises se passent APRÈS `i18n.init()` (load_baseline est invoqué depuis le chemin audit, pas depuis `parse_args`), donc les messages PEUVENT être proprement i18n'd via le helper `bob._i18n_safe.t_or_hardcoded`.
+
+Quatre nouvelles clés locale landent sous `compare.baseline_load.*` (EN + FR) :
+
+| Clé                                  | Baseline EN                                                                                                                                                  | Localisation FR                                                                                                                                                |
+|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `not_found`                           | `Baseline file not found: {path} — check the path and that the file exists on this machine.`                                                                  | `Baseline introuvable : {path} — vérifie le chemin et que le fichier existe sur cette machine.`                                                                  |
+| `invalid_json`                        | `Baseline file {path} could not be read or parsed as JSON: {error}`                                                                                           | `Le fichier baseline {path} n'a pas pu être lu ou parsé comme JSON : {error}`                                                                                    |
+| `v1_schema`                           | `Baseline file {path} carries the legacy v0.6.x schema (schema_version="1") which was retired in v0.9.0 F-3. Re-generate the baseline on a v0.9.0+ host.`     | `Le fichier baseline {path} porte le schéma legacy v0.6.x (schema_version="1") qui a été retiré en v0.9.0 F-3. Régénère le baseline sur un host v0.9.0+.`        |
+| `bad_shape`                           | `Baseline file {path} has unexpected shape: {error}`                                                                                                           | `Le fichier baseline {path} a une forme inattendue : {error}`                                                                                                    |
+
+Le helper `t_or_hardcoded` fallback vers la baseline EN au module-level quand i18n n'est pas initialisée — même pattern que la consolidation `bob/_i18n_safe.py` v0.8.2.
+
+Post-v0.9.2 le système FR montre :
+
+```
+Erreur : Baseline introuvable : /tmp/X — vérifie le chemin et que le fichier existe sur cette machine.
+```
+
+### Migration shim baseline cross-version
+
+Pre-v0.9.2, un baseline écrit par v0.7.x / v0.8.x portait des finding keys avec des prefixes renommés en v0.9.0 D-1 :
+
+```
+iptables_nft.input_accept
+iptables_nft.forward_accept
+cron_audit.pipe_to_shell
+...
+```
+
+L'audit v0.9.0+ émet les prefixes canoniques (`firewall_iptables.input_accept`, `cron.pipe_to_shell`, …), donc `compute_delta` voyait le même problème physique comme *résolu* (vieille clé dans `prev.finding_keys`) ET *nouveau* (clé canonique dans `curr.finding_keys`). Le field test Ubuntu 26.04 a surfacé le bug déterministiquement :
+
+```
+✔ [OK] Résolu : iptables_nft.input_accept
+⚠ [ATTENTION] Nouveau finding : firewall_iptables.input_accept
+```
+
+Deux findings affichés pour le même problème sous-jacent. Documenté dans le CHANGELOG v0.9.0 comme "les entries ignore.yml doivent être migrées à la main" — mais c'était le path diff, pas ignore.yml.
+
+Le fix est un tiny pure transform dans [bob/_v090_renames.py](../bob/_v090_renames.py) :
+
+```python
+def remap_finding_key(key: str) -> str:
+    if "." not in key:
+        return key
+    prefix, _, suffix = key.partition(".")
+    new_prefix = SECTION_RENAMES_V090.get(prefix)
+    if new_prefix is None:
+        return key
+    return f"{new_prefix}.{suffix}"
+```
+
+Wire dans `load_baseline` après le parse JSON raw, avant la construction AuditBaseline.
+
+Couvre les 7 renames D-1. Self-contained :
+
+- Ne modifie PAS le fichier baseline on-disk (le `save_baseline` du prochain audit écrit les noms canoniques — self-healing naturel)
+- N'affecte PAS les baselines déjà écrits par v0.9.0+ (le shim est idempotent sur input canonique ; `remap_finding_key("ssh.password_auth")` retourne `"ssh.password_auth"` inchangé)
+- Ne touche PAS la sémantique `ignore.yml` (requiert toujours une migration manuelle per le contrat v0.9.0)
+
+Post-v0.9.2, le même scénario field test Ubuntu 26.04 surface proprement :
+
+```
+ℹ [INFO] Score inchangé
+✔ [OK] Aucun changement détecté depuis le dernier audit
+```
+
+### Extraction map partagée
+
+Pre-v0.9.2 la map legacy → canonical vivait inline dans [bob/runner.py](../bob/runner.py) comme `_RENAMED_SECTIONS_V090`. L'extraire dans un module dédié [bob/_v090_renames.py](../bob/_v090_renames.py) était nécessaire parce que :
+
+- `bob/compare.py` a besoin de la map pour le migration shim
+- `bob/compare.py` ne peut pas importer depuis `bob/runner.py` (runner importe déjà depuis compare → circulaire)
+- Dupliquer le dict risquerait un drift entre les deux call sites (un contributeur v0.10.0 ajoute une entry à un mais pas à l'autre)
+
+[bob/runner.py](../bob/runner.py) garde le nom legacy `_RENAMED_SECTIONS_V090` comme re-export back-compat pointant vers le dict partagé :
+
+```python
+from bob._v090_renames import SECTION_RENAMES_V090 as _RENAMED_SECTIONS_V090
+```
+
+[tests/test_v092_baseline_i18n_and_shim.py::TestV090RenamesSharedModule::test_runner_legacy_alias_points_at_shared_module](../tests/test_v092_baseline_i18n_and_shim.py) asserte l'identité `is` (même objet) — le drift entre les deux noms devient impossible. `test_seven_entries_match_d1_table` pin le contenu exact de la map contre la table CHANGELOG v0.9.0 documentée.
+
+### Numbers
+
+- **Tests 6212 → 6242** (+30 sur 4 classes) :
+  - `TestV090RenamesSharedModule` (2 tests) : back-compat shared-map + contrat 7-entries
+  - `TestRemapFindingKey` (18 tests) : 8 parametrize legacy → canonical + 6 pass-through canonical + 4 edge cases unaffected (y compris suffix-with-dots)
+  - `TestLoadBaselineMigrationShim` (4 tests) : baselines v0.7.x et v0.8.x remappés, pass-through v0.9.x, guard pre-v1.22 absent-field
+  - `TestBaselineLoadErrorI18n` (6 tests) : rendering FR pour 3 des 4 messages + sanity présence locale-key dans les deux locales
+- 0 régression.
+- Code production : ~50 lignes changées à travers [bob/_v090_renames.py](../bob/_v090_renames.py) (nouveau fichier, 50 lignes), [bob/runner.py](../bob/runner.py) (5 lignes — le dict inline remplacé par l'import), [bob/compare.py](../bob/compare.py) (~20 lignes — 4 sites raise utilisent `t_or_hardcoded` + le remap finding_keys dans la construction AuditBaseline).
+- Locale : 4 nouvelles clés × 2 locales = 8 entries sous `compare.baseline_load.*`.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
+**v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Leçons
+
+- **La liste "déféré à v0.10.0+" est un holding pattern utile, pas un cimetière.** Les deux items avaient été write-off comme future travail v0.10.0 en v0.9.1 ("zéro signal user"), mais l'estimation d'effort s'est révélée petite (~1.5 h total) et la campagne field test avait déjà fait le hard work de documenter les bugs reproductiblement. Ré-évaluer la liste déférée à chaque patch cycle coûte ~5 minutes et surface occasionnellement des wins "en fait on peut le faire maintenant".
+- **L'évitement d'import circulaire via tiny shared modules** est cheap. `bob/_v090_renames.py` est 50 lignes, a zéro dépendance runtime, expose un dict et un helper. L'alias back-compat dans `runner.py` garde n'importe quel script out-of-tree fonctionnel. Pattern réutilisable pour toute future situation "deux consumers, ne peuvent pas s'importer".
+- **Les pure transforms sont plus faciles à tester que les features wired-in**. `remap_finding_key` est une pure function 5-lignes — 18 tests parametrize couvrent chaque classe d'input raisonnable. Le test du baseline shim wired-in est alors un thin integration test au-dessus de la pure transform trusted.
+- **Le release same-day v0.9.1 + v0.9.2 est fine** quand le travail est genuinely petit et indépendant. v0.9.1 a fixé un bug de code-correctness ; v0.9.2 a fermé deux gaps UX. Les combiner aurait muddied le message hotfix v0.9.1 (qui délibérément n'a PAS touché ces items pour que le fix F-3 soit le seul diff à reviewer).
+
+---
+
 ## [v0.9.1] — 08-06-2026
 
 **Hotfix de la régression UX message F-3 v0.9.0** surfacée par la campagne field test cross-distro.

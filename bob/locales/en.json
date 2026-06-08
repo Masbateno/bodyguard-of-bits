@@ -730,7 +730,13 @@
     "variable_deductions_increased": "Variable deductions +{delta} pt(s) (logs, network traffic)",
     "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)",
     "no_baseline_yet": "No previous baseline found — run a full audit first to establish a baseline.",
-    "cross_machine_notice": "ℹ Baseline was recorded on '{baseline_host}'; comparing against current host '{current_host}' (cross-machine diff)."
+    "cross_machine_notice": "ℹ Baseline was recorded on '{baseline_host}'; comparing against current host '{current_host}' (cross-machine diff).",
+    "baseline_load": {
+      "not_found": "Baseline file not found: {path} — check the path and that the file exists on this machine.",
+      "invalid_json": "Baseline file {path} could not be read or parsed as JSON: {error}",
+      "v1_schema": "Baseline file {path} carries the legacy v0.6.x schema (schema_version=\"1\") which was retired in v0.9.0 F-3. Re-generate the baseline on a v0.9.0+ host.",
+      "bad_shape": "Baseline file {path} has unexpected shape: {error}"
+    }
   },
   "cli": {
     "list": {

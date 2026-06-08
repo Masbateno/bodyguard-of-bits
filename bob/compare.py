@@ -236,23 +236,34 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
             loaded or carries the v0.6.x ``schema_version="1"`` (retired
             in v0.9.0 F-3).
     """
+    # v0.9.2: i18n the BaselineLoadError messages. The raise sites run
+    # AFTER ``i18n.init()`` (load_baseline lives in the audit path, not
+    # parse_args), so ``t_or_hardcoded`` resolves to the locale-rendered
+    # message when i18n is initialised and falls back to the English
+    # baseline otherwise. Same pattern as ``bob._i18n_safe`` (v0.8.2).
+    from bob._i18n_safe import t_or_hardcoded
+
     src = path or (_CONFIG_DIR / _BASELINE_FILENAME)
     try:
         raw = json.loads(src.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         if strict:
-            raise BaselineLoadError(
+            msg = t_or_hardcoded(
+                "compare.baseline_load.not_found",
                 f"Baseline file not found: {src} — check the path and "
-                f"that the file exists on this machine."
-            ) from exc
+                f"that the file exists on this machine.",
+            ).format(path=src)
+            raise BaselineLoadError(msg) from exc
         logger.debug("load_baseline: %s does not exist", src)
         return None
     except (OSError, ValueError) as exc:
         if strict:
-            raise BaselineLoadError(
+            msg = t_or_hardcoded(
+                "compare.baseline_load.invalid_json",
                 f"Baseline file {src} could not be read or parsed as "
-                f"JSON: {exc}"
-            ) from exc
+                f"JSON: {exc}",
+            ).format(path=src, error=exc)
+            raise BaselineLoadError(msg) from exc
         logger.debug("load_baseline: could not read %s: %s", src, exc)
         return None
 
@@ -262,17 +273,36 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
     # for the marker only when present to avoid false positives.
     schema_version = raw.get("schema_version") if isinstance(raw, dict) else None
     if schema_version == "1":
-        msg = (
+        msg = t_or_hardcoded(
+            "compare.baseline_load.v1_schema",
             f"Baseline file {src} carries the legacy v0.6.x schema "
             f"(schema_version=\"1\") which was retired in v0.9.0 F-3. "
-            f"Re-generate the baseline on a v0.9.0+ host."
-        )
+            f"Re-generate the baseline on a v0.9.0+ host.",
+        ).format(path=src)
         if strict:
             raise BaselineLoadError(msg)
         logger.warning("load_baseline: %s", msg)
         return None
 
     try:
+        # v0.9.2: cross-version baseline migration shim. When a baseline
+        # written by v0.7.x / v0.8.x carries finding keys with prefixes
+        # renamed in v0.9.0 D-1 (e.g. ``iptables_nft.input_accept``), the
+        # diff against a v0.9.0+ audit (emitting the canonical
+        # ``firewall_iptables.input_accept``) would surface the SAME
+        # physical issue as both resolved (old key) AND new (new key)
+        # — see the v0.9.1 CHANGELOG entry for the field-test repro on
+        # Ubuntu 26.04. The shim remaps each legacy prefix to its
+        # canonical form at load time so the comparison is clean. Keys
+        # already using canonical names (or keys with no rename
+        # mapping) pass through unchanged.
+        from bob._v090_renames import remap_finding_key
+        raw_keys = raw.get("finding_keys")
+        if isinstance(raw_keys, list):
+            finding_keys = [remap_finding_key(str(k)) for k in raw_keys]
+        else:
+            finding_keys = None
+
         return AuditBaseline(
             timestamp=str(raw.get("timestamp", "")),
             score=int(raw.get("score", 0)),
@@ -281,15 +311,17 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
             info_count=int(raw.get("info_count", 0)),
             open_ports=list(raw.get("open_ports", [])),
             active_services=list(raw.get("active_services", [])),
-            finding_keys=list(raw["finding_keys"]) if isinstance(raw.get("finding_keys"), list) else None,
+            finding_keys=finding_keys,
             deduction_total=int(raw["deduction_total"]) if isinstance(raw.get("deduction_total"), int) else None,
             hostname=(str(raw["hostname"]) if isinstance(raw.get("hostname"), str) and raw["hostname"] else None),
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         if strict:
-            raise BaselineLoadError(
-                f"Baseline file {src} has unexpected shape: {exc}"
-            ) from exc
+            msg = t_or_hardcoded(
+                "compare.baseline_load.bad_shape",
+                f"Baseline file {src} has unexpected shape: {exc}",
+            ).format(path=src, error=exc)
+            raise BaselineLoadError(msg) from exc
         logger.debug("load_baseline: could not unpack %s: %s", src, exc)
         return None
 
