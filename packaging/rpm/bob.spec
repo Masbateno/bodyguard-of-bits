@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.9.2
+Version:        0.10.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,24 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Tue Jun 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.10.0-1
+- Preparation release opening the v0.10.x branch. Ships the D-4
+  sub-check migration shim foundation + ScoreEngine ignore.yml
+  back-compat wiring so v0.10.1+ patches can implement the 8 ranked
+  D-4 sub-check splits + the F-1 parallel-check refactor without
+  needing a second BREAKING bump.
+- D-4 migration shim foundation (bob/_v100_subcheck_renames.py):
+  SUBCHECK_RENAMES_V100 + matches_legacy_ignore() + ScoreEngine.apply
+  wiring. Legacy v0.9.x ignore.yml entries continue to suppress
+  findings via fnmatch glob match when v0.10.1+ ships the splits.
+- D-4 splits Rank 1-8 + F-1 Option B parallel-check refactor
+  deferred to v0.10.1+ hardening patches per the two sub-agent audit
+  reports (2026-06-08) with concrete file:line citations and effort
+  estimates.
+- SNAPSHOT.md refresh v0.7.4 -> v0.9.2 + v0.10.0 preparation
+  paragraph (three majeures of drift documented).
+- Tests 6242 -> 6242 (no delta). 0 regression.
+
 * Mon Jun 08 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.9.2-1
 - Closes the two i18n / UX gaps documented in the v0.9.1 CHANGELOG as
   "deferred to v0.10.0+", both surfaced by the v0.9.0 cross-distro

@@ -6,6 +6,137 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.10.0] — 2026-06-09
+
+**First v0.10.x release — preparation release** opening the next BREAKING bundle window. Ships the D-4 sub-check migration shim foundation + ScoreEngine ignore.yml back-compat wiring + SNAPSHOT.md refresh, while intentionally deferring the actual D-4 split implementations and the F-1 parallel-check refactor to v0.10.1+ hardening patches.
+
+### Why a preparation release
+
+Two sub-agent audits were run on 2026-06-08 to scope the v0.10.0 BREAKING bundle work:
+
+1. **D-4 sub-check candidates audit** — walked `bob/checks/*.py` looking for finding keys that lump multiple subcases under a single name. Identified 8 ranked split candidates with effort estimates per split, plus a "do NOT split" list of 5 keys that look like candidates but stay unified. Total D-4 effort estimate: **≈ 20 hours** (wildcard shim contract is the chief novelty vs v0.9.2's simple `str → str` baseline shim).
+
+2. **F-1 parallel-check thread-safety audit** — inventoried shared state in `bob/runner.py::run_checks` (engine, report, output, i18n, GEO cache, network_context, audited_ports cross-check), classified check functions as pure vs side-effecting (~38 of ~38 are pure once their snapshot is collected), identified torn-read risks in apt-related checks (apt-get -s + apt-cache policy take a frontend lock). Recommended **Option B**: Phase 0 sequential firewall/ports/network_context (cross-check deps) + Phase 1 `ThreadPoolExecutor(max_workers=min(8, cpu_count()))` snapshot+check fan-out with apt slot serialization + Phase 2 sequential merge in canonical `_SECTIONS` order. Total F-1 effort estimate: **≈ 6-8 hours** + 4 new determinism test files (`test_v0100_parallel_determinism.py`, `_parallel_flake.py`, `_parallel_json_stable.py`, `_apt_slot.py`).
+
+Combined effort estimate: **≈ 30 hours** for the full v0.10.0 BREAKING bundle (D-4 splits + F-1 + SNAPSHOT refresh + release surface), which exceeded a single ship session. The pragmatic call was to **stage the work**:
+
+  - **v0.10.0 (this release)** — ship the D-4 shim foundation so the eight follow-up patches can land without re-touching the shim file. Ship the SNAPSHOT.md refresh so the project-snapshot doc covers the three majeures of drift the v0.10.x branch sits on top of. Bump the version to mark the v0.10.x branch open.
+  - **v0.10.1+** — implement the 8 D-4 splits one at a time (Rank 1 first as the canonical ssh.x11 server/client example), each with its own locale + EXPLAIN + tests. Implement F-1 Option B in a dedicated patch with the four determinism test files landing alongside the refactor.
+
+This approach mirrors the v0.7.x → v0.8.x cycle where the BREAKING bundle landed as a single ship (v0.8.0 + the v0.8.0 drift batch + v0.7.0-deferred items) and the hardening patches followed (v0.8.1 / v0.8.2 / v0.8.3 / v0.8.4).
+
+### D-4 migration shim foundation
+
+[bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py) — new 90-line module exporting:
+
+```python
+SUBCHECK_RENAMES_V100: dict[str, str] = {
+    "ssh.x11_forwarding":             "ssh.x11.forwarding.*",
+    "ssh.host_key_dsa":               "ssh.dsa.host_key",
+    "ssh.dsa_key":                    "ssh.dsa.private_key",
+    "ssh.authorized_keys_dsa":        "ssh.dsa.authorized_key",
+    "ssh.known_hosts_deprecated":     "ssh.dsa.known_host",
+    "auditd.missing_sensitive_rules": "auditd.missing.*",
+    "samba.guest_writable":           "samba.share.guest_writable.*",
+    "samba.guest_readonly":           "samba.share.guest_readonly.*",
+    "log_rotation.journald_volatile": "log_rotation.journald.*",
+    "firewall_rules.duplicate_found": "firewall_rules.duplicate.*",
+    "kernel_modules.risky_fs":        "kernel_modules.risky.*",
+    "kernel_modules.risky_net":       "kernel_modules.risky.*",
+    "ssh.weak_ciphers":               "ssh.weak.cipher.*",
+    "ssh.weak_macs":                  "ssh.weak.mac.*",
+    "ssh.weak_kex":                   "ssh.weak.kex.*",
+}
+
+def matches_legacy_ignore(finding_key: str, ignore_entry: str) -> bool: ...
+def any_legacy_ignore_matches(finding_key: str, ignore_keys: ...) -> bool: ...
+```
+
+The shape changed vs v0.9.2's `bob/_v090_renames.py` because D-4 covers three migration topologies in one map:
+
+1. **1-to-1 simple renames** (Rank 2 DSA family — `ssh.host_key_dsa` → `ssh.dsa.host_key`). The pattern is the exact target with no wildcard. `fnmatch.fnmatch("ssh.dsa.host_key", "ssh.dsa.host_key")` returns True; the helper handles them identically to the wildcard cases.
+2. **1-to-N enumerated splits** (Rank 1 ssh.x11 server+client, Rank 5 journald volatile+storage_unknown, Rank 6 firewall_rules duplicate.exact+duplicate.proto_implicit). The pattern uses `*` to cover every canonical sibling without listing them inline (which would require keeping the map in sync as new siblings land).
+3. **1-to-many runtime-discovered** (Rank 4 samba per-share, Rank 7 kernel modules per-name, Rank 8 SSH weak crypto per-algo). The canonical key set is unbounded — the wildcard form is the only viable representation.
+
+The runtime helper `matches_legacy_ignore(finding_key, ignore_entry)` resolves `ignore_entry` against `SUBCHECK_RENAMES_V100` and runs `fnmatch.fnmatch(finding_key, pattern)`. Returns False on unknown entries (the operator typed something not in the legacy map — probably already-canonical or a typo). `any_legacy_ignore_matches(finding_key, ignore_keys)` is the convenience wrapper that returns True if ANY entry in the operator's `ignore.yml` covers the finding key via the legacy path.
+
+### ScoreEngine.apply ignore.yml back-compat wiring
+
+[bob/scoring.py::ScoreEngine.apply](../bob/scoring.py) was updated to consult both the existing exact-match path AND the new legacy-glob path:
+
+```python
+def _is_ignored(key: str | None) -> bool:
+    if not (ignored_keys and key):
+        return False
+    if key in ignored_keys:
+        return True
+    return any_legacy_ignore_matches(key, ignored_keys)
+
+for deduction in result.deductions:
+    if not _is_ignored(deduction.key):
+        self._apply_deduction(deduction)
+for finding in result.findings:
+    if _is_ignored(finding.key):
+        self.ignored_findings.append(finding)
+    else:
+        self.findings.append(finding)
+```
+
+Today this changes no visible behavior because no check emits the new canonical sub-keys yet. The shim becomes load-bearing as soon as v0.10.1 ships the first D-4 split. Operators upgrading their `ignore.yml` to the canonical sub-keys see no behavior change (the exact-match path catches them first).
+
+### SNAPSHOT.md refresh
+
+[DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md) was last refreshed for v0.7.4 (2026-06-02, refreshed from the v0.6.0 baseline). v0.10.0 adds two paragraphs:
+
+- **v0.7.4 → v0.9.2 drift, one paragraph** — covers the v0.8.x cycle (v0.8.0 drift batch + framing actions A1+A2 + silent-feature-gap audit closing v0.7.x, v0.8.1 deep-hardening 26 tiers across 3 sub-agent passes including the workstation alias retrait BREAKING, v0.8.2 conservative bundle + `bob/_i18n_safe.py` consolidation + `--test-webhook` + `--check=list` descriptions + D-3 deprecation warning + locale linter, v0.8.3 hotfix UnboundLocalError audit path from the v0.8.2 ship shadowing `UserConfig` module import inside `main()`, v0.8.4 cleanup `is_unit_enabled` 7-month-monitoring + new `DOCUMENTS/TUTORIAL{,_FR}.md`) and the v0.9.x cycle (v0.9.0 BREAKING bundle closing D-1/D-2/D-3/TD-1/F-2/F-3 + bash completion `cur="="` fix, v0.9.1 hotfix F-3 message UX bracketed-fallback from `i18n.t` called pre-init inside `parse_args`, v0.9.2 BaselineLoadError i18n + cross-version baseline migration shim).
+
+- **v0.10.0 preparation paragraph** — describes the staging strategy: D-4 migration shim foundation in this release + D-4 split implementations and F-1 Option B refactor in v0.10.1+ hardening patches. Records the two sub-agent audit reports and the effort estimates that v0.10.1+ work tracks directly.
+
+The one-screen view banner was updated from `bob v0.8.0 ~30.7 kLoC` to `bob v0.10.0 ~32+ kLoC`. The detailed module-by-module sections downstream from the banner are LARGELY UNCHANGED structurally — the v0.8.0 split table, the v0.7.4 layer diagram, and the module call-out paragraphs remain factually accurate as of v0.9.2 with respect to file paths and high-level shape (the v0.8.x / v0.9.x drift was mostly in-place behaviour changes, not architectural splits). The drift paragraphs above are the authoritative pointer to the per-release detail in `DOCUMENTS/CHANGELOG_FULL.md` for any consumer needing finer-grained snapshot detail; a deeper module-by-module refresh is a v0.10.2+ documentation patch candidate when post-D-4 + post-F-1 splits warrant it.
+
+### Numbers
+
+- **Tests 6242 → 6242** (no delta in this preparation release). 0 regression.
+- 1 new module ([bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py)) — 90 lines.
+- 1 production code file modified ([bob/scoring.py](../bob/scoring.py)) — `_is_ignored` helper + `any_legacy_ignore_matches` consultation, ~15 lines changed.
+- 1 documentation file modified ([DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md)) — 3 paragraphs added (v0.7.4 → v0.9.2 drift + v0.10.0 preparation + version banner bump).
+- 4 changelog surfaces + TESTING.md + man pages + debian + rpm + memory note bumped per convention.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No migration action required from v0.9.x. The D-4 shim foundation does not change visible behavior on existing `ignore.yml` entries because the legacy keys are not yet emitted as canonical sub-keys. Operators who upgrade to v0.10.0 today will see exactly the same audit output as on v0.9.2.
+
+The shim becomes load-bearing once v0.10.1+ ships the first D-4 split. At that point legacy `ignore.yml` entries continue to silence the about-to-be-split sub-keys without operator intervention — the only ones who need to act are operators who want to migrate their `ignore.yml` to the canonical sub-key names for clarity.
+
+**v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1).
+**v0.6.x remains EOL** (declared in v0.7.2).
+
+### Deferred to v0.10.1+ (intentionally staged)
+
+- **D-4 Rank 1** — `ssh.x11_forwarding` split into `ssh.x11.forwarding.server` (rename) + `ssh.x11.forwarding.client` (NEW client-side detection in `_check_client_config`). Smallest split, canonical D-4 example. Effort: ~2 h.
+- **D-4 Rank 2** — DSA family unification under `ssh.dsa.*` prefix. 4 × 1-to-1 simple renames. Effort: ~2 h.
+- **D-4 Rank 3** — `auditd.missing_sensitive_rules` split into 4 file-family buckets (`passwd_group`, `shadow`, `sudoers`, `ssh_config`) with per-bucket cap. Effort: ~3 h.
+- **D-4 Rank 4** — `samba.guest_{writable,readonly}` split into per-share-name keys via runtime emit loop. Wildcard ignore.yml entry pattern is the first runtime-discovered case shipped. Effort: ~3 h.
+- **D-4 Rank 5** — `log_rotation.journald_volatile` split into `volatile` vs `storage_unknown`. Effort: ~1 h.
+- **D-4 Rank 6** — `firewall_rules.duplicate_found` split into `duplicate.exact` vs `duplicate.proto_implicit`. Effort: ~2 h.
+- **D-4 Rank 7** — `kernel_modules.risky_{fs,net}` split into per-module-name keys with cap. Effort: ~3 h.
+- **D-4 Rank 8** — `ssh.weak_{ciphers,macs,kex}` split into per-algorithm keys with cap. Effort: ~3 h.
+- **F-1** — runner.py Option B refactor (Phase 0 / Phase 1 ThreadPoolExecutor / Phase 2 sequential merge + apt slot serialization). 4 new determinism test files. Effort: ~6-8 h.
+
+Each item lands as its own v0.10.x patch with locale + EXPLAIN + tests. The pattern matches the v0.8.x cycle (v0.8.0 BREAKING + 4 hardening patches v0.8.1 / v0.8.2 / v0.8.3 / v0.8.4) and the v0.9.x cycle (v0.9.0 BREAKING + 2 hardening patches v0.9.1 / v0.9.2).
+
+### Lessons
+
+- **Stage BREAKING bundles when the audit-driven effort estimate exceeds a single ship session.** v0.10.0 audits estimated ~30 hours of implementation work. Shipping the shim foundation in a preparation release means the eight follow-up patches don't need to re-touch the shim file (or worry about back-compat for already-shipped legacy entries), and the bug surface is small per patch instead of one large surface across the bundle. This is the same staging pattern the v0.7.0 cycle used (T1 / T2 / T3 each landed as a separate Phase) and the v0.8.x cycle used (each `T<n>` tier shipped as its own commit).
+- **Sub-agent audits remain the cheapest way to scope a BREAKING bundle.** Two parallel audits running in background for ~3 min each produced concrete file:line citations + ranked candidate lists + effort estimates + recommended Options that informed the staging decision. Without the audits, the staging call would have been a gut estimate; with them, it's a defensible scope decision the next operator can re-verify.
+- **The shim foundation is forward-compatible** — adding a new D-4 rename in v0.10.x+ is a one-line entry in `SUBCHECK_RENAMES_V100`; the runtime helpers and the `ScoreEngine.apply` wiring already cover it. The cost of a wrong D-4 candidate decision is now a one-line revert, not a multi-file rollback.
+
+---
+
 ## [v0.9.2] — 2026-06-08
 
 **Closes the two i18n / UX gaps documented in the v0.9.1 CHANGELOG as "deferred to v0.10.0+"** — both surfaced by the v0.9.0 cross-distro field test campaign. Both are purely additive (no BREAKING wire-format change, no risk to the golden audit path), so they fit naturally as a v0.9.x patch rather than waiting for v0.10.0.

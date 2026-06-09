@@ -1,3 +1,49 @@
+bodyguard-of-bits (0.10.0-1) UNRELEASED; urgency=low
+
+  * Preparation release opening the v0.10.x branch. Ships the D-4
+    sub-check migration shim foundation + ScoreEngine ignore.yml
+    back-compat wiring so future D-4 splits can land as v0.10.1+
+    hardening patches without needing a second BREAKING bump.
+  * D-4 migration shim foundation (bob/_v100_subcheck_renames.py):
+    SUBCHECK_RENAMES_V100 dict maps 14 legacy v0.9.x finding keys
+    (8 ranked candidates from the sub-agent D-4 audit) to fnmatch
+    glob patterns covering both 1-to-1 simple renames (Rank 2 DSA
+    family) and 1-to-N splits (Rank 1 ssh.x11 server/client, Rank 3
+    auditd buckets, Rank 4 samba per-share wildcard, Rank 5 journald,
+    Rank 6 firewall duplicate algos, Rank 7 kernel modules per-name
+    wildcard, Rank 8 SSH weak crypto per-algo wildcard). The shim
+    exposes matches_legacy_ignore() and any_legacy_ignore_matches()
+    helpers; ScoreEngine.apply consults the latter alongside the
+    existing exact-match path so v0.9.x ignore.yml entries continue
+    to suppress findings when v0.10.1+ ships the actual splits.
+  * D-4 split implementations (Rank 1-8) and the F-1 parallel-check
+    refactor (Option B per the F-1 thread-safety audit: Phase 0
+    sequential firewall/ports/network_context + Phase 1
+    ThreadPoolExecutor snapshot+check fan-out with apt slot
+    serialization + Phase 2 sequential merge in canonical
+    _SECTIONS order) are intentionally deferred to v0.10.1+
+    hardening patches. Both sub-agent audits were run on 2026-06-08
+    and produced concrete file:line citations + ranked candidate
+    lists + effort estimates (~20 h D-4 across 8 splits + ~6-8 h
+    F-1 + ~30 net new tests + 4 determinism test files) that the
+    follow-up patches will track directly.
+  * SNAPSHOT.md refresh (v0.7.4 -> v0.9.2 + v0.10.0 preparation
+    paragraph). Updates the project-snapshot doc with three majeures
+    of drift: the v0.8.x cycle (v0.8.0 drift batch + framing + silent
+    feature gap audit, v0.8.1 deep-hardening 26 tiers, v0.8.2
+    conservative bundle + i18n_safe consolidation, v0.8.3 hotfix
+    UnboundLocalError, v0.8.4 cleanup) and the v0.9.x cycle (v0.9.0
+    BREAKING bundle closing the v0.7.0 deferred contract: D-1/D-2/D-3/
+    TD-1/F-2/F-3, v0.9.1 hotfix F-3 message UX, v0.9.2 BaselineLoadError
+    i18n + cross-version baseline migration shim).
+  * Tests 6242 -> 6242 (no delta in this preparation release; the
+    D-4 shim foundation does not change visible behavior on existing
+    ignore.yml entries because the legacy keys are not yet emitted
+    as canonical sub-keys). 0 regression.
+  * v0.7.x remains EOL since v0.8.1; v0.6.x remains EOL since v0.7.2.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 09 Jun 2026 10:00:00 +0200
+
 bodyguard-of-bits (0.9.2-1) UNRELEASED; urgency=low
 
   * Closes the two i18n / UX gaps documented in the v0.9.1 CHANGELOG

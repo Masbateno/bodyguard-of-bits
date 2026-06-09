@@ -6,6 +6,78 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.10.0] — 09-06-2026
+
+**Première release v0.10.x — release de préparation** ouvrant la prochaine fenêtre de bundle BREAKING. Ship la foundation du shim de migration sub-check D-4 + ScoreEngine ignore.yml back-compat wiring + refresh SNAPSHOT.md, en déférant intentionnellement les implémentations D-4 splits réelles et le refactor F-1 parallel-check aux patches hardening v0.10.1+.
+
+### Pourquoi une release de préparation
+
+Deux audits sub-agent ont été runs le 2026-06-08 pour scoper le travail bundle BREAKING v0.10.0 :
+
+1. **Audit candidates D-4 sub-checks** — walk `bob/checks/*.py` à la recherche de finding keys qui lump plusieurs subcases sous un seul nom. Identifié 8 candidates split ranked avec estimations d'effort par split, plus une liste "do NOT split" de 5 keys qui ressemblent à des candidates mais restent unifiées. Estimation effort D-4 total : **≈ 20 heures** (le shim wildcard est la nouveauté principale vs le shim baseline simple `str → str` v0.9.2).
+
+2. **Audit thread-safety F-1 parallel-check** — inventaire shared state dans `bob/runner.py::run_checks` (engine, report, output, i18n, GEO cache, network_context, audited_ports cross-check), classifié les check functions comme pure vs side-effecting (~38 sur ~38 sont pure une fois leur snapshot collecté), identifié torn-read risks dans les apt-related checks (apt-get -s + apt-cache policy prennent un frontend lock). Recommandé **Option B** : Phase 0 séquentielle firewall/ports/network_context (cross-check deps) + Phase 1 `ThreadPoolExecutor(max_workers=min(8, cpu_count()))` snapshot+check fan-out avec apt slot serialization + Phase 2 merge séquentielle en ordre canonique `_SECTIONS`. Estimation effort F-1 total : **≈ 6-8 heures** + 4 nouveaux test files determinism.
+
+Effort combiné estimé : **≈ 30 heures** pour le bundle BREAKING v0.10.0 complet (D-4 splits + F-1 + refresh SNAPSHOT + release surface), ce qui dépassait une session ship unique. Le call pragmatique a été de **stager le travail** :
+
+  - **v0.10.0 (cette release)** — ship la foundation du shim D-4 pour que les huit patches follow-up puissent landing sans re-toucher le fichier shim. Ship le refresh SNAPSHOT.md pour que le doc project-snapshot couvre les trois majeures de drift sur lesquelles la branche v0.10.x sit. Bump la version pour marquer la branche v0.10.x ouverte.
+  - **v0.10.1+** — implémenter les 8 D-4 splits un par un (Rank 1 en premier comme exemple canonique ssh.x11 server/client), chacun avec son propre locale + EXPLAIN + tests. Implémenter F-1 Option B dans un patch dédié avec les quatre test files determinism landing à côté du refactor.
+
+Cette approche miroite le cycle v0.7.x → v0.8.x où le bundle BREAKING a landed comme single ship (v0.8.0 + drift batch v0.8.0 + items déférés v0.7.0) et les patches hardening ont follow-up (v0.8.1 / v0.8.2 / v0.8.3 / v0.8.4).
+
+### Foundation shim migration D-4
+
+[bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py) — nouveau module 90-lignes exportant `SUBCHECK_RENAMES_V100` (dict 14 entries legacy v0.9.x → patterns glob `fnmatch`) + `matches_legacy_ignore()` + `any_legacy_ignore_matches()` helpers.
+
+La shape a changé vs `bob/_v090_renames.py` v0.9.2 parce que D-4 couvre trois topologies de migration en une map :
+
+1. **1-to-1 simple renames** (Rank 2 DSA family) — le pattern est la target exacte sans wildcard
+2. **1-to-N enumerated splits** (Rank 1 ssh.x11 server+client, Rank 5 journald, Rank 6 firewall_rules duplicate) — le pattern utilise `*` pour couvrir chaque sibling canonique
+3. **1-to-many runtime-discovered** (Rank 4 samba per-share, Rank 7 kernel modules per-name, Rank 8 SSH weak crypto per-algo) — le set de keys canoniques est unbounded, le wildcard est la seule représentation viable
+
+Le runtime helper `matches_legacy_ignore(finding_key, ignore_entry)` résout `ignore_entry` contre `SUBCHECK_RENAMES_V100` et run `fnmatch.fnmatch(finding_key, pattern)`.
+
+### Wiring ScoreEngine.apply ignore.yml back-compat
+
+[bob/scoring.py::ScoreEngine.apply](../bob/scoring.py) a été update pour consulter à la fois le path exact-match existant ET le nouveau path legacy-glob via `_is_ignored()` helper interne.
+
+Aujourd'hui ça ne change pas de behavior visible parce qu'aucun check émet les nouvelles sub-keys canoniques. Le shim devient load-bearing dès que v0.10.1 ship le premier split D-4.
+
+### Refresh SNAPSHOT.md
+
+[DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md) a été refresh pour la dernière fois pour v0.7.4 (2026-06-02, refresh depuis baseline v0.6.0). v0.10.0 ajoute deux paragraphes : drift v0.7.4 → v0.9.2 (couvre les cycles v0.8.x et v0.9.x) + paragraphe préparation v0.10.0 (stratégie staging + estimations d'audit).
+
+### Numbers
+
+- **Tests 6242 → 6242** (pas de delta dans cette release de préparation). 0 régression.
+- 1 nouveau module ([bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py)) — 90 lignes.
+- 1 fichier code production modifié ([bob/scoring.py](../bob/scoring.py)) — `_is_ignored` helper + consultation `any_legacy_ignore_matches`, ~15 lignes changées.
+- 1 fichier documentation modifié ([DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md)) — 3 paragraphes ajoutés.
+- 4 surfaces changelog + TESTING.md + man pages + debian + rpm + memory note bumpées per convention.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Pas d'action de migration requise depuis v0.9.x. La foundation shim D-4 ne change pas le behavior visible sur les entries `ignore.yml` existantes parce que les keys legacy ne sont pas encore émises comme sub-keys canoniques.
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
+**v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Déféré à v0.10.1+ (intentionnellement stagé)
+
+8 splits D-4 (Rank 1-8) avec leur effort estimé chacun + F-1 Option B refactor + 4 test files determinism — tous décrits avec file:line dans les reports audit sub-agent enregistrés dans le transcript de session projet.
+
+### Leçons
+
+- **Stage les bundles BREAKING quand l'effort estimé par l'audit dépasse une session ship unique.** Les audits v0.10.0 ont estimé ~30 heures de travail d'implémentation. Shipper la foundation shim dans une release de préparation veut dire que les huit patches follow-up n'ont pas besoin de re-toucher le fichier shim, et la surface de bug est petite par patch au lieu d'une grosse surface à travers le bundle.
+- **Les audits sub-agent restent la façon la moins chère de scoper un bundle BREAKING.** Deux audits parallèles tournant en background pour ~3 min chacun ont produit des file:line citations concrètes + listes ranked candidate + estimations d'effort + Options recommandées qui ont informé la décision de staging.
+- **La foundation shim est forward-compatible** — ajouter un nouveau rename D-4 en v0.10.x+ est une entry one-line dans `SUBCHECK_RENAMES_V100`.
+
+---
+
 ## [v0.9.2] — 08-06-2026
 
 **Ferme les deux gaps i18n / UX documentés dans le CHANGELOG v0.9.1 comme "déférés à v0.10.0+"** — tous deux surfacés par la campagne field test cross-distro v0.9.0. Les deux sont purement additifs (pas de changement BREAKING wire-format, pas de risque pour le chemin audit golden), donc ils fit naturellement comme un patch v0.9.x plutôt que d'attendre v0.10.0.

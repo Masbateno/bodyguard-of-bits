@@ -373,11 +373,28 @@ class ScoreEngine:
             result: Output of a check_* function.
         """
         ignored_keys = self.ignore_keys
+
+        # v0.10.0 D-4 — accept both exact matches (operator already
+        # migrated their ignore.yml to canonical sub-keys) AND legacy
+        # umbrella entries (operator wrote ``ssh.x11_forwarding`` pre-
+        # v0.10.0 and expects it to keep silencing the now-split
+        # ``ssh.x11.forwarding.{server,client}`` findings). The legacy
+        # path uses fnmatch globs from SUBCHECK_RENAMES_V100 — see
+        # ``bob/_v100_subcheck_renames.py`` for the migration table.
+        from bob._v100_subcheck_renames import any_legacy_ignore_matches
+
+        def _is_ignored(key: str | None) -> bool:
+            if not (ignored_keys and key):
+                return False
+            if key in ignored_keys:
+                return True
+            return any_legacy_ignore_matches(key, ignored_keys)
+
         for deduction in result.deductions:
-            if not (ignored_keys and deduction.key and deduction.key in ignored_keys):
+            if not _is_ignored(deduction.key):
                 self._apply_deduction(deduction)
         for finding in result.findings:
-            if ignored_keys and finding.key and finding.key in ignored_keys:
+            if _is_ignored(finding.key):
                 self.ignored_findings.append(finding)
             else:
                 self.findings.append(finding)
