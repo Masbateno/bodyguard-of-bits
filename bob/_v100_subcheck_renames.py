@@ -1,12 +1,27 @@
 """v0.10.0 D-4 sub-check renames — shared map + ignore.yml back-compat shim.
 
-v0.10.0 D-4 split eight previously-monolithic finding keys into more
-granular sub-keys to express orthogonal concerns separately. The full
-migration table is documented in ``DOCUMENTS/CHANGELOG_FULL.md`` v0.10.0
-entry; this module holds the legacy → canonical mapping and the helper
-that ``ScoreEngine`` consults at runtime to keep pre-v0.10.0
-``ignore.yml`` entries working without forcing operators to migrate
-every customisation by hand.
+v0.10.0 shipped this shim as a *foundation* for a planned 8-rank D-4
+split, mapping legacy monolithic finding keys to canonical sub-key
+patterns so pre-split ``ignore.yml`` entries would keep working once
+the emit sites were changed. Only **Rank 1** was ever implemented
+(``ssh.x11_forwarding`` → ``ssh.x11.forwarding.{server,client}``,
+shipped v0.10.1 with the new client-side detection).
+
+**v0.11.0 killed Ranks 2-8.** They were never implemented — the emit
+sites still produce the monolithic keys (``ssh.host_key_dsa``,
+``ssh.weak_ciphers``, ``auditd.missing_sensitive_rules``, …), so the
+shim entries for those ranks were *inert*: the canonical patterns they
+mapped to (``ssh.dsa.host_key``, ``ssh.weak.cipher.*``, …) were emitted
+by nothing, so ``matches_legacy_ignore`` never fired for them and the
+still-live legacy keys were covered by the plain exact-match path. With
+zero user signal across 5+ majors that any of those splits were wanted
+(the kill-dormant-features rule, cf. the v0.8.4 compare-breakdown-diff
+retirement), carrying 13 inert entries was pure dead weight. Removing
+them is behaviour-preserving: nothing emitted their canonical patterns,
+so no live finding changes suppression state.
+
+If a future release genuinely splits one of those keys, re-add a single
+entry here at that time — same one-line pattern as Rank 1.
 
 Shape vs v0.9.2 (``bob/_v090_renames.py``):
 
@@ -14,22 +29,15 @@ Shape vs v0.9.2 (``bob/_v090_renames.py``):
     A 1-to-1 string substitution sufficed because every legacy key
     ``cron_audit.X`` had exactly one canonical form ``cron.X``.
 
-  - **v0.10.0 D-4** maps legacy *finding keys* (``ssh.x11_forwarding``)
-    to canonical sub-key *patterns* (``ssh.x11.forwarding.*``). Some
-    splits are 1-to-1 (Rank 2 DSA family), some are 1-to-N (Rank 1, 3,
-    5, 6), and some are 1-to-many-with-runtime-discovery (Rank 4, 7, 8
-    — samba shares per name, kernel modules per name, SSH algorithms
-    per algo). ``fnmatch`` glob semantics cover all three cases via a
-    single uniform contract.
+  - **v0.10.0 D-4 (Rank 1)** maps a legacy *finding key*
+    (``ssh.x11_forwarding``) to a canonical sub-key *pattern*
+    (``ssh.x11.forwarding.*``). The glob covers the 1-to-N split into
+    ``.server`` + ``.client`` via a single uniform contract.
 
 Design choices:
 
-  - The map value is always a single string. 1-to-1 renames use the
-    exact target name (``ssh.host_key_dsa`` → ``ssh.dsa.host_key``).
-    1-to-N splits use a glob that matches any of the canonical
-    siblings (``ssh.x11_forwarding`` → ``ssh.x11.forwarding.*``). The
-    wildcard form also naturally handles the runtime-discovered cases
-    (per-share, per-module, per-algo) without listing every instance.
+  - The map value is a single string: a glob that matches any canonical
+    sibling (``ssh.x11_forwarding`` → ``ssh.x11.forwarding.*``).
 
   - The runtime helper ``matches_legacy_ignore(finding_key, entry)``
     returns True iff ``entry`` is a legacy key whose pattern matches
@@ -61,40 +69,13 @@ import fnmatch
 
 # Legacy finding key → canonical sub-key pattern (fnmatch glob).
 #
-# 1-to-1 renames use the exact target as the value (no wildcard).
-# 1-to-N splits use a wildcard glob that covers every canonical sibling.
-# Migration table mirrors the v0.10.0 CHANGELOG D-4 entry.
+# v0.11.0: only the Rank 1 entry survives (the only D-4 split ever
+# implemented). Ranks 2-8 were inert foundation entries and were killed
+# — see the module docstring. Re-add a single line here if a future
+# release actually splits one of those keys.
 SUBCHECK_RENAMES_V100: dict[str, str] = {
-    # Rank 1 — server/client split (new client detection)
+    # Rank 1 — server/client split (new client detection, shipped v0.10.1)
     "ssh.x11_forwarding": "ssh.x11.forwarding.*",
-
-    # Rank 2 — DSA family unification (4 × 1-to-1 simple renames)
-    "ssh.host_key_dsa":           "ssh.dsa.host_key",
-    "ssh.dsa_key":                "ssh.dsa.private_key",
-    "ssh.authorized_keys_dsa":    "ssh.dsa.authorized_key",
-    "ssh.known_hosts_deprecated": "ssh.dsa.known_host",
-
-    # Rank 3 — auditd missing rules per sensitive-file bucket
-    "auditd.missing_sensitive_rules": "auditd.missing.*",
-
-    # Rank 4 — samba shares per share-name (wildcard required for runtime discovery)
-    "samba.guest_writable": "samba.share.guest_writable.*",
-    "samba.guest_readonly": "samba.share.guest_readonly.*",
-
-    # Rank 5 — journald storage volatile vs unknown
-    "log_rotation.journald_volatile": "log_rotation.journald.*",
-
-    # Rank 6 — firewall duplicate detection algorithms
-    "firewall_rules.duplicate_found": "firewall_rules.duplicate.*",
-
-    # Rank 7 — kernel risky modules per module-name
-    "kernel_modules.risky_fs":  "kernel_modules.risky.*",
-    "kernel_modules.risky_net": "kernel_modules.risky.*",
-
-    # Rank 8 — SSH weak crypto per algorithm
-    "ssh.weak_ciphers": "ssh.weak.cipher.*",
-    "ssh.weak_macs":    "ssh.weak.mac.*",
-    "ssh.weak_kex":     "ssh.weak.kex.*",
 }
 
 

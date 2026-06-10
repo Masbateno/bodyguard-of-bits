@@ -1,3 +1,61 @@
+bodyguard-of-bits (0.11.0-1) UNRELEASED; urgency=low
+
+  * BREAKING bundle — hygiene + design fix. Opens the v0.11.x branch.
+    Two BREAKING items; F-1 parallel checks deliberately stay deferred
+    indefinitely (zero user signal on perf, high thread-safety risk).
+  * M-3 — ssh ~/.ssh/config Host scope semantics. Pre-v0.11.0
+    _check_client_config flattened every entry: a directive inside a
+    restricted ``Host pattern`` block fired exactly as if it were global
+    (``Host *``). This contradicted BOB's own remediation advice for the
+    forwarding directives ("restrict it per-Host"). v0.11.0 makes the two
+    forwarding directives scope-aware: ``ForwardX11 yes`` / ``ForwardAgent
+    yes`` scoped to a non-global Host block now emit an INFO note with NO
+    deduction (new keys ssh.x11.forwarding.client_scoped +
+    ssh.client_forward_agent_scoped, EN+FR with a {host} placeholder);
+    global scope keeps WARN+deduction. ``StrictHostKeyChecking no`` and
+    ``UserKnownHostsFile /dev/null`` stay ALERT in ANY scope — disabling
+    host-key verification is a MITM exposure even for one host. A
+    multi-pattern Host line containing a bare ``*`` (``Host gitlab *``) is
+    correctly treated as global (OpenSSH applies the block when any
+    pattern matches; ``*`` matches every host) — caught by the pre-ship
+    audit before tag. A bounded subdomain wildcard (``Host *.example.com``)
+    stays scoped. BREAKING: an operator with a scoped forwarding directive
+    previously lost 1 point (WARN); now they get an INFO with no
+    deduction, so the score goes up.
+  * D-4 Rank 2-8 KILL. v0.10.0 shipped SUBCHECK_RENAMES_V100 as a
+    foundation for a planned 8-rank D-4 split; only Rank 1
+    (ssh.x11_forwarding, shipped v0.10.1) was ever implemented. Ranks 2-8
+    were inert: their canonical patterns were emitted by nothing, so the
+    shim entries never fired and the still-live monolithic keys
+    (ssh.weak_ciphers, ssh.host_key_dsa, auditd.missing_sensitive_rules,
+    …) were covered by the plain exact-match ignore path. With zero user
+    signal across 5+ majors (kill-dormant rule, cf. v0.8.4
+    compare-breakdown-diff), the 13 dead entries were removed. The map is
+    now {ssh.x11_forwarding: ssh.x11.forwarding.*}. Behaviour-preserving:
+    nothing emitted the canonical patterns the dead entries mapped to.
+  * CI guard — tests/test_v0110_legacy_key_drift_guard.py. AST sweep over
+    production bob/ source forbidding string literals that reference a
+    renamed-away key (the v0.9.0 D-1 prefixes + the v0.10.1 Rank 1 key),
+    with the migration/alias modules allowlisted. Generalises the v0.10.2
+    static guard to every historical rename so the next cross-module
+    rename drift fails CI instead of shipping silently.
+  * Posture matrix — tests/test_v0110_posture_matrix.py. Exhaustive
+    2x2x2 = 8-cell UFW x iptables x firewall-domain-score matrix pinning
+    every set_posture_from_engine escalation outcome + branch-isolation +
+    priority-resolution tests. Closes the masking-branch test debt that
+    let the v0.10.2 I-1 bug hide for 3 majors.
+  * SNAPSHOT.md refreshed v0.10.0 -> v0.10.2 (+ v0.11.0 in preparation).
+  * Pre-ship sub-agent audit: 1 important (multi-pattern Host scope) fixed
+    before tag, 2 minor (Match-block parsing, no-op) deferred.
+  * Tests 6268 -> 6336 (+68: 15 posture matrix + 4 drift guard + 37 D-4
+    kill pin + 12 ssh Host scope). 0 regression.
+  * v0.7.x remains EOL (declared v0.8.1); v0.6.x remains EOL (v0.7.2).
+  * Upgrade: pipx upgrade bodyguard-of-bits. Operators who scoped a
+    ForwardX11/ForwardAgent directive per-Host see the finding move from
+    WARN to INFO (score improves); no migration action required.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 10 Jun 2026 20:00:00 +0200
+
 bodyguard-of-bits (0.10.2-1) UNRELEASED; urgency=low
 
   * I-1 hotfix from the post-v0.10.1 deep hardening audit (sub-agent

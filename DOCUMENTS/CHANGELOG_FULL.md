@@ -6,6 +6,148 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.11.0] — 2026-06-10
+
+**First v0.11.x release — BREAKING bundle: hygiene + design fix.**
+
+Opens the v0.11.x branch. A planned, conservative BREAKING bundle (not an audit-reaction patch): the scope was frozen in advance ([[project_v0110_plan]]) and approved before implementation. Two BREAKING items, three engineering/test items, a documentation refresh, and a pre-ship audit pass.
+
+### Why this bundle, and why F-1 is NOT in it
+
+The v0.11.0 backlog filter applied "gain × risque = STOP" ([[feedback_conservative_refactor]]) to every deferred item:
+
+| Item | Verdict | Reason |
+|---|---|---|
+| **F-1 parallel checks** | **DEFER indefinitely** | 30s → 5-10s perf gain BUT zero user signal on perf across 3+ majors. High thread-safety risk (apt slot, global state). Tranché — not re-proposed each cycle. |
+| **M-3 ssh client Host scope** | **GO** | Real contract leak that v0.10.1 self-introduced (its explain text recommends "restrict per-Host" but the checker couldn't distinguish). |
+| **D-4 Rank 2-8 KILL** | **GO** | Kill-dormant rule (v0.8.4 precedent): 5+ majors, zero signal, inert shim entries. |
+| **CI literal-drift guard** | **GO** | Cheap; prevents the v0.10.2 I-1 bug class from recurring. |
+| **Posture matrix tests** | **GO** | Cheap; closes the masking-branch test debt the v0.10.2 bug exposed. |
+| **SNAPSHOT refresh** | **GO** | Accumulated doc drift v0.6.0 → v0.10.x. |
+| **Pre-ship audit** | **GO** | Pattern habituel pre-major. Found + fixed one real issue. |
+
+### M-3 — ssh `~/.ssh/config` Host scope semantics (BREAKING)
+
+Pre-v0.11.0 [bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) flattened every parsed entry — a directive inside a restricted `Host pattern` block was evaluated exactly as if it sat in the global `Host *` block. This directly contradicted BOB's own remediation advice: the v0.10.1 explain text for client-side X11 forwarding recommends "restrict it per-Host block", but an operator who did exactly that still got WARNed with a `-1` point deduction. Following BOB's advice did not silence BOB.
+
+v0.11.0 makes the two **forwarding** directives scope-aware:
+
+```python
+# A Host line can list multiple patterns (``Host bastion *``); OpenSSH
+# applies the block if ANY pattern matches, and a bare ``*`` matches every
+# host — so such a line is globally effective.
+scoped = "*" not in entry.host.split()
+
+elif k == "forwardagent" and v == "yes":
+    if scoped:
+        result.info(key="ssh.client_forward_agent_scoped",
+                    message=_t("ssh.client_forward_agent_scoped", host=entry.host))
+    else:
+        result.warn_with_deduction(key="ssh.client_forward_agent", points=1, ...)
+    found_issue = True
+
+elif k == "forwardx11" and v == "yes":
+    if scoped:
+        result.info(key="ssh.x11.forwarding.client_scoped",
+                    message=_t("ssh.x11.forwarding.client_scoped", host=entry.host))
+    else:
+        result.warn_with_deduction(key="ssh.x11.forwarding.client", points=1, ...)
+    found_issue = True
+```
+
+Severity policy, by directive:
+
+| Directive | Global scope (`Host *`) | Scoped to a specific Host |
+|---|---|---|
+| `ForwardX11 yes` | WARN + `-1` | **INFO, no deduction** |
+| `ForwardAgent yes` | WARN + `-1` | **INFO, no deduction** |
+| `StrictHostKeyChecking no` | ALERT + `-3` | **ALERT + `-3` (unchanged)** |
+| `UserKnownHostsFile /dev/null` | ALERT + `-3` | **ALERT + `-3` (unchanged)** |
+
+The host-key-verification directives stay ALERT in **any** scope: disabling host-key checking or discarding the known_hosts pin is a MITM exposure even when scoped to one host. The forwarding directives are legitimately useful when scoped to a trusted host, so a scoped occurrence is acknowledged at INFO without penalty.
+
+**The multi-pattern edge case (pre-ship audit I-1).** The client-config parser ([bob/checks/ssh/_parsers.py::_parse_client_config](../bob/checks/ssh/_parsers.py)) stores the entire remainder of a `Host` line verbatim, so `Host bastion *` yields `entry.host == "bastion *"`. A naïve `entry.host != "*"` test would treat that as scoped — but OpenSSH applies the block when **any** listed pattern matches, and a bare `*` matches every host, so `Host bastion *` is globally effective. The pre-ship sub-agent audit caught this as a scoring-evasion hole (a config-templating tool emitting `Host gitlab *` would silently dodge the deduction). The shipped test tokenizes: `scoped = "*" not in entry.host.split()`. A bounded subdomain wildcard (`Host *.example.com`) has no bare `*` token and stays scoped, which is defensible — it matches a bounded set, not all hosts.
+
+**BREAKING**: an operator with a scoped `ForwardX11 yes` / `ForwardAgent yes` previously lost 1 point (WARN); now it is INFO with no deduction, so the score goes **up**. This is a scoring-contract change, hence the minor bump to v0.11.0.
+
+New locale keys (EN + FR, both with a `{host}` placeholder):
+- `ssh.client_forward_agent_scoped`
+- `ssh.x11.forwarding.client_scoped`
+
+These are INFO keys, so — like the existing `ssh.client_config_ok` / `ssh.client_config_not_found` INFO keys — they are intentionally **not** in `EXPLAIN_KEYS` (the explain catalog is for actionable WARN/ALERT findings).
+
+### D-4 Rank 2-8 KILL
+
+v0.10.0 shipped [bob/_v100_subcheck_renames.py::SUBCHECK_RENAMES_V100](../bob/_v100_subcheck_renames.py) as a **foundation** for a planned 8-rank D-4 sub-check split, mapping 14 legacy monolithic finding keys to canonical sub-key glob patterns so pre-split `ignore.yml` entries would keep working once the emit sites were changed. Only **Rank 1** (`ssh.x11_forwarding` → `ssh.x11.forwarding.{server,client}`) was ever implemented — shipped v0.10.1 with the new client-side detection.
+
+Ranks 2-8 were never implemented. The emit sites still produce the monolithic keys (`ssh.host_key_dsa`, `ssh.weak_ciphers`, `auditd.missing_sensitive_rules`, `samba.guest_writable`, `log_rotation.journald_volatile`, `firewall_rules.duplicate_found`, `kernel_modules.risky_fs`, …), so their shim entries were **inert**:
+
+- The canonical patterns those entries mapped to (`ssh.dsa.host_key`, `ssh.weak.cipher.*`, `auditd.missing.*`, …) were emitted by **nothing** — verified by the pre-ship audit grepping every removed pattern across `bob/`.
+- `matches_legacy_ignore(finding_key, entry)` only fires when a *live finding key* matches a canonical *pattern*. Since nothing emitted the canonical patterns, the Rank 2-8 entries never fired.
+- An `ignore.yml` entry with a still-live monolithic key (e.g. `ssh.weak_ciphers`) is handled by the plain exact-match path in `ScoreEngine.apply` (`key in ignored_keys`, checked *before* the glob shim), not by the shim.
+
+With zero user signal across 5+ majors that any of those splits were wanted, carrying 13 inert entries was dead weight. v0.11.0 removes them (kill-dormant-features rule, the same call as the v0.8.4 `compare-breakdown-diff` retirement). The map is now a single entry:
+
+```python
+SUBCHECK_RENAMES_V100 = {"ssh.x11_forwarding": "ssh.x11.forwarding.*"}
+```
+
+**Behaviour-preserving**: nothing emitted the canonical patterns the dead entries mapped to, so no live finding changes suppression state. If a future release genuinely splits one of those keys, re-add a single one-line entry at that time. Pinned by [tests/test_v0110_d4_rank28_kill.py](../tests/test_v0110_d4_rank28_kill.py) — Rank 1 survives + works; the 14 killed legacy keys are absent from the shim; and a representative sample is asserted to still be a **live emitted key** in its check module (proving the removal was safe precisely because the rank was never split).
+
+### CI guard — literal key-drift detection
+
+[tests/test_v0110_legacy_key_drift_guard.py](../tests/test_v0110_legacy_key_drift_guard.py) generalises the v0.10.2 `TestNoLegacyKeyInLiveCheck` static guard (which pinned the single `iptables_nft.input_accept` literal) to **every** historical rename. It AST-sweeps all production `bob/` source for string literals that reference a *renamed-away* key:
+
+- The 7 v0.9.0 D-1 section-prefix renames (data-driven from `SECTION_RENAMES_V090` — a future rename added there is automatically covered): `iptables_nft.`, `cron_audit.`, `docker_audit.`, `services_state.`, `ports_analysis.`, `rules.`, `firewall_stack.`.
+- The single v0.10.1 D-4 Rank 1 key `ssh.x11_forwarding`.
+
+The D-4 Rank 2-8 keys are **deliberately out of scope** — they are live production keys (never split), not renamed-away. Allowlisted modules (migration contract / intentional alias): `_v090_renames.py`, `_v100_subcheck_renames.py`, `compare.py`, `explain.py`. Docstrings are skipped via AST (a module docstring mentioning a legacy key in prose is documentation, not a live comparison); comments are naturally absent from the AST. The guard ships with self-tests (a planted offender is flagged, a canonical literal is not, a docstring mention is not).
+
+This is the exact bug class that left the v0.10.2 I-1 posture escalation dead for 3 majors — a string literal comparing against a key whose prefix had been renamed. The guard makes the next cross-module rename drift fail CI instead of shipping silently.
+
+### Posture matrix tests
+
+[tests/test_v0110_posture_matrix.py](../tests/test_v0110_posture_matrix.py) enumerates the full 2×2×2 = 8-cell matrix of `set_posture_from_engine` inputs — UFW active/inactive × iptables `firewall_iptables.input_accept` finding present/absent × firewall domain score ≤3/>3 — and pins the exact `posture_escalation` output for every combination, including the priority resolution (`firewall_inactive` > `iptables_input_accept` > `firewall_domain_low`). Plus a `TestPostureBranchIsolation` class asserting each escalation branch fires **in isolation** (the v0.10.2 lesson: a masking branch can hide a dead one for majors — the `firewall_inactive` branch escalating HIGH on the common UFW-down shape hid the dead iptables branch), and a `TestPosturePriorityResolution` class for the multi-trigger ordering.
+
+### SNAPSHOT.md refresh
+
+`DOCUMENTS/SNAPSHOT.md` refreshed from its v0.10.0 state to v0.10.2 (with v0.11.0 noted as in preparation): module sizes, EXPLAIN_KEYS count (169), test counts, the new `_v090_renames.py` / `_v100_subcheck_renames.py` / `_i18n_safe.py` modules, retired `--json-v1` + `BOB_SANDBOX_LEGACY`, and appended v0.10.x cycle paragraphs. Footer convention preserved.
+
+### Pre-ship audit
+
+A focused sub-agent audit on the v0.11.0 diff returned 3 findings:
+
+- **I-1 (important)** — the `entry.host != "*"` multi-pattern scope-evasion hole described above. **Fixed before tag** (`scoped = "*" not in entry.host.split()` + 3 regression tests for `Host bastion *`, `Host * gitlab.example.com`, `Host *.example.com`).
+- **M-1 (minor)** — `Match` blocks are not parsed; a forwarding directive inside a `Match host X` block inherits the enclosing `Host` scope (default `*`) and is evaluated as global. This **fails safe** (over-reports rather than hides), so it is deferred. Candidate for a future patch if a user signals on a `Match`-scoped false WARN.
+- **M-2 (minor)** — confirmed the scope-awareness is intentionally partial and correct; no other client directive should be scope-aware. No-op.
+
+The D-4 KILL was independently verified inert, the locale parity + `{host}` format path were verified clean (the host value is the substituted argument, never the format template, so a malformed `Host {foo}` cannot raise `KeyError`), and the CI guard logic was verified sound.
+
+### Numbers
+
+- **Tests 6268 → 6336** (+68): 15 posture matrix + 4 drift guard + 37 D-4 kill pin + 12 ssh Host scope (9 core + 3 multi-pattern from the I-1 fix). 0 regression.
+- 2 production files changed: [bob/checks/ssh/_subchecks.py](../bob/checks/ssh/_subchecks.py) (scope-aware logic + M-2 loop hoist), [bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py) (KILL + docstring).
+- 2 locale files: [en.json](../bob/locales/en.json) + [fr.json](../bob/locales/fr.json) (2 new INFO keys each).
+- 4 new test files + SNAPSHOT.md refresh + full release surface.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Operators who scoped a `ForwardX11` / `ForwardAgent` directive to a specific `Host` block see the finding move from WARN to INFO (score improves). No `ignore.yml` migration required — the D-4 KILL is behaviour-preserving and the surviving Rank 1 shim is untouched. No other migration action.
+
+**v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1). **v0.6.x remains EOL** (declared in v0.7.2).
+
+### Lessons
+
+- **Planned BREAKING bundles work when the scope is frozen in advance.** v0.11.0 was scoped + approved before implementation, unlike the same-day audit→hotfix cycles (v0.7.1/v0.8.1/v0.9.1/v0.9.2/v0.10.2). Both patterns coexist: bundle the planned BREAKING design work, hotfix the audit findings same-day.
+- **A test-debt item from a past bug pays off the same cycle.** The posture matrix (closing the v0.10.2 masking-branch debt) and the CI literal-drift guard (closing the v0.10.2 rename-drift bug class) both turn a single past bug into permanent regression protection.
+- **The pre-ship audit earns its place.** It caught a real scoring-evasion hole (`Host gitlab *`) in the very feature whose whole point is scope semantics — exactly the kind of self-inflicted edge case a designer misses and an adversarial reviewer finds.
+
+---
+
 ## [v0.10.2] — 2026-06-10
 
 **Second v0.10.x hardening patch — I-1 fix from the post-v0.10.1 deep hardening audit.**

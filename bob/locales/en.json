@@ -900,6 +900,7 @@
     "client_known_hosts_devnull_detail": "Remove this line from ~/.ssh/config to restore host verification",
     "client_forward_agent": "ForwardAgent = yes in ~/.ssh/config — SSH agent forwarding enabled",
     "client_forward_agent_detail": "Agent forwarding lets a compromised remote host use your local keys. Disable if not needed.",
+    "client_forward_agent_scoped": "ForwardAgent = yes scoped to Host '{host}' in ~/.ssh/config — lower risk than a global setting; review whether that host is trusted",
     "client_config_ok": "~/.ssh/config: no dangerous settings detected",
     "known_hosts_not_found": "No known_hosts file — no hosts have been connected to yet",
     "known_hosts_duplicate": "Duplicate entries for host {host} in known_hosts",
@@ -916,7 +917,8 @@
       "forwarding": {
         "server": "X11 forwarding is enabled — increases attack surface if not needed",
         "client": "Client config enables X11 forwarding (ForwardX11 yes) — forwarding your display INTO a remote host lets that host inspect your local desktop",
-        "client_detail": "X11 forwarding from your machine TO a remote host opens your display server to the remote — a hostile remote can take screenshots, inject keystrokes, and read clipboard data via the X protocol. Disable ForwardX11 in ~/.ssh/config (or use 'ssh -X' on-demand for trusted hosts only) by removing the directive or setting 'no'."
+        "client_detail": "X11 forwarding from your machine TO a remote host opens your display server to the remote — a hostile remote can take screenshots, inject keystrokes, and read clipboard data via the X protocol. Disable ForwardX11 in ~/.ssh/config (or use 'ssh -X' on-demand for trusted hosts only) by removing the directive or setting 'no'.",
+        "client_scoped": "ForwardX11 = yes scoped to Host '{host}' in ~/.ssh/config — lower risk than a global setting; review whether that host is trusted"
       }
     }
   },

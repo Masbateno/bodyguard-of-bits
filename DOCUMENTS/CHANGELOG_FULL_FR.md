@@ -6,6 +6,96 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.11.0] — 10-06-2026
+
+**Première release v0.11.x — BREAKING bundle : hygiene + design fix.**
+
+Ouvre la branche v0.11.x. Un BREAKING bundle planifié et conservateur (pas un patch de réaction à un audit) : le scope a été figé à l'avance ([[project_v0110_plan]]) et approuvé avant l'implémentation. Deux items BREAKING, trois items engineering/test, un refresh documentaire, et une passe d'audit pre-ship.
+
+### Pourquoi ce bundle, et pourquoi F-1 N'Y est PAS
+
+Le filter backlog v0.11.0 a appliqué "gain × risque = STOP" ([[feedback_conservative_refactor]]) à chaque item déféré :
+
+| Item | Verdict | Raison |
+|---|---|---|
+| **F-1 parallel checks** | **DEFER indéfiniment** | Gain perf 30s → 5-10s MAIS zéro signal user perf sur 3+ majeures. Risque thread-safety élevé. Tranché — pas re-proposé chaque cycle. |
+| **M-3 ssh client Host scope** | **GO** | Vrai contract leak que v0.10.1 a self-introduit (son explain text recommande "restrict per-Host" mais le checker peut pas distinguer). |
+| **D-4 Rank 2-8 KILL** | **GO** | Règle kill-dormant (précédent v0.8.4) : 5+ majeures, zéro signal, entries shim inertes. |
+| **CI literal-drift guard** | **GO** | Cheap ; prévient la récurrence de la classe de bug v0.10.2 I-1. |
+| **Posture matrix tests** | **GO** | Cheap ; ferme le test debt masking-branch que le bug v0.10.2 a exposé. |
+| **SNAPSHOT refresh** | **GO** | Drift doc accumulé v0.6.0 → v0.10.x. |
+| **Audit pre-ship** | **GO** | Pattern habituel pre-major. A trouvé + fixé un vrai problème. |
+
+### M-3 — sémantique de scope Host `~/.ssh/config` (BREAKING)
+
+Pre-v0.11.0 [bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) aplatissait chaque entry parsée — une directive dans un block `Host pattern` restreint était évaluée exactement comme si elle était dans le block global `Host *`. Ça contredisait directement la propre advice de remediation de BOB : l'explain text v0.10.1 pour le transfert X11 client-side recommande "restrict it per-Host block", mais un operator qui faisait exactement ça était quand même WARNé avec une déduction de `-1` point. Suivre l'advice de BOB ne silençait pas BOB.
+
+v0.11.0 rend les deux directives de **forwarding** scope-aware. Politique de sévérité par directive :
+
+| Directive | Scope global (`Host *`) | Scopé à un Host spécifique |
+|---|---|---|
+| `ForwardX11 yes` | WARN + `-1` | **INFO, sans déduction** |
+| `ForwardAgent yes` | WARN + `-1` | **INFO, sans déduction** |
+| `StrictHostKeyChecking no` | ALERT + `-3` | **ALERT + `-3` (inchangé)** |
+| `UserKnownHostsFile /dev/null` | ALERT + `-3` | **ALERT + `-3` (inchangé)** |
+
+Les directives de vérification de clé d'hôte restent ALERT dans **n'importe quel** scope : désactiver la vérification de clé d'hôte est une exposition MITM même scopé à un host.
+
+**Le cas multi-pattern (audit pre-ship I-1).** Le parser client-config stocke le reste entier de la ligne `Host` verbatim, donc `Host bastion *` donne `entry.host == "bastion *"`. Un test naïf `entry.host != "*"` traiterait ça comme scopé — mais OpenSSH applique le block si **n'importe quel** pattern matche, et un `*` nu matche tout host, donc `Host bastion *` est globalement effectif. L'audit sub-agent pre-ship a chopé ça comme un trou d'évasion de scoring. Le test shippé tokenise : `scoped = "*" not in entry.host.split()`. Un wildcard de sous-domaine borné (`Host *.example.com`) n'a pas de token `*` nu et reste scopé.
+
+**BREAKING** : une directive de forwarding scopée déduisait avant 1 point (WARN) ; maintenant c'est INFO sans déduction, donc le score **monte**.
+
+Nouvelles clés locale (EN + FR, avec placeholder `{host}`) : `ssh.client_forward_agent_scoped`, `ssh.x11.forwarding.client_scoped`. Ce sont des clés INFO, donc — comme les clés INFO existantes `ssh.client_config_ok` — intentionnellement **pas** dans `EXPLAIN_KEYS`.
+
+### D-4 Rank 2-8 KILL
+
+v0.10.0 a shippé `SUBCHECK_RENAMES_V100` comme **foundation** pour un split D-4 8-ranks planifié, mappant 14 clés legacy. Seul **Rank 1** (`ssh.x11_forwarding`, shippé v0.10.1) a jamais été implémenté.
+
+Les Ranks 2-8 n'ont jamais été implémentés. Les emit sites produisent encore les clés monolithiques (`ssh.host_key_dsa`, `ssh.weak_ciphers`, …), donc leurs entries shim étaient **inertes** : leurs patterns canoniques étaient émis par **rien** (vérifié par l'audit pre-ship), `matches_legacy_ignore` ne firait jamais, et un `ignore.yml` avec une clé monolithique toujours-live est géré par le path exact-match dans `ScoreEngine.apply`.
+
+Avec zéro signal user sur 5+ majeures, v0.11.0 retire les 13 entries inertes (règle kill-dormant, même call que le retrait v0.8.4 `compare-breakdown-diff`). La map est maintenant `{ssh.x11_forwarding: ssh.x11.forwarding.*}`. **Behaviour-preserving**. Piné par [tests/test_v0110_d4_rank28_kill.py](../tests/test_v0110_d4_rank28_kill.py) — Rank 1 survit + marche ; les 14 clés killées sont absentes ; et un échantillon représentatif est asserté comme toujours une **clé live émise** dans son module de check.
+
+### CI guard — détection de literal key-drift
+
+[tests/test_v0110_legacy_key_drift_guard.py](../tests/test_v0110_legacy_key_drift_guard.py) généralise le guard statique v0.10.2 à **tous** les renames historiques. Sweep AST sur tout le source production `bob/` pour les string literals qui référencent une clé *renommée-away* : les 7 prefixes v0.9.0 D-1 (data-driven depuis `SECTION_RENAMES_V090`) + la clé Rank 1 v0.10.1 `ssh.x11_forwarding`. Les clés D-4 Rank 2-8 sont **délibérément hors scope** (live, pas renommées). Modules allowlisted : `_v090_renames.py`, `_v100_subcheck_renames.py`, `compare.py`, `explain.py`. Docstrings skippés via AST.
+
+C'est la classe exacte de bug qui a laissé l'escalation posture I-1 v0.10.2 dead 3 majeures. Le guard fait fail CI le prochain drift de rename cross-module au lieu de shipper silencieusement.
+
+### Posture matrix tests
+
+[tests/test_v0110_posture_matrix.py](../tests/test_v0110_posture_matrix.py) énumère la matrice complète 2×2×2 = 8 cellules de `set_posture_from_engine` + résolution de priorité + isolation de branche (la leçon v0.10.2 : une branche de masking peut cacher une branche morte pendant des majeures).
+
+### SNAPSHOT.md refresh
+
+`DOCUMENTS/SNAPSHOT.md` rafraîchi de v0.10.0 à v0.10.2 (+ v0.11.0 in preparation). Footer préservé.
+
+### Audit pre-ship
+
+Audit sub-agent ciblé sur le diff v0.11.0 → 3 findings : **I-1 (important)** trou d'évasion scope multi-pattern, **fixé avant tag** ; **M-1 (minor)** blocks `Match` non parsés (fail-safe, déféré) ; **M-2 (minor)** scope-awareness intentionnellement partiel, no-op.
+
+### Numbers
+
+- **Tests 6268 → 6336** (+68 : 15 posture matrix + 4 drift guard + 37 D-4 kill pin + 12 ssh Host scope). 0 régression.
+- 2 fichiers production + 2 fichiers locale + 4 nouveaux test files + SNAPSHOT refresh.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Les operators qui ont scopé une directive `ForwardX11` / `ForwardAgent` per-Host voient le finding passer de WARN à INFO (le score s'améliore). Pas de migration `ignore.yml` requise.
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1). **v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Leçons
+
+- **Les BREAKING bundles planifiés marchent quand le scope est figé à l'avance.**
+- **Un item de test-debt d'un bug passé paye off le même cycle** (posture matrix + CI drift guard transforment le bug v0.10.2 en protection régression permanente).
+- **L'audit pre-ship gagne sa place** : a chopé un vrai trou d'évasion de scoring dans la feature même dont le point est la sémantique de scope.
+
+---
+
 ## [v0.10.2] — 10-06-2026
 
 **Deuxième patch hardening v0.10.x — fix I-1 issu de l'audit deep hardening post-v0.10.1.**

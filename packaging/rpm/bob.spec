@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.10.2
+Version:        0.11.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,31 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Wed Jun 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.11.0-1
+- BREAKING bundle: hygiene + design fix. Two BREAKING items, no F-1
+  (parallel checks stay deferred indefinitely — zero user signal on perf).
+- M-3 ssh ~/.ssh/config Host scope semantics: forwardx11 / forwardagent
+  scoped to a non-global Host block downgrade from WARN+deduction to an
+  INFO note (new keys ssh.x11.forwarding.client_scoped +
+  ssh.client_forward_agent_scoped). Global scope keeps WARN+deduction.
+  StrictHostKeyChecking no + UserKnownHostsFile /dev/null stay ALERT in
+  any scope (MITM is not mitigated by scoping). A multi-pattern Host
+  line containing a bare * (Host gitlab *) is treated as global.
+  BREAKING: scoped forwarding occurrences no longer deduct.
+- D-4 Rank 2-8 KILL: SUBCHECK_RENAMES_V100 reduced 14 -> 1 (kept only
+  Rank 1 ssh.x11_forwarding). The 13 removed entries were inert — their
+  canonical patterns were emitted by nothing; the live monolithic keys
+  are covered by the exact-match ignore path. Behaviour-preserving.
+- CI guard test_v0110_legacy_key_drift_guard.py: AST sweep forbidding
+  production literals that reference a renamed-away key (generalises the
+  v0.10.2 static guard to every historical rename).
+- Posture matrix test_v0110_posture_matrix.py: exhaustive 8-cell
+  UFW x iptables x domain_score matrix pinning every escalation outcome
+  (the v0.10.2 masking-branch lesson).
+- SNAPSHOT.md refresh v0.10.0 -> v0.10.2 + v0.11.0-in-prep.
+- Pre-ship sub-agent audit (I-1 multi-pattern Host fix applied before tag).
+- Tests 6268 -> 6336 (+68). 0 regression.
+
 * Wed Jun 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.10.2-1
 - I-1 hotfix from the post-v0.10.1 deep hardening audit.
 - bob/scoring.py::set_posture_from_engine looked for the v0.7.x / v0.8.x

@@ -900,6 +900,7 @@
     "client_known_hosts_devnull_detail": "Supprimer cette ligne de ~/.ssh/config pour rétablir la vérification des hôtes",
     "client_forward_agent": "ForwardAgent = yes dans ~/.ssh/config — transfert d'agent SSH activé",
     "client_forward_agent_detail": "Le transfert d'agent permet à un hôte distant compromis d'utiliser vos clés locales. Désactiver si inutile.",
+    "client_forward_agent_scoped": "ForwardAgent = yes limité au Host '{host}' dans ~/.ssh/config — risque moindre qu'un réglage global ; vérifie que cet hôte est de confiance",
     "client_config_ok": "~/.ssh/config : aucun paramètre dangereux détecté",
     "known_hosts_not_found": "Aucun fichier known_hosts — aucun hôte n'a encore été contacté",
     "known_hosts_duplicate": "Entrées dupliquées pour l'hôte {host} dans known_hosts",
@@ -916,7 +917,8 @@
       "forwarding": {
         "server": "Le transfert X11 est activé — augmente la surface d'attaque si inutile",
         "client": "La config client active le transfert X11 (ForwardX11 yes) — transférer ton display VERS un hôte distant lui donne accès à ton bureau local",
-        "client_detail": "Le transfert X11 de ta machine VERS un hôte distant ouvre ton serveur d'affichage au distant — un host hostile peut prendre des captures d'écran, injecter des frappes clavier, et lire le presse-papiers via le protocole X. Désactive ForwardX11 dans ~/.ssh/config (ou utilise 'ssh -X' on-demand pour les hôtes de confiance uniquement) en retirant la directive ou en mettant 'no'."
+        "client_detail": "Le transfert X11 de ta machine VERS un hôte distant ouvre ton serveur d'affichage au distant — un host hostile peut prendre des captures d'écran, injecter des frappes clavier, et lire le presse-papiers via le protocole X. Désactive ForwardX11 dans ~/.ssh/config (ou utilise 'ssh -X' on-demand pour les hôtes de confiance uniquement) en retirant la directive ou en mettant 'no'.",
+        "client_scoped": "ForwardX11 = yes limité au Host '{host}' dans ~/.ssh/config — risque moindre qu'un réglage global ; vérifie que cet hôte est de confiance"
       }
     }
   },

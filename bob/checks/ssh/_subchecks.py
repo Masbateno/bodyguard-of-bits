@@ -459,11 +459,31 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
     found_issue = False
     entries = snapshot.client_config_entries
 
+    # v0.11.0 M-2: hoist the invariant config path/quote out of the loop.
+    client_config = (snapshot.user_home or Path("/root")) / ".ssh" / "config"
+    client_config_q = shlex.quote(str(client_config))
+
     for entry in entries:
         k, v = entry.key, entry.value.lower()
 
-        client_config = (snapshot.user_home or Path("/root")) / ".ssh" / "config"
-        client_config_q = shlex.quote(str(client_config))
+        # v0.11.0 M-3: a directive inside a restricted ``Host pattern``
+        # block (anything other than the global ``Host *``) is scoped — it
+        # only applies when connecting to that host. BOB's own remediation
+        # advice for the forwarding directives is "restrict it per-Host", so
+        # an operator who follows that advice must not keep getting WARNed as
+        # if it were global. For ``forwardx11`` / ``forwardagent`` (legitimate
+        # when scoped to a trusted host) we downgrade scoped occurrences to an
+        # INFO note with no deduction. ``stricthostkeychecking no`` and
+        # ``userknownhostsfile /dev/null`` stay ALERT in ANY scope — disabling
+        # host-key verification is a MITM exposure even for a single host.
+        #
+        # A ``Host`` line can list multiple patterns (``Host bastion *``);
+        # OpenSSH applies the block if ANY pattern matches, and a bare ``*``
+        # matches every host — so such a line is globally effective. Tokenise
+        # and treat the presence of a bare ``*`` token as global, otherwise
+        # a config like ``Host gitlab *`` would silently dodge the deduction.
+        # A bounded subdomain wildcard (``Host *.example.com``) stays scoped.
+        scoped = "*" not in entry.host.split()
 
         if k == "stricthostkeychecking" and v == "no":
             result.alert_with_deduction(
@@ -488,14 +508,20 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
             found_issue = True
 
         elif k == "forwardagent" and v == "yes":
-            result.warn_with_deduction(
-                key="ssh.client_forward_agent",
-                message=_t("ssh.client_forward_agent"),
-                points=1,
-                detail=_t("ssh.client_forward_agent_detail"),
-                cmd=f"sed -i '/^[[:space:]]*ForwardAgent[[:space:]]\\+yes/d' {client_config_q}",
-                nature="action",
-            )
+            if scoped:
+                result.info(
+                    key="ssh.client_forward_agent_scoped",
+                    message=_t("ssh.client_forward_agent_scoped", host=entry.host),
+                )
+            else:
+                result.warn_with_deduction(
+                    key="ssh.client_forward_agent",
+                    message=_t("ssh.client_forward_agent"),
+                    points=1,
+                    detail=_t("ssh.client_forward_agent_detail"),
+                    cmd=f"sed -i '/^[[:space:]]*ForwardAgent[[:space:]]\\+yes/d' {client_config_q}",
+                    nature="action",
+                )
             found_issue = True
 
         # v0.10.1 D-4 Rank 1: detect ``ForwardX11 yes`` client-side.
@@ -505,14 +531,20 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
         # an untrusted host lets that host take screenshots and inject
         # keystrokes through the X protocol's wide-open security model.
         elif k == "forwardx11" and v == "yes":
-            result.warn_with_deduction(
-                key="ssh.x11.forwarding.client",
-                message=_t("ssh.x11.forwarding.client"),
-                points=1,
-                detail=_t("ssh.x11.forwarding.client_detail"),
-                cmd=f"sed -i '/^[[:space:]]*ForwardX11[[:space:]]\\+yes/d' {client_config_q}",
-                nature="action",
-            )
+            if scoped:
+                result.info(
+                    key="ssh.x11.forwarding.client_scoped",
+                    message=_t("ssh.x11.forwarding.client_scoped", host=entry.host),
+                )
+            else:
+                result.warn_with_deduction(
+                    key="ssh.x11.forwarding.client",
+                    message=_t("ssh.x11.forwarding.client"),
+                    points=1,
+                    detail=_t("ssh.x11.forwarding.client_detail"),
+                    cmd=f"sed -i '/^[[:space:]]*ForwardX11[[:space:]]\\+yes/d' {client_config_q}",
+                    nature="action",
+                )
             found_issue = True
 
     if not found_issue:
