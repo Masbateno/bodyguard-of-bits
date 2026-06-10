@@ -6,6 +6,170 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.10.2] — 2026-06-10
+
+**Second v0.10.x hardening patch — I-1 fix from the post-v0.10.1 deep hardening audit.**
+
+### The cycle: same-day audit → same-day ship
+
+After v0.10.1 was tagged earlier today, a sub-agent ran the standard deep hardening audit pass over the post-v0.10.1 codebase. The audit returned 4 findings:
+
+| ID | Severity | Surface | Verdict |
+|---|---|---|---|
+| **I-1** | Important | `bob/scoring.py:739` (posture escalation, legacy key) | **GO v0.10.2** |
+| M-1 | Minor | `bob/checks/ssh/_subchecks.py:507-516` (duplicate `Host` blocks) | DEFER |
+| M-2 | Minor | `bob/checks/ssh/_subchecks.py:462-466` (hoist `client_config_q`) | KILL (cosmetic) |
+| M-3 | Minor | `bob/checks/ssh/_parsers.py:334-351` (`Host` scope semantics) | DEFER → v0.11.x candidate |
+
+Conservative-workflow filter ([[feedback_conservative_refactor]] "gain × risque = STOP"): only I-1 passes the cost/value test because it's a real escalation bug with a security-relevant regression, masked by another posture branch but visibly broken on a deployment shape that exists in the wild. The 3 minors fail because they're either pre-existing patterns (no user signal across 5+ majors) or pure cosmetic.
+
+### The bug
+
+`bob/scoring.py::set_posture_from_engine` looked for findings with the v0.7.x / v0.8.x legacy key to flip the `iptables_input_accept` posture flag:
+
+```python
+engine.set_posture(
+    firewall_inactive=not fw_active,
+    iptables_input_accept=any(
+        f.key == "iptables_nft.input_accept" for f in engine.findings  # ← v0.7.x / v0.8.x key
+    ),
+    firewall_domain_score=_fw_score,
+)
+```
+
+The `iptables_nft.*` prefix was renamed to `firewall_iptables.*` in **v0.9.0 D-1** as part of the BREAKING bundle that closed the v0.7.0 deferred architectural cleanup. The rename is documented in `bob/_v090_renames.py::SECTION_RENAMES_V090` and the canonical key has been emitted live by `bob/checks/iptables_nftables.py:174` since v0.9.0:
+
+```python
+# bob/checks/iptables_nftables.py:174 (since v0.9.0)
+result.warn_with_deduction(
+    key="firewall_iptables.input_accept",   # ← canonical v0.9.0+
+    message=_t("firewall_iptables.input_accept"),
+    ...
+)
+```
+
+The string-literal comparison in `scoring.py:739` stopped matching anything at the v0.9.0 release. **The iptables-passthrough posture escalation has been silently dead for 3 majors** (v0.9.0 → v0.9.1 → v0.9.2 → v0.10.0 → v0.10.1).
+
+### Why no user signaled
+
+`set_posture` has three escalation triggers, in priority order:
+
+1. `firewall_inactive=True` → HIGH (`scoring.posture.firewall_inactive`)
+2. `iptables_input_accept=True` → HIGH (`scoring.posture.iptables_input_accept`)
+3. `firewall_domain_score <= 3` → MEDIUM (`scoring.posture.firewall_domain_low`)
+
+The most common deployment shape that surfaces the iptables-passthrough risk is **UFW disabled + iptables INPUT ACCEPT** (the host operator either never enabled UFW, or disabled it to debug, and left iptables open). That shape triggers branch (1) — `firewall_inactive=True` — which already escalates to HIGH. So the user-visible risk floor is correct *for the most common case*.
+
+The shape that regresses silently is the rarer **UFW active + iptables INPUT ACCEPT** combination — e.g. an operator enabled UFW but left a legacy iptables passthrough rule from a previous configuration. In that case, branch (1) is False (`fw_active=True`), branch (2) was supposed to fire on the iptables finding but the literal comparison never matched, so neither (1) nor (2) escalated. The risk floor regressed from HIGH (pre-v0.9.0) to LOW (post-v0.9.0).
+
+The bug class: **a literal comparison that drifts silently when the surrounding contract is renamed**. The v0.9.0 D-1 rename audited and updated every emit site + locale + explain + profile override, but the posture-escalation comparison in `set_posture_from_engine` was never grepped for because the field reads as plain Python data, not as a key reference.
+
+### The fix
+
+[bob/scoring.py:739](../bob/scoring.py#L739) — update the literal to match the v0.9.0+ canonical key:
+
+```python
+engine.set_posture(
+    firewall_inactive=not fw_active,
+    # v0.10.2 I-1: the v0.9.0 D-1 rename ``iptables_nft.*`` →
+    # ``firewall_iptables.*`` left this string-literal comparison
+    # matching the retired prefix, so the iptables-passthrough
+    # escalation has been silently dead since v0.9.0. Masked in
+    # practice by the ``firewall_inactive`` branch (UFW down + iptables
+    # ACCEPT both escalate to HIGH), but the iptables-only escalation
+    # (UFW active + iptables ACCEPT rule) regressed to LOW.
+    iptables_input_accept=any(
+        f.key == "firewall_iptables.input_accept" for f in engine.findings
+    ),
+    firewall_domain_score=_fw_score,
+)
+```
+
+The inline comment captures the **why** and the **failure mode** so future audits can trace the historical context — and so a future canonical-key rename has a concrete prior precedent to reference.
+
+### Why this single fix covers both call sites
+
+`set_posture_from_engine` is the single source of truth for posture computation since v0.7.3 M-10 ([[project_v073_hardening]]). It's called from two surfaces:
+
+- `bob/__main__.py::audit` — the main one-shot audit path (`bob audit`)
+- `bob/watch.py:109` — the `bob --watch` loop, which re-derives the posture every iteration
+
+Pre-v0.7.3 M-10 these had divergent inline implementations; the dedup means the v0.10.2 fix to `scoring.py` propagates to both surfaces without further change. The v0.7.1 I-1 lesson (watch-mode contract drift) holds: keep posture computation in one place.
+
+### Tests
+
+[tests/test_v0102_posture_iptables_key.py](../tests/test_v0102_posture_iptables_key.py), NEW, 7 tests across 2 classes + 1 parametrize:
+
+**`TestPostureIptablesKey`** (4 tests):
+
+- `test_canonical_key_triggers_iptables_passthrough_escalation` — builds a `ScoreEngine` with a single `Finding(key="firewall_iptables.input_accept")`, calls `set_posture_from_engine(engine, fw_active=True)`, asserts `posture_escalation == (RiskLevel.HIGH, "scoring.posture.iptables_input_accept")`. **This is the bug repro**: pre-fix returns `(None, "")` (no escalation, the LOW floor stays).
+- `test_legacy_key_does_not_trigger_escalation` — same setup but with the legacy `iptables_nft.input_accept` finding key, asserts escalation does NOT fire. This pins the **intent**: the v0.9.2 baseline migration shim handles legacy keys at load time, but live findings always emit the canonical prefix, so the live-comparison contract should be canonical-only.
+- `test_no_finding_no_escalation_with_fw_active` — sanity baseline.
+- `test_fw_inactive_still_escalates_independently` — confirms the `firewall_inactive` branch is untouched by the fix.
+
+**`TestNoLegacyKeyInLiveCheck`** (2 tests, static guards):
+
+- `test_scoring_py_does_not_reference_legacy_key_for_match` — regex sweep of `bob/scoring.py` source for `== "iptables_nft.input_accept"` (live comparison context, not just any mention). Fails if the v0.10.2 fix is reverted.
+- `test_no_other_production_module_references_legacy_key_for_match` — same sweep over all of `bob/` with the v0.9.2 migration shim files (`_v090_renames.py` + `compare.py`) explicitly allowlisted (they document the rename in module-level docstrings + comments + the `SECTION_RENAMES_V090` dict — that's not a live comparison, it's the migration contract).
+
+**Parametrize** (1 test):
+
+- `test_canonical_key_present_in_explain_catalog` — pins the contract that any key the posture check matches against must also be present in `EXPLAIN_KEYS`, so `bob --explain firewall_iptables.input_accept` works on the upgrade path. Future canonical key splits will trip this if EXPLAIN_KEYS is not updated.
+
+Total: **+7 tests** (6261 → 6268). 0 regression.
+
+### Why the 3 minors are deferred
+
+- **M-1** — Duplicate `Host` blocks with `ForwardX11 yes` triple-deduct on the new v0.10.1 client check. Pre-existing pattern on 4 client directives (`forwardx11`/`forwardagent`/`stricthostkeychecking`/`userknownhostsfile`). Zero user signal across 5+ majors on the 3 pre-existing directives. The v0.10.1 new branch inherits the same shape — fixing requires the same shape on all 4 to stay consistent, which is a 2-3h refactor for a rare-in-practice failure mode (a single `Host *` global block is the norm, multi-Host with the same directive across blocks is unusual).
+- **M-2** — Cosmetic hoist of `client_config_q = shlex.quote(str(client_config))` out of the per-entry loop. No measurable user impact (`shlex.quote` on a 30-character path is sub-microsecond; the loop iterates 0-20 entries in practice). KILL.
+- **M-3** — `_check_client_config` flattens `Host` blocks: a `ForwardX11 yes` inside a tight `Host trusted-jumpbox.internal` block fires as if it were global. The v0.10.1 explain text just shipped recommends "restrict it per-Host block" as remediation — which the checker can't currently distinguish. This is a real contract leak introduced by v0.10.1's own documentation. Pre-existing for 3 of the 4 client directives but v0.10.1 made the surface visibility much higher. Deferred to v0.11.x as a real D-4-style refinement: the design question is which `Host` scopes should WARN vs INFO. For `forwardx11`/`forwardagent`, scoped per-Host is often legitimate. For `stricthostkeychecking no` / `userknownhostsfile /dev/null`, dangerous in any scope. The fix requires either a new INFO emit path or a per-directive scope policy table — too much design work for a same-day hotfix. Revisit if a user signals on a per-Host scoping false positive.
+
+### Numbers
+
+- **Tests 6261 → 6268** (+7). 0 regression.
+- 1 production code file modified ([bob/scoring.py](../bob/scoring.py)) — 1 line changed in the comparison literal + 7 lines of context comment.
+- 1 new test file ([tests/test_v0102_posture_iptables_key.py](../tests/test_v0102_posture_iptables_key.py)) — 7 tests.
+- All release surface (pyproject + man × 3 + 2 README_TECH shields + debian + rpm + 4 CHANGELOG + TESTING + memory note) bumped per convention.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No migration action required from v0.10.1. Operators see correct HIGH posture escalation on UFW-active hosts with an iptables INPUT ACCEPT passthrough rule (the previously-silent regression).
+
+**v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1).
+**v0.6.x remains EOL** (declared in v0.7.2).
+
+### Field test scope
+
+The v0.10.2 fix is a single-literal correction with deterministic unit-test coverage (the bug repro is one of the 7 tests). No 5-distro field test campaign required. Local sanity:
+
+```
+python3 -c "
+from bob.scoring import Finding, ScoreEngine, RiskLevel, set_posture_from_engine
+engine = ScoreEngine()
+engine.findings.append(Finding(level='warn', message='m', key='firewall_iptables.input_accept'))
+set_posture_from_engine(engine, fw_active=True)
+floor, reason = engine.posture_escalation
+assert floor == RiskLevel.HIGH and reason == 'scoring.posture.iptables_input_accept'
+print('v0.10.2 I-1 fix verified')
+"
+```
+
+### Audit pattern: same-day audit → same-day ship is the pattern
+
+v0.7.1 (post-v0.7.0), v0.8.1 (post-v0.8.0 + multi-pass), v0.9.1 (hotfix v0.9.0 F-3), v0.9.2 (same-day after v0.9.1), v0.10.2 (same-day after v0.10.1). The "ship a major, audit, ship the hotfix same-day or next-day" rhythm has held across all 4 most recent BREAKING / hardening cycles. The conservative-workflow filter selects only the bugs that actually require shipping — the alternative ("bundle all findings into v0.10.3") would have shipped 4 items including 3 cosmetic. Same-day discipline keeps the patches surgical.
+
+### Lessons
+
+- **Literal comparisons in posture / scoring layers must be pinned by regression tests against the canonical contract.** The v0.9.0 D-1 rename should have tripped a test that pinned the canonical key for the iptables posture check — the test would have caught the regression at the D-1 ship. v0.10.2 adds that test (`test_canonical_key_triggers_iptables_passthrough_escalation`), so a future canonical-key rename gets a loud test failure instead of a silent regression.
+- **Renames across module boundaries need a literal-string sweep.** The v0.9.0 D-1 rename pass audited emit sites, locale keys, explain content, profile overrides, and the bash completion — but did not grep `bob/scoring.py` for the legacy key in comparison context. The post-v0.10.1 audit caught the bug. Future BREAKING renames should include a `grep -rn '"$LEGACY_KEY"'` sweep before ship (this could be a CI guard).
+- **Masking branches make silent regressions invisible.** The `firewall_inactive` branch escalating HIGH on the most common deployment shape (UFW down) masked the dead `iptables_input_accept` branch for 3 majors. When a posture system has overlapping triggers, audits must enumerate the matrix and verify each trigger fires in isolation. (The v0.10.2 test `test_fw_inactive_still_escalates_independently` is a partial pin in that direction.)
+
+---
+
 ## [v0.10.1] — 2026-06-10
 
 **First v0.10.x hardening patch — D-4 Rank 1 `ssh.x11_forwarding` split + NEW client-side ForwardX11 detection.**

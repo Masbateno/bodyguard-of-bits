@@ -1,3 +1,50 @@
+bodyguard-of-bits (0.10.2-1) UNRELEASED; urgency=low
+
+  * I-1 hotfix from the post-v0.10.1 deep hardening audit (sub-agent
+    pass, 2026-06-10). Single targeted fix to a posture-escalation
+    branch that has been silently dead since v0.9.0.
+  * bob/scoring.py::set_posture_from_engine looked for findings with
+    f.key == "iptables_nft.input_accept" to flip the
+    iptables_input_accept posture flag (which forces the risk level
+    floor to HIGH when UFW is up but iptables still has an INPUT
+    ACCEPT passthrough rule). The "iptables_nft.*" prefix was renamed
+    to "firewall_iptables.*" in v0.9.0 D-1, so the string-literal
+    comparison stopped matching anything. The iptables-only posture
+    escalation has been dead since v0.9.0; masked in practice by the
+    firewall_inactive branch (UFW down + iptables ACCEPT both escalate
+    to HIGH for the same host), but UFW-active hosts with a
+    legacy-allowed iptables passthrough rule regressed silently from
+    HIGH to LOW.
+  * Fix: update the literal to "firewall_iptables.input_accept" to
+    match the v0.9.0+ canonical key emitted by
+    bob/checks/iptables_nftables.py:174. Covers both call sites in
+    one change (bob/__main__.py::audit + bob/watch.py via
+    set_posture_from_engine — single source of truth since v0.7.3).
+  * tests/test_v0102_posture_iptables_key.py (NEW, 7 tests across
+    2 classes + 1 parametrize): canonical key triggers iptables
+    escalation (the regression); legacy key does NOT trigger
+    escalation (intent pinning — v0.9.2 baseline shim handles
+    legacy at load time, live findings always emit canonical);
+    sanity baselines (UFW active + zero findings → no escalation,
+    UFW inactive → firewall_inactive branch still fires
+    independently); static guards (scoring.py + sweep of bob/
+    must not compare against the retired prefix outside the
+    documented v0.9.2 migration shim contract); EXPLAIN_KEYS
+    contract (canonical key must be in EXPLAIN_KEYS so
+    bob --explain works on the upgrade path).
+  * Tests 6261 → 6268 (+7). 0 regression.
+  * Conservative-workflow filter held: 4 findings total from the
+    audit (1 important + 3 minor). Only I-1 ships in v0.10.2.
+    M-1 (duplicate Host blocks triple-deduct), M-2 (cosmetic
+    hoist), M-3 (Host scope semantics in client config) deferred —
+    M-1/M-3 are pre-existing patterns on 4 client directives with
+    zero user signal across 5+ majors; M-2 has no measurable user
+    gain. M-3 may become a real v0.11.x D-4-style refinement if a
+    user signals on the per-Host scoping contract.
+  * No migration action required — pipx upgrade bodyguard-of-bits.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 10 Jun 2026 18:00:00 +0200
+
 bodyguard-of-bits (0.10.1-1) UNRELEASED; urgency=low
 
   * First v0.10.x hardening patch — D-4 Rank 1 ssh.x11_forwarding split

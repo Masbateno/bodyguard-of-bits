@@ -735,8 +735,15 @@ def set_posture_from_engine(engine: "ScoreEngine", fw_active: bool) -> None:
         _fw_score = None
     engine.set_posture(
         firewall_inactive=not fw_active,
+        # v0.10.2 I-1: the v0.9.0 D-1 rename ``iptables_nft.*`` →
+        # ``firewall_iptables.*`` left this string-literal comparison
+        # matching the retired prefix, so the iptables-passthrough
+        # escalation has been silently dead since v0.9.0. Masked in
+        # practice by the ``firewall_inactive`` branch (UFW down + iptables
+        # ACCEPT both escalate to HIGH), but the iptables-only escalation
+        # (UFW active + iptables ACCEPT rule) regressed to LOW.
         iptables_input_accept=any(
-            f.key == "iptables_nft.input_accept" for f in engine.findings
+            f.key == "firewall_iptables.input_accept" for f in engine.findings
         ),
         firewall_domain_score=_fw_score,
     )

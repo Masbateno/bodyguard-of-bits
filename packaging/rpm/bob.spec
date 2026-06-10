@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.10.1
+Version:        0.10.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,24 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Wed Jun 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.10.2-1
+- I-1 hotfix from the post-v0.10.1 deep hardening audit.
+- bob/scoring.py::set_posture_from_engine looked for the v0.7.x / v0.8.x
+  legacy key iptables_nft.input_accept to flip the iptables_input_accept
+  posture flag. The prefix was renamed firewall_iptables.* in v0.9.0 D-1,
+  so the comparison silently stopped matching. The iptables-only posture
+  escalation has been dead since v0.9.0; masked by the firewall_inactive
+  branch on UFW-down hosts, but UFW-active hosts with an iptables INPUT
+  ACCEPT passthrough rule regressed from HIGH to LOW.
+- Fix: update the literal to the v0.9.0+ canonical key. Single source of
+  truth via set_posture_from_engine covers both audit and watch paths.
+- tests/test_v0102_posture_iptables_key.py: 7 regression tests pinning
+  the canonical contract + 2 static guards forbidding live comparisons
+  against the retired prefix outside the v0.9.2 migration shim.
+- Tests 6261 → 6268 (+7). 0 regression.
+- Conservative workflow: 4 audit findings, ship I-1 only. M-1/M-2/M-3
+  deferred (pre-existing patterns or cosmetic).
+
 * Wed Jun 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.10.1-1
 - First v0.10.x hardening patch — D-4 Rank 1 ssh.x11_forwarding split
   + NEW client-side ForwardX11 detection.

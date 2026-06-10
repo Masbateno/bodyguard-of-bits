@@ -6,6 +6,108 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.10.2] — 10-06-2026
+
+**Deuxième patch hardening v0.10.x — fix I-1 issu de l'audit deep hardening post-v0.10.1.**
+
+### Le cycle : audit same-day → ship same-day
+
+Après que v0.10.1 ait été taggé plus tôt aujourd'hui, un sub-agent a roulé la passe d'audit deep hardening standard sur le codebase post-v0.10.1. L'audit a retourné 4 findings :
+
+| ID | Sévérité | Surface | Verdict |
+|---|---|---|---|
+| **I-1** | Important | `bob/scoring.py:739` (posture escalation, legacy key) | **GO v0.10.2** |
+| M-1 | Minor | `bob/checks/ssh/_subchecks.py:507-516` (Host blocks dupliqués) | DEFER |
+| M-2 | Minor | `bob/checks/ssh/_subchecks.py:462-466` (hoist `client_config_q`) | KILL (cosmetic) |
+| M-3 | Minor | `bob/checks/ssh/_parsers.py:334-351` (semantics scope `Host`) | DEFER → candidat v0.11.x |
+
+Filter workflow conservateur ([[feedback_conservative_refactor]] "gain × risque = STOP") : seul I-1 passe le test coût/valeur parce que c'est un vrai bug d'escalation avec régression security-relevant, masqué par une autre branche posture mais visiblement broken sur une shape de déploiement qui existe in the wild. Les 3 minors fail parce que pré-existants (zéro signal user sur 5+ majeures) ou purement cosmétiques.
+
+### Le bug
+
+`bob/scoring.py::set_posture_from_engine` cherchait des findings avec la clé legacy v0.7.x / v0.8.x pour flip le posture flag `iptables_input_accept` :
+
+```python
+engine.set_posture(
+    firewall_inactive=not fw_active,
+    iptables_input_accept=any(
+        f.key == "iptables_nft.input_accept" for f in engine.findings  # ← clé v0.7.x / v0.8.x
+    ),
+    firewall_domain_score=_fw_score,
+)
+```
+
+Le prefix `iptables_nft.*` a été renommé `firewall_iptables.*` en **v0.9.0 D-1** dans le cadre du bundle BREAKING qui a fermé le deferred architectural cleanup v0.7.0. Le rename est documenté dans `bob/_v090_renames.py::SECTION_RENAMES_V090` et la clé canonique est émise live par `bob/checks/iptables_nftables.py:174` depuis v0.9.0.
+
+La comparaison string-literal en `scoring.py:739` a arrêté de matcher quoi que ce soit à la release v0.9.0. **L'escalation iptables-passthrough de posture est dead silencieusement depuis 3 majeures** (v0.9.0 → v0.9.1 → v0.9.2 → v0.10.0 → v0.10.1).
+
+### Pourquoi aucun user n'a signalé
+
+`set_posture` a 3 triggers d'escalation, en ordre de priorité :
+
+1. `firewall_inactive=True` → HIGH (`scoring.posture.firewall_inactive`)
+2. `iptables_input_accept=True` → HIGH (`scoring.posture.iptables_input_accept`)
+3. `firewall_domain_score <= 3` → MEDIUM (`scoring.posture.firewall_domain_low`)
+
+La shape de déploiement la plus commune qui surface le risk iptables-passthrough est **UFW disabled + iptables INPUT ACCEPT**. Cette shape trigger la branche (1) qui escalate déjà à HIGH. Donc le risk floor user-visible est correct *pour le cas le plus commun*.
+
+La shape qui régresse silencieusement est la combinaison plus rare **UFW active + iptables INPUT ACCEPT** — ex. un operator a activé UFW mais a laissé une règle iptables passthrough legacy d'une config précédente. Dans ce cas, branche (1) est False, branche (2) était supposée fire sur le finding iptables mais la comparaison literal n'a jamais matché, donc ni (1) ni (2) n'a escaladé. Le risk floor a régressé de HIGH (pre-v0.9.0) à LOW (post-v0.9.0).
+
+### Le fix
+
+[bob/scoring.py:739](../bob/scoring.py#L739) — update le literal pour matcher la clé canonique v0.9.0+ avec commentaire inline qui capture le **why** et le **failure mode** pour les audits futurs.
+
+### Pourquoi ce fix unique couvre les 2 call sites
+
+`set_posture_from_engine` est la single source of truth pour la computation posture depuis v0.7.3 M-10. Appelé depuis `bob/__main__.py::audit` et `bob/watch.py:109`. Le dedup signifie que le fix v0.10.2 à `scoring.py` se propage aux 2 surfaces sans changement additionnel.
+
+### Tests
+
+[tests/test_v0102_posture_iptables_key.py](../tests/test_v0102_posture_iptables_key.py), NOUVEAU, 7 tests sur 2 classes + 1 parametrize.
+
+**`TestPostureIptablesKey`** (4 tests) : canonical_key_triggers + legacy_key_does_not + no_finding + fw_inactive_still_escalates.
+
+**`TestNoLegacyKeyInLiveCheck`** (2 tests static guards) : scoring.py sweep + full bob/ sweep avec allowlist `_v090_renames.py` + `compare.py`.
+
+**Parametrize** (1 test) : canonical_key_present_in_explain_catalog (pin EXPLAIN_KEYS contract).
+
+Total : **+7 tests** (6261 → 6268). 0 régression.
+
+### Pourquoi les 3 minors sont déférés
+
+- **M-1** — Host blocks dupliqués triple-deduct. Pré-existant 4 directives client. Zéro signal user 5+ majeures.
+- **M-2** — Cosmetic hoist. Aucun impact mesurable. KILL.
+- **M-3** — `_check_client_config` flatten `Host` blocks. Vrai contract leak introduit par v0.10.1 (l'explain text recommande "restrict per-Host" mais le checker peut pas distinguer). Déféré v0.11.x comme refinement style D-4 ; revisite si signal user sur faux-positif per-Host scoping.
+
+### Numbers
+
+- **Tests 6261 → 6268** (+7). 0 régression.
+- 1 fichier production code modifié (1 ligne + commentaire de contexte).
+- 1 nouveau test file (7 tests).
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Pas d'action de migration requise depuis v0.10.1.
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
+**v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Audit pattern : same-day audit → same-day ship est le pattern
+
+v0.7.1, v0.8.1, v0.9.1, v0.9.2, v0.10.2. Le rythme "ship un major, audit, ship le hotfix same-day ou next-day" a tenu sur les 4 cycles BREAKING / hardening les plus récents. Le filter workflow conservateur sélectionne seulement les bugs qui requirent vraiment de shipper.
+
+### Leçons
+
+- **Les comparaisons literal dans les couches posture / scoring doivent être pinées par tests régression contre le contract canonical.**
+- **Les renames cross-module nécessitent un literal-string sweep.**
+- **Les branches de masking font les régressions silencieuses invisibles.**
+
+---
+
 ## [v0.10.1] — 10-06-2026
 
 **Premier patch hardening v0.10.x — D-4 Rank 1 split `ssh.x11_forwarding` + NOUVELLE détection client-side ForwardX11.**
