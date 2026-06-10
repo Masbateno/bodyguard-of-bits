@@ -84,7 +84,10 @@ class TestGetCisCode:
         assert code == "CIS:5.2.7"
 
     def test_code_format_matches_pattern(self):
-        code = get_cis_code("ssh.x11_forwarding")
+        # v0.10.1 D-4 Rank 1: ssh.x11_forwarding was split into
+        # ssh.x11.forwarding.server (keeps the CIS reference) +
+        # ssh.x11.forwarding.client (Best practice — no CIS code).
+        code = get_cis_code("ssh.x11.forwarding.server")
         assert code is not None
         assert _CODE_RE.match(code), f"Unexpected code format: {code!r}"
 

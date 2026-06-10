@@ -147,12 +147,19 @@ class TestExplainKeyFreezePolicy:
     })
 
     def test_core_keys_present_in_canonical_set(self):
-        """Frozen core keys must remain in EXPLAIN_KEYS — schema_version v1 contract."""
+        """Frozen core keys must remain callable — either directly via EXPLAIN_KEYS
+        or via the EXPLAIN_KEY_ALIASES indirection (v0.10.1 D-4 Rank 1 added
+        ssh.x11_forwarding → ssh.x11.forwarding.server as the first live alias
+        after the v0.9.0 D-3 retrait emptied the dict). Both paths satisfy the
+        schema_version v1 contract per the explain.py docstring policy."""
+        from bob.explain import EXPLAIN_KEY_ALIASES
         canonical = set(EXPLAIN_KEYS)
-        missing = self._FROZEN_CORE_KEYS - canonical
+        callable_keys = canonical | set(EXPLAIN_KEY_ALIASES.keys())
+        missing = self._FROZEN_CORE_KEYS - callable_keys
         assert not missing, (
             f"v1 schema contract broken — frozen keys missing: {missing}. "
-            "Either restore them or add them to EXPLAIN_KEY_ALIASES (alias map)."
+            "Either restore them in EXPLAIN_KEYS or add them to "
+            "EXPLAIN_KEY_ALIASES (alias map)."
         )
 
 

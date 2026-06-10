@@ -862,7 +862,6 @@
     "permit_empty_passwords": "Les mots de passe vides sont autorisés (PermitEmptyPasswords = yes)",
     "max_auth_tries": "MaxAuthTries = {value} — valeur recommandée : 3 ou moins",
     "login_grace_time": "LoginGraceTime = {value}s — valeur recommandée : 60s ou moins",
-    "x11_forwarding": "Le transfert X11 est activé — augmente la surface d'attaque si inutile",
     "ignore_rhosts_disabled": "IgnoreRhosts est désactivé — les fichiers .rhosts sont approuvés (risque legacy)",
     "host_based_auth": "L'authentification basée sur l'hôte est activée — permet la connexion depuis des hôtes de confiance sans mot de passe",
     "permit_user_env": "PermitUserEnvironment est activé — les utilisateurs peuvent injecter des variables d'environnement",
@@ -912,7 +911,14 @@
     "host_key_rsa_short": "Clé hôte serveur RSA {name} : {bits} bits — envisagez de régénérer à 4096 bits ou de passer à ed25519",
     "host_key_rsa_short_detail": "Les clés hôte RSA inférieures à 4096 bits sont techniquement acceptables mais ne sont plus considérées comme optimales. Les clients et autorités modernes recommandent RSA 4096 bits ou ed25519 pour les clés d'identité serveur.",
     "host_key_ok": "Clé hôte serveur {name} ({type}) : algorithme fort",
-    "match_block_skipped": "sshd_config contient un bloc Match — les directives qui le suivent n'ont pas été analysées"
+    "match_block_skipped": "sshd_config contient un bloc Match — les directives qui le suivent n'ont pas été analysées",
+    "x11": {
+      "forwarding": {
+        "server": "Le transfert X11 est activé — augmente la surface d'attaque si inutile",
+        "client": "La config client active le transfert X11 (ForwardX11 yes) — transférer ton display VERS un hôte distant lui donne accès à ton bureau local",
+        "client_detail": "Le transfert X11 de ta machine VERS un hôte distant ouvre ton serveur d'affichage au distant — un host hostile peut prendre des captures d'écran, injecter des frappes clavier, et lire le presse-papiers via le protocole X. Désactive ForwardX11 dans ~/.ssh/config (ou utilise 'ssh -X' on-demand pour les hôtes de confiance uniquement) en retirant la directive ou en mettant 'no'."
+      }
+    }
   },
   "file_perms": {
     "world_writable": "{path} accessible en écriture par tous ({mode}) — n'importe quel utilisateur peut modifier ce fichier critique",
@@ -1068,11 +1074,6 @@
         "why": "Désactiver l'authentification par clé publique force tous les utilisateurs à utiliser un mot de passe. Cela supprime le mécanisme d'authentification le plus robuste et rend le serveur entièrement dépendant de la solidité des mots de passe.",
         "how": "1. Activez l'authentification par clé :\n   sudo nano /etc/ssh/sshd_config  →  PubkeyAuthentication yes\n2. Générez une paire de clés :\n   ssh-keygen -t ed25519\n3. Copiez la clé sur le serveur :\n   ssh-copy-id utilisateur@serveur\n4. Redémarrez SSH :\n   sudo systemctl restart ssh"
       },
-      "x11_forwarding": {
-        "title": "Transfert X11 activé (X11Forwarding yes)",
-        "why": "Le transfert X11 expose votre affichage X11 local à un serveur distant. Un serveur distant malveillant ou compromis pourrait capturer vos frappes clavier et le contenu de votre écran.",
-        "how": "1. Désactivez le transfert X11 :\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. Si nécessaire, assurez-vous que X11UseLocalhost yes est également défini\n3. Redémarrez SSH :\n   sudo systemctl restart ssh"
-      },
       "dsa_key": {
         "title": "Clé hôte DSA en cours d'utilisation",
         "why": "Les clés DSA sont cryptographiquement obsolètes et dépréciées depuis OpenSSH 7.0+. L'algorithme n'offre qu'une sécurité de 1024 bits et est vulnérable aux attaques lorsque le générateur de nombres aléatoires est faible.",
@@ -1224,6 +1225,20 @@
         },
         "container": {
           "why": "La plupart des images container ne devraient PAS faire tourner SSH (utiliser docker exec / kubectl exec / podman exec à la place). Si sshd est installé mais inactif dans un container, envisagez de le retirer de l'image."
+        }
+      },
+      "x11": {
+        "forwarding": {
+          "server": {
+            "title": "Transfert X11 activé (X11Forwarding yes)",
+            "why": "Le transfert X11 expose votre affichage X11 local à un serveur distant. Un serveur distant malveillant ou compromis pourrait capturer vos frappes clavier et le contenu de votre écran.",
+            "how": "1. Désactivez le transfert X11 :\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. Si nécessaire, assurez-vous que X11UseLocalhost yes est également défini\n3. Redémarrez SSH :\n   sudo systemctl restart ssh"
+          },
+          "client": {
+            "title": "Transfert X11 client activé (ForwardX11 yes)",
+            "why": "Quand tu te connectes avec `ssh -X` ou que tu as `ForwardX11 yes` dans ~/.ssh/config, ton serveur X local est exposé à l'hôte distant via un tunnel SSH. Un distant malveillant ou compromis peut prendre des captures d'écran de ton bureau local, injecter des frappes clavier dans n'importe quelle application X, et lire ton presse-papiers — le protocole X11 n'a aucune frontière de sécurité entre les applications locales et forwardées.",
+            "how": "1. Ouvre ~/.ssh/config :\n   nano ~/.ssh/config\n2. Retire ou mets à 'no' toute ligne 'ForwardX11 yes'\n3. Si le transfert X11 est vraiment nécessaire pour des hôtes spécifiques, restreins-le par bloc Host et préfère 'ForwardX11Trusted no' (utilise l'extension SECURITY pour limiter l'accès distant)\n4. Utilise 'ssh -X host' on-demand uniquement pour les hôtes de confiance où tu as besoin d'une app graphique one-shot"
+          }
         }
       }
     },

@@ -23,12 +23,24 @@
     "ref": "CIS Ubuntu 22.04 L2 — 5.2.23 — Ensure SSH access is limited (AllowUsers/AllowGroups; review public login sources)",
     "code": "CIS:5.2.23"
   },
+  "backup.no_backup": {
+    "ref": "Best practice — Install a backup solution (timeshift / restic / borg) and verify restore quarterly",
+    "code": null
+  },
+  "clamav.db_not_found": {
+    "ref": "Best practice — Initialise the ClamAV signature database via 'freshclam' before relying on scans",
+    "code": null
+  },
   "clamav.db_outdated": {
     "ref": "Best practice — Ensure virus database is updated at least weekly",
     "code": null
   },
   "clamav.db_very_outdated": {
     "ref": "Best practice — Ensure virus database is updated daily (freshclam enabled)",
+    "code": null
+  },
+  "clamav.freshclam_missing": {
+    "ref": "Best practice — Keep clamav-freshclam running so signatures stay current automatically",
     "code": null
   },
   "clamav.scan_old": {
@@ -46,6 +58,14 @@
   "cron.world_writable": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1.8 — Ensure cron is restricted to authorized users",
     "code": "CIS:5.1.8"
+  },
+  "ddns.found": {
+    "ref": "Best practice — A DDNS client publishes your public IP; harden every exposed port behind it",
+    "code": null
+  },
+  "ddns.warn": {
+    "ref": "Best practice — DDNS + open ports = persistent public exposure; close unintended ports",
+    "code": null
   },
   "disk.partition_critical": {
     "ref": "Best practice — Monitor disk space to ensure system stability",
@@ -67,17 +87,17 @@
     "ref": "Best practice — Monitor SMART attribute 198 (uncorrectable errors)",
     "code": null
   },
-  "docker.iptables_bypass": {
-    "ref": "CIS Docker 1.6 — 2.1 — Ensure network traffic is restricted between containers on the default bridge",
-    "code": "CIS Docker:2.1"
+  "docker.exposed_bypass_ufw": {
+    "ref": "CIS Docker 1.6 — 5.7 — Ensure that privileged ports are not mapped within containers (UFW-bypassing publish)",
+    "code": "CIS Docker:5.7"
   },
   "docker.exposed_port": {
     "ref": "CIS Docker 1.6 — 5.7 — Ensure that privileged ports are not mapped within containers",
     "code": "CIS Docker:5.7"
   },
-  "docker.exposed_bypass_ufw": {
-    "ref": "CIS Docker 1.6 — 5.7 — Ensure that privileged ports are not mapped within containers (UFW-bypassing publish)",
-    "code": "CIS Docker:5.7"
+  "docker.iptables_bypass": {
+    "ref": "CIS Docker 1.6 — 2.1 — Ensure network traffic is restricted between containers on the default bridge",
+    "code": "CIS Docker:2.1"
   },
   "docker_hardening.host_network": {
     "ref": "CIS Docker 1.6 — 5.13 — Ensure that the container's network is not set to host",
@@ -94,6 +114,14 @@
   "docker_hardening.socket_mounted": {
     "ref": "CIS Docker 1.6 — 5.31 — Ensure that the Docker socket is not mounted inside any container",
     "code": "CIS Docker:5.31"
+  },
+  "fail2ban.no_jails": {
+    "ref": "Best practice — Enable at least the sshd jail; fail2ban with no jails offers no protection",
+    "code": null
+  },
+  "fail2ban.service_inactive": {
+    "ref": "Best practice — Activate fail2ban or uninstall it; an inactive service provides no protection",
+    "code": null
   },
   "file_integrity.check_old": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.3.2 — Ensure filesystem integrity is regularly checked",
@@ -143,6 +171,10 @@
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy",
     "code": "CIS:3.5.1.7"
   },
+  "firewall_drivers.ip_forward_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.2.1 — Ensure IP forwarding is disabled (net.ipv4.ip_forward)",
+    "code": "CIS:3.2.1"
+  },
   "firewall_drivers.iptables_bypass": {
     "ref": "Best practice — Avoid raw iptables ACCEPT rules in INPUT that bypass UFW chains",
     "code": null
@@ -155,121 +187,37 @@
     "ref": "Best practice — Avoid running iptables/UFW and nftables stacks in parallel",
     "code": null
   },
-  "firewall_drivers.ip_forward_enabled": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.2.1 — Ensure IP forwarding is disabled (net.ipv4.ip_forward)",
-    "code": "CIS:3.2.1"
-  },
-  "services.exposure.open_local": {
-    "ref": "Best practice — Restrict LAN-exposed service ports to trusted networks or bind to 127.0.0.1",
-    "code": null
-  },
-  "services.state.active_disabled": {
-    "ref": "Best practice — Enable security-critical systemd services so they start at boot",
-    "code": null
-  },
-  "services.state.installed_inactive_critical": {
-    "ref": "Best practice — Activate or remove installed security tools rather than leaving them dormant",
-    "code": null
-  },
-  "rootkit.db_outdated": {
-    "ref": "Best practice — Keep rkhunter signature database up to date (daily 'rkhunter --update')",
-    "code": null
-  },
-  "rootkit.no_scan": {
-    "ref": "Best practice — Schedule rkhunter scans so detection runs without manual intervention",
-    "code": null
-  },
-  "rootkit.scan_old": {
-    "ref": "Best practice — Run rkhunter at least monthly to keep detection coverage current",
-    "code": null
-  },
-  "ports.uncovered": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy, or add an explicit rule",
-    "code": "CIS:3.5.1.7"
-  },
-  "ports.uncovered_netbios": {
-    "ref": "Best practice — Restrict NetBIOS / Samba ports (137-139, 445) to the trusted LAN subnet only",
-    "code": null
-  },
-  "ntp.not_enabled": {
-    "ref": "CIS Ubuntu 22.04 L1 — 2.2.1.1 — Ensure time synchronization is in use (chrony / systemd-timesyncd)",
-    "code": "CIS:2.2.1.1"
-  },
-  "ntp.not_synchronized": {
-    "ref": "Best practice — NTP service active but not synchronised; verify UDP/123 egress and pool reachability",
-    "code": null
-  },
-  "clamav.db_not_found": {
-    "ref": "Best practice — Initialise the ClamAV signature database via 'freshclam' before relying on scans",
-    "code": null
-  },
-  "clamav.freshclam_missing": {
-    "ref": "Best practice — Keep clamav-freshclam running so signatures stay current automatically",
-    "code": null
-  },
-  "fail2ban.no_jails": {
-    "ref": "Best practice — Enable at least the sshd jail; fail2ban with no jails offers no protection",
-    "code": null
-  },
-  "fail2ban.service_inactive": {
-    "ref": "Best practice — Activate fail2ban or uninstall it; an inactive service provides no protection",
-    "code": null
-  },
-  "ddns.found": {
-    "ref": "Best practice — A DDNS client publishes your public IP; harden every exposed port behind it",
-    "code": null
-  },
-  "ddns.warn": {
-    "ref": "Best practice — DDNS + open ports = persistent public exposure; close unintended ports",
-    "code": null
-  },
-  "ssh.host_key_dsa": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.13 — Ensure only strong key exchange algorithms are used (no DSA host keys)",
-    "code": "CIS:5.2.13"
-  },
-  "ssh.not_active": {
-    "ref": "Best practice — Activate sshd if administration via SSH is needed; otherwise uninstall openssh-server",
-    "code": null
-  },
-  "updates.apt_cache_stale": {
-    "ref": "Best practice — Keep the APT cache fresh so 'no updates' verdicts reflect reality (apt-daily.timer)",
-    "code": null
-  },
-  "updates.dist_upgrade_inconsistent": {
-    "ref": "Best practice — Periodically run 'apt full-upgrade' to catch kernel and dependency updates skipped by 'apt upgrade'",
-    "code": null
-  },
-  "log_rotation.journald_volatile": {
-    "ref": "CIS Ubuntu 22.04 L1 — 4.2.1.1 — Ensure systemd-journald is configured for persistent storage",
-    "code": "CIS:4.2.1.1"
-  },
-  "log_rotation.logrotate_missing": {
-    "ref": "CIS Ubuntu 22.04 L1 — 4.3 — Ensure logrotate is configured to rotate system logs",
-    "code": "CIS:4.3"
-  },
-  "logs.brute_found": {
-    "ref": "Best practice — Brute-force activity detected; deploy fail2ban + key-only authentication",
-    "code": null
-  },
-  "smtp.exposed": {
-    "ref": "Best practice — Bind local-only SMTP daemons to 127.0.0.1 to avoid relay abuse exposure",
-    "code": null
-  },
-  "backup.no_backup": {
-    "ref": "Best practice — Install a backup solution (timeshift / restic / borg) and verify restore quarterly",
-    "code": null
-  },
-  "virt.snap_network": {
-    "ref": "Best practice — Audit snap-installed virtualisation tools (multipass, lxd) and their bridge interfaces",
-    "code": null
-  },
-  "network_context.sensitive_remote": {
-    "ref": "Best practice — Move sensitive services off the public internet (VPN, jump host) or harden if exposure is required",
-    "code": null
-  },
-  "prerequisites.ufw_missing": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw is installed",
+  "firewall_iptables.forward_accept": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (FORWARD chain ACCEPT)",
     "code": "CIS:3.5.1.1"
+  },
+  "firewall_iptables.input_accept": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (INPUT chain ACCEPT)",
+    "code": "CIS:3.5.1.1"
+  },
+  "firewall_iptables.no_backend": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (no active firewall layer detected)",
+    "code": "CIS:3.5"
+  },
+  "firewall_iptables.no_conntrack": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Configure firewall (no ESTABLISHED/RELATED conntrack rule detected)",
+    "code": "CIS:3.5.1"
+  },
+  "firewall_iptables.no_loopback": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.5 — Ensure ufw loopback traffic is configured",
+    "code": "CIS:3.5.1.5"
+  },
+  "firewall_rules.duplicate_found": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (rule hygiene and auditability)",
+    "code": "CIS:3.5"
+  },
+  "firewall_rules.ipv6_missing": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure ufw rules exist for all open ports (IPv4 and IPv6 parity)",
+    "code": "CIS:3.5.1.4"
+  },
+  "firewall_rules.open_any_found": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Ensure ufw is installed and configured with restrictive default policy",
+    "code": "CIS:3.5.1"
   },
   "firmware.fwupd_updates": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (firmware)",
@@ -322,26 +270,6 @@
   "hardening.tcp_syncookies_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.8 — Ensure TCP SYN cookies is enabled (net.ipv4.tcp_syncookies)",
     "code": "CIS:3.3.8"
-  },
-  "firewall_iptables.forward_accept": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (FORWARD chain ACCEPT)",
-    "code": "CIS:3.5.1.1"
-  },
-  "firewall_iptables.input_accept": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (INPUT chain ACCEPT)",
-    "code": "CIS:3.5.1.1"
-  },
-  "firewall_iptables.no_backend": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (no active firewall layer detected)",
-    "code": "CIS:3.5"
-  },
-  "firewall_iptables.no_conntrack": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Configure firewall (no ESTABLISHED/RELATED conntrack rule detected)",
-    "code": "CIS:3.5.1"
-  },
-  "firewall_iptables.no_loopback": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.5 — Ensure ufw loopback traffic is configured",
-    "code": "CIS:3.5.1.5"
   },
   "ipv6.port_no_v6_rule": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
@@ -399,6 +327,18 @@
     "ref": "CIS Ubuntu 22.04 L1 — 3.4.x — Ensure DCCP/SCTP/RDS/TIPC is disabled",
     "code": "CIS:3.4"
   },
+  "log_rotation.journald_volatile": {
+    "ref": "CIS Ubuntu 22.04 L1 — 4.2.1.1 — Ensure systemd-journald is configured for persistent storage",
+    "code": "CIS:4.2.1.1"
+  },
+  "log_rotation.logrotate_missing": {
+    "ref": "CIS Ubuntu 22.04 L1 — 4.3 — Ensure logrotate is configured to rotate system logs",
+    "code": "CIS:4.3"
+  },
+  "logs.brute_found": {
+    "ref": "Best practice — Brute-force activity detected; deploy fail2ban + key-only authentication",
+    "code": null
+  },
   "mac_policy.apparmor_complain_profiles": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.3 — Ensure all AppArmor profiles are in enforce or complain mode",
     "code": "CIS:1.6.3"
@@ -411,6 +351,10 @@
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.2 — Ensure AppArmor is enabled in bootloader configuration",
     "code": "CIS:1.6.2"
   },
+  "mac_policy.apparmor_no_profiles": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.4 — Ensure all AppArmor profiles are loaded",
+    "code": "CIS:1.6.4"
+  },
   "mac_policy.no_enforce": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure a MAC solution (AppArmor/SELinux) is installed and enforcing",
     "code": "CIS:1.6.1"
@@ -418,10 +362,6 @@
   "mac_policy.no_mac": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure a MAC solution (AppArmor/SELinux) is installed",
     "code": "CIS:1.6.1"
-  },
-  "mac_policy.apparmor_no_profiles": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.6.4 — Ensure all AppArmor profiles are loaded",
-    "code": "CIS:1.6.4"
   },
   "mac_policy.selinux_disabled": {
     "ref": "CIS Red Hat 8/9 L1 — 1.7.1.4 — Ensure SELinux state is enforcing",
@@ -433,6 +373,18 @@
   },
   "memory.swappiness_unjustified": {
     "ref": "Best practice — Optimise vm.swappiness for system workload",
+    "code": null
+  },
+  "network_context.sensitive_remote": {
+    "ref": "Best practice — Move sensitive services off the public internet (VPN, jump host) or harden if exposure is required",
+    "code": null
+  },
+  "ntp.not_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 2.2.1.1 — Ensure time synchronization is in use (chrony / systemd-timesyncd)",
+    "code": "CIS:2.2.1.1"
+  },
+  "ntp.not_synchronized": {
+    "ref": "Best practice — NTP service active but not synchronised; verify UDP/123 egress and pool reachability",
     "code": null
   },
   "password_policy.no_expiry": {
@@ -447,17 +399,33 @@
     "ref": "CIS Ubuntu 22.04 L1 — 5.4.1 — Ensure password creation requirements are configured (minlen ≥ 14)",
     "code": "CIS:5.4.1"
   },
-  "firewall_rules.duplicate_found": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (rule hygiene and auditability)",
-    "code": "CIS:3.5"
+  "ports.uncovered": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy, or add an explicit rule",
+    "code": "CIS:3.5.1.7"
   },
-  "firewall_rules.ipv6_missing": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure ufw rules exist for all open ports (IPv4 and IPv6 parity)",
-    "code": "CIS:3.5.1.4"
+  "ports.uncovered_netbios": {
+    "ref": "Best practice — Restrict NetBIOS / Samba ports (137-139, 445) to the trusted LAN subnet only",
+    "code": null
   },
-  "firewall_rules.open_any_found": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Ensure ufw is installed and configured with restrictive default policy",
-    "code": "CIS:3.5.1"
+  "prerequisites.ufw_missing": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw is installed",
+    "code": "CIS:3.5.1.1"
+  },
+  "risk.escalated_posture": {
+    "ref": "Best practice — Displayed risk level must reflect posture, not only network exposure",
+    "code": null
+  },
+  "rootkit.db_outdated": {
+    "ref": "Best practice — Keep rkhunter signature database up to date (daily 'rkhunter --update')",
+    "code": null
+  },
+  "rootkit.no_scan": {
+    "ref": "Best practice — Schedule rkhunter scans so detection runs without manual intervention",
+    "code": null
+  },
+  "rootkit.scan_old": {
+    "ref": "Best practice — Run rkhunter at least monthly to keep detection coverage current",
+    "code": null
   },
   "samba.guest_readonly": {
     "ref": "Best practice (Samba) — Verify anonymous read-only shares are intentional",
@@ -491,8 +459,24 @@
     "ref": "CIS Ubuntu 22.04 L2 — 1.4.1 — Ensure Secure Boot is enabled",
     "code": "CIS:1.4.1"
   },
+  "services.exposure.open_local": {
+    "ref": "Best practice — Restrict LAN-exposed service ports to trusted networks or bind to 127.0.0.1",
+    "code": null
+  },
+  "services.state.active_disabled": {
+    "ref": "Best practice — Enable security-critical systemd services so they start at boot",
+    "code": null
+  },
+  "services.state.installed_inactive_critical": {
+    "ref": "Best practice — Activate or remove installed security tools rather than leaving them dormant",
+    "code": null
+  },
   "services_health.service_inactive": {
     "ref": "Best practice — Ensure security services remain enabled and active after reboot",
+    "code": null
+  },
+  "smtp.exposed": {
+    "ref": "Best practice — Bind local-only SMTP daemons to 127.0.0.1 to avoid relay abuse exposure",
     "code": null
   },
   "ssh.allow_tcp_forwarding": {
@@ -543,6 +527,10 @@
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.13 — Ensure SSH HostbasedAuthentication is disabled",
     "code": "CIS:5.2.13"
   },
+  "ssh.host_key_dsa": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.13 — Ensure only strong key exchange algorithms are used (no DSA host keys)",
+    "code": "CIS:5.2.13"
+  },
   "ssh.ignore_rhosts_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.12 — Ensure SSH IgnoreRhosts is enabled",
     "code": "CIS:5.2.12"
@@ -569,6 +557,10 @@
   },
   "ssh.no_passphrase": {
     "ref": "Best practice — Protect SSH private keys with a passphrase",
+    "code": null
+  },
+  "ssh.not_active": {
+    "ref": "Best practice — Activate sshd if administration via SSH is needed; otherwise uninstall openssh-server",
     "code": null
   },
   "ssh.password_auth": {
@@ -615,7 +607,11 @@
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.16 — Ensure only strong MAC algorithms are used",
     "code": "CIS:5.2.16"
   },
-  "ssh.x11_forwarding": {
+  "ssh.x11.forwarding.client": {
+    "ref": "Best practice — Disable client-side X11 forwarding (ForwardX11 no) — prevents untrusted remotes from inspecting your local display",
+    "code": null
+  },
+  "ssh.x11.forwarding.server": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.6 — Ensure SSH X11 forwarding is disabled",
     "code": "CIS:5.2.6"
   },
@@ -659,6 +655,14 @@
     "ref": "CIS Ubuntu 22.04 L1 — 5.5.5 — Ensure default user umask is 027 or more restrictive",
     "code": "CIS:5.5.5"
   },
+  "updates.apt_cache_stale": {
+    "ref": "Best practice — Keep the APT cache fresh so 'no updates' verdicts reflect reality (apt-daily.timer)",
+    "code": null
+  },
+  "updates.dist_upgrade_inconsistent": {
+    "ref": "Best practice — Periodically run 'apt full-upgrade' to catch kernel and dependency updates skipped by 'apt upgrade'",
+    "code": null
+  },
   "updates.security_pending": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed",
     "code": "CIS:1.9"
@@ -687,8 +691,8 @@
     "ref": "Best practice — Ensure bridge interfaces do not bypass UFW FORWARD rules",
     "code": null
   },
-  "risk.escalated_posture": {
-    "ref": "Best practice — Displayed risk level must reflect posture, not only network exposure",
+  "virt.snap_network": {
+    "ref": "Best practice — Audit snap-installed virtualisation tools (multipass, lxd) and their bridge interfaces",
     "code": null
   }
 }

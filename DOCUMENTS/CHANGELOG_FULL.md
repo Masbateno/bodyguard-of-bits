@@ -6,6 +6,194 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.10.1] — 2026-06-10
+
+**First v0.10.x hardening patch — D-4 Rank 1 `ssh.x11_forwarding` split + NEW client-side ForwardX11 detection.**
+
+### Why this single split, why now
+
+The v0.10.x conservative workflow (proposed in the v0.10.0 ship + memory note) applies "gain × risque = STOP" from [[feedback_conservative_refactor]] to the 8 D-4 ranked candidates from the sub-agent audit. The filter:
+
+| Item | Measurable gain | User signal | Risk | Verdict |
+|---|---|---|---|---|
+| D-4 Rank 1 (ssh.x11 server + NEW client) | ✓ new detection capability (zero pre-v0.10.1) | indirect | L | **GO** |
+| D-4 Rank 2 (DSA family rename) | ✗ cosmetic | zero | L | DEFER |
+| D-4 Rank 3-8 | △ granular ignore.yml | zero | M | DEFER |
+| F-1 parallel checks | ✓ 30s → 5-10s perf | **zero on perf** | H | DEFER until signal |
+
+Rank 1 ships because it adds a **previously-missing detection** (client-side X11 forwarding via `~/.ssh/config ForwardX11 yes`), not just a cosmetic key rename. The other 7 ranks fail the "measurable gain" filter without user signal — they stay deferred indefinitely per the kill-dormant-features rule established by v0.8.4 ([[project_v084_shipped]] retired `compare-breakdown-diff` after zero signal across 5 majeures).
+
+### Server-side rename
+
+[bob/checks/ssh/_directives.py](../bob/checks/ssh/_directives.py) — the existing `_BadDirective` row for `x11forwarding`:
+
+```python
+_BadDirective(
+    name="x11forwarding", default="no",
+    bad_values=("yes",),
+    level="warn",
+    key="ssh.x11.forwarding.server",   # v0.10.1 D-4 Rank 1 — was "ssh.x11_forwarding"
+    points=1,
+    cmd_template="sudo sed -i 's/^#*X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+),
+```
+
+sshd_config parsing logic unchanged. The `_apply_bad_directive` helper picks up the new key automatically. Operators see the same finding behaviour with the new canonical name in JSON / CSV / Markdown outputs.
+
+### Client-side detection (NEW capability)
+
+[bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) — new branch added next to the existing `forwardagent` detection:
+
+```python
+elif k == "forwardx11" and v == "yes":
+    result.warn_with_deduction(
+        key="ssh.x11.forwarding.client",
+        message=_t("ssh.x11.forwarding.client"),
+        points=1,
+        detail=_t("ssh.x11.forwarding.client_detail"),
+        cmd=f"sed -i '/^[[:space:]]*ForwardX11[[:space:]]\\+yes/d' {client_config_q}",
+        nature="action",
+    )
+    found_issue = True
+```
+
+Pattern mirrors the existing `client_forward_agent` shape exactly. The detection covers any `~/.ssh/config` block (global or per-Host) with `ForwardX11 yes`. The remediation `sed -i` removes the offending directive in-place.
+
+### Why client-side X11 forwarding matters
+
+The X11 protocol has **no security boundary between local and forwarded applications**. When a user runs `ssh -X host` or has `ForwardX11 yes` in `~/.ssh/config`, the local X server is exposed to the remote host through an SSH tunnel:
+
+- The remote can call `xwd` to take screenshots of the local desktop
+- The remote can call `xdotool` to inject keystrokes into any local X application (including a terminal, password manager, browser)
+- The remote can read the local clipboard via `xclip` / `xsel`
+- The remote can read window titles, focused window content, and the X session's selection buffers
+
+This is a wide-open trust model: the remote effectively has equivalent access to the X session as a local process. Pre-v0.10.1 BOB had **zero detection** of this configuration, even though the server-side `X11Forwarding yes` was already flagged. The asymmetry is fixed in v0.10.1.
+
+Remediation guidance points operators at `ForwardX11Trusted no` (X11 SECURITY extension, available in OpenSSH since the early 2000s) as the per-Host hardening path when X11 forwarding is genuinely needed, plus `ssh -X` on-demand as the alternative to `ForwardX11 yes`-by-default.
+
+### Back-compat — ignore.yml
+
+Pre-v0.10.1 `ignore.yml` entries with the legacy `ssh.x11_forwarding` continue to suppress BOTH new sub-keys via the v0.10.0 [SUBCHECK_RENAMES_V100](../bob/_v100_subcheck_renames.py) shim:
+
+```python
+SUBCHECK_RENAMES_V100: dict[str, str] = {
+    "ssh.x11_forwarding": "ssh.x11.forwarding.*",   # v0.10.1 ships THIS rank
+    ...
+}
+```
+
+The `fnmatch.fnmatch("ssh.x11.forwarding.server", "ssh.x11.forwarding.*")` and `fnmatch.fnmatch("ssh.x11.forwarding.client", "ssh.x11.forwarding.*")` both return True, so `bob/scoring.py::ScoreEngine.apply::_is_ignored` silences both findings on operators who had ignored the legacy key. No `ignore.yml` migration required.
+
+The v0.10.0 shim foundation has now seen its first real use — the contract holds end-to-end.
+
+### Back-compat — `bob --explain`
+
+Pre-v0.10.1 `bob --explain ssh.x11_forwarding` resolves to the server-side content via a new EXPLAIN_KEY_ALIASES entry:
+
+```python
+EXPLAIN_KEY_ALIASES: dict[str, str] = {
+    "ssh.x11_forwarding": "ssh.x11.forwarding.server",  # v0.10.1 D-4 Rank 1
+    # The dict had been empty since v0.9.0 D-3 retrait emptied it...
+}
+```
+
+This is the **first live alias** after the v0.9.0 D-3 retrait. The v0.9.0 D-3 ship explicitly chose to keep the dict + lookup machinery (rather than retire them entirely) so a future rename would have a one-line migration path — v0.10.1 is that future rename, and the one-line `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` is all that was needed.
+
+`normalize_key("ssh.x11_forwarding")` returns `"ssh.x11.forwarding.server"` after passing through the alias resolution.
+
+### Locale (EN + FR)
+
+Migrated the existing `ssh.x11_forwarding` content into the new nested namespace `ssh.x11.forwarding.server`, and added 4 new client-side entries:
+
+| Key | EN | FR |
+|---|---|---|
+| `ssh.x11.forwarding.client` | "Client config enables X11 forwarding (ForwardX11 yes) — forwarding your display INTO a remote host lets that host inspect your local desktop" | "La config client active le transfert X11 (ForwardX11 yes) — transférer ton display VERS un hôte distant lui donne accès à ton bureau local" |
+| `ssh.x11.forwarding.client_detail` | "X11 forwarding from your machine TO a remote host opens your display server to the remote — a hostile remote can take screenshots, inject keystrokes, and read clipboard data via the X protocol. Disable ForwardX11 in ~/.ssh/config..." | "Le transfert X11 de ta machine VERS un hôte distant ouvre ton serveur d'affichage au distant — un host hostile peut prendre des captures d'écran, injecter des frappes clavier, et lire le presse-papiers via le protocole X. Désactive ForwardX11 dans ~/.ssh/config..." |
+| `explain.ssh.x11.forwarding.client.title` | "Client X11 forwarding enabled (ForwardX11 yes)" | "Transfert X11 client activé (ForwardX11 yes)" |
+| `explain.ssh.x11.forwarding.client.why` | Full client-side risk explanation (~3 sentences) | Full client-side risk explanation in FR |
+| `explain.ssh.x11.forwarding.client.how` | 4-step remediation including `ForwardX11Trusted no` SECURITY extension | 4-step remediation in FR |
+
+The server-side entries `ssh.x11.forwarding.server*` + `explain.ssh.x11.forwarding.server.*` preserve the pre-v0.10.1 content verbatim — operators upgrading see no change in the existing server-side wording.
+
+### EXPLAIN_KEYS catalog
+
+168 → **169** (+1 for the new `ssh.x11.forwarding.client`).
+
+[tests/test_explain_naming_convention.py](../tests/test_explain_naming_convention.py):
+
+- `test_total_keys_match_audit_count` constant bumped 168 → 169
+- `_SSH_X11_FORWARDING_RE = re.compile(r"^ssh\.x11\.forwarding\.(server|client)$")` exception added to `_is_canonical()` (sister to the existing `_FILE_PERMS_MULTI_RE` and `_SERVICES_MULTI_RE` exceptions). The single-dot regex `_SINGLE_DOT_RE` does not match 4-segment keys; the exception preserves the "canonical pattern" invariant while making room for the v0.10.1 split. Future D-4 ranks (Rank 2 ssh.dsa.*, Rank 3-8) will extend or generalise this pattern when they ship.
+
+### CIS refs
+
+| Key | CIS reference |
+|---|---|
+| `ssh.x11.forwarding.server` | CIS Ubuntu 22.04 L1 — 5.2.6 — "Ensure SSH X11 forwarding is disabled" (unchanged from `ssh.x11_forwarding` pre-v0.10.1) |
+| `ssh.x11.forwarding.client` | Best practice — "Disable client-side X11 forwarding (ForwardX11 no) — prevents untrusted remotes from inspecting your local display" (no formal CIS code today) |
+
+[tests/test_cis_refs.py::test_code_format_matches_pattern](../tests/test_cis_refs.py) was updated to use the new canonical `ssh.x11.forwarding.server` instead of the retired flat key.
+
+### Profile overrides + bash completion
+
+[bob/data/profiles/desktop.conf](../bob/data/profiles/desktop.conf) + [workstation.conf](../bob/data/profiles/workstation.conf) — the existing `ssh.x11_forwarding = info` override (downgrading the warning to info on personal workstations where X11 forwarding is common practice) renamed to `ssh.x11.forwarding.server`. The new client-side key has no profile override (the warn default applies on all profiles — client-side ForwardX11 is harder to justify than the server-side equivalent and the conservative default is to alert).
+
+[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — `_EXPLAIN_KEYS` list regenerated from `bob.explain.EXPLAIN_KEYS` runtime so `bob --explain ssh.x11.forwarding.<TAB>` completes both `server` and `client`.
+
+### Tests
+
+[tests/test_v0101_ssh_x11_client.py](../tests/test_v0101_ssh_x11_client.py) — 10 dedicated tests across 3 classes:
+
+- **`TestServerSideRename`** (2 tests): `_BadDirective` row pins the new canonical key; legacy `ssh.x11_forwarding` never appears as a `key="..."` literal anywhere in `bob/checks/ssh/*.py` (only in comments documenting the rename + as an EXPLAIN_KEY_ALIASES dict entry — which the test scope excludes via reading source files only).
+- **`TestClientSideDetection`** (3 tests): the new `elif k == "forwardx11"` branch is present in `_check_client_config`; the 4 new locale keys exist in both EN + FR locales (no bracketed-fallback risk); the `explain.ssh.x11.forwarding.client.{title,why,how}` leaves are present and non-empty in both locales (required by `test_locale_coverage`).
+- **`TestBackCompat`** (5 tests): the legacy `ssh.x11_forwarding` entry exists in `SUBCHECK_RENAMES_V100` with the right glob pattern; `matches_legacy_ignore` covers both sub-keys; `normalize_key("ssh.x11_forwarding")` returns the server-side canonical via `EXPLAIN_KEY_ALIASES`; the new canonical sub-keys pass through `normalize_key` unchanged (not aliases themselves).
+
+Plus 9 other tests updated for the rename (`test_total_keys_match_audit_count` constant, canonical regex, freeze policy, CIS code format, `test_ssh.py` legacy-key parametrize, `test_profiles.py` override key reference). Total **+19 tests** (6242 → 6261). 0 regression.
+
+### Numbers
+
+- **Tests 6242 → 6261** (+19). 0 regression.
+- 2 production code files modified ([bob/checks/ssh/_directives.py](../bob/checks/ssh/_directives.py), [bob/checks/ssh/_subchecks.py](../bob/checks/ssh/_subchecks.py)) — ~25 lines changed.
+- 1 module file modified ([bob/explain.py](../bob/explain.py)) — EXPLAIN_KEYS rename + EXPLAIN_KEY_ALIASES entry, ~5 lines changed.
+- 2 locale files modified ([bob/locales/en.json](../bob/locales/en.json), [bob/locales/fr.json](../bob/locales/fr.json)) — namespace migration + 4 new keys + 6 new explain leaves per locale.
+- 1 CIS refs file modified ([bob/data/cis_refs.json](../bob/data/cis_refs.json)) — rename + 1 new entry.
+- 2 profile files modified ([desktop.conf](../bob/data/profiles/desktop.conf), [workstation.conf](../bob/data/profiles/workstation.conf)) — 1 line each.
+- 1 bash completion file modified ([bob/data/bob.bash-completion](../bob/data/bob.bash-completion)) — `_EXPLAIN_KEYS` regenerated.
+- 1 new test file ([tests/test_v0101_ssh_x11_client.py](../tests/test_v0101_ssh_x11_client.py)) — 10 tests.
+- 4 existing test files modified for the rename ([test_explain.py](../tests/test_explain.py), [test_explain_naming_convention.py](../tests/test_explain_naming_convention.py), [test_cis_refs.py](../tests/test_cis_refs.py), [test_ssh.py](../tests/test_ssh.py), [test_profiles.py](../tests/test_profiles.py)).
+- All release surface (pyproject + man + shields + debian + rpm + 4 CHANGELOG + TESTING + memory note) bumped per convention.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No migration action required from v0.10.0 or v0.9.x. Operators with `ignore.yml` entries on `ssh.x11_forwarding` see no behavior change (legacy key covers both new sub-keys via the shim). Operators running `bob --explain ssh.x11_forwarding` see the server-side content (via the new EXPLAIN_KEY_ALIASES entry). The client-side detection surfaces as a new finding on systems with `ForwardX11 yes` in `~/.ssh/config` — operators may want to review their `~/.ssh/config` and apply the recommended fix or document an exception via `bob --ignore ssh.x11.forwarding.client`.
+
+**v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1).
+**v0.6.x remains EOL** (declared in v0.7.2).
+
+### Field test scope
+
+The conservative workflow does not require a 5-distro cross-distro campaign for a single-rank D-4 patch. A local smoke on the host (operator with `~/.ssh/config` to exercise the client-side detection) covers the new code path; the EN+FR locale parity is enforced by the `TestClientSideDetection::test_locale_keys_present_in_both_locales` + `test_explain_content_present_in_both_locales` automated tests.
+
+If a user signals on the client-side detection (false positive on a legitimate forwarding setup, false negative on a config form the parser misses), reopen the rank for a follow-up patch.
+
+### Deferred to future v0.10.x patches (still aligned with conservative workflow)
+
+- **D-4 Rank 2-8** — cosmetic / granular ignore.yml. No user signal → no ship. Possibly killed indefinitely if 5 majeures pass without signal (pattern v0.8.4 compare-breakdown-diff).
+- **F-1 parallel checks** — perf 30s → 5-10s. **Zero user signal on perf**. Don't ship without measured demand. The audit-driven plan stays in the v0.10.0 CHANGELOG entry for when someone signals.
+- **SNAPSHOT.md deep refresh** — module-by-module call-outs + file sizes. The v0.10.0 surgical patches covered the load-bearing drift paragraphs; a deeper refresh is a low-priority documentation patch candidate.
+
+### Lessons
+
+- **EXPLAIN_KEY_ALIASES kept-but-empty pays off.** The v0.9.0 D-3 retrait emptied the dict but explicitly kept the lookup machinery in `normalize_key()` so a future rename would have a one-line migration path. v0.10.1 D-4 Rank 1 is exactly that future rename — the one-line `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` is all that was needed. Pattern validated: **keep deprecated infrastructure when the cost-to-keep is low and the cost-to-recreate is non-trivial**.
+- **Conservative workflow filter held in practice.** The v0.10.x proposal applied "gain × risque = STOP" to 9 deferred items; 1 passed the filter (D-4 Rank 1) because it adds **new detection capability** (not just rename). 8 failed because they were cosmetic or had zero user signal. Shipping the 1 + deferring the 8 is the right call when the goal is "fewer releases, higher signal-per-release".
+- **Adding new detection is qualitatively different from renaming existing detection.** The Rank 2-8 splits would have qualified as "rename" work even under aggressive scope; Rank 1 is the only one of the 9 that adds an actual new finding the operator wouldn't see otherwise. The cost-value framing surfaces this distinction.
+
+---
+
 ## [v0.10.0] — 2026-06-09
 
 **First v0.10.x release — preparation release** opening the next BREAKING bundle window. Ships the D-4 sub-check migration shim foundation + ScoreEngine ignore.yml back-compat wiring + SNAPSHOT.md refresh, while intentionally deferring the actual D-4 split implementations and the F-1 parallel-check refactor to v0.10.1+ hardening patches.

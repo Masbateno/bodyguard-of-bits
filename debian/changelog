@@ -1,3 +1,51 @@
+bodyguard-of-bits (0.10.1-1) UNRELEASED; urgency=low
+
+  * First v0.10.x hardening patch — D-4 Rank 1 ssh.x11_forwarding split
+    + NEW client-side ForwardX11 detection. Single curated split with
+    measurable security gain (adds a previously-missing detection),
+    not just cosmetic rename. Per the conservative v0.10.x workflow,
+    other D-4 ranks (2-8) and F-1 parallel checks stay deferred until
+    user signal — "gain × risque = STOP" rule from
+    feedback_conservative_refactor.
+  * Server-side: ssh.x11_forwarding renamed to ssh.x11.forwarding.server
+    in bob/checks/ssh/_directives.py. The existing _BadDirective row
+    for x11forwarding picks up the new canonical key; sshd_config
+    parsing logic unchanged.
+  * Client-side (NEW detection capability): bob/checks/ssh/_subchecks.py
+    _check_client_config adds an elif k == "forwardx11" and v == "yes"
+    branch that emits ssh.x11.forwarding.client with points=1 warn +
+    detail + cmd remediation. Pattern mirrors the existing forwardagent
+    branch. Pre-v0.10.1 BOB had ZERO detection of client-side X11
+    forwarding; this is added security value.
+  * Back-compat: pre-v0.10.1 ignore.yml entries with ssh.x11_forwarding
+    keep suppressing BOTH new sub-keys via the v0.10.0 SUBCHECK_RENAMES_V100
+    shim (the ssh.x11.forwarding.* glob covers both .server and .client).
+    Pre-v0.10.1 bob --explain ssh.x11_forwarding resolves to the
+    server-side content via EXPLAIN_KEY_ALIASES (first live alias entry
+    after the v0.9.0 D-3 retrait emptied the dict).
+  * Locale: ssh.x11_forwarding namespace migrated to
+    ssh.x11.forwarding.server in both en.json + fr.json. New
+    ssh.x11.forwarding.client + client_detail entries added. New
+    explain.ssh.x11.forwarding.client.{title,why,how} entries added
+    EN+FR with the dedicated client-side risk explanation (untrusted
+    remote can capture screenshots, inject keystrokes, read clipboard
+    via the X protocol's wide-open security model).
+  * EXPLAIN_KEYS: 168 -> 169 (+1 for ssh.x11.forwarding.client). The
+    test_total_keys_match_audit_count constant was bumped accordingly.
+    The canonical_pattern regex was extended with a new
+    _SSH_X11_FORWARDING_RE exception covering the 4-segment form.
+  * CIS refs: ssh.x11.forwarding.server keeps the legacy CIS:5.2.6
+    reference. ssh.x11.forwarding.client gets a Best practice ref (no
+    formal CIS code for client-side ForwardX11 today).
+  * Tests 6242 -> 6261 (+19): tests/test_v0101_ssh_x11_client.py
+    (10 dedicated tests across 3 classes: TestServerSideRename,
+    TestClientSideDetection, TestBackCompat) plus +9 elsewhere from
+    the test_total_keys, test_canonical_pattern, test_freeze_policy,
+    test_code_format, test_ssh, test_profiles updates. 0 regression.
+  * v0.7.x remains EOL since v0.8.1; v0.6.x remains EOL since v0.7.2.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 10 Jun 2026 14:00:00 +0200
+
 bodyguard-of-bits (0.10.0-1) UNRELEASED; urgency=low
 
   * Preparation release opening the v0.10.x branch. Ships the D-4

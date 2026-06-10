@@ -206,8 +206,8 @@ class TestSshdConfig:
     def test_x11_forwarding_warn(self):
         snap = base_snapshot(sshd_config={"x11forwarding": "yes"})
         result = check_ssh(snap)
-        assert _has_finding(result, "ssh.x11_forwarding", FindingLevel.WARN)
-        assert "ssh.x11_forwarding" in _deduction_keys(result)
+        assert _has_finding(result, "ssh.x11.forwarding.server", FindingLevel.WARN)
+        assert "ssh.x11.forwarding.server" in _deduction_keys(result)
 
     def test_ignore_rhosts_disabled_warn(self):
         snap = base_snapshot(sshd_config={"ignorerhosts": "no"})
@@ -293,7 +293,7 @@ class TestSshdConfig:
         assert "ssh.permit_root_login" in dk
         assert "ssh.permit_empty_passwords" in dk
         assert "ssh.password_auth" in dk
-        assert "ssh.x11_forwarding" in dk
+        assert "ssh.x11.forwarding.server" in dk
         assert len(result.deductions) >= 4
 
 

@@ -54,13 +54,25 @@ _SERVICES_MULTI_RE = re.compile(
     r"^services\.(exposure|state)\.[a-z][a-z0-9_]*$"
 )
 
+# v0.10.1 D-4 Rank 1 exception: ``ssh.x11_forwarding`` was split into
+# ``ssh.x11.forwarding.{server,client}`` to express server vs client side
+# as orthogonal sub-keys. The legacy single-dot form is kept as an
+# EXPLAIN_KEY_ALIASES entry so old --explain calls and old ignore.yml
+# files keep working. Future D-4 ranks may need to extend this exception
+# pattern when they ship.
+_SSH_X11_FORWARDING_RE = re.compile(
+    r"^ssh\.x11\.forwarding\.(server|client)$"
+)
+
 
 def _is_canonical(key: str) -> bool:
-    """Single-dot, file_perms multi-segment, or services category exception."""
+    """Single-dot, file_perms multi-segment, services category, or
+    v0.10.1 ssh.x11.forwarding sub-check exception."""
     return bool(
         _SINGLE_DOT_RE.match(key)
         or _FILE_PERMS_MULTI_RE.match(key)
         or _SERVICES_MULTI_RE.match(key)
+        or _SSH_X11_FORWARDING_RE.match(key)
     )
 
 
@@ -201,7 +213,7 @@ class TestExplainAuditInvariants:
         """v0.7.0 baseline = 117. v0.8.0 drift batch backfilled 51 missing
         WARN/ALERT findings → 168. Drifts beyond require a doc update in
         DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
-        assert len(EXPLAIN_KEYS) == 168, (
+        assert len(EXPLAIN_KEYS) == 169, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

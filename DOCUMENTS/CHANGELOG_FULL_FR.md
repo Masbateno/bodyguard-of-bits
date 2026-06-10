@@ -6,6 +6,106 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.10.1] — 10-06-2026
+
+**Premier patch hardening v0.10.x — D-4 Rank 1 split `ssh.x11_forwarding` + NOUVELLE détection client-side ForwardX11.**
+
+### Pourquoi ce split unique, pourquoi maintenant
+
+Le workflow conservateur v0.10.x (proposé dans le ship v0.10.0 + memory note) applique "gain × risque = STOP" de [[feedback_conservative_refactor]] aux 8 candidates ranked D-4 de l'audit sub-agent. Le filtre :
+
+| Item | Gain mesurable | Signal user | Risque | Verdict |
+|---|---|---|---|---|
+| D-4 Rank 1 (ssh.x11 server + NEW client) | ✓ nouvelle capacité de détection (zéro pre-v0.10.1) | indirect | L | **GO** |
+| D-4 Rank 2 (DSA family rename) | ✗ cosmétique | zéro | L | DEFER |
+| D-4 Rank 3-8 | △ granular ignore.yml | zéro | M | DEFER |
+| F-1 parallel checks | ✓ 30s → 5-10s perf | **zéro signal perf** | H | DEFER jusqu'au signal |
+
+Rank 1 ship parce qu'il apporte une **détection précédemment manquante** (client-side X11 forwarding via `~/.ssh/config ForwardX11 yes`), pas qu'un rename cosmétique de clé. Les 7 autres ranks fail le filtre "gain mesurable" sans signal user — ils restent déférés indéfiniment per la règle kill-dormant-features établie par v0.8.4 ([[project_v084_shipped]] a retiré `compare-breakdown-diff` après zéro signal sur 5 majeures).
+
+### Rename server-side
+
+[bob/checks/ssh/_directives.py](../bob/checks/ssh/_directives.py) — la row `_BadDirective` existante pour `x11forwarding` reprend la clé canonique renommée `ssh.x11.forwarding.server`. Logique parsing sshd_config inchangée.
+
+### Détection client-side (NOUVELLE capacité)
+
+[bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) — nouvelle branche `elif k == "forwardx11" and v == "yes":` à côté du `forwardagent` existant, émet `ssh.x11.forwarding.client` avec `points=1` warn + detail + cmd remediation.
+
+### Pourquoi le transfert X11 client-side importe
+
+Le protocole X11 **n'a aucune frontière de sécurité entre applications locales et forwardées**. Quand un user fait `ssh -X host` ou a `ForwardX11 yes` dans `~/.ssh/config`, le serveur X local est exposé à l'hôte distant via le tunnel SSH :
+
+- Le distant peut appeler `xwd` pour prendre des captures d'écran du bureau local
+- Le distant peut appeler `xdotool` pour injecter des frappes clavier dans n'importe quelle application X locale (terminal, password manager, browser)
+- Le distant peut lire le presse-papiers local via `xclip` / `xsel`
+- Le distant peut lire les titres de fenêtre, le contenu de la fenêtre focusée, et les selection buffers de la session X
+
+C'est un trust model wide-open : le distant a effectivement l'équivalent d'un accès process local à la session X. Pre-v0.10.1 BOB avait **zéro détection** de cette configuration. L'asymétrie est fixée en v0.10.1.
+
+Le guidance remediation pointe vers `ForwardX11Trusted no` (extension SECURITY X11) comme path de hardening per-Host quand le transfert X11 est vraiment nécessaire, plus `ssh -X` on-demand comme alternative à `ForwardX11 yes`-by-default.
+
+### Back-compat — ignore.yml + --explain
+
+- Pre-v0.10.1 entries `ignore.yml` avec `ssh.x11_forwarding` couvrent les 2 nouvelles sub-keys via le shim v0.10.0 [SUBCHECK_RENAMES_V100](../bob/_v100_subcheck_renames.py) (le glob fnmatch `ssh.x11.forwarding.*`).
+- Pre-v0.10.1 `bob --explain ssh.x11_forwarding` résout vers le contenu server-side via la nouvelle entry EXPLAIN_KEY_ALIASES. **Premier alias live après le retrait D-3 v0.9.0** — la rationale "garder le dict pour qu'un futur rename ait un migration path one-line" rencontre son premier user.
+
+### Locale (EN + FR)
+
+Migration namespace `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + 4 nouvelles entries client-side (message + detail + explain.{title,why,how}) avec wording risque client-side dédié.
+
+### EXPLAIN_KEYS catalog
+
+168 → **169** (+1 pour le nouveau `ssh.x11.forwarding.client`). Le constant `test_total_keys_match_audit_count` bumpé. La regex canonical_pattern étendue avec exception `_SSH_X11_FORWARDING_RE` (soeur des exceptions `_FILE_PERMS_MULTI_RE` et `_SERVICES_MULTI_RE` existantes).
+
+### CIS refs
+
+| Key | Référence CIS |
+|---|---|
+| `ssh.x11.forwarding.server` | CIS Ubuntu 22.04 L1 — 5.2.6 (unchanged) |
+| `ssh.x11.forwarding.client` | Best practice (no formal CIS code today) |
+
+### Tests
+
+[tests/test_v0101_ssh_x11_client.py](../tests/test_v0101_ssh_x11_client.py) — 10 tests dédiés sur 3 classes (`TestServerSideRename`, `TestClientSideDetection`, `TestBackCompat`) + 9 updates ailleurs. Total **+19 tests** (6242 → 6261). 0 régression.
+
+### Numbers
+
+- **Tests 6242 → 6261** (+19). 0 régression.
+- 2 fichiers code production modifiés (`_directives.py`, `_subchecks.py`).
+- 1 fichier module modifié (`explain.py` — EXPLAIN_KEY_ALIASES entry + EXPLAIN_KEYS rename).
+- 2 fichiers locale modifiés (EN + FR — migration namespace + 4 nouvelles entries).
+- 1 fichier CIS refs + 2 fichiers profile + 1 fichier bash completion modifiés.
+- 1 nouveau test file + 4 test files existants modifiés.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Pas d'action de migration requise depuis v0.10.0 ou v0.9.x.
+
+**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
+**v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Field test scope
+
+Le workflow conservateur ne requiert pas une campagne cross-distro 5-distros pour un patch D-4 single-rank. Un smoke local sur l'host (operator avec `~/.ssh/config` pour exercer la détection client-side) couvre le nouveau code path ; la parité locale EN+FR est enforced par les tests automatisés `TestClientSideDetection::test_locale_keys_present_in_both_locales` + `test_explain_content_present_in_both_locales`.
+
+### Déféré aux futurs patches v0.10.x (toujours aligné avec workflow conservateur)
+
+- **D-4 Rank 2-8** — cosmétique / granular ignore.yml. Pas de signal user → pas de ship.
+- **F-1 parallel checks** — perf 30s → 5-10s. **Zéro signal user perf**. Ne pas shipper sans demande mesurée.
+- **SNAPSHOT.md deep refresh** — module-by-module + tailles fichier. Low-priority doc patch candidate.
+
+### Leçons
+
+- **EXPLAIN_KEY_ALIASES kept-but-empty paye off.** Le retrait D-3 v0.9.0 a vidé le dict mais explicitement gardé la machinery `normalize_key()` pour qu'un futur rename ait un migration path one-line. v0.10.1 D-4 Rank 1 est exactement ce futur rename. Pattern validé.
+- **Workflow conservateur a tenu en pratique.** Le proposal v0.10.x a appliqué "gain × risque = STOP" aux 9 items déférés ; 1 a passé le filtre, 8 ont fail.
+- **Ajouter une nouvelle détection est qualitativement différent du rename d'une détection existante.** Le framing coût/valeur surface cette distinction.
+
+---
+
 ## [v0.10.0] — 09-06-2026
 
 **Première release v0.10.x — release de préparation** ouvrant la prochaine fenêtre de bundle BREAKING. Ship la foundation du shim de migration sub-check D-4 + ScoreEngine ignore.yml back-compat wiring + refresh SNAPSHOT.md, en déférant intentionnellement les implémentations D-4 splits réelles et le refactor F-1 parallel-check aux patches hardening v0.10.1+.

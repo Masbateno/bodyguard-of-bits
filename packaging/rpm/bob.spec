@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.10.0
+Version:        0.10.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,25 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Wed Jun 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.10.1-1
+- First v0.10.x hardening patch — D-4 Rank 1 ssh.x11_forwarding split
+  + NEW client-side ForwardX11 detection.
+- Server-side: ssh.x11_forwarding renamed to ssh.x11.forwarding.server.
+- Client-side (NEW): _check_client_config detects ForwardX11 yes in
+  ~/.ssh/config and emits ssh.x11.forwarding.client with full warn +
+  detail + cmd remediation. Pre-v0.10.1 BOB had ZERO client-side X11
+  detection.
+- Back-compat: pre-v0.10.1 ignore.yml entries with ssh.x11_forwarding
+  cover both new sub-keys via the v0.10.0 SUBCHECK_RENAMES_V100 shim;
+  bob --explain ssh.x11_forwarding resolves to server content via
+  EXPLAIN_KEY_ALIASES.
+- Locale: ssh.x11.forwarding.{server,client,client_detail} +
+  explain.ssh.x11.forwarding.client.{title,why,how} EN+FR.
+- EXPLAIN_KEYS 168 -> 169. CIS refs: server keeps CIS:5.2.6, client
+  gets Best practice ref.
+- Tests 6242 -> 6261 (+19, 10 dedicated in
+  test_v0101_ssh_x11_client.py). 0 regression.
+
 * Tue Jun 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.10.0-1
 - Preparation release opening the v0.10.x branch. Ships the D-4
   sub-check migration shim foundation + ScoreEngine ignore.yml

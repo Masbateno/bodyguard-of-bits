@@ -65,7 +65,8 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("SSH — Access Control", [
         "ssh.max_auth_tries",
         "ssh.allow_tcp_forwarding",
-        "ssh.x11_forwarding",
+        "ssh.x11.forwarding.server",
+        "ssh.x11.forwarding.client",
         "ssh.permit_user_env",
         "ssh.ignore_rhosts_disabled",
         "ssh.host_based_auth",
@@ -344,6 +345,15 @@ EXPLAIN_KEYS: list[str] = [k for _, keys in _EXPLAIN_GROUPS for k in keys]
 # ---------------------------------------------------------------------------
 
 EXPLAIN_KEY_ALIASES: dict[str, str] = {
+    # v0.10.1 D-4 Rank 1: ssh.x11_forwarding was split into
+    # ssh.x11.forwarding.{server,client}. The legacy key keeps working via
+    # this alias so pre-v0.10.1 scripts running ``bob --explain
+    # ssh.x11_forwarding`` resolve to the server-side content (the original
+    # finding was server-side only). For ignore.yml back-compat across BOTH
+    # split halves, see bob/_v100_subcheck_renames.py::SUBCHECK_RENAMES_V100
+    # (the fnmatch glob ``ssh.x11.forwarding.*`` covers both sub-keys).
+    "ssh.x11_forwarding": "ssh.x11.forwarding.server",
+
     # v0.9.0 D-3: cleared on retrait. The only entry that lived here from
     # v0.5.5 through v0.8.x (``services_health.service_inactive`` →
     # ``enabled_inactive``, originally ``services_state.*`` pre-v0.9.0 D-1)

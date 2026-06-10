@@ -498,6 +498,23 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
             )
             found_issue = True
 
+        # v0.10.1 D-4 Rank 1: detect ``ForwardX11 yes`` client-side.
+        # The server side has always emitted ``ssh.x11.forwarding.server``
+        # (formerly ``ssh.x11_forwarding`` — see _directives.py); the
+        # client-side risk is orthogonal: forwarding an X11 display INTO
+        # an untrusted host lets that host take screenshots and inject
+        # keystrokes through the X protocol's wide-open security model.
+        elif k == "forwardx11" and v == "yes":
+            result.warn_with_deduction(
+                key="ssh.x11.forwarding.client",
+                message=_t("ssh.x11.forwarding.client"),
+                points=1,
+                detail=_t("ssh.x11.forwarding.client_detail"),
+                cmd=f"sed -i '/^[[:space:]]*ForwardX11[[:space:]]\\+yes/d' {client_config_q}",
+                nature="action",
+            )
+            found_issue = True
+
     if not found_issue:
         result.ok(
             message=_t("ssh.client_config_ok"),

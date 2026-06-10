@@ -106,7 +106,14 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
     _BadDirective(
         name="x11forwarding", default="no",
         bad_values=("yes",),
-        level="warn", key="ssh.x11_forwarding",
+        # v0.10.1 D-4 Rank 1: server-side X11 forwarding split from a generic
+        # ``ssh.x11_forwarding`` into ``ssh.x11.forwarding.server`` so the
+        # parallel client-side detection in _check_client_config can ship
+        # under ``.client`` without overloading the legacy key. Pre-v0.10.1
+        # ``ignore.yml`` entries with ``ssh.x11_forwarding`` keep working
+        # via the SUBCHECK_RENAMES_V100 shim (covers both ``.server`` and
+        # ``.client`` via the ``ssh.x11.forwarding.*`` glob).
+        level="warn", key="ssh.x11.forwarding.server",
         points=1,
         cmd_template="sudo sed -i 's/^#*X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
     ),

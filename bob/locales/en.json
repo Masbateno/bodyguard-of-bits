@@ -862,7 +862,6 @@
     "permit_empty_passwords": "Empty passwords are permitted (PermitEmptyPasswords = yes)",
     "max_auth_tries": "MaxAuthTries = {value} — recommended value is 3 or less",
     "login_grace_time": "LoginGraceTime = {value}s — recommended value is 60s or less",
-    "x11_forwarding": "X11 forwarding is enabled — increases attack surface if not needed",
     "ignore_rhosts_disabled": "IgnoreRhosts is disabled — .rhosts files are trusted (legacy risk)",
     "host_based_auth": "Host-based authentication is enabled — allows login from trusted hosts without password",
     "permit_user_env": "PermitUserEnvironment is enabled — users can inject environment variables",
@@ -912,7 +911,14 @@
     "host_key_rsa_short": "RSA server host key {name}: {bits} bits — consider regenerating at 4096 bits or switching to ed25519",
     "host_key_rsa_short_detail": "RSA host keys below 4096 bits are technically acceptable but no longer considered optimal. Modern clients and CAs recommend 4096-bit RSA or ed25519 for server identity keys.",
     "host_key_ok": "Server host key {name} ({type}): strong algorithm",
-    "match_block_skipped": "sshd_config contains a Match block — directives after it were not analysed"
+    "match_block_skipped": "sshd_config contains a Match block — directives after it were not analysed",
+    "x11": {
+      "forwarding": {
+        "server": "X11 forwarding is enabled — increases attack surface if not needed",
+        "client": "Client config enables X11 forwarding (ForwardX11 yes) — forwarding your display INTO a remote host lets that host inspect your local desktop",
+        "client_detail": "X11 forwarding from your machine TO a remote host opens your display server to the remote — a hostile remote can take screenshots, inject keystrokes, and read clipboard data via the X protocol. Disable ForwardX11 in ~/.ssh/config (or use 'ssh -X' on-demand for trusted hosts only) by removing the directive or setting 'no'."
+      }
+    }
   },
   "file_perms": {
     "world_writable": "{path} is world-writable ({mode}) — any user can modify this critical file",
@@ -1068,11 +1074,6 @@
         "why": "Disabling public key authentication forces all users onto password login. This removes the strongest authentication mechanism available and makes the server entirely dependent on password strength.",
         "how": "1. Enable key-based authentication:\n   sudo nano /etc/ssh/sshd_config  →  PubkeyAuthentication yes\n2. Generate a key pair:\n   ssh-keygen -t ed25519\n3. Copy the key to the server:\n   ssh-copy-id user@server\n4. Restart SSH:\n   sudo systemctl restart ssh"
       },
-      "x11_forwarding": {
-        "title": "X11 forwarding enabled (X11Forwarding yes)",
-        "why": "X11 forwarding exposes your local X11 display to a remote server. A malicious or compromised remote host could capture keystrokes and screen contents from your X session.",
-        "how": "1. Disable X11 forwarding:\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. If genuinely needed, ensure X11UseLocalhost yes is also set\n3. Restart SSH:\n   sudo systemctl restart ssh"
-      },
       "dsa_key": {
         "title": "DSA host key in use",
         "why": "DSA keys are cryptographically broken and deprecated in OpenSSH 7.0+. The algorithm offers only 1024-bit security and is vulnerable to attacks when the random number generator produces weak values.",
@@ -1224,6 +1225,20 @@
         },
         "container": {
           "why": "Most container images should NOT run SSH (use docker exec / kubectl exec / podman exec instead). If sshd is installed but inactive in a container, consider removing it from the image."
+        }
+      },
+      "x11": {
+        "forwarding": {
+          "server": {
+            "title": "X11 forwarding enabled (X11Forwarding yes)",
+            "why": "X11 forwarding exposes your local X11 display to a remote server. A malicious or compromised remote host could capture keystrokes and screen contents from your X session.",
+            "how": "1. Disable X11 forwarding:\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. If genuinely needed, ensure X11UseLocalhost yes is also set\n3. Restart SSH:\n   sudo systemctl restart ssh"
+          },
+          "client": {
+            "title": "Client X11 forwarding enabled (ForwardX11 yes)",
+            "why": "When you connect with `ssh -X` or have `ForwardX11 yes` in ~/.ssh/config, your local X server is exposed to the remote host through an SSH tunnel. A malicious or compromised remote can take screenshots of your local desktop, inject keystrokes into any X application, and read your clipboard — the X11 protocol has no security boundary between local and forwarded applications.",
+            "how": "1. Open ~/.ssh/config:\n   nano ~/.ssh/config\n2. Remove or set to 'no' any 'ForwardX11 yes' lines\n3. If X11 forwarding is genuinely needed for specific hosts, restrict it per-Host block and prefer 'ForwardX11Trusted no' (use the SECURITY extension to limit remote access)\n4. Use 'ssh -X host' on-demand only for trusted hosts where you need a one-shot graphical app"
+          }
         }
       }
     },

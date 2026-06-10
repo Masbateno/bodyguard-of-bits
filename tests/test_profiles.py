@@ -148,7 +148,7 @@ class TestLoadBuiltinProfiles:
 
     def test_desktop_overrides_ssh_x11_forwarding(self):
         p = load_profile("desktop")
-        assert p.override_for("ssh.x11_forwarding") == "info"
+        assert p.override_for("ssh.x11.forwarding.server") == "info"
 
     def test_desktop_overrides_ssh_allow_tcp_forwarding(self):
         p = load_profile("desktop")
@@ -556,8 +556,8 @@ class TestDesktopProfileNewOverrides:
         result = check_ssh(snap, t=_t)
         profile = load_profile("desktop")
         apply_profile(result, profile)
-        findings = [f for f in result.findings if f.key == "ssh.x11_forwarding"]
-        assert findings, "ssh.x11_forwarding finding expected"
+        findings = [f for f in result.findings if f.key == "ssh.x11.forwarding.server"]
+        assert findings, "ssh.x11.forwarding.server finding expected"
         assert findings[0].level == FindingLevel.INFO
 
     def test_ssh_tcp_forwarding_becomes_info(self):
