@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.11.0
+Version:        0.11.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,46 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Jun 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.11.1-1
+- Two minors from the post-v0.11.0 whole-tool deep hardening audit
+  (0 critical + 0 important + 2 minor — a clean pass after 19 audits).
+- M-1: bob/i18n.py::t() caught only KeyError from str.format(). A
+  malformed locale template (unbalanced brace -> ValueError, positional
+  {0} field -> IndexError) would propagate uncaught and crash the audit
+  for that locale. Broadened t() to (KeyError, IndexError, ValueError)
+  and added the IndexError/ValueError guard to try_t() (preserving its
+  intentional KeyError propagation), degrading to the raw template — the
+  i18n never-crash / bracketed-fallback contract. New locale linter
+  TestTemplateWellFormed rejects unbalanced braces + positional fields
+  at CI time so such strings never reach a release.
+- M-2: --test-webhook now honors --offline. --offline is a global
+  no-egress guard; the audit-time webhook path already gated on it but
+  the explicit --test-webhook command did not, so
+  `bob --test-webhook --offline` made a POST. Now skips cleanly (clear
+  message on stderr, EXIT_OK) — the more restrictive flag wins. New
+  locale key cli.test_webhook.offline_skipped (EN+FR).
+- Plus three trivially-safe polish fixes from the post-v0.11.0 UX audit
+  (the no-contract-change subset; F1 score model / F2 presentation / F4
+  explain exit code / F6 root-gate ordering deferred to v0.12.0).
+- F3: fwupd device-name parsing leaked connector junk (`?`, `??UEFI dbx:`)
+  when the device tree degraded to `?` under LC_ALL=C. Now runs fwupd
+  under C.UTF-8 + a parser guard rejecting non-alphanumeric-leading names.
+- F5: the unknown-key explain hint wrongly said sudo; `--explain list`
+  needs none. Dropped it (EN+FR).
+- F7: protocol-unspecified UFW orphan rules now display `57621/tcp+udp`
+  instead of a bare `57621` (consistent with proto-qualified siblings);
+  the delete command keeps the bare port.
+- Plus a documentation accuracy pass (DOC-A...G): --json-v1 (retired
+  v0.9.0) removed from user docs; workstation profile reconciled to
+  first-class + added to --help; EXPLAIN_KEYS counts -> 169/45, "43
+  checks" -> 34 sections; UFW_AUDIT_SHARE -> BOB_SHARE; man dates 06-11.
+  Pinned by tests/test_v0111_doc_accuracy.py (6 anti-drift guards).
+- Also fixed a reverse i18n leak: five smartctl self-test command
+  suggestions in bob/checks/disk.py had hardcoded French comments that
+  leaked into English audits. Now locale keys disk.smart_cmd.* (EN+FR).
+  Clear wrong-language bug; shipped here vs the v0.12.0-deferred F8.
+- Tests 6336 -> 6369 (+33). 0 regression.
+
 * Wed Jun 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.11.0-1
 - BREAKING bundle: hygiene + design fix. Two BREAKING items, no F-1
   (parallel checks stay deferred indefinitely — zero user signal on perf).

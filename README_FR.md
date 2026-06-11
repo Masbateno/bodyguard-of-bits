@@ -4,7 +4,7 @@
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 43 vérifications sur 7 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
+BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 34 sections de vérification sur 7 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -142,7 +142,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ---
 
-## Vérifications de sécurité — 43 vérifications, 7 domaines de score
+## Vérifications de sécurité — 34 sections de vérification, 7 domaines de score
 
 | Domaine | Ce qu'il couvre |
 |---------|----------------|
@@ -187,7 +187,7 @@ Sans sudo. Entièrement hors ligne — aucun appel externe ni collecte de donné
 |--------|------------|
 | `server` | Par défaut — strict sur SSH, pare-feu, services |
 | `desktop` | Assoupli pour les systèmes desktop — auth SSH par mot de passe tolérée, apps GUI non signalées, mécanismes de mise à jour manuels acceptés (~11 surcharges étendant `server`) |
-| `workstation` | Alias rétrocompatible vers `desktop` |
+| `workstation` | Profil business first-class depuis v0.8.1 (plus un alias vers `desktop`) — garde backup / auditd / MAC-enforce au niveau WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file-integrity que `desktop` |
 | `container` | Étend `desktop` et saute les vérifications niveau hôte (modules noyau, durcissement noyau, secure boot, auditd, suid_audit, docker_audit, intégrité fichiers, rootkit) |
 
 ```

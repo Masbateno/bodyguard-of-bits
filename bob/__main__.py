@@ -209,6 +209,15 @@ def _run(argv=None) -> int:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
         t = i18n.t
+        # v0.11.1 M-2: --offline is a global no-egress guard (air-gapped
+        # environments). When it conflicts with the explicit --test-webhook
+        # network smoke, the more restrictive flag wins: skip the POST cleanly
+        # rather than silently violate the offline guarantee. The audit-time
+        # webhook path already gates on ``not config.offline``; this mirrors it
+        # for the explicit test command.
+        if config.offline:
+            print("ℹ  " + i18n.t("cli.test_webhook.offline_skipped"), file=sys.stderr)
+            return EXIT_OK
         # Resolve URL: --webhook=URL takes precedence; otherwise use the saved
         # user config (same precedence as the real audit-time webhook path).
         # ``UserConfig`` is imported at module scope; do NOT re-import it inside

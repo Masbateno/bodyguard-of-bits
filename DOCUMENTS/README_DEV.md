@@ -746,16 +746,17 @@ If a key does not exist, `t()` returns `"[missing.key]"` — never an exception.
 
 Locale files and `services.json` are read from the `locales/` and `data/` directories relative to the Python module (`Path(__file__).parent`). This works both in development and with pipx (which includes the package data files in the isolated environment).
 
-`$UFW_AUDIT_SHARE` can point to a shared data directory (e.g. `/usr/local/share/bob/`). It takes priority over the in-package path when set. Not used by pipx installs.
+`$BOB_SHARE` can point to a shared data directory (e.g. `/usr/local/share/bob/`) for system-package installs. When set to an existing absolute directory it takes priority over the in-package path; otherwise BOB falls back to the package-relative `locales/` and `data/`. Resolution lives in `bob/_paths.py` (strict — a missing, relative, or unsafe path is ignored with a warning). Not used by pipx installs.
 
 ```python
-# i18n.py
-_share = os.environ.get("UFW_AUDIT_SHARE", "")
-if _share:
-    _LOCALES_DIR = Path(_share) / "locales"
-else:
-    _LOCALES_DIR = Path(__file__).parent / "locales"
+# bob/_paths.py — share-dir resolution
+share = os.environ.get("BOB_SHARE", "").strip()
+if share:
+    resolved = Path(share).resolve(strict=True)   # ignored if missing / not absolute
+    # → resolved / "locales", resolved / "data"
 ```
+
+> The legacy `UFW_AUDIT_SHARE` alias was deprecated in v0.5.4 and **removed** — use `BOB_SHARE`.
 
 ---
 
@@ -763,7 +764,7 @@ else:
 
 | Variable | Effect |
 |---|---|
-| `UFW_AUDIT_SHARE` | Shared data directory (locales, services.json) — overrides in-package path when set; not used by pipx installs |
+| `BOB_SHARE` | Shared data directory (locales, services.json) — overrides in-package path when set to an existing absolute dir; not used by pipx installs. (Legacy `UFW_AUDIT_SHARE` removed in v0.5.4.) |
 | `SUDO_USER` | Real user under sudo — used for config path and report |
 | `NO_COLOR` | Disables ANSI colours (standard) |
 

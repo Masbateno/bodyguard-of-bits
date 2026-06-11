@@ -3,13 +3,13 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.11.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.11.1-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
 
-BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 43 vérifications sur 7 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
+BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 34 sections de vérification sur 7 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
 ---
 
@@ -76,7 +76,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` ou `--lang=en`
 - **Mode sans couleur** — `--no-color` pour une sortie propre dans les pipes et fichiers log
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit
-- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 116 clés dans 29 groupes ; 19 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
+- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 169 clés sur 45 préfixes ; 19 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
 - **Scores par domaine** — sous-scores 0–10 (SSH / Samba / Fichiers & Accès / Mises à jour / Durcissement / Santé Disque / Pare-feu & Services) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
@@ -595,21 +595,18 @@ Exemple cron — audit quotidien à 6h, mail en cas de problème :
 
 ### Versions du schéma
 
-Deux versions sont émises par `bob.json_output.build_json_data()` :
+Le schéma **v2** est la seule version émise par `bob.json_output.build_json_data()` :
 
 | Version | Statut | Sélection |
 |---|---|---|
-| **v2** | **Défaut depuis v0.7.0** | `--json` / `--json-full` (aucun flag supplémentaire) |
-| v1 | Legacy depuis v0.6.x — préservé opt-in | `--json-v1` (implique `--json`) |
+| **v2** | **Défaut et unique schéma depuis v0.9.0** | `--json` / `--json-full` |
+| v1 | Schéma legacy v0.6.x — **retiré en v0.9.0** | (plus disponible) |
 
-Les consommateurs qui n'ont pas migré peuvent fixer v1 explicitement :
+Le layout legacy v1 et son flag opt-in `--json-v1` ont été retirés en v0.9.0 (déprécié pendant le cycle v0.7.x → v0.8.x comme annoncé ici précédemment). Les consommateurs encore figés sur v1 doivent migrer vers v2 :
 
 ```bash
-sudo bob --json --json-v1 | jq '.schema_version'   # → "1"
-sudo bob --json            | jq '.schema_version'   # → "2"
+sudo bob --json | jq '.schema_version'   # → "2"
 ```
-
-Le chemin v1 est conservé pendant au moins un cycle de release minor complet après v0.7.0. Une release future publiera un avis de dépréciation ; un majeur futur pourra retirer `--json-v1` complètement.
 
 ### v2 — Clés top-level (toujours présentes)
 
@@ -751,7 +748,7 @@ Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--expl
 
 ### Audit EXPLAIN_KEYS (baseline v0.7.0)
 
-À partir de v0.7.0, le set de clés `--explain` contient **117 clés** réparties sur **30 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
+À partir de v0.11.x, le set de clés `--explain` contient **169 clés** réparties sur **45 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
 
 - **Pattern :** `<prefix>.<finding_id>` (single dot, snake_case)
 - **Exception :** `file_perms.<path>.<finding_id>` (segments path intermédiaires, résolus par `bob.explain.normalize_key`)

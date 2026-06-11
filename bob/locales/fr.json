@@ -696,7 +696,14 @@
     "col_used": "UTILISÉ",
     "col_free": "LIBRE",
     "smart_tips": "Analyse SMART approfondie disponible via smartmontools",
-    "smart_tips_detail": "Chaque commande -a affiche le rapport SMART complet (attributs + santé) d'un disque. Les tests se lancent un disque à la fois — les commandes ci-dessous ciblent le premier disque à titre d'exemple."
+    "smart_tips_detail": "Chaque commande -a affiche le rapport SMART complet (attributs + santé) d'un disque. Les tests se lancent un disque à la fois — les commandes ci-dessous ciblent le premier disque à titre d'exemple.",
+    "smart_cmd": {
+      "test_short": "lancer un test automatique court (~2 min)",
+      "test_long": "lancer un test approfondi (peut durer plusieurs heures)",
+      "watch": "surveiller la progression en temps réel (Ctrl+C pour quitter)",
+      "abort": "interrompre le test en cours (-X = abort)",
+      "history": "consulter l'historique des tests passés"
+    }
   },
   "memory": {
     "no_swap": "Aucun espace swap configuré",
@@ -765,7 +772,8 @@
       "no_url": "--test-webhook nécessite une URL webhook configurée. Définissez-en une avec `bob --webhook=URL` d'abord.",
       "posting": "POST du payload de test vers {url}",
       "success": "Test webhook réussi : {url} a renvoyé HTTP {status}",
-      "failed": "Le test webhook a échoué"
+      "failed": "Le test webhook a échoué",
+      "offline_skipped": "--test-webhook ignoré : --offline est activé (aucun appel réseau sortant)."
     },
     "error": {
       "prefix": "Erreur : ",
@@ -1033,7 +1041,7 @@
     "ui": {
       "list_header": "Clés --explain disponibles :",
       "unknown_key": "Aucune explication disponible pour : {requested}",
-      "unknown_hint": "Exécutez 'sudo bob --explain list' pour voir toutes les clés disponibles.",
+      "unknown_hint": "Exécutez 'bob --explain list' pour voir toutes les clés disponibles.",
       "why_title": "POURQUOI C'EST UN RISQUE",
       "how_title": "COMMENT CORRIGER",
       "uniform_profiles_note": "Cette découverte s'applique de la même manière à tous les profils.",

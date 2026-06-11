@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-06-10" "BOB 0.11.0" "User Commands"
+.TH BOB 1 "2026-06-11" "BOB 0.11.1" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -145,6 +145,7 @@ Apply an audit profile that adjusts severity overrides per finding key.
 Built-in profiles:
 .BR server " (default), "
 .BR desktop ", "
+.BR workstation ", "
 .BR container .
 User profiles in
 .IR ~/.config/bob/profiles/*.conf
@@ -223,7 +224,7 @@ Display a structured explanation for a single finding key. Pass
 .B list
 as the
 .I KEY
-to list all available explain keys (116 keys in v0.6.2).
+to list all available explain keys (169 keys).
 .TP
 .B \-e
 Shortcut for
@@ -457,14 +458,6 @@ Set by the installer entry point — typical values:
 .IR /usr/local/share/bob/
 (local installs). When unset, BOB uses the data files bundled inside the
 Python package itself (pipx / pip install layout).
-.TP
-.B UFW_AUDIT_SHARE
-Legacy alias for
-.BR BOB_SHARE ,
-retained for backward compatibility with pre-v0.4.2 installer scripts. Will
-be removed in a future major release.
-.BR BOB_SHARE
-takes precedence when both are set.
 .
 .SH SECURITY
 BOB is an audit-only tool that runs with root privileges. It is part of the

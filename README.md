@@ -4,7 +4,7 @@
 
 **Linux hardening auditor for sysadmins who read the output.**
 
-BOB is a CLI security audit and hardening tool for Linux systems. It runs 43 checks across 7 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
+BOB is a CLI security audit and hardening tool for Linux systems. It runs 34 check sections across 7 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
 
 ---
 
@@ -142,7 +142,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 ---
 
-## Security checks — 43 checks, 7 score domains
+## Security checks — 34 check sections, 7 score domains
 
 | Domain | What it covers |
 |--------|----------------|
@@ -187,7 +187,7 @@ No sudo required. Fully offline — no external calls or data collection.
 |---------|----------|
 | `server` | Default — strict on SSH, firewall, services |
 | `desktop` | Relaxed for desktop systems — SSH password auth tolerated, GUI apps not flagged, manual update mechanisms accepted (~11 overrides extending `server`) |
-| `workstation` | Backward-compat alias to `desktop` |
+| `workstation` | First-class business-tier profile since v0.8.1 (no longer an alias to `desktop`) — keeps backup / auditd / MAC-enforce findings at WARN while relaxing the same SSH / clamav / rootkit / file-integrity ergonomics as `desktop` |
 | `container` | Extends `desktop` and skips host-level checks (kernel modules, kernel hardening, secure boot, auditd, suid_audit, docker_audit, file integrity, rootkit) |
 
 ```

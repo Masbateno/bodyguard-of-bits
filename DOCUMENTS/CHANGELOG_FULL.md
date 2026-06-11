@@ -6,6 +6,135 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.11.1] — 2026-06-11
+
+**First v0.11.x hardening patch — two minors from the post-v0.11.0 whole-tool deep audit.**
+
+### The audit
+
+The 20th deep-audit pass swept the whole tool (not just the v0.11.0 diff) — input parsers, every `cmd=` remediation construction site, the atomic-write contract + all callers, scoring/posture/output integrity, CLI/TUI, and i18n. Result: **0 critical + 0 important + 2 minor**. After 19 prior passes the security-critical surfaces are clean:
+
+- **cmd injection**: all 68 `cmd=` / `nature="action"` sites verified — every config/parsed value reaching a shell command is `shlex.quote`'d, integer/whitelist-bounded, or guarded by `fixes._has_shell_ops` (which runs `subprocess.run(shlex.split(...))` without `shell=True`). Cron-line generation validates emails against an anchored regex before writing.
+- **atomic-write**: `_atomic.py` fsync(fd)+fsync(dir), per-call `mkstemp`, tmp cleanup on every failure path, all callers pass correct explicit mode bits.
+- **HTML output**: every finding field + hostname/OS escaped via `_h()` — no XSS.
+- **literal-key contracts** (the v0.10.2 bug class): every finding-key literal in `scoring.py` / `exposure.py` / `correlation.py` / `domain_scores.py` resolves to a live emitted key.
+
+The conservative filter selected **both** minors: they are small contract-consistency fixes that bundle cleanly, and both align with an existing stated contract.
+
+### M-1 — i18n must not crash on a malformed locale template
+
+[bob/i18n.py](../bob/i18n.py)::`t()` caught only `KeyError` from `str.format()`:
+
+```python
+# before
+except KeyError as exc:
+    logger.warning("Missing placeholder %s in translation key %r", exc, key)
+    return value
+```
+
+But `str.format()` raises more than `KeyError`:
+- an **unbalanced brace** (`"50% off {price"`) → `ValueError`;
+- a **positional field** (`"item {0}"`) called with named kwargs (which BOB always uses) → `IndexError`.
+
+Either of those would propagate uncaught and **crash the audit** for the affected locale. The placeholder-parity linter only compared the *set* of well-formed `{name}` placeholders between `en.json` and `fr.json` — it could not see an unbalanced brace or a positional field.
+
+The fix is two-layered:
+
+1. **Runtime safety net.** `t()` now degrades to the raw template on `(KeyError, IndexError, ValueError)`. `try_t()` (the lower-level resolver used by `_i18n_safe`) gains the `(IndexError, ValueError)` guard **while preserving its intentional `KeyError` propagation** — a forgotten kwarg is a caller error that callers distinguish, but a malformed template is corrupt data and degrades:
+
+   ```python
+   # try_t() — KeyError still propagates; malformed-template errors degrade
+   try:
+       return value.format(**kwargs)
+   except (IndexError, ValueError):
+       return value
+   ```
+
+2. **CI-time prevention (the stronger guard).** [tests/test_locale_coverage.py](../tests/test_locale_coverage.py)::`TestTemplateWellFormed` parses every string leaf in both locales with `string.Formatter().parse()` and rejects unbalanced braces (`ValueError` from `parse`) and positional/auto-numbered fields (`{0}` / `{}`). This protects *every* reader (`t`, `try_t`, `t_or_hardcoded`) by ensuring a malformed string never lands in a released locale in the first place.
+
+Current `en.json` / `fr.json` are clean — this is a latent crash-on-future-edit class, closed before it could ever bite, consistent with BOB's i18n "never crash, degrade to bracketed fallback" contract.
+
+### M-2 — `--test-webhook` now honors `--offline`
+
+[bob/__main__.py](../bob/__main__.py): `--offline` is documented as disabling **all** outbound network calls (air-gapped environments). The audit-time webhook path already gated on it (`if _webhook_url and not config.offline:`), but the explicit `--test-webhook` smoke command did not — so `bob --test-webhook --offline` still issued a POST.
+
+The "explicit network-test intent" excuse is weak: `--offline` is a deliberate global override, and when two flags conflict around a network-egress guard, the safe resolution is that the **more restrictive flag wins**. An unexpected egress is most harmful in exactly the air-gapped environment where `--offline` is used. The fix skips the POST cleanly, before any URL resolution or network import:
+
+```python
+if config.offline:
+    print("ℹ  " + i18n.t("cli.test_webhook.offline_skipped"), file=sys.stderr)
+    return EXIT_OK
+```
+
+`EXIT_OK` because honoring `--offline` is correct behavior, not a failure; the clear stderr notice means no one is misled. New locale key `cli.test_webhook.offline_skipped` (EN+FR).
+
+### Tests
+
+[tests/test_v0111_i18n_format_and_offline_webhook.py](../tests/test_v0111_i18n_format_and_offline_webhook.py) — 9 tests:
+
+- `TestI18nMalformedTemplateDegrades` (4): `t()` degrades on unbalanced brace / positional field / missing kwarg, and still formats a well-formed named template.
+- `TestTOptionalMalformedTemplate` (3): `try_t()` swallows the malformed-template errors but **still propagates `KeyError`** (contract preserved).
+- `TestTestWebhookOfflineGuard` (2): `--test-webhook --offline` returns `EXIT_OK`, makes **no** network call (a monkeypatched `test_webhook` that raises if reached is never hit), and short-circuits before the "no URL configured" error.
+
+Plus 2 in `TestTemplateWellFormed` (en + fr parametrized). 11 tests for M-1+M-2. 0 regression.
+
+(One self-inflicted fixture lesson during development: the M-2 test invokes `main()`, which calls `output.init(no_color=config.no_color)`. With color defaulting on, that leaked ANSI state into a later `test_watch.py` score-bar test. Fixed by passing `--no-color` in the test invocation — the offline guard fires before any colored output anyway.)
+
+### Polish fixes from the functional / perceived-quality (UX) audit — F3, F5, F7
+
+Right after M-1+M-2 landed, a functional / perceived-quality audit was run on the whole tool **in real conditions** (a live root audit on Linux Mint 22.3, every output format, the `--explain` education layer, error paths, EN+FR). It surfaced 7 findings. Four are contract/design/behavior changes deferred to a planned v0.12.0 bundle: **F1** (the domain-averaging score model rounds a real `-1` deduction up to a headline `10/10`, which coexists with "Action required" and reads contradictory — the centerpiece, needs design), **F2** (a finding shows as `⚠ [WARNING]` in the body but under `✖ Action required` in the summary), **F4** (`--explain <bad key>` exits `0`, indistinct from success, and offers no "did you mean" suggestion), **F6** (the root gate fires before non-root validation, so `--check=typo` without sudo reports "must be run as root" instead of "unknown check"). The three remaining are trivially-safe, no-contract-change fixes pulled into v0.11.1:
+
+**F3 — fwupd device-name parsing leaked connector junk.** [bob/checks/firmware.py](../bob/checks/firmware.py). All system commands run under `LC_ALL=C` (forced in [bob/checks/_run.py](../bob/checks/_run.py) for stable English output that regexes can parse). But `fwupdmgr get-updates` draws its device tree with Unicode box-drawing connectors (├ └ ─ │), and under `LC_ALL=C` those collapse to `?`. `_parse_fwupd_updates` detects the tree by matching `^[├└]─`; with the connectors degraded to `?`, detection failed, the parser fell into its flat-format branch, and harvested the non-indented junk lines — the system-container header, a bare `?` (was `│`), and `??UEFI dbx:` (was `└─UEFI dbx:`) — as three "device names". Observed live on the test machine: `3 pending firmware update(s): ASUSTeK COMPUTER INC. ASUS X500MA_U500MA, ?, ??UEFI dbx:` — wrong name **and** wrong count (3 vs the real 1).
+
+The fix targets the root cause: a new `_C_UTF8_LOCALE_ENV` (`LC_ALL=C.UTF-8` — still English/POSIX text, but a UTF-8 charset so the connectors survive), passed to fwupd via a new optional `env=` parameter on `_run`. The existing tree parser is correct when it receives proper input — verified live, the finding is now the clean `1 pending firmware update(s): UEFI dbx`. A defense-in-depth parser guard (`_VALID_DEVICE_NAME_RE` — a real device name starts with an alphanumeric) rejects any residual `?`/connector junk on the rare distro lacking `C.UTF-8`.
+
+**F5 — the "key not found" explain hint wrongly said sudo.** [bob/locales/en.json](../bob/locales/en.json) + [fr.json](../bob/locales/fr.json). `explain.ui.unknown_hint` read *"Run 'sudo bob --explain list' …"*, but `--explain list` needs no sudo — the `--help` carefully marks the entire explain surface "no sudo required", and the sibling `explain.ui.invalid_key_hint` already said *"Run 'bob --explain list'"* (no sudo). Dropped the stray `sudo` in both locales.
+
+**F7 — protocol-unspecified UFW orphan rules displayed a bare port.** [bob/checks/firewall.py::_check_orphan_rules](../bob/checks/firewall.py). A UFW rule with no protocol (UFW applies it to both tcp and udp) is stored as a bare port and was displayed as `57621`, jarringly inconsistent next to proto-qualified siblings like `41681/tcp`. It now renders as `57621/tcp+udp` — consistent and informative (it tells the operator the rule covers both protocols) — while the `sudo ufw delete allow 57621` remediation keeps the bare port, which is the only form UFW's delete accepts.
+
+[tests/test_v0111_ux_audit_fixes.py](../tests/test_v0111_ux_audit_fixes.py) — 9 tests: F3 (`_C_UTF8_LOCALE_ENV` shape, proper-tree clean parse, degraded-`?` input emits no junk, empty input), F5 (no-sudo hint EN+FR, still references list), F7 (bare→`/tcp+udp` display + bare delete cmd, proto-qualified unchanged, listening port not flagged).
+
+### Documentation accuracy pass (DOC-A … DOC-G)
+
+A full documentation audit (cross-checking every prose doc + man page + CLI help against the real code) ran in the same window and its no-risk corrections were folded in. The doc *skeleton* was excellent (EN/FR parity, footer/email/URL conventions all clean); the drift was concentrated in **two features whose status had changed** plus **counts never re-synced**:
+
+- **`--json-v1`** (retired in v0.9.0) was still documented as a usable flag: a runnable `sudo bob --json-v1` line in [TUTORIAL.md](../DOCUMENTS/TUTORIAL.md) + FR (a dead copy-paste command), a whole "opt-in v1 schema" table + example + "may retire in a future major" line in [README_TECH.md](../DOCUMENTS/README_TECH.md), and an upgrade-chain mention in [SECURITY.md](../SECURITY.md). All corrected to "retired in v0.9.0; v2 is the only schema".
+- **The `workstation` profile** was self-contradicting across the docs: [README.md](../README.md) called it a "backward-compat alias to `desktop`" and [man/bob-profile.5](../man/bob-profile.5) said "shipped but not consumed by the loader" — both describe the *pre-v0.8.1* behavior — while README_TECH / SECURITY correctly called it first-class. Reality ([bob/profiles.py](../bob/profiles.py)): the alias was retired in v0.8.1 and `workstation` is a first-class business-tier profile. All sources reconciled, and `workstation` was **added to the `--help` profile line + `--profile` error message** ([bob/cli.py](../bob/cli.py)) where it had been omitted entirely.
+- **Stale counts**: EXPLAIN_KEYS cited as 116 / 168 (README_TECH) and 116 (man) → corrected to the real **169 keys / 45 prefixes**; "43 checks" (README ×2, README_TECH ×2) → **34 check sections** (matching `--check=list`). Services count (38) was already correct.
+- **`UFW_AUDIT_SHARE`** (removed in v0.5.4) was documented as a working env var in [man/bob.1](../man/bob.1) (entry removed) and [README_DEV.md](../DOCUMENTS/README_DEV.md) (env table + a stale code snippet → corrected to the real `BOB_SHARE` mechanism in `bob/_paths.py`).
+- man page dates bumped to 2026-06-11.
+
+[tests/test_v0111_doc_accuracy.py](../tests/test_v0111_doc_accuracy.py) — 6 anti-drift guards pinning two of the fixed facts so they can't regress: every shipped `bob/data/profiles/*.conf` must appear in the `--help` profile line + `--profile` error message, and no user-facing doc may show a runnable `bob --json-v1`. (Same "post-bug → generic guard" pattern as the v0.11.0 literal-drift guard.)
+
+### Reverse i18n leak — hardcoded French in the disk SMART commands
+
+Surfaced by comparing a live **English** audit against the French one (user runs, 2026-06-10): the five `smartctl` self-test command suggestions in [bob/checks/disk.py](../bob/checks/disk.py) carried **hardcoded French inline comments** (`# lancer un test automatique court (~2 min)`, `# surveiller la progression en temps réel`, …). They rendered correctly in a French audit but **leaked French into every English audit**. This is the inverse of (and more clear-cut than) the deferred F8 — F8 is "untranslated English" (defensible for CIS titles), this is plain wrong-language output, so it ships now rather than waiting for the v0.12.0 i18n bundle. Fix: five locale keys `disk.smart_cmd.{test_short,test_long,watch,abort,history}` (EN + FR), built into the command comment via `_t()`. A scan confirmed the leak was isolated to these five strings (the only other French-in-source hit, `logs.py`, is a correct `… if lang == "fr" else …` conditional). Pinned by `tests/test_v0111_ux_audit_fixes.py::TestDiskSmartCmdLocalised` (no hardcoded French in `disk.py`; both locales present; EN comment is English).
+
+### Numbers
+
+- **Tests 6336 → 6369** (+33: 11 for M-1+M-2 — 9 in `test_v0111_i18n_format_and_offline_webhook.py` + 2 locale-linter cases — 16 in `test_v0111_ux_audit_fixes.py` (9 for F3/F5/F7 + 7 for the disk SMART comment i18n leak) — 6 in `test_v0111_doc_accuracy.py` doc anti-drift guards). 0 regression.
+- 5 production files: [bob/i18n.py](../bob/i18n.py) (broaden two except clauses), [bob/__main__.py](../bob/__main__.py) (offline guard), [bob/checks/_run.py](../bob/checks/_run.py) (`_C_UTF8_LOCALE_ENV` + `env=` param), [bob/checks/firmware.py](../bob/checks/firmware.py) (UTF-8 fwupd call + parser guard), [bob/checks/firewall.py](../bob/checks/firewall.py) (orphan port display), [bob/checks/disk.py](../bob/checks/disk.py) (SMART comment i18n) + [bob/cli.py](../bob/cli.py) (workstation in --help, from the doc pass).
+- locale files: `cli.test_webhook.offline_skipped`, `explain.ui.unknown_hint` (F5), `disk.smart_cmd.*` (5 keys) — EN + FR.
+- 3 new test files + 1 locale-linter class + full release surface.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No migration action required. `bob --test-webhook --offline` now skips cleanly instead of POSTing.
+
+**v0.7.x remains EOL** (declared in [SECURITY.md](../SECURITY.md) since v0.8.1). **v0.6.x remains EOL** (declared in v0.7.2).
+
+### Lessons
+
+- **A clean audit is a valid result — but the two minors it found were both real contract gaps**, not cosmetic: i18n's never-crash contract had a hole for malformed templates; `--offline`'s no-egress contract had a hole for `--test-webhook`. Worth shipping precisely because they restore stated contracts.
+- **Fix at the strongest layer.** M-1 ships both a runtime degrade AND a CI-time linter that prevents the bad data from ever landing — the linter protects every reader, not just the one function the audit flagged.
+- **The conservative filter is not "ship nothing on a clean audit".** With 0 C / 0 I there was no urgency, but two cheap contract-restoring fixes that bundle into a tiny patch pass "gain × risque": low risk, real (if latent) gain, aligned with existing contracts.
+
+---
+
 ## [v0.11.0] — 2026-06-10
 
 **First v0.11.x release — BREAKING bundle: hygiene + design fix.**
@@ -2924,7 +3053,7 @@ $ python3 -m pytest tests/ -q
 | `tests/test_cron.py::TestApplyCronScheduleAtomic` (patch target) | +2L / −0L |
 | Version bump + changelogs | standard ~17 files |
 
-**Cumulative: ~+260 LoC overhead** for the split (across both packages) vs the monolithic equivalent. Justified by the modularity gain — largest single module post-split is 529L (well below the project's soft 1000-LoC ceiling), down from 1296L pre-split.
+**Cumulative: ~+330 LoC overhead** for the split (across both packages) vs the monolithic equivalent. Justified by the modularity gain — largest single module post-split is 529L (well below the project's soft 1000-LoC ceiling), down from 1296L pre-split.
 
 ### Cross-cutting observation: the public API surface is now explicit
 

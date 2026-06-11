@@ -1,3 +1,78 @@
+bodyguard-of-bits (0.11.1-1) UNRELEASED; urgency=low
+
+  * Two minors from the post-v0.11.0 whole-tool deep hardening audit
+    (0 critical + 0 important + 2 minor — a clean pass after 19 audits;
+    cmd construction, atomic-write, HTML escaping, literal-key contracts
+    all verified clean).
+  * M-1 — i18n must not crash on a malformed locale template.
+    bob/i18n.py::t() caught only KeyError from str.format(). A malformed
+    template (unbalanced brace -> ValueError, positional {0} field ->
+    IndexError) would propagate uncaught and crash the audit for the
+    affected locale. t() now degrades to the raw template on
+    (KeyError, IndexError, ValueError); try_t() gains the
+    IndexError/ValueError guard while keeping its intentional KeyError
+    propagation (a forgotten kwarg is a caller error, distinct from a
+    corrupt template). The locale linter gains TestTemplateWellFormed,
+    which rejects unbalanced braces and positional fields in en.json /
+    fr.json at CI time so a malformed string can never ship. Current
+    locales are clean; this closes a crash-on-future-edit class
+    consistent with the bracketed-fallback contract.
+  * M-2 — --test-webhook now honors --offline. --offline is a global
+    no-egress guard for air-gapped environments. The audit-time webhook
+    path already gated on `not config.offline`, but the explicit
+    --test-webhook command did not, so `bob --test-webhook --offline`
+    still issued a POST. The offline guard now wins: the test is skipped
+    cleanly with a clear stderr notice and EXIT_OK, before any URL
+    resolution or network import. New locale key
+    cli.test_webhook.offline_skipped (EN+FR).
+  * Plus three trivially-safe polish fixes from the post-v0.11.0
+    functional / perceived-quality (UX) audit — the no-contract-change
+    subset; the score-model + presentation + exit-code + root-gate items
+    (F1/F2/F4/F6) are deferred to the planned v0.12.0 bundle.
+  * F3 — fwupd device-name parsing leaked connector junk. Under the
+    default LC_ALL=C, `fwupdmgr get-updates` renders its device tree
+    connectors as `?`, breaking tree detection; the parser fell to flat
+    mode and surfaced `?` / `??UEFI dbx:` / the container header as
+    device names (observed live: "ASUSTeK ... , ?, ??UEFI dbx:"). Now
+    runs fwupd under C.UTF-8 (new _C_UTF8_LOCALE_ENV) so the tree renders
+    correctly, plus a parser guard rejecting names not starting with an
+    alphanumeric. Live result is now the clean "1 pending firmware
+    update(s): UEFI dbx".
+  * F5 — the unknown-key explain hint wrongly said "Run 'sudo bob
+    --explain list'"; `--explain list` needs no sudo. Dropped it (EN+FR).
+  * F7 — a protocol-unspecified UFW orphan rule displayed a bare port
+    ("57621") next to proto-qualified siblings ("41681/tcp"). Now shows
+    "57621/tcp+udp" (UFW applies it to both); the delete command keeps
+    the bare port.
+  * Plus a documentation accuracy pass (DOC-A...G): a full doc audit
+    cross-checking every prose doc + man page + CLI help against the
+    real code, folding in the no-risk corrections. --json-v1 (retired
+    v0.9.0) removed from TUTORIAL / README_TECH / SECURITY where it was
+    still shown as a usable flag; the workstation profile reconciled to
+    first-class business-tier (README called it an alias, man said
+    "shipped but not consumed" — both described the pre-v0.8.1
+    behaviour) and added to the --help profile line + --profile error
+    message where it was omitted; stale EXPLAIN_KEYS counts (116 / 168)
+    corrected to the real 169 keys / 45 prefixes; "43 checks" corrected
+    to 34 check sections (matching --check=list); UFW_AUDIT_SHARE
+    (removed in v0.5.4) corrected to BOB_SHARE in man + README_DEV; man
+    page dates bumped to 2026-06-11. Pinned by
+    tests/test_v0111_doc_accuracy.py (6 anti-drift guards: every shipped
+    profiles/*.conf must appear in --help; no user doc may show a
+    runnable bob --json-v1).
+  * Also fixed a reverse i18n leak (bob/checks/disk.py): five smartctl
+    self-test command suggestions had hardcoded French inline comments
+    that leaked French into English audits (surfaced by comparing live
+    EN vs FR runs). Now locale keys disk.smart_cmd.* (EN+FR). A clear
+    wrong-language bug, shipped now rather than with the v0.12.0-deferred
+    F8 (untranslated-English Best-practice refs).
+  * Tests 6336 -> 6369 (+33: 9 i18n/webhook + 2 locale-linter + 16 UX-fix
+    [F3/F5/F7 + disk i18n] + 6 doc-accuracy). 0 regression.
+  * v0.7.x remains EOL (declared v0.8.1); v0.6.x remains EOL (v0.7.2).
+  * Upgrade: pipx upgrade bodyguard-of-bits. No migration action required.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 11 Jun 2026 09:00:00 +0200
+
 bodyguard-of-bits (0.11.0-1) UNRELEASED; urgency=low
 
   * BREAKING bundle — hygiene + design fix. Opens the v0.11.x branch.

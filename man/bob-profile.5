@@ -1,5 +1,5 @@
 .\" Manpage for BOB audit profile files
-.TH BOB-PROFILE 5 "2026-06-10" "BOB 0.11.0" "File Formats"
+.TH BOB-PROFILE 5 "2026-06-11" "BOB 0.11.1" "File Formats"
 .SH NAME
 bob-profile \- BOB audit profile file format (severity overrides per finding key)
 .
@@ -147,13 +147,13 @@ container images and CI environments where filesystem and kernel state
 are not auditable.
 .TP
 .B workstation
-Backward-compat alias. Selecting it loads
-.B desktop
-(see
-.B bob/profiles.py::load_profile );
-the file
-.B workstation.conf
-is shipped but not consumed by the loader.
+First-class business-tier profile since v0.8.1 (no longer an alias to
+.BR desktop ).
+Loads
+.B workstation.conf ,
+which keeps backup / auditd / MAC-enforce findings at WARN while relaxing the
+same SSH / clamav / rootkit / file-integrity ergonomics as
+.BR desktop .
 .
 .SH SEE ALSO
 .BR bob (1),

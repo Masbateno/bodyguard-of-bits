@@ -6,6 +6,95 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.11.1] — 11-06-2026
+
+**Premier patch hardening v0.11.x — deux minors issus de l'audit deep whole-tool post-v0.11.0.**
+
+### L'audit
+
+La 20e passe d'audit deep a balayé tout l'outil (pas juste le diff v0.11.0) — parsers d'input, chaque site de construction `cmd=`, le contrat atomic-write + tous les callers, l'intégrité scoring/posture/output, CLI/TUI, et i18n. Résultat : **0 critique + 0 important + 2 minor**. Après 19 passes les surfaces sensibles sont clean :
+
+- **injection cmd** : 68 sites `cmd=` vérifiés — toute valeur config/parsée atteignant un shell est `shlex.quote`'d, int/whitelist-bounded, ou gardée par `fixes._has_shell_ops` (`subprocess.run(shlex.split(...))` sans `shell=True`). La génération de ligne cron valide les emails contre une regex ancrée.
+- **atomic-write** : `_atomic.py` fsync(fd)+fsync(dir), `mkstemp` par appel, cleanup tmp sur tout path d'échec.
+- **HTML output** : chaque champ de finding + hostname/OS échappé via `_h()`.
+- **contrats de clés littérales** (classe de bug v0.10.2) : chaque littéral de clé dans `scoring.py`/`exposure.py`/`correlation.py` résout vers une clé live.
+
+Le filter conservateur a sélectionné **les deux** minors : petits fixes de cohérence de contrat qui bundlent proprement, alignés sur un contrat existant.
+
+### M-1 — i18n ne doit pas crasher sur un template locale malformé
+
+[bob/i18n.py](../bob/i18n.py)::`t()` ne catchait que `KeyError` de `str.format()`. Mais `str.format()` lève plus que ça : une **accolade non fermée** (`"{price"`) → `ValueError` ; un **champ positionnel** (`"{0}"`) appelé avec kwargs nommés → `IndexError`. L'un ou l'autre propageait non catché et **crashait l'audit** pour la locale affectée. Le linter parity ne comparait que le *set* de placeholders `{name}` bien formés.
+
+Fix à deux couches :
+
+1. **Filet runtime.** `t()` dégrade vers le template brut sur `(KeyError, IndexError, ValueError)`. `try_t()` gagne le guard `(IndexError, ValueError)` **en préservant sa propagation `KeyError` intentionnelle** (un kwarg oublié est une erreur du caller que les callers distinguent ; un template malformé est de la data corrompue et dégrade).
+2. **Prévention au CI (le guard le plus fort).** [tests/test_locale_coverage.py](../tests/test_locale_coverage.py)::`TestTemplateWellFormed` parse chaque string des deux locales avec `string.Formatter().parse()` et rejette les accolades non équilibrées + champs positionnels. Protège *tous* les lecteurs (`t`, `try_t`, `t_or_hardcoded`).
+
+Les locales actuelles sont clean — classe de crash-on-future-edit latente, fermée avant qu'elle puisse mordre, cohérente avec le contrat i18n "ne crashe jamais, dégrade en bracketed-fallback".
+
+### M-2 — `--test-webhook` honore maintenant `--offline`
+
+[bob/__main__.py](../bob/__main__.py) : `--offline` est documenté comme désactivant **tous** les appels réseau sortants (air-gapped). Le path webhook audit-time gatait déjà dessus, mais la commande explicite `--test-webhook` non — donc `bob --test-webhook --offline` faisait quand même un POST.
+
+L'excuse "intention explicite de test réseau" est faible : `--offline` est un override global délibéré, et quand deux flags entrent en conflit autour d'un garde-fou d'egress, la résolution sûre est que **le flag le plus restrictif gagne**. Une egress inattendue fait le plus de mal précisément dans l'environnement air-gapped. Le fix skip le POST proprement, avant toute résolution d'URL ou import réseau, avec `EXIT_OK` (honorer `--offline` est correct, pas un échec) + notice claire sur stderr. Nouvelle clé locale `cli.test_webhook.offline_skipped` (EN+FR).
+
+### Tests
+
+[tests/test_v0111_i18n_format_and_offline_webhook.py](../tests/test_v0111_i18n_format_and_offline_webhook.py) — 9 tests (degrade `t()` ×4, `try_t()` ×3 dont KeyError préservé, offline guard ×2 dont guard no-network) + 2 dans `TestTemplateWellFormed` (en+fr). 11 tests pour M-1+M-2. 0 régression.
+
+### Fixes de polish issus de l'audit fonctionnel / qualité-perçue (UX) — F3, F5, F7
+
+Juste après M-1+M-2, un audit fonctionnel / qualité-perçue a été mené sur tout l'outil **en conditions réelles** (audit root live sur Linux Mint 22.3, tous les formats de sortie, la couche éducation `--explain`, les chemins d'erreur, EN+FR). Il a surfacé 7 findings. Quatre sont des changements de contrat/design/comportement déférés à un bundle v0.12.0 planifié : **F1** (le modèle de score domain-average arrondit une déduction `-1` réelle vers un `10/10` de tête, qui coexiste avec "Action required" et sonne contradictoire — la pièce maîtresse, demande du design), **F2** (un finding s'affiche `⚠ [WARNING]` dans le corps mais sous `✖ Action required` dans le résumé), **F4** (`--explain <mauvaise clé>` sort `0`, indistinct d'un succès, sans suggestion "did you mean"), **F6** (le root-gate fire avant la validation non-root). Les trois restants sont triviaux, sans changement de contrat, intégrés à v0.11.1 :
+
+**F3 — le parsing des noms de device fwupd fuyait du junk connecteur.** [bob/checks/firmware.py](../bob/checks/firmware.py). Toutes les commandes système tournent sous `LC_ALL=C` (forcé dans [bob/checks/_run.py](../bob/checks/_run.py) pour une sortie anglaise stable). Mais `fwupdmgr get-updates` dessine son arbre de devices avec des connecteurs Unicode (├ └ ─ │), qui sous `LC_ALL=C` dégradent en `?`. La détection d'arbre échouait, le parser tombait en mode flat et récupérait l'en-tête conteneur + un `?` nu + `??UEFI dbx:` comme 3 "noms de device". Observé live : `3 pending firmware update(s): ASUSTeK ... , ?, ??UEFI dbx:` — nom **et** count faux (3 vs 1 réel). Fix : nouveau `_C_UTF8_LOCALE_ENV` (`LC_ALL=C.UTF-8` — texte anglais, charset UTF-8) passé à fwupd via un nouveau paramètre `env=` sur `_run`. Le parser tree est correct sur entrée correcte — vérifié live : `1 pending firmware update(s): UEFI dbx`. Une garde défense-en-profondeur (`_VALID_DEVICE_NAME_RE`) rejette tout junk résiduel.
+
+**F5 — le hint explain clé-introuvable disait sudo à tort.** `explain.ui.unknown_hint` disait *"Run 'sudo bob --explain list'"*, or `--explain list` ne demande pas sudo (le sibling `invalid_key_hint` était déjà correct). Sudo retiré (EN+FR).
+
+**F7 — les règles orphelines UFW proto-non-spécifiées affichaient un port nu.** [bob/checks/firewall.py::_check_orphan_rules](../bob/checks/firewall.py). Une règle sans protocole (UFW → tcp+udp) s'affichait `57621` à côté de `41681/tcp`. Maintenant `57621/tcp+udp` ; la remediation `ufw delete allow 57621` garde le port nu (seule forme acceptée).
+
+[tests/test_v0111_ux_audit_fixes.py](../tests/test_v0111_ux_audit_fixes.py) — 9 tests (F3 ×4, F5 ×2, F7 ×3).
+
+### Passe de justesse documentaire (DOC-A … DOC-G)
+
+Un audit complet de la doc (cross-check de chaque doc prose + man + help CLI contre le code réel) a tourné dans la même fenêtre ; ses corrections sans risque ont été intégrées. Le *squelette* de la doc était excellent (parité EN/FR, conventions footer/email/URL clean) ; le drift se concentrait sur **deux features au statut changé** + des **compteurs jamais resynchronisés** :
+
+- **`--json-v1`** (retiré en v0.9.0) était encore documenté comme flag utilisable : ligne `sudo bob --json-v1` exécutable dans [TUTORIAL.md](../DOCUMENTS/TUTORIAL.md) + FR, table + exemple dans [README_TECH.md](../DOCUMENTS/README_TECH.md), mention dans [SECURITY.md](../SECURITY.md). Tout corrigé en "retiré en v0.9.0 ; v2 seul schéma".
+- **Le profil `workstation`** se contredisait : [README.md](../README.md) le disait "alias rétrocompatible vers `desktop`" et [man/bob-profile.5](../man/bob-profile.5) "shipped mais non consommé par le loader" (comportement pré-v0.8.1) alors que README_TECH/SECURITY le disaient first-class. Réalité ([bob/profiles.py](../bob/profiles.py)) : alias retiré en v0.8.1, `workstation` est un profil first-class business-tier. Sources réconciliées + `workstation` **ajouté à la ligne profil du `--help` + message d'erreur `--profile`** ([bob/cli.py](../bob/cli.py)) où il était omis.
+- **Compteurs périmés** : EXPLAIN_KEYS cité 116 / 168 → réel **169 clés / 45 préfixes** ; "43 vérifications" → **34 sections** (matche `--check=list`). Services (38) déjà correct.
+- **`UFW_AUDIT_SHARE`** (supprimé v0.5.4) documenté comme env var fonctionnelle dans [man/bob.1](../man/bob.1) (entrée retirée) et [README_DEV.md](../DOCUMENTS/README_DEV.md) (corrigé vers le vrai mécanisme `BOB_SHARE`).
+- Dates man bumpées à 2026-06-11.
+
+[tests/test_v0111_doc_accuracy.py](../tests/test_v0111_doc_accuracy.py) — 6 gardes anti-drift (profils `.conf` ⊆ ligne `--help` + message d'erreur ; aucun doc user ne montre un `bob --json-v1` exécutable). Même pattern "post-bug → garde générique" que le literal-drift guard v0.11.0.
+
+### Fuite i18n inverse — français hardcodé dans les commandes SMART disque
+
+Révélé en comparant un audit **anglais** live au français (runs user, 2026-06-10) : les cinq suggestions de commandes `smartctl` dans [bob/checks/disk.py](../bob/checks/disk.py) portaient des **commentaires français hardcodés** (`# lancer un test automatique court`, `# surveiller la progression`, …) — corrects en audit FR mais **fuitant le français dans tout audit anglais**. C'est l'inverse (et plus net) que le F8 déféré : F8 = "non traduit" (défendable pour les titres CIS), ça = mauvaise langue — donc ship maintenant. Fix : cinq clés locale `disk.smart_cmd.{test_short,test_long,watch,abort,history}` (EN+FR) via `_t()`. Scan confirmé isolé à ces 5 strings. Piné par `TestDiskSmartCmdLocalised`.
+
+### Numbers
+
+- **Tests 6336 → 6369** (+33 : 11 pour M-1+M-2 + 16 dans ux_audit_fixes (9 F3/F5/F7 + 7 disk i18n) + 6 gardes doc-accuracy). 0 régression.
+- 5 fichiers production (`i18n.py`, `__main__.py`, `_run.py`, `firmware.py`, `firewall.py`, `disk.py`, `cli.py`).
+- locale : `offline_skipped`, `unknown_hint`, `disk.smart_cmd.*` (5 clés) — EN+FR.
+- 3 test files (nouveaux) + 1 classe locale-linter + release surface complète.
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Pas d'action de migration requise. `bob --test-webhook --offline` skip maintenant proprement au lieu de POSTer.
+
+**v0.7.x reste EOL** (déclaré dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1). **v0.6.x reste EOL** (déclaré en v0.7.2).
+
+### Leçons
+
+- **Un audit clean est un résultat valide — mais les deux minors trouvés étaient de vrais trous de contrat**, pas cosmétiques : le contrat never-crash d'i18n avait un trou pour les templates malformés ; le contrat no-egress de `--offline` avait un trou pour `--test-webhook`.
+- **Fixer à la couche la plus forte.** M-1 ship un degrade runtime ET un linter CI qui empêche la mauvaise data d'atterrir.
+- **Le filter conservateur n'est pas "ne rien shipper sur un audit clean".** 0 C / 0 I = pas d'urgence, mais deux fixes cheap qui restaurent des contrats passent "gain × risque".
+
+---
+
 ## [v0.11.0] — 10-06-2026
 
 **Première release v0.11.x — BREAKING bundle : hygiene + design fix.**
@@ -1955,7 +2044,7 @@ $ python3 -m pytest tests/ -q
 | `tests/test_cron.py::TestApplyCronScheduleAtomic` (target patch) | +2L / −0L |
 | Bump version + changelogs | ~17 fichiers standard |
 
-**Cumulé : ~+260 LoC overhead** pour le split (à travers les deux packages) vs l'équivalent monolithique. Justifié par le gain de modularité — le plus gros module simple post-split est 529L (bien sous le soft ceiling 1000-LoC du projet), down de 1296L pré-split.
+**Cumulé : ~+330 LoC overhead** pour le split (à travers les deux packages) vs l'équivalent monolithique. Justifié par le gain de modularité — le plus gros module simple post-split est 529L (bien sous le soft ceiling 1000-LoC du projet), down de 1296L pré-split.
 
 ### Observation cross-cutting : la surface API publique est maintenant explicite
 

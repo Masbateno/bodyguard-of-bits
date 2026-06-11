@@ -26,7 +26,13 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import (
+    TranslationFunc,
+    _C_UTF8_LOCALE_ENV,
+    _command_exists,
+    _identity_t,
+    _run,
+)
 from bob.scoring import CheckResult
 
 _VENDOR_RE = re.compile(r"^vendor_id\s*:\s*(.+)", re.MULTILINE | re.IGNORECASE)
@@ -93,7 +99,14 @@ class FirmwareSnapshot:
         # --- fwupd ----------------------------------------------------------
         snap.fwupd_available = _command_exists("fwupdmgr")
         if snap.fwupd_available:
-            out = _run("fwupdmgr", "get-updates", timeout=_FWUPD_TIMEOUT) or ""
+            # v0.11.1 F3: run under C.UTF-8 (not the default LC_ALL=C) so the
+            # device tree connectors ├ └ ─ │ render as Unicode instead of
+            # degrading to ``?``, which would break _parse_fwupd_updates and
+            # leak connector junk as device names.
+            out = _run(
+                "fwupdmgr", "get-updates",
+                timeout=_FWUPD_TIMEOUT, env=_C_UTF8_LOCALE_ENV,
+            ) or ""
             # Error and updates are independent: both can appear in the same output.
             if _FWUPD_ERROR_RE.search(out):
                 first_line = out.strip().splitlines()[0] if out.strip() else out.strip()
@@ -220,6 +233,12 @@ def _dpkg_installed(package: str) -> bool:
     return False
 
 _TREE_ITEM_RE = re.compile(r"^[├└]─\s*")
+# v0.11.1 F3: a real fwupd device name always starts with an alphanumeric.
+# This rejects connector/placeholder junk (``?``, ``??UEFI dbx:``, ``│``,
+# ``└─…``) that leaks through when the device tree is rendered as ``?``
+# under a non-UTF-8 locale (defense in depth — the call site now forces
+# C.UTF-8, but an older / minimal distro may still lack it).
+_VALID_DEVICE_NAME_RE = re.compile(r"^[A-Za-z0-9]")
 _FLAT_SKIP_RE = re.compile(
     r"^(Update|Version|Summary|Description|Requires|Urgency|Remote|Size|"
     r"Flags|Status|GUID|Device|AppStream|Release|\[|WARNING|Error|\s)",
@@ -250,7 +269,7 @@ def _parse_fwupd_updates(output: str) -> list[str]:
                 continue
             name = line.strip()
 
-        if name and name not in seen:
+        if name and _VALID_DEVICE_NAME_RE.match(name) and name not in seen:
             devices.append(name)
             seen.add(name)
         if len(devices) >= 10:

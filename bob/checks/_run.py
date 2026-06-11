@@ -54,13 +54,28 @@ logger = logging.getLogger(__name__)
 # than LC_ALL, so "LANGUAGE=fr_FR" would still override LC_ALL=C.
 _C_LOCALE_ENV = {**os.environ, "LC_ALL": "C", "LANG": "C", "LANGUAGE": ""}
 
+# Same English-forcing intent as _C_LOCALE_ENV, but with a UTF-8 charset so a
+# command that draws Unicode (e.g. ``fwupdmgr get-updates`` renders its device
+# tree with ├ └ ─ │) is not degraded to ``?`` placeholders. Under plain
+# ``LC_ALL=C`` those box-drawing characters collapse to ``?``, which breaks
+# tree parsing — see bob/checks/firmware.py::_parse_fwupd_updates (v0.11.1 F3).
+# ``C.UTF-8`` is English/POSIX text with UTF-8 encoding and is present on
+# modern glibc distros; if absent the command simply degrades as before and
+# the caller's parser still guards against junk.
+_C_UTF8_LOCALE_ENV = {**os.environ, "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "LANGUAGE": ""}
 
-def _run(*args: str, timeout: int = _CMD_TIMEOUT) -> str:
-    """Run a command and return stdout. Returns empty string on error."""
+
+def _run(*args: str, timeout: int = _CMD_TIMEOUT, env: "dict | None" = None) -> str:
+    """Run a command and return stdout. Returns empty string on error.
+
+    ``env`` defaults to the English ``LC_ALL=C`` environment so regexes match
+    regardless of the host locale. Pass ``env=_C_UTF8_LOCALE_ENV`` for commands
+    whose output contains Unicode that must survive (still English text).
+    """
     try:
         proc = subprocess.run(
             list(args), capture_output=True, text=True, timeout=timeout,
-            env=_C_LOCALE_ENV,
+            env=env if env is not None else _C_LOCALE_ENV,
         )
         return proc.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:

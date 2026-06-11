@@ -746,16 +746,17 @@ Si une clé n'existe pas, `t()` retourne `"[clé.manquante]"` — jamais une exc
 
 Les fichiers de locale et `services.json` sont lus depuis les répertoires `locales/` et `data/` relatifs au module Python (`Path(__file__).parent`). Cela fonctionne en développement comme avec pipx (qui inclut les fichiers de données dans l'environnement isolé).
 
-`$UFW_AUDIT_SHARE` peut pointer vers un répertoire de données partagé (ex. `/usr/local/share/bob/`). Elle prend la priorité sur le chemin embarqué dans le paquet si définie. Non utilisée avec pipx.
+`$BOB_SHARE` peut pointer vers un répertoire de données partagé (ex. `/usr/local/share/bob/`) pour les installs via paquet système. Si défini sur un répertoire absolu existant, il prend la priorité sur le chemin embarqué ; sinon BOB retombe sur les `locales/` et `data/` relatifs au paquet. La résolution est dans `bob/_paths.py` (strict — un chemin manquant, relatif ou non sûr est ignoré avec un warning). Non utilisé avec pipx.
 
 ```python
-# i18n.py
-_share = os.environ.get("UFW_AUDIT_SHARE", "")
-if _share:
-    _LOCALES_DIR = Path(_share) / "locales"
-else:
-    _LOCALES_DIR = Path(__file__).parent / "locales"
+# bob/_paths.py — résolution du share-dir
+share = os.environ.get("BOB_SHARE", "").strip()
+if share:
+    resolved = Path(share).resolve(strict=True)   # ignoré si manquant / non absolu
+    # → resolved / "locales", resolved / "data"
 ```
+
+> L'alias legacy `UFW_AUDIT_SHARE` a été déprécié en v0.5.4 et **supprimé** — utiliser `BOB_SHARE`.
 
 ---
 
@@ -763,7 +764,7 @@ else:
 
 | Variable | Effet |
 |---|---|
-| `UFW_AUDIT_SHARE` | Répertoire des données partagées (locales, services.json) — prioritaire sur le chemin embarqué si défini ; non utilisé avec pipx |
+| `BOB_SHARE` | Répertoire des données partagées (locales, services.json) — prioritaire sur le chemin embarqué si défini sur un répertoire absolu existant ; non utilisé avec pipx. (Legacy `UFW_AUDIT_SHARE` supprimé en v0.5.4.) |
 | `SUDO_USER` | Utilisateur réel sous sudo — utilisé pour le chemin de config et le rapport |
 | `NO_COLOR` | Désactive les couleurs ANSI (standard) |
 

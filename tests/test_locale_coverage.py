@@ -26,6 +26,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import string
 from pathlib import Path
 
 import pytest
@@ -303,6 +304,49 @@ def _flatten_with_values(d: dict, prefix: str = "") -> dict[str, object]:
         else:
             out[full] = v
     return out
+
+
+class TestTemplateWellFormed:
+    """Every locale string must be a valid *named-only* ``str.format`` template.
+
+    A malformed template crashes at render time:
+      - an unbalanced brace (``"50% off {price"``) raises ``ValueError``;
+      - a positional field (``"item {0}"``) raises ``IndexError`` when the call
+        site supplies only named kwargs (which BOB always does).
+
+    ``i18n.t()`` now degrades to the raw template instead of crashing (the
+    bracketed-fallback contract), but the real defense is to never let such a
+    string land in a released locale. The placeholder-parity test above only
+    compares the *set* of well-formed ``{name}`` placeholders — it cannot see
+    an unbalanced brace or a positional field. This guard closes that gap.
+    """
+
+    @pytest.mark.parametrize("locale", ["en", "fr"])
+    def test_all_strings_are_valid_named_templates(self, locale, en_data, fr_data):
+        data = en_data if locale == "en" else fr_data
+        fmt = string.Formatter()
+        bad: list[str] = []
+        for path, value in _flatten_with_values(data).items():
+            if not isinstance(value, str):
+                continue
+            try:
+                fields = [
+                    fname for _, fname, _, _ in fmt.parse(value) if fname is not None
+                ]
+            except ValueError as exc:
+                bad.append(f"{path}: unbalanced/invalid braces ({exc})")
+                continue
+            for fname in fields:
+                # Strip attribute/index access (``{user.name}`` → ``user``).
+                root = fname.split(".")[0].split("[")[0]
+                if root == "" or root.isdigit():
+                    bad.append(
+                        f"{path}: positional field '{{{fname}}}' — use named placeholders"
+                    )
+        assert not bad, (
+            f"Malformed locale templates in {locale}.json "
+            "(would crash str.format at render):\n  " + "\n  ".join(bad)
+        )
 
 
 class TestPlaceholderParity:

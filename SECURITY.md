@@ -23,7 +23,7 @@ formally declared, mirroring the pattern that retired v0.6.x in v0.7.2). No
 security fixes will be backported to v0.7.x. Users on v0.7.x must
 `pipx upgrade bodyguard-of-bits` to v0.8.x to receive security patches. The
 v0.8.x line is largely backwards-compatible with v0.7.x via `__init__.py`
-re-exports + the `--json-v1` flag for legacy JSON consumers, but **one
+re-exports (the `--json-v1` legacy JSON flag was later retired in v0.9.0), but **one
 behavioural BREAKING change** lands in v0.8.1: the `workstation` audit profile
 is no longer a silent alias for `desktop` — it's a first-class business-tier
 profile that keeps `backup.no_backup` / `auditd.*` /
@@ -37,8 +37,8 @@ of `bob/data/profiles/desktop.conf` at
 security fixes will be backported to v0.6.x. Users on v0.6.x must
 `pipx upgrade bodyguard-of-bits` to v0.8.x to receive security patches.
 The v0.7.x → v0.8.x upgrade chain is backwards-compatible with the v0.6.x
-public API via `__init__.py` re-exports + the `--json-v1` flag for legacy
-JSON consumers.
+public API via `__init__.py` re-exports (the `--json-v1` legacy JSON flag was
+later retired in v0.9.0).
 
 v0.5.x was declared EOL on the same day v0.6.0 shipped (2026-05-25). The
 v0.6.0 release is backwards-compatible with the full v0.5.x public API via

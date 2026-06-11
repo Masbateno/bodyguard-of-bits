@@ -216,7 +216,6 @@ sudo bob --format=json | jq '.score'        # score as JSON
 sudo bob --format=csv  > audit.csv          # spreadsheet-friendly
 sudo bob --format=markdown -o /tmp/         # human-readable .md
 sudo bob --format=html -o /tmp/             # HTML report
-sudo bob --json-v1                          # legacy v0.6.x JSON schema (for old consumers)
 ```
 
 `-J` and `-j` are shorthands for `--format=json-full` / `--format=json`. Combine with `--min-level=warn` to filter.

@@ -335,8 +335,14 @@ def _check_orphan_rules(
             orphans.add(port_proto)
 
     for port_proto in sorted(orphans):
+        # v0.11.1 F7: a protocol-unspecified rule is stored as a bare port
+        # (e.g. "57621"); UFW applies it to both protocols. Display it as
+        # ``57621/tcp+udp`` so the finding is consistent with proto-qualified
+        # entries (``41681/tcp``) and tells the operator it covers both. The
+        # delete command keeps the bare token (the only form UFW accepts).
+        display = port_proto if "/" in port_proto else f"{port_proto}/tcp+udp"
         result.info(
-            message=t("firewall_rules.orphan_rule", port=port_proto),
+            message=t("firewall_rules.orphan_rule", port=display),
             cmd=f"sudo ufw delete allow {port_proto}",
             key="firewall_rules.orphan_rule",
         )

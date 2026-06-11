@@ -104,7 +104,7 @@ class AuditConfig:
     """--offline: skip all external HTTP calls (no public IP lookup)."""
 
     profile: str = ""
-    """-p / --profile=NAME: audit profile to apply (server|desktop|container or custom)."""
+    """-p / --profile=NAME: audit profile to apply (server|desktop|workstation|container or custom)."""
 
     reset_baseline: bool = False
     """--reset-baseline: delete the stored audit baseline and exit."""
@@ -356,7 +356,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
         elif arg.startswith("--profile="):
             value = arg.split("=", 1)[1].strip()
             if not value:
-                raise CLIError("--profile= requires a profile name (e.g. server, desktop, container)")
+                raise CLIError("--profile= requires a profile name (e.g. server, desktop, workstation, container)")
             config.profile = value
 
         elif arg in ("-p", "--profile") and i + 1 < len(argv):
@@ -741,7 +741,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     print("       bob --explain KEY   (standalone, no sudo required)")
 
     section("AUDIT — what to check and how")
-    opt("-p, --profile=NAME",    "Audit profile: server (default), desktop, container")
+    opt("-p, --profile=NAME",    "Audit profile: server (default), desktop, workstation, container")
     opt("-l N, --log-days=N",    "Analyse last N days of UFW logs (default: 7)")
     opt("-D, --diff[=PATH]",     "Show only changes since last audit baseline; pass a file path to compare against an arbitrary baseline (cross-machine)")
     opt("    --watch[=N]",       "Re-run audit every N seconds (default: 60) — Ctrl+C to quit")

@@ -696,7 +696,14 @@
     "col_used": "USED",
     "col_free": "FREE",
     "smart_tips": "Deeper SMART analysis available via smartmontools",
-    "smart_tips_detail": "Each -a command prints the full SMART report (attributes + health) for one disk. Run tests one disk at a time — each command below targets the first disk as an example."
+    "smart_tips_detail": "Each -a command prints the full SMART report (attributes + health) for one disk. Run tests one disk at a time — each command below targets the first disk as an example.",
+    "smart_cmd": {
+      "test_short": "run a short self-test (~2 min)",
+      "test_long": "run a long self-test (can take several hours)",
+      "watch": "watch progress in real time (Ctrl+C to quit)",
+      "abort": "abort the running test (-X = abort)",
+      "history": "view past self-test history"
+    }
   },
   "memory": {
     "no_swap": "No swap space configured",
@@ -765,7 +772,8 @@
       "no_url": "--test-webhook requires a configured webhook URL. Set one with `bob --webhook=URL` first.",
       "posting": "POSTing smoke payload to {url}",
       "success": "Webhook smoke test succeeded: {url} returned HTTP {status}",
-      "failed": "Webhook smoke test failed"
+      "failed": "Webhook smoke test failed",
+      "offline_skipped": "--test-webhook skipped: --offline is set (no outbound network calls)."
     },
     "error": {
       "prefix": "Error: ",
@@ -1033,7 +1041,7 @@
     "ui": {
       "list_header": "Available --explain keys:",
       "unknown_key": "No explanation available for: {requested}",
-      "unknown_hint": "Run 'sudo bob --explain list' to see all available keys.",
+      "unknown_hint": "Run 'bob --explain list' to see all available keys.",
       "why_title": "WHY IT IS A RISK",
       "how_title": "HOW TO FIX",
       "uniform_profiles_note": "This finding applies equally to all profiles.",

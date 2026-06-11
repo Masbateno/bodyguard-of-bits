@@ -272,12 +272,14 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
     if snapshot.smartctl_available and real_devices:
         first = shlex.quote(real_devices[0])
         cmd_lines = [f"sudo smartctl -a {shlex.quote(dev)}" for dev in real_devices]
+        # v0.11.1: the inline ``# ...`` comments are locale-aware — they were
+        # previously hardcoded French, which leaked into English audits.
         cmd_lines += [
-            f"sudo smartctl -t short {first}  # lancer un test automatique court (~2 min)",
-            f"sudo smartctl -t long {first}   # lancer un test approfondi (peut durer plusieurs heures)",
-            f"sudo watch -n 30 smartctl -a {first}  # surveiller la progression en temps réel (Ctrl+C pour quitter)",
-            f"sudo smartctl -X {first}  # interrompre le test en cours (-X = abort)",
-            f"sudo smartctl -l selftest {first}  # consulter l'historique des tests passés",
+            f"sudo smartctl -t short {first}  # {_t('disk.smart_cmd.test_short')}",
+            f"sudo smartctl -t long {first}   # {_t('disk.smart_cmd.test_long')}",
+            f"sudo watch -n 30 smartctl -a {first}  # {_t('disk.smart_cmd.watch')}",
+            f"sudo smartctl -X {first}  # {_t('disk.smart_cmd.abort')}",
+            f"sudo smartctl -l selftest {first}  # {_t('disk.smart_cmd.history')}",
         ]
         result.info(
             message=_t("disk.smart_tips"),

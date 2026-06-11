@@ -177,7 +177,15 @@ def try_t(key: str, **kwargs: Any) -> "str | None":
         # str.format raises KeyError for missing placeholders — we let it
         # propagate so callers can distinguish "key missing" (None return)
         # from "key present but call site forgot a kwarg" (KeyError).
-        return value.format(**kwargs)
+        # A malformed locale *template* (unbalanced brace → ValueError, or a
+        # positional ``{0}`` field → IndexError) is a corrupt-data bug, not a
+        # caller error: degrade to the raw string rather than crash. The
+        # locale linter (tests/test_locale_coverage.py) also rejects these at
+        # CI time so they never reach a released build.
+        try:
+            return value.format(**kwargs)
+        except (IndexError, ValueError):
+            return value
     return value
 
 
@@ -224,9 +232,16 @@ def t(key: str, **kwargs: Any) -> str:
     if kwargs:
         try:
             return value.format(**kwargs)
-        except KeyError as exc:
+        except (KeyError, IndexError, ValueError) as exc:
+            # KeyError: the call site forgot a kwarg. IndexError/ValueError:
+            # the locale template itself is malformed (a positional ``{0}``
+            # field or an unbalanced brace). Either way, degrade to the raw
+            # template — i18n must never crash the audit (the bracketed-
+            # fallback contract). The locale linter rejects malformed
+            # templates at CI time; this is the runtime safety net.
             logger.warning(
-                "Missing placeholder %s in translation key %r", exc, key
+                "Could not format translation key %r (%s) — using raw template",
+                key, exc,
             )
             return value
 
