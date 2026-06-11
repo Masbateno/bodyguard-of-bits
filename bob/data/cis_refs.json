@@ -25,30 +25,37 @@
   },
   "backup.no_backup": {
     "ref": "Best practice — Install a backup solution (timeshift / restic / borg) and verify restore quarterly",
+    "ref_fr": "Bonne pratique — Installer une solution de sauvegarde (timeshift / restic / borg) et vérifier la restauration chaque trimestre",
     "code": null
   },
   "clamav.db_not_found": {
     "ref": "Best practice — Initialise the ClamAV signature database via 'freshclam' before relying on scans",
+    "ref_fr": "Bonne pratique — Initialiser la base de signatures ClamAV via 'freshclam' avant de se fier aux analyses",
     "code": null
   },
   "clamav.db_outdated": {
     "ref": "Best practice — Ensure virus database is updated at least weekly",
+    "ref_fr": "Bonne pratique — S'assurer que la base virale est mise à jour au moins chaque semaine",
     "code": null
   },
   "clamav.db_very_outdated": {
     "ref": "Best practice — Ensure virus database is updated daily (freshclam enabled)",
+    "ref_fr": "Bonne pratique — S'assurer que la base virale est mise à jour quotidiennement (freshclam activé)",
     "code": null
   },
   "clamav.freshclam_missing": {
     "ref": "Best practice — Keep clamav-freshclam running so signatures stay current automatically",
+    "ref_fr": "Bonne pratique — Garder clamav-freshclam actif pour que les signatures restent à jour automatiquement",
     "code": null
   },
   "clamav.scan_old": {
     "ref": "Best practice — Ensure regular full system scans are scheduled (weekly)",
+    "ref_fr": "Bonne pratique — Planifier des analyses système complètes régulières (hebdomadaires)",
     "code": null
   },
   "clamav.scan_very_old": {
     "ref": "Best practice — Ensure regular full system scans are scheduled (weekly)",
+    "ref_fr": "Bonne pratique — Planifier des analyses système complètes régulières (hebdomadaires)",
     "code": null
   },
   "cron.pipe_to_shell": {
@@ -61,30 +68,37 @@
   },
   "ddns.found": {
     "ref": "Best practice — A DDNS client publishes your public IP; harden every exposed port behind it",
+    "ref_fr": "Bonne pratique — Un client DDNS publie votre IP publique ; durcir chaque port exposé derrière lui",
     "code": null
   },
   "ddns.warn": {
     "ref": "Best practice — DDNS + open ports = persistent public exposure; close unintended ports",
+    "ref_fr": "Bonne pratique — DDNS + ports ouverts = exposition publique persistante ; fermer les ports non voulus",
     "code": null
   },
   "disk.partition_critical": {
     "ref": "Best practice — Monitor disk space to ensure system stability",
+    "ref_fr": "Bonne pratique — Surveiller l'espace disque pour garantir la stabilité du système",
     "code": null
   },
   "disk.pending_sectors": {
     "ref": "Best practice — Monitor SMART attribute 197 (pending sectors)",
+    "ref_fr": "Bonne pratique — Surveiller l'attribut SMART 197 (secteurs en attente)",
     "code": null
   },
   "disk.reallocated_sectors": {
     "ref": "Best practice — Monitor SMART attribute 5 (reallocated sectors)",
+    "ref_fr": "Bonne pratique — Surveiller l'attribut SMART 5 (secteurs réalloués)",
     "code": null
   },
   "disk.smart_failed": {
     "ref": "Best practice — Monitor disk health with SMART (predictive failure prevention)",
+    "ref_fr": "Bonne pratique — Surveiller la santé disque avec SMART (prévention prédictive des pannes)",
     "code": null
   },
   "disk.uncorrectable_errors": {
     "ref": "Best practice — Monitor SMART attribute 198 (uncorrectable errors)",
+    "ref_fr": "Bonne pratique — Surveiller l'attribut SMART 198 (erreurs non corrigeables)",
     "code": null
   },
   "docker.exposed_bypass_ufw": {
@@ -117,10 +131,12 @@
   },
   "fail2ban.no_jails": {
     "ref": "Best practice — Enable at least the sshd jail; fail2ban with no jails offers no protection",
+    "ref_fr": "Bonne pratique — Activer au moins la jail sshd ; fail2ban sans jail n'offre aucune protection",
     "code": null
   },
   "fail2ban.service_inactive": {
     "ref": "Best practice — Activate fail2ban or uninstall it; an inactive service provides no protection",
+    "ref_fr": "Bonne pratique — Activer fail2ban ou le désinstaller ; un service inactif n'offre aucune protection",
     "code": null
   },
   "file_integrity.check_old": {
@@ -177,14 +193,17 @@
   },
   "firewall_drivers.iptables_bypass": {
     "ref": "Best practice — Avoid raw iptables ACCEPT rules in INPUT that bypass UFW chains",
+    "ref_fr": "Bonne pratique — Éviter les règles iptables ACCEPT brutes dans INPUT qui contournent les chaînes UFW",
     "code": null
   },
   "firewall_drivers.iptables_forward_bypass": {
     "ref": "Best practice — Avoid raw iptables ACCEPT rules in FORWARD when no routing daemon is present",
+    "ref_fr": "Bonne pratique — Éviter les règles iptables ACCEPT brutes dans FORWARD en l'absence de démon de routage",
     "code": null
   },
   "firewall_drivers.nftables_parallel": {
     "ref": "Best practice — Avoid running iptables/UFW and nftables stacks in parallel",
+    "ref_fr": "Bonne pratique — Éviter de faire tourner les piles iptables/UFW et nftables en parallèle",
     "code": null
   },
   "firewall_iptables.forward_accept": {
@@ -293,10 +312,12 @@
   },
   "kernel_hardening.dmesg_exposed": {
     "ref": "Best practice — Restrict access to kernel log (kernel.dmesg_restrict = 1)",
+    "ref_fr": "Bonne pratique — Restreindre l'accès au journal noyau (kernel.dmesg_restrict = 1)",
     "code": null
   },
   "kernel_hardening.kptr_exposed": {
     "ref": "Best practice — Restrict kernel pointer exposure (kernel.kptr_restrict ≥ 1)",
+    "ref_fr": "Bonne pratique — Restreindre l'exposition des pointeurs noyau (kernel.kptr_restrict ≥ 1)",
     "code": null
   },
   "kernel_hardening.ptrace_unrestricted": {
@@ -337,6 +358,7 @@
   },
   "logs.brute_found": {
     "ref": "Best practice — Brute-force activity detected; deploy fail2ban + key-only authentication",
+    "ref_fr": "Bonne pratique — Activité de force brute détectée ; déployer fail2ban + authentification par clé uniquement",
     "code": null
   },
   "mac_policy.apparmor_complain_profiles": {
@@ -369,14 +391,17 @@
   },
   "memory.swappiness_ssd_wear": {
     "ref": "Best practice — Tune vm.swappiness to reduce SSD wear (≤ 10 for SSDs)",
+    "ref_fr": "Bonne pratique — Régler vm.swappiness pour réduire l'usure du SSD (≤ 10 pour les SSD)",
     "code": null
   },
   "memory.swappiness_unjustified": {
     "ref": "Best practice — Optimise vm.swappiness for system workload",
+    "ref_fr": "Bonne pratique — Optimiser vm.swappiness selon la charge du système",
     "code": null
   },
   "network_context.sensitive_remote": {
     "ref": "Best practice — Move sensitive services off the public internet (VPN, jump host) or harden if exposure is required",
+    "ref_fr": "Bonne pratique — Sortir les services sensibles de l'internet public (VPN, jump host) ou les durcir si l'exposition est nécessaire",
     "code": null
   },
   "ntp.not_enabled": {
@@ -385,6 +410,7 @@
   },
   "ntp.not_synchronized": {
     "ref": "Best practice — NTP service active but not synchronised; verify UDP/123 egress and pool reachability",
+    "ref_fr": "Bonne pratique — Service NTP actif mais non synchronisé ; vérifier la sortie UDP/123 et l'accessibilité du pool",
     "code": null
   },
   "password_policy.no_expiry": {
@@ -405,6 +431,7 @@
   },
   "ports.uncovered_netbios": {
     "ref": "Best practice — Restrict NetBIOS / Samba ports (137-139, 445) to the trusted LAN subnet only",
+    "ref_fr": "Bonne pratique — Restreindre les ports NetBIOS / Samba (137-139, 445) au seul sous-réseau LAN de confiance",
     "code": null
   },
   "prerequisites.ufw_missing": {
@@ -413,42 +440,52 @@
   },
   "risk.escalated_posture": {
     "ref": "Best practice — Displayed risk level must reflect posture, not only network exposure",
+    "ref_fr": "Bonne pratique — Le niveau de risque affiché doit refléter la posture, pas seulement l'exposition réseau",
     "code": null
   },
   "rootkit.db_outdated": {
     "ref": "Best practice — Keep rkhunter signature database up to date (daily 'rkhunter --update')",
+    "ref_fr": "Bonne pratique — Garder la base de signatures rkhunter à jour ('rkhunter --update' quotidien)",
     "code": null
   },
   "rootkit.no_scan": {
     "ref": "Best practice — Schedule rkhunter scans so detection runs without manual intervention",
+    "ref_fr": "Bonne pratique — Planifier les scans rkhunter pour que la détection s'exécute sans intervention manuelle",
     "code": null
   },
   "rootkit.scan_old": {
     "ref": "Best practice — Run rkhunter at least monthly to keep detection coverage current",
+    "ref_fr": "Bonne pratique — Lancer rkhunter au moins une fois par mois pour maintenir la couverture de détection",
     "code": null
   },
   "samba.guest_readonly": {
     "ref": "Best practice (Samba) — Verify anonymous read-only shares are intentional",
+    "ref_fr": "Bonne pratique (Samba) — Vérifier que les partages anonymes en lecture seule sont intentionnels",
     "code": null
   },
   "samba.guest_writable": {
     "ref": "Best practice (Samba) — Ensure no shares allow anonymous write access",
+    "ref_fr": "Bonne pratique (Samba) — S'assurer qu'aucun partage n'autorise l'écriture anonyme",
     "code": null
   },
   "samba.map_to_guest": {
     "ref": "Best practice (Samba) — Ensure map to guest is set to never",
+    "ref_fr": "Bonne pratique (Samba) — S'assurer que 'map to guest' est réglé sur never",
     "code": null
   },
   "samba.null_passwords": {
     "ref": "Best practice (Samba) — Ensure null passwords are disabled",
+    "ref_fr": "Bonne pratique (Samba) — S'assurer que les mots de passe vides sont désactivés",
     "code": null
   },
   "samba.server_signing_disabled": {
     "ref": "Best practice (Samba) — Ensure SMB signing is enabled (prevents NTLM relay)",
+    "ref_fr": "Bonne pratique (Samba) — Activer la signature SMB (empêche le relais NTLM)",
     "code": null
   },
   "samba.smb1_enabled": {
     "ref": "Best practice (Samba) — Disable SMBv1 to prevent EternalBlue/WannaCry exploits",
+    "ref_fr": "Bonne pratique (Samba) — Désactiver SMBv1 pour prévenir les exploits EternalBlue/WannaCry",
     "code": null
   },
   "secure_boot.disabled": {
@@ -461,22 +498,27 @@
   },
   "services.exposure.open_local": {
     "ref": "Best practice — Restrict LAN-exposed service ports to trusted networks or bind to 127.0.0.1",
+    "ref_fr": "Bonne pratique — Restreindre les ports de service exposés sur le LAN aux réseaux de confiance ou les lier à 127.0.0.1",
     "code": null
   },
   "services.state.active_disabled": {
     "ref": "Best practice — Enable security-critical systemd services so they start at boot",
+    "ref_fr": "Bonne pratique — Activer les services systemd critiques pour la sécurité afin qu'ils démarrent au boot",
     "code": null
   },
   "services.state.installed_inactive_critical": {
     "ref": "Best practice — Activate or remove installed security tools rather than leaving them dormant",
+    "ref_fr": "Bonne pratique — Activer ou retirer les outils de sécurité installés plutôt que de les laisser dormants",
     "code": null
   },
   "services_health.service_inactive": {
     "ref": "Best practice — Ensure security services remain enabled and active after reboot",
+    "ref_fr": "Bonne pratique — S'assurer que les services de sécurité restent activés et actifs après redémarrage",
     "code": null
   },
   "smtp.exposed": {
     "ref": "Best practice — Bind local-only SMTP daemons to 127.0.0.1 to avoid relay abuse exposure",
+    "ref_fr": "Bonne pratique — Lier les démons SMTP locaux à 127.0.0.1 pour éviter l'exposition à l'abus de relais",
     "code": null
   },
   "ssh.allow_tcp_forwarding": {
@@ -489,6 +531,7 @@
   },
   "ssh.authorized_keys_duplicate": {
     "ref": "Best practice — Remove stale or duplicate authorized_keys entries",
+    "ref_fr": "Bonne pratique — Retirer les entrées authorized_keys obsolètes ou en double",
     "code": null
   },
   "ssh.authorized_keys_no_restrictions": {
@@ -501,18 +544,22 @@
   },
   "ssh.authorized_keys_weak_key": {
     "ref": "Best practice — Use strong key types in authorized_keys (NIST SP 800-57)",
+    "ref_fr": "Bonne pratique — Utiliser des types de clés forts dans authorized_keys (NIST SP 800-57)",
     "code": null
   },
   "ssh.client_forward_agent": {
     "ref": "Best practice — Disable ForwardAgent to prevent credential forwarding",
+    "ref_fr": "Bonne pratique — Désactiver ForwardAgent pour empêcher le transfert d'identifiants",
     "code": null
   },
   "ssh.client_known_hosts_devnull": {
     "ref": "Best practice — Do not redirect known_hosts to /dev/null (disables host key verification)",
+    "ref_fr": "Bonne pratique — Ne pas rediriger known_hosts vers /dev/null (désactive la vérification des clés d'hôte)",
     "code": null
   },
   "ssh.client_strict_host_no": {
     "ref": "Best practice — Enable StrictHostKeyChecking to prevent MITM attacks",
+    "ref_fr": "Bonne pratique — Activer StrictHostKeyChecking pour prévenir les attaques MITM",
     "code": null
   },
   "ssh.dir_perms": {
@@ -537,10 +584,12 @@
   },
   "ssh.known_hosts_deprecated": {
     "ref": "Best practice — Remove deprecated key types from known_hosts",
+    "ref_fr": "Bonne pratique — Retirer les types de clés obsolètes de known_hosts",
     "code": null
   },
   "ssh.known_hosts_duplicate": {
     "ref": "Best practice — Remove duplicate entries from known_hosts",
+    "ref_fr": "Bonne pratique — Retirer les entrées en double de known_hosts",
     "code": null
   },
   "ssh.login_grace_time": {
@@ -557,10 +606,12 @@
   },
   "ssh.no_passphrase": {
     "ref": "Best practice — Protect SSH private keys with a passphrase",
+    "ref_fr": "Bonne pratique — Protéger les clés privées SSH par une passphrase",
     "code": null
   },
   "ssh.not_active": {
     "ref": "Best practice — Activate sshd if administration via SSH is needed; otherwise uninstall openssh-server",
+    "ref_fr": "Bonne pratique — Activer sshd si l'administration via SSH est nécessaire ; sinon désinstaller openssh-server",
     "code": null
   },
   "ssh.password_auth": {
@@ -585,6 +636,7 @@
   },
   "ssh.pubkey_auth_disabled": {
     "ref": "Best practice — Ensure SSH public key authentication is enabled",
+    "ref_fr": "Bonne pratique — S'assurer que l'authentification SSH par clé publique est activée",
     "code": null
   },
   "ssh.rsa_weak": {
@@ -609,6 +661,7 @@
   },
   "ssh.x11.forwarding.client": {
     "ref": "Best practice — Disable client-side X11 forwarding (ForwardX11 no) — prevents untrusted remotes from inspecting your local display",
+    "ref_fr": "Bonne pratique — Désactiver le transfert X11 côté client (ForwardX11 no) — empêche les distants non fiables d'inspecter votre affichage local",
     "code": null
   },
   "ssh.x11.forwarding.server": {
@@ -617,14 +670,17 @@
   },
   "ssl_certs.expired": {
     "ref": "Best practice — Ensure TLS certificates are valid and renewed before expiry",
+    "ref_fr": "Bonne pratique — S'assurer que les certificats TLS sont valides et renouvelés avant expiration",
     "code": null
   },
   "ssl_certs.expiring_critical": {
     "ref": "Best practice — Renew TLS certificates expiring within 7 days",
+    "ref_fr": "Bonne pratique — Renouveler les certificats TLS expirant sous 7 jours",
     "code": null
   },
   "ssl_certs.expiring_soon": {
     "ref": "Best practice — Renew TLS certificates expiring within 30 days",
+    "ref_fr": "Bonne pratique — Renouveler les certificats TLS expirant sous 30 jours",
     "code": null
   },
   "suid_audit.unexpected_sgid": {
@@ -657,10 +713,12 @@
   },
   "updates.apt_cache_stale": {
     "ref": "Best practice — Keep the APT cache fresh so 'no updates' verdicts reflect reality (apt-daily.timer)",
+    "ref_fr": "Bonne pratique — Garder le cache APT frais pour que les verdicts 'aucune mise à jour' reflètent la réalité (apt-daily.timer)",
     "code": null
   },
   "updates.dist_upgrade_inconsistent": {
     "ref": "Best practice — Periodically run 'apt full-upgrade' to catch kernel and dependency updates skipped by 'apt upgrade'",
+    "ref_fr": "Bonne pratique — Lancer périodiquement 'apt full-upgrade' pour capter les mises à jour noyau et dépendances ignorées par 'apt upgrade'",
     "code": null
   },
   "updates.security_pending": {
@@ -689,10 +747,12 @@
   },
   "virt.bypass_risk": {
     "ref": "Best practice — Ensure bridge interfaces do not bypass UFW FORWARD rules",
+    "ref_fr": "Bonne pratique — S'assurer que les interfaces bridge ne contournent pas les règles UFW FORWARD",
     "code": null
   },
   "virt.snap_network": {
     "ref": "Best practice — Audit snap-installed virtualisation tools (multipass, lxd) and their bridge interfaces",
+    "ref_fr": "Bonne pratique — Auditer les outils de virtualisation installés via snap (multipass, lxd) et leurs interfaces bridge",
     "code": null
   }
 }

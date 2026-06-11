@@ -191,7 +191,7 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
             result.info(
                 message=_t("log_rotation.journald_no_limit"),
                 detail=_t("log_rotation.journald_no_limit_detail"),
-                cmd="sudo nano /etc/systemd/journald.conf  # add: SystemMaxUse=500M",
+                cmd=f"sudo nano /etc/systemd/journald.conf  # {_t('log_rotation.cmd_comment_maxuse')}",
                 cmd_type="fix",
                 key="log_rotation.journald_no_limit",
             )

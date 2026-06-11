@@ -6,6 +6,60 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.11.2] — 11-06-2026
+
+**Deuxième patch hardening v0.11.x — complétude i18n (F8 + F8b).**
+
+Ferme les deux dernières lacunes i18n d'audit FR, toutes deux révélées par un **test bilingue approfondi en live** de v0.11.1 (audit réel sur l'host en EN et FR, comparaison ligne à ligne). Ni les audits deep code-level (locale défaut) ni la passe UX précédente (surtout EN) ne pouvaient les voir — il fallait des runs EN/FR côte à côte. Les findings UX restants (F1 modèle de score, F2 présentation sévérité, F4 exit-code explain, F6 ordre root-gate, F9 nommage JSON `alerts`/`warnings`) sont BREAKING ou des décisions de design et restent dans le bundle v0.12.0 planifié.
+
+### F8 — les 60 lignes de référence "Best practice" étaient EN-only
+
+[bob/data/cis_refs.json](../bob/data/cis_refs.json) mappe chaque finding key vers un `ref` (ligne de référence sous un finding en verbose + dans `--explain`). Deux types :
+- **114 entrées CIS-codées** (`"code": "CIS:X.Y.Z"`) — `ref` = titre de benchmark CIS canonique.
+- **60 entrées best-practice** (`"code": null`) — conseils rédigés par BOB pour les findings sans code CIS formel.
+
+Le `ref` est lu directement du fichier data, **pas** via le système locale → les 60 lignes best-practice rendues en **anglais dans un audit FR**.
+
+Fix — chaque entrée best-practice porte un `ref_fr`, et [bob/cis_refs.py::get_cis_ref](../bob/cis_refs.py) est devenu locale-aware : `lang` défaut sur la locale active (résolu en lazy via `i18n.current_lang()`, pas de cycle d'import) ; retourne `ref_fr` si FR + présent, sinon fallback `ref`. Les 4 call sites n'ont pas besoin de changer. Les **114 entrées CIS-codées n'ont délibérément pas de `ref_fr`** — titres CIS canoniques publiés en anglais par le Center for Internet Security ; les traduire inventerait une formulation non officielle et risquerait l'imprécision. Résultat live FR : *"Bonne pratique — S'assurer que les interfaces bridge ne contournent pas les règles UFW FORWARD"*.
+
+### F8b — deux commentaires `cmd=` en anglais hardcodé (le fix disk.py était incomplet)
+
+v0.11.1 avait fixé les commentaires SMART disque qui fuitaient le **français dans EN** ; un scan propre ce cycle a trouvé l'inverse : 2 suggestions `cmd=` avec commentaires inline **anglais** hardcodés fuitant dans les audits **FR** :
+- [bob/checks/ipv6.py](../bob/checks/ipv6.py) : `# set IPV6=yes, then: sudo ufw reload`
+- [bob/checks/log_rotation.py](../bob/checks/log_rotation.py) : `# add: SystemMaxUse=500M` (confirmé fuyant dans le run FR live)
+
+Maintenant `f"… # {_t('…')}"` avec nouvelles clés `ipv6.cmd_comment_enable` + `log_rotation.cmd_comment_maxuse` (EN+FR). Scan complet confirmé : c'étaient les **2 seuls restants** — tous les `message`/`detail`/`reason` passent déjà par `_t()`.
+
+### Garde anti-drift
+
+[tests/test_v0112_i18n_refs_and_cmd_comments.py](../tests/test_v0112_i18n_refs_and_cmd_comments.py) scanne `bob/checks/` pour un littéral `cmd=` contenant `  # <texte>` hardcodé (les commentaires localisés en `# {_t(...)}` ne matchent pas). Ferme la classe de leak disk.py/ipv6/log_rotation. + 9 tests F8.
+
+### Deux "findings" vérifiés comme NON-bugs (vérifier avant de fixer)
+
+- **`--unignore` laisse un header `ignore:` résiduel** : délibéré (`remove_ignore_key` I-1 v0.8.1 préserve les commentaires opérateur + structure YAML verbatim). Laissé tel quel.
+- **Alignement des bordures de box** : chaque ligne fait exactement 80 chars — pas de désalignement char-count. Tout offset visuel = effet de largeur d'affichage emoji (east-asian width), hors scope patch. Laissé tel quel.
+
+### Numbers
+
+- **Tests 6369 → 6381** (+12 : tous dans `test_v0112_i18n_refs_and_cmd_comments.py` — 9 F8 + 3 F8b). 0 régression.
+- 4 fichiers production (`cis_refs.py`, `ipv6.py`, `log_rotation.py`) + 1 data (`cis_refs.json` +60 `ref_fr`) + 2 locales (+2 clés).
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Pas de migration. Les utilisateurs FR voient les 60 lignes "Best practice" et les 2 commentaires en français ; les audits EN inchangés. **v0.7.x reste EOL** (déclaré v0.8.1) ; **v0.6.x reste EOL** (v0.7.2).
+
+### Leçons
+
+- **Un fix est incomplet tant qu'on n'a pas scanné toute la classe.** disk.py v0.11.1 = une instance ; v0.11.2 en trouve 2 autres (sens inverse). Le garde anti-drift pin la classe entière.
+- **Le test bilingue live trouve ce que le monolingue ne voit pas.** F8 et F8b invisibles en EN-only et en audit code locale-défaut.
+- **Vérifier avant de fixer (encore).** 2 observations du deep test étaient correctes-by-design ; les toucher aurait régressé le contrat de préservation I-1 ou chassé un bug d'alignement inexistant.
+
+---
+
 ## [v0.11.1] — 11-06-2026
 
 **Premier patch hardening v0.11.x — deux minors issus de l'audit deep whole-tool post-v0.11.0.**

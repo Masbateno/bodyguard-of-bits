@@ -125,7 +125,7 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                                    count=len(snapshot.ipv6_listeners)),
                         points=2,
                         detail=_t("ipv6.listeners_list", ports=listeners_str),
-                        cmd="sudo nano /etc/default/ufw  # set IPV6=yes, then: sudo ufw reload",
+                        cmd=f"sudo nano /etc/default/ufw  # {_t('ipv6.cmd_comment_enable')}",
                     )
                     found_issue = True
                 else:

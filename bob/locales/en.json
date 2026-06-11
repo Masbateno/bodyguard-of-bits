@@ -824,6 +824,7 @@
   },
   "ipv6": {
     "config_ok": "UFW IPv6 configuration matches kernel IPv6 state",
+    "cmd_comment_enable": "set IPV6=yes, then: sudo ufw reload",
     "both_disabled": "IPv6 disabled both in kernel and UFW — consistent",
     "ufw_enabled_kernel_disabled": "UFW has IPv6 enabled but kernel IPv6 is disabled — UFW (v6) rules have no effect",
     "ufw_disabled_no_listeners": "UFW IPv6 disabled and no IPv6 listeners detected — no immediate risk",
@@ -2918,6 +2919,7 @@
     "journald_volatile_reason": "systemd-journald storage is volatile — logs lost on reboot",
     "journald_persistent": "systemd-journald logs are persistent (/var/log/journal/)",
     "journald_no_limit": "systemd-journald disk usage is unlimited (SystemMaxUse not set)",
+    "cmd_comment_maxuse": "add: SystemMaxUse=500M",
     "journald_no_limit_detail": "Without SystemMaxUse= or SystemKeepFree=, the journal can consume all available disk space. Set a limit in /etc/systemd/journald.conf appropriate to your disk size.",
     "journald_limit_ok": "systemd-journald disk limits configured: {settings}",
     "remote_syslog_ok": "{daemon} configured with remote log target",

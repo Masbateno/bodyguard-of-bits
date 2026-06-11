@@ -6,6 +6,83 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.11.2] — 2026-06-11
+
+**Second v0.11.x hardening patch — i18n completeness (F8 + F8b).**
+
+Closes the last two French-audit i18n gaps, both surfaced by a **deep bilingual live test** of v0.11.1 (running the real audit on the host in EN and FR and comparing every line). Neither the code-level deep audits (run in the default locale) nor the earlier UX pass (mostly EN) could see them — it took side-by-side EN/FR live runs. The remaining UX-audit findings (F1 score model, F2 severity presentation, F4 explain exit code, F6 root-gate ordering, F9 JSON `alerts`/`warnings` naming) are BREAKING or design decisions and stay in the planned v0.12.0 bundle.
+
+### F8 — the 60 "Best practice" reference lines were English-only
+
+[bob/data/cis_refs.json](../bob/data/cis_refs.json) maps each finding key to a `ref` (the reference line shown under a finding in verbose mode + in `--explain`). Entries split two ways:
+
+- **114 CIS-coded** entries (`"code": "CIS:X.Y.Z"`) — the `ref` is a canonical CIS benchmark title (e.g. *"CIS Ubuntu 22.04 L1 — 5.2.8 — Ensure SSH PasswordAuthentication is disabled"*).
+- **60 best-practice** entries (`"code": null`) — BOB-authored guidance for findings with no formal CIS code (e.g. *"Best practice — Restrict LAN-exposed service ports to trusted networks or bind to 127.0.0.1"*).
+
+The `ref` is read straight from the JSON data file, **not** through the locale system, so all 60 best-practice lines rendered in **English inside a French audit** (the live FR run showed *"Best practice — Ensure bridge interfaces do not bypass UFW FORWARD rules"* under an otherwise fully-French finding).
+
+Fix — each best-practice entry now carries a French `ref_fr` translation, and [bob/cis_refs.py::get_cis_ref](../bob/cis_refs.py) became locale-aware:
+
+```python
+def get_cis_ref(key, lang=None):
+    entry = _load().get(key)
+    if entry is None:
+        return None
+    if lang is None:
+        from bob.i18n import current_lang   # lazy → no import cycle
+        lang = current_lang()
+    if lang == "fr":
+        ref_fr = entry.get("ref_fr")
+        if ref_fr:
+            return ref_fr
+    return entry.get("ref")
+```
+
+`lang` defaults to the active interface language (resolved lazily — `cis_refs` is imported by `display`/`explain`, so a top-level `import i18n` is fine but the lazy import keeps the module dependency-free). The four call sites (`display.py`, three in `explain.py`) need no change. The **114 CIS-coded entries deliberately have no `ref_fr`** — canonical CIS benchmark titles are published in English by the Center for Internet Security, and translating them would invent unofficial wording and risk drift from the standard; they stay English in every locale (verified by a test). Live FR result: *"Bonne pratique — S'assurer que les interfaces bridge ne contournent pas les règles UFW FORWARD"*.
+
+### F8b — two hardcoded-English `cmd=` comments (the disk.py fix was incomplete)
+
+v0.11.1 fixed the disk-SMART command comments that leaked **French into EN** audits, but a proper scan this cycle found the inverse: two `cmd=` command suggestions with hardcoded **English** inline comments that leak into **FR** audits:
+
+- [bob/checks/ipv6.py](../bob/checks/ipv6.py): `cmd="sudo nano /etc/default/ufw  # set IPV6=yes, then: sudo ufw reload"`
+- [bob/checks/log_rotation.py](../bob/checks/log_rotation.py): `cmd="sudo nano /etc/systemd/journald.conf  # add: SystemMaxUse=500M"` (confirmed leaking in the live FR run)
+
+Both are now `f"… # {_t('…')}"` with new locale keys `ipv6.cmd_comment_enable` + `log_rotation.cmd_comment_maxuse` (EN + FR). A full scan (`message`/`detail`/`reason` literals + inline `cmd=` comments across `bob/checks/`) confirmed these were the **only two remaining** — every user-facing `message`/`detail`/`reason` already routes through `_t()`.
+
+### Anti-drift guard
+
+[tests/test_v0112_i18n_refs_and_cmd_comments.py](../tests/test_v0112_i18n_refs_and_cmd_comments.py)::`test_no_hardcoded_inline_cmd_comment_in_checks` regex-scans `bob/checks/` for a `cmd=` **string literal** containing `  # <text>` (a hardcoded shell comment). Localised comments use an f-string `# {_t(...)}` and are not matched. This closes the disk.py / ipv6 / log_rotation leak class so it can't recur. Plus 9 F8 tests (every BP entry has `ref_fr`; `ref_fr` is not a copy of EN and starts with "Bonne pratique"; CIS-coded entries have no `ref_fr`; `get_cis_ref` resolves FR/EN by locale and by explicit `lang=`).
+
+### Two "findings" verified as NON-bugs (verify before fixing)
+
+The deep test flagged two things that turned out to be correct behaviour — checked before touching them:
+
+- **`--unignore` of the last key leaves a residual `ignore:` header.** This is deliberate: `remove_ignore_key` (I-1, v0.8.1) walks the file line-by-line and drops only the `- key: X` line, **preserving operator comments + custom YAML structure verbatim**. Re-emitting/removing the file would discard hand-curated annotations. Left as-is.
+- **Box-border alignment.** Every box line (header `╔`, section `┌`, content `│`) measures **exactly 80 characters** — no char-count misalignment. Any visual offset on emoji-bearing lines is a terminal display-width effect (east-asian width), out of scope for a patch and risky to "fix". Left as-is.
+
+### Numbers
+
+- **Tests 6369 → 6381** (+12: all in `test_v0112_i18n_refs_and_cmd_comments.py` — 9 F8 + 3 F8b). 0 regression.
+- 4 production files: [bob/cis_refs.py](../bob/cis_refs.py) (locale-aware lookup), [bob/checks/ipv6.py](../bob/checks/ipv6.py) + [bob/checks/log_rotation.py](../bob/checks/log_rotation.py) (cmd comment `_t`).
+- 1 data file: [bob/data/cis_refs.json](../bob/data/cis_refs.json) (+60 `ref_fr`).
+- 2 locale files: `ipv6.cmd_comment_enable` + `log_rotation.cmd_comment_maxuse` (EN + FR).
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No migration action. French users see the 60 "Best practice" reference lines and the two command comments in French; English audits are unchanged. **v0.7.x remains EOL** (declared v0.8.1); **v0.6.x remains EOL** (v0.7.2).
+
+### Lessons
+
+- **A fix is incomplete until you scan the whole class.** The v0.11.1 disk.py i18n fix patched one instance of "hardcoded language in a `cmd=` comment"; v0.11.2 found two more in the inverse direction. The anti-drift guard now pins the whole class so the next one fails CI.
+- **Bilingual live testing finds what monolingual testing can't.** Both F8 and F8b were invisible to EN-only runs and to code audits in the default locale — only side-by-side EN/FR live audits surfaced them.
+- **Verify before fixing (again).** Two of the deep-test observations were correct-by-design; touching them would have regressed the I-1 comment-preservation contract or chased a non-existent alignment bug. Same discipline that earlier caught the false "exit 0" and "↩ N×" alarms.
+
+---
+
 ## [v0.11.1] — 2026-06-11
 
 **First v0.11.x hardening patch — two minors from the post-v0.11.0 whole-tool deep audit.**

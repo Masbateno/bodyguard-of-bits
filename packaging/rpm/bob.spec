@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.11.1
+Version:        0.11.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,29 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Jun 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.11.2-1
+- i18n completeness patch — closes the two remaining French-audit gaps
+  found by a deep bilingual live test of v0.11.1 (F8 + F8b).
+- F8: the 60 BOB-authored "Best practice — ..." reference lines in
+  bob/data/cis_refs.json (entries with code:null) were English-only and
+  rendered in English inside a French audit. Each now carries a French
+  ref_fr translation; get_cis_ref() is locale-aware and returns it when
+  the active locale is French (lazy i18n.current_lang(), no import cycle).
+  The 114 CIS-coded entries keep their canonical English benchmark titles
+  in every locale by design.
+- F8b: two inline "# ..." comments in cmd= command suggestions
+  (bob/checks/ipv6.py, bob/checks/log_rotation.py) were hardcoded English
+  and leaked into French audits — the same class as the v0.11.1 disk.py
+  fix, which was incomplete. Both are now locale keys
+  (ipv6.cmd_comment_enable, log_rotation.cmd_comment_maxuse).
+- New anti-drift guard: no check may build a cmd= literal with a hardcoded
+  "  # <text>" comment (localised comments use # {_t(...)}).
+- Two deep-test "findings" were verified to be NON-bugs and left as-is:
+  --unignore leaving a residual ignore.yml header (deliberate operator-
+  comment preservation, I-1 v0.8.1) and box-border alignment (all box
+  lines are exactly 80 chars; any visual offset is emoji display-width).
+- Tests 6369 -> 6381 (+12). 0 regression.
+
 * Thu Jun 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.11.1-1
 - Two minors from the post-v0.11.0 whole-tool deep hardening audit
   (0 critical + 0 important + 2 minor — a clean pass after 19 audits).

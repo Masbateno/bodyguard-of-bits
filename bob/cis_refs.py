@@ -17,11 +17,26 @@ def _load() -> dict[str, dict]:
         return {}
 
 
-def get_cis_ref(key: str) -> str | None:
-    """Return the full CIS reference text for *key*, or None if not found."""
+def get_cis_ref(key: str, lang: "str | None" = None) -> str | None:
+    """Return the full CIS reference text for *key*, or None if not found.
+
+    v0.11.2: locale-aware. ``Best practice`` entries (no formal CIS code)
+    carry a French ``ref_fr`` translation; when the active locale is French
+    and a ``ref_fr`` is present, it is returned. CIS-coded entries have no
+    ``ref_fr`` — their canonical English benchmark titles are kept verbatim
+    in every locale by design. ``lang`` defaults to the active interface
+    language (resolved lazily to avoid an import cycle).
+    """
     entry = _load().get(key)
     if entry is None:
         return None
+    if lang is None:
+        from bob.i18n import current_lang
+        lang = current_lang()
+    if lang == "fr":
+        ref_fr = entry.get("ref_fr")
+        if ref_fr:
+            return ref_fr
     return entry.get("ref")
 
 

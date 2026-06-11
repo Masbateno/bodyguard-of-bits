@@ -1,3 +1,40 @@
+bodyguard-of-bits (0.11.2-1) UNRELEASED; urgency=low
+
+  * i18n completeness patch — closes the two remaining French-audit gaps
+    found by a deep bilingual live test of v0.11.1 (F8 + F8b). The other
+    UX-audit items (F1 score model, F2 presentation, F4 explain exit code,
+    F6 root-gate ordering, F9 JSON naming) are BREAKING/design and stay in
+    the planned v0.12.0 bundle.
+  * F8 — the 60 BOB-authored "Best practice — ..." reference lines in
+    bob/data/cis_refs.json (entries with code:null) were English-only, so
+    they appeared in English inside a French audit (revealed by a live FR
+    run). Each now carries a French ref_fr translation; get_cis_ref() is
+    locale-aware (lazy i18n.current_lang(), no import cycle) and returns
+    ref_fr when the active locale is French. The 114 CIS-coded entries
+    keep their canonical English benchmark titles in every locale by
+    design (CIS publishes titles in English; translating risks drift).
+  * F8b — two inline "# ..." comments in cmd= command suggestions
+    (bob/checks/ipv6.py "# set IPV6=yes, then: sudo ufw reload" and
+    bob/checks/log_rotation.py "# add: SystemMaxUse=500M") were hardcoded
+    English and leaked into French audits. This is the same class as the
+    v0.11.1 disk.py fix, which was incomplete — these were the two
+    remaining instances. Both are now locale keys. A scan confirmed there
+    are no others; all message/detail/reason already go through _t().
+  * New anti-drift guard (tests/test_v0112_i18n_refs_and_cmd_comments.py):
+    no check may build a cmd= string literal with a hardcoded "  # <text>"
+    comment; localised comments use f"... # {_t(...)}".
+  * Two deep-test observations verified to be NON-bugs and left unchanged:
+    --unignore of the last key leaves a residual "ignore:" header (this is
+    deliberate operator-comment preservation, I-1 v0.8.1), and box-border
+    alignment (every box line is exactly 80 characters — any visual offset
+    is an emoji display-width effect, not a char-count bug).
+  * Tests 6369 -> 6381 (+12). 0 regression.
+  * v0.7.x remains EOL (declared v0.8.1); v0.6.x remains EOL (v0.7.2).
+  * Upgrade: pipx upgrade bodyguard-of-bits. French users see the
+    "Best practice" reference lines and the two command comments in French.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 11 Jun 2026 22:00:00 +0200
+
 bodyguard-of-bits (0.11.1-1) UNRELEASED; urgency=low
 
   * Two minors from the post-v0.11.0 whole-tool deep hardening audit
