@@ -57,15 +57,15 @@ class AuditConfig:
     """-q / --quiet: suppress all terminal output; use exit code to detect issues."""
 
     json_mode: bool = False
-    """--json: export audit summary as JSON (schema v2 by default since v0.7.0)."""
+    """--json: export audit summary as JSON (schema v3 by default since v0.12.0)."""
 
     json_full: bool = False
     """-J / --json-full: export complete audit details as JSON (implies --json)."""
 
     # v0.9.0 F-3: ``--json-v1`` legacy schema (v0.6.x) retired. ``json_v1``
-    # field removed. ``__main__.py`` now passes ``schema_version="2"``
-    # unconditionally. A user who types ``--json-v1`` on the CLI hits the
-    # ``CLIError`` migration message in ``parse_args`` below.
+    # field removed. ``__main__.py`` now passes ``schema_version="3"``
+    # unconditionally (v0.12.0 F9 bumped v2→v3). A user who types ``--json-v1``
+    # on the CLI hits the ``CLIError`` migration message in ``parse_args`` below.
 
     csv_mode: bool = False
     """--output csv: export audit findings as CSV to stdout."""

@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.11.2-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.12.0-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -595,24 +595,25 @@ Example cron job — daily audit at 6am, email on issues:
 
 ### Schema versions
 
-Schema **v2** is the only version emitted by `bob.json_output.build_json_data()`:
+Schema **v3** is the only version emitted by `bob.json_output.build_json_data()`:
 
 | Version | Status | Selection |
 |---|---|---|
-| **v2** | **Default and only schema since v0.9.0** | `--json` / `--json-full` |
+| **v3** | **Default and only schema since v0.12.0** | `--json` / `--json-full` |
+| v2 | v0.7.0 schema — **retired in v0.12.0** (F9 count-key rename) | (no longer available) |
 | v1 | Legacy v0.6.x schema — **retired in v0.9.0** | (no longer available) |
 
-The legacy v1 layout and its opt-in `--json-v1` flag were retired in v0.9.0 (deprecated through the v0.7.x → v0.8.x cycle as announced here previously). Consumers still pinned to v1 must migrate to v2:
+v1 (and its opt-in `--json-v1` flag) was retired in v0.9.0; **v2 was retired in v0.12.0** when F9 renamed the integer count keys `alerts`→`alert_count` and `warnings`→`warning_count` for symmetry with `info_count` — a breaking rename, so the major bumped v2→v3 rather than mutating v2 in place. Consumers pinned to v2 must re-pin to v3 and rename those two keys:
 
 ```bash
-sudo bob --json | jq '.schema_version'   # → "2"
+sudo bob --json | jq '.schema_version'   # → "3"
 ```
 
-### v2 — Top-level keys (always present)
+### v3 — Top-level keys (always present)
 
 | Key | Type | Description |
 |---|---|---|
-| `schema_version` | string | `"2"` |
+| `schema_version` | string | `"3"` |
 | `version` | string | BOB version producing the output |
 | `host` | string | Hostname (`uname -n`) |
 | `timestamp_utc` | string | UTC ISO 8601 timestamp (renamed from `timestamp` in v1) |
@@ -621,14 +622,14 @@ sudo bob --json | jq '.schema_version'   # → "2"
 | `risk` | string | **Effective** risk level (includes posture escalation): `"low"`, `"medium"`, `"high"`, `"critical"` |
 | `network_context` | object | `{ "context": "local" \| "private" \| "public" \| "ddns" }` in short mode; extended with `interfaces`, `connections_count`, `top_remote_ips` in `--json-full` |
 | `public_ip` | string | Public IP (empty if behind NAT) |
-| `alerts` | int | Number of ALERT-level findings |
-| `warnings` | int | Number of WARN-level findings |
+| `alert_count` | int | Number of ALERT-level findings (renamed from `alerts` in v0.12.0) |
+| `warning_count` | int | Number of WARN-level findings (renamed from `warnings` in v0.12.0) |
 | `info_count` | int | Number of INFO-level findings (new in v2) |
 | `deductions` | array | Score deductions (filtered: `points > 0`) |
 | `domain_scores` | object | Per-domain sub-scores |
 | `posture_escalation` | object | Posture-driven risk-level adjustment context (new in v2) |
 
-### v2 — `posture_escalation` structure (new)
+### v3 — `posture_escalation` structure (new)
 
 ```json
 {
@@ -652,7 +653,7 @@ Triggers (first match wins):
 
 Phase 1 (commit `e3d998f`) introduced the posture concept internally; v2 surfaces it in JSON so consumers can distinguish "low risk because clean" from "low risk dominated by good but non-firewall domains".
 
-### v2 — `deductions[]` structure
+### v3 — `deductions[]` structure
 
 ```json
 {
@@ -665,7 +666,7 @@ Phase 1 (commit `e3d998f`) introduced the posture concept internally; v2 surface
 
 The `key` field is a **stable dotted i18n key** (`<prefix>.<finding_id>`) — match on this rather than on the localized `reason` for stable client logic across locales. See the EXPLAIN_KEYS audit below for the convention.
 
-### v2 — `domain_scores` structure
+### v3 — `domain_scores` structure
 
 ```json
 {
@@ -681,7 +682,7 @@ The `key` field is a **stable dotted i18n key** (`<prefix>.<finding_id>`) — ma
 
 Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 total — defined in `bob.domain_scores.DOMAINS`). Each entry has `score` (int 0–10), `label` (English display name), and `deductions` (int — total points deducted in this domain, new in v2).
 
-### v2 — Full mode (`--json-full`) additional keys
+### v3 — Full mode (`--json-full`) additional keys
 
 | Key | Type | Description |
 |---|---|---|
@@ -694,47 +695,43 @@ Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `d
 | `hardening` | object | Sysctl/AppArmor flags (only when hardening data is collected) |
 | `ipv6` | object | IPv6 stack consistency (only when IPv6 data is collected) |
 
-In v2 full mode, `network_context` additionally carries `interfaces` / `connections_count` / `top_remote_ips` — the same enrichment v1 used to carry but as an **additive** extension of the object, not as a type swap.
+In full mode, `network_context` additionally carries `interfaces` / `connections_count` / `top_remote_ips` — an **additive** extension of the object, not a type swap.
 
-### v1 — Legacy schema (opt-in via `--json-v1`)
+### Retired schemas (v1, v2) — what changed vs current v3
 
-The v1 layout is preserved exactly as it was in v0.6.x for backward compatibility. Notable differences vs v2:
+v1 (v0.6.x, opt-in `--json-v1`) was retired in v0.9.0; v2 (v0.7.0) was retired in v0.12.0. Notable differences vs the current **v3** layout:
 
-| Field | v1 behavior | v2 behavior |
-|---|---|---|
-| `schema_version` | `"1"` | `"2"` |
-| `timestamp` | present (UTC ISO 8601) | absent (renamed `timestamp_utc`) |
-| `info_count` | absent | present |
-| `network_context` | string `"local"` etc. in short mode; **overwritten to dict** in full mode | always dict |
-| `posture_escalation` | absent | present |
-| `deductions_raw` | absent | present (full only) |
-| `open_ports_all` | absent | present (full only) |
-| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` |
+| Field | v1 | v2 | v3 (current) |
+|---|---|---|---|
+| `schema_version` | `"1"` | `"2"` | `"3"` |
+| `timestamp` | present | renamed `timestamp_utc` | `timestamp_utc` |
+| `alerts` / `warnings` | present (int counts) | present (int counts) | renamed `alert_count` / `warning_count` |
+| `info_count` | absent | present | present |
+| `network_context` | string in short mode; dict in full | always dict | always dict |
+| `posture_escalation` | absent | present | present |
+| `deductions_raw` / `open_ports_all` | absent | present (full only) | present (full only) |
+| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` | `{ score, label, deductions }` |
 
-The v1 `risk` field already reflects the **effective** level (i.e. includes posture escalation since v0.7.0 Phase 1). The pre-Phase-1 score-only level is not retrievable from v1 — consumers needing the un-escalated baseline must use v2's `posture_escalation.score_level`.
-
-### Migration guide (v1 → v2)
+### Migration guide (→ v3)
 
 For most consumers the migration is mechanical:
 
-| If your v1 code reads… | …in v2 use |
+| If your older code reads… | …in v3 use |
 |---|---|
-| `data["timestamp"]` | `data["timestamp_utc"]` |
-| `data["network_context"]` (expecting string) | `data["network_context"]["context"]` |
+| `data["alerts"]` (v1/v2 int count) | `data["alert_count"]` |
+| `data["warnings"]` (v1/v2 int count) | `data["warning_count"]` |
+| `data["timestamp"]` (v1) | `data["timestamp_utc"]` |
+| `data["network_context"]` (v1 string) | `data["network_context"]["context"]` |
 | `data["domain_scores"]["ssh"]["score"]` | unchanged |
-| `data["domain_scores"]["ssh"]` (expecting 2 keys) | now has 3 (`deductions` added) |
-| (anything else) | unchanged — v2 is additive on top of v1 |
+| (anything else) | unchanged — v3 is additive beyond the renames above |
 
-A jq snippet that works on **both** versions:
+Pin to the current major explicitly:
 
 ```bash
-sudo bob --json | jq '
-  .schema_version as $v
-  | if $v == "2"
-    then .network_context.context
-    else .network_context
-    end
-'
+sudo bob --json | jq 'if .schema_version == "3"
+  then { alerts: .alert_count, warnings: .warning_count, score }
+  else error("unsupported schema_version \(.schema_version) — expected 3")
+  end'
 ```
 
 ### Stable matching example (locale-independent)

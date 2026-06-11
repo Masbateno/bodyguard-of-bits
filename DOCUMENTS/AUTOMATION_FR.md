@@ -215,28 +215,23 @@ Le payload générique est volontairement minimal et stable :
 
 ```json
 {
-  "schema_version": "1",
-  "version": "0.4.6",
+  "source": "bob",
+  "version": "0.12.0",
   "host": "example.local",
-  "timestamp": "2026-05-17T18:42:01+00:00",
+  "timestamp": "2026-06-11T18:42:01+00:00",
   "score": 8,
-  "score_max": 10,
+  "max_score": 10,
   "risk": "low",
-  "network_context": "private",
-  "public_ip": "203.0.113.42",
   "alerts": 1,
   "warnings": 2,
-  "deductions": [
-    {"reason": "Connexion root autorisée via SSH", "points": 2, "key": "ssh.permit_root_login", "template_vars": {}}
-  ],
-  "domain_scores": {
-    "ssh": {"score": 8, "deductions": 2, "label": "SSH"},
-    "firewall": {"score": 10, "deductions": 0, "label": "Firewall & Services"}
-  }
+  "domain_scores": {"ssh": 8, "firewall": 10},
+  "findings": [
+    {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Connexion root autorisée via SSH", "detail": "", "note": ""}
+  ]
 }
 ```
 
-C'est le même contrat que `bob --json` (clés top-level). `alerts` et `warnings` sont des **compteurs (entiers)**, pas des tableaux — pour énumérer les findings, utiliser `--json-full` qui ajoute un tableau `findings` top-level. `risk` est en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"` — valeurs de `bob.scoring.RiskLevel`).
+Cette enveloppe générique a son **propre** contrat plat (distinct du schéma d'audit `bob --json`) : clés top-level `source`/`max_score`/`timestamp` et une map plate `domain_scores` de `{domaine: score}`. `alerts` et `warnings` sont des **compteurs (entiers)** ; le tableau `findings` énumère toujours les findings de niveau ALERT et WARN (chacun avec `level`/`key`/`message`/`detail`/`note`). `risk` est le niveau **effectif** (avec escalade de posture), en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"`). Note : le webhook garde les noms `alerts`/`warnings` — seul le schéma d'audit `bob --json` les a renommés en `alert_count`/`warning_count` en v0.12.0 (F9).
 
 ### Comportement
 

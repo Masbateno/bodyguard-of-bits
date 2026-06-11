@@ -813,6 +813,7 @@
     "raw_score": "Score brut (somme des déductions) : {score}/10",
     "domain_scores_header": "Scores par domaine (domaines actifs) :",
     "domain_average": "Moyenne des domaines ({count} domaines actifs) : {score}/10",
+    "f1_cap": "Déduction présente → score de tête plafonné à {score}/10 (un 10 parfait est réservé à un audit sans rien à corriger)",
     "final_score": "Score final : {score}/10"
   },
   "watch": {
@@ -1043,6 +1044,7 @@
       "list_header": "Clés --explain disponibles :",
       "unknown_key": "Aucune explication disponible pour : {requested}",
       "unknown_hint": "Exécutez 'bob --explain list' pour voir toutes les clés disponibles.",
+      "did_you_mean": "Vouliez-vous dire : {suggestions} ?",
       "why_title": "POURQUOI C'EST UN RISQUE",
       "how_title": "COMMENT CORRIGER",
       "uniform_profiles_note": "Cette découverte s'applique de la même manière à tous les profils.",

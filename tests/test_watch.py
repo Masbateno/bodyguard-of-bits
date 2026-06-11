@@ -27,6 +27,21 @@ from bob.cli import AuditConfig, CLIError, parse_args
 # _score_bar
 # ---------------------------------------------------------------------------
 
+@pytest.fixture
+def _no_color_output():
+    """Force monochrome output so bar assertions see only block chars.
+
+    bob.output._c defaults to _COLOURS_ON; these tests assert the bare
+    "█"/"░" glyphs, so they only passed when an unrelated test happened to
+    leave _c = _COLOURS_OFF. Under deterministic ordering that leak isn't
+    guaranteed — make the colour state explicit and restore it after."""
+    from bob import output
+    output.init(no_color=True)
+    yield
+    output.init(no_color=False)
+
+
+@pytest.mark.usefixtures("_no_color_output")
 class TestScoreBar:
     def test_zero_is_all_empty(self):
         assert _score_bar(0) == "░░░░░░░░░░"
@@ -287,6 +302,7 @@ class TestWatchExoticInputs:
 # _score_bar: type enforcement
 # ---------------------------------------------------------------------------
 
+@pytest.mark.usefixtures("_no_color_output")
 class TestScoreBarTypes:
     def test_float_raises_type_error(self):
         """_score_bar enforces int — float input must raise TypeError."""
@@ -351,6 +367,7 @@ class TestWatchKeyboardInterrupt:
         fake_engine = MagicMock()
         fake_engine.score    = 8
         fake_engine.finalize = MagicMock()
+        fake_engine.raw_score = 10  # numeric for the F1 cap check in apply_domain_score_override
 
         fake_baseline = MagicMock()
 
@@ -388,6 +405,7 @@ class TestWatchKeyboardInterrupt:
         fake_engine = MagicMock()
         fake_engine.score    = 5
         fake_engine.finalize = MagicMock()
+        fake_engine.raw_score = 10  # numeric for the F1 cap check in apply_domain_score_override
 
         minimal_result = self._make_minimal_result()
 
@@ -450,6 +468,7 @@ class TestWatchContractParity:
         fake_engine.findings = []
         fake_engine.domain_scores = {}
         fake_engine.finalize = MagicMock()
+        fake_engine.raw_score = 10  # numeric for the F1 cap check in apply_domain_score_override
         fake_engine.effective_level.value = "low"
 
         minimal_result = self._make_minimal_result(fw_active=True)
@@ -488,6 +507,7 @@ class TestWatchContractParity:
         fake_engine.findings = []
         fake_engine.domain_scores = {"firewall": {"score": 3}}
         fake_engine.finalize = MagicMock()
+        fake_engine.raw_score = 10  # numeric for the F1 cap check in apply_domain_score_override
         fake_engine.effective_level.value = "high"
 
         # firewall_inactive scenario

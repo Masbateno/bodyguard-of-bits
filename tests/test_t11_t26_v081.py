@@ -117,7 +117,7 @@ class TestT11JsonV2Detail:
         from bob.json_output import build_json_data
         data = build_json_data(
             engine_with_detail, sys_info_stub,
-            schema_version="2", **json_kwargs,
+            schema_version="3", **json_kwargs,
         )
         assert "findings" in data
         f = data["findings"][0]

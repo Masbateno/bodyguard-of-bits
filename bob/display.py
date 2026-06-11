@@ -504,17 +504,28 @@ def _summary_findings_lines(engine, t, inner: int) -> list[tuple[str, str]]:
     if not (action_items or improvement_items or structural_items):
         return []
 
+    # F2 (v0.12.0): the per-item bullet reflects the finding's SEVERITY
+    # (⚠ WARN / ✖ ALERT), matching how the same finding is printed in the
+    # body. Pre-fix the bullet was hardcoded per *nature* section (✖ for every
+    # "Action required" item, ⚠ for every "Possible improvements" item), so a
+    # WARN-level action item showed ✖ in the summary but ⚠ in the body — the
+    # same item with two different severity symbols. The section *header* still
+    # groups by nature (what to do); the bullet now agrees with the body.
+    from bob.scoring import FindingLevel
+    def _sev_bullet(item) -> str:
+        return "  ✖  " if item.level == FindingLevel.ALERT else "  ⚠  "
+
     lines: list[tuple[str, str]] = []
     if action_items:
         lines.append(("---", ""))
         lines.append((f"✖ {t('summary.block_action')}", ""))
         for item in action_items:
-            lines.extend(_add_finding_lines("  ✖  ", item, inner))
+            lines.extend(_add_finding_lines(_sev_bullet(item), item, inner))
     if improvement_items:
         lines.append(("---", ""))
         lines.append((f"⚠ {t('summary.block_improve')}", ""))
         for item in improvement_items:
-            lines.extend(_add_finding_lines("  ⚠  ", item, inner))
+            lines.extend(_add_finding_lines(_sev_bullet(item), item, inner))
         for content, val in _wrap_for_box("  ℹ  ", t("summary.block_improve_disclaimer"), inner):
             lines.append((f"{_c.red}{content}{_c.reset}", val))
     return lines

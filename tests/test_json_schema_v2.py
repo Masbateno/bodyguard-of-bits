@@ -53,12 +53,12 @@ from bob.scoring import CheckResult, ScoreEngine
 # ---------------------------------------------------------------------------
 
 from bob.json_output import (
-    SCHEMA_V2_FULL_KEYS,
-    SCHEMA_V2_REQUIRED_KEYS,
+    SCHEMA_V3_FULL_KEYS,
+    SCHEMA_V3_REQUIRED_KEYS,
 )
 
-EXPECTED_REQUIRED_KEYS_V2 = SCHEMA_V2_REQUIRED_KEYS
-EXPECTED_FULL_KEYS_V2 = SCHEMA_V2_FULL_KEYS
+EXPECTED_REQUIRED_KEYS_V3 = SCHEMA_V3_REQUIRED_KEYS
+EXPECTED_FULL_KEYS_V3 = SCHEMA_V3_FULL_KEYS
 
 
 # ---------------------------------------------------------------------------
@@ -124,41 +124,41 @@ def minimal_args() -> dict:
     }
 
 
-def _build_v2(engine: ScoreEngine, minimal_args: dict, full: bool = False) -> dict:
-    """Build v2 output explicitly. Default schema_version is v2 in production
-    after A-1 lands; we still pass it explicitly here for self-documentation."""
-    return build_json_data(engine=engine, full=full, schema_version="2", **minimal_args)
+def _build_v3(engine: ScoreEngine, minimal_args: dict, full: bool = False) -> dict:
+    """Build v3 output explicitly. Default schema_version is v3 in production
+    (v0.12.0 F9 bump); we still pass it explicitly here for self-documentation."""
+    return build_json_data(engine=engine, full=full, schema_version="3", **minimal_args)
 
 
 # ===========================================================================
-# A-1 + general v2 contract
+# A-1 + general v3 contract
 # ===========================================================================
 
 class TestSchemaV2DefaultRequiredKeys:
-    """v2 default = schema_version=2 + extended top-level key set."""
+    """v3 default = schema_version=3 + extended top-level key set."""
 
-    def test_schema_version_is_string_2(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
-        assert data["schema_version"] == "2"
+    def test_schema_version_is_string_3(self, engine_clean, minimal_args):
+        data = _build_v3(engine_clean, minimal_args)
+        assert data["schema_version"] == "3"
 
     def test_v2_short_mode_has_all_required(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
-        missing = EXPECTED_REQUIRED_KEYS_V2 - set(data.keys())
+        data = _build_v3(engine_clean, minimal_args)
+        missing = EXPECTED_REQUIRED_KEYS_V3 - set(data.keys())
         assert not missing, f"v2 short mode missing keys: {missing}"
 
     def test_v2_short_mode_strict_set(self, engine_clean, minimal_args):
         """No leak of full-only keys nor undocumented keys in short mode."""
-        data = _build_v2(engine_clean, minimal_args)
-        unexpected = set(data.keys()) - EXPECTED_REQUIRED_KEYS_V2
+        data = _build_v3(engine_clean, minimal_args)
+        unexpected = set(data.keys()) - EXPECTED_REQUIRED_KEYS_V3
         assert not unexpected, (
             f"v2 short mode has undocumented keys: {unexpected}. "
             f"Either remove them or move to full=True."
         )
 
     def test_v2_full_mode_adds_full_keys(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args, full=True)
+        data = _build_v3(engine_clean, minimal_args, full=True)
         # hardening + ipv6 are conditional — verified separately below
-        always_in_full = EXPECTED_FULL_KEYS_V2 - {"hardening", "ipv6"}
+        always_in_full = EXPECTED_FULL_KEYS_V3 - {"hardening", "ipv6"}
         missing = always_in_full - set(data.keys())
         assert not missing, f"v2 full mode missing keys: {missing}"
 
@@ -171,20 +171,20 @@ class TestSchemaV2NetworkContextAlwaysDict:
     """The same key never changes type based on a flag."""
 
     def test_v2_network_context_is_dict_in_short_mode(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args, full=False)
+        data = _build_v3(engine_clean, minimal_args, full=False)
         assert isinstance(data["network_context"], dict)
 
     def test_v2_network_context_has_label_in_short_mode(self, engine_clean, minimal_args):
         """Short mode dict carries the canonical context string under a field
         so consumers don't lose the v1 info."""
-        data = _build_v2(engine_clean, minimal_args, full=False)
+        data = _build_v3(engine_clean, minimal_args, full=False)
         assert "context" in data["network_context"]
         assert data["network_context"]["context"] in {"local", "private", "public", "ddns"}
 
     def test_v2_network_context_is_dict_in_full_mode(self, engine_clean, minimal_args):
         """Full mode retains the v1 enriched fields (interfaces etc.) plus
         the new context label."""
-        data = _build_v2(engine_clean, minimal_args, full=True)
+        data = _build_v3(engine_clean, minimal_args, full=True)
         nc = data["network_context"]
         assert isinstance(nc, dict)
         assert "context" in nc
@@ -193,8 +193,8 @@ class TestSchemaV2NetworkContextAlwaysDict:
 
     def test_v2_network_context_same_type_short_vs_full(self, engine_clean, minimal_args):
         """The fix point of P1: same type regardless of --json-full."""
-        short = _build_v2(engine_clean, minimal_args, full=False)
-        full = _build_v2(engine_clean, minimal_args, full=True)
+        short = _build_v3(engine_clean, minimal_args, full=False)
+        full = _build_v3(engine_clean, minimal_args, full=True)
         assert type(short["network_context"]) is type(full["network_context"])
 
 
@@ -206,7 +206,7 @@ class TestSchemaV2PostureEscalationBlock:
     """Posture escalation context surfaced in JSON output."""
 
     def test_v2_posture_escalation_present_when_clean(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
+        data = _build_v3(engine_clean, minimal_args)
         assert "posture_escalation" in data
         pe = data["posture_escalation"]
         assert isinstance(pe, dict)
@@ -216,20 +216,20 @@ class TestSchemaV2PostureEscalationBlock:
         assert "score_level" in pe
 
     def test_v2_posture_escalation_clean_engine_has_applied_false(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
+        data = _build_v3(engine_clean, minimal_args)
         pe = data["posture_escalation"]
         assert pe["applied"] is False
         assert pe["reason_key"] is None
 
     def test_v2_posture_escalation_score_level_is_valid_enum(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
+        data = _build_v3(engine_clean, minimal_args)
         pe = data["posture_escalation"]
         assert pe["score_level"] in {"low", "medium", "high", "critical"}
 
     def test_v2_posture_escalation_firewall_inactive(
             self, engine_firewall_inactive, minimal_args):
         """Firewall inactive must escalate from LOW → HIGH and surface the reason."""
-        data = _build_v2(engine_firewall_inactive, minimal_args)
+        data = _build_v3(engine_firewall_inactive, minimal_args)
         pe = data["posture_escalation"]
         assert pe["applied"] is True
         assert pe["reason_key"] == "scoring.posture.firewall_inactive"
@@ -249,7 +249,7 @@ class TestSchemaV2PostureEscalationBlock:
         engine_firewall_inactive fixture has no deductions so score is at
         MAX (LOW) and posture lifts to HIGH — the values always diverge.
         Pin that explicit shape here."""
-        data = _build_v2(engine_firewall_inactive, minimal_args)
+        data = _build_v3(engine_firewall_inactive, minimal_args)
         pe = data["posture_escalation"]
         if pe["applied"]:
             # Fixture is firewall_inactive with no deductions → score = LOW,
@@ -274,7 +274,7 @@ class TestSchemaV2NamingCleanup:
 
     # B-3 — timestamp_utc rename
     def test_v2_timestamp_utc_field_present(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
+        data = _build_v3(engine_clean, minimal_args)
         assert "timestamp_utc" in data
         # Implementation detail: still ISO 8601 with timezone, but the field
         # name now signals UTC explicitly.
@@ -283,19 +283,19 @@ class TestSchemaV2NamingCleanup:
 
     def test_v2_timestamp_legacy_field_removed(self, engine_clean, minimal_args):
         """Legacy ``timestamp`` removed in v2 — v1 consumers must use --json-v1."""
-        data = _build_v2(engine_clean, minimal_args)
+        data = _build_v3(engine_clean, minimal_args)
         assert "timestamp" not in data
 
     # B-4 — deductions_raw added
     def test_v2_deductions_raw_in_full(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args, full=True)
+        data = _build_v3(engine_clean, minimal_args, full=True)
         assert "deductions_raw" in data
         assert isinstance(data["deductions_raw"], list)
 
     def test_v2_deductions_filtered_keeps_v1_semantics(self, engine_clean, minimal_args):
         """The classical ``deductions`` field keeps its v1 ``points > 0`` filter
         for direct migration. ``deductions_raw`` exposes the unfiltered set."""
-        data = _build_v2(engine_clean, minimal_args, full=True)
+        data = _build_v3(engine_clean, minimal_args, full=True)
         for d in data["deductions"]:
             assert d["points"] > 0, (
                 "deductions[] must keep its v1 points>0 filter; "
@@ -304,13 +304,13 @@ class TestSchemaV2NamingCleanup:
 
     # B-5 — open_ports_all added
     def test_v2_open_ports_all_in_full(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args, full=True)
+        data = _build_v3(engine_clean, minimal_args, full=True)
         assert "open_ports_all" in data
         assert isinstance(data["open_ports_all"], list)
 
     # B-6 — domain_scores[d].deductions exposed
     def test_v2_domain_scores_includes_deductions_count(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
+        data = _build_v3(engine_clean, minimal_args)
         for domain, entry in data["domain_scores"].items():
             assert "deductions" in entry, (
                 f"v2 domain_scores[{domain!r}] must expose 'deductions' (int count) "
@@ -322,7 +322,7 @@ class TestSchemaV2NamingCleanup:
 
     # B-7 — info_count top-level
     def test_v2_info_count_present(self, engine_clean, minimal_args):
-        data = _build_v2(engine_clean, minimal_args)
+        data = _build_v3(engine_clean, minimal_args)
         assert "info_count" in data
         assert isinstance(data["info_count"], int)
         assert data["info_count"] >= 0
@@ -372,24 +372,56 @@ class TestSchemaConstantsPinActualOutput:
     def test_v2_short_output_keys_match_required_constants(
         self, engine_clean, minimal_args,
     ):
-        data = _build_v2(engine_clean, minimal_args)
-        assert set(data.keys()) == SCHEMA_V2_REQUIRED_KEYS, (
-            f"v2 short output ↔ SCHEMA_V2_REQUIRED_KEYS drift. "
-            f"emitted ∖ declared: {set(data.keys()) - SCHEMA_V2_REQUIRED_KEYS}, "
-            f"declared ∖ emitted: {SCHEMA_V2_REQUIRED_KEYS - set(data.keys())}"
+        data = _build_v3(engine_clean, minimal_args)
+        assert set(data.keys()) == SCHEMA_V3_REQUIRED_KEYS, (
+            f"v2 short output ↔ SCHEMA_V3_REQUIRED_KEYS drift. "
+            f"emitted ∖ declared: {set(data.keys()) - SCHEMA_V3_REQUIRED_KEYS}, "
+            f"declared ∖ emitted: {SCHEMA_V3_REQUIRED_KEYS - set(data.keys())}"
         )
 
     def test_v2_full_output_keys_match_required_plus_full_constants(
         self, engine_clean, minimal_args,
     ):
-        data = _build_v2(engine_clean, minimal_args, full=True)
-        expected_unconditional = SCHEMA_V2_REQUIRED_KEYS | (
-            SCHEMA_V2_FULL_KEYS - {"hardening", "ipv6"}
+        data = _build_v3(engine_clean, minimal_args, full=True)
+        expected_unconditional = SCHEMA_V3_REQUIRED_KEYS | (
+            SCHEMA_V3_FULL_KEYS - {"hardening", "ipv6"}
         )
         missing = expected_unconditional - set(data.keys())
-        unexpected = set(data.keys()) - (SCHEMA_V2_REQUIRED_KEYS | SCHEMA_V2_FULL_KEYS)
+        unexpected = set(data.keys()) - (SCHEMA_V3_REQUIRED_KEYS | SCHEMA_V3_FULL_KEYS)
         assert not missing, f"v2 full mode missing keys: {missing}"
         assert not unexpected, (
             f"v2 full mode has undocumented keys: {unexpected}. "
-            f"Add to SCHEMA_V2_FULL_KEYS or remove from producer."
+            f"Add to SCHEMA_V3_FULL_KEYS or remove from producer."
         )
+
+
+# ===========================================================================
+# F9 (v0.12.0) — alert/warning count keys renamed for symmetry with info_count
+#
+# Pre-v0.12.0 the v2 schema exposed integer counts under "alerts" / "warnings"
+# while the sibling count was "info_count". A consumer iterating data["alerts"]
+# (expecting a list, like the "findings" array in --json-full) got an int and
+# broke. F9 renames them to "alert_count" / "warning_count". BREAKING for v2
+# consumers — in-place within v2, matching the project's clean-cut convention
+# (no deprecated aliases, mirroring the v1 retirement). webhook/CSV keep their
+# own naming (they have no info_count, so no internal inconsistency to fix).
+# ===========================================================================
+
+
+class TestF9CountKeyRename:
+    def test_new_count_keys_present(self, engine_clean, minimal_args):
+        data = _build_v3(engine_clean, minimal_args)
+        assert "alert_count" in data
+        assert "warning_count" in data
+        assert isinstance(data["alert_count"], int)
+        assert isinstance(data["warning_count"], int)
+
+    def test_old_count_keys_absent(self, engine_clean, minimal_args):
+        data = _build_v3(engine_clean, minimal_args)
+        assert "alerts" not in data
+        assert "warnings" not in data
+
+    def test_count_trio_is_symmetric(self, engine_clean, minimal_args):
+        """alert_count / warning_count / info_count now share the _count suffix."""
+        data = _build_v3(engine_clean, minimal_args)
+        assert {"alert_count", "warning_count", "info_count"} <= set(data)

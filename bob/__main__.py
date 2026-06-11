@@ -103,9 +103,11 @@ def _run(argv=None) -> int:
         from bob.explain import run_explain, run_explain_interactive
         if config.explain_key == "__interactive__":
             run_explain_interactive(i18n.t)
-        else:
-            run_explain(config.explain_key, i18n.t)
-        return EXIT_OK
+            return EXIT_OK
+        # F4 (v0.12.0): an unknown key returns a non-zero exit so scripts can
+        # tell "explained" from "no such key" (the exit codes are a stable API).
+        found = run_explain(config.explain_key, i18n.t)
+        return EXIT_OK if found else EXIT_ERROR
 
     if config.show_history:
         i18n.init(lang=config.lang)
@@ -281,10 +283,14 @@ def _run(argv=None) -> int:
             print(i18n.t("cli.baseline.not_found", path=BASELINE_PATH))
         return EXIT_OK
 
-    require_root()
     i18n.init(lang=config.lang)
     t = i18n.t
 
+    # F6 (v0.12.0): validate --check / --skip tokens BEFORE the root gate.
+    # The validation needs no privileges, so an unknown section name should
+    # report "unknown check 'X'" rather than first demanding sudo. Pre-fix,
+    # ``bob --check=typo`` (no sudo) printed "must be run as root", forcing the
+    # operator to sudo + re-run only to then learn the token was wrong.
     _filter_error = validate_check_filters(config)
     if _filter_error:
         # T10 (v0.8.1): i18n the "Error:" prefix so a French audit emits
@@ -296,6 +302,8 @@ def _run(argv=None) -> int:
         # convention (``"Erreur : message"`` not ``"Erreur: message"``).
         print(f"{t('cli.error.prefix')}{_filter_error}", file=sys.stderr)
         return EXIT_ERROR
+
+    require_root()
 
     _machine_mode = config.json_mode or config.csv_mode or config.markdown_mode or config.html_mode
     # diff/breakdown suppress all audit output (bare print() calls bypass quiet=True)
@@ -553,7 +561,7 @@ def _run(argv=None) -> int:
                 full=config.json_full, version=VERSION,
                 hardening_snapshot=hardening_snapshot,
                 ipv6_snapshot=ipv6_snapshot,
-                schema_version="2",
+                schema_version="3",
             )
             print(_json.dumps(data, ensure_ascii=False, indent=2))
 

@@ -215,28 +215,23 @@ The generic payload is intentionally minimal and stable:
 
 ```json
 {
-  "schema_version": "1",
-  "version": "0.4.6",
+  "source": "bob",
+  "version": "0.12.0",
   "host": "example.local",
-  "timestamp": "2026-05-17T18:42:01+00:00",
+  "timestamp": "2026-06-11T18:42:01+00:00",
   "score": 8,
-  "score_max": 10,
+  "max_score": 10,
   "risk": "low",
-  "network_context": "private",
-  "public_ip": "203.0.113.42",
   "alerts": 1,
   "warnings": 2,
-  "deductions": [
-    {"reason": "Root login allowed via SSH", "points": 2, "key": "ssh.permit_root_login", "template_vars": {}}
-  ],
-  "domain_scores": {
-    "ssh": {"score": 8, "deductions": 2, "label": "SSH"},
-    "firewall": {"score": 10, "deductions": 0, "label": "Firewall & Services"}
-  }
+  "domain_scores": {"ssh": 8, "firewall": 10},
+  "findings": [
+    {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Root login allowed via SSH", "detail": "", "note": ""}
+  ]
 }
 ```
 
-This is the same contract as `bob --json` (top-level keys). `alerts` and `warnings` are **counts (integers)**, not arrays — to enumerate the findings, use `--json-full` which adds a top-level `findings` array. `risk` is lowercase (`"low"` / `"medium"` / `"high"` / `"critical"` — values from `bob.scoring.RiskLevel`).
+This generic envelope is its **own** flat contract (distinct from the `bob --json` audit schema): top-level `source`/`max_score`/`timestamp` and a flat `domain_scores` map of `{domain: score}`. `alerts` and `warnings` are **counts (integers)**; the `findings` array always enumerates the ALERT- and WARN-level findings (each with `level`/`key`/`message`/`detail`/`note`). `risk` is the **effective** (posture-escalated) level, lowercase (`"low"` / `"medium"` / `"high"` / `"critical"`). Note: the webhook keeps the `alerts`/`warnings` names — only the `bob --json` audit schema renamed them to `alert_count`/`warning_count` in v0.12.0 (F9).
 
 ### Behaviour
 

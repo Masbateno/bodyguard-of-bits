@@ -6,6 +6,59 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.12.0] — 11-06-2026
+
+**Première release v0.12.x — bundle UX BREAKING planifié (F1 / F2 / F4 / F6 / F9).**
+
+Les cinq findings du test bilingue approfondi en live de v0.11.x qui ne pouvaient pas rider un patch parce que chacun change un contrat, un code de sortie, ou le score. Le scope a été figé avant impl (le pattern "planned BREAKING bundle" validé en v0.9.0 et v0.11.0), les questions de design ont été tranchées avec le mainteneur (stratégie de cap F1 ; versioning de schéma F9), et un audit pre-ship sub-agent a tourné avant le tag.
+
+### F1 — le modèle de score effaçait les déductions (BREAKING, score)
+
+Le score de sécurité de tête est la **moyenne des scores de domaine actifs** ([bob/domain_scores.py](../bob/domain_scores.py) `compute_global_from_domains`), pas la somme brute des déductions. La moyenne équipondérée est délibérée (elle empêche un domaine bruyant de dominer le chiffre), mais l'arrondir **vers le haut** pouvait effacer une vraie déduction : une machine dont le seul souci était une mise à jour firmware en attente scorait brut 9/10, pourtant la moyenne `(6×10 + 1×9) / 7 = 9.857` **arrondissait à 10/10**. Le résultat se lisait comme un audit parfait alors que le même rapport affichait `✖ Action requise`, 5 avertissements et "Des corrections sont nécessaires" — le bug de qualité-perçue le plus érodant de la confiance dans l'outil.
+
+**Fix — "10/10 = audit sans défaut".** Dès qu'une déduction a été appliquée (`engine.raw_score < MAX_SCORE`), le score de tête est plafonné à `MAX_SCORE − 1` (9/10) ; un 10 parfait est désormais réservé à un audit sans rien à corriger. Les moyennes plus basses ne sont pas affectées (elles arrondissent déjà sous 9). Mécanique :
+
+- [bob/scoring.py](../bob/scoring.py) — `ScoreEngine.set_global_score(score, precap=None)` enregistre la moyenne avant cap dans `_global_precap` ; nouvelle propriété `domain_average_precap` qui l'expose.
+- [bob/domain_scores.py](../bob/domain_scores.py) — `apply_domain_score_override` calcule la moyenne, la stocke comme `precap`, puis applique le cap.
+- [bob/breakdown.py](../bob/breakdown.py) — `--breakdown` imprime maintenant la moyenne des domaines et le cap en **deux étapes distinctes** (`Moyenne des domaines : 10/10` → `Déduction présente → score de tête plafonné à 9/10`) au lieu d'un chiffre opaque. Nouvelle clé locale `breakdown.f1_cap` (EN+FR).
+- Le champ `score` JSON reflète la valeur plafonnée (la conséquence wire-format notée dans le plan).
+
+**BREAKING :** toute machine avec au moins une déduction qui affichait 10/10 affiche maintenant 9/10, et `--target 10` sur une telle machine retourne le code 4. Pinné par [tests/test_v0120_score_model.py](../tests/test_v0120_score_model.py) (le cap se déclenche sur déduction, un audit clean garde 10, le cap ne remonte jamais un score, precap enregistré).
+
+### F2 — incohérence sévérité corps↔résumé (présentation)
+
+Le bloc résumé groupe les findings par **nature** (Action requise / Améliorations possibles) et, avant le fix, imposait le symbole de la section à chaque item en dessous (`✖` pour toute "Action requise", `⚠` pour toute "Amélioration possible"). Le corps imprime chaque finding par sa **sévérité**. Donc un item action de niveau WARN comme `firmware.fwupd_updates` affichait `⚠ [WARNING]` au corps mais `✖` au résumé — un finding portant deux symboles de sévérité. [bob/display.py](../bob/display.py) `_summary_findings_lines` dérive maintenant le symbole par item de `item.level` (`⚠` WARN / `✖` ALERT) pour que le résumé s'accorde avec le corps ; l'**en-tête** de section groupe toujours par nature (quoi faire). Pinné par [tests/test_v0120_ux_bundle.py](../tests/test_v0120_ux_bundle.py) `TestF2SeverityBullet`.
+
+### F4 — `--explain <clé-inconnue>` sortait 0 (BREAKING, code de sortie)
+
+`bob --explain foo.bar` pour une typo ou une clé inexistante affichait un message "clé inconnue" mais retournait **0**, indistinct d'une explication réussie — or les codes de sortie de BOB sont une API publique stable. [bob/explain.py](../bob/explain.py) `run_explain` retourne maintenant un `bool` ; [bob/__main__.py](../bob/__main__.py) le mappe : une clé valide, `list` et le navigateur interactif retournent `EXIT_OK` (0) ; une clé inconnue retourne `EXIT_ERROR` (3). **Additif** (sûr isolément) : pour un quasi-match, la branche inconnue imprime une suggestion `difflib.get_close_matches(key, EXPLAIN_KEYS, cutoff=0.6)` "Vouliez-vous dire : ssh.password_auth ?" (nouvelle clé locale `explain.ui.did_you_mean`, EN+FR). Pinné par `TestF4ExplainExitAndSuggestion` (retours bool sur chaque chemin, suggestion présente pour une typo / absente pour une clé sans rapport, codes de sortie main()).
+
+### F6 — le root-gate passait avant la validation `--check`/`--skip`
+
+`bob --check=typo` **sans sudo** affichait *"This script must be run as root"*, forçant l'opérateur à sudo + re-run seulement pour ensuite découvrir que le token était faux. La validation des tokens `--check`/`--skip` ne nécessite aucun privilège, elle s'exécute donc maintenant **avant** le root-gate dans [bob/__main__.py](../bob/__main__.py) `_run` (le bloc `i18n.init` + `validate_check_filters` déplacé au-dessus de `require_root()`). Un `--check` tout-invalide rapporte le token inconnu et retourne `EXIT_ERROR` sans jamais demander root ; un match partiel (au moins un token valide) avertit puis procède au gate, puisqu'un vrai audit a besoin de root. Une garde AST statique fige l'ordre contre les régressions (l'`UnboundLocalError` de v0.8.3 venait de ce même scope `main()`, donc l'ordre est gardé, pas seulement testé comportementalement).
+
+### F9 — nommage des compteurs JSON + schéma v2 → v3 (BREAKING, schéma)
+
+Le schéma JSON v2 exposait des compteurs entiers sous `alerts` et `warnings`, alors que le compteur sibling était `info_count`. Un consommateur itérant `data["alerts"]` — attendant raisonnablement une liste, à l'image du tableau `findings` de `--json-full` — recevait un `int` et crashait avec `TypeError: 'int' object is not iterable`. [bob/json_output.py](../bob/json_output.py) les renomme en **`alert_count` / `warning_count`** par symétrie avec `info_count`.
+
+Un renommage de clé est un changement breaking. Deux options de design étaient sur la table (un bump de schéma propre, ou des champs `*_count` additifs gardant les anciens dépréciés). La décision a suivi **la propre règle documentée du projet** (SNAPSHOT.md : *"les changements breaking incrémentent `schema_version` au majeur suivant"*) et le **précédent clean-cut** (v1 entièrement retiré en v0.9.0 F-3 — aucune déprécation gardée). Donc **schema_version passe `"2"` → `"3"`** : `DEFAULT_SCHEMA_VERSION = "3"`, `SUPPORTED_SCHEMA_VERSIONS = {"3"}`, les constantes/builder v2 deviennent v3 en place, et `build_json_data` raise `ValueError` pour toute version autre que `"3"`. Cela garde le champ `schema_version` comme un signal de compatibilité honnête pour tout changement futur, plutôt que de laisser deux formats wire différents revendiquer `"2"`.
+
+Le **payload webhook générique garde délibérément `alerts`/`warnings`** ([bob/webhook.py](../bob/webhook.py) `build_generic_payload`) : il n'a pas d'`info_count` (donc aucune incohérence interne à corriger), il diverge déjà du schéma `--json` (`source`, `max_score`, `timestamp` vs `timestamp_utc`), et c'est un contrat plat séparé — le renommer serait une casse gratuite. Tant qu'on y était, l'exemple "Enveloppe JSON générique" d'AUTOMATION — qui **mal-documentait depuis longtemps** le payload webhook comme *"le même contrat que `bob --json`"* (montrant `schema_version`, `deductions`, `network_context` que le webhook n'envoie jamais) — a été corrigé vers la vraie forme `build_generic_payload`. Les sections JSON de README_TECH, SNAPSHOT et AUTOMATION ont été mises à jour EN+FR avec un guide de migration v1/v2 → v3 et la table de comparaison des schémas retirés.
+
+Pinné par [tests/test_json_schema_v2.py](../tests/test_json_schema_v2.py) `TestF9CountKeyRename` (nouvelles clés présentes, anciennes absentes, trio de compteurs symétrique) + l'assertion schema-version-`"3"` + l'import de la constante de production (pour que toute drift future se déclenche immédiatement).
+
+### Isolation de test — fuite couleur de la barre de score watch
+
+`bob.output._c` défaut = couleurs **ON** ; les assertions `TestScoreBar` / `TestScoreBarTypes` (la barre ne contient que `█`/`░`) ne passaient que quand un test sans rapport laissait le global dans l'état couleurs-OFF. Sous ordre déterministe (et par intermittence sous `pytest-randomly`) cette fuite n'est pas garantie, donc les tests de barre échouaient avec des codes ANSI dans la string. Ils forcent maintenant le monochrome explicitement via une fixture `output.init(no_color=True)` avec teardown — un vrai fix d'isolation révélé par les runs full-suite de F1, pas introduit par lui.
+
+### Tests & compatibilité
+
+**Tests** 6381 → **6401** (+20 : 6 F1 + 3 F2 + 6 F4 + 2 F6 + 3 F9). 0 régression, vert en ordre déterministe et aléatoire. L'audit pre-ship sub-agent a retourné **0 critique / 0 important** côté code et SHIP, ne signalant que la drift de l'exemple JSON d'AUTOMATION.md (corrigée dans cette release). **v0.7.x reste EOL** (déclaré en v0.8.1) ; **v0.6.x reste EOL** (déclaré en v0.7.2).
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **BREAKING pour** : les consommateurs JSON (lire `alert_count`/`warning_count`, vérifier `schema_version == "3"`) ; les scripts qui branchent sur les codes de sortie `--explain` (une mauvaise clé est maintenant 3, pas 0) ; une CI gardée par `--target` sur une machine portant une déduction (le score de tête plafonne maintenant à 9). L'usage interactif n'est pas affecté au-delà du score corrigé et des symboles de résumé.
+
+---
+
 ## [v0.11.2] — 11-06-2026
 
 **Deuxième patch hardening v0.11.x — complétude i18n (F8 + F8b).**

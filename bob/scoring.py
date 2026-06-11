@@ -341,6 +341,10 @@ class ScoreEngine:
         self._raw_score: int = MAX_SCORE
         self._cap: ScoreCap | None = None
         self._global_override: int | None = None
+        # F1 (v0.12.0): the domain average BEFORE the "10 reserved for a
+        # flawless audit" cap, so --breakdown can show the average and the cap
+        # as two distinct steps rather than a single opaque number.
+        self._global_precap: int | None = None
         self.breakdown: list[Deduction] = []
         self.findings:  list[Finding]   = []
         self.ignored_findings: list[Finding] = []
@@ -440,7 +444,7 @@ class ScoreEngine:
         self._active_domains = active
         self._capped_indices = capped_indices or frozenset()
 
-    def set_global_score(self, score: int) -> None:
+    def set_global_score(self, score: int, precap: "int | None" = None) -> None:
         """
         Override the global score with a domain-averaged value.
 
@@ -451,8 +455,15 @@ class ScoreEngine:
         Do not call this directly — use apply_domain_score_override(engine)
         from bob.domain_scores, which computes the correct domain average.
         The raw pre-override score remains accessible as engine._raw_score.
+
+        ``precap`` is the domain average before the F1 flawless-audit cap; it
+        defaults to ``score`` when no cap was applied.
         """
         self._global_override = max(0, min(MAX_SCORE, score))
+        self._global_precap = (
+            max(0, min(MAX_SCORE, precap)) if precap is not None
+            else self._global_override
+        )
 
     def finalize(self) -> None:
         """
@@ -611,6 +622,15 @@ class ScoreEngine:
     def global_override(self) -> int | None:
         """Domain-average override set by apply_domain_score_override(), or None."""
         return self._global_override
+
+    @property
+    def domain_average_precap(self) -> int | None:
+        """The domain average BEFORE the F1 flawless-audit cap (v0.12.0).
+
+        Equals ``global_override`` when no cap was applied. Used by
+        ``--breakdown`` to show the average and the cap as two steps.
+        """
+        return self._global_precap
 
     @property
     def domain_scores(self) -> dict:

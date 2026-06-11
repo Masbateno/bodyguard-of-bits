@@ -813,6 +813,7 @@
     "raw_score": "Raw score (sum of deductions): {score}/10",
     "domain_scores_header": "Domain scores (active domains):",
     "domain_average": "Domain average ({count} active domains): {score}/10",
+    "f1_cap": "Deduction present → headline capped at {score}/10 (a perfect 10 is reserved for an audit with nothing to fix)",
     "final_score": "Final score: {score}/10"
   },
   "watch": {
@@ -1043,6 +1044,7 @@
       "list_header": "Available --explain keys:",
       "unknown_key": "No explanation available for: {requested}",
       "unknown_hint": "Run 'bob --explain list' to see all available keys.",
+      "did_you_mean": "Did you mean: {suggestions}?",
       "why_title": "WHY IT IS A RISK",
       "how_title": "HOW TO FIX",
       "uniform_profiles_note": "This finding applies equally to all profiles.",

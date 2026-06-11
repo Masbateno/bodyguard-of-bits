@@ -287,7 +287,18 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
     """
     scores, capped_indices = compute_domain_scores(engine)
     active = active_domains_from_engine(engine)
-    engine.set_global_score(compute_global_from_domains(scores, active))
+    glob = compute_global_from_domains(scores, active)
+    # F1 (v0.12.0): "10/10 means a flawless audit." The domain average smooths
+    # multi-deduction domains, but rounding it up can erase a real deduction —
+    # a host with one pending firmware update (raw 9/10) averaged to 10/10,
+    # reading as "perfect" while the summary said "Action required". When ANY
+    # deduction was applied (raw_score < MAX_SCORE) we cap the headline at
+    # MAX_SCORE-1, reserving a perfect score for an audit with nothing to fix.
+    # Lower averages are unaffected (they already round below MAX_SCORE-1).
+    precap = glob
+    if engine.raw_score < MAX_SCORE:
+        glob = min(glob, MAX_SCORE - 1)
+    engine.set_global_score(glob, precap=precap)
     engine.set_domain_scores(scores, active, capped_indices)
 
 

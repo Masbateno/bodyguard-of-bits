@@ -480,16 +480,16 @@ level = engine.level           # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
 
 ## Frozen contracts (DO NOT BREAK)
 
-### 1. JSON schema version `"2"` only (legacy `"1"` retired v0.9.0 F-3)
+### 1. JSON schema version `"3"` only (legacy `"1"` retired v0.9.0 F-3, `"2"` retired v0.12.0 F9)
 
-`build_json_data(..., schema_version=DEFAULT_SCHEMA_VERSION)` dispatches on the version string. `DEFAULT_SCHEMA_VERSION = "2"` since v0.7.0 T2. **v0.9.0 F-3 retired `--json-v1` and the entire v1 builder path** (`_build_v1`, `_populate_v1_full_blocks`, `SCHEMA_V1_REQUIRED_KEYS`, `SCHEMA_V1_FULL_KEYS` all removed, net −183 L); the module now raises `ValueError` for any `schema_version` other than `"2"` to flag drifting callers loudly. Within a major:
+`build_json_data(..., schema_version=DEFAULT_SCHEMA_VERSION)` dispatches on the version string. `DEFAULT_SCHEMA_VERSION = "3"` since v0.12.0 F9 (was `"2"` v0.7.0→v0.11.x). **v0.9.0 F-3 retired `--json-v1` and the entire v1 builder path** (`_build_v1`, `_populate_v1_full_blocks`, `SCHEMA_V1_*` removed, net −183 L); **v0.12.0 F9 bumped v2→v3** for the breaking count-key rename (`alerts`→`alert_count`, `warnings`→`warning_count`, for symmetry with `info_count`) — following the clean-cut rule, the v2 constants/builder became v3 in place and the module raises `ValueError` for any `schema_version` other than `"3"`. Within a major:
 
 - Top-level keys cannot disappear, be renamed, or change semantics
 - New top-level keys MAY be added (clients ignore unknowns)
 - Nested dicts follow the same rule
-- Breaking changes bump to `"3"` (next major)
+- Breaking changes bump to `"4"` (next major)
 
-Top-level always-present keys (v2): `schema_version`, `version`, `host`, `timestamp`, `score`, `score_max`, `risk`, `effective_risk`, `posture_escalation` (object with `floor` + `reason`), `network_context`, `public_ip`, `alerts`, `warnings`, `deductions`, `domain_scores` (object containing `score` + `deductions` count per domain). The v2 surface is pinned in `tests/test_json_schema_v2.py`.
+Top-level always-present keys (v3): `schema_version`, `version`, `host`, `timestamp_utc`, `score`, `score_max`, `risk`, `network_context` (object `{context: …}`), `public_ip`, `alert_count`, `warning_count`, `info_count`, `deductions`, `posture_escalation` (object `applied`/`reason_key`/`score_level`), `domain_scores` (object containing `score` + `label` + `deductions` count per domain). The v3 surface is pinned in `tests/test_json_schema_v2.py`.
 
 `--json-full` additionally emits: `findings`, `services`, `open_ports`, `firewall_stack` (always when full=True), plus `hardening` and `ipv6` (only when the respective `hardening_snapshot` / `ipv6_snapshot` parameters are passed to `build_json_data`). **Caveat**: in `--json-full`, `network_context` changes type from a string (`"public"` / `"private"`) to a richer dict containing `interfaces` (list of interface objects). Clients that read `network_context` from `--json` and `--json-full` interchangeably need to type-check first.
 

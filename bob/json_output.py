@@ -11,15 +11,17 @@ The structure below is part of BOB's public API. Backwards-compatibility rules:
     removed/renamed within the same major schema version.
   - Breaking changes bump ``schema_version`` to a new major (``"2"``, ``"3"``…).
 
-Two schema versions are emitted by this module:
+One schema version is emitted by this module:
 
-  - **v2** (default) — v0.7.0 release. Fixes the v1 ``network_context``
-    type inconsistency (P1), adds the ``posture_escalation`` block (P3),
-    renames ``timestamp`` → ``timestamp_utc`` (B-3), adds ``info_count``
-    (B-7), and exposes more detailed counts in ``domain_scores`` (B-6).
-  - **v1** (legacy, opt-in via ``schema_version="1"`` — wired to the CLI as
-    ``--json-v1``) — preserves the v0.6.x output verbatim for consumers
-    that haven't migrated yet.
+  - **v3** (current, default) — v0.12.0 release. F9 renames the integer
+    count keys ``alerts`` → ``alert_count`` and ``warnings`` →
+    ``warning_count`` for symmetry with the existing ``info_count``. Per the
+    versioning rule above, a key rename is a breaking change, so it bumps the
+    major from ``"2"`` to ``"3"`` rather than mutating ``"2"`` in place.
+  - **v2** (v0.7.0) and **v1** (v0.6.x) are retired — exactly as v1 was
+    retired in v0.9.0 F-3, BOB emits only the current major and keeps no
+    legacy builders. A consumer pinned to ``schema_version == "2"`` must
+    re-pin to ``"3"`` and rename the two count keys.
 
 For full schema reference, see DOCUMENTS/README_TECH.md → "JSON output schema".
 """
@@ -38,17 +40,17 @@ from bob.report import SystemInfo
 from bob.scoring import ScoreEngine
 
 # Default schema version emitted when no explicit version is requested.
-DEFAULT_SCHEMA_VERSION = "2"
+DEFAULT_SCHEMA_VERSION = "3"
 
 # Supported schema versions — any value outside this set raises ValueError.
-# v0.9.0 F-3: ``"1"`` retired (was the legacy v0.6.x schema, default before
-# v0.7.0). Schema v2 is the only supported format from v0.9.0+. The
-# SCHEMA_V1_* constants and ``_build_v1`` / ``_populate_v1_full_blocks``
-# helpers were deleted alongside the dispatch.
-SUPPORTED_SCHEMA_VERSIONS = frozenset({"2"})
+# v0.9.0 F-3 retired ``"1"`` (legacy v0.6.x). v0.12.0 F9 retired ``"2"``
+# (v0.7.0) when the breaking count-key rename bumped the major to ``"3"``.
+# Following the established clean-cut pattern, only the current major is
+# emitted — the SCHEMA_V1_*/_build_v1 and now the v2 names give way to v3.
+SUPPORTED_SCHEMA_VERSIONS = frozenset({"3"})
 
-# Top-level keys ALWAYS present in v2 output, regardless of ``full``.
-SCHEMA_V2_REQUIRED_KEYS = frozenset({
+# Top-level keys ALWAYS present in v3 output, regardless of ``full``.
+SCHEMA_V3_REQUIRED_KEYS = frozenset({
     "schema_version",
     "version",
     "host",
@@ -58,16 +60,16 @@ SCHEMA_V2_REQUIRED_KEYS = frozenset({
     "risk",
     "network_context",        # A-2 (always dict, never overwritten)
     "public_ip",
-    "alerts",
-    "warnings",
-    "info_count",             # B-7 (new — symmetry with alerts/warnings)
+    "alert_count",            # F9 (v0.12.0, v2→v3): renamed from "alerts"
+    "warning_count",          # F9 (v0.12.0, v2→v3): renamed from "warnings"
+    "info_count",             # B-7 — symmetry with alert_count/warning_count
     "deductions",
     "domain_scores",
     "posture_escalation",     # A-4 (new — exposes Phase 1 escalation context)
 })
 
-# Additional top-level keys present in v2 only when ``full=True``.
-SCHEMA_V2_FULL_KEYS = frozenset({
+# Additional top-level keys present in v3 only when ``full=True``.
+SCHEMA_V3_FULL_KEYS = frozenset({
     "findings",
     "services",
     "open_ports",
@@ -97,9 +99,9 @@ def build_json_data(
     """Serialize audit results to a JSON-ready dict.
 
     Args:
-        schema_version: ``"2"`` (default) or ``"1"`` (legacy). Any other
+        schema_version: ``"3"`` (default, the only supported major). Any other
             value raises ``ValueError``. Non-string raises ``TypeError``.
-            See module docstring for the two contracts.
+            See module docstring for the contract.
 
     Raises:
         TypeError: when ``schema_version`` is not a ``str``.
@@ -109,32 +111,33 @@ def build_json_data(
     if not isinstance(schema_version, str):
         raise TypeError(
             f"schema_version must be str, got {type(schema_version).__name__}. "
-            f"Pass \"2\" as a string."
+            f"Pass \"3\" as a string."
         )
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(
             f"schema_version={schema_version!r} not supported. "
             f"Supported values: {sorted(SUPPORTED_SCHEMA_VERSIONS)} "
-            f"(v0.9.0 retired the legacy \"1\" schema)."
+            f"(v0.9.0 retired \"1\"; v0.12.0 F9 retired \"2\")."
         )
 
-    # v0.9.0 F-3: dispatch retired — only schema_version="2" lands here.
-    return _build_v2(
+    # Only the current major (v3) lands here; v1 (v0.9.0 F-3) and v2
+    # (v0.12.0 F9) dispatches were retired with their builders.
+    return _build_v3(
         engine, sys_info, network_context, public_ip, snapshots,
         ports_snapshot, stack_snapshot, net_snapshot, full, version,
         hardening_snapshot, ipv6_snapshot,
     )
 
 
-# v0.9.0 F-3: ``_build_v1`` and ``_populate_v1_full_blocks`` deleted with the
-# ``--json-v1`` retrait. Only the v2 builder remains.
+# v0.9.0 F-3: ``_build_v1`` deleted with the ``--json-v1`` retrait. v0.12.0 F9:
+# the v2 builder became v3 in place (count-key rename). Only one builder remains.
 
 
 # ---------------------------------------------------------------------------
-# v2 — current schema (v0.7.0)
+# v3 — current schema (v0.12.0; count keys renamed from v2)
 # ---------------------------------------------------------------------------
 
-def _build_v2(
+def _build_v3(
     engine: ScoreEngine,
     sys_info: SystemInfo,
     network_context: str,
@@ -185,7 +188,7 @@ def _build_v2(
     nc_block: dict = {"context": network_context}
 
     data: dict = {
-        "schema_version":  "2",
+        "schema_version":  "3",
         "version":         version,
         "host":            sys_info.hostname,
         "timestamp_utc":   datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -194,8 +197,8 @@ def _build_v2(
         "risk":            engine.effective_level.value,
         "network_context": nc_block,
         "public_ip":       public_ip,
-        "alerts":          engine.alert_count,
-        "warnings":        engine.warn_count,
+        "alert_count":     engine.alert_count,
+        "warning_count":   engine.warn_count,
         "info_count":      engine.info_count,
         "deductions": [
             {

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.11.2
+Version:        0.12.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,35 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Jun 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.12.0-1
+- Planned BREAKING UX bundle (F1/F2/F4/F6/F9) from the deep bilingual live
+  test of v0.11.x — the five findings that could not ride a patch because
+  each changes a contract, exit code, or score.
+- F1 (BREAKING, score): "10/10 means a flawless audit". The headline score
+  is the mean of the active domain scores; rounding that average up could
+  erase a real deduction (one pending firmware update averaged to 10/10
+  while the summary said "Action required"). When ANY deduction exists the
+  headline is now capped at 9/10; a perfect 10 is reserved for an audit
+  with nothing to fix. --breakdown shows the average -> cap as two steps.
+  The JSON "score" reflects the capped value.
+- F2 (presentation): the summary per-item bullet now reflects the finding's
+  SEVERITY (warn / alert), matching the body. Pre-fix a WARN action item
+  showed the alert symbol in the summary but the warn symbol in the body.
+- F4 (BREAKING, exit code): "bob --explain <unknown-key>" now exits non-zero
+  (3) instead of 0, so scripts can tell "explained" from "no such key", and
+  prints a difflib "did you mean" fuzzy suggestion for typos.
+- F6: --check / --skip token validation now runs BEFORE the root gate, so
+  "bob --check=typo" without sudo reports the bad token instead of first
+  demanding root.
+- F9 (BREAKING, JSON schema v2 -> v3): the integer count keys "alerts" and
+  "warnings" are renamed "alert_count" / "warning_count" for symmetry with
+  "info_count". A key rename is breaking, so schema_version bumps v2 -> v3
+  (the clean-cut pattern: v2 retired like v1 in v0.9.0; only the current
+  major is emitted). The webhook generic payload keeps alerts/warnings (it
+  has no info_count and is a separate contract).
+- Test isolation: the watch score-bar tests now force monochrome output
+  explicitly instead of relying on a leaked global colour state.
+- Tests 6381 -> 6401 (+20). 0 regression.
 * Thu Jun 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.11.2-1
 - i18n completeness patch — closes the two remaining French-audit gaps
   found by a deep bilingual live test of v0.11.1 (F8 + F8b).

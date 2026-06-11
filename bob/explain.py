@@ -552,7 +552,7 @@ def _render_dynamic_service_explain(norm: str, t) -> bool:
     return True
 
 
-def run_explain(key: str, t) -> None:
+def run_explain(key: str, t) -> bool:
     """
     Print a structured explanation for *key*.
 
@@ -561,6 +561,11 @@ def run_explain(key: str, t) -> None:
     Args:
         key: Finding key (e.g. "ssh.password_auth") or "list".
         t:   Translation function from bob.i18n.
+
+    Returns:
+        True when an explanation (or the key list) was printed; False when
+        *key* is unknown (F4, v0.12.0 — the caller maps this to a non-zero
+        exit code so scripts can distinguish "explained" from "no such key").
     """
     key = key.strip()
 
@@ -574,7 +579,7 @@ def run_explain(key: str, t) -> None:
                 title = t(f"explain.{k}.title")
                 print(f"    {k:<42}  {title}")
         print()
-        return
+        return True
 
     # ---- single key mode ---------------------------------------------------
     norm = normalize_key(key)
@@ -598,13 +603,19 @@ def run_explain(key: str, t) -> None:
     if key_unknown and norm.startswith("services.exposed."):
         rendered = _render_dynamic_service_explain(norm, t)
         if rendered:
-            return
+            return True
 
     if key_unknown:
         print(t("explain.ui.unknown_key", requested=repr(key)))
+        # F4 (v0.12.0): offer the closest known keys for a typo.
+        import difflib
+        suggestions = difflib.get_close_matches(key, EXPLAIN_KEYS, n=3, cutoff=0.6)
+        if suggestions:
+            print()
+            print(t("explain.ui.did_you_mean", suggestions=", ".join(suggestions)))
         print()
         print(t("explain.ui.unknown_hint"))
-        return
+        return False
 
     cis_val = get_cis_ref(norm)
     _key_label   = t("explain.ui.label_key")
@@ -665,6 +676,7 @@ def run_explain(key: str, t) -> None:
         print()
 
     _explain_scoring(norm, t)
+    return True
 
 
 def _explain_scoring(key: str, t) -> None:

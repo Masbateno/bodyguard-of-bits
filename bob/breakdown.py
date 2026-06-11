@@ -162,11 +162,18 @@ def display_breakdown(engine: "ScoreEngine", t: TranslationFunc | None, output_m
     # ------------------------------------------------------------------ #
     if engine.global_override is not None:
         n_active = len(active)
+        precap = engine.domain_average_precap
         output_mod.print_info(
             t("breakdown.domain_average",
-              score=engine.global_override,
+              score=precap if precap is not None else engine.global_override,
               count=n_active)
         )
+        # F1 (v0.12.0): when a deduction exists, a perfect headline is
+        # reserved for a flawless audit — show the average → cap step.
+        if precap is not None and precap != engine.global_override:
+            output_mod.print_info(
+                t("breakdown.f1_cap", score=engine.global_override)
+            )
 
     # ------------------------------------------------------------------ #
     # 7. Final score                                                       #
