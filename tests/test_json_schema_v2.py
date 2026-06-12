@@ -425,3 +425,56 @@ class TestF9CountKeyRename:
         """alert_count / warning_count / info_count now share the _count suffix."""
         data = _build_v3(engine_clean, minimal_args)
         assert {"alert_count", "warning_count", "info_count"} <= set(data)
+
+
+# ===========================================================================
+# ADV-1 (v0.12.1) — per-domain ``active`` + ``reason`` (machine parity with
+# the text Domain Scores display). Additive within schema v3.
+# ===========================================================================
+
+
+class TestADV1DomainActiveReason:
+    def test_every_domain_exposes_active_and_reason(self, engine_clean, minimal_args):
+        data = _build_v3(engine_clean, minimal_args)
+        for dom, entry in data["domain_scores"].items():
+            assert "active" in entry and isinstance(entry["active"], bool), dom
+            assert "reason" in entry, dom
+            # reason is null exactly when the domain is active
+            if entry["active"]:
+                assert entry["reason"] is None, dom
+            else:
+                assert isinstance(entry["reason"], str) and entry["reason"], dom
+
+    def test_active_domain_marked_active(self, engine_clean, minimal_args):
+        # engine_clean has a firewall.logging_off finding → firewall is active.
+        data = _build_v3(engine_clean, minimal_args)
+        assert data["domain_scores"]["firewall"]["active"] is True
+        assert data["domain_scores"]["firewall"]["reason"] is None
+
+    def test_profile_skip_reason_in_json(self, engine_clean, minimal_args):
+        from bob.profiles import AuditProfile
+        prof = AuditProfile(name="container", skip_sections={"disk", "backup"})
+        data = build_json_data(engine=engine_clean, full=False, schema_version="3",
+                               profile=prof, **minimal_args)
+        disk = data["domain_scores"]["disk"]
+        assert disk["active"] is False
+        assert disk["reason"] == "profile_skipped"
+
+    def test_check_filter_reason_in_json(self, engine_clean, minimal_args):
+        from types import SimpleNamespace
+        cfg = SimpleNamespace(check_only=["firewall"], skip_checks=[])
+        data = build_json_data(engine=engine_clean, full=False, schema_version="3",
+                               config=cfg, **minimal_args)
+        samba = data["domain_scores"]["samba"]
+        assert samba["active"] is False
+        assert samba["reason"] == "filtered"
+
+    def test_score_reproducible_from_active_domains(self, engine_clean, minimal_args):
+        """A consumer can recompute the headline: mean of active domain scores,
+        capped at 9 when any deduction exists."""
+        data = _build_v3(engine_clean, minimal_args)
+        ds = data["domain_scores"]
+        active_scores = [v["score"] for v in ds.values() if v["active"]]
+        avg = round(sum(active_scores) / len(active_scores))
+        expected = min(avg, 9) if data["deductions"] else avg
+        assert expected == data["score"]

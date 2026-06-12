@@ -1024,7 +1024,13 @@
     "updates": "Mises à jour",
     "hardening": "Durcissement",
     "disk": "Santé des disques",
-    "firewall": "Pare-feu & Services"
+    "firewall": "Pare-feu & Services",
+    "reason": {
+      "no_action": "aucune action requise",
+      "not_assessed": "non évalué (profil {profile})",
+      "filtered": "non évalué (--check/--skip)",
+      "not_installed": "non installé"
+    }
   },
   "plugin": {
     "sandbox": {
@@ -2972,6 +2978,9 @@
     "heading_deductions": "Déductions de score",
     "col_field": "Champ",
     "col_value": "Valeur",
+    "col_domain": "Domaine",
+    "col_score": "Score",
+    "col_status": "Statut",
     "col_points": "Points",
     "col_reason": "Raison",
     "col_message": "Message",
@@ -3004,6 +3013,9 @@
     "field_kernel": "Noyau",
     "field_timestamp": "Horodatage",
     "heading_deductions": "Déductions de score",
+    "col_domain": "Domaine",
+    "col_score": "Score",
+    "col_status": "Statut",
     "col_points": "Points",
     "col_reason": "Raison",
     "col_message": "Message",

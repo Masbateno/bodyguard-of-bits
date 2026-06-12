@@ -76,12 +76,17 @@ def save_score(
         # I-5 (v0.6.1): explicit mode=0o600 on creation. Python's default
         # `Path.open("a")` uses the process umask (typically 0o644 → world-
         # readable history file). Score timestamps are privacy-sensitive on
-        # shared systems. os.open with explicit mode is applied ONLY at
-        # creation; existing-file mode is preserved.
+        # shared systems.
         flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
         fd = os.open(str(_HISTORY_FILE), flags, 0o600)
         with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(entry + "\n")
+        # ADV-G2 (v0.12.1): os.open's mode applies only at *creation*, so a
+        # legacy history file created before I-5 (or by another path) stayed
+        # 0o644 and world-readable forever. Heal the mode on every write so
+        # an existing loose-permission file is brought back to 0o600 — a
+        # hardening tool must not leak its own state.
+        os.chmod(str(_HISTORY_FILE), 0o600)
         if not existed:
             chown_to_sudo_user(_HISTORY_FILE)
         _rotate_if_needed()

@@ -95,6 +95,8 @@ def build_json_data(
     hardening_snapshot: HardeningSnapshot | None = None,
     ipv6_snapshot: IPv6Snapshot | None = None,
     schema_version: str = DEFAULT_SCHEMA_VERSION,
+    profile=None,
+    config=None,
 ) -> dict:
     """Serialize audit results to a JSON-ready dict.
 
@@ -125,7 +127,7 @@ def build_json_data(
     return _build_v3(
         engine, sys_info, network_context, public_ip, snapshots,
         ports_snapshot, stack_snapshot, net_snapshot, full, version,
-        hardening_snapshot, ipv6_snapshot,
+        hardening_snapshot, ipv6_snapshot, profile=profile, config=config,
     )
 
 
@@ -150,6 +152,8 @@ def _build_v3(
     version: str,
     hardening_snapshot: HardeningSnapshot | None,
     ipv6_snapshot: IPv6Snapshot | None,
+    profile=None,
+    config=None,
 ) -> dict:
     """v2 producer — v0.7.0 schema.
 
@@ -235,13 +239,25 @@ def _build_v3(
 
     # Domain sub-scores (always included, includes deductions count in v2)
     # M-7 (v0.7.4): use cache when available — see _build_v1 for rationale.
-    from bob.domain_scores import compute_domain_scores, DOMAINS
+    from bob.domain_scores import (
+        compute_domain_scores, DOMAINS, active_domains_from_engine,
+        domain_inactive_reason,
+    )
     _ds = engine.domain_scores or compute_domain_scores(engine)[0]
+    # v0.12.1 (ADV-1): expose per-domain ``active`` + ``reason`` so a machine
+    # consumer can (a) reproduce the headline score — which averages only the
+    # active domains then applies the F1 cap — and (b) tell an absent component
+    # (score 10, active=false) from a genuine 10/10. Mirrors the text display.
+    # Additive within schema v3 — existing keys are unchanged.
+    _active = engine.active_domains or active_domains_from_engine(engine)
     data["domain_scores"] = {
         domain: {
             "score":      _ds[domain]["score"],
             "label":      _ds[domain]["label"],
             "deductions": _ds[domain]["deductions"],   # B-6
+            "active":     domain in _active,
+            "reason":     (None if domain in _active
+                           else domain_inactive_reason(domain, engine, profile, config)),
         }
         for domain in DOMAINS
     }

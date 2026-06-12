@@ -182,14 +182,14 @@ _bob() {
         return 0
     fi
 
-    # Handle --output=FMT — alias for --format= (csv/json/markdown only)
+    # Handle --output=FMT — full alias for --format= (csv/json/json-full/markdown/html)
     if [[ "${cur}" == --output=* ]]; then
-        COMPREPLY=( $(compgen -W "csv json markdown" -- "${cur#--output=}") )
+        COMPREPLY=( $(compgen -W "csv json json-full markdown html" -- "${cur#--output=}") )
         COMPREPLY=( "${COMPREPLY[@]/#/--output=}" )
         return 0
     fi
     if [[ "${prev}" == "--output" ]]; then
-        COMPREPLY=( $(compgen -W "csv json markdown" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "csv json json-full markdown html" -- "${cur}") )
         return 0
     fi
 
@@ -220,7 +220,7 @@ _bob() {
     local short_opts="-v -d -q -f -y -r -n -j -J -l -m -c -C -o -p -e -D -w -V -h -B"
 
     # All long options (single line — avoids multiline parsing issues on some bash versions)
-    local long_opts="--verbose --detailed --quiet --fix --apply --yes --reconfigure --no-color --no-colour --format= --json --json-full --output= --output-dir= --min-level= --log-days= --manage-logs --install-cron --manage-cron --install-completion --french --lang= --offline --profile= --reset-baseline --ignore= --unignore= --show-ignored --history --explain --diff --watch= --webhook= --webhook-format= --test-webhook --target= --html --check= --skip= --breakdown --version --help"
+    local long_opts="--verbose --detailed --quiet --fix --apply --yes --reconfigure --no-color --no-colour --format= --json --json-full --output= --output-dir= --min-level= --log-days= --manage-logs --install-cron --manage-cron --install-completion --french --english --lang= --offline --profile= --reset-baseline --ignore= --unignore= --show-ignored --history --explain --diff --watch= --webhook= --webhook-format= --test-webhook --target= --html --check= --skip= --breakdown --version --help"
 
     if [[ "${cur}" == --* ]]; then
         COMPREPLY=( $(compgen -W "${long_opts}" -- "${cur}") )

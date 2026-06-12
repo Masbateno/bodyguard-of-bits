@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.12.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.12.1-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -670,17 +670,28 @@ The `key` field is a **stable dotted i18n key** (`<prefix>.<finding_id>`) — ma
 
 ```json
 {
-  "ssh":        { "score": 7,  "label": "SSH",                  "deductions": 3 },
-  "samba":      { "score": 10, "label": "Samba Security",        "deductions": 0 },
-  "file_perms": { "score": 10, "label": "Files & Access",        "deductions": 0 },
-  "updates":    { "score": 10, "label": "Updates",               "deductions": 0 },
-  "hardening":  { "score": 6,  "label": "Hardening",             "deductions": 4 },
-  "disk":       { "score": 9,  "label": "Disk Health",           "deductions": 1 },
-  "firewall":   { "score": 10, "label": "Firewall & Services",   "deductions": 0 }
+  "ssh":        { "score": 10, "label": "SSH",                "deductions": 0, "active": true,  "reason": null },
+  "samba":      { "score": 10, "label": "Samba Security",     "deductions": 0, "active": false, "reason": "not_installed" },
+  "file_perms": { "score": 10, "label": "Files & Access",     "deductions": 0, "active": true,  "reason": null },
+  "updates":    { "score": 10, "label": "Updates",            "deductions": 0, "active": false, "reason": "info_only" },
+  "hardening":  { "score": 9,  "label": "Hardening",          "deductions": 1, "active": true,  "reason": null },
+  "disk":       { "score": 10, "label": "Disk Health",        "deductions": 0, "active": false, "reason": "profile_skipped" },
+  "firewall":   { "score": 10, "label": "Firewall & Services","deductions": 0, "active": true,  "reason": null }
 }
 ```
 
-Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 total — defined in `bob.domain_scores.DOMAINS`). Each entry has `score` (int 0–10), `label` (English display name), and `deductions` (int — total points deducted in this domain, new in v2).
+Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 total — defined in `bob.domain_scores.DOMAINS`). Each entry has `score` (int 0–10), `label` (English display name), `deductions` (int — total points deducted in this domain, new in v2), and **`active` / `reason` (new in v0.12.1)**.
+
+`active` (bool) is `true` when the domain contributed an actionable (OK/WARN/ALERT) finding — **only active domains are averaged into the global `score`**. When `active` is `false`, `reason` (string) explains why the domain was shown but not scored:
+
+| `reason` | Meaning |
+|---|---|
+| `info_only` | The checks ran and reported, but only informational notices — nothing to act on. |
+| `profile_skipped` | The active audit profile skips every section feeding this domain (e.g. `disk` under the `container` profile). |
+| `filtered` | Excluded by a `--check` / `--skip` filter on this run. |
+| `not_installed` | The checks ran and found the component absent. |
+
+For an active domain, `reason` is `null`. This lets a consumer **reproduce the headline**: `score = round(mean(score for active domains))`, capped at 9 when any deduction exists (the F1 "10 means a flawless audit" rule — see v0.12.0).
 
 ### v3 — Full mode (`--json-full`) additional keys
 
@@ -710,7 +721,7 @@ v1 (v0.6.x, opt-in `--json-v1`) was retired in v0.9.0; v2 (v0.7.0) was retired i
 | `network_context` | string in short mode; dict in full | always dict | always dict |
 | `posture_escalation` | absent | present | present |
 | `deductions_raw` / `open_ports_all` | absent | present (full only) | present (full only) |
-| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` | `{ score, label, deductions }` |
+| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` | `{ score, label, deductions, active, reason }` |
 
 ### Migration guide (→ v3)
 

@@ -6,6 +6,55 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.12.1] — 12-06-2026
+
+**Premier patch hardening v0.12.x — complétude de l'affichage des domaines + campagne d'audit naive/advanced. Additif et entièrement rétro-compatible.**
+
+Le changement principal implémente la demande différée de v0.12.0 : **toujours afficher les 7 domaines de score, même inactifs, avec la raison précise** de leur non-scoring. Les domaines inactifs ne sont jamais comptés dans la moyenne — les scores, le cap F1 "10 = sans défaut" et la garde anti-inversion v0.4.5 sont tous préservés. Le changement a ensuite déclenché une campagne d'audit profonde (un tour naive-user + quatre tours advanced-user) qui a trouvé et corrigé une série de problèmes (CLI, contrat de scoring, sorties machine, permissions de fichiers).
+
+### Afficher tous les domaines, avec la raison (texte + JSON + Markdown + HTML)
+
+`bob.domain_scores.domain_inactive_reason()` classe pourquoi un domaine n'a produit aucun finding actionnable (OK/WARN/ALERT), via une source unique partagée par tous les renderers :
+
+| `reason` | Signification |
+|---|---|
+| `info_only` | Les checks ont tourné et rapporté, mais seulement de l'informatif. |
+| `profile_skipped` | Le profil actif saute toutes les sections du domaine (ex. `disk` en `container`). |
+| `filtered` | Exclu par un filtre `--check` / `--skip` ce run. |
+| `not_installed` | Les checks ont tourné et trouvé le composant absent. |
+
+La précédence est INFO-only → a tourné-mais-vide (`not_installed`) → filtré → skippé-par-profil, calculée via le gate `_section_enabled` du runner pour coller exactement à ce qui a tourné. **`disk` n'est jamais "non installé" à tort** : sur un host réel il est actif (findings SMART) ; seul un profil qui le saute donne `profile_skipped`. L'affichage texte ([bob/domain_scores.py](../bob/domain_scores.py) `render_domain_scores`) montre les domaines inactifs grisés avec la raison ; la même donnée est exposée en JSON, Markdown et HTML (voir ADV-1 / ADV-B1).
+
+### Tour naive-user — A / B / C / E
+
+- **A — `--check`/`--skip` étiquetaient mal les domaines filtrés.** `bob --check=ssh` montrait `Samba / Files & Access / Updates : not installed` — faux (filtrés, pas absents). `domain_inactive_reason` consomme maintenant la config et le gate `_section_enabled`, renvoyant la nouvelle raison `filtered`.
+- **B — `--profile=typo` corrompait la config sauvegardée.** [bob/__main__.py](../bob/__main__.py) persistait *n'importe quelle* valeur `--profile` (via `set_profile`) **avant** de la valider, donc `--profile=banane` écrivait `audit_profile=banane` et chaque run suivant tombait en fallback, perdant silencieusement le vrai profil. Maintenant le profil est résolu d'abord et seul un nom **valide** est persisté.
+- **C — le root-gate passait avant la validation de `--profile`.** `bob --profile=typo` sans sudo affichait *"must be run as root"* au lieu de signaler le mauvais profil. Un `--profile` inconnu est maintenant signalé **avant** `require_root()` (comme l'ordre F6 pour `--check`/`--skip`). `--diff` / `--html` nécessitent légitimement root et sont inchangés.
+- **E — polish CLI.** Ajout de `--english` (symétrie avec `--french`). `--output` accepte maintenant `html` et `json-full` → alias **complet** de `--format` (les deux étaient rejetés avant). Les tokens `--check`/`--skip`, les clés `--explain` et les valeurs `--output`/`--format` sont maintenant **casse-insensibles**. Help + complétion bash mis à jour.
+
+### Tours advanced-user — ADV-1 / ADV-D2 / ADV-G2 / ADV-B1
+
+- **ADV-1 — le JSON ne permettait pas de reproduire le score.** `domain_scores` exposait les 7 domaines à leur score sans marqueur actif/inactif, donc un consommateur qui les moyennait obtenait 10 alors que le vrai headline était 9, et ne pouvait pas distinguer un `samba` absent (montré 10) d'un vrai 10. Chaque `domain_scores[d]` porte maintenant **`active` (bool)** et **`reason` (code stable, ou `null` si actif)**. **Additif en schema v3 — pas de bump** ([bob/json_output.py](../bob/json_output.py)).
+- **ADV-D2 — `--output` était un alias incomplet.** `--format=json-full` marchait mais `--output=json-full` erreur. Corrigé (intégré à E).
+- **ADV-G2 — `history.jsonl` pouvait rester world-readable.** I-5 (v0.6.1) mettait `0600` seulement à la *création* ; un fichier legacy créé avant restait `0644`. Le chemin append fait maintenant un `os.chmod` à `0600` à chaque write — un outil de hardening ne doit pas fuiter son propre état ([bob/history.py](../bob/history.py)).
+- **ADV-B1 — les rapports Markdown + HTML n'avaient pas le breakdown par domaine** (texte + JSON l'avaient). Les deux rendent maintenant la table par domaine (score + statut), EN+FR, via le helper format-agnostique partagé `domain_rows()`.
+
+### Vérifié propre (résultats négatifs de l'audit)
+
+Déterminisme (JSON bit-identique entre runs), maths de scoring (cap domaine firewall-inactif × F1 × escalade posture), concurrence (deux runs parallèles laissent `last_baseline.json` / `history.jsonl` non-corrompus), rendu `LC_ALL=C` (stdout UTF-8, pas d'erreur d'encodage), lignes reason en `--no-color`, interaction `--ignore` (un finding ignoré garde son domaine actif et recalcule proprement), et import standalone de `build_json_data` (pas de cycle) — tous sondés et corrects.
+
+### Tensions de design connues (laissées telles quelles, documentées)
+
+`--check=X` produit un score d'audit partiel non comparable au baseline complet — pré-existant, déféré. JSON utilise `alert_count`/`warning_count` alors que CSV/webhook gardent `alerts`/`warnings` — décision F9 (contrats séparés) assumée. Le résidu `ignore:` vide laissé par `--unignore` de la dernière clé est de la préservation délibérée des commentaires opérateur.
+
+### Tests & compatibilité
+
+**Tests** 6401 → **6437** (+36). 0 régression, vert en ordre déterministe et aléatoire. Field test bilingue complet sur host réel (texte / Markdown / HTML / `--json-full` × EN/FR + chaque fix CLI) propre. **v0.7.x reste EOL** (v0.8.1) ; **v0.6.x reste EOL** (v0.7.2).
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **entièrement rétro-compatible** : le changement JSON est additif (nouvelles clés `active`/`reason`, schema_version toujours `"3"`), les nouveaux flags CLI sont additifs, aucun champ existant ne change de sens.
+
+---
+
 ## [v0.12.0] — 11-06-2026
 
 **Première release v0.12.x — bundle UX BREAKING planifié (F1 / F2 / F4 / F6 / F9).**

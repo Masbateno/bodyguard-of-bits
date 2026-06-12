@@ -1,3 +1,46 @@
+bodyguard-of-bits (0.12.1-1) UNRELEASED; urgency=low
+
+  * First v0.12.x hardening patch — domain-display completeness + a
+    naive/advanced-user audit campaign. Additive and fully backwards-compatible.
+  * Show all 7 score domains, even inactive ones, with the precise reason they
+    were not scored (never counted in the average — scores, the F1 cap and the
+    v0.4.5 inversion guard are preserved). An inactive domain is tagged
+    "not installed" (component absent), "not assessed (<profile> profile)"
+    (skipped by the active profile — e.g. disk under container, which is NEVER
+    "not installed"), "not assessed (--check/--skip)" (filtered this run), or
+    "no action needed" (only informational notices). Surfaced in text, JSON
+    (--json/--json-full), Markdown and HTML — all four EN+FR.
+  * A — --check/--skip mislabelled filtered domains as "not installed";
+    domain_inactive_reason now uses the _section_enabled gate and returns a
+    new "filtered" reason.
+  * B — --profile=typo persisted the invalid name to config, silently losing
+    the user's real saved profile. Only valid profiles are now persisted.
+  * C — an unknown --profile is reported BEFORE the root gate (mirrors F6)
+    instead of demanding sudo first.
+  * E — added --english (symmetry with --french), --output=html and
+    --output=json-full (so --output is a complete alias of --format), and
+    case-insensitive --check/--skip/--explain/--output. Help + bash completion
+    updated.
+  * ADV-1 — JSON domain_scores[d] gains "active" (bool) + "reason" (stable
+    enum, null when active) so a machine consumer can reproduce the headline
+    (mean of active scores, then the F1 cap) and tell an absent component from
+    a real 10/10. Additive within schema v3 — no version bump.
+  * ADV-G2 — history.jsonl is healed to 0600 on every write; a legacy
+    world-readable file created before I-5 stayed 0644 (os.open's mode applies
+    only at creation). A hardening tool must not leak its own state.
+  * ADV-B1 — the per-domain breakdown is now in the Markdown + HTML reports
+    too (they previously carried only score + findings), via the shared
+    format-agnostic domain_rows() helper.
+  * Audit also verified clean: determinism, scoring math (domain cap × F1 ×
+    posture), concurrency, LC_ALL=C, --ignore interaction, --no-color, and a
+    standalone build_json_data import (no circular import).
+  * Tests 6401 -> 6437 (+36). 0 regression. Bilingual live field test clean.
+  * v0.7.x remains EOL (declared v0.8.1); v0.6.x remains EOL (v0.7.2).
+  * Upgrade: pipx upgrade bodyguard-of-bits. Fully backwards-compatible — JSON
+    additions only, new CLI flags are additive, no existing field changed.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 12 Jun 2026 10:00:00 +0200
+
 bodyguard-of-bits (0.12.0-1) UNRELEASED; urgency=low
 
   * Planned BREAKING UX bundle (F1/F2/F4/F6/F9) from the deep bilingual live

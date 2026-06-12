@@ -59,8 +59,12 @@ _FALLBACK_LABELS = {
     "markdown_output.report_title":           "BOB Report",
     "markdown_output.heading_summary":        "Summary",
     "markdown_output.heading_deductions":     "Score Deductions",
+    "domain_scores.title":                    "Domain Scores",
     "markdown_output.col_field":              "Field",
     "markdown_output.col_value":              "Value",
+    "markdown_output.col_domain":             "Domain",
+    "markdown_output.col_score":              "Score",
+    "markdown_output.col_status":             "Status",
     "markdown_output.col_points":             "Points",
     "markdown_output.col_reason":             "Reason",
     "markdown_output.col_message":            "Message",
@@ -106,6 +110,8 @@ def build_markdown_output(
     engine: ScoreEngine,
     sys_info: SystemInfo,
     t=None,
+    profile=None,
+    config=None,
 ) -> str:
     """Return a Markdown string with the full audit report.
 
@@ -159,6 +165,25 @@ def build_markdown_output(
     lines.append(f"| **{t('markdown_output.field_kernel')}** | {sys_info.kernel} |")
     lines.append(f"| **{t('markdown_output.field_timestamp')}** | {ts} |")
     lines.append("")
+
+    # --- Domain scores (ADV-B1, v0.12.1) ---
+    # Bring the per-domain breakdown the text + JSON outputs already carry into
+    # the Markdown report so an exported/archived report explains the headline.
+    from bob.domain_scores import domain_rows
+    _rows = domain_rows(engine, t, profile, config)
+    if _rows:
+        lines.append(f"## {t('domain_scores.title')}")
+        lines.append("")
+        lines.append(
+            f"| {t('markdown_output.col_domain')} | "
+            f"{t('markdown_output.col_score')} | {t('markdown_output.col_status')} |"
+        )
+        lines.append("|--------|--------|--------|")
+        for r in _rows:
+            _score = f"{r['score']}/10" if r["active"] else "—"
+            _status = "" if r["active"] else _md_escape(r["reason"])
+            lines.append(f"| {_md_escape(r['label'])} | {_score} | {_status} |")
+        lines.append("")
 
     # --- Score deductions ---
     deductions = [d for d in engine.breakdown if d.points > 0]

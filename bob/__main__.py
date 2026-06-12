@@ -303,6 +303,21 @@ def _run(argv=None) -> int:
         print(f"{t('cli.error.prefix')}{_filter_error}", file=sys.stderr)
         return EXIT_ERROR
 
+    # C-fix (v0.12.1): surface an unknown --profile BEFORE the root gate (like
+    # F6 does for --check/--skip), so `bob --profile=typo` without sudo reports
+    # the bad name instead of first demanding root. Resolving a profile name
+    # needs no privileges. Non-fatal — the audit still falls back to the
+    # default once root is satisfied; this just removes the sudo round-trip
+    # before the operator learns the name was wrong.
+    _profile_prewarned = False
+    if config.profile and config.profile not in ("", "default", "server"):
+        from bob.profiles import _find_profile_file
+        if _find_profile_file(config.profile) is None:
+            print(f"{t('cli.error.warning_prefix')}"
+                  + t("audit.profile_not_found", profile=config.profile),
+                  file=sys.stderr)
+            _profile_prewarned = True
+
     require_root()
 
     _machine_mode = config.json_mode or config.csv_mode or config.markdown_mode or config.html_mode
@@ -338,10 +353,18 @@ def _run(argv=None) -> int:
 
             # Resolve audit profile: CLI flag > saved config > default
             profile_name = config.profile or user_config.get_profile() or "server"
-            if config.profile:
-                user_config.set_profile(config.profile)
             active_profile = load_profile(profile_name)
-            if profile_name not in ("", "default", "server") and active_profile.name != profile_name:
+            _profile_not_found = (
+                profile_name not in ("", "default", "server")
+                and active_profile.name != profile_name
+            )
+            # v0.12.1 (Fix B): persist an explicit --profile ONLY when it
+            # resolved to a real profile. Pre-fix, `--profile=typo` saved the
+            # bad name to config, so every later run fell back to the default
+            # and silently lost the user's real saved profile.
+            if config.profile and not _profile_not_found:
+                user_config.set_profile(config.profile)
+            if _profile_not_found and not _profile_prewarned:
                 output.print_warn(t("audit.profile_not_found", profile=profile_name))
 
             if config.watch_mode:
@@ -498,8 +521,13 @@ def _run(argv=None) -> int:
                                     fw_policy=fw_policy)
                 from bob.domain_scores import render_domain_scores
                 _domain_scores = engine.domain_scores
-                _active        = engine.active_domains
-                for _line in render_domain_scores(_domain_scores, t, active_domains=_active):
+                # v0.12.1: pass engine + profile so ALL domains are shown,
+                # inactive ones annotated with the reason (not installed /
+                # not assessed by profile / no action needed), still excluded
+                # from the average.
+                for _line in render_domain_scores(_domain_scores, t,
+                                                  engine=engine, profile=active_profile,
+                                                  config=config):
                     print(_line)
                 print()
                 _exposure = compute_exposure(engine, ports_snapshot, network_context,
@@ -562,6 +590,7 @@ def _run(argv=None) -> int:
                 hardening_snapshot=hardening_snapshot,
                 ipv6_snapshot=ipv6_snapshot,
                 schema_version="3",
+                profile=active_profile, config=config,
             )
             print(_json.dumps(data, ensure_ascii=False, indent=2))
 
@@ -574,13 +603,15 @@ def _run(argv=None) -> int:
             # M-4 (v0.7.2): pass the audit's bound translation function so
             # the export can be localised. The Markdown module accepts t=None
             # for backwards-compat with legacy callers / test mocks.
-            print(build_markdown_output(engine, sys_info, t=t), end="")
+            print(build_markdown_output(engine, sys_info, t=t,
+                                        profile=active_profile, config=config), end="")
 
         if config.html_mode:
             from bob.html_output import build_html_output
             # M-4 (v0.7.2): pass t + lang so the HTML report carries both
             # the localised strings and a correct <html lang="..."> attr.
-            print(build_html_output(engine, sys_info, t=t, lang=config.lang), end="")
+            print(build_html_output(engine, sys_info, t=t, lang=config.lang,
+                                    profile=active_profile, config=config), end="")
 
         # stdout restored — display post-audit views with full output (no quiet filter)
         if config.diff_mode:

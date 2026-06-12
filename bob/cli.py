@@ -296,6 +296,14 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             config.lang = "fr"
             lang_explicit = True
 
+        # E-fix (v0.12.1): symmetric explicit-English flag. A naive user who
+        # sees --french reasonably tries --english; pre-fix it errored with
+        # "Unknown option: '--english'". English is the default, so this just
+        # makes the choice explicit (and overrides a saved/auto-detected fr).
+        elif arg == "--english":
+            config.lang = "en"
+            lang_explicit = True
+
         elif arg.startswith("--lang="):
             value = arg.split("=", 1)[1]
             if not value:
@@ -370,7 +378,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             value = arg.split("=", 1)[1].strip()
             if not value:
                 raise CLIError("--explain= requires a key (e.g. ssh.password_auth) — use --explain alone for interactive mode")
-            config.explain_key = value
+            config.explain_key = value.lower()
 
         elif arg in ("-e", "--explain") and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
             i += 1
@@ -380,7 +388,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             # interactive picker after consuming the arg.
             if not value:
                 raise CLIError("--explain requires a key (e.g. ssh.password_auth) — use --explain alone for interactive mode")
-            config.explain_key = value
+            config.explain_key = value.lower()
 
         elif arg in ("-e", "--explain"):
             # No key provided → launch interactive picker
@@ -488,31 +496,44 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             config.target = int(value)
 
         elif arg.startswith("--output="):
-            value = arg.split("=", 1)[1].strip()
+            # E-fix (v0.12.1): accept html (mirrors --html) + case-insensitive.
+            # ADV-D2 (v0.12.1): accept json-full so --output is a complete alias
+            # of --format (which already supports it).
+            value = arg.split("=", 1)[1].strip().lower()
             if not value:
-                raise CLIError("--output= requires a format: 'csv', 'json', or 'markdown'")
+                raise CLIError("--output= requires a format: 'csv', 'json', 'json-full', 'markdown', or 'html'")
             if value == "csv":
                 config.csv_mode = True
             elif value == "json":
                 config.json_mode = True
+            elif value == "json-full":
+                config.json_mode = True
+                config.json_full = True
             elif value == "markdown":
                 config.markdown_mode = True
+            elif value == "html":
+                config.html_mode = True
             else:
-                raise CLIError(f"--output requires 'csv', 'json', or 'markdown', got: {value!r}")
+                raise CLIError(f"--output requires 'csv', 'json', 'json-full', 'markdown', or 'html', got: {value!r}")
 
         elif arg == "--output" and i + 1 < len(argv):
             i += 1
-            value = argv[i].strip()
+            value = argv[i].strip().lower()
             if not value:
-                raise CLIError("--output requires a format: 'csv', 'json', or 'markdown'")
+                raise CLIError("--output requires a format: 'csv', 'json', 'json-full', 'markdown', or 'html'")
             if value == "csv":
                 config.csv_mode = True
             elif value == "json":
                 config.json_mode = True
+            elif value == "json-full":
+                config.json_mode = True
+                config.json_full = True
             elif value == "markdown":
                 config.markdown_mode = True
+            elif value == "html":
+                config.html_mode = True
             else:
-                raise CLIError(f"--output requires 'csv', 'json', or 'markdown', got: {value!r}")
+                raise CLIError(f"--output requires 'csv', 'json', 'json-full', 'markdown', or 'html', got: {value!r}")
 
         elif arg.startswith("--min-level="):
             value = arg.split("=", 1)[1].strip().lower()
@@ -566,7 +587,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             if value.lower() == "list":
                 config.list_checks = True
             else:
-                config.check_only = frozenset(n.strip() for n in value.split(",") if n.strip())
+                config.check_only = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
 
         elif arg == "--check" and i + 1 < len(argv):
             i += 1
@@ -574,18 +595,18 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             if value.lower() == "list":
                 config.list_checks = True
             else:
-                config.check_only = frozenset(n.strip() for n in value.split(",") if n.strip())
+                config.check_only = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
 
         elif arg.startswith("--skip="):
             value = arg.split("=", 1)[1].strip()
             if not value:
                 raise CLIError("--skip= requires a comma-separated list of check names")
-            config.skip_checks = frozenset(n.strip() for n in value.split(",") if n.strip())
+            config.skip_checks = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
 
         elif arg == "--skip" and i + 1 < len(argv):
             i += 1
             value = argv[i].strip()
-            config.skip_checks = frozenset(n.strip() for n in value.split(",") if n.strip())
+            config.skip_checks = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
 
         elif arg.startswith("--output-dir="):
             value = arg.split("=", 1)[1].strip()
@@ -773,6 +794,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     section("CONFIGURATION — language and settings")
     opt("    --lang=CODE",       "Set interface language: en, fr (default: detected from $LANG, fallback en)")
     opt("    --french",          "Shortcut for --lang=fr (overrides detection)")
+    opt("    --english",         "Shortcut for --lang=en (overrides detection)")
     opt("-r, --reconfigure",     "Reset saved port configuration and re-ask")
 
     section("MAINTENANCE — cron jobs and logs")

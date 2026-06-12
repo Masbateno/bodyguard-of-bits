@@ -481,10 +481,9 @@ class TestCSVHardening:
         with pytest.raises(CLIError, match="--output"):
             parse_args(["--output="])
 
-    def test_output_csv_uppercase_raises(self):
-        """CLI is case-sensitive — 'CSV' is not a valid format."""
-        with pytest.raises(CLIError, match="--output requires"):
-            parse_args(["--output=CSV"])
+    def test_output_csv_uppercase_accepted(self):
+        """v0.12.1 (E-fix): --output is now case-insensitive — 'CSV' == 'csv'."""
+        assert parse_args(["--output=CSV"]).csv_mode is True
 
     def test_output_csv_then_json_raises(self):
         """Two --output flags conflict."""

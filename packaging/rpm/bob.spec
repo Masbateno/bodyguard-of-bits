@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.12.0
+Version:        0.12.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,29 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Jun 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.12.1-1
+- First v0.12.x hardening patch — domain-display completeness + a
+  naive/advanced-user audit campaign. Additive and fully backwards-compatible.
+- Show all 7 score domains, even inactive ones, with the precise reason
+  they were not scored (never counted in the average — scores, the F1 cap
+  and the v0.4.5 inversion guard are preserved). An inactive domain is
+  tagged not_installed / not_assessed (<profile> profile) / not_assessed
+  (--check/--skip) / no action needed. disk is NEVER wrongly "not installed".
+  Surfaced in text, JSON, Markdown and HTML — all four EN+FR.
+- A: --check/--skip mislabel → new "filtered" reason via _section_enabled.
+- B: --profile=typo persisted the invalid name to config → only valid
+  profiles are now saved.
+- C: an unknown --profile is reported BEFORE the root gate (mirrors F6).
+- E: added --english, --output=html, --output=json-full (--output is now a
+  complete alias of --format), and case-insensitive --check/--skip/--explain
+  /--output.
+- ADV-1: JSON domain_scores[d] gains "active" + "reason" so a machine
+  consumer can reproduce the headline and tell absent from a real 10/10.
+  Additive within schema v3 — no version bump.
+- ADV-G2: history.jsonl healed to 0600 on every write (legacy world-readable
+  files created before I-5 stayed 0644).
+- ADV-B1: per-domain breakdown added to the Markdown + HTML reports.
+- Tests 6401 -> 6437 (+36). 0 regression. Bilingual live field test clean.
 * Thu Jun 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.12.0-1
 - Planned BREAKING UX bundle (F1/F2/F4/F6/F9) from the deep bilingual live
   test of v0.11.x — the five findings that could not ride a patch because

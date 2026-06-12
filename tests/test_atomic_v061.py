@@ -124,6 +124,20 @@ class TestHistoryFileMode:
         # Two lines written
         assert len(history_file.read_text().splitlines()) == 2
 
+    def test_legacy_loose_perms_healed(self, tmp_path, monkeypatch):
+        """ADV-G2 (v0.12.1): a pre-existing world-readable history file (e.g.
+        created before I-5) is healed back to 0o600 on the next write — os.open's
+        mode only applies at creation, so legacy files needed an explicit chmod."""
+        from bob import history
+        history_file = tmp_path / "history.jsonl"
+        monkeypatch.setattr(history, "_HISTORY_FILE", history_file)
+        monkeypatch.setattr(history, "_CONFIG_DIR", tmp_path)
+        history_file.write_text('{"legacy": 1}\n')
+        history_file.chmod(0o644)
+        assert stat.S_IMODE(history_file.stat().st_mode) == 0o644
+        history.save_score(8, "low")
+        assert stat.S_IMODE(history_file.stat().st_mode) == 0o600
+
 
 class TestIgnoreAtomic:
     """I-6 (v0.6.1): ignore.yml writes are atomic (tmp + replace)."""

@@ -130,6 +130,83 @@ def key_to_domain(key: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Domain → contributing sections (inverse of _PREFIX_TO_DOMAIN)
+# ---------------------------------------------------------------------------
+# v0.12.1: used to explain WHY an inactive domain is inactive. The key
+# prefixes in _PREFIX_TO_DOMAIN are also the runner section names, so a
+# domain counts as "skipped by the active profile" when every section that
+# could feed it is in the profile's skip_sections. Built programmatically so
+# it can never drift from _PREFIX_TO_DOMAIN.
+_DOMAIN_SECTIONS: dict[str, set[str]] = {}
+for _prefix, _dom in _PREFIX_TO_DOMAIN.items():
+    _DOMAIN_SECTIONS.setdefault(_dom, set()).add(_prefix)
+del _prefix, _dom
+
+# Inactive-domain reason codes (v0.12.1). A domain with no actionable
+# (OK/WARN/ALERT) finding is still displayed, but shown without a score and
+# annotated with the reason — never counted in the global average.
+REASON_INFO_ONLY       = "info_only"        # assessed; only INFO notices
+REASON_PROFILE_SKIPPED = "profile_skipped"  # the active profile skips it
+REASON_FILTERED        = "filtered"         # excluded by --check / --skip
+REASON_NOT_INSTALLED   = "not_installed"    # service/component absent
+
+
+def domain_inactive_reason(
+    domain: str, engine: "ScoreEngine", profile=None, config=None,
+) -> str:
+    """Classify why an inactive domain produced no actionable finding.
+
+    Only meaningful for a domain that is NOT in
+    ``active_domains_from_engine(engine)``. Returns one of
+    ``REASON_INFO_ONLY`` / ``REASON_PROFILE_SKIPPED`` / ``REASON_FILTERED`` /
+    ``REASON_NOT_INSTALLED``.
+
+    Order matters:
+      1. A domain that emitted INFO notices was genuinely assessed → INFO_ONLY.
+      2. If at least one of the domain's sections actually ran (given
+         ``--check`` / ``--skip`` and the profile) yet nothing was found, the
+         component is simply absent → NOT_INSTALLED.
+      3. Otherwise NONE of its sections ran; say why — a ``--check`` / ``--skip``
+         filter (FILTERED) or the active profile (PROFILE_SKIPPED).
+
+    This is why ``disk`` is never wrongly "not installed": a profile that skips
+    it yields PROFILE_SKIPPED, and a ``--check=ssh`` that excludes it yields
+    FILTERED — only a host where the disk section ran and found nothing would
+    read NOT_INSTALLED (which does not happen for disk in practice).
+    """
+    for finding in engine.findings:
+        if finding.level is FindingLevel.INFO and key_to_domain(finding.key) == domain:
+            return REASON_INFO_ONLY
+
+    sections = _DOMAIN_SECTIONS.get(domain, set())
+    if not sections:
+        return REASON_NOT_INSTALLED
+
+    # Did any of the domain's sections actually run?
+    if config is not None:
+        from bob.runner import _section_enabled  # lazy: runner imports this module
+        ran = any(_section_enabled(s, config, profile) for s in sections)
+    elif profile is not None:
+        ran = any(not profile.should_skip_section(s) for s in sections)
+    else:
+        ran = True
+    if ran:
+        return REASON_NOT_INSTALLED  # ran, found nothing → component absent
+
+    # None ran — distinguish a user filter from a profile skip.
+    if config is not None:
+        def _match(section: str, tokens) -> bool:
+            return any(section == tok or section.startswith(tok) for tok in tokens)
+        check_excludes = bool(config.check_only) and not any(
+            _match(s, config.check_only) for s in sections)
+        skip_excludes = bool(config.skip_checks) and all(
+            _match(s, config.skip_checks) for s in sections)
+        if check_excludes or skip_excludes:
+            return REASON_FILTERED
+    return REASON_PROFILE_SKIPPED
+
+
+# ---------------------------------------------------------------------------
 # Main computation
 # ---------------------------------------------------------------------------
 
@@ -309,10 +386,34 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
 from bob.output import SCORE_BAR_WIDTH as _BAR_WIDTH  # single source of truth, see bob.output
 
 
+def _reason_text(reason: str, t, profile_name: str) -> str:
+    """Translate an inactive-domain reason code to a human label (v0.12.1)."""
+    if reason == REASON_PROFILE_SKIPPED:
+        if t:
+            txt = t("domain_scores.reason.not_assessed", profile=profile_name)
+            if txt != "domain_scores.reason.not_assessed":
+                return txt
+        return f"not assessed ({profile_name} profile)"
+    key, fallback = {
+        REASON_INFO_ONLY:     ("domain_scores.reason.no_action",     "no action needed"),
+        REASON_FILTERED:      ("domain_scores.reason.filtered",      "not assessed (--check/--skip)"),
+        REASON_NOT_INSTALLED: ("domain_scores.reason.not_installed", "not installed"),
+    }.get(reason, ("domain_scores.reason.not_installed", "not installed"))
+    if t:
+        txt = t(key)
+        if txt != key:
+            return txt
+    return fallback
+
+
 def render_domain_scores(
     scores: dict[str, dict],
     t=None,
     active_domains: "frozenset[str] | None" = None,
+    *,
+    engine: "ScoreEngine | None" = None,
+    profile=None,
+    config=None,
 ) -> list[str]:
     """
     Render domain scores as a list of indented text lines.
@@ -322,6 +423,15 @@ def render_domain_scores(
         t:      Optional translation function.  When provided the title line
                 uses the locale key 'domain_scores.title'; otherwise the
                 English default is used.
+        active_domains: When ``engine`` is None, restricts the display to this
+                set (legacy behaviour).
+        engine: v0.12.1 — when provided, ALL domains are shown. Inactive ones
+                (no actionable finding) are rendered without a score and
+                annotated with the reason they were not scored; they remain
+                excluded from the global average. ``active_domains`` is then
+                derived from the engine and the argument is ignored.
+        profile: active AuditProfile — used to label a domain skipped by the
+                profile as "not assessed (<profile> profile)".
 
     Returns:
         List of strings (one per line), ready for print().
@@ -335,6 +445,10 @@ def render_domain_scores(
         lines.append("  (no data)")
         return lines
 
+    show_all = engine is not None
+    if show_all:
+        active_domains = active_domains_from_engine(engine)
+
     def _label(domain: str, fallback: str) -> str:
         if not t:
             return fallback
@@ -344,18 +458,67 @@ def render_domain_scores(
     labels = {d: _label(d, scores[d]["label"]) for d in DOMAINS if d in scores}
     label_width = max(len(lbl) for lbl in labels.values())
 
+    from bob.output import score_bar
+    profile_name = getattr(profile, "name", "") or ""
+
     for domain in DOMAINS:
         if domain not in scores:
             continue
-        if active_domains is not None and domain not in active_domains:
-            continue
-        info  = scores[domain]
-        score = info["score"]
+        is_active = active_domains is None or domain in active_domains
+        if not is_active and not show_all:
+            continue  # legacy: hide inactive domains entirely
         label = labels[domain]
-        from bob.output import score_bar
-        bar   = score_bar(int(score * _BAR_WIDTH / MAX_SCORE))
-        lines.append(
-            f"  {label:<{label_width}}  {score:>2}/10  {bar}"
-        )
+        if is_active:
+            score = scores[domain]["score"]
+            bar   = score_bar(int(score * _BAR_WIDTH / MAX_SCORE))
+            lines.append(f"  {label:<{label_width}}  {score:>2}/10  {bar}")
+        else:
+            # v0.12.1: show the domain, but with its reason instead of a score,
+            # dimmed and kept out of the average.
+            from bob.output import _c
+            reason = domain_inactive_reason(domain, engine, profile, config)
+            reason_txt = _reason_text(reason, t, profile_name)
+            lines.append(
+                f"  {_c.dim}{label:<{label_width}}  {'—':>5}  {reason_txt}{_c.reset}"
+            )
 
     return lines
+
+
+def domain_rows(engine: "ScoreEngine", t=None, profile=None, config=None) -> list[dict]:
+    """Format-agnostic per-domain display rows (v0.12.1, ADV-B1).
+
+    Returns one dict per domain: ``{key, label, score, active, reason}`` where
+    ``score`` is the int 0–10 for an active domain (and ``None`` for an
+    inactive one) and ``reason`` is the human label explaining an inactive
+    domain (empty string when active). The reason classification is the single
+    source shared with the text display and JSON output
+    (``domain_inactive_reason``); only the rendering differs per format
+    (text bars / Markdown table / HTML). Used by Markdown + HTML exports.
+
+    Returns ``[]`` for an engine double that does not expose the domain
+    interface (legacy / test fakes) — callers guard on the empty list and
+    simply omit the section, never crashing the report.
+    """
+    if not hasattr(engine, "domain_scores") or not hasattr(engine, "active_domains"):
+        return []
+    scores = engine.domain_scores or compute_domain_scores(engine)[0]
+    active = engine.active_domains or active_domains_from_engine(engine)
+    profile_name = getattr(profile, "name", "") or ""
+    rows: list[dict] = []
+    for domain in DOMAINS:
+        if domain not in scores:
+            continue
+        label = scores[domain]["label"]
+        if t:
+            translated = t(f"domain_scores.{domain}")
+            if translated != f"domain_scores.{domain}":
+                label = translated
+        if domain in active:
+            rows.append({"key": domain, "label": label,
+                         "score": scores[domain]["score"], "active": True, "reason": ""})
+        else:
+            reason = domain_inactive_reason(domain, engine, profile, config)
+            rows.append({"key": domain, "label": label, "score": None,
+                         "active": False, "reason": _reason_text(reason, t, profile_name)})
+    return rows

@@ -6,6 +6,55 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.12.1] — 2026-06-12
+
+**First v0.12.x hardening patch — domain-display completeness + a naive/advanced-user audit campaign. Additive and fully backwards-compatible.**
+
+The headline change implements the request deferred from v0.12.0: **always show all 7 score domains, even inactive ones, with the precise reason they were not scored.** Inactive domains are never counted in the global average — the scores, the F1 "10 = flawless" cap, and the v0.4.5 inversion guard are all preserved. The change then triggered a deep audit campaign (one naive-user pass + four advanced-user passes) that found and fixed a series of issues across the CLI, the scoring contract, the machine outputs, and file permissions.
+
+### Show all domains, with the reason (text + JSON + Markdown + HTML)
+
+`bob.domain_scores.domain_inactive_reason()` classifies why a domain produced no actionable (OK/WARN/ALERT) finding, using a single source of truth shared by every renderer:
+
+| `reason` | Meaning |
+|---|---|
+| `info_only` | The checks ran and reported, but only informational notices. |
+| `profile_skipped` | The active profile skips every section feeding the domain (e.g. `disk` under `container`). |
+| `filtered` | Excluded by a `--check` / `--skip` filter on this run. |
+| `not_installed` | The checks ran and found the component absent. |
+
+Precedence is INFO-only → ran-but-empty (`not_installed`) → filtered → profile-skipped, computed via the runner's `_section_enabled` gate so it agrees exactly with what actually ran. Crucially **`disk` is never wrongly "not installed"**: on a real host it is active (SMART findings); only a profile that skips it yields `profile_skipped`. The text display ([bob/domain_scores.py](../bob/domain_scores.py) `render_domain_scores`) shows inactive domains dimmed with the reason instead of a score; the same data is exposed in JSON, Markdown and HTML (see ADV-1 / ADV-B1).
+
+### Naive-user pass — A / B / C / E
+
+- **A — `--check`/`--skip` mislabelled filtered domains.** `bob --check=ssh` showed `Samba / Files & Access / Updates: not installed` — false (they were filtered out, not absent). `domain_inactive_reason` now consumes the config and the `_section_enabled` gate, returning the new `filtered` reason. [bob/domain_scores.py](../bob/domain_scores.py).
+- **B — `--profile=typo` corrupted the saved config.** [bob/__main__.py](../bob/__main__.py) persisted *whatever* `--profile` value was passed (via `set_profile`) **before** validating it, so `--profile=banane` wrote `audit_profile=banane` to `config.conf` and every later run fell back to the default, silently losing the user's real `container`/`desktop` profile. Now the profile is resolved first and only a **valid** name is persisted.
+- **C — root gate jumped ahead of `--profile` validation.** `bob --profile=typo` without sudo printed *"must be run as root"* instead of reporting the bad profile. An unknown `--profile` is now surfaced **before** `require_root()` (mirroring F6's `--check`/`--skip` ordering), so the operator learns the name is wrong without a sudo round-trip. `--diff` / `--html` legitimately need root (they run an audit) and are unchanged.
+- **E — CLI polish.** Added `--english` (symmetry with `--french`; English is the default but the flag makes it explicit and overrides a saved/auto-detected `fr`). `--output` now accepts `html` and `json-full` so it is a **complete alias** of `--format` (it previously rejected both). `--check` / `--skip` tokens, `--explain` keys, and `--output` / `--format` values are now **case-insensitive** (`--check=SSH`, `--explain LIST` work). Help text + bash completion updated.
+
+### Advanced-user passes — ADV-1 / ADV-D2 / ADV-G2 / ADV-B1
+
+- **ADV-1 — JSON could not reproduce the score.** `domain_scores` exposed all 7 domains at their computed score with no active/inactive marker, so a consumer averaging them got 10 while the real headline was 9, and could not tell an absent `samba` (shown as 10) from a real 10. Each `domain_scores[d]` now carries **`active` (bool)** and **`reason` (stable code, or `null` when active)**. A consumer can now reproduce the headline (`mean(scores where active)` then capped at 9 when any deduction exists) and distinguish absent components. **Additive within schema v3 — no version bump** ([bob/json_output.py](../bob/json_output.py)).
+- **ADV-D2 — `--output` was an incomplete alias.** `--format=json-full` worked but `--output=json-full` errored. `--output=json-full` now maps to `json_mode + json_full` (folded into E).
+- **ADV-G2 — `history.jsonl` could stay world-readable.** I-5 (v0.6.1) set `0600` only at *creation*; a legacy file created before it (or by another path) stayed `0644`. The append path now `os.chmod`s the file to `0600` on every write, healing legacy loose permissions — a hardening tool must not leak its own state ([bob/history.py](../bob/history.py)).
+- **ADV-B1 — Markdown + HTML reports lacked the domain breakdown** (text + JSON had it). Both now render the per-domain table with score + status, EN+FR, via the shared format-agnostic `domain_rows()` helper ([bob/markdown_output.py](../bob/markdown_output.py), [bob/html_output.py](../bob/html_output.py)). The helper returns `[]` for engine doubles without domain support, so legacy/test callers simply omit the section.
+
+### Verified clean (the audit's negative results)
+
+Determinism (byte-identical JSON across runs), the scoring math (firewall-inactive domain cap × F1 × posture escalation), concurrency (two parallel runs leave `last_baseline.json` / `history.jsonl` uncorrupted), `LC_ALL=C` rendering (UTF-8 stdout, no encode error), `--no-color` reason lines, `--ignore` interaction (an ignored finding keeps its domain active and recomputes the score cleanly), and standalone `build_json_data` import (no circular import) were all probed and found correct.
+
+### Known design tensions (left as-is, documented)
+
+`--check=X` produces a partial-audit score that is not comparable to the full-audit baseline (the "↑ +N" trend can mislead) — pre-existing, deferred. JSON uses `alert_count`/`warning_count` while CSV/webhook keep `alerts`/`warnings` — the deliberate F9 separate-contract decision. Markdown/HTML/watch still omit the attack-surface + posture panels — out of scope. The residual empty `ignore:` header left by `--unignore` of the last key is deliberate operator-comment preservation.
+
+### Tests & compatibility
+
+**Tests** 6401 → **6437** (+36, in `tests/test_v0121_domain_display.py` + history/JSON additions). 0 regression, green under deterministic and random ordering. A full bilingual field test on a live host (text / Markdown / HTML / `--json-full` × EN/FR, plus every CLI fix) was clean. **v0.7.x remains EOL** (declared in v0.8.1); **v0.6.x remains EOL** (declared in v0.7.2).
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **fully backwards-compatible**: the JSON change is additive (new `active`/`reason` keys, schema_version still `"3"`), the new CLI flags are additive, and no existing output field changed meaning. Operators get the completed domain display + the audit fixes with no migration action.
+
+---
+
 ## [v0.12.0] — 2026-06-11
 
 **First v0.12.x release — planned BREAKING UX bundle (F1 / F2 / F4 / F6 / F9).**

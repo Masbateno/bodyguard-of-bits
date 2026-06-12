@@ -54,6 +54,10 @@ _FALLBACK_LABELS = {
     "html_output.field_kernel":        "Kernel",
     "html_output.field_timestamp":     "Timestamp",
     "html_output.heading_deductions":  "Score Deductions",
+    "domain_scores.title":             "Domain Scores",
+    "html_output.col_domain":          "Domain",
+    "html_output.col_score":           "Score",
+    "html_output.col_status":          "Status",
     "html_output.col_points":          "Points",
     "html_output.col_reason":          "Reason",
     "html_output.col_message":         "Message",
@@ -138,6 +142,8 @@ def build_html_output(
     sys_info: SystemInfo,
     t=None,
     lang: str = "en",
+    profile=None,
+    config=None,
 ) -> str:
     """Return a standalone HTML string with the full audit report.
 
@@ -204,6 +210,20 @@ def build_html_output(
     a(f"<dt>{_h(t('html_output.field_kernel'))}</dt><dd>{_h(sys_info.kernel)}</dd>")
     a(f"<dt>{_h(t('html_output.field_timestamp'))}</dt><dd>{_h(ts)}</dd>")
     a("</dl>")
+
+    # --- Domain scores (ADV-B1, v0.12.1) ---
+    from bob.domain_scores import domain_rows
+    _rows = domain_rows(engine, t, profile, config)
+    if _rows:
+        a(f"<h2>{_h(t('domain_scores.title'))}</h2>")
+        a(f"<table><thead><tr><th>{_h(t('html_output.col_domain'))}</th>"
+          f"<th>{_h(t('html_output.col_score'))}</th>"
+          f"<th>{_h(t('html_output.col_status'))}</th></tr></thead><tbody>")
+        for r in _rows:
+            _score = f"{r['score']}/10" if r["active"] else "—"
+            _status = "" if r["active"] else _h(r["reason"])
+            a(f"<tr><td>{_h(r['label'])}</td><td>{_score}</td><td>{_status}</td></tr>")
+        a("</tbody></table>")
 
     # --- Score deductions ---
     deductions = [d for d in engine.breakdown if d.points > 0]

@@ -172,7 +172,7 @@ bodyguard-of-bits/
 │   ├── registry.py            ← ServiceRegistry.load()
 │   ├── report.py              ← AuditReport, NullReport, file output; field labels i18n (v0.7.3 M-5); posture annotation propagation
 │   ├── report_markdown.py     ← MarkdownReport, HTML email (816 L); Markdown signature drift fix (v0.7.1 I-5)
-│   ├── json_output.py         ← --json / --json-full builder; **schema v2 only since v0.9.0 F-3** (`--json-v1` + `SCHEMA_V1_REQUIRED_KEYS` + `SCHEMA_V1_FULL_KEYS` + `_build_v1` + `_populate_v1_full_blocks` all removed) — posture_escalation block (v0.7.0 T1); uses engine.domain_scores cache (v0.7.4 M-7) — 350 L (net −183 from v1 retrait)
+│   ├── json_output.py         ← --json / --json-full builder; **schema v3 only** (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9 — `SCHEMA_V3_*` + `_build_v3` are the only survivors) — posture_escalation block (v0.7.0 T1); per-domain `active`/`reason` (v0.12.1); uses engine.domain_scores cache (v0.7.4 M-7)
 │   ├── csv_output.py          ← --format csv; **BREAKING v0.7.3 I-3**: column renamed "section" → "nature"
 │   ├── html_output.py         ← --html standalone export; i18n via t (v0.7.2 M-4); section descriptions (v0.8.2 T39)
 │   ├── markdown_output.py     ← --format markdown; i18n via t + level emoji prefixes (v0.7.2 M-4)
@@ -235,7 +235,7 @@ bodyguard-of-bits/
 | `registry.py` | 464 | `ServiceRegistry.load()`: bundle services.json + ~/.config/bob/services.d/ |
 | `report.py` | 458 | `AuditReport` + `NullReport`, immediate flush, ASCII art header. `NullReport` is the canonical Protocol type since v0.5.x (`bob/watch.py:_NullReport` removed); field labels i18n (v0.7.3 M-5); posture annotation propagation (v0.7.0 I-3) |
 | `report_markdown.py` | 816 | `MarkdownReport` + `send_html_email()` (multipart/alternative); XSS fix in `_safe_url` (html.escape with quote=True, v0.5.x); Markdown signature drift fix (v0.7.1 I-5); uses `_i18n_safe.make_fallback_t` since v0.8.2 |
-| `json_output.py` | 350 | `build_json_data(..., schema_version=DEFAULT_SCHEMA_VERSION="2")` — **v2-only since v0.9.0 F-3** (`SCHEMA_V1_REQUIRED_KEYS`, `SCHEMA_V1_FULL_KEYS`, `_build_v1`, `_populate_v1_full_blocks` all removed; net −183 L); `posture_escalation` block (v0.7.0 T1); uses `engine.domain_scores` cache when populated (v0.7.4 M-7). Module still validates `schema_version` arg and raises `ValueError` for any value other than `"2"` to flag drifting callers loudly. |
+| `json_output.py` | 350 | `build_json_data(..., schema_version=DEFAULT_SCHEMA_VERSION="3")` — **v3-only** (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9); `posture_escalation` block (v0.7.0 T1); per-domain `active`/`reason` (v0.12.1, ADV-1); uses `engine.domain_scores` cache when populated (v0.7.4 M-7). Module validates `schema_version` and raises `ValueError` for any value other than `"3"`. |
 | `csv_output.py` | 95 | `--format csv` formatter; **BREAKING v0.7.3 I-3**: column renamed `section` → `nature` to match the Finding field it actually carries |
 | `html_output.py` | 265 | `build_html_output()` standalone HTML (no JS, XSS-safe); i18n via `t` (v0.7.2 M-4); section descriptions (v0.8.2 T39); uses `_i18n_safe.make_fallback_t` |
 | `markdown_output.py` | 216 | `--format markdown` formatter; i18n via `t` + level emoji prefixes (v0.7.2 M-4); uses `_i18n_safe.make_fallback_t` |
@@ -489,7 +489,7 @@ level = engine.level           # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
 - Nested dicts follow the same rule
 - Breaking changes bump to `"4"` (next major)
 
-Top-level always-present keys (v3): `schema_version`, `version`, `host`, `timestamp_utc`, `score`, `score_max`, `risk`, `network_context` (object `{context: …}`), `public_ip`, `alert_count`, `warning_count`, `info_count`, `deductions`, `posture_escalation` (object `applied`/`reason_key`/`score_level`), `domain_scores` (object containing `score` + `label` + `deductions` count per domain). The v3 surface is pinned in `tests/test_json_schema_v2.py`.
+Top-level always-present keys (v3): `schema_version`, `version`, `host`, `timestamp_utc`, `score`, `score_max`, `risk`, `network_context` (object `{context: …}`), `public_ip`, `alert_count`, `warning_count`, `info_count`, `deductions`, `posture_escalation` (object `applied`/`reason_key`/`score_level`), `domain_scores` (object; per domain `score` + `label` + `deductions` + **`active` + `reason`** — the last two new in v0.12.1 so a machine consumer can tell scored from shown-but-not-scored domains and reproduce the headline average). The v3 surface is pinned in `tests/test_json_schema_v2.py`.
 
 `--json-full` additionally emits: `findings`, `services`, `open_ports`, `firewall_stack` (always when full=True), plus `hardening` and `ipv6` (only when the respective `hardening_snapshot` / `ipv6_snapshot` parameters are passed to `build_json_data`). **Caveat**: in `--json-full`, `network_context` changes type from a string (`"public"` / `"private"`) to a richer dict containing `interfaces` (list of interface objects). Clients that read `network_context` from `--json` and `--json-full` interchangeably need to type-check first.
 

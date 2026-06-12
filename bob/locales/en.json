@@ -1024,7 +1024,13 @@
     "updates": "Updates",
     "hardening": "Hardening",
     "disk": "Disk Health",
-    "firewall": "Firewall & Services"
+    "firewall": "Firewall & Services",
+    "reason": {
+      "no_action": "no action needed",
+      "not_assessed": "not assessed ({profile} profile)",
+      "filtered": "not assessed (--check/--skip)",
+      "not_installed": "not installed"
+    }
   },
   "plugin": {
     "sandbox": {
@@ -2972,6 +2978,9 @@
     "heading_deductions": "Score Deductions",
     "col_field": "Field",
     "col_value": "Value",
+    "col_domain": "Domain",
+    "col_score": "Score",
+    "col_status": "Status",
     "col_points": "Points",
     "col_reason": "Reason",
     "col_message": "Message",
@@ -3004,6 +3013,9 @@
     "field_kernel": "Kernel",
     "field_timestamp": "Timestamp",
     "heading_deductions": "Score Deductions",
+    "col_domain": "Domain",
+    "col_score": "Score",
+    "col_status": "Status",
     "col_points": "Points",
     "col_reason": "Reason",
     "col_message": "Message",

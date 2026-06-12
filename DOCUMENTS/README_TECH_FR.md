@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.12.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.12.1-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -670,17 +670,28 @@ Le champ `key` est une **clé i18n stable en notation pointée** (`<prefix>.<fin
 
 ```json
 {
-  "ssh":        { "score": 7,  "label": "SSH",                  "deductions": 3 },
-  "samba":      { "score": 10, "label": "Samba Security",        "deductions": 0 },
-  "file_perms": { "score": 10, "label": "Files & Access",        "deductions": 0 },
-  "updates":    { "score": 10, "label": "Updates",               "deductions": 0 },
-  "hardening":  { "score": 6,  "label": "Hardening",             "deductions": 4 },
-  "disk":       { "score": 9,  "label": "Disk Health",           "deductions": 1 },
-  "firewall":   { "score": 10, "label": "Firewall & Services",   "deductions": 0 }
+  "ssh":        { "score": 10, "label": "SSH",                "deductions": 0, "active": true,  "reason": null },
+  "samba":      { "score": 10, "label": "Samba Security",     "deductions": 0, "active": false, "reason": "not_installed" },
+  "file_perms": { "score": 10, "label": "Files & Access",     "deductions": 0, "active": true,  "reason": null },
+  "updates":    { "score": 10, "label": "Updates",            "deductions": 0, "active": false, "reason": "info_only" },
+  "hardening":  { "score": 9,  "label": "Hardening",          "deductions": 1, "active": true,  "reason": null },
+  "disk":       { "score": 10, "label": "Disk Health",        "deductions": 0, "active": false, "reason": "profile_skipped" },
+  "firewall":   { "score": 10, "label": "Firewall & Services","deductions": 0, "active": true,  "reason": null }
 }
 ```
 
-Les clés de domaines sont stables : `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 au total — définies dans `bob.domain_scores.DOMAINS`). Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), et `deductions` (int — total des points déduits dans ce domaine, nouveau en v2).
+Les clés de domaines sont stables : `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 au total — définies dans `bob.domain_scores.DOMAINS`). Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), `deductions` (int — total des points déduits dans ce domaine, nouveau en v2), et **`active` / `reason` (nouveau en v0.12.1)**.
+
+`active` (bool) vaut `true` quand le domaine a produit un finding actionnable (OK/WARN/ALERT) — **seuls les domaines actifs sont moyennés dans le `score` global**. Quand `active` vaut `false`, `reason` (string) explique pourquoi le domaine est affiché mais non scoré :
+
+| `reason` | Signification |
+|---|---|
+| `info_only` | Les checks ont tourné et rapporté, mais seulement de l'informatif — rien à corriger. |
+| `profile_skipped` | Le profil d'audit actif saute toutes les sections de ce domaine (ex. `disk` en profil `container`). |
+| `filtered` | Exclu par un filtre `--check` / `--skip` sur ce run. |
+| `not_installed` | Les checks ont tourné et trouvé le composant absent. |
+
+Pour un domaine actif, `reason` vaut `null`. Cela permet à un consommateur de **reproduire le headline** : `score = round(moyenne(score des domaines actifs))`, plafonné à 9 dès qu'il y a une déduction (règle F1 "10 = audit sans défaut" — voir v0.12.0).
 
 ### v3 — Clés additionnelles en mode complet (`--json-full`)
 
@@ -710,7 +721,7 @@ v1 (v0.6.x, opt-in `--json-v1`) a été retiré en v0.9.0 ; v2 (v0.7.0) a été 
 | `network_context` | string en mode court ; dict en complet | toujours dict | toujours dict |
 | `posture_escalation` | absent | présent | présent |
 | `deductions_raw` / `open_ports_all` | absent | présent (complet) | présent (complet) |
-| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` | `{ score, label, deductions }` |
+| `domain_scores[d]` | `{ score, label }` | `{ score, label, deductions }` | `{ score, label, deductions, active, reason }` |
 
 ### Guide de migration (→ v3)
 
