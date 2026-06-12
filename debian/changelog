@@ -1,3 +1,34 @@
+bodyguard-of-bits (0.12.2-1) UNRELEASED; urgency=low
+
+  * Branch-closing hardening cleanup — a whole-tool deep-audit pass + an
+    "unexplored angles" sweep before sealing the v0.12.x line. No behaviour
+    change. Audit verdict: 0 critical / 0 important. Closes the v0.12.x branch.
+  * M-1 — _DOMAIN_SECTIONS held finding-key prefixes (virt, logs) instead of
+    the real runner section names (virtualization, ufw_logging). Both real
+    sections are always-on, so the mismatch was behaviourally unreachable, but
+    domain_inactive_reason's _section_enabled check tested names that don't
+    exist and the comment falsely claimed the prefixes were section names.
+    Remapped via _PREFIX_TO_SECTION + a drift guard asserting every entry in
+    _DOMAIN_SECTIONS is a real runner._SECTIONS name.
+  * Cron name defense-in-depth — the cron name is slugged for the file path
+    (no traversal) but written verbatim into the "# name:" comment of the root
+    /etc/cron.d file. input() is line-based so an interactively-entered name
+    cannot contain a newline (this is NOT an exploitable injection), but a
+    hardening tool must not rely on that as the sole guard for a root cron
+    write: control characters are now stripped so a name can never inject a
+    second cron line regardless of source. Consistent with the already-strict
+    _validate_custom_cron. The email comment was already safe (anchored regex).
+  * Verified clean (recorded): _atomic (mkstemp+fchmod+fsync+cleanup), webhook
+    (scheme guard + credential redaction + finite timeout, no SSRF), subprocess
+    (no shell=True, LC_ALL=C, authorized_keys symlink-escape guard), log/config
+    parsers (anchored, no ReDoS), i18n 1975/1975 parity, no key-literal drift,
+    profile .conf parser (extends bounded at 8 + graceful fallback).
+  * Tests 6437 -> 6442 (+5). 0 regression.
+  * v0.7.x remains EOL (declared v0.8.1); v0.6.x remains EOL (v0.7.2).
+  * Upgrade: pipx upgrade bodyguard-of-bits. No behaviour change.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 12 Jun 2026 16:00:00 +0200
+
 bodyguard-of-bits (0.12.1-1) UNRELEASED; urgency=low
 
   * First v0.12.x hardening patch — domain-display completeness + a

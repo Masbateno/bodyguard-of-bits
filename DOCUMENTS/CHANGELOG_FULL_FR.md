@@ -6,6 +6,30 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.12.2] — 12-06-2026
+
+**Cleanup hardening de clôture de branche — une passe deep-audit du tool entier + un sweep "angles inexplorés" avant de sceller la ligne v0.12.x. Aucun changement de comportement.**
+
+Après la campagne d'audit v0.12.1 (naive + 4 tours advanced sur les changements récents), un audit deep hardening par sub-agent a balayé le code **plus large, moins récemment touché**, et un sweep de suivi a sondé des angles que rien n'avait vérifiés (injection Markdown, génération cron, en-têtes email, parsing de profils). Verdict : **CLOSE THE BRANCH** — 0 critique, 0 important. Deux petits items corrigés pour sceller propre ; tout le reste vérifié solide.
+
+### M-1 — `_DOMAIN_SECTIONS` contenait des préfixes de clés, pas des noms de sections réels
+
+`bob/domain_scores.py` construit `_DOMAIN_SECTIONS` (domaine → sections contributrices) depuis `_PREFIX_TO_DOMAIN`, puis passe ces noms à `runner._section_enabled` dans `domain_inactive_reason` pour décider si un domaine est *skippé par le profil*. La plupart des préfixes de clés égalent le nom de section, mais deux non — `virt` (section réelle `virtualization`) et `logs` (section réelle `ufw_logging`). Comme les deux sections réelles sont **always-on** (jamais filtrables/skippables), le domaine hardening est toujours actif et l'écart était **inatteignable** — mais le gate testait des noms inexistants et le commentaire prétendait à tort que les préfixes *étaient* des noms de sections. Corrigé avec un petit remap `_PREFIX_TO_SECTION`, pinné par un nouveau garde de drift (`tests/test_v0122_branch_close.py`) qui asserte que **chaque** nom dans `_DOMAIN_SECTIONS` est une vraie entrée `runner._SECTIONS`.
+
+### Nom de cron — défense-en-profondeur sur l'écriture cron root
+
+`bob/cron/_install.py` slugue le nom pour le chemin (`/etc/cron.d/bob-<slug>` — pas de traversal) mais écrit le nom **brut** dans le commentaire `# name:` du fichier cron root généré. L'audit a signalé qu'un newline dans le nom injecterait une 2e ligne. Vérification faite, **ce n'est PAS une injection exploitable** : le nom vient de `prompt_wizard` → `input(label).strip()`, et `input()` est line-based, donc un nom saisi interactivement ne peut pas contenir de newline. Rapporté honnêtement comme défense-en-profondeur, pas un bug live. Mais worth doing : un outil de hardening ne doit pas dépendre de la sémantique line de `input()` comme *seule* garde pour une écriture cron root — les caractères de contrôle sont maintenant strippés du nom avant le commentaire, rendant l'injection impossible quelle que soit la source. Cohérent avec `_validate_custom_cron` déjà strict. La ligne email était déjà sûre (`_EMAIL_RE` anchored).
+
+### Vérifié propre (enregistré pour le prochain auditeur)
+
+`_atomic.py` (mkstemp + fchmod + fsync + cleanup sur erreur) · `webhook.py` (http/https-only + redaction credentials + timeout fini, pas de SSRF) · subprocess (pas de `shell=True`, `LC_ALL=C`, garde symlink `authorized_keys → /etc/shadow`) · `fixes.py` (cmd author-controlled + rejet shell-metachar) · parsers logs/config (regex anchored, pas de ReDoS) · i18n (1975/1975 parité) · pas de drift de littéral · parser profils `.conf` (extends borné à 8 + fallback) · export Markdown (`_md_escape` échappe `|` et `\n` ; `*`/backtick non échappés = NIT cosmétique sur strings author-controlled).
+
+### Tests & compatibilité
+
+**Tests** 6437 → **6442** (+5). 0 régression, vert déterministe + aléatoire. **v0.7.x reste EOL** (v0.8.1) ; **v0.6.x reste EOL** (v0.7.2). Cette release **clôt la branche v0.12.x**. Upgrade : `pipx upgrade bodyguard-of-bits` — aucun changement de comportement.
+
+---
+
 ## [v0.12.1] — 12-06-2026
 
 **Premier patch hardening v0.12.x — complétude de l'affichage des domaines + campagne d'audit naive/advanced. Additif et entièrement rétro-compatible.**

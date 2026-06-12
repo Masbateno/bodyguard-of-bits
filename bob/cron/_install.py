@@ -145,6 +145,14 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     if not slug:
         print(f"  ✖ {t('install_cron.invalid_name')}")
         return 1
+    # Defense-in-depth (v0.12.2): the name is sanitised to a slug for the file
+    # path, but is also written verbatim into the "# name:" comment of the root
+    # cron file. input() is line-based, so an interactively-entered name cannot
+    # contain a newline today — but a hardening tool must not rely on that as
+    # the SOLE guard for a root /etc/cron.d write. Strip control characters so
+    # a name can never inject a second line into the cron file regardless of
+    # how it was obtained.
+    raw_name = re.sub(r"[\x00-\x1f\x7f]+", " ", raw_name).strip() or slug
 
     # --- Step 2: Schedule type ---
     print()

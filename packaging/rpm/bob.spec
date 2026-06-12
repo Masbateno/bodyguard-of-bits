@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.12.1
+Version:        0.12.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,22 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Jun 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.12.2-1
+- Branch-closing hardening cleanup — whole-tool deep-audit + unexplored-angles
+  sweep. No behaviour change. Audit verdict: 0 critical / 0 important. Closes
+  the v0.12.x branch.
+- M-1: _DOMAIN_SECTIONS held key prefixes (virt, logs) instead of the real
+  runner section names (virtualization, ufw_logging). Unreachable (both
+  always-on) but inaccurate; remapped via _PREFIX_TO_SECTION + a drift guard
+  asserting every entry is a real runner._SECTIONS name.
+- Cron name defense-in-depth: the name is slugged for the file path but written
+  verbatim into the "# name:" comment of the root cron file. input() is
+  line-based so NOT an exploitable injection, but control chars are now stripped
+  so a name can never inject a second cron line regardless of source.
+- Verified clean: _atomic, webhook (scheme+redaction+timeout), subprocess (no
+  shell=True, LC_ALL=C, symlink guard), parsers (no ReDoS), i18n parity, no
+  key-literal drift, profile .conf parser (extends bounded).
+- Tests 6437 -> 6442 (+5). 0 regression.
 * Fri Jun 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.12.1-1
 - First v0.12.x hardening patch — domain-display completeness + a
   naive/advanced-user audit campaign. Additive and fully backwards-compatible.

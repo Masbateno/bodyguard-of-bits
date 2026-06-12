@@ -6,6 +6,40 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.12.2] — 2026-06-12
+
+**Branch-closing hardening cleanup — a whole-tool deep-audit pass plus an "unexplored angles" sweep before sealing the v0.12.x line. No behaviour change.**
+
+After the v0.12.1 audit campaign (naive + four advanced rounds on the recent changes), a sub-agent deep hardening audit swept the **broader, less-recently-touched** codebase, and a follow-up sweep probed angles nothing had checked (Markdown injection, cron generation, email headers, profile parsing). The verdict was **CLOSE THE BRANCH** — 0 critical, 0 important. Two small items were fixed to seal it clean; everything else verified solid.
+
+### M-1 — `_DOMAIN_SECTIONS` held key prefixes, not real section names
+
+`bob/domain_scores.py` builds `_DOMAIN_SECTIONS` (domain → contributing sections) from `_PREFIX_TO_DOMAIN`, then feeds those names to `runner._section_enabled` inside `domain_inactive_reason` to decide whether a domain was *profile-skipped*. Most finding-key prefixes equal the runner section name, but two did not — `virt` (real section `virtualization`) and `logs` (real section `ufw_logging`). Because both real sections are **always-on** (they can never be `--check`/`--skip`-filtered or profile-skipped), the hardening domain is always active and the mismatch was behaviourally **unreachable** — but it made the gate test against names that don't exist, and the comment falsely claimed "the key prefixes are also the runner section names". Fixed with a small `_PREFIX_TO_SECTION` remap so `_DOMAIN_SECTIONS` holds real section names, pinned by a new drift guard (`tests/test_v0122_branch_close.py`) that asserts **every** name in `_DOMAIN_SECTIONS` is a real `runner._SECTIONS` entry — so any future prefix/section divergence fails CI.
+
+### Cron name — defense-in-depth on the root cron write
+
+`bob/cron/_install.py` slugs the cron name for the file path (`/etc/cron.d/bob-<slug>`, `/usr/local/bin/bob-<slug>` — no path traversal) but writes the name **verbatim** into the `# name:` comment of the generated root cron file. The audit flagged that a newline in the name would inject a second line into the cron file. On inspection this is **not an exploitable injection**: the name comes from `prompt_wizard` → `input(label).strip()`, and `input()` is line-based, so an interactively-entered name cannot contain a newline (a piped multi-line value splits across separate prompts). It is reported honestly as defense-in-depth, not a live bug. Still worth doing: a hardening tool must not rely on `input()`'s line semantics as the *sole* guard for a root `/etc/cron.d` write — so control characters are now stripped from the name (`re.sub(r"[\x00-\x1f\x7f]+", " ", raw_name)`) before the comment, making injection impossible regardless of how the name was obtained. This matches the already-strict `_validate_custom_cron` (which rejects any non-5-field custom expression). The email comment line was already safe (anchored `_EMAIL_RE`, no newlines).
+
+### Verified clean (recorded so the next auditor can skip)
+
+- **`bob/_atomic.py`** — unique `mkstemp` tmp, `fchmod` before write, `fsync(fd)` + `fsync(dir_fd)`, tmp cleanup on `BaseException`, correct mode contract.
+- **`bob/webhook.py`** — http/https-only scheme guard (case-insensitive), `BOB_WEBHOOK_ALLOW_INSECURE` opt-out, credential redaction via anchored regex (original URL POSTed, only display redacted), finite 10s timeout. No `file://`/SSRF beyond the operator's own configured URL.
+- **Subprocess** (`bob/checks/_run.py`) — no `shell=True` in production; `list(args)`, forced `LC_ALL=C`, finite timeout; `_is_safe_user_path` defends the `~/.ssh/authorized_keys → /etc/shadow` symlink escape.
+- **`bob/fixes.py`** — `--fix` cmd strings are author-controlled; `shlex.split` + shell-metachar rejection before any exec.
+- **Log/config parsers** — anchored regexes, no nested quantifiers (no ReDoS), `re.escape` on interpolated field names, bounded match lengths.
+- **i18n** — 1975/1975 EN/FR key parity, 0 placeholder mismatches.
+- **Drift** — no legacy section literals; the v0.10.2 `firewall_iptables.input_accept` posture literal still matches the emitted key; no bare `except:`.
+- **Profile `.conf` parser** — extends chain bounded at `_MAX_EXTENDS_DEPTH = 8`, malformed/missing profile falls back to `server` without crashing.
+- **Markdown export** — `_md_escape` escapes `|` and `\n` (no table-structure break); the new ADV-B1 domain rows use it. (`*`/backtick are not escaped — a purely cosmetic rendering nicety on author-controlled strings, left as a NIT.)
+
+### Tests & compatibility
+
+**Tests** 6437 → **6442** (+5, in `tests/test_v0122_branch_close.py`). 0 regression, green under deterministic and random ordering. **v0.7.x remains EOL** (declared v0.8.1); **v0.6.x remains EOL** (v0.7.2). This release **closes the v0.12.x branch**.
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — no behaviour change, no migration action. The two fixes are internal hardening (the domain-section remap is unreachable-but-correct; the cron-name strip is defense-in-depth on a path `input()` already guards).
+
+---
+
 ## [v0.12.1] — 2026-06-12
 
 **First v0.12.x hardening patch — domain-display completeness + a naive/advanced-user audit campaign. Additive and fully backwards-compatible.**

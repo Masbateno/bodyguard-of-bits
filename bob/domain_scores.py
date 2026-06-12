@@ -132,14 +132,22 @@ def key_to_domain(key: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 # Domain → contributing sections (inverse of _PREFIX_TO_DOMAIN)
 # ---------------------------------------------------------------------------
-# v0.12.1: used to explain WHY an inactive domain is inactive. The key
-# prefixes in _PREFIX_TO_DOMAIN are also the runner section names, so a
-# domain counts as "skipped by the active profile" when every section that
-# could feed it is in the profile's skip_sections. Built programmatically so
-# it can never drift from _PREFIX_TO_DOMAIN.
+# v0.12.1: used to explain WHY an inactive domain is inactive — a domain counts
+# as "skipped by the active profile" when every section that could feed it is in
+# the profile's skip_sections (checked via runner._section_enabled).
+#
+# Most finding-key prefixes ARE the runner section name, but a few differ; M-1
+# (v0.12.2) maps those so _DOMAIN_SECTIONS holds real section names rather than
+# key prefixes. (Both differing sections — virtualization, ufw_logging — are
+# always-on, so the mismatch was behaviourally unreachable; this fixes the
+# latent inaccuracy + the comment claim.)
+_PREFIX_TO_SECTION: dict[str, str] = {
+    "virt": "virtualization",
+    "logs": "ufw_logging",
+}
 _DOMAIN_SECTIONS: dict[str, set[str]] = {}
 for _prefix, _dom in _PREFIX_TO_DOMAIN.items():
-    _DOMAIN_SECTIONS.setdefault(_dom, set()).add(_prefix)
+    _DOMAIN_SECTIONS.setdefault(_dom, set()).add(_PREFIX_TO_SECTION.get(_prefix, _prefix))
 del _prefix, _dom
 
 # Inactive-domain reason codes (v0.12.1). A domain with no actionable
