@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.13.0] — 12-06-2026
+## [v0.13.0] — 20-06-2026
 
 **Première release v0.13.x — extension de scope. Deux nouveaux checks INFO-only. Additif, non-BREAKING, sans changement de score.**
 

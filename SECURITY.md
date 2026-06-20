@@ -18,7 +18,7 @@ are not backported.
 
 Patches release as `0.13.x+1`. A breaking change bumps the minor (`0.14.0`).
 
-**v0.12.x is end-of-life as of 2026-06-12** (the day v0.13.0 ships and the EOL
+**v0.12.x is end-of-life as of 2026-06-20** (the day v0.13.0 ships and the EOL
 is formally declared, per the "latest minor line only" policy above). No
 security fixes will be backported to v0.12.x. Users on v0.12.x must
 `pipx upgrade bodyguard-of-bits` to v0.13.x to receive patches — the upgrade is

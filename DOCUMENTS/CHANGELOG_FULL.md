@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.13.0] — 2026-06-12
+## [v0.13.0] — 2026-06-20
 
 **First v0.13.x release — scope expansion. Two new INFO-only hardening checks. Additive, non-BREAKING, no score change.**
 

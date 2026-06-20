@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Fri Jun 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.0-1
+* Sat Jun 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.0-1
 - First v0.13.x release — scope expansion: two new INFO-only hardening checks.
   First real coverage growth after the long internal-hardening cycle. Additive,
   non-BREAKING, no score change.
