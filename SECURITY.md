@@ -7,16 +7,25 @@
 Security patches are issued for the latest minor release line only. Older minors
 are not backported.
 
-| Version   | Supported          |
-|-----------|--------------------|
-| 0.8.x     | ✅ current          |
-| 0.7.x     | ❌ end of life      |
-| 0.6.x     | ❌ end of life      |
-| 0.5.x     | ❌ end of life      |
-| 0.4.x     | ❌ end of life      |
-| < 0.4.0   | ❌ end of life      |
+| Version        | Supported          |
+|----------------|--------------------|
+| 0.13.x         | ✅ current          |
+| 0.12.x         | ❌ end of life      |
+| 0.8.x – 0.11.x | ❌ end of life      |
+| 0.7.x          | ❌ end of life      |
+| 0.6.x          | ❌ end of life      |
+| ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.8.x+1`. A breaking change bumps the minor (`0.9.0`).
+Patches release as `0.13.x+1`. A breaking change bumps the minor (`0.14.0`).
+
+**v0.12.x is end-of-life as of 2026-06-12** (the day v0.13.0 ships and the EOL
+is formally declared, per the "latest minor line only" policy above). No
+security fixes will be backported to v0.12.x. Users on v0.12.x must
+`pipx upgrade bodyguard-of-bits` to v0.13.x to receive patches — the upgrade is
+fully backwards-compatible (v0.13.0 only *adds* two INFO-only checks; no
+existing output field or exit code changed). The v0.8.x – v0.11.x lines are
+likewise end-of-life, each superseded by the next minor; v0.13.x is the only
+supported line.
 
 **v0.7.x is end-of-life as of 2026-06-05** (the day v0.8.1 ships and the EOL is
 formally declared, mirroring the pattern that retired v0.6.x in v0.7.2). No

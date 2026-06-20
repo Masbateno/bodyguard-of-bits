@@ -6,6 +6,34 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.13.0] — 12-06-2026
+
+**Première release v0.13.x — extension de scope. Deux nouveaux checks INFO-only. Additif, non-BREAKING, sans changement de score.**
+
+Après un long cycle de durcissement interne (v0.5.x–v0.12.x), v0.13.0 est la **première vraie croissance de couverture** de BOB — exploitant deux surfaces documentées, déterministes, offline-safe que rien n'utilisait : la métrique d'exposition par service de systemd, et la posture d'isolation propre d'un conteneur. Les deux sont conçus conservativement (INFO-only, aucune déduction) pour pouvoir shipper *sans* signal terrain, laissant la calibration du scoring pour plus tard.
+
+### Durcissement des services — `systemd-analyze security`
+
+[bob/checks/systemd_hardening.py](../bob/checks/systemd_hardening.py) lance `systemd-analyze security --json=short` restreint aux services **en cours** (intersection avec `systemctl list-units --state=running`) et remonte : un résumé (compte par prédicat UNSAFE/EXPOSED/OK), les services en cours les moins durcis (top 5), et un pointeur `systemd-analyze security <unit>`. **Aucune déduction, par design** : systemd ship la grande majorité des units non-durcies — c'est l'*état normal par défaut* d'un hôte Linux, pas une mauvaise config choisie, et la doc systemd qualifie le score d'exposition de guide *relatif*, explicitement pas un verdict de vulnérabilité. Déduire dessus serait du bruit sur chaque machine et violerait le cadrage A1/A2. Une déduction étroite défendable (unit *écrite par l'admin* dans `/etc/systemd/system` à exposition UNSAFE) est différée au signal terrain. Nouvelle section `systemd_hardening` (groupe SYSTEM HARDENING, domaine hardening). Field-testé live EN+FR (44 services évalués, score inchangé).
+
+### Posture de sécurité du conteneur
+
+[bob/checks/container_security.py](../bob/checks/container_security.py) ne s'exécute que **dans un conteneur** (section supprimée sur un hôte normal via `skip_if`). Détection : `systemd-detect-virt`, `/.dockerenv`, `/run/.containerenv`, `/proc/1/cgroup`. Lectures (interfaces noyau documentées, offline) : **capabilities** (`/proc/self/status` CapBnd → détection privilégié/CAP_SYS_ADMIN + liste des caps dangereuses, bitmask parsé en interne sans `capsh`), **seccomp**, **user namespace** (`/proc/self/uid_map` ; un map non-identité = root du conteneur ≠ root de l'hôte, donc le warning « root » est correctement supprimé), **rootfs en écriture** (`/proc/mounts`). INFO-only dans cette première version — une vraie déduction WARN pour un conteneur privilégié est le fast-follow évident une fois le signal runtime accumulé. Nouvelle section `container_security` (groupe SYSTEM HARDENING, domaine hardening).
+
+### Validation
+
+Le check systemd a tourné live sur un hôte réel, EN+FR. Le check conteneur — qui par définition ne peut pas s'exécuter sur un hôte non-conteneur — a été validé contre de **vraies données noyau `/proc` dans des user namespaces Linux** via `unshare` : contexte privilégié (CapBnd full → privilégié + toutes caps dangereuses), non-privilégié (`setpriv` drop → `caps_restricted`), seccomp désactivé, et la branche subtile **userns-actif** (root présent mais uid_map non-identité → warning root-hôte correctement *non* émis) tous confirmés sur du réel, et la section complète rendue end-to-end EN+FR dans le namespace. (Aucun runtime conteneur requis — `unshare` exerce les mêmes primitives noyau. Aparté robustesse sous le mapping userns artificiel : un check `ddns` sans rapport a levé une `PermissionError` non catchée sur un fichier `/root` illisible et a aborté le run — artefact du userns, pas une réalité conteneur ; noté comme edge pré-existant pour une future passe.)
+
+### Tests, EOL & compatibilité
+
+Compte de sections **35 → 36**. **Tests** 6442 → **6461** (+19 : 7 systemd + 12 conteneur). 0 régression.
+
+**Fin de vie** : selon la politique « patchs pour la ligne minor la plus récente uniquement », **v0.12.x est maintenant déclarée EOL** au ship de v0.13.0 ; les lignes v0.8.x–v0.11.x sont également EOL ; **v0.13.x est la seule ligne supportée**. v0.7.x reste EOL (v0.8.1), v0.6.x reste EOL (v0.7.2). SECURITY.md / SECURITY_FR.md mis à jour.
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **entièrement rétro-compatible** : deux sections INFO-only ajoutées ; aucun champ de sortie, clé JSON, score ou code de sortie existant ne change. La section conteneur n'apparaît que dans un conteneur.
+
+---
+
 ## [v0.12.2] — 12-06-2026
 
 **Cleanup hardening de clôture de branche — une passe deep-audit du tool entier + un sweep "angles inexplorés" avant de sceller la ligne v0.12.x. Aucun changement de comportement.**

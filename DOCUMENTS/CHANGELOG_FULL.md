@@ -6,6 +6,47 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.13.0] — 2026-06-12
+
+**First v0.13.x release — scope expansion. Two new INFO-only hardening checks. Additive, non-BREAKING, no score change.**
+
+After a long internal-hardening cycle (v0.5.x–v0.12.x: audits, contract work, perceived-quality fixes), v0.13.0 is BOB's **first real coverage growth** — exploiting two well-documented, deterministic, offline-safe surfaces that nothing in the tool tapped: systemd's per-service exposure metric and a container's own isolation posture. Both are designed conservatively (INFO-only, no deduction) so they can ship *without* field signal, leaving the scoring calibration for later.
+
+### Service hardening — `systemd-analyze security`
+
+[bob/checks/systemd_hardening.py](../bob/checks/systemd_hardening.py) runs `systemd-analyze security --json=short` and scopes it to the host's **running** service units (intersected with `systemctl list-units --state=running`). It surfaces:
+
+- a summary: `{total} running service(s) scored — {n} UNSAFE, {n} EXPOSED, {n} OK/medium`;
+- the least-hardened running services (top 5, worst exposure first) with their score + predicate;
+- a pointer to `systemd-analyze security <unit>` for the per-setting breakdown.
+
+**No deduction, by design.** systemd ships the large majority of units unhardened (no `NoNewPrivileges`, no `ProtectSystem`, full capability bounding set) — that is the *normal default state* of a Linux host, not a misconfiguration the admin chose, and systemd's own documentation frames the exposure score as a relative guide, explicitly *not* a vulnerability verdict. Deducting on it would be noise on every machine and would violate BOB's "audit configuration hardening, don't over-claim" framing (A1/A2). A defensible narrow deduction (e.g. an *admin-authored* unit in `/etc/systemd/system` at UNSAFE exposure — the analog of the existing systemd-timers check) is deferred until real-world signal. New section `systemd_hardening` (SYSTEM HARDENING group, hardening domain). Field-tested live EN+FR on a real host (44 running services scored, score unchanged).
+
+### Container security posture
+
+[bob/checks/container_security.py](../bob/checks/container_security.py) runs **only when BOB is inside a container** — the entire section is suppressed on a normal host (`skip_if=lambda s: not s.in_container`). Detection covers `systemd-detect-virt --container`, `/.dockerenv`, `/run/.containerenv`, and `/proc/1/cgroup` markers (docker/containerd/lxc/kubepods). When in a container it reads the container's own isolation from documented, offline kernel interfaces:
+
+- **Capabilities** — `/proc/self/status` `CapBnd` bitmask → **privileged / CAP_SYS_ADMIN** detection (the strongest container-escape signal; Docker's default set drops it) plus a list of held dangerous capabilities (CAP_SYS_ADMIN, CAP_SYS_MODULE, CAP_SYS_PTRACE, CAP_SYS_RAWIO, CAP_NET_ADMIN, CAP_DAC_READ_SEARCH). The bitmask is parsed in-process (no `capsh` dependency, consistent with BOB's zero-runtime-deps stance).
+- **Seccomp** — `/proc/self/status` `Seccomp` (0 = no filter).
+- **User namespace** — `/proc/self/uid_map`; a non-identity map means root in the container does **not** map to root on the host (so the "running as root" warning is correctly suppressed).
+- **Writable rootfs** — the `/` mount options in `/proc/mounts`.
+
+INFO-only in this first version — a real WARN deduction for a privileged container (a genuine, admin-chosen isolation regression) is the obvious fast-follow once it can accrue runtime signal. New section `container_security` (SYSTEM HARDENING group, hardening domain).
+
+### Validation
+
+The systemd check ran live on a real host, EN+FR. The container check — which by definition cannot be exercised on a non-container host — was validated against **real kernel `/proc` data inside Linux user namespaces** via `unshare --user --map-root-user --mount`: a privileged context (full `CapBnd 000001ffffffffff` → privileged + all dangerous caps), a non-privileged one (`setpriv --bounding-set` drop → `caps_restricted`), seccomp-disabled, and the subtle **userns-active branch** (root present but `uid_map` non-identity → the host-root warning correctly *not* emitted) were all confirmed on real data, and the full section rendered end-to-end EN+FR inside the namespace. (No container runtime needed — `unshare` exercises the same kernel primitives. A robustness aside surfaced under the artificial userns mapping: an unrelated `ddns` check raised an uncaught `PermissionError` on an unreadable `/root` file and aborted the run — a userns artifact, not a container reality since a real container runs as real root; noted as a pre-existing edge for a future hardening pass.)
+
+### Tests, EOL & compatibility
+
+Section count **35 → 36**. **Tests** 6442 → **6461** (+19: 7 in `tests/test_systemd_hardening.py`, 12 in `tests/test_container_security.py`). 0 regression, green under deterministic and random ordering.
+
+**End-of-life**: per the "patches for the latest minor line only" policy, **v0.12.x is now declared EOL** as v0.13.0 ships; the v0.8.x–v0.11.x lines are likewise EOL (each superseded by the next minor); **v0.13.x is the only supported line**. v0.7.x remains EOL (v0.8.1), v0.6.x remains EOL (v0.7.2). SECURITY.md / SECURITY_FR.md updated.
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **fully backwards-compatible**: two INFO-only sections are added; no existing output field, JSON key, score, or exit code changed. The container section only appears when BOB runs inside a container.
+
+---
+
 ## [v0.12.2] — 2026-06-12
 
 **Branch-closing hardening cleanup — a whole-tool deep-audit pass plus an "unexplored angles" sweep before sealing the v0.12.x line. No behaviour change.**

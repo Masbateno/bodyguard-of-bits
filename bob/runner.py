@@ -67,6 +67,8 @@ from bob.checks.fail2ban import Fail2banSnapshot, check_fail2ban
 from bob.checks.rootkit import RootkitSnapshot, check_rootkit
 from bob.checks.ssl_certs import SslCertsSnapshot, check_ssl_certs
 from bob.checks.systemd_timers import SystemdTimersSnapshot, check_systemd_timers
+from bob.checks.systemd_hardening import ServiceHardeningSnapshot, check_service_hardening
+from bob.checks.container_security import ContainerSecuritySnapshot, check_container_security
 from bob.checks.firmware import FirmwareSnapshot, check_firmware
 from bob.plugin_checks import load_plugin_checks
 
@@ -114,6 +116,8 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("mac_policy",        False),
     _Section("cron",              False),
     _Section("services_health",   False),
+    _Section("systemd_hardening", False),
+    _Section("container_security", False),
     _Section("updates",           False),
     _Section("umask",             False),
     _Section("memory",            False),
@@ -715,6 +719,15 @@ def run_checks(
     # ---- CHECK 16 — Service state audit ----
     services_state_snapshot = ServicesStateSnapshot.from_system()
     _sec("services_health", services_state_snapshot, check_services_state)
+
+    # ---- CHECK 46 — Service hardening (systemd-analyze security) ----
+    service_hardening_snapshot = ServiceHardeningSnapshot.from_system()
+    _sec("systemd_hardening", service_hardening_snapshot, check_service_hardening)
+
+    # ---- CHECK 47 — Container self-hardening posture (only inside a container) ----
+    container_security_snapshot = ContainerSecuritySnapshot.from_system()
+    _sec("container_security", container_security_snapshot, check_container_security,
+         skip_if=lambda s: not s.in_container)
 
     # ---- CHECK 13 — System updates ----
     updates_snapshot = UpdatesSnapshot.from_system()

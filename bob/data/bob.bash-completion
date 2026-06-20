@@ -41,10 +41,10 @@ _bob() {
     fi
 
     # Authoritative list of filterable sections — keep in sync with
-    # bob/runner.py::_ALL_SECTIONS (34 entries; matches `bob --check=list`).
+    # bob/runner.py::_ALL_SECTIONS (36 entries; matches `bob --check=list`).
     # Core checks (firewall, ports, services, logs) always run and are
     # intentionally absent from this list.
-    local _SECTIONS="auditd auth_log backup clamav cron desktop_apps disk docker_hardening fail2ban file_integrity file_perms firewall_iptables firmware hardening ipv6 kernel_hardening kernel_modules log_rotation mac_policy memory ntp password_policy rootkit samba secure_boot services_health smtp ssh ssl_certs suid_audit systemd_timers umask updates user_accounts"
+    local _SECTIONS="auditd auth_log backup clamav container_security cron desktop_apps disk docker_hardening fail2ban file_integrity file_perms firewall_iptables firmware hardening ipv6 kernel_hardening kernel_modules log_rotation mac_policy memory ntp password_policy rootkit samba secure_boot services_health smtp ssh ssl_certs suid_audit systemd_hardening systemd_timers umask updates user_accounts"
 
     # Handle -l N (--log-days short form) — suggest common values
     if [[ "${prev}" == "-l" ]]; then

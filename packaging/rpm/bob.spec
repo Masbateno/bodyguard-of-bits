@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.12.2
+Version:        0.13.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,26 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Jun 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.0-1
+- First v0.13.x release — scope expansion: two new INFO-only hardening checks.
+  First real coverage growth after the long internal-hardening cycle. Additive,
+  non-BREAKING, no score change.
+- Service hardening (systemd-analyze security) — new section systemd_hardening.
+  Surfaces the systemd exposure score of running services (--json=short, scoped
+  to running units): summary by predicate (UNSAFE/EXPOSED/OK) + least-hardened
+  services + pointer to `systemd-analyze security <unit>`. No deduction by
+  design (unhardened-by-default is the normal state, not a misconfig; a narrow
+  admin-authored-unit deduction is deferred to signal). Field-tested live EN+FR.
+- Container security posture — new section container_security, run only inside a
+  container (suppressed on a host). Reads CapBnd → privileged/CAP_SYS_ADMIN
+  detection, seccomp, user namespace (uid_map), writable rootfs from /proc.
+  Detection via systemd-detect-virt / .dockerenv / .containerenv / cgroup.
+  INFO-only (privileged-container WARN is a fast-follow). Validated against real
+  kernel /proc data inside Linux user namespaces (unshare), EN+FR.
+- Section count 35 -> 36. Tests 6442 -> 6461 (+19). 0 regression.
+- EOL: v0.12.x is now declared EOL (latest-minor-line-only policy); v0.8.x-
+  v0.11.x likewise EOL; v0.13.x is the only supported line. v0.7.x / v0.6.x
+  remain EOL.
 * Fri Jun 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.12.2-1
 - Branch-closing hardening cleanup — whole-tool deep-audit + unexplored-angles
   sweep. No behaviour change. Audit verdict: 0 critical / 0 important. Closes

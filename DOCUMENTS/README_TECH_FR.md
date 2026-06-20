@@ -3,13 +3,13 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.12.2-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.13.0-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
 
-BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 34 sections de vérification sur 7 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
+BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 36 sections de vérification sur 7 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
 ---
 
@@ -52,6 +52,8 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Audit firmware & microcode** — `fwupdmgr` firmware device en attente ; paquet microcode CPU (Intel/AMD) ; WARN −1 pt si absent ou obsolète
 - **Expiration certificats TLS/SSL** — analyse Let's Encrypt, `/etc/ssl/private`, directives nginx/apache2/postfix ; expiré → ALERT −2 pts ; <7 j → ALERT −2 pts ; <30 j → WARN −1 pt ; total plafonné à −4 pts ; liens symboliques cassés gérés
 - **Sécurité timers systemd** — curl/wget pipé vers un shell dans ExecStart → WARN −2 pts ; scripts world-writable dans ExecStart → WARN −1 pt ; timers root créés par l'utilisateur sans `User=` → INFO
+- **Durcissement des services (`systemd-analyze security`)** — remonte le score d'exposition systemd des services en cours (NoNewPrivileges, ProtectSystem, capability bounding, namespacing…) ; résumé INFO uniquement (compte par prédicat + services en cours les moins durcis + pointeur `systemd-analyze security <unit>`), **aucune déduction** — une exposition élevée par défaut est l'état normal d'un hôte Linux, pas une mauvaise configuration choisie (v0.13.0)
+- **Posture de sécurité du conteneur** — quand BOB tourne *dans* un conteneur, lit l'isolation du conteneur depuis les interfaces noyau (jeu de capabilities → détection privilégié / CAP_SYS_ADMIN, mode seccomp, mapping user namespace, rootfs en écriture) ; la section entière est supprimée hors conteneur. INFO uniquement en v0.13.0 (une vraie déduction pour un conteneur privilégié est un fast-follow une fois validée en runtime) (v0.13.0)
 
 ### Détection & surveillance
 

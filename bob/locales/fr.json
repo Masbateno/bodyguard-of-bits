@@ -68,6 +68,8 @@
     "auth_log": "ANALYSE DES CONNEXIONS SSH",
     "ssl_certs": "EXPIRATION DES CERTIFICATS TLS/SSL",
     "systemd_timers": "AUDIT DES TIMERS SYSTEMD",
+    "systemd_hardening": "DURCISSEMENT DES SERVICES (SYSTEMD)",
+    "container_security": "POSTURE DE SÉCURITÉ DU CONTENEUR",
     "firmware": "AUDIT FIRMWARE & MICROCODE",
     "descriptions": {
       "auditd": "Démon d'audit Linux (auditd) — règles, état du service, surveillance fichiers sensibles",
@@ -97,6 +99,8 @@
       "ssl_certs": "Expiration certificats TLS/SSL — Let's Encrypt, nginx, apache, postfix",
       "suid_audit": "Binaires SUID/SGID — entrées inattendues vs whitelist",
       "systemd_timers": "Timers systemd — motifs risqués + permissions",
+      "systemd_hardening": "Durcissement des services — exposition systemd-analyze des services en cours",
+      "container_security": "Sécurité conteneur — capabilities, seccomp, userns, rootfs (uniquement dans un conteneur)",
       "umask": "Umask système — valeur par défaut /etc/login.defs",
       "updates": "Mises à jour de paquets — cache APT, sécurité/réguliers en attente, unattended-upgrades",
       "user_accounts": "Comptes utilisateurs — collisions UID 0, mots de passe vides, comptes système",
@@ -2905,6 +2909,23 @@
     "world_writable_reason": "{count} script(s) world-writable dans ExecStart d'un timer systemd",
     "user_created_root": "{count} timer(s) créés manuellement dans /etc/systemd/system/ s'exécutant en root : {units}",
     "ok": "Les {count} timer(s) systemd semblent sains"
+  },
+  "systemd_hardening": {
+    "no_tool": "systemd-analyze indisponible — analyse du durcissement des services ignorée",
+    "none": "Aucun service en cours d'exécution à analyser pour le durcissement systemd",
+    "summary": "{total} service(s) en cours évalué(s) par systemd-analyze security — {unsafe} UNSAFE, {exposed} EXPOSED, {lower} OK/moyen",
+    "summary_detail": "Le score d'exposition de systemd-analyze est un guide relatif de durcissement — un score élevé est le défaut courant et ne signifie pas en soi qu'un service est vulnérable. Inspectez une unit avec : systemd-analyze security <unit>",
+    "worst": "Service(s) en cours les moins durcis : {units}"
+  },
+  "container_security": {
+    "detected": "Exécution dans un conteneur {runtime} — audit de la posture d'isolation du conteneur",
+    "privileged": "Le conteneur semble PRIVILÉGIÉ — jeu complet de capabilities Linux disponible ({caps})",
+    "privileged_detail": "Un conteneur privilégié (ou doté de CAP_SYS_ADMIN) peut largement agir comme root sur l'hôte — c'est le chemin d'évasion de conteneur le plus courant. Droppez les capabilities inutiles : --cap-drop=ALL --cap-add=<seulement le nécessaire>, et évitez --privileged.",
+    "dangerous_caps": "Le conteneur détient des capabilities élevées : {caps}",
+    "caps_restricted": "Le jeu de capabilities est restreint (aucune capability à haut risque) — bien",
+    "no_seccomp": "Aucun filtre seccomp actif — envisagez un profil seccomp (le défaut du runtime suffit généralement)",
+    "root_no_userns": "Le conteneur s'exécute en root sans user namespace — le root du conteneur correspond au root de l'hôte",
+    "rootfs_writable": "Le système de fichiers racine est accessible en écriture — envisagez un rootfs en lecture seule (--read-only) avec des volumes explicites"
   },
   "ssl_certs": {
     "openssl_unavailable": "openssl introuvable — impossible de vérifier l'expiration des certificats TLS/SSL",

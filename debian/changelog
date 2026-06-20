@@ -1,3 +1,38 @@
+bodyguard-of-bits (0.13.0-1) UNRELEASED; urgency=low
+
+  * First v0.13.x release — scope expansion: two new INFO-only hardening
+    checks. BOB's first real coverage growth after the long internal-hardening
+    cycle. Additive, non-BREAKING, no score change.
+  * Service hardening (systemd-analyze security) — new section
+    systemd_hardening. Runs `systemd-analyze security --json=short` scoped to
+    running service units; surfaces a summary (counts by predicate UNSAFE /
+    EXPOSED / OK), the least-hardened running services, and a pointer to
+    `systemd-analyze security <unit>`. No deduction by design: most units ship
+    unhardened by default (systemd's own docs call the exposure score a
+    relative guide, not a vulnerability verdict), so deducting would be noise
+    and would over-claim. A narrow admin-authored-unit deduction is deferred
+    to real-world signal. Field-tested live EN+FR.
+  * Container security posture — new section container_security, suppressed on
+    a normal host and run only inside a container. Reads the container's own
+    isolation from offline kernel interfaces: capability bounding set
+    (/proc/self/status CapBnd → privileged / CAP_SYS_ADMIN detection +
+    dangerous-cap list), seccomp mode, user-namespace mapping
+    (/proc/self/uid_map), writable rootfs (/proc/mounts). Detection via
+    systemd-detect-virt, /.dockerenv, /run/.containerenv, /proc/1/cgroup.
+    INFO-only; a privileged-container WARN deduction is a fast-follow once it
+    can accrue runtime signal. Validated against real kernel /proc data inside
+    Linux user namespaces (unshare): privileged + non-privileged + the
+    userns-suppresses-host-root-warning branch, EN+FR.
+  * Section count 35 -> 36.
+  * Tests 6442 -> 6461 (+19: 7 systemd + 12 container). 0 regression.
+  * End-of-life: v0.12.x is now declared EOL (latest-minor-line-only policy);
+    v0.8.x-v0.11.x likewise EOL; v0.13.x is the only supported line. v0.7.x /
+    v0.6.x remain EOL. SECURITY.md / SECURITY_FR.md updated.
+  * Upgrade: pipx upgrade bodyguard-of-bits. Fully backwards-compatible — two
+    INFO-only sections added; no existing field, score, or exit code changed.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 12 Jun 2026 20:00:00 +0200
+
 bodyguard-of-bits (0.12.2-1) UNRELEASED; urgency=low
 
   * Branch-closing hardening cleanup — a whole-tool deep-audit pass + an
