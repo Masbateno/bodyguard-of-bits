@@ -6,6 +6,51 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.13.1] — 21-06-2026
+
+**Premier patch hardening v0.13.x — checks de contexte runtime additifs. INFO-only, non-BREAKING, sans changement de score.**
+
+Poursuit le virage runtime ouvert par v0.13.0, en restant strictement in-branch : tout est **additif et sans déduction**. Les dents — déductions « choix opérateur » pour un conteneur privilégié et parité de scoring nftables — sont délibérément gardées pour le **bundle BREAKING planifié v0.14.0**, pour qu'un seul changement de note tombe d'un coup et non au compte-gouttes. Chaque nouvelle ligne INFO est un *finding latent* (règle anti-dashboard : elle porte un fix actionnable, sinon elle ne sort pas).
+
+### Unités socket systemd orphelines / en échec
+
+[bob/checks/socket_units.py](../bob/checks/socket_units.py) — nouvelle section `socket_units`, à l'intersection systemd × sockets en écoute ouverte par v0.13.0. Un service activé par socket est normal ; ce qui ne l'est pas, c'est une unité `.socket` encore **active** alors que le `.service` censé traiter les connexions est **cassé** — absent (`masked` / `not-found`) ou présent mais crashé (`ActiveState=failed`) — ou la socket elle-même en état **failed** : une socket en écoute sans consommateur fonctionnel, typiquement le résidu d'un paquet supprimé/renommé ou une unité mal configurée. Le check :
+
+- énumère les unités `.socket` via `systemctl list-units --type=socket --all`, en résolvant `ActiveState`, les adresses `Listen`, et **tous** les services `Triggers` plus le `LoadState` *et* l'`ActiveState` de chacun ;
+- flague une unité comme **orpheline** quand **au moins un** trigger déclaré est cassé — `LoadState` dans `not-found` / `masked` / `error` / `bad-setting`, *ou* `ActiveState=failed` (un service qui existe mais crashe au démarrage — la première version v0.13.1 ne regardait que le `LoadState`, donc un consommateur `loaded`+`failed` était un angle mort ; fermé avant le ship après revue) ;
+- considère un service backing simplement **inactive** comme sain (l'état de repos normal de l'activation par socket — le flaguer ferait faux-positif sur quasiment chaque socket saine), et flague la socket elle-même comme **en échec** sur `ActiveState=failed` ;
+- marque les unités liées à une adresse **non-loopback** (`0.0.0.0` / `::` / `*` / IP publique) pour qu'une orpheline exposée réseau ressorte.
+
+Soigneusement **sans faux positif** : une socket à `Triggers=` *vide* (internes systemd comme `systemd-coredump.socket`, `systemd-sysext.socket`, activées autrement) n'est jamais flaguée. INFO-only ; la déduction latente (une orpheline liée à une adresse non-loopback) est un candidat v0.14.0. Validé live (33 sockets saines → clean) et sur une unité réelle forcée à un trigger cassé (orpheline rendue avec le marqueur `[net]`), EN+FR.
+
+### Contexte cloud côté hôte
+
+[bob/checks/cloud_context.py](../bob/checks/cloud_context.py) — nouvelle section `cloud_context`, supprimée hors cloud via `skip_if=lambda s: not s.is_cloud`. **La détection est conservatrice.** Un fournisseur identifié via SMBIOS/DMI (`/sys/class/dmi/id` : Amazon EC2, Google Cloud, l'asset tag de chassis fixe d'Azure, DigitalOcean, OpenStack, Alibaba, Oracle, Hetzner, Scaleway, Vultr, Linode/Akamai) fait autorité ; la virtualisation nue (QEMU/VMware/VirtualBox) n'est **pas** du cloud. Un simple cloud-init installé n'en est **pas** non plus — Ubuntu ship cloud-init activé, donc `/var/lib/cloud/instance` existe (avec un `DataSourceNone`) sur quantité de VM Proxmox/VMware/homelab (le public historique de BOB) ; cloud-init ne compte donc comme cloud que si le service de métadonnées est **aussi** joignable on-link (le homelab le route via la gateway et est correctement exclu). Sur une instance cloud elle remonte l'exposition strictement visible depuis l'hôte :
+
+- **joignabilité IMDS** — le service de métadonnées d'instance (`169.254.169.254`) joignable *on-link*, distingué par une route link-scoped (`dev eth0`, sans `via`) plutôt qu'une route passant par la gateway par défaut ; avec un rappel IMDSv2 (BOB ne peut pas vérifier le réglage IMDSv2 hors-ligne) ;
+- **user-data persistée lisible par tous** (`/var/lib/cloud/instance/user-data.txt`), qui peut contenir des secrets de provisioning.
+
+(Une ligne `cloud-init toujours activé` a été retirée avant le ship : cloud-init activé est le *défaut éditeur* sur les images cloud — le flaguer serait du bruit sur quasiment chaque instance, le même piège que BOB évite pour l'exposition `systemd-analyze`.) **Strictement côté hôte.** Aucune API cloud, IAM, bucket, security group, VPC ou identifiant n'est jamais touché — c'est le territoire de Scout Suite / Prowler, et y entrer dissoudrait la singularité mono-hôte et zéro-dépendance de BOB. INFO-only ; les déductions IMDS-sans-IMDSv2 et user-data-lisible-par-tous sont des candidats v0.14.0. Path négatif validé live sur un hôte non-cloud (section supprimée, score inchangé) ; path positif rendu end-to-end EN+FR sur une instance Amazon EC2 forgée.
+
+### Fixes robustesse — `ddns` + `ssh` (chemin `/root` illisible)
+
+Même classe, deux checks : un chemin sous un répertoire que l'auditeur ne peut pas **parcourir** (un `/root` durci, ou un user namespace où root mappe sur un uid non privilégié) fait lever `PermissionError` à `Path.exists()` / `is_dir()` / `is_symlink()` (EACCES n'est pas avalé par pathlib).
+
+- [bob/checks/ddns.py](../bob/checks/ddns.py) — `Path.exists()` et `_is_safe_config_path()` (via `is_symlink()`) levaient *hors* du try/except existant, **avortant tout l'audit**. Le nouveau helper `_config_present()` enveloppe la sonde existence + sûreté et **dégrade un chemin illisible en « absent »**. Observé pour la première fois pendant la validation userns de v0.13.0 ; le test de régression reproduit le vrai `EACCES` avec un répertoire mode-`000`.
+- [bob/checks/ssh/_snapshot.py](../bob/checks/ssh/_snapshot.py) — révélé par le **field test live** de v0.13.1 : `~/.ssh` sous un home non-parcourable (`/root/.ssh` dans un user namespace) faisait lever `is_dir()` ; le runner l'attrapait mais **fuitait la chaîne `[Errno 13] …/.ssh` dans le rapport**. Toute la sonde `~/.ssh` côté utilisateur est maintenant enveloppée dans `try/except OSError`, dégradant en « pas de `~/.ssh` » (même principe que `_config_present`). Pré-existant (pas une régression v0.13.1), userns-only, cosmétique — corrigé par cohérence une fois exposé par le field test. Test de régression dans `TestSshDir` (skippé en root).
+
+(Ce sont les deux premiers du backlog « sweep `except OSError` » ; les autres checks ont été vérifiés sans fuite sous le même run userns.)
+
+### Tests & compatibilité
+
+Compte de sections **36 → 38**. **Tests** 6461 → **6504** (+43 : 21 dans `tests/test_socket_units.py`, 18 dans `tests/test_cloud_context.py`, 3 dans `tests/test_ddns.py`, 1 dans `tests/test_ssh.py`). 0 régression, vert en ordre déterministe et aléatoire. Parité locale EN/FR préservée.
+
+**v0.12.x reste EOL** ; v0.13.x est la seule ligne supportée (un patch ne change pas le tableau EOL).
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **entièrement rétro-compatible** : trois ajouts INFO-only ; aucun champ de sortie, clé JSON, score ou code de sortie existant ne change. La section cloud n'apparaît que sur une instance cloud.
+
+---
+
 ## [v0.13.0] — 20-06-2026
 
 **Première release v0.13.x — extension de scope. Deux nouveaux checks INFO-only. Additif, non-BREAKING, sans changement de score.**

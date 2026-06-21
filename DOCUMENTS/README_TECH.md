@@ -3,13 +3,13 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.13.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.13.1-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
 ![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
 
-BOB is a Linux hardening auditor for sysadmins and power users. It runs 36 check sections across 7 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
+BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check sections across 7 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
 
 ---
 
@@ -54,6 +54,8 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 36 check
 - **Systemd timers security** — curl/wget piped to a shell in ExecStart → WARN −2 pts; world-writable scripts in ExecStart → WARN −1 pt; user-created root timers without `User=` → INFO
 - **Service hardening (`systemd-analyze security`)** — surfaces the systemd exposure score of running services (NoNewPrivileges, ProtectSystem, capability bounding, namespacing…); INFO-only summary (counts by predicate + least-hardened running services + pointer to `systemd-analyze security <unit>`), **no deduction** — a high default exposure is the normal state of a Linux host, not a chosen misconfiguration (v0.13.0)
 - **Container security posture** — when BOB runs *inside* a container, reads the container's own isolation from kernel interfaces (capability bounding set → privileged / CAP_SYS_ADMIN detection, seccomp mode, user namespace mapping, writable rootfs); the whole section is suppressed on a non-container host. INFO-only in v0.13.0 (a real deduction for a privileged container is a fast-follow once validated in a runtime) (v0.13.0)
+- **Systemd socket units** — flags `.socket` units that are still active while their backing service is gone (masked / not-found) or that are in a failed state — a listening socket with no working consumer, usually the leftover of a removed/renamed package; marks ones bound to a non-loopback address. Empty-trigger systemd internals are never flagged. INFO-only (v0.13.1)
+- **Cloud context (host-side)** — only on a cloud instance (conservative detection: a SMBIOS/DMI-identified provider, or cloud-init corroborated by an on-link metadata route — a bare cloud-init install on a Proxmox/VMware/homelab VM is *not* treated as cloud): surfaces host-visible cloud exposure — instance metadata service reachable on-link (IMDSv2 reminder), world-readable persisted user-data — strictly host-side, no cloud API/credentials. INFO-only (v0.13.1)
 
 ### Detection & monitoring
 
@@ -351,7 +353,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.6.2  │  Linux hardening auditor                                      ║
+║  BOB v0.13.1  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

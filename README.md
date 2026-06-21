@@ -4,7 +4,7 @@
 
 **Linux hardening auditor for sysadmins who read the output.**
 
-BOB is a CLI security audit and hardening tool for Linux systems. It runs 36 check sections across 7 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
+BOB is a CLI security audit and hardening tool for Linux systems. It runs 38 check sections across 7 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
 
 ---
 
@@ -114,7 +114,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.6.2  │  Linux hardening auditor                                      ║
+║  BOB v0.13.1  │  Linux hardening auditor                                     ║
 ║  System        : Linux Mint 22.3                                             ║
 ║  Kernel        : 6.17.0-23-generic                                           ║
 ║  UFW           : v0.36.2                                                     ║
@@ -142,7 +142,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 ---
 
-## Security checks — 36 check sections, 7 score domains
+## Security checks — 38 check sections, 7 score domains
 
 | Domain | What it covers |
 |--------|----------------|

@@ -70,6 +70,8 @@
     "systemd_timers": "AUDIT DES TIMERS SYSTEMD",
     "systemd_hardening": "DURCISSEMENT DES SERVICES (SYSTEMD)",
     "container_security": "POSTURE DE SÉCURITÉ DU CONTENEUR",
+    "socket_units": "UNITÉS SOCKET SYSTEMD",
+    "cloud_context": "CONTEXTE CLOUD (CÔTÉ HÔTE)",
     "firmware": "AUDIT FIRMWARE & MICROCODE",
     "descriptions": {
       "auditd": "Démon d'audit Linux (auditd) — règles, état du service, surveillance fichiers sensibles",
@@ -101,6 +103,8 @@
       "systemd_timers": "Timers systemd — motifs risqués + permissions",
       "systemd_hardening": "Durcissement des services — exposition systemd-analyze des services en cours",
       "container_security": "Sécurité conteneur — capabilities, seccomp, userns, rootfs (uniquement dans un conteneur)",
+      "socket_units": "Unités socket systemd — sockets en écoute orphelines (service backing absent) ou en échec",
+      "cloud_context": "Contexte cloud — exposition cloud côté hôte (IMDS, cloud-init, user-data) ; uniquement sur une instance cloud",
       "umask": "Umask système — valeur par défaut /etc/login.defs",
       "updates": "Mises à jour de paquets — cache APT, sécurité/réguliers en attente, unattended-upgrades",
       "user_accounts": "Comptes utilisateurs — collisions UID 0, mots de passe vides, comptes système",
@@ -2926,6 +2930,22 @@
     "no_seccomp": "Aucun filtre seccomp actif — envisagez un profil seccomp (le défaut du runtime suffit généralement)",
     "root_no_userns": "Le conteneur s'exécute en root sans user namespace — le root du conteneur correspond au root de l'hôte",
     "rootfs_writable": "Le système de fichiers racine est accessible en écriture — envisagez un rootfs en lecture seule (--read-only) avec des volumes explicites"
+  },
+  "socket_units": {
+    "no_tool": "systemctl indisponible — analyse des unités socket ignorée",
+    "clean": "Les {total} unité(s) socket systemd ont un service backing sain — aucune orpheline ni en échec",
+    "summary": "{orphans} unité(s) socket orpheline(s) + {failed} en échec ({exposed} en écoute sur une adresse non-loopback)",
+    "summary_detail": "Une socket orpheline accepte toujours des connexions alors que le service censé les traiter est masqué, introuvable ou en échec — typiquement le résidu d'un paquet supprimé/renommé ou une unité qui crashe au démarrage. Inspectez avec : systemctl status <socket> ; supprimez l'unité obsolète ou corrigez/réinstallez son service.",
+    "orphan": "Socket orpheline {name} (écoute {addr}{net}) — le service backing {trigger} est absent, masqué ou en échec",
+    "failed": "Socket en échec {name} (écoute {addr}{net}) — l'unité est en état failed (trigger : {trigger})"
+  },
+  "cloud_context": {
+    "detected": "Instance cloud {provider} détectée — audit de l'exposition cloud côté hôte",
+    "detected_generic": "Instance cloud détectée (cloud-init présent) — audit de l'exposition cloud côté hôte",
+    "imds_reachable": "Le service de métadonnées d'instance ({addr}) est joignable en lien direct (on-link)",
+    "imds_reachable_detail": "Le point de métadonnées sert les identifiants d'instance et la user-data. Assurez-vous qu'IMDSv2 est imposé (jeton de session + hop limit = 1) afin qu'une falsification de requête côté serveur (SSRF) dans un service local ne puisse pas lire les identifiants cloud. BOB ne peut pas vérifier le réglage IMDSv2 hors-ligne — confirmez-le dans la console du fournisseur / les options de métadonnées de l'instance.",
+    "userdata_present": "La user-data cloud est persistée dans {path} — assurez-vous qu'elle ne contient aucun secret en clair (ils restent lisibles sur disque après le boot)",
+    "userdata_world_readable": "Le fichier user-data cloud {path} est lisible par le groupe/autres — il peut contenir des secrets de provisioning ; restreignez-le à root : chmod 600 {path}"
   },
   "ssl_certs": {
     "openssl_unavailable": "openssl introuvable — impossible de vérifier l'expiration des certificats TLS/SSL",

@@ -70,6 +70,8 @@
     "systemd_timers": "SYSTEMD TIMERS AUDIT",
     "systemd_hardening": "SERVICE HARDENING (SYSTEMD)",
     "container_security": "CONTAINER SECURITY POSTURE",
+    "socket_units": "SYSTEMD SOCKET UNITS",
+    "cloud_context": "CLOUD CONTEXT (HOST-SIDE)",
     "firmware": "FIRMWARE & MICROCODE AUDIT",
     "descriptions": {
       "auditd": "Linux audit daemon (auditd) — rules, service state, sensitive-file watches",
@@ -101,6 +103,8 @@
       "systemd_timers": "Systemd timers — risky patterns + permissions",
       "systemd_hardening": "Service hardening — systemd-analyze exposure of running services",
       "container_security": "Container security — capabilities, seccomp, userns, rootfs (only inside a container)",
+      "socket_units": "Systemd socket units — orphaned (backing service gone) or failed listening sockets",
+      "cloud_context": "Cloud context — host-side cloud exposure (IMDS, cloud-init, user-data); only on a cloud instance",
       "umask": "System umask — /etc/login.defs default value",
       "updates": "Package updates — APT cache, security/regular pending, unattended-upgrades",
       "user_accounts": "User accounts — UID 0 collisions, empty passwords, system accounts",
@@ -2926,6 +2930,22 @@
     "no_seccomp": "No seccomp filter is active — consider running with a seccomp profile (the runtime default is usually enough)",
     "root_no_userns": "Container runs as root without a user namespace — root in the container maps to root on the host",
     "rootfs_writable": "Root filesystem is writable — consider a read-only rootfs (--read-only) with explicit writable volumes"
+  },
+  "socket_units": {
+    "no_tool": "systemctl not available — socket-unit analysis skipped",
+    "clean": "All {total} systemd socket unit(s) have a healthy backing service — none orphaned or failed",
+    "summary": "{orphans} orphaned + {failed} failed systemd socket unit(s) ({exposed} listening on a non-loopback address)",
+    "summary_detail": "An orphaned socket still accepts connections while the service it should hand them to is masked, not-found, or failed — usually the leftover of a removed/renamed package or a unit that crashes on start. Inspect with: systemctl status <socket> ; remove the stale unit or fix/reinstall its service.",
+    "orphan": "Orphaned socket {name} (listen {addr}{net}) — backing service {trigger} is gone, masked, or failed",
+    "failed": "Failed socket {name} (listen {addr}{net}) — unit is in failed state (trigger: {trigger})"
+  },
+  "cloud_context": {
+    "detected": "Detected {provider} cloud instance — auditing host-side cloud exposure",
+    "detected_generic": "Cloud instance detected (cloud-init present) — auditing host-side cloud exposure",
+    "imds_reachable": "Instance metadata service ({addr}) is reachable on-link",
+    "imds_reachable_detail": "The metadata endpoint serves instance credentials and user-data. Ensure IMDSv2 is enforced (session token + hop limit = 1) so a server-side request forgery (SSRF) in any local service cannot read cloud credentials. BOB cannot verify the IMDSv2 setting offline — confirm it in the provider console / instance metadata options.",
+    "userdata_present": "Cloud user-data is persisted at {path} — ensure it contains no plaintext secrets (they remain readable on disk after boot)",
+    "userdata_world_readable": "Cloud user-data file {path} is group/other-readable — it may contain provisioning secrets; restrict it to root: chmod 600 {path}"
   },
   "ssl_certs": {
     "openssl_unavailable": "openssl not found — cannot check TLS/SSL certificate expiry",

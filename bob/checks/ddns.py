@@ -270,6 +270,23 @@ def check_ddns(
 # Detection helpers
 # ---------------------------------------------------------------------------
 
+def _config_present(path: Path) -> bool:
+    """True if ``path`` exists and is a safe (absolute, non-symlink) config file.
+
+    Robust against an unreadable path: both ``Path.exists()`` and
+    ``_is_safe_config_path`` (via ``is_symlink()``) call ``stat``/``lstat``,
+    which raise ``PermissionError`` when a parent directory is not searchable
+    (e.g. a DuckDNS script under a hardened ``/root`` the auditor cannot enter,
+    or a user-namespace where root maps to an unprivileged uid). A read-only
+    auditor must degrade such a path to "absent" rather than crash the whole
+    audit. See the ddns-robustness backlog note.
+    """
+    try:
+        return path.exists() and _is_safe_config_path(path)
+    except OSError:
+        return False
+
+
 def _is_installed(client_def: DdnsClientDef) -> bool:
     """Return True if the DDNS client is installed via dpkg or config file."""
     # dpkg check
@@ -280,8 +297,7 @@ def _is_installed(client_def: DdnsClientDef) -> bool:
 
     # Config file check (for script-based clients like DuckDNS)
     for cfg_path in client_def.config_files:
-        p = Path(cfg_path)
-        if p.exists() and _is_safe_config_path(p):
+        if _config_present(Path(cfg_path)):
             return True
 
     return False
@@ -295,8 +311,7 @@ def _is_active(client_def: DdnsClientDef) -> bool:
     # DuckDNS: check cron entry
     if client_def.client_type == "duckdns":
         for cfg_path in client_def.config_files:
-            p = Path(cfg_path)
-            if p.exists() and _is_safe_config_path(p):
+            if _config_present(Path(cfg_path)):
                 return True
 
     return False
@@ -310,7 +325,7 @@ def _extract_domain(client_def: DdnsClientDef) -> str | None:
     """
     for cfg_path in client_def.config_files:
         path = Path(cfg_path)
-        if not path.exists() or not _is_safe_config_path(path):
+        if not _config_present(path):
             continue
         try:
             content = path.read_text(encoding="utf-8", errors="ignore")

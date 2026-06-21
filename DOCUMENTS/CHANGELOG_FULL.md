@@ -6,6 +6,51 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.13.1] — 2026-06-21
+
+**First v0.13.x hardening patch — additive runtime-context checks. INFO-only, non-BREAKING, no score change.**
+
+Continues the runtime turn opened by v0.13.0, staying strictly in-branch: everything here is **additive and carries no deduction**. The teeth — operator-choice deductions for a privileged container and nftables scoring parity — are deliberately held for the planned **v0.14.0 BREAKING bundle**, so a single grade shift lands once, not piecemeal. Each new INFO line is a *latent finding* (the anti-dashboard rule: it carries an actionable fix, or it does not ship).
+
+### Orphan / failed systemd socket units
+
+[bob/checks/socket_units.py](../bob/checks/socket_units.py) — new section `socket_units`, at the systemd × listening-sockets intersection opened by v0.13.0. A socket-activated service is normal; what is not is a `.socket` unit that is still **active** while the `.service` it should hand connections to is **broken** — gone (`masked` / `not-found`) or present but crashed (`ActiveState=failed`) — or a socket in **failed** state itself: a listening socket with no working consumer, usually the leftover of a removed/renamed package or a misconfigured unit. The check:
+
+- enumerates `.socket` units via `systemctl list-units --type=socket --all`, resolving each unit's `ActiveState`, `Listen` addresses, and **all** its `Triggers` services plus each trigger's `LoadState` *and* `ActiveState`;
+- flags a unit as **orphan** when **any** declared trigger service is broken — `LoadState` in `not-found` / `masked` / `error` / `bad-setting`, *or* `ActiveState=failed` (a service that exists but crashes on start — the original v0.13.1 cut only looked at `LoadState`, so a `loaded`+`failed` consumer was a blind spot; closed before ship after review);
+- treats a merely **inactive** backing service as healthy (the normal at-rest state of socket activation — flagging it would false-positive on nearly every healthy socket), and flags the socket unit itself as **failed** on `ActiveState=failed`;
+- marks units bound to a **non-loopback** address (`0.0.0.0` / `::` / `*` / public IP) so a network-exposed orphan stands out.
+
+Carefully **false-positive-free**: a socket with an *empty* `Triggers=` (systemd internals such as `systemd-coredump.socket`, `systemd-sysext.socket`, activated by other means) is never flagged. INFO-only; the latent deduction (an orphan bound to a non-loopback address) is a v0.14.0 candidate. Validated live (33 healthy sockets → clean) and on a real unit forced to a broken trigger (orphan rendered with the `[net]` marker), EN+FR.
+
+### Host-side cloud context
+
+[bob/checks/cloud_context.py](../bob/checks/cloud_context.py) — new section `cloud_context`, suppressed off-cloud via `skip_if=lambda s: not s.is_cloud`. **Detection is conservative.** A SMBIOS/DMI-identified provider (`/sys/class/dmi/id`: Amazon EC2, Google Cloud, the Azure fixed chassis asset tag, DigitalOcean, OpenStack, Alibaba, Oracle, Hetzner, Scaleway, Vultr, Linode/Akamai) is authoritative; bare virtualization (QEMU/VMware/VirtualBox) is intentionally **not** cloud. A bare cloud-init install is **not** cloud either — Ubuntu ships cloud-init enabled, so `/var/lib/cloud/instance` exists (with a `DataSourceNone`) on plenty of Proxmox/VMware/homelab VMs (BOB's historical audience); cloud-init therefore only counts as cloud when the metadata service is **also** reachable on-link (the homelab routes it via the gateway and is correctly excluded). On a cloud instance it surfaces strictly host-visible exposure:
+
+- **IMDS reachability** — the instance metadata service (`169.254.169.254`) reachable *on-link*, distinguished by a link-scoped route (`dev eth0`, no `via`) rather than one merely routed through the default gateway; with an IMDSv2 reminder (BOB cannot verify the IMDSv2 setting offline);
+- **world-readable persisted user-data** (`/var/lib/cloud/instance/user-data.txt`), which may hold provisioning secrets.
+
+(An earlier `cloud-init still enabled` line was dropped before ship: cloud-init enabled is the *vendor default* on cloud images — flagging it would be noise on essentially every instance, the same trap BOB avoids for `systemd-analyze` exposure.) **Strictly host-side.** No cloud API, IAM, buckets, security groups, VPC, or credentials are ever touched — that is Scout Suite / Prowler territory, and crossing into it would dissolve BOB's single-host, zero-dependency singularity. INFO-only; the IMDS-without-IMDSv2 and world-readable-user-data deductions are v0.14.0 candidates. Negative path validated live on a non-cloud host (section suppressed, score unchanged); positive path rendered end-to-end EN+FR against a crafted Amazon EC2 instance.
+
+### Robustness fixes — `ddns` + `ssh` (unreadable `/root` path)
+
+Same class, two checks: a path under a directory the auditor cannot **search** (a hardened `/root`, or a user namespace where root maps to an unprivileged uid) makes `Path.exists()` / `is_dir()` / `is_symlink()` raise `PermissionError` (EACCES is not swallowed by pathlib).
+
+- [bob/checks/ddns.py](../bob/checks/ddns.py) — `Path.exists()` and `_is_safe_config_path()` (via `is_symlink()`) raised *outside* the existing try/except, **aborting the whole audit**. The new `_config_present()` helper wraps the existence + safety probe and **degrades an unreadable path to "absent"**. First observed under the v0.13.0 userns validation; regression test reproduces the real `EACCES` with a mode-`000` directory.
+- [bob/checks/ssh/_snapshot.py](../bob/checks/ssh/_snapshot.py) — surfaced by the v0.13.1 **live field test**: `~/.ssh` under an unsearchable home (`/root/.ssh` in a user namespace) made `is_dir()` raise; the runner caught it but **leaked the `[Errno 13] …/.ssh` string into the report**. The whole user-side `~/.ssh` probe is now wrapped in `try/except OSError`, degrading to "no `~/.ssh`" (same principle as `_config_present`). Pre-existing (not a v0.13.1 regression), userns-only, cosmetic — fixed for consistency once the field test exposed it. Regression test in `TestSshDir` reproduces the unreadable-home case (skipped as root).
+
+(These are the first two of the `except OSError` robustness-sweep backlog; the remaining checks were verified leak-free under the same userns run.)
+
+### Tests & compatibility
+
+Section count **36 → 38**. **Tests** 6461 → **6504** (+43: 21 in `tests/test_socket_units.py`, 18 in `tests/test_cloud_context.py`, 3 in `tests/test_ddns.py`, 1 in `tests/test_ssh.py`). 0 regression, green under deterministic and random ordering. EN/FR locale parity preserved.
+
+**v0.12.x remains EOL**; v0.13.x is the only supported line (a patch does not change the EOL table).
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **fully backwards-compatible**: three INFO-only additions; no existing output field, JSON key, score, or exit code changed. The cloud section only appears on a cloud instance.
+
+---
+
 ## [v0.13.0] — 2026-06-20
 
 **First v0.13.x release — scope expansion. Two new INFO-only hardening checks. Additive, non-BREAKING, no score change.**

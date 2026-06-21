@@ -30,7 +30,7 @@ For Fedora/RHEL : `sudo dnf install pipx`. For Arch : `sudo pacman -S python-pip
 Verify :
 
 ```bash
-bob --version                               # prints "BOB v0.8.x"
+bob --version                               # prints "BOB v0.13.x"
 ```
 
 ### Make `sudo bob` work

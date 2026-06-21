@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.13.0
+Version:        0.13.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,30 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Jun 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.1-1
+- First v0.13.x hardening patch — additive runtime-context checks. INFO-only,
+  non-BREAKING, no score change. Teeth (container/nftables scoring) held for the
+  planned v0.14.0 BREAKING bundle.
+- Orphan / failed systemd socket units — new section socket_units. Flags a
+  .socket still active while its backing .service is broken — gone
+  (masked/not-found) or crashed (ActiveState=failed) — or the socket itself is
+  failed; orphaned if any of several triggers is broken; a merely-inactive
+  backing service is healthy; marks non-loopback binds. Empty-Triggers systemd
+  internals are never flagged. INFO-only.
+- Host-side cloud context — new section cloud_context, suppressed off-cloud.
+  Conservative detection: a DMI-identified provider, or cloud-init corroborated
+  by an on-link metadata route (a bare cloud-init homelab VM is not flagged).
+  Surfaces host-visible exposure: IMDS reachable on-link (IMDSv2 reminder) and
+  world-readable user-data. Strictly host-side — no cloud API/credentials.
+  INFO-only.
+- Robustness fixes (ddns + ssh) — a path under an unsearchable directory
+  (hardened /root, user namespace) raised PermissionError on
+  exists()/is_dir()/is_symlink(). In ddns it aborted the audit
+  (_config_present() now degrades to "absent"); the live field test surfaced
+  the same class in ssh/_snapshot.py (~/.ssh under an unsearchable home leaked
+  the error string), now guarded too. Pre-existing, userns-only.
+- Section count 36 -> 38. Tests 6461 -> 6504 (+43). 0 regression. v0.12.x
+  remains EOL; v0.13.x the only supported line.
 * Sat Jun 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.0-1
 - First v0.13.x release — scope expansion: two new INFO-only hardening checks.
   First real coverage growth after the long internal-hardening cycle. Additive,

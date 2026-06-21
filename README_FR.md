@@ -4,7 +4,7 @@
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 36 sections de vérification sur 7 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
+BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 38 sections de vérification sur 7 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -114,7 +114,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.6.2  │  Auditeur de durcissement Linux                               ║
+║  BOB v0.13.1  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : v0.36.2                                                     ║
@@ -142,7 +142,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ---
 
-## Vérifications de sécurité — 36 sections de vérification, 7 domaines de score
+## Vérifications de sécurité — 38 sections de vérification, 7 domaines de score
 
 | Domaine | Ce qu'il couvre |
 |---------|----------------|

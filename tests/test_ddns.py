@@ -6,9 +6,12 @@ All tests use DdnsSnapshot instances built directly — no subprocess calls.
 Run with: python -m pytest tests/test_ddns.py -v
 """
 
+import os
+
 import pytest
 from bob.checks.ddns import (
     DdnsSnapshot,
+    _config_present,
     _extract_ddclient_domain,
     _extract_duckdns_domain,
     _extract_inadyn_domain,
@@ -328,3 +331,31 @@ class TestDdnsEffectiveContext:
         ctx = ddns_effective_context(snap, UFW_OPEN)
         assert ctx == "ddns"
         assert ctx != "public"
+
+
+class TestConfigPresentRobustness:
+    """v0.13.1 — a config path the auditor cannot stat must degrade, not crash."""
+
+    def test_missing_path_is_absent(self, tmp_path):
+        assert _config_present(tmp_path / "does-not-exist.conf") is False
+
+    def test_real_file_is_present(self, tmp_path):
+        f = tmp_path / "duck.sh"
+        f.write_text("echo hi\n")
+        assert _config_present(f) is True
+
+    @pytest.mark.skipif(os.geteuid() == 0,
+                        reason="root bypasses directory search permissions")
+    def test_unsearchable_parent_degrades_to_absent(self, tmp_path):
+        # Reproduces the userns /root crash: a config under a directory the
+        # process cannot search makes exists()/is_symlink() raise PermissionError.
+        secret = tmp_path / "root-like"
+        secret.mkdir()
+        cfg = secret / "duck.sh"
+        cfg.write_text("token\n")
+        secret.chmod(0o000)
+        try:
+            # Must return False (degrade), never raise PermissionError.
+            assert _config_present(cfg) is False
+        finally:
+            secret.chmod(0o700)  # restore so tmp cleanup can proceed

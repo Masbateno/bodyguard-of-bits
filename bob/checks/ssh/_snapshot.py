@@ -161,38 +161,47 @@ class SSHSnapshot:
         ssh_dir = snap.user_home / ".ssh"
 
         # --- ~/.ssh directory ---
-        if ssh_dir.is_dir():
-            snap.ssh_dir_exists = True
-            try:
-                snap.ssh_dir_perms = stat.S_IMODE(ssh_dir.stat().st_mode)
-            except OSError:
-                pass
-
-            # private keys
-            snap.private_keys = _parsers._collect_private_keys(ssh_dir)
-
-            # authorized_keys — accept dotfiles symlinks inside home, reject
-            # symlinks pointing outside (e.g. attacker linking authorized_keys
-            # to /etc/shadow would leak its content into the audit report).
-            ak_path = ssh_dir / "authorized_keys"
-            if ak_path.is_file() and _is_safe_user_path(ak_path, snap.user_home):
-                snap.authorized_keys_exists = True
+        # The whole user-side probe is guarded: ~/.ssh can sit under a directory
+        # the auditor cannot search (e.g. /root/.ssh under a user namespace where
+        # root maps to an unprivileged uid), making is_dir()/iterdir() raise
+        # PermissionError. A read-only auditor degrades to "couldn't read ~/.ssh"
+        # rather than aborting the audit or leaking the OSError into its output.
+        # Mirrors ddns._config_present.
+        try:
+            if ssh_dir.is_dir():
+                snap.ssh_dir_exists = True
                 try:
-                    snap.authorized_keys_perms = stat.S_IMODE(ak_path.stat().st_mode)
+                    snap.ssh_dir_perms = stat.S_IMODE(ssh_dir.stat().st_mode)
                 except OSError:
                     pass
-                snap.authorized_keys_entries = _parsers._parse_authorized_keys(ak_path)
 
-            # client config — same symlink-out-of-home protection.
-            cfg_path = ssh_dir / "config"
-            if cfg_path.is_file() and _is_safe_user_path(cfg_path, snap.user_home):
-                snap.client_config_exists = True
-                snap.client_config_entries = _parsers._parse_client_config(cfg_path)
+                # private keys
+                snap.private_keys = _parsers._collect_private_keys(ssh_dir)
 
-            # known_hosts — public data but apply the same protection by symmetry.
-            kh_path = ssh_dir / "known_hosts"
-            if kh_path.is_file() and _is_safe_user_path(kh_path, snap.user_home):
-                snap.known_hosts_exists = True
-                snap.known_hosts_entries = _parsers._parse_known_hosts(kh_path)
+                # authorized_keys — accept dotfiles symlinks inside home, reject
+                # symlinks pointing outside (e.g. attacker linking authorized_keys
+                # to /etc/shadow would leak its content into the audit report).
+                ak_path = ssh_dir / "authorized_keys"
+                if ak_path.is_file() and _is_safe_user_path(ak_path, snap.user_home):
+                    snap.authorized_keys_exists = True
+                    try:
+                        snap.authorized_keys_perms = stat.S_IMODE(ak_path.stat().st_mode)
+                    except OSError:
+                        pass
+                    snap.authorized_keys_entries = _parsers._parse_authorized_keys(ak_path)
+
+                # client config — same symlink-out-of-home protection.
+                cfg_path = ssh_dir / "config"
+                if cfg_path.is_file() and _is_safe_user_path(cfg_path, snap.user_home):
+                    snap.client_config_exists = True
+                    snap.client_config_entries = _parsers._parse_client_config(cfg_path)
+
+                # known_hosts — public data but apply the same protection by symmetry.
+                kh_path = ssh_dir / "known_hosts"
+                if kh_path.is_file() and _is_safe_user_path(kh_path, snap.user_home):
+                    snap.known_hosts_exists = True
+                    snap.known_hosts_entries = _parsers._parse_known_hosts(kh_path)
+        except OSError:
+            pass
 
         return snap

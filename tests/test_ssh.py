@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import os
 import struct
+import types
 from pathlib import Path
 
 import pytest
@@ -355,6 +357,25 @@ class TestSshDir:
             f.key for f in result.findings if f.level == FindingLevel.ALERT
         ]
         assert "ssh.dir_perms" in _deduction_keys(result)
+
+    @pytest.mark.skipif(os.geteuid() == 0,
+                        reason="root bypasses directory search permissions")
+    def test_unreadable_ssh_dir_degrades(self, tmp_path, monkeypatch):
+        # ~/.ssh under a directory the auditor cannot search (e.g. /root/.ssh
+        # under a user namespace where root maps to an unprivileged uid) makes
+        # is_dir() raise PermissionError. from_system() must degrade cleanly —
+        # neither raise nor leak the OSError — not abort the whole audit.
+        home = tmp_path / "home"
+        (home / ".ssh").mkdir(parents=True)
+        home.chmod(0o000)  # parent unsearchable -> is_dir(home/.ssh) -> EACCES
+        monkeypatch.setenv("SUDO_USER", "fakeuser")
+        monkeypatch.setattr("bob.checks.ssh._snapshot.pwd.getpwnam",
+                            lambda u: types.SimpleNamespace(pw_dir=str(home)))
+        try:
+            snap = SSHSnapshot.from_system()   # must NOT raise
+        finally:
+            home.chmod(0o700)                  # restore for tmp cleanup
+        assert snap.ssh_dir_exists is False    # degraded, audit continues
 
 
 # ---------------------------------------------------------------------------

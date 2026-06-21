@@ -101,6 +101,8 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "systemd_timers":   "hardening",
     "systemd_hardening": "hardening",
     "container_security": "hardening",
+    "socket_units":     "hardening",
+    "cloud_context":    "hardening",
     "firmware":         "hardening",
     "disk":             "disk",
     "fail2ban":         "ssh",
