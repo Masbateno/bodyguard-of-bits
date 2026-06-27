@@ -400,7 +400,7 @@ def _check_installed_kernels(
             message=_t("kernel_modules.kernels_update_available",
                        candidate=snapshot.apt_candidate_kernel),
             cmd="sudo apt upgrade",
-            cmd_type="action",
+            cmd_type="fix",
             key="kernel_modules.kernels_update_available",
         )
     elif snapshot.apt_checked and not snapshot.apt_update_available:
@@ -462,7 +462,11 @@ def _check_installed_kernels(
                       to_remove=", ".join(to_remove),
                       recent=running),
             cmd=_purge_cmd(to_remove),
-            cmd_type="check",
+            # An apt purge is a corrective ACTION, not a read-only check — it
+            # belongs under "What to do? →", not the "Verify:" (ℹ) label. The
+            # caution (purge only after confirming the box boots on the running
+            # kernel) stays in the detail above.
+            cmd_type="fix",
             key="kernel_modules.kernels_obsolete",
         )
     else:

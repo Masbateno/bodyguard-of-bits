@@ -3097,7 +3097,7 @@
     "socket_mounted_detail": "Mounting /var/run/docker.sock inside a container grants root-equivalent control over the host. Any process in the container can create new privileged containers or escape the sandbox.",
     "socket_mounted_reason": "{count} container(s) with Docker socket mounted",
     "userns_not_configured": "User namespace remapping not configured (userns-remap)",
-    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root.",
+    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root. The command below only creates the file when it does not exist — if you already have a /etc/docker/daemon.json, do NOT overwrite it: back it up and merge the \"userns-remap\": \"default\" key into it, then restart docker.",
     "userns_configured": "User namespace remapping enabled (userns-remap)",
     "root_containers": "{count} container(s) running as root (UID 0): {containers}",
     "root_containers_detail": "Running containers as root increases the blast radius of a container escape. Set a non-root USER in the Dockerfile or pass --user at runtime.",

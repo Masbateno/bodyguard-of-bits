@@ -235,7 +235,11 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         result.info(
             message=_t("docker_hardening.userns_not_configured"),
             detail=_t("docker_hardening.userns_not_configured_detail"),
-            cmd='echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker',
+            # create-if-absent only: never clobbers an existing daemon.json (it
+            # may already hold log-driver / registry-mirrors / iptables keys).
+            # If the file exists the command is a no-op — the detail explains the
+            # manual merge. No human-language text in the cmd (would leak locale).
+            cmd='test -f /etc/docker/daemon.json || { echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker; }',
             cmd_type="fix",
             key="docker_hardening.userns_not_configured",
         )

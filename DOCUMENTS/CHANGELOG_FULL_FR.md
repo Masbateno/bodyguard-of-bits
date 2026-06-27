@@ -6,6 +6,54 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.13.2] — 21-06-2026
+
+**Patch same-day cohérence / sécurité des commandes de finding. Additif, non-BREAKING, sans changement de score.**
+
+Un utilisateur a remarqué que le nettoyage des noyaux obsolètes affichait un `apt purge` destructif sous le label « Vérifier : » (ℹ) — sémantiquement une action portant un label de vérification. Ça a déclenché une **passe de cohérence sémantique par sub-agent** sur chaque finding (~144 avec une `cmd`, ~170 au total), vérifiant cinq dimensions : cmd_type (action-vs-lecture), level-vs-sévérité, cohérence de nature, cohérence message↔detail↔cmd, et parité de sens EN/FR. Elle a retourné un petit groupe réel — tous des défauts de *présentation*, aucun n'affectant les scores — corrigés ici.
+
+### 🔴 docker `userns_not_configured` — écrasement silencieux de `daemon.json`
+
+[bob/checks/docker_audit.py](../bob/checks/docker_audit.py) suggérait, en remédiation INFO :
+
+```
+echo '{"userns-remap": "default"}' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker
+```
+
+`tee` sans `-a` **tronque et remplace tout le fichier** — un hôte qui a déjà un `/etc/docker/daemon.json` (log-driver, registry-mirrors, iptables, address-pools, …) perd tout, ne gardant que `userns-remap`, puis docker redémarre. Le detail n'en disait rien. Même classe que le déclencheur apt-purge mais pire : **perte de données** silencieuse derrière un libellé rassurant, présentée comme un fix impératif `→`. C'était le seul `tee` du code visant une config *partagée et pré-remplie* (les `tee` auditd/memory visent des fichiers dédiés mono-usage — sûrs). Corrigé : la commande est désormais **création-si-absent uniquement** —
+
+```
+test -f /etc/docker/daemon.json || { echo '{"userns-remap": "default"}' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker; }
+```
+
+— elle ne touche jamais un fichier existant (la branche `||` est sautée), ne contient **aucun texte en langage humain** (qui fuiterait une locale dans l'audit de l'autre langue, la classe reverse-i18n de v0.11.1), et le `detail` (EN+FR) dit maintenant explicitement : si `daemon.json` existe déjà, ne pas écraser — sauvegarder et fusionner la clé.
+
+### kernel `kernels_obsolete` — `apt purge` re-typé de check vers fix
+
+[bob/checks/kernel_modules.py](../bob/checks/kernel_modules.py) émettait la commande `apt purge linux-image-…` sous `cmd_type="check"`, dont le contrat documenté = *commandes de diagnostic lecture-seule sans changement* (rendu « ℹ » sous « Vérifier : »). Un purge est une **action** corrective, donc il utilise maintenant `cmd_type="fix"` → il s'affiche sous « Que faire ? → » où il a sa place. La précaution « purger seulement après avoir confirmé que la machine démarre sur le noyau courant » était déjà dans le detail et y reste. C'est exactement le point signalé par l'utilisateur.
+
+### kernel `kernels_update_available` — `cmd_type="action"` invalide
+
+La suggestion « apt upgrade » utilisait `cmd_type="action"` — **pas une valeur valide** (seulement "fix"/"check" ; « action » est une valeur de *nature*). Le renderer traite toute chaîne ≠ "check" comme la branche fix, donc ça s'affichait correctement *par accident*. Corrigé en `"fix"`.
+
+### Garde-fou contrat dans `CheckResult.add_finding`
+
+[bob/scoring.py](../bob/scoring.py) lève maintenant `ValueError` sur tout `cmd_type` hors `("fix","check")`. cmd_type est toujours un littéral dans les checks de BOB, donc ça ne trip qu'une erreur développeur — attrapée immédiatement par la suite de tests — et rend impossible la classe de drift-de-label silencieux (comment le typo `"action"` était passé inaperçu). Aurait attrapé le #3 à l'écriture.
+
+### Résultats de l'audit & négatifs
+
+La passe a confirmé que ce sont les seuls bugs de présentation : tous les autres `cmd_type="check"` sont de vraies lectures (`smartctl -a`, `stat`, `grep`, `iptables -L`, `docker inspect`, `ls`, `fail2ban-client status`) ; toutes les commandes `cmd_type="fix"` sont de vraies actions ; EN/FR sans divergence de sens ; les checks kernel-hardening / runtime INFO-only sont de la calibration délibérée, pas des mismatches. Deux items en zone grise laissés pour la passe UX v0.14.0 (le menu diagnostic `disk.smart_tips` mélangeant `smartctl -t`/`-X` et des lectures ; le `firewall_rules.orphan_rule` INFO portant un `ufw delete`).
+
+### Tests & compatibilité
+
+Compte de sections inchangé à **38**. **Tests** 6504 → **6511** (+7 : 3 garde-fou cmd_type + 3 docker non-clobbant dans `tests/test_v0132_cmd_semantics.py`, 1 cmd_type kernel dans `tests/test_kernel_modules.py` ; le test obsolete-kernel passé d'assertion "check" à "fix"). 0 régression. Validé live EN+FR : le purge kernel s'affiche sous « → Que faire ? », et aucune commande destructive ne reste sous « Vérifier : ».
+
+**v0.12.x reste EOL** ; v0.13.x est la seule ligne supportée.
+
+**Upgrade** (`pipx upgrade bodyguard-of-bits`) — seuls le libellé et le placement des commandes de remédiation changent ; aucun score, champ JSON ou code de sortie n'est affecté.
+
+---
+
 ## [v0.13.1] — 21-06-2026
 
 **Premier patch hardening v0.13.x — checks de contexte runtime additifs. INFO-only, non-BREAKING, sans changement de score.**

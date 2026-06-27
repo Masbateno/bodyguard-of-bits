@@ -220,6 +220,16 @@ class CheckResult:
         template_vars: "dict | None" = None,
     ) -> None:
         """Convenience method to append a finding. See Finding docstring for template_vars contract."""
+        # Contract guard: cmd_type is rendered by display.py as either the "→"
+        # fix branch or the "ℹ" check branch — any other value silently renders
+        # as "fix" (a non-"check" string is treated as fix), which is how the
+        # legacy cmd_type="action" typo went unnoticed. Fail fast on drift; the
+        # value is always a literal in BOB's own checks, so this only ever trips
+        # a developer error, caught by the test suite.
+        if cmd_type not in ("fix", "check"):
+            raise ValueError(
+                f"invalid cmd_type {cmd_type!r}: expected 'fix' or 'check'"
+            )
         self.findings.append(
             Finding(
                 level=level, message=message, detail=detail,

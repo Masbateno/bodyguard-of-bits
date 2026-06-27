@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.13.1
+Version:        0.13.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,21 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Jun 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.2-1
+- Same-day finding-command safety/coherence patch. Additive, non-BREAKING,
+  no score change. Sub-agent semantic-coherence pass over ~144 finding commands
+  (triggered by a user noticing `apt purge` under a "Verify:" label).
+- docker userns_not_configured (security): suggested `tee /etc/docker/daemon.json`
+  overwrote the whole file (data loss) with no warning. Now create-if-absent only
+  (test -f … || { … }, no human-language text); detail (EN+FR) warns to back up
+  and merge an existing file.
+- kernel kernels_obsolete: destructive `apt purge` moved from cmd_type="check"
+  (Verify ℹ) to "fix" (What to do →); the boots-first caution stays in detail.
+- kernel kernels_update_available: invalid cmd_type="action" corrected to "fix".
+- Contract guard: CheckResult.add_finding raises on cmd_type outside
+  ("fix","check") — makes this label-drift class impossible.
+- Tests 6504 -> 6511 (+7). 0 regression. v0.12.x remains EOL; v0.13.x the only
+  supported line.
 * Sun Jun 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.1-1
 - First v0.13.x hardening patch — additive runtime-context checks. INFO-only,
   non-BREAKING, no score change. Teeth (container/nftables scoring) held for the

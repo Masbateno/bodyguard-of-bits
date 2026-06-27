@@ -1,3 +1,26 @@
+bodyguard-of-bits (0.13.2-1) UNRELEASED; urgency=low
+
+  * Same-day finding-command safety/coherence patch. Additive, non-BREAKING,
+    no score change. A sub-agent semantic-coherence pass over ~144 finding
+    commands (triggered by a user noticing `apt purge` shown under a "Verify:"
+    label) found a small cluster of presentation defects.
+  * docker userns_not_configured (security) — the suggested remediation
+    `tee /etc/docker/daemon.json` overwrote the whole file (clobbering any
+    existing keys) with no warning. Now create-if-absent only
+    (test -f … || { … }, no human-language text that could leak a locale);
+    the detail (EN+FR) warns to back up and merge an existing file.
+  * kernel kernels_obsolete — the destructive `apt purge` moved from
+    cmd_type="check" (Verify ℹ, contractually read-only) to "fix" (What to
+    do →), its correct place; the boots-first caution stays in the detail.
+  * kernel kernels_update_available — invalid cmd_type="action" (rendered as
+    fix only by accident) corrected to "fix".
+  * Contract guard — CheckResult.add_finding now raises on any cmd_type
+    outside ("fix","check"), making this class of label drift impossible.
+  * Tests 6504 -> 6511 (+7). 0 regression. Validated live EN+FR. v0.12.x
+    remains EOL; v0.13.x the only supported line.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 21 Jun 2026 22:00:00 +0200
+
 bodyguard-of-bits (0.13.1-1) UNRELEASED; urgency=low
 
   * First v0.13.x hardening patch — additive runtime-context checks. INFO-only,

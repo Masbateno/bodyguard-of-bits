@@ -657,14 +657,16 @@ class TestKernelCleanupObsolete:
         assert "apt purge" in finding.cmd
         assert "linux-image-6.8.0-52-generic" in finding.cmd
 
-    def test_obsolete_cmd_type_is_check(self):
+    def test_obsolete_cmd_type_is_fix(self):
+        # v0.13.2: an `apt purge` is a corrective ACTION — it must render under
+        # "What to do? →" (cmd_type="fix"), not the "Verify:" (ℹ check) label.
         snap = _ksnap(
             running="6.8.0-58-generic",
             installed=["6.8.0-52-generic", "6.8.0-55-generic", "6.8.0-58-generic"],
         )
         result = check_kernel_modules(snap, profile_name="desktop")
         finding = _get_finding(result, "kernel_modules.kernels_obsolete")
-        assert finding.cmd_type == "check"
+        assert finding.cmd_type == "fix"
 
     def test_obsolete_no_deduction(self):
         snap = _ksnap(
@@ -807,6 +809,16 @@ class TestKernelAptUpdate:
             self._snap(apt_update_available=True, apt_candidate_kernel="6.8.0.56.57")
         )
         assert "kernel_modules.kernels_update_available" in _finding_keys(result)
+
+    def test_update_available_cmd_type_is_fix(self):
+        # v0.13.2: was the invalid cmd_type="action" (rendered as fix by
+        # accident) — now the correct literal "fix".
+        result = check_kernel_modules(
+            self._snap(apt_update_available=True, apt_candidate_kernel="6.8.0.56.57")
+        )
+        finding = next(f for f in result.findings
+                       if f.key == "kernel_modules.kernels_update_available")
+        assert finding.cmd_type == "fix"
 
     def test_update_not_available_no_finding(self):
         result = check_kernel_modules(self._snap(apt_update_available=False))

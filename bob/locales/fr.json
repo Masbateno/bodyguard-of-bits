@@ -3097,7 +3097,7 @@
     "socket_mounted_detail": "Monter /var/run/docker.sock dans un conteneur donne un contrôle équivalent à root sur l'hôte. Tout processus du conteneur peut créer de nouveaux conteneurs privilégiés ou s'échapper du bac à sable.",
     "socket_mounted_reason": "{count} conteneur(s) avec la socket Docker montée",
     "userns_not_configured": "Remappage des espaces de noms utilisateurs non configuré (userns-remap)",
-    "userns_not_configured_detail": "Sans userns-remap, un processus conteneur s'exécutant en tant qu'UID 0 est mappé directement sur root de l'hôte. Activez userns-remap dans /etc/docker/daemon.json pour remapper les UID des conteneurs.",
+    "userns_not_configured_detail": "Sans userns-remap, un processus conteneur s'exécutant en tant qu'UID 0 est mappé directement sur root de l'hôte. Activez userns-remap dans /etc/docker/daemon.json pour remapper les UID des conteneurs. La commande ci-dessous ne crée le fichier que s'il n'existe pas — si vous avez déjà un /etc/docker/daemon.json, ne l'écrasez PAS : sauvegardez-le et fusionnez-y la clé \"userns-remap\": \"default\", puis redémarrez docker.",
     "userns_configured": "Remappage des espaces de noms utilisateurs activé (userns-remap)",
     "root_containers": "{count} conteneur(s) s'exécutant en tant que root (UID 0) : {containers}",
     "root_containers_detail": "Exécuter des conteneurs en tant que root augmente le rayon d'explosion d'une évasion de conteneur. Définissez un utilisateur non-root dans le Dockerfile ou utilisez --user à l'exécution.",
