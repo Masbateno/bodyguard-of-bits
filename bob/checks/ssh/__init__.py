@@ -44,7 +44,7 @@ from ._subchecks import check_ssh
 # These leading-underscore helpers are imported by tests/test_ssh.py — keep
 # them re-exported so that `from bob.checks.ssh import _has_passphrase` etc.
 # continues to work after the v0.6.0 split.
-from ._parsers import (
+from ._parsers import (  # noqa: F401 — pure parsers re-exported for tests + back-compat
     _has_passphrase,
     _parse_authorized_keys,
     _parse_client_config,

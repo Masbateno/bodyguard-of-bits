@@ -398,7 +398,7 @@ class ServiceRegistry:
         with json_path.open(encoding="utf-8") as fh:
             content = fh.read(_MAX_JSON_SIZE + 1)
         if len(content) > _MAX_JSON_SIZE:
-            raise ValueError(f"services.json exceeds maximum allowed size (1 MB)")
+            raise ValueError("services.json exceeds maximum allowed size (1 MB)")
         raw = json.loads(content)
 
         if not isinstance(raw, list):

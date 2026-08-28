@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.13.2-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.13.3-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -71,7 +71,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 - **Samba security audit** — SMB1 protocol (ALERT −2 pts); null passwords (ALERT −3 pts); server signing disabled (WARN −1 pt); guest-writable/readable shares; dedicated `samba` domain
 - **ClamAV antivirus audit** — installation, virus database freshness via mtime (WARN/ALERT based on age), daemon status, last scan date parsed from standard log paths
 - **SMTP local exposure** — detects MTA (Postfix, Exim, Sendmail) listening on all interfaces vs localhost only; WARN −1 pt when publicly exposed
-- **Signal correlation engine** — 5 compound-risk rules (root+no-fail2ban, password-auth+brute-force, root+password, NOPASSWD+SUID, logging-off+no-fail2ban+no-auditd); evaluated post-audit on active ALERT+WARN findings
+- **Signal correlation engine** — 6 compound-risk rules (root+no-fail2ban, password-auth+brute-force, root+password, NOPASSWD+SUID, security-updates-pending+no-fail2ban, logging-off+no-fail2ban+no-auditd); evaluated post-audit on active ALERT+WARN findings
 - **Recurring finding tracker** — consecutive-audit appearance counter per ALERT/WARN key; stored at `~/.config/bob/recurrence.json`
 - **Desktop application detection** — known GUI apps (Steam, Discord, Zoom, Signal, VLC, Spotify, Slack, Telegram, Chrome, Firefox…) running as processes; INFO findings, no deduction
 

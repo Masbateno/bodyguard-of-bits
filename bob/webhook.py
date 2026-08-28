@@ -389,9 +389,9 @@ def test_webhook(url: str, fmt: str = "auto", timeout: int = _TIMEOUT_SECONDS,
     if effective_fmt == "slack":
         payload = {
             "text": (
-                f":wave: BOB webhook smoke test — "
-                f"if you see this, the URL is reachable and the receiver "
-                f"accepts POSTs."
+                ":wave: BOB webhook smoke test — "
+                "if you see this, the URL is reachable and the receiver "
+                "accepts POSTs."
             ),
             "attachments": [{
                 "color":  _SLACK_COLOR_OK,

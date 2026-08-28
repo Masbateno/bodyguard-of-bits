@@ -409,7 +409,7 @@ class AuditReport:
 
     def write_next_steps(self, steps: list[str]) -> None:
         """Write the next steps block at the end of the report."""
-        self._writeln(f"[NEXT STEPS]")
+        self._writeln("[NEXT STEPS]")
         for i, step in enumerate(steps, start=1):
             self._writeln(f"{i}. {step}")
         self._writeln(_SEPARATOR)

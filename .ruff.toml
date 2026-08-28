@@ -1,0 +1,30 @@
+# v0.13.3 — correctness-only lint gate.
+#
+# Deliberately NOT a style checker: no line-length (E501), no import sorting
+# (I), no naming (N), no pyupgrade (UP). Enabling those on a ~33 kLoC
+# codebase would produce hundreds of cosmetic diffs for no defect caught,
+# which is exactly the churn this project refuses.
+#
+# What is enabled is the class of bug that 6500 behavioural tests cannot
+# see: names that do not resolve, imports shadowed inside a function
+# (the v0.8.3 `UnboundLocalError` shipped to PyPI), f-strings that lost
+# their placeholders, and mutable-default / blind-except footguns.
+target-version = "py310"
+
+[lint]
+select = ["E9", "F", "B"]
+
+# Deferred, not waived — both are real signals whose fixes change runtime
+# behaviour, which does not belong in a patch release:
+#   B904  `raise ... from err` inside except — 4 sites (_sandbox, cli). Alters
+#         exception chaining and the traceback users see on a CLI error.
+#   B905  `zip(strict=)` — 1 site (cron/_parse). Turning it on makes a length
+#         mismatch raise where it currently truncates silently.
+# Revisit in v0.14.0 alongside the other behaviour-affecting changes.
+ignore = ["B904", "B905"]
+
+[lint.per-file-ignores]
+# Re-export shims from the v0.6.0 package splits: names are imported purely
+# so `from bob.cron import X` keeps working for tests and back-compat.
+"bob/cron/__init__.py"       = ["F401"]
+"bob/checks/ssh/__init__.py" = ["F401"]

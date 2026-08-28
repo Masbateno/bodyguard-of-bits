@@ -38,7 +38,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | Module | Role |
 |---|---|
 | `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~401 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (29 sections), `_section_enabled()` (656 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (38 filterable + 10 always-on sections), `_section_enabled()` (~845 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `~/.config/bob/config.conf`, `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,11 +54,11 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 116-key canonical list in 29 groups, profile variants (19 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 169-key canonical list in 45 prefixes, profile variants (19 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
 | `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (174 entries: 107 formal CIS, 60 best-practice, 7 Docker) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 7-domain attribution (`backup` → `disk`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
-| `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 5 built-in compound-risk rules |
+| `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 6 built-in compound-risk rules |
 | `exposure.py` | Port exposure analysis — groups exposed listening services by interface scope and risk level; fw_policy allowlist |
 | `recurrence.py` | Recurring finding tracker — `load_recurrence()`, `save_recurrence()`, `update_recurrence()`; consecutive-audit counters at `~/.config/bob/recurrence.json` |
 
@@ -134,12 +134,12 @@ bob/
 ├── compare.py           # AuditBaseline (finding_keys) + AuditDelta (new/resolved keys) + comparative report
 ├── completion.py        # bash completion installer — `bob --install-completion`
 ├── config.py            # UserConfig, EmailStore
-├── correlation.py       # CorrelationRule + run_correlations() — 5 compound-risk rules
+├── correlation.py       # CorrelationRule + run_correlations() — 6 compound-risk rules
 ├── cron.py              # CronEntry, schedule wizard logic, build_script_content()
 ├── csv_output.py        # CSV output formatter (--format csv)
 ├── display.py           # Terminal output helpers (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→disk attribution
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 116 keys in 29 groups
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 169 keys in 45 prefixes
 ├── exposure.py          # Port exposure grouping — interface scope + risk level
 ├── fixes.py             # Fix mode UI (interactive + auto-fix)
 ├── formatter.py         # bob.formatter — locale-independent rendering via Finding.template_vars (v0.4.1)
@@ -158,7 +158,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, HTML email
-├── runner.py            # Audit execution engine — run_checks() with _sec section closure (29 sections)
+├── runner.py            # Audit execution engine — run_checks() with _sec section closure (38 filterable + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # --watch=N mode — re-run audit every N seconds
@@ -466,7 +466,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 1401 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2008 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

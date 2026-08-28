@@ -7,6 +7,28 @@ on:
     branches: ["**"]
 
 jobs:
+  lint:
+    name: ruff — correctness gate (bob/ only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install --upgrade pip && pip install ruff
+
+      # Config lives in .ruff.toml: correctness rules only (E9/F/B), no style
+      # rules. Scoped to bob/ — tests/ carries ~140 unused-import findings
+      # whose cleanup is pure churn and would drown the signal this gate
+      # exists for (the v0.8.3 UnboundLocalError shipped to PyPI would have
+      # surfaced here as "redefinition of unused 'UserConfig'").
+      - name: Lint shipped package
+        run: ruff check bob/
+
   pytest:
     name: pytest — Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest

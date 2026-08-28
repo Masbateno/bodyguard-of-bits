@@ -38,7 +38,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | Module | Rôle |
 |---|---|
 | `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~401 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (29 sections), `_section_enabled()` (656 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (38 sections filtrables + 10 always-on), `_section_enabled()` (~845 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig`, `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,11 +54,11 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `sysinfo.py` | Info système — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Rapport comparatif — `AuditBaseline` (avec `finding_keys`), `AuditDelta` (avec `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Chargeur de plugins — `PluginCheck`, `load_plugin_checks()`, sanitisation ANSI |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 116 clés canoniques dans 29 groupes, variantes par profil (19 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 169 clés canoniques dans 45 préfixes, variantes par profil (19 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
 | `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (174 entrées : 107 CIS formels, 60 best-practice, 7 Docker) |
 | `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 7 domaines (`backup` → `disk`) |
 | `webhook.py` | Envoi webhook — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, auto-détection format |
-| `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 5 règles de risque composé intégrées |
+| `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 6 règles de risque composé intégrées |
 | `exposure.py` | Analyse d'exposition des ports — regroupe par portée d'interface et niveau de risque ; allowlist fw_policy |
 | `recurrence.py` | Suivi findings récurrents — `load_recurrence()`, `save_recurrence()`, `update_recurrence()` ; compteurs consécutifs dans `~/.config/bob/recurrence.json` |
 
@@ -134,12 +134,12 @@ bob/
 ├── compare.py           # AuditBaseline (finding_keys) + AuditDelta (new/resolved keys) + rapport comparatif
 ├── completion.py        # Installeur d'autocomplétion bash — `bob --install-completion`
 ├── config.py            # UserConfig, EmailStore
-├── correlation.py       # CorrelationRule + run_correlations() — 5 règles de risque composé
+├── correlation.py       # CorrelationRule + run_correlations() — 6 règles de risque composé
 ├── cron.py              # CronEntry, logique wizard planification, build_script_content()
 ├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→disk
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 116 clés dans 29 groupes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 169 clés dans 45 préfixes
 ├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
 ├── fixes.py             # Interface mode fix (interactif + auto-fix)
 ├── formatter.py         # bob.formatter — rendu indépendant de la locale via Finding.template_vars (v0.4.1)
@@ -158,7 +158,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, email HTML
-├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (29 sections)
+├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (38 filtrables + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # Mode --watch=N — relance l'audit toutes les N secondes
@@ -466,7 +466,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 1401 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2008 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

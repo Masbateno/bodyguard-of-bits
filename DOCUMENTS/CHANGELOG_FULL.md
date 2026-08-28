@@ -6,6 +6,129 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.13.3] — 2026-08-28
+
+**Hardening patch. Additive, non-BREAKING, no score change, no output field or exit code changed.**
+
+Five items, all found by auditing the tool against itself rather than by user report. Each was verified by reproducing the defect before fixing it.
+
+### 🔴 `logger.warning` leaked raw to stderr — `--quiet` and i18n bypassed
+
+BOB never called `logging.basicConfig` or installed a handler anywhere. Python's *lastResort* handler therefore caught all ~45 `logger.warning` / `logger.error` sites in the package and printed them on stderr — with no level prefix, no i18n, and no regard for `--quiet` (documented as *"Suppress all output"*).
+
+The most visible symptom was a doubled message:
+
+```
+$ sudo bob --profile=bogus --quiet
+Warning: Profile 'bogus' not found — using default (server)     <- output.print_warn (i18n, prefixed)
+Profile 'bogus' not found — using default (server)              <- profiles.py:134 logger.warning
+```
+
+The `_profile_prewarned` guard in `bob/__main__.py` correctly suppressed the *second BOB-formatted* warning; it could do nothing about the logger record behind it.
+
+The fix is two lines in [bob/__init__.py](../bob/__init__.py):
+
+```python
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+```
+
+The mechanism matters and was verified empirically: `logging.lastResort` fires **only** when zero handlers are found while walking the logger hierarchy. A `NullHandler` on `bob` counts as a handler found, so lastResort is disabled — but `propagate` stays `True`, so records still reach the root logger. Confirmed with a three-way probe (no handler → leak; NullHandler → silence; NullHandler + root handler → still propagates) and by running the full suite, including the three tests that use `caplog`.
+
+Silencing diagnostics without a way back would be a regression, so **`BOB_DEBUG=1`** now installs a real handler. As a side benefit it surfaces the 23 `logger.debug` calls that were unreachable before — including `_run()`'s per-subprocess failure trace, which is the single most useful thing to see when a check returns nothing on an unfamiliar distro.
+
+`BOB_DEBUG` is handled in `bob/__init__.py` rather than `bob/__main__.py` **on purpose**: `bob/i18n.py:46` and `bob/registry.py:40` both call `resolve_share_dir()` at module-import time, and that helper logs warnings for an invalid `BOB_SHARE`. Configuring logging in `main()` would run after those records were already emitted and dropped. Verified:
+
+```
+$ BOB_DEBUG=1 BOB_SHARE=/nonexistent/nope bob --version
+WARNING bob._paths: BOB_SHARE could not be resolved, ignoring: '/nonexistent/nope' (...)
+```
+
+### ⚡ `--check` / `--skip` bought no time — snapshots were collected before the gate
+
+`bob/runner.py` builds every section's snapshot **at the call site**:
+
+```python
+rootkit_snapshot = RootkitSnapshot.from_system()   # always executed
+_sec("rootkit", rootkit_snapshot, check_rootkit)   # gate consulted here — too late
+```
+
+`_sec` checks `_section_enabled` first thing, so a filtered-out section produced no finding — but the subprocesses had already run. Filtering was therefore free of *output* and free of *savings*:
+
+```
+sudo bob --quiet              5.42 s
+sudo bob --quiet --check=ssh  5.40 s
+```
+
+`_sec` now accepts either a pre-built snapshot **or a zero-arg factory**, and unwraps the factory *after* the `_section_enabled` gate and *before* `skip_if` — preserving the existing ordering contract exactly. Because a gated-out section already returned before `engine.apply()`, the behavioural delta is nil **by construction**, not by hope.
+
+The pattern was not invented here: `IptablesNftSnapshot` at `runner.py:471` has always been collected inside its guard. This generalises it.
+
+A static analysis of all 48 snapshots in `runner.py` classified them before any edit:
+
+| Category | Count | Treatment |
+|---|---:|---|
+| Referenced only by their own `_sec` call | 34 | Safe to make lazy |
+| Cross-used by always-on logic (`fw_status`, `ports_snapshot`, `net_snapshot`, `stack_snapshot`, `ddns_snapshot`, `logs_snapshot`, `docker_snapshot`, `virt_snapshot`, `snapshots`, `ipt_snapshot`) | 10 | Must stay eager |
+| Returned in `ChecksResult` and consumed by `json_output` (`hardening_snapshot`, `ipv6_snapshot`) | 2 | **Must stay eager** |
+
+The last row is the trap. Both feed the `sysctl` block of `--json-full`; they are already typed `| None` with a guard, so making them lazy would not crash — it would silently **drop a block from the schema v3 output** under `--check=ssh --json-full`. They are excluded.
+
+This release converts the five most expensive of the 34 (~2.9 s of a 5.4 s audit):
+
+```
+1491 ms  updates            660 ms  services_health
+ 324 ms  socket_units       288 ms  disk
+ 186 ms  systemd_hardening
+```
+
+**Result: `--check=ssh` 5.40 s → 2.57 s (−52 %)**, full audit unchanged. The 29 remaining sites are deferred to v0.13.4 pending field feedback on these five.
+
+**On testing this correctly.** A raw JSON diff is *not* a valid equivalence check: live data (UFW block counters) drifts between two runs and produces false positives — the first comparison attempted here reported a difference that a control run of unmodified code against itself reproduced. The valid test compares the **structural signature** `(key, level, nature)` of every finding, run A/B/A/B to cancel time drift. Identical across `--check=ssh`, `--skip=updates,disk`, `-p desktop` and `--check=updates` (the last exercising the lazy path *taken*), with matching `score` / `risk` / `alert_count` / `warning_count` / `info_count` and an unchanged JSON key set.
+
+### `NO_COLOR` is honoured
+
+[bob/output.py](../bob/output.py) `init()` now also consults the [no-color.org](https://no-color.org) environment variable, with spec-correct semantics: any **non-empty** value disables colour, an **empty** value is ignored. Strictly additive — this path can only ever turn colour *off*.
+
+The related finding is **not** fixed here: BOB still emits ANSI when stdout is a pipe (`bob --breakdown > file.txt` writes escape codes), and `output.supports_color()` — written, correct, never called — is exactly the missing wiring. Enabling it is **BREAKING** (it would strip colour from `bob | less -R`), so it ships in v0.14.0 together with a `FORCE_COLOR` escape hatch.
+
+### Documented counters had drifted — one by six minor releases
+
+| Counter | Docs said | Code says |
+|---|---:|---:|
+| Correlation rules | 5 | **6** |
+| `--explain` keys | 116 | **169** |
+| Explain groups | 29 | **45** prefixes |
+| Runner sections | 29 | **38** filterable + **10** always-on |
+| Locale keys | 1401 | **2008** |
+
+`SNAPSHOT.md` was correct throughout; `README_TECH.md` had one drift; `README_DEV.md` / `README_DEV_FR.md` carried all five — its "116 keys / 29 groups" predates even the v0.7.0 baseline of 117/30. The correlation-rule enumeration was also missing a rule entirely (`corr.stale_unmonitored` — security updates pending + no brute-force protection).
+
+The structural cause: the existing guards (`test_doc_version_consistency.py`, `test_v0111_doc_accuracy.py`) pin *versions*, *profiles* and *retired flags* — never *counters*. [tests/test_v0133_release.py](../tests/test_v0133_release.py) closes the class, matching documented claims against values computed from the code at test time.
+
+It deliberately **skips lines that narrate past releases**. `README_TECH.md:776` reads *"Baseline history: v0.7.0 audit = 117 keys / 30 prefixes"* — legitimately historical, and a naive guard would demand it be rewritten to today's number. Exactly one line in the corpus needs this exemption, so the rule stays narrow and auditable.
+
+### Correctness-only lint gate, at zero
+
+New `.ruff.toml` and a CI job running `ruff check bob/`, restricted to `E9` / `F` / `B` with **no style rules whatsoever** — no line length, import sorting, naming, or pyupgrade. Enabling those on ~33 kLoC would produce hundreds of cosmetic diffs for no defect caught, which is the churn this project refuses.
+
+Scoped to `bob/`. `tests/` carries ~140 findings, almost all unused imports in test files: zero value, and enough noise to drown the signal.
+
+The justification was **tested, not assumed**. Reconstructing the v0.8.3 bug that shipped to PyPI (a `from bob.config import UserConfig` inside an untaken branch, making the name local to the whole function and raising `UnboundLocalError`), ruff reports *"redefinition of unused 'UserConfig' from line 1"* at the right line. It names the shadowing, not the error — a strong hint rather than a diagnosis — and it is only visible if the baseline sits at zero.
+
+`B904` (`raise ... from`) and `B905` (`zip(strict=)`) are **deferred, not waived**, and the config says so: their fixes change exception chaining and iteration strictness, which does not belong in a patch release. They are v0.14.0 candidates.
+
+Cleanup to reach zero: 6 genuinely dead imports, 8 redundant `f` prefixes (string contents unchanged), and one discarded `ast.parse` result made explicit.
+
+**One removal was wrong and the test suite caught it.** Dropping the "unused" `_run` import from `bob/checks/clamav.py` broke three tests: they patch it with `monkeypatch.setattr(clamav_mod, "_run", ...)`, which requires the name to exist in the module namespace. The same import in `backup.py` and `log_rotation.py` is the same kind of **test seam**. All three were restored and annotated. A grep for imports could not have found this — only running the suite could.
+
+### Tests
+
+6511 → **6533** (+22, all in `tests/test_v0133_release.py`: 6 logging, 4 lazy-snapshot, 4 `NO_COLOR`, 8 doc-counter). 0 regression.
+
+**v0.12.x remains EOL**; v0.13.x is the only supported line. Upgrade: `pipx upgrade bodyguard-of-bits` — no migration action.
+
+---
+
 ## [v0.13.2] — 2026-06-21
 
 **Same-day finding-command safety / coherence patch. Additive, non-BREAKING, no score change.**

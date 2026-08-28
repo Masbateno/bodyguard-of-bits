@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import unicodedata
@@ -156,11 +157,16 @@ def init(no_color: bool = False, quiet: bool = False, min_level: str = "") -> No
         no_color:  If True, all ANSI codes are suppressed.
         quiet:     If True, all print_* functions are silenced.
         min_level: Minimum severity to display: '' (all), 'warn', or 'alert'.
+
+    The ``NO_COLOR`` environment variable (https://no-color.org) is honoured
+    as an additional way to reach the same state as ``--no-color`` — per the
+    spec, *any* non-empty value disables colour. Added in v0.13.3; strictly
+    additive, since it can only ever turn colour off.
     """
     global _c, _no_color, _quiet, _min_level_threshold
-    _no_color = no_color
+    _no_color = no_color or bool(os.environ.get("NO_COLOR"))
     _quiet    = quiet
-    _c = _COLOURS_OFF if (no_color or quiet) else _COLOURS_ON
+    _c = _COLOURS_OFF if (_no_color or quiet) else _COLOURS_ON
     _min_level_threshold = _LEVEL_RANK.get(min_level.lower(), 0)
 
 

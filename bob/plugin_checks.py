@@ -300,8 +300,10 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
         return None
 
     # --- Syntax check (AST parse only, no exec) ---
+    # The parse tree is deliberately discarded: only the SyntaxError matters
+    # here. Run-time validation of the plugin body happens in the sandbox.
     try:
-        tree = ast.parse(source)
+        ast.parse(source)
     except SyntaxError as exc:
         logger.warning(
             "Plugin %s: syntax error: %s — skipped",

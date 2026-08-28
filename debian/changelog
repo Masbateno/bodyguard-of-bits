@@ -1,3 +1,33 @@
+bodyguard-of-bits (0.13.3-1) UNRELEASED; urgency=low
+
+  * Hardening patch. Additive, non-BREAKING, no score change, no output field
+    or exit code changed.
+  * logging — BOB never configured logging, so every logger.warning() in the
+    package fell through to Python's lastResort handler and printed a raw,
+    un-prefixed, un-i18n'd line on stderr, bypassing --quiet. Visible as a
+    doubled message on `bob --profile=typo`. A NullHandler on the `bob`
+    logger stops lastResort without breaking propagation (caplog and any
+    downstream handler keep working). New BOB_DEBUG=1 env var turns on a
+    real handler, including the 23 previously unreachable logger.debug calls.
+  * performance — section snapshots were collected eagerly at the _sec call
+    site, before --check/--skip/profile gating could skip the section, so
+    `bob --check=ssh` still paid for all 47 checks. _sec now accepts a
+    factory and invokes it after the gate; the five most expensive snapshots
+    are converted. Measured 5.40s -> 2.57s on --check=ssh; full audit
+    unchanged. Output proven byte-identical across four filter combinations.
+  * NO_COLOR — the no-color.org environment variable now reaches the same
+    state as --no-color (additive; it can only ever turn colour off).
+  * docs — five counters had drifted from the code (correlation rules 5->6,
+    explain keys 116->169, groups 29->45 prefixes, runner sections 29->38+10,
+    locale keys 1401->2008), one of them by six minor releases. Corrected in
+    README_TECH + README_DEV (EN+FR) and pinned by a new counter-drift guard
+    that skips lines narrating past releases.
+  * lint — new correctness-only ruff gate on bob/ in CI (E9/F/B, no style
+    rules), at zero findings. B904/B905 documented as deferred: their fixes
+    change runtime behaviour and belong in v0.14.0.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 28 Aug 2026 18:00:00 +0200
+
 bodyguard-of-bits (0.13.2-1) UNRELEASED; urgency=low
 
   * Same-day finding-command safety/coherence patch. Additive, non-BREAKING,

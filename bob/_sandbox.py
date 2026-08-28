@@ -124,8 +124,6 @@ import ast
 import builtins
 import logging
 import multiprocessing as mp
-import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -361,7 +359,7 @@ def _patch_pathlib_writes() -> None:
 
     def _denied(self, *args, **kwargs):
         raise PermissionError(
-            f"Plugin sandbox: pathlib write operation not allowed."
+            "Plugin sandbox: pathlib write operation not allowed."
         )
 
     for method in _PATH_WRITE_METHODS:

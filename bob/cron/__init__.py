@@ -29,7 +29,7 @@ from __future__ import annotations
 # asserts `bob.cron.datetime is datetime.datetime`.
 from datetime import datetime  # noqa: F401
 
-from ._parse import (
+from ._parse import (  # noqa: F401 — private helpers re-exported for tests + back-compat
     CRON_DIR,
     LEGACY_CRON_PATH,
     LEGACY_SCRIPT_PATH,
@@ -51,20 +51,20 @@ from ._parse import (
     parse_cron_file,
     suggest_name,
 )
-from ._io import (
+from ._io import (  # noqa: F401 — _atomic_write re-exported for back-compat
     _atomic_write,
     apply_cron_email,
     apply_cron_schedule,
     build_script_content,
 )
-from ._install import (
+from ._install import (  # noqa: F401 — _CronQuit / _run_*_plain re-exported
     _CronQuit,
     _run_install_cron_plain,
     prompt_email,
     prompt_emails,
     run_install_cron,
 )
-from ._manage import (
+from ._manage import (  # noqa: F401 — _manage_email_store / _run_*_plain re-exported
     _manage_email_store,
     _run_manage_cron_plain,
     edit_cron_email,

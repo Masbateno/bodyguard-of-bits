@@ -389,8 +389,15 @@ def run_checks(
         Args:
             section: section key (drives header text + `_section_enabled` gate
                 via profile / `--check`).
-            snapshot: pre-collected snapshot object (passed positionally to
-                ``check_fn``).
+            snapshot: either a pre-collected snapshot object, or a zero-arg
+                callable returning one (``XxxSnapshot.from_system``). A
+                callable is invoked *after* the ``_section_enabled`` gate, so
+                a section excluded by ``--check`` / ``--skip`` / the active
+                profile costs nothing — pre-v0.13.3 every snapshot was
+                collected eagerly at the call site and `--check=ssh` still
+                paid for all 47 checks. No snapshot class produces a callable
+                instance, so ``callable()`` distinguishes the two without
+                ambiguity.
             check_fn: pure check function returning a ``CheckResult``.
             skip_if: optional ``Callable[[snapshot], bool]`` — when truthy,
                 the section is skipped without emitting the header (used for
@@ -405,6 +412,8 @@ def run_checks(
         """
         if not _section_enabled(section, config, profile):
             return
+        if callable(snapshot):
+            snapshot = snapshot()
         if skip_if is not None and skip_if(snapshot):
             return
         emit_section(section)
@@ -721,12 +730,10 @@ def run_checks(
     _sec("cron", cron_audit_snapshot, check_cron_audit)
 
     # ---- CHECK 16 — Service state audit ----
-    services_state_snapshot = ServicesStateSnapshot.from_system()
-    _sec("services_health", services_state_snapshot, check_services_state)
+    _sec("services_health", ServicesStateSnapshot.from_system, check_services_state)
 
     # ---- CHECK 46 — Service hardening (systemd-analyze security) ----
-    service_hardening_snapshot = ServiceHardeningSnapshot.from_system()
-    _sec("systemd_hardening", service_hardening_snapshot, check_service_hardening)
+    _sec("systemd_hardening", ServiceHardeningSnapshot.from_system, check_service_hardening)
 
     # ---- CHECK 47 — Container self-hardening posture (only inside a container) ----
     container_security_snapshot = ContainerSecuritySnapshot.from_system()
@@ -734,8 +741,7 @@ def run_checks(
          skip_if=lambda s: not s.in_container)
 
     # ---- CHECK 48 — Orphan / failed systemd socket units ----
-    socket_units_snapshot = SocketUnitsSnapshot.from_system()
-    _sec("socket_units", socket_units_snapshot, check_socket_units)
+    _sec("socket_units", SocketUnitsSnapshot.from_system, check_socket_units)
 
     # ---- CHECK 49 — Host-side cloud context (only on a cloud instance) ----
     cloud_context_snapshot = CloudContextSnapshot.from_system()
@@ -743,8 +749,7 @@ def run_checks(
          skip_if=lambda s: not s.is_cloud)
 
     # ---- CHECK 13 — System updates ----
-    updates_snapshot = UpdatesSnapshot.from_system()
-    _sec("updates", updates_snapshot, check_updates, profile_name=_pname)
+    _sec("updates", UpdatesSnapshot.from_system, check_updates, profile_name=_pname)
 
     # ---- CHECK 41 — System umask ----
     umask_snapshot = UmaskSnapshot.from_system()
@@ -755,8 +760,7 @@ def run_checks(
     _sec("memory", memory_snapshot, check_memory, profile_name=_pname)
 
     # ---- CHECK 22 — Disk health (SMART + partition usage) ----
-    disk_snapshot = DiskSnapshot.from_system()
-    _sec("disk", disk_snapshot, check_disk,
+    _sec("disk", DiskSnapshot.from_system, check_disk,
          post_display=lambda snap, _r: display_disk_partitions(snap, t, output))
 
     # =========================================================================

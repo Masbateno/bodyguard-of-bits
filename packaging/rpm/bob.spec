@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.13.2
+Version:        0.13.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,18 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Aug 28 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.3-1
+- Hardening patch. Additive, non-BREAKING, no score change.
+- logging: NullHandler on the `bob` logger stops Python's lastResort handler
+  from leaking ~45 raw logger.warning lines to stderr (bypassing --quiet and
+  i18n, and doubling the --profile=typo message). New BOB_DEBUG=1 opt-in.
+- performance: _sec now takes a snapshot factory invoked after the
+  --check/--skip/profile gate, so a filtered section costs nothing.
+  --check=ssh measured 5.40s -> 2.57s; full audit unchanged.
+- NO_COLOR environment variable honoured (no-color.org).
+- docs: five stale counters corrected (EN+FR) + a counter-drift test guard.
+- lint: correctness-only ruff gate on bob/ in CI, at zero findings.
+
 * Sun Jun 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.2-1
 - Same-day finding-command safety/coherence patch. Additive, non-BREAKING,
   no score change. Sub-agent semantic-coherence pass over ~144 finding commands
