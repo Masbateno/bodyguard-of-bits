@@ -82,7 +82,7 @@ def run_watch(
             ts  = now.strftime("%H:%M:%S")
 
             # ---- Run a silent audit ----
-            engine = ScoreEngine()
+            engine = ScoreEngine(profile=active_profile)
             # I-1 (v0.7.1): propagate the user's ignore.yml so watch mode
             # respects the same skip list as the non-watch audit path
             # (compare bob/__main__.py "if ignore_keys: engine.ignore_keys = ...").

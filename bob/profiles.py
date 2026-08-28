@@ -26,10 +26,18 @@ hardening.rp_filter_disabled   = info
 
 Usage
 -----
-    from bob.profiles import load_profile, apply_profile
+    from bob.profiles import load_profile
+    from bob.scoring import ScoreEngine
 
     profile = load_profile("workstation")
-    result  = apply_profile(result, profile)
+    engine  = ScoreEngine(profile=profile)
+    engine.apply(result)          # overrides applied inside apply()
+
+Since v0.14.0 the engine carries the profile and applies the overrides
+itself. Calling ``apply_profile(result, profile)`` by hand still works and
+is idempotent, but it is no longer the contract: doing it at the call site
+is what left 8 shipped overrides dead, because only 2 of the 14
+``engine.apply()`` sites in bob/runner.py remembered to do it.
 """
 
 from __future__ import annotations

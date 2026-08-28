@@ -9,7 +9,7 @@ from typing import NamedTuple
 from bob import output
 from bob.cli import AuditConfig
 from bob.config import UserConfig
-from bob.profiles import AuditProfile, apply_profile
+from bob.profiles import AuditProfile
 from bob.display import (
     check_single_service_display,
     display_disk_partitions,
@@ -418,8 +418,9 @@ def run_checks(
             return
         emit_section(section)
         result = check_fn(snapshot, t=t, **check_kwargs)
-        if profile is not None:
-            apply_profile(result, profile)
+        # v0.14.0 E: the profile is applied inside engine.apply() now — it is
+        # the single choke point every result passes through, so the 12
+        # hand-rolled always-on sections below get their overrides too.
         engine.apply(result)
         display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if post_display is not None and not config.quiet:
@@ -825,8 +826,6 @@ def run_checks(
             print_section(plugin.name)
         report.write_section(plugin.name)
         plugin_result = plugin.run(t)
-        if profile is not None:
-            apply_profile(plugin_result, profile)
         engine.apply(plugin_result)
         display_result(plugin_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if not config.quiet:

@@ -397,7 +397,7 @@ def _run(argv=None) -> int:
             curr_baseline   = None
 
             report   = init_report(config, user_config, t, VERSION)
-            engine   = ScoreEngine()
+            engine   = ScoreEngine(profile=active_profile)
             engine.ignore_keys = load_ignore_keys()
             sys_info = collect_system_info(VERSION, config.lang)
             # M-5 (v0.7.4): pass localised labels so `--french` reports have

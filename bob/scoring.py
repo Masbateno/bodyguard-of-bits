@@ -27,6 +27,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover — annotation only, avoids the
+    # bob.profiles -> bob.scoring import cycle at runtime.
+    from bob.profiles import AuditProfile
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -347,7 +352,16 @@ class ScoreEngine:
         findings:  Flat list of all findings from all applied CheckResults.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, profile: "AuditProfile | None" = None) -> None:
+        # v0.14.0 E: the active audit profile is carried by the engine so
+        # severity overrides are applied at the single choke point every
+        # check result must pass through (``apply``). Pre-v0.14.0 the caller
+        # was responsible for invoking ``apply_profile`` before
+        # ``engine.apply``, and only 2 of the 14 call sites in bob/runner.py
+        # did — the 12 hand-rolled always-on sections never applied it, which
+        # left 8 shipped profile overrides silently dead (see the class
+        # docstring of ``bob.profiles.apply_profile``).
+        self.profile = profile
         self._raw_score: int = MAX_SCORE
         self._cap: ScoreCap | None = None
         self._global_override: int | None = None
@@ -386,6 +400,16 @@ class ScoreEngine:
         Args:
             result: Output of a check_* function.
         """
+        # v0.14.0 E: apply the profile's severity overrides FIRST — it can
+        # downgrade a finding to INFO (dropping its deductions) or remove it
+        # outright ("skip"), so it must run before deductions and findings are
+        # accumulated below. Imported lazily: bob.profiles imports CheckResult
+        # and FindingLevel from this module, so a top-level import would be
+        # circular.
+        if self.profile is not None:
+            from bob.profiles import apply_profile
+            apply_profile(result, self.profile)
+
         ignored_keys = self.ignore_keys
 
         # v0.10.0 D-4 — accept both exact matches (operator already
