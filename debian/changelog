@@ -1,3 +1,38 @@
+bodyguard-of-bits (0.13.4-1) UNRELEASED; urgency=low
+
+  * Documentation accuracy pass. Factual corrections only — no rewriting of
+    text that was already correct. Two of the seven defects were introduced
+    by v0.13.3 itself.
+  * SECURITY_FR.md "Plugin checks" was not merely abridged (83 words against
+    562 in English) — it was factually inverted: it stated plugins are NOT
+    sandboxed and referred to "la ligne 0.6.x". The sandbox shipped in
+    v0.7.0, so the French security policy had been telling readers the
+    opposite of the truth for seven minor releases, and the entire threat
+    model (defence-in-depth not a security boundary, code-review your
+    plugins, AppArmor is the real boundary) was absent in French. Fully
+    translated: 15% -> 121% of the English word count.
+  * 5 working CLI flags appeared nowhere in --help: --json, --json-full,
+    --html, --output=FORMAT and --no-colour. Documented.
+  * 17 links in DOCUMENTS/CHANGELOG_FULL.md used ](bob/…) instead of
+    ](../bob/…) and 404 on GitHub; the FR twin had zero. Fixed, plus 8 links
+    pointing at Claude's internal memory store that had leaked into the
+    public changelog, and 4 stale targets (a file split in v0.6.0, a
+    "::method" suffix in a URL).
+  * SNAPSHOT.md contradicted itself after v0.13.3: the new header said
+    NO_COLOR is honoured, a later line still said "NOT honored". Resolved,
+    and the still-unwired TTY auto-detection stated explicitly.
+  * BOB_DEBUG was documented as traceback-only in SECURITY.md + FR; v0.13.3
+    also made it install a logging handler without updating the table.
+  * README_DEV was missing the four v0.13.x check modules
+    (systemd_hardening, container_security, socket_units, cloud_context),
+    and --english (v0.12.1) was absent from README_TECH and the man page.
+  * Three anti-drift guards added, each closing a class rather than the
+    instances: relative-link resolution, per-section EN/FR word ratio (a
+    whole-file ratio would have missed the SECURITY_FR defect — the file was
+    at 92% overall), and every parse_args flag must appear in --help.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 28 Aug 2026 20:30:00 +0200
+
 bodyguard-of-bits (0.13.3-1) UNRELEASED; urgency=low
 
   * Hardening patch. Additive, non-BREAKING, no score change, no output field

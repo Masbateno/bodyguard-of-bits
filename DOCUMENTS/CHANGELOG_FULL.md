@@ -6,6 +6,84 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.13.4] — 2026-08-28
+
+**Documentation accuracy pass. Factual corrections only — no rewriting of text that was already correct, and no audit behaviour change.**
+
+A machine audit of the entire documentation corpus (21 markdown files, 3 man pages, ~26 kLines) against the code. Seven real defects; **two of them were introduced by v0.13.3 itself**, which is the point — a release that changes behaviour must sweep the docs for claims it just falsified, and v0.13.3 updated only the SNAPSHOT header and the changelog.
+
+### 🔴 `SECURITY_FR.md` "Plugin checks" was factually inverted, not merely abridged
+
+The section measured 83 words against 562 in English (**15 %**), while the other 15 sections of the same file sat at 107–132 %. But the word count was the least of it. The French text said:
+
+> les plugins […] **NE SONT PAS sandboxés** […] Une future version majeure pourra introduire un runner de plugins en mode restreint […] mais c'est hors périmètre pour la ligne **0.6.x**.
+
+The sandbox shipped in **v0.7.0**. For **seven minor releases**, the French security policy told its readers the opposite of the truth, and froze the roadmap at a line that had been EOL since v0.7.2.
+
+Everything the English version says about the threat model was absent in French: that in-process Python sandboxing **is not a security boundary** (PEP 416, retracted); that `json.dumps.__globals__["__builtins__"]["__import__"]` is reachable by any plugin and this is *expected* and pinned by `TestKnownInProcessLimitation`; that the `dict.__setitem__` unbound bypass is a known limitation; that **AppArmor is the actual boundary**; and the operational conclusion — **if you run BOB unconfined under `sudo`, code-review your plugins before installing them**.
+
+The section is now fully translated, including the spawn isolation, the rlimits, the import allowlist, the `_ImmutableBuiltins` rationale, the `open()` wrapper, the JSON-safe round-trip that defeats a malicious `__reduce__`, and the retired `BOB_SANDBOX_LEGACY` note. **15 % → 121 %**.
+
+### Five working CLI flags appeared nowhere in `--help`
+
+All five parse correctly and are used in the wild; none were discoverable:
+
+| Flag | Verified | Was in `--help` |
+|---|---|---|
+| `--json` | `json_mode=True` | no |
+| `--json-full` | `json_full=True` | no |
+| `--html` | `html_mode=True` | no |
+| `--output=FORMAT` | `csv_mode=True` | no — the grep hit was `--output-dir` |
+| `--no-colour` | `no_color=True` | no |
+
+This is the "silent feature gap" class the project hunted through eight tiers in v0.8.0. `--output=FORMAT` is now documented with an explicit warning not to confuse it with `--output-dir`, and `--no-colour` / `NO_COLOR` are mentioned on the `--no-color` line.
+
+### 29 broken or leaked markdown links
+
+- **17** in `DOCUMENTS/CHANGELOG_FULL.md` written `](bob/…)` instead of `](../bob/…)`. They resolve to `DOCUMENTS/bob/…` and 404 on GitHub. The French twin had **zero** — which is exactly why cross-locale symmetry never surfaced them.
+- **8** pointing at `](memory)` — references to Claude's internal memory store that leaked into the public changelogs across four files. They mean nothing to a reader and resolve to nothing in the repository; replaced by the plain-language rule they were citing.
+- **4** stale targets: `bob/checks/ssh.py` (split into a package in v0.6.0) and a `bob/_v090_renames.py::remap_finding_key` URL where the `::method` suffix made the path invalid.
+
+### `SNAPSHOT.md` contradicted itself after v0.13.3
+
+Line 15 (added by v0.13.3) said `NO_COLOR` is honoured. Line 633 still said:
+
+> **NOT honored**: `NO_COLOR` env var. BOB currently respects only the `--no-color`/`-n` CLI flag.
+
+Resolved. The replacement also states the part that is *still* true and easy to conflate: TTY auto-detection remains unwired — `output.supports_color()` exists, is correct, and is called from nowhere, so BOB emits ANSI even into a pipe. Enabling it is BREAKING and is reserved for v0.14.0 with a `FORCE_COLOR` escape hatch.
+
+### `BOB_DEBUG` was documented as traceback-only
+
+`SECURITY.md` and `SECURITY_FR.md` described it as *"Print the full Python traceback on `EXIT_ERROR=3` exits"* — true since v0.6.1, and incomplete since yesterday: v0.13.3 also made it install a real logging handler on the `bob` logger. Both tables now describe both effects. `NO_COLOR`, absent from the env tables entirely, was added in both locales.
+
+### `README_DEV` was missing the four v0.13.x check modules
+
+`systemd_hardening`, `container_security`, `socket_units` and `cloud_context` had **0 occurrences** in `README_DEV{,_FR}.md` against 3–4 each in `SNAPSHOT.md`. Added to both the module table and the directory tree, in both locales. `--english` (v0.12.1) was likewise absent from `README_TECH{,_FR}.md` and `man/bob.1`.
+
+### Three anti-drift guards
+
+Each closes a class rather than the instances found:
+
+1. **Link resolution** — every relative markdown link must resolve; no `](bob/` from `DOCUMENTS/`; no link to the memory store. Two documented false-positive exemptions (a literal `[label](url)` syntax example and a regex inside a fenced block).
+2. **Per-section EN/FR word ratio ≥ 55 %.** The *per-section* granularity is the point: `SECURITY_FR.md` was at **92 % overall**, so a whole-file ratio would have missed the inverted section entirely.
+3. **CLI surface coverage** — every flag `parse_args()` accepts must appear in `--help`, plus the reverse check that `--help` promises nothing the parser rejects. Writing this guard immediately exposed a bug in its own extraction: value-taking flags are matched as `arg.startswith("--webhook-format=")`, so the literal carries a trailing `=` inside the quotes and a naive regex reports a working flag as a ghost. Fixed before the guard was trusted.
+
+### Verified healthy — deliberately left untouched
+
+The audit's negative results matter as much as its findings, and they bound any future pass:
+
+- **5 of 6 doc pairs at 106–113 %** EN/FR word ratio (README, README_TECH, README_DEV, AUTOMATION, TUTORIAL) — the translations are complete; French simply runs longer.
+- **`CHANGELOG_FULL` carries all 65 releases in both locales**, none missing. The 1755-line gap is formatting, not content.
+- **`README_DEV`'s module inventory is otherwise complete** — no ghost module, no missing root module. It is organised by *filename* (`docker_audit.py`, `services_state.py`), which are the real names; the section-name renames of v0.9.0 D-1 are a separate, internal-only surface.
+
+### Tests
+
+6533 → **6545** (+12, all in `tests/test_v0134_docs_accuracy.py`). 0 regression.
+
+**v0.12.x remains EOL**; v0.13.x is the only supported line. Upgrade: `pipx upgrade bodyguard-of-bits` — documentation and `--help` text only.
+
+---
+
 ## [v0.13.3] — 2026-08-28
 
 **Hardening patch. Additive, non-BREAKING, no score change, no output field or exit code changed.**
@@ -2376,23 +2454,23 @@ Sub-agent deep-audit on the v0.7.3 codebase surfaced 0 Critical + 6 Important + 
 
 #### Important
 
-- **I-1 — `--quiet` output leaks** ([bob/runner.py:467](bob/runner.py#L467) + [bob/display.py:206](bob/display.py#L206)): the Docker `exposed_ports` block, `display_ports_overview`, `display_geoip_notice` and `display_log_results` all printed to stdout even with `-q`. `bob -q | cat` could thus be non-empty when geoip2 was unavailable, Docker exposed ports, or log analysis surfaced content. Contract break. Each helper now gates print_* calls on `config.quiet`; `report.write_*` calls always run so the `.log` report is unaffected. `display_geoip_notice` gained a keyword-only `quiet: bool = False` (back-compat default).
-- **I-2 — `--explain` UI labels i18n** ([bob/explain.py](bob/explain.py) + new locale namespace `explain.ui.*`): `WHY IT IS A RISK`, `HOW TO FIX`, `SCORING`, `Domain`, `Tool cap`, `Impact`, curses picker/detail headers (`bob --explain    ↑↓: move   Enter: view   q: quit`, `↑↓ / PgUp/PgDn: scroll   Esc: back`), picker footer `{n_keys} keys across {n_groups} groups`, list-mode header `Available --explain keys:`, error path `No explanation available for: {requested}` / `Run 'sudo bob --explain list' …` — all hardcoded English on FR audits. 18 new keys land under `explain.ui.*` in both locales.
-- **I-3 — `__main__` CLI flows i18n** ([bob/__main__.py](bob/__main__.py) + new `cli.list.*` / `cli.ignore.*` / `cli.baseline.*` / `compare.no_baseline_yet` keys): `--check=list` header + prefix-matching note + always-on header + usage block, `--ignore=KEY` invalid-key validation message + canonical-hint + success/already-present feedback, `--reset-baseline` deleted/not-found/error, `--diff` no-baseline-yet message — all hardcoded English. Now routed through `t()` with the audit's lang.
-- **I-4 — webhook scheme symmetry between `webhook.py` and `config.py::set_webhook_url`** ([bob/config.py:261](bob/config.py#L261)): v0.7.3 I-5 made `webhook.py::send_webhook` case-insensitive (`url.lower()`); the persistence sister `UserConfig.set_webhook_url` stayed case-sensitive. Result: `bob --webhook HTTPS://...` sent OK at runtime then silently failed to persist (the `ValueError` was swallowed by `__main__.py`, leaving the saved config unchanged, so the next cron audit posted nowhere). Mirrors the v0.7.3 fix with `url.lower().startswith(...)` for the scheme check; persisted value is the user's original case.
-- **I-5 — `bob/checks/services.py` duplicate private-IP matcher** ([bob/checks/services.py:38](bob/checks/services.py#L38)): the v0.5.6 architectural unification of private-IP detection retired a hand-rolled regex in `bob/checks/logs.py` and documented that `sysinfo._is_private_or_loopback_ipv4/_ipv6` is the single source of truth. A duplicate `_PRIVATE_ADDR` regex was overlooked in `services.py::_classify_exposure`. v0.7.4 replaces the regex with token extraction + delegation to the sysinfo helpers, so the next CGNAT / ULA / link-local range update lands once. Behaviour-preserved: all existing 192.168 / 10.0 / 172.16 / 100.64 (CGNAT) / fc00:: (ULA) tests pass; IPv6 zone-id (`fe80::1%eth0`) is stripped before the helper call.
-- **I-6 — CSV `risk` aligned to JSON v1 (BREAKING)** ([bob/csv_output.py:55](bob/csv_output.py#L55)): pre-v0.7.4 CSV `risk` used `engine.effective_level.value` (posture-escalated) while JSON v1 `risk` was restored to `engine.level.value` (score-only) by v0.7.1 I-3 to preserve the v0.6.x wire-format contract. Consumers comparing CSV + JSON v1 on the same posture-escalated audit saw different `risk` values. v0.7.4 aligns CSV with JSON v1's score-only semantics — **wire-format break** for CSV consumers that relied on the escalated value (migrate to JSON v2's `posture_escalation.score_level` for that). User decision: option A (rename + break) chosen explicitly per the v0.7.1 contract-preservation stance.
+- **I-1 — `--quiet` output leaks** ([bob/runner.py:467](../bob/runner.py#L467) + [bob/display.py:206](../bob/display.py#L206)): the Docker `exposed_ports` block, `display_ports_overview`, `display_geoip_notice` and `display_log_results` all printed to stdout even with `-q`. `bob -q | cat` could thus be non-empty when geoip2 was unavailable, Docker exposed ports, or log analysis surfaced content. Contract break. Each helper now gates print_* calls on `config.quiet`; `report.write_*` calls always run so the `.log` report is unaffected. `display_geoip_notice` gained a keyword-only `quiet: bool = False` (back-compat default).
+- **I-2 — `--explain` UI labels i18n** ([bob/explain.py](../bob/explain.py) + new locale namespace `explain.ui.*`): `WHY IT IS A RISK`, `HOW TO FIX`, `SCORING`, `Domain`, `Tool cap`, `Impact`, curses picker/detail headers (`bob --explain    ↑↓: move   Enter: view   q: quit`, `↑↓ / PgUp/PgDn: scroll   Esc: back`), picker footer `{n_keys} keys across {n_groups} groups`, list-mode header `Available --explain keys:`, error path `No explanation available for: {requested}` / `Run 'sudo bob --explain list' …` — all hardcoded English on FR audits. 18 new keys land under `explain.ui.*` in both locales.
+- **I-3 — `__main__` CLI flows i18n** ([bob/__main__.py](../bob/__main__.py) + new `cli.list.*` / `cli.ignore.*` / `cli.baseline.*` / `compare.no_baseline_yet` keys): `--check=list` header + prefix-matching note + always-on header + usage block, `--ignore=KEY` invalid-key validation message + canonical-hint + success/already-present feedback, `--reset-baseline` deleted/not-found/error, `--diff` no-baseline-yet message — all hardcoded English. Now routed through `t()` with the audit's lang.
+- **I-4 — webhook scheme symmetry between `webhook.py` and `config.py::set_webhook_url`** ([bob/config.py:261](../bob/config.py#L261)): v0.7.3 I-5 made `webhook.py::send_webhook` case-insensitive (`url.lower()`); the persistence sister `UserConfig.set_webhook_url` stayed case-sensitive. Result: `bob --webhook HTTPS://...` sent OK at runtime then silently failed to persist (the `ValueError` was swallowed by `__main__.py`, leaving the saved config unchanged, so the next cron audit posted nowhere). Mirrors the v0.7.3 fix with `url.lower().startswith(...)` for the scheme check; persisted value is the user's original case.
+- **I-5 — `bob/checks/services.py` duplicate private-IP matcher** ([bob/checks/services.py:38](../bob/checks/services.py#L38)): the v0.5.6 architectural unification of private-IP detection retired a hand-rolled regex in `bob/checks/logs.py` and documented that `sysinfo._is_private_or_loopback_ipv4/_ipv6` is the single source of truth. A duplicate `_PRIVATE_ADDR` regex was overlooked in `services.py::_classify_exposure`. v0.7.4 replaces the regex with token extraction + delegation to the sysinfo helpers, so the next CGNAT / ULA / link-local range update lands once. Behaviour-preserved: all existing 192.168 / 10.0 / 172.16 / 100.64 (CGNAT) / fc00:: (ULA) tests pass; IPv6 zone-id (`fe80::1%eth0`) is stripped before the helper call.
+- **I-6 — CSV `risk` aligned to JSON v1 (BREAKING)** ([bob/csv_output.py:55](../bob/csv_output.py#L55)): pre-v0.7.4 CSV `risk` used `engine.effective_level.value` (posture-escalated) while JSON v1 `risk` was restored to `engine.level.value` (score-only) by v0.7.1 I-3 to preserve the v0.6.x wire-format contract. Consumers comparing CSV + JSON v1 on the same posture-escalated audit saw different `risk` values. v0.7.4 aligns CSV with JSON v1's score-only semantics — **wire-format break** for CSV consumers that relied on the escalated value (migrate to JSON v2's `posture_escalation.score_level` for that). User decision: option A (rename + break) chosen explicitly per the v0.7.1 contract-preservation stance.
 
 #### Minor
 
-- **M-1 — `recurrence.py` dead `.tmp` cleanup removal** ([bob/recurrence.py:67](bob/recurrence.py#L67)): pre-v0.7.2 `_atomic.atomic_write` used a deterministic `name + ".tmp"` suffix; the handler tried to `unlink_missing_ok` that exact path on failure. Since v0.7.2 M-7 (`tempfile.mkstemp` random names), `recurrence.json.tmp` virtually never exists and the handler silently no-ops. `_atomic.atomic_write` already cleans up its own tmp leftovers via its `except BaseException` block. Removed the dead line.
-- **M-2 — CLI value-missing UX** ([bob/cli.py:533](bob/cli.py#L533)): pre-v0.7.4 `bob -l` (no value) fell through to `Error: Unknown option: '-l'` — confusing, since `-l` IS known and only its value is missing. Each value-taking elif was gated by `i + 1 < len(argv)`; when the option was the last argv element, the elif missed and the parser fell into the `Unknown option` catch-all. New module-level `_VALUE_TAKING_OPTS` frozenset enumerates the value-taking flags; the else-branch checks `arg in _VALUE_TAKING_OPTS` and raises a clearer `<flag> requires a value`. `-e/--explain` and `--watch` are intentionally absent from the set because they have documented no-arg forms (interactive picker, default 30 s loop). Pins: 9 new tests.
-- **M-3 — cron wrapper `PYTHONPATH` trailing-colon footgun** ([bob/cron/_io.py:45](bob/cron/_io.py#L45)): pre-v0.7.4 the install-cron-generated wrapper exported `PYTHONPATH=path:"$PYTHONPATH"`. Under cron `$PYTHONPATH` is typically unset, so the resulting value was `path:` — a trailing colon. Python interprets a trailing colon as "also search CWD" (long-standing footgun); root's CWD becomes `/root`, so a write to `/root/foo.py` would shadow stdlib at the next cron run. BOB ships the hardening pitch so this gap mattered. Fixed via `path${PYTHONPATH:+:$PYTHONPATH}` — no trailing colon when unset, semantically identical when set.
-- **M-4 — `_sandbox.py` + `plugin_checks.py` WARN message i18n + `key=`** ([bob/_sandbox.py:800](bob/_sandbox.py#L800) + [bob/plugin_checks.py:175](bob/plugin_checks.py#L175)): 9 sandbox error WARN paths emitted hardcoded English messages AND no `key=`, so `bob --ignore plugin.sandbox.timeout` had no key to match (the user had no way to silence repeated plugin failures). New locale namespace `plugin.sandbox.*` (9 keys: timeout / no_result / bad_payload / error / rejected / runner_error / missing_run_check / bad_return / crashed). Each WARN now carries `key="plugin.sandbox.<reason>"`. `t` is threaded from `PluginCheck.run(t)` through `SandboxRunner.run(plugin_path, t)` → `_run_sandboxed(t)` / `_run_legacy(t)`; absent `t` falls back to English via a per-module `_sandbox_msg` / `_warn_msg` helper (back-compat with legacy callers).
-- **M-5 — `report.py::write_header` banner labels i18n** ([bob/report.py:219](bob/report.py#L219)): the `--detailed` `.log` report begins with hardcoded English `[SYSTEM INFORMATION]` + `System` / `Host` / `Kernel` / `Firewall` / `User` / `Language` / `Port config`. Same Frenglish gap that v0.7.3 M-5 closed for `write_summary`. `write_header` now accepts an optional `labels=` dict; `__main__.py` passes the audit's bound `t()` values from the `banner.*` namespace (3 keys re-used: `system` / `host` / `kernel` / `user`; 4 new: `system_information` / `firewall` / `language` / `port_config`). Defaults preserve the pre-v0.7.4 English wording for back-compat. `MarkdownReport.write_header` accepts `labels=` for Protocol parity but ignores it (Markdown reports use fixed structural labels for external-tool interop — may be honoured later if user demand surfaces).
-- **M-6 — `fixes.py` Frenglish parenthetical** ([bob/fixes.py:108](bob/fixes.py#L108)): `print(f"  ✖ {t('fixes.manual')} (unsafe shell syntax in command)")` — `fixes.manual` was translated, the parenthetical hardcoded English. New `fixes.skipped_unsafe_shell` key in both locales.
-- **M-7 — `json_output` uses cached `engine.domain_scores`** ([bob/json_output.py:215](bob/json_output.py#L215) + [bob/json_output.py:418](bob/json_output.py#L418)): the v1 + v2 JSON builders re-ran `compute_domain_scores(engine)` to assemble the `domain_scores` block, while the engine already held the cached values from `apply_domain_score_override`. Equivalent today; future drift risk between terminal display (reads cache) and JSON (recomputes) eliminated. Cache-first with a fresh-compute fallback for engines without override applied (defensive — production code paths always go through `apply_domain_score_override` before JSON emit).
-- **M-8 — `set_posture_from_engine` rejects bool subclass-of-int** ([bob/scoring.py:706](bob/scoring.py#L706)): `isinstance(True, int)` is True (bool is subclass of int). A `firewall: True` entry in `domain_scores` would slip past the `elif isinstance(int)` branch and forward `firewall_domain_score=True` to `set_posture`, which then raises TypeError from its explicit-bool reject guard (scoring.py:538). The helper's docstring claimed to "centralise the dict-vs-int guard so a future contributor adding a new entry point can't accidentally pass the wrong shape" — this v0.7.4 fix completes that promise. Bool now normalised to None (skips the posture floor instead of crashing).
+- **M-1 — `recurrence.py` dead `.tmp` cleanup removal** ([bob/recurrence.py:67](../bob/recurrence.py#L67)): pre-v0.7.2 `_atomic.atomic_write` used a deterministic `name + ".tmp"` suffix; the handler tried to `unlink_missing_ok` that exact path on failure. Since v0.7.2 M-7 (`tempfile.mkstemp` random names), `recurrence.json.tmp` virtually never exists and the handler silently no-ops. `_atomic.atomic_write` already cleans up its own tmp leftovers via its `except BaseException` block. Removed the dead line.
+- **M-2 — CLI value-missing UX** ([bob/cli.py:533](../bob/cli.py#L533)): pre-v0.7.4 `bob -l` (no value) fell through to `Error: Unknown option: '-l'` — confusing, since `-l` IS known and only its value is missing. Each value-taking elif was gated by `i + 1 < len(argv)`; when the option was the last argv element, the elif missed and the parser fell into the `Unknown option` catch-all. New module-level `_VALUE_TAKING_OPTS` frozenset enumerates the value-taking flags; the else-branch checks `arg in _VALUE_TAKING_OPTS` and raises a clearer `<flag> requires a value`. `-e/--explain` and `--watch` are intentionally absent from the set because they have documented no-arg forms (interactive picker, default 30 s loop). Pins: 9 new tests.
+- **M-3 — cron wrapper `PYTHONPATH` trailing-colon footgun** ([bob/cron/_io.py:45](../bob/cron/_io.py#L45)): pre-v0.7.4 the install-cron-generated wrapper exported `PYTHONPATH=path:"$PYTHONPATH"`. Under cron `$PYTHONPATH` is typically unset, so the resulting value was `path:` — a trailing colon. Python interprets a trailing colon as "also search CWD" (long-standing footgun); root's CWD becomes `/root`, so a write to `/root/foo.py` would shadow stdlib at the next cron run. BOB ships the hardening pitch so this gap mattered. Fixed via `path${PYTHONPATH:+:$PYTHONPATH}` — no trailing colon when unset, semantically identical when set.
+- **M-4 — `_sandbox.py` + `plugin_checks.py` WARN message i18n + `key=`** ([bob/_sandbox.py:800](../bob/_sandbox.py#L800) + [bob/plugin_checks.py:175](../bob/plugin_checks.py#L175)): 9 sandbox error WARN paths emitted hardcoded English messages AND no `key=`, so `bob --ignore plugin.sandbox.timeout` had no key to match (the user had no way to silence repeated plugin failures). New locale namespace `plugin.sandbox.*` (9 keys: timeout / no_result / bad_payload / error / rejected / runner_error / missing_run_check / bad_return / crashed). Each WARN now carries `key="plugin.sandbox.<reason>"`. `t` is threaded from `PluginCheck.run(t)` through `SandboxRunner.run(plugin_path, t)` → `_run_sandboxed(t)` / `_run_legacy(t)`; absent `t` falls back to English via a per-module `_sandbox_msg` / `_warn_msg` helper (back-compat with legacy callers).
+- **M-5 — `report.py::write_header` banner labels i18n** ([bob/report.py:219](../bob/report.py#L219)): the `--detailed` `.log` report begins with hardcoded English `[SYSTEM INFORMATION]` + `System` / `Host` / `Kernel` / `Firewall` / `User` / `Language` / `Port config`. Same Frenglish gap that v0.7.3 M-5 closed for `write_summary`. `write_header` now accepts an optional `labels=` dict; `__main__.py` passes the audit's bound `t()` values from the `banner.*` namespace (3 keys re-used: `system` / `host` / `kernel` / `user`; 4 new: `system_information` / `firewall` / `language` / `port_config`). Defaults preserve the pre-v0.7.4 English wording for back-compat. `MarkdownReport.write_header` accepts `labels=` for Protocol parity but ignores it (Markdown reports use fixed structural labels for external-tool interop — may be honoured later if user demand surfaces).
+- **M-6 — `fixes.py` Frenglish parenthetical** ([bob/fixes.py:108](../bob/fixes.py#L108)): `print(f"  ✖ {t('fixes.manual')} (unsafe shell syntax in command)")` — `fixes.manual` was translated, the parenthetical hardcoded English. New `fixes.skipped_unsafe_shell` key in both locales.
+- **M-7 — `json_output` uses cached `engine.domain_scores`** ([bob/json_output.py:215](../bob/json_output.py#L215) + [bob/json_output.py:418](../bob/json_output.py#L418)): the v1 + v2 JSON builders re-ran `compute_domain_scores(engine)` to assemble the `domain_scores` block, while the engine already held the cached values from `apply_domain_score_override`. Equivalent today; future drift risk between terminal display (reads cache) and JSON (recomputes) eliminated. Cache-first with a fresh-compute fallback for engines without override applied (defensive — production code paths always go through `apply_domain_score_override` before JSON emit).
+- **M-8 — `set_posture_from_engine` rejects bool subclass-of-int** ([bob/scoring.py:706](../bob/scoring.py#L706)): `isinstance(True, int)` is True (bool is subclass of int). A `firewall: True` entry in `domain_scores` would slip past the `elif isinstance(int)` branch and forward `firewall_domain_score=True` to `set_posture`, which then raises TypeError from its explicit-bool reject guard (scoring.py:538). The helper's docstring claimed to "centralise the dict-vs-int guard so a future contributor adding a new entry point can't accidentally pass the wrong shape" — this v0.7.4 fix completes that promise. Bool now normalised to None (skips the posture floor instead of crashing).
 
 ### What's NOT shipped
 
@@ -4201,7 +4279,7 @@ bob/cron.py:        1223 LoC at audit  → 1223 after #6 (Phase 5)  → 1223 at 
 
 The audit's prediction was that Phases 2 + 3 would shrink ssh.py below 1000 LoC, making the split unnecessary. The actual end-state is 1324 LoC — Phase 2 (`warn_with_deduction`) cut 119 lines but Phase 3 (`_BAD_DIRECTIVES`) added 56 (table verbosity offsets the imperative shrinkage).
 
-**Decision: defer both to v0.6.0.** Per [`feedback_conservative_refactor`](memory) — splitting a file is medium-risk for marginal reader gain. In a contract-preserving release line (v0.5.x), the risk-adjusted value is negative. v0.6.0 is a major version bump that already perturbs import paths and is the natural place for structural shifts.
+**Decision: defer both to v0.6.0.** Per the *conservative refactor* rule (no cosmetic churn: low gain × non-zero risk = STOP) — splitting a file is medium-risk for marginal reader gain. In a contract-preserving release line (v0.5.x), the risk-adjusted value is negative. v0.6.0 is a major version bump that already perturbs import paths and is the natural place for structural shifts.
 
 `#15a` test (added in v0.5.0) pins all current key prefixes; whatever the v0.6.0 split decision is, the test catches unhandled prefixes at PR time before they regress.
 
@@ -4570,7 +4648,7 @@ Reality table:
 | v0.5.1 (Phase 2 — #1) | 1268 | −119 |
 | v0.5.2 (Phase 3 — #4) | 1324 | +56 |
 
-ssh.py is still 1324 LoC, 32% above the 1000-LoC target. Per [conservative-refactor](memory), ssh.py split is medium-risk surgery (must preserve `from bob.checks.ssh import SSHSnapshot` imports across 122 tests, propagate `_check_*` sub-function visibility for tests). Decision deferred to **Phase 5 (v0.5.4)** alongside #14 (cron.py split) once final state is known. Both splits will be revisited together with #15b (`_PREFIX_TO_DOMAIN` re-attribution).
+ssh.py is still 1324 LoC, 32% above the 1000-LoC target. Per the *conservative refactor* rule, ssh.py split is medium-risk surgery (must preserve `from bob.checks.ssh import SSHSnapshot` imports across 122 tests, propagate `_check_*` sub-function visibility for tests). Decision deferred to **Phase 5 (v0.5.4)** alongside #14 (cron.py split) once final state is known. Both splits will be revisited together with #15b (`_PREFIX_TO_DOMAIN` re-attribution).
 
 ---
 

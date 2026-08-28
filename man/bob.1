@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-08-28" "BOB 0.13.3" "User Commands"
+.TH BOB 1 "2026-08-28" "BOB 0.13.4" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -136,6 +136,12 @@ or an unsupported locale.
 Shorthand for
 .BR \-\-lang=fr .
 Overrides the locale detection.
+.TP
+.B \-\-english
+Shorthand for
+.BR \-\-lang=en .
+Overrides the locale detection. Added in v0.12.1 for symmetry with
+.BR \-\-french .
 .TP
 .B \-\-reconfigure
 Re-run the first-launch configuration wizard (custom service ports, log dir).

@@ -94,9 +94,88 @@ Le mode `--fix` affiche les commandes de remédiation et ne les exécute qu'apr�
 
 ### Plugin checks (`~/.config/bob/checks.d/*.py`)
 
-Les plugins Python custom sont chargés avec **limites de taille et sanitization ANSI** sur leur sortie, mais ils **NE SONT PAS sandboxés** : un plugin tourne avec les mêmes privilèges que BOB lui-même (typiquement root). Faites confiance à vos sources de plugins comme à tout autre code que vous exécuteriez sous `sudo`.
+Depuis la **v0.7.0**, les plugins s'exécutent dans un **sandbox in-process restreint** :
 
-Une future version majeure pourra introduire un runner de plugins en mode restreint (pas d'écriture filesystem, pas de subprocess), mais c'est hors périmètre pour la ligne 0.6.x.
+  - Isolation de processus via `multiprocessing.get_context("spawn")` (interpréteur
+    Python séparé, aucune mémoire partagée avec l'audit).
+  - Timeout de 5 secondes en temps réel + `RLIMIT_AS = 256 Mio` + `RLIMIT_CPU = 10 s`
+    appliqués dans le worker.
+  - Liste blanche d'imports (uniquement `bob.scoring` et un sous-ensemble choisi de
+    la stdlib — `json`, `re`, `pathlib`, `datetime`, …).
+  - `__builtins__` restreints (ni `eval` / `exec` / `compile` / `__import__` /
+    `input` / `breakpoint`), installés sous forme d'une sous-classe de dict
+    `_ImmutableBuiltins` qui redéfinit `__setitem__` et consorts pour lever
+    TypeError. Cela bloque le chemin de mutation naturel en Python
+    `bins["eval"] = ...`. Un attaquant déterminé peut toujours contourner via
+    `dict.__setitem__(bins, "eval", ...)` (méthode de base non liée) ; les
+    alternatives réellement immuables (`MappingProxyType`, `frozendict`)
+    déclenchent une `SystemError` depuis les chemins rapides C des dicts de
+    CPython dont `exec()` a besoin — l'approche par sous-classe est donc le
+    maximum que Python permet ici.
+  - Wrapper `open()` qui refuse les modes écriture ET interdit la lecture d'une
+    courte liste de chemins notoirement sensibles (`/etc/shadow`, `~/.ssh/id_*`,
+    `/dev/mem`, …).
+  - Méthodes d'écriture de `pathlib.Path` monkey-patchées en `PermissionError`.
+  - Retrait extensif des attributs dangereux du module `os`
+    (subprocess/spawn, E/S sur descripteurs bruts, écritures FS, changements de
+    privilèges, mutations d'environnement, …).
+  - Le CheckResult transite du worker vers le parent par un aller-retour en dict
+    JSON-safe (et non par un pickle de l'objet contrôlé par le plugin), de sorte
+    qu'un `__reduce__` malveillant dans `template_vars` ne peut pas déclencher
+    d'exécution de code dans le parent.
+  - Le parent n'exécute **jamais** (`exec`) le source du plugin — `_load_one` est
+    en lecture AST seule (taille + syntaxe + présence de `run_check` + extraction
+    de `CHECK_NAME`).
+
+#### Modèle de menace — ce contre quoi le sandbox protège, et ce contre quoi il ne protège PAS
+
+**Un sandbox Python in-process n'est pas une frontière de sécurité** — c'est une
+couche de défense en profondeur. La communauté Python converge sur cette position
+depuis 2012 (PEP 416, retirée) : un attaquant déterminé peut toujours atteindre
+les builtins non restreints via la chaîne `__globals__["__builtins__"]` de
+n'importe quel module stdlib autorisé, et aucune mitigation au niveau Python ne
+peut fermer cela sans casser l'usage légitime de ces modules. RestrictedPython
+durcit l'accès aux attributs au niveau bytecode mais n'attrape pas la chaîne
+`__globals__` (uniquement les lookups d'attributs publics + l'accès dict).
+
+Ce que le sandbox **arrête** :
+
+  - **Les accidents** — un plugin bogué qui appelle `os.unlink`, boucle
+    indéfiniment, alloue 2 Gio, fuit des handles.
+  - **Les attaques naïves** — `import subprocess; subprocess.run(...)` au niveau
+    module, `open("/etc/passwd", "w")`, `eval(...)`.
+  - **Les lectures en député confus** — un `open("/etc/shadow")` accidentel parce
+    que l'utilisateur a oublié que BOB tourne en root.
+
+Ce qu'il **n'arrête PAS** :
+
+  - Un attaquant déterminé qui connaît le playbook d'évasion Python
+    (`json.dumps.__globals__["__builtins__"]["__import__"]` est atteignable par
+    n'importe quel plugin — c'est *attendu* et testé dans
+    `TestKnownInProcessLimitation::test_real_builtins_reachable_via_stdlib_globals`).
+  - Le contournement `dict.__setitem__(bins, "eval", real_eval)` de la sous-classe
+    de builtins restreints — également épinglé comme limitation connue dans
+    `TestKnownInProcessLimitation::test_i1_known_limitation_unbound_dict_setitem_bypass`.
+  - Les attaques par canal auxiliaire via le timing, l'ordonnancement ou les
+    ressources partagées.
+  - Les attaques exploitant la propre surface de parsing de BOB (un `sshd_config`
+    malveillant que BOB tente d'auditer).
+
+**Une isolation réellement adverse exige une frontière au niveau de l'OS.** BOB
+livre un profil AppArmor (`packaging/apparmor/bob.profile`) qui confine le
+processus BOB lui-même ; c'est *la* véritable frontière contre les plugins
+malveillants. Les distributions qui livrent BOB dans un runtime confiné (snap,
+flatpak, conteneur) héritent de l'isolation de ce runtime.
+
+Si vous exécutez BOB non confiné sous `sudo`, **vous devez relire le code de vos
+plugins avant de les installer**. Le sandbox élève la barre contre les accidents
+et les attaques naïves ; il ne remplace pas la confiance.
+
+~~`BOB_SANDBOX_LEGACY=1`~~ (retirée en v0.9.0 TD-1) permettait autrefois de
+désactiver entièrement le sandbox et d'exécuter le plugin dans le processus
+parent — cela produisait une entrée de log CRITICAL + un WARNING voyant sur
+stderr à chaque exécution. La variable d'environnement est désormais ignorée ;
+les plugins s'exécutent toujours dans le processus enfant sandboxé.
 
 ## Variables d'environnement
 
@@ -107,7 +186,8 @@ BOB lit les variables d'environnement suivantes. Toutes sont opt-in ; aucune n'e
 | `BOB_SHARE` | non défini | Force le chemin du dossier de données du package (`bob/data/`). Utilisé par les packageurs distro lorsque les données sont livrées hors de l'arbre Python. |
 | `BOB_WEBHOOK_ALLOW_INSECURE=1` | non défini | Autorise les URLs `http://` pour les webhooks (rejet par défaut). La charge utile fuite hostname + IP publique + score + alertes en clair — à n'utiliser que sur réseau privé de confiance ou en lab local. |
 | ~~`BOB_SANDBOX_LEGACY=1`~~ | retiré en v0.9.0 (TD-1) | Pre-v0.9.0, exécutait les plugins dans le processus parent au lieu du sandbox enfant (spawn). Retiré ; l'env var est ignorée. Les plugins s'exécutent toujours dans le sandbox enfant. |
-| `BOB_DEBUG=1` | non défini | Affiche la trace Python complète sur sortie `EXIT_ERROR=3`. Sans, une seule ligne résumé + un hint pour activer la variable s'affichent. Utile pour diagnostiquer les crashs ; jamais requis en production. |
+| `BOB_DEBUG=1` | non défini | Commutateur de diagnostic, deux effets. (1) Affiche la trace Python complète sur sortie `EXIT_ERROR=3` (depuis v0.6.1) — sans, une seule ligne résumé + un hint pour activer la variable s'affichent. (2) Depuis la **v0.13.3**, installe un vrai handler de logging sur le logger `bob` au niveau DEBUG, ce qui rend visibles les enregistrements internes `logger.debug` / `logger.warning` autrement avalés (notamment la trace d'échec par subprocess de `_run()`). Utile pour diagnostiquer les crashs et les checks qui ne renvoient silencieusement rien ; jamais requis en production. |
+| `NO_COLOR` | non défini | Désactive toute sortie couleur ANSI, équivalent à `--no-color`. Suit la convention [no-color.org](https://no-color.org) : **toute valeur non vide** désactive la couleur, une valeur vide est ignorée. Honorée depuis la **v0.13.3**. |
 
 ## Surface réseau
 

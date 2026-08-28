@@ -251,7 +251,8 @@ required for normal operation.
 | `BOB_SHARE` | unset | Override the auto-detected package data dir (`bob/data/`). Used by distro packagers when the data files ship outside the Python package tree. |
 | `BOB_WEBHOOK_ALLOW_INSECURE=1` | unset | Allow `http://` webhook URLs (default rejects them). The audit payload leaks hostname + public IP + score + alerts in plaintext — only use on a trusted private network or for local lab testing. |
 | ~~`BOB_SANDBOX_LEGACY=1`~~ | retired in v0.9.0 (TD-1) | Pre-v0.9.0, ran plugins in the parent process instead of the spawn'd sandbox child. Removed; the env var is now ignored. Plugins always execute in the spawn'd sandbox child. |
-| `BOB_DEBUG=1` | unset | Print the full Python traceback on `EXIT_ERROR=3` exits. Without it, errors print a one-line summary + the hint to set this variable. Useful for diagnosing crashes; never required in production. |
+| `BOB_DEBUG=1` | unset | Diagnostics switch, two effects. (1) Prints the full Python traceback on `EXIT_ERROR=3` exits (since v0.6.1) — without it, errors print a one-line summary + the hint to set this variable. (2) Since **v0.13.3**, installs a real logging handler on the `bob` logger at DEBUG level, surfacing the internal `logger.debug` / `logger.warning` records that are otherwise swallowed (notably `_run()`'s per-subprocess failure trace). Useful for diagnosing crashes and checks that silently return nothing; never required in production. |
+| `NO_COLOR` | unset | Disables all ANSI colour output, equivalent to `--no-color`. Follows the [no-color.org](https://no-color.org) convention: **any non-empty value** disables colour, an empty value is ignored. Honoured since **v0.13.3**. |
 
 ## Network surface
 

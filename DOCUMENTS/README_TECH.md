@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.13.3-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.13.4-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -77,7 +77,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 
 ### Output & UX
 
-- **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` or `--lang=en`
+- **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **No-colour mode** — `--no-color` for clean output in pipes and log files
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail
 - **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 169 explainable keys across 45 prefixes; 19 keys show profile-specific sections; interactive TUI; no root required; `--explain list` shows all keys
@@ -490,6 +490,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--install-cron`        | Set up an automated nightly audit (cron)                           |
 | `--install-completion`  | Install bash completion and create sudo PATH symlink               |
 | `--french`              | Switch interface to French                                         |
+| `--english`             | Switch interface to English (symmetry with `--french`, v0.12.1)    |
 | `-V`, `--version`       | Show version and exit (no sudo required)                           |
 | `-h`, `--help`          | Show help and exit (no sudo required)                              |
 

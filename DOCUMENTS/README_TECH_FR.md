@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.13.3-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.13.4-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -77,7 +77,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Sortie & UX
 
-- **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` ou `--lang=en`
+- **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` / `--english` (ou `--lang=fr` / `--lang=en`)
 - **Mode sans couleur** — `--no-color` pour une sortie propre dans les pipes et fichiers log
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit
 - **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 169 clés sur 45 préfixes ; 19 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
@@ -490,6 +490,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `--install-cron`        | Configurer un audit nocturne automatique (cron)                    |
 | `--install-completion`  | Installer l'autocomplétion bash et créer le lien symbolique sudo PATH |
 | `--french`              | Passer l'interface en français                                     |
+| `--english`             | Passer l'interface en anglais (symétrie avec `--french`, v0.12.1)  |
 | `-V`, `--version`       | Afficher la version et quitter (sans sudo)                         |
 | `-h`, `--help`          | Afficher l'aide et quitter (sans sudo)                             |
 

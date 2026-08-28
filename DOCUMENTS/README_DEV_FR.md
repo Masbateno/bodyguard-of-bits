@@ -116,7 +116,11 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `rootkit.py` | Scan rootkit & intégrité : installation rkhunter/chkrootkit, fraîcheur BDD, date dernier scan |
 | `ssl_certs.py` | Expiration certificats TLS/SSL : Let's Encrypt, `/etc/ssl/private` (snakeoil filtré), configs nginx/apache2/postfix |
 | `systemd_timers.py` | Sécurité timers systemd : pipe-to-shell dans ExecStart, scripts world-writable, timers root utilisateur |
-| `firmware.py` | Firmware & microcode : mises à jour fwupdmgr, paquet microcode CPU via dpkg |
+| `firmware.py` | Firmware & microcode : mises à jour fwupdmgr en attente, paquet microcode CPU via dpkg |
+| `systemd_hardening.py` | **v0.13.0** — score d'exposition `systemd-analyze security` des services *en cours d'exécution* ; INFO-only, aucune déduction (la plupart des units sont livrées non durcies par défaut) |
+| `container_security.py` | **v0.13.0** — posture du conteneur lue depuis `/proc` (CapBnd, mode seccomp, uid_map, rootfs inscriptible) ; section entièrement supprimée hors conteneur via `skip_if` ; INFO-only |
+| `socket_units.py` | **v0.13.1** — units `.socket` systemd orphelines / en échec, à l'intersection systemd × sockets en écoute ; un `Triggers=` vide n'est jamais signalé, un service backing simplement inactif est sain ; INFO-only |
+| `cloud_context.py` | **v0.13.1** — exposition cloud côté hôte (IMDS joignable on-link, user-data lisible par tous) ; détection conservatrice (provider DMI, ou cloud-init + route IMDS on-link) ; supprimée hors cloud, aucune API cloud ; INFO-only |
 
 ---
 
@@ -210,8 +214,12 @@ bob/
 │   ├── file_integrity.py   # FileIntegritySnapshot + check_file_integrity() — AIDE/Tripwire
 │   ├── rootkit.py          # RootkitSnapshot + check_rootkit() — rkhunter/chkrootkit
 │   ├── ssl_certs.py        # SslCertsSnapshot + check_ssl_certs() — expiration certs
-│   ├── systemd_timers.py   # SystemdTimersSnapshot + check_systemd_timers() — sécurité timers
-│   └── firmware.py         # FirmwareSnapshot + check_firmware() — fwupd + microcode
+│   ├── systemd_timers.py   # SystemdTimersSnapshot + check_systemd_timers() — sécurité des timers
+│   ├── firmware.py         # FirmwareSnapshot + check_firmware() — fwupd + microcode
+│   ├── systemd_hardening.py    # ServiceHardeningSnapshot + check_service_hardening() (v0.13.0)
+│   ├── container_security.py   # ContainerSecuritySnapshot + check_container_security() (v0.13.0)
+│   ├── socket_units.py         # SocketUnitsSnapshot + check_socket_units() (v0.13.1)
+│   └── cloud_context.py        # CloudContextSnapshot + check_cloud_context() (v0.13.1)
 ├── data/
 │   ├── services.json            # Registre déclaratif des 38 services
 │   ├── cis_refs.json            # Références CIS — 174 entrées {ref, code}

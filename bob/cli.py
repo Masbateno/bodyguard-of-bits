@@ -776,9 +776,12 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("-v, --verbose",          "Show detailed port exposure for each service")
     opt("-d, --detailed",         "Save full audit report to a log file")
     opt("-q, --quiet",            "Suppress all output — use exit code to detect issues")
-    opt("-n, --no-color",         "Disable colour output")
+    opt("-n, --no-color",         "Disable colour output (--no-colour and NO_COLOR= also work)")
     opt("    --format=FORMAT",    "Output format: json | json-full | csv | markdown | html")
+    opt("    --output=FORMAT",    "Alias of --format (not to be confused with --output-dir)")
     opt("-j / -J",                "Shorthands: --format=json / --format=json-full")
+    opt("    --json / --json-full", "Long-form aliases of -j / -J")
+    opt("    --html",             "Long-form alias of --format=html")
     opt("    --min-level=LEVEL",  "Only show findings at or above: warn  |  alert")
 
     section("FIXES — apply remediation suggestions")

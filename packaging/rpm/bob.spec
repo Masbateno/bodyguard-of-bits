@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.13.3
+Version:        0.13.4
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,20 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Aug 28 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.4-1
+- Documentation accuracy pass. Factual corrections only.
+- SECURITY_FR.md "Plugin checks" was factually inverted: it claimed plugins are
+  NOT sandboxed (the sandbox shipped in v0.7.0, seven minors earlier) and the
+  whole threat model was missing in French. Fully translated.
+- 5 working CLI flags absent from --help (--json, --json-full, --html,
+  --output=FORMAT, --no-colour) are now documented.
+- 29 broken/leaked markdown links fixed across the changelogs.
+- SNAPSHOT.md NO_COLOR self-contradiction and BOB_DEBUG table entry corrected
+  (both introduced by v0.13.3).
+- README_DEV gains the four v0.13.x check modules; --english documented.
+- Three anti-drift guards: link resolution, per-section EN/FR parity, CLI
+  surface coverage.
+
 * Fri Aug 28 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.3-1
 - Hardening patch. Additive, non-BREAKING, no score change.
 - logging: NullHandler on the `bob` logger stops Python's lastResort handler

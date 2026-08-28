@@ -6,6 +6,84 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.13.4] — 28-08-2026
+
+**Passe d'exactitude documentaire. Corrections factuelles uniquement — aucune réécriture d'un texte déjà correct, aucun changement de comportement d'audit.**
+
+Un audit machine du corpus documentaire complet (21 fichiers markdown, 3 pages de man, ~26 kLignes) confronté au code. Sept défauts réels ; **deux ont été introduits par la v0.13.3 elle-même**, et c'est précisément l'enseignement : une release qui change un comportement doit balayer la doc à la recherche des affirmations qu'elle vient de rendre fausses — or la v0.13.3 n'avait mis à jour que l'en-tête du SNAPSHOT et le changelog.
+
+### 🔴 La section « Plugin checks » de `SECURITY_FR.md` était factuellement inversée, pas seulement amputée
+
+La section mesurait 83 mots contre 562 en anglais (**15 %**), alors que les 15 autres sections du même fichier étaient à 107–132 %. Mais le volume était le moindre problème. Le texte français disait :
+
+> les plugins […] **NE SONT PAS sandboxés** […] Une future version majeure pourra introduire un runner de plugins en mode restreint […] mais c'est hors périmètre pour la ligne **0.6.x**.
+
+Le sandbox est livré depuis la **v0.7.0**. Pendant **sept versions mineures**, la politique de sécurité française a dit à ses lecteurs l'inverse de la vérité, et a figé la feuille de route sur une ligne en fin de vie depuis la v0.7.2.
+
+Tout ce que la version anglaise dit du modèle de menace était absent en français : qu'un sandbox Python in-process **n'est pas une frontière de sécurité** (PEP 416, retirée) ; que `json.dumps.__globals__["__builtins__"]["__import__"]` est atteignable par n'importe quel plugin et que c'est *attendu* et épinglé par `TestKnownInProcessLimitation` ; que le contournement non lié `dict.__setitem__` est une limitation connue ; que **AppArmor est la véritable frontière** ; et la conclusion opérationnelle — **si vous exécutez BOB non confiné sous `sudo`, relisez le code de vos plugins avant de les installer**.
+
+La section est désormais intégralement traduite, y compris l'isolation par spawn, les rlimits, la liste blanche d'imports, la justification d'`_ImmutableBuiltins`, le wrapper `open()`, l'aller-retour JSON-safe qui défait un `__reduce__` malveillant, et la note sur `BOB_SANDBOX_LEGACY` retirée. **15 % → 121 %**.
+
+### Cinq options CLI fonctionnelles n'apparaissaient nulle part dans `--help`
+
+Les cinq sont correctement parsées et utilisées ; aucune n'était découvrable :
+
+| Option | Vérifié | Présente dans `--help` |
+|---|---|---|
+| `--json` | `json_mode=True` | non |
+| `--json-full` | `json_full=True` | non |
+| `--html` | `html_mode=True` | non |
+| `--output=FORMAT` | `csv_mode=True` | non — le grep matchait `--output-dir` |
+| `--no-colour` | `no_color=True` | non |
+
+C'est la classe « silent feature gap » que le projet avait chassée sur huit tiers en v0.8.0. `--output=FORMAT` est désormais documentée avec un avertissement explicite pour ne pas la confondre avec `--output-dir`, et `--no-colour` / `NO_COLOR` sont mentionnées sur la ligne `--no-color`.
+
+### 29 liens markdown cassés ou fuités
+
+- **17** dans `DOCUMENTS/CHANGELOG_FULL.md` écrits `](bob/…)` au lieu de `](../bob/…)`. Ils résolvent vers `DOCUMENTS/bob/…` et renvoient 404 sur GitHub. Le jumeau français en avait **zéro** — ce qui explique exactement pourquoi la symétrie entre locales ne les a jamais fait remonter.
+- **8** pointant vers `](memory)` — des références au magasin de mémoire interne de Claude qui avaient fuité dans les changelogs publics, répartis sur quatre fichiers. Ils ne signifient rien pour un lecteur et ne résolvent vers rien dans le dépôt ; remplacés par la règle en langage clair qu'ils citaient.
+- **4** cibles obsolètes : `bob/checks/ssh.py` (splitté en paquet en v0.6.0) et une URL `bob/_v090_renames.py::remap_finding_key` où le suffixe `::méthode` rendait le chemin invalide.
+
+### `SNAPSHOT.md` se contredisait après la v0.13.3
+
+La ligne 15 (ajoutée par la v0.13.3) disait `NO_COLOR` honorée. La ligne 633 disait encore :
+
+> **NOT honored** : `NO_COLOR` env var. BOB currently respects only the `--no-color`/`-n` CLI flag.
+
+Résolu. Le remplacement énonce aussi la partie qui reste vraie et facile à confondre : l'auto-détection TTY n'est toujours pas câblée — `output.supports_color()` existe, est correcte, et n'est appelée nulle part, donc BOB émet de l'ANSI même dans un pipe. L'activer est BREAKING et reste réservé à la v0.14.0 avec une échappatoire `FORCE_COLOR`.
+
+### `BOB_DEBUG` était documentée comme traceback seulement
+
+`SECURITY.md` et `SECURITY_FR.md` la décrivaient comme « affiche la trace Python complète sur sortie `EXIT_ERROR=3` » — vrai depuis la v0.6.1, et incomplet depuis hier : la v0.13.3 lui a en plus fait installer un vrai handler de logging sur le logger `bob`. Les deux tables décrivent maintenant les deux effets. `NO_COLOR`, entièrement absente des tables d'environnement, y a été ajoutée dans les deux locales.
+
+### `README_DEV` omettait les quatre modules de check v0.13.x
+
+`systemd_hardening`, `container_security`, `socket_units` et `cloud_context` avaient **0 occurrence** dans `README_DEV{,_FR}.md` contre 3–4 chacun dans `SNAPSHOT.md`. Ajoutés au tableau des modules et à l'arborescence, dans les deux locales. `--english` (v0.12.1) était de même absente de `README_TECH{,_FR}.md` et de `man/bob.1`.
+
+### Trois gardes anti-drift
+
+Chacun ferme une classe plutôt que les instances trouvées :
+
+1. **Résolution des liens** — tout lien markdown relatif doit résoudre ; aucun `](bob/` depuis `DOCUMENTS/` ; aucun lien vers le magasin de mémoire. Deux exemptions de faux positifs documentées (un exemple littéral de syntaxe `[label](url)` et une regex dans un bloc de code).
+2. **Ratio de mots EN/FR par section ≥ 55 %.** La granularité *par section* est l'essentiel : `SECURITY_FR.md` était à **92 % globalement**, donc un ratio par fichier aurait entièrement raté la section inversée.
+3. **Couverture de la surface CLI** — toute option acceptée par `parse_args()` doit figurer dans `--help`, plus la vérification inverse que `--help` ne promet rien que le parseur refuse. Écrire ce garde a immédiatement exposé un bug dans sa propre extraction : les options à valeur sont matchées via `arg.startswith("--webhook-format=")`, donc le littéral porte un `=` final à l'intérieur des guillemets et une regex naïve signale une option fonctionnelle comme fantôme. Corrigé avant que le garde ne soit considéré comme fiable.
+
+### Vérifié sain — délibérément non touché
+
+Les résultats négatifs de l'audit comptent autant que ses trouvailles, et ils bornent toute passe future :
+
+- **5 paires de docs sur 6 à 106–113 %** de ratio de mots EN/FR (README, README_TECH, README_DEV, AUTOMATION, TUTORIAL) — les traductions sont complètes ; le français est simplement plus long.
+- **`CHANGELOG_FULL` porte les 65 releases dans les deux locales**, aucune manquante. L'écart de 1755 lignes est de la mise en forme, pas du contenu.
+- **L'inventaire des modules de `README_DEV` est par ailleurs complet** — aucun module fantôme, aucun module racine manquant. Il est organisé par *nom de fichier* (`docker_audit.py`, `services_state.py`), qui sont les vrais noms ; les renommages de *sections* de la v0.9.0 D-1 sont une surface distincte et purement interne.
+
+### Tests
+
+6533 → **6545** (+12, tous dans `tests/test_v0134_docs_accuracy.py`). 0 régression.
+
+**v0.12.x reste EOL** ; v0.13.x est la seule ligne supportée. Mise à jour : `pipx upgrade bodyguard-of-bits` — documentation et texte de `--help` uniquement.
+
+---
+
 ## [v0.13.3] — 28-08-2026
 
 **Patch de durcissement. Additif, non-BREAKING, sans changement de score, sans modification d'un champ de sortie ou d'un code de retour.**
@@ -3146,7 +3224,7 @@ bob/cron.py:        1223 LoC à l'audit → 1223 après #6 (Phase 5)  → 1223 �
 
 La prédiction de l'audit était que les Phases 2 + 3 shrinkeraient ssh.py sous 1000 LoC, rendant le split inutile. L'état final est 1324 LoC — Phase 2 (`warn_with_deduction`) a coupé 119 lignes mais Phase 3 (`_BAD_DIRECTIVES`) a ajouté 56 (verbosité table compense le shrinkage impératif).
 
-**Décision : défer les deux à v0.6.0.** Selon [`feedback_conservative_refactor`](memory) — splitter un fichier est medium-risk pour un gain de lecture marginal. Dans une ligne de release contract-preserving (v0.5.x), la valeur risk-adjusted est négative. v0.6.0 est un bump majeur qui perturbe déjà les chemins d'import et est l'endroit naturel pour les shifts structurels.
+**Décision : défer les deux à v0.6.0.** Selon la règle *refactor conservateur* (pas de churn cosmétique : gain faible × risque non-nul = STOP) — splitter un fichier est medium-risk pour un gain de lecture marginal. Dans une ligne de release contract-preserving (v0.5.x), la valeur risk-adjusted est négative. v0.6.0 est un bump majeur qui perturbe déjà les chemins d'import et est l'endroit naturel pour les shifts structurels.
 
 Le test `#15a` (ajouté en v0.5.0) pin tous les prefixes de clé actuels ; quelle que soit la décision du split en v0.6.0, le test attrape les prefixes non gérés au moment du PR avant qu'ils régressent.
 
@@ -3391,7 +3469,7 @@ Réalité (table) :
 | v0.5.1 (Phase 2 — #1) | 1268 | −119 |
 | v0.5.2 (Phase 3 — #4) | 1324 | +56 |
 
-ssh.py reste à 1324 LoC, 32% au-dessus de la cible 1000. Selon [conservative-refactor](memory), split de ssh.py est une chirurgie medium-risk. Décision déférée à **Phase 5 (v0.5.4)** avec #14 (split cron.py) et #15b (ré-attribution `_PREFIX_TO_DOMAIN`).
+ssh.py reste à 1324 LoC, 32% au-dessus de la cible 1000. Selon la règle *refactor conservateur*, split de ssh.py est une chirurgie medium-risk. Décision déférée à **Phase 5 (v0.5.4)** avec #14 (split cron.py) et #15b (ré-attribution `_PREFIX_TO_DOMAIN`).
 
 ---
 
