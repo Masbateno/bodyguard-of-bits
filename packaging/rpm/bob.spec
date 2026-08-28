@@ -975,7 +975,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - 4538 → 4545 tests (+7 regression coverage).
 - JSON contract preserved.
 
-* Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.4-1
+* Fri May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.4-1
 - Refactor v0.5.x Phase 5 of 5 (final, closes the v0.5.x audit).
   Three audit findings (#6, #9, #15b) + one user-requested metier
   feature (cache APT option C). Two findings deferred to v0.6.0.
@@ -999,7 +999,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - 2 new locale keys (updates.apt_cache_age + detail) in EN+FR.
 - JSON contract preserved.
 
-* Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.3-1
+* Fri May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.3-1
 - Refactor v0.5.x Phase 4 (audit findings #5 + #12 + #8). Three
   pure structural refactors; zero behaviour change.
 - #5: new _LevelTraits frozen dataclass + 4-row dispatch dict in
@@ -1025,7 +1025,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - #13 / #14 / #15b still deferred to Phase 5 (v0.5.4).
 - JSON contract preserved.
 
-* Thu May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.2-1
+* Fri May 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.5.2-1
 - Refactor v0.5.x Phase 3 (audit findings #4 + #3).
 - #4: new _BadDirective dataclass + _BAD_DIRECTIVES table + helper
   in bob/checks/ssh.py. Migrates 8 uniform sshd_config directives

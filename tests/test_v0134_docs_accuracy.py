@@ -126,6 +126,16 @@ _DOC_PAIRS = [
     ("DOCUMENTS/TUTORIAL.md", "DOCUMENTS/TUTORIAL_FR.md"),
 ]
 
+# DOCUMENTS/TESTING{,_FR}.md is deliberately NOT in the list. Its h1-h3
+# skeleton is identical (1 / 8 / 60 headings both sides), but the two locales
+# order some sections differently — FR places "Catégorie E — Ports loopback"
+# after the observations block, EN places it before. This guard pairs sections
+# by position, so on that file it would compare unrelated sections and report
+# nonsense (measured: EN "Obs — DDNS false positives" 97w paired against FR
+# "Catégorie E" 7w → a bogus 7%). Guarding it correctly needs content-based
+# alignment, which is a different tool; until then the file is knowingly
+# unguarded rather than guarded wrongly.
+
 # French runs ~10-30% longer than English for the same content, so a healthy
 # ratio sits above 1.0. A section under this floor is not a terser
 # translation — it is missing content.
@@ -133,14 +143,40 @@ _MIN_RATIO = 0.55
 _MIN_WORDS = 40  # ignore headers and one-liners, where the ratio is noise
 
 
-def _sections(path: pathlib.Path) -> list[tuple[str, int]]:
-    lines = path.read_text(encoding="utf-8").splitlines()
+def _strip_fences(lines: list[str]) -> list[str]:
+    """Blank out fenced code blocks, keeping line numbering intact.
+
+    A shell comment at the start of a line inside a ``` block (``# Cleanup:``,
+    ``# Redis default: bind 127.0.0.1``) is indistinguishable from a level-1
+    heading to a line-based regex. DOCUMENTS/TESTING.md contains 15 such
+    comments and DOCUMENTS/TESTING_FR.md 13, which made the two files look
+    like they had a 2-section structural divergence when their real heading
+    structure is identical. Counting them would also make this guard fail
+    spuriously the day someone adds a shell comment to one locale only.
+    """
+    out, in_fence = [], False
+    for line in lines:
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            out.append("")
+            continue
+        out.append("" if in_fence else line)
+    return out
+
+
+def _sections(path: pathlib.Path, with_depth: bool = False) -> list[tuple]:
+    """Return [(title, word_count)] or, with_depth, [(depth, title)]."""
+    lines = _strip_fences(path.read_text(encoding="utf-8").splitlines())
     heads = [(i, l) for i, l in enumerate(lines) if re.match(r"^#{1,3} ", l)]
     out = []
     for n, (i, title) in enumerate(heads):
         end = heads[n + 1][0] if n + 1 < len(heads) else len(lines)
-        out.append((title.lstrip("# ").strip(),
-                    sum(len(x.split()) for x in lines[i:end])))
+        depth = len(title) - len(title.lstrip("#"))
+        if with_depth:
+            out.append((depth, title.lstrip("# ").strip()))
+        else:
+            out.append((title.lstrip("# ").strip(),
+                        sum(len(x.split()) for x in lines[i:end])))
     return out
 
 
@@ -154,8 +190,18 @@ class TestLocaleSectionParity:
             f"{en_path} has {len(en)} sections but {fr_path} has {len(fr)} — "
             "the two locales must keep the same structure"
         )
+        # Sections are paired by position, which is only meaningful while both
+        # locales keep the same skeleton. Pin the heading-depth sequence so a
+        # structural divergence is reported as such instead of silently
+        # producing word-ratio nonsense from mismatched pairs.
+        depths_en = [d for d, _ in _sections(_REPO_ROOT / en_path, with_depth=True)]
+        depths_fr = [d for d, _ in _sections(_REPO_ROOT / fr_path, with_depth=True)]
+        assert depths_en == depths_fr, (
+            f"{en_path} and {fr_path} have the same section count but a "
+            "different heading-depth sequence — positional pairing is unsafe"
+        )
         thin = []
-        for (t_en, w_en), (t_fr, w_fr) in zip(en, fr):
+        for (t_en, w_en), (_t_fr, w_fr) in zip(en, fr):
             if w_en < _MIN_WORDS:
                 continue
             ratio = w_fr / w_en
@@ -236,3 +282,49 @@ class TestCliSurfaceDocumented:
             assert getattr(parse_args(argv), attr) is True, f"{argv} stopped working"
         for flag in ("--json", "--json-full", "--html", "--output", "--no-colour"):
             assert flag in help_text, f"{flag} vanished from --help"
+
+
+# ---------------------------------------------------------------------------
+# 4 — packaging changelog dates must name the right weekday
+# ---------------------------------------------------------------------------
+
+_MONTHS = {m: i for i, m in enumerate(
+    "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(), start=1)}
+
+
+class TestPackagingChangelogWeekdays:
+    """Both packaging changelogs carry a written weekday next to the date.
+
+    Nothing in the Python toolchain validates it, so a hand-written entry can
+    name the wrong day indefinitely — 5 of the 46 debian entries and 3 of the
+    46 rpm entries did (v0.13.3 and v0.13.4 each shipped one, on top of three
+    pre-existing from 2026-05-22). ``lintian`` flags this as
+    ``debian-changelog-has-wrong-day-of-week`` and it would surface at exactly
+    the wrong moment: the first real Debian packaging review.
+    """
+
+    def test_debian_changelog_weekdays_match_dates(self):
+        import datetime
+        text = (_REPO_ROOT / "debian" / "changelog").read_text(encoding="utf-8")
+        rows = re.findall(r"^ -- .+?>  (\w{3}), (\d{2}) (\w{3}) (\d{4})", text, re.M)
+        assert rows, "no signature line found in debian/changelog"
+        wrong = [
+            f"  {wd}, {d} {mon} {y} — should be "
+            f"{datetime.date(int(y), _MONTHS[mon], int(d)):%a}"
+            for wd, d, mon, y in rows
+            if f"{datetime.date(int(y), _MONTHS[mon], int(d)):%a}" != wd
+        ]
+        assert not wrong, "debian/changelog weekday mismatch:\n" + "\n".join(wrong)
+
+    def test_rpm_spec_weekdays_match_dates(self):
+        import datetime
+        text = (_REPO_ROOT / "packaging" / "rpm" / "bob.spec").read_text(encoding="utf-8")
+        rows = re.findall(r"^\* (\w{3}) (\w{3}) (\d{1,2}) (\d{4})", text, re.M)
+        assert rows, "no %changelog entry found in bob.spec"
+        wrong = [
+            f"  {wd} {mon} {d} {y} — should be "
+            f"{datetime.date(int(y), _MONTHS[mon], int(d)):%a}"
+            for wd, mon, d, y in rows
+            if f"{datetime.date(int(y), _MONTHS[mon], int(d)):%a}" != wd
+        ]
+        assert not wrong, "bob.spec weekday mismatch:\n" + "\n".join(wrong)

@@ -31,7 +31,7 @@ bodyguard-of-bits (0.13.4-1) UNRELEASED; urgency=low
     whole-file ratio would have missed the SECURITY_FR defect — the file was
     at 92% overall), and every parse_args flag must appear in --help.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 28 Aug 2026 20:30:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 28 Aug 2026 20:30:00 +0200
 
 bodyguard-of-bits (0.13.3-1) UNRELEASED; urgency=low
 
@@ -61,7 +61,7 @@ bodyguard-of-bits (0.13.3-1) UNRELEASED; urgency=low
     rules), at zero findings. B904/B905 documented as deferred: their fixes
     change runtime behaviour and belong in v0.14.0.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 28 Aug 2026 18:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 28 Aug 2026 18:00:00 +0200
 
 bodyguard-of-bits (0.13.2-1) UNRELEASED; urgency=low
 
@@ -1606,7 +1606,7 @@ bodyguard-of-bits (0.5.4-1) UNRELEASED; urgency=low
   * Closes the v0.5.x audit: 13/15 findings shipped + 1 metier
     feature + 1 deprecation (env var) + 2 splits deferred.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 22 May 2026 21:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 22 May 2026 21:00:00 +0200
 
 bodyguard-of-bits (0.5.3-1) UNRELEASED; urgency=low
 
@@ -1656,7 +1656,7 @@ bodyguard-of-bits (0.5.3-1) UNRELEASED; urgency=low
     filterable sections, CLI surface, locale keys, plugin
     contract, wire output — all unchanged.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 22 May 2026 20:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 22 May 2026 20:00:00 +0200
 
 bodyguard-of-bits (0.5.2-1) UNRELEASED; urgency=low
 
@@ -1695,7 +1695,7 @@ bodyguard-of-bits (0.5.2-1) UNRELEASED; urgency=low
     filterable sections, CLI surface, locale keys, plugin contract,
     wire output — all unchanged.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 22 May 2026 06:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 22 May 2026 06:00:00 +0200
 
 bodyguard-of-bits (0.5.1-1) UNRELEASED; urgency=low
 

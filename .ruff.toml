@@ -23,8 +23,10 @@ select = ["E9", "F", "B"]
 # Revisit in v0.14.0 alongside the other behaviour-affecting changes.
 ignore = ["B904", "B905"]
 
-[lint.per-file-ignores]
-# Re-export shims from the v0.6.0 package splits: names are imported purely
-# so `from bob.cron import X` keeps working for tests and back-compat.
-"bob/cron/__init__.py"       = ["F401"]
-"bob/checks/ssh/__init__.py" = ["F401"]
+
+# NOTE: no [lint.per-file-ignores] block on purpose. The v0.6.0 re-export
+# shims (bob/cron/__init__.py, bob/checks/ssh/__init__.py) and the three
+# monkeypatch seams (_run in backup/clamav/log_rotation) carry an inline
+# `# noqa: F401` that says *why* the import is kept. A per-file ignore would
+# be strictly worse: it documents nothing and makes the whole file blind to
+# F401, so a genuinely dead import added later would never be reported.
