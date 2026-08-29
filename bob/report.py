@@ -155,15 +155,26 @@ class AuditReport:
     def __init__(self, path: Path) -> None:
         self.path: Path = path
         self.enabled: bool = True
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # v0.14.1: O_NOFOLLOW. The report name is fully predictable
+        # (``bob_%Y%m%d_%H%M%S.log``) and this open runs as root under sudo, so
+        # without it anyone able to write in the target directory could
+        # pre-plant a symlink and have root truncate + overwrite an arbitrary
+        # file. The default directory is the invoking user's own
+        # ~/.local/share/bob/logs, but ``--output-dir`` lets an operator point
+        # this at a shared location. O_NOFOLLOW makes the open fail instead.
+        fd = os.open(str(path),
+                     os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                     0o600)
         self._fh = os.fdopen(fd, "w", encoding="utf-8")
         # When invoked under sudo, the report file is owned by root by default
         # and cannot be read/deleted afterwards by the real user. Chown it back
         # so `sudo bob -d` reports land in the user's account, not root's. Same
         # pattern as bob.config / bob.history / bob.ignore / bob.compare /
         # bob.recurrence — see SECURITY.md and v0.3.6 entry for context.
-        from bob.sysinfo import chown_to_sudo_user
-        chown_to_sudo_user(path)
+        # chown the descriptor we already hold, not the name — no symlink to
+        # follow and no TOCTOU window (v0.14.1).
+        from bob.sysinfo import chown_fd_to_sudo_user
+        chown_fd_to_sudo_user(self._fh.fileno())
 
     # ------------------------------------------------------------------
     # Factory

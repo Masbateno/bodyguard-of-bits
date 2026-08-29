@@ -227,7 +227,7 @@ def _recognised_override_keys() -> set[str] | None:
     try:
         for f in checks_dir.rglob("*.py"):
             try:
-                src = f.read_text(encoding="utf-8")
+                src = f.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
             for m in re.finditer(

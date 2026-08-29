@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import difflib
+import logging
 import sys
+import traceback
 from typing import NamedTuple
 
 from bob import output
@@ -321,6 +323,9 @@ def validate_check_filters(config: "AuditConfig") -> str | None:
     return None
 
 
+logger = logging.getLogger(__name__)
+
+
 class ChecksResult(NamedTuple):
     snapshots:          list
     ports_snapshot:     PortsSnapshot
@@ -331,6 +336,12 @@ class ChecksResult(NamedTuple):
     fw_active:          bool = False
     fw_policy:          str  = "unknown"
     network_context:    str  = "local"
+    # v0.14.1: sections whose check raised and were degraded rather than
+    # aborting the whole audit (see ``_sec``). Machine-readable mirror of the
+    # ``<section>.unavailable`` INFO findings, surfaced as the top-level JSON
+    # ``degraded_sections`` so a pipeline can gate on "the audit was
+    # incomplete" without parsing findings.
+    degraded_sections:  tuple[str, ...] = ()
 
 
 def init_report(config: AuditConfig, user_config: UserConfig, t, version: str) -> AuditReport:
@@ -360,6 +371,9 @@ def run_checks(
     """Run all audit checks in sequence."""
     _pr: dict[str, int] = prev_recurrence or {}
     _pname = profile.name if profile is not None else "server"
+
+    # v0.14.1: sections degraded by the ``_sec`` fault barrier.
+    _degraded: list[str] = []
 
     def emit_section(section_key: str) -> None:
         """Print and write a section header (respects ``--quiet``)."""
@@ -412,21 +426,80 @@ def run_checks(
         """
         if not _section_enabled(section, config, profile):
             return
-        if callable(snapshot):
-            snapshot = snapshot()
-        if skip_if is not None and skip_if(snapshot):
-            return
-        emit_section(section)
-        result = check_fn(snapshot, t=t, **check_kwargs)
-        # v0.14.0 E: the profile is applied inside engine.apply() now — it is
-        # the single choke point every result passes through, so the 12
-        # hand-rolled always-on sections below get their overrides too.
-        engine.apply(result)
-        display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-        if post_display is not None and not config.quiet:
-            post_display(snapshot, result)
-        if not config.quiet:
-            print()
+        # v0.14.1 — fault isolation. Pre-v0.14.1 ``_sec`` had no exception
+        # handling, so ANY exception raised by a snapshot factory or a check
+        # function propagated out of ``run_checks`` to the broad handler in
+        # __main__: the operator lost the ENTIRE audit (exit 3, zero bytes on
+        # stdout) because one section could not read one file. Proven live —
+        # a single latin-1 byte in an /etc/passwd GECOS field killed the run.
+        # A failing section is now degraded in place: the audit completes and
+        # the failure surfaces as a ``<section>.unavailable`` INFO finding in
+        # every output format plus ``ChecksResult.degraded_sections``.
+        #
+        # Scope — this barrier covers the sections dispatched through ``_sec``,
+        # which are genuinely independent (snapshot → check → apply). The
+        # always-on core above (firewall / rules / ports / services / logs /
+        # ddns / docker / virtualization) is deliberately NOT guarded: it is a
+        # data pipeline, not a set of sections. ``fw_status``,
+        # ``ports_snapshot``, ``network_context`` and ``audited_ports`` flow
+        # into one another and into the ``_sec`` calls, so swallowing a failure
+        # there would leave downstream code reading names that were never bound
+        # (a NameError cascade) — strictly worse than the current abort. If the
+        # firewall core cannot be read there is genuinely no audit to render.
+        try:
+            if callable(snapshot):
+                snapshot = snapshot()
+            if skip_if is not None and skip_if(snapshot):
+                return
+            emit_section(section)
+            result = check_fn(snapshot, t=t, **check_kwargs)
+            # v0.14.0 E: the profile is applied inside engine.apply() now — it is
+            # the single choke point every result passes through, so the 12
+            # hand-rolled always-on sections below get their overrides too.
+            engine.apply(result)
+            display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+            if post_display is not None and not config.quiet:
+                post_display(snapshot, result)
+            if not config.quiet:
+                print()
+        except Exception as exc:  # noqa: BLE001 — deliberate section-level barrier
+            _degrade_section(section, exc)
+
+    def _degrade_section(section: str, exc: BaseException) -> None:
+        """Record a section that raised, without aborting the audit.
+
+        The failure is emitted as an INFO finding through the normal
+        ``engine.apply`` path so it reaches every output format (text, JSON,
+        CSV, Markdown, HTML) and the ``-d`` report, and the section name is
+        appended to ``_degraded`` for the top-level ``degraded_sections``
+        JSON field.
+        """
+        from bob.scoring import CheckResult, FindingLevel
+
+        if section not in _degraded:
+            _degraded.append(section)
+        # The traceback goes to the debug log (BOB_DEBUG=1) and to the detailed
+        # report — never to stdout, which must stay machine-parseable.
+        logger.debug("Section %r failed: %s", section, traceback.format_exc())
+        report.write_raw(
+            f"\n  !! section {section} failed: {exc!r}\n{traceback.format_exc()}"
+        )
+
+        result = CheckResult()
+        result.add_finding(
+            level=FindingLevel.INFO,
+            message=t("audit.section_unavailable", section=t(f"sections.{section}")),
+            detail=output.sanitize(f"{type(exc).__name__}: {exc}", max_len=200),
+            key=f"{section}.unavailable",
+        )
+        try:
+            engine.apply(result)
+            display_result(result, report, config.verbose,
+                           quiet=config.quiet, recurrence=_pr)
+            if not config.quiet:
+                print()
+        except Exception:  # noqa: BLE001 — reporting a failure must never fail
+            logger.debug("Could not report failure of section %r", section, exc_info=True)
 
     # =========================================================================
     # GROUP 1 — FIREWALL & RÉSEAU
@@ -657,13 +730,11 @@ def run_checks(
         print()
 
     # ---- CHECK 24 — Samba security audit ----
-    samba_snapshot = SambaSnapshot.from_system()
-    _sec("samba", samba_snapshot, check_samba,
+    _sec("samba", SambaSnapshot.from_system, check_samba,
          skip_if=lambda s: not s.installed)
 
     # ---- CHECK 26 — SMTP local exposure ----
-    smtp_snapshot = SmtpSnapshot.from_system()
-    _sec("smtp", smtp_snapshot, check_smtp)
+    _sec("smtp", SmtpSnapshot.from_system, check_smtp)
 
     # =========================================================================
     # GROUP 3 — CONTRÔLE D'ACCÈS
@@ -671,24 +742,19 @@ def run_checks(
     emit_group("access_control")
 
     # ---- CHECK 11 — SSH security ----
-    ssh_snapshot = SSHSnapshot.from_system()
-    _sec("ssh", ssh_snapshot, check_ssh, ssh_exposed=_ssh_exposed)
+    _sec("ssh", SSHSnapshot.from_system, check_ssh, ssh_exposed=_ssh_exposed)
 
     # ---- CHECK 42 — SSH auth.log login analysis ----
-    auth_log_snapshot = AuthLogSnapshot.from_system()
-    _sec("auth_log", auth_log_snapshot, check_auth_log)
+    _sec("auth_log", AuthLogSnapshot.from_system, check_auth_log)
 
     # ---- CHECK 17 — User account audit ----
-    user_accounts_snapshot = UserAccountsSnapshot.from_system()
-    _sec("user_accounts", user_accounts_snapshot, check_user_accounts)
+    _sec("user_accounts", UserAccountsSnapshot.from_system, check_user_accounts)
 
     # ---- CHECK 18 — Password policy audit ----
-    password_policy_snapshot = PasswordPolicySnapshot.from_system()
-    _sec("password_policy", password_policy_snapshot, check_password_policy)
+    _sec("password_policy", PasswordPolicySnapshot.from_system, check_password_policy)
 
     # ---- CHECK 12 — Sensitive file permissions + sudoers ----
-    file_perms_snapshot = FilePermsSnapshot.from_system()
-    _sec("file_perms", file_perms_snapshot, check_file_perms)
+    _sec("file_perms", FilePermsSnapshot.from_system, check_file_perms)
 
     # =========================================================================
     # GROUP 4 — DURCISSEMENT SYSTÈME
@@ -700,35 +766,30 @@ def run_checks(
     _sec("hardening", hardening_snapshot, check_hardening)
 
     # ---- CHECK 36 — Kernel hardening ----
-    kernel_hardening_snapshot = KernelHardeningSnapshot.from_system()
-    _sec("kernel_hardening", kernel_hardening_snapshot, check_kernel_hardening)
+    _sec("kernel_hardening", KernelHardeningSnapshot.from_system, check_kernel_hardening)
 
     # ---- CHECK 37 — SUID/SGID binary audit ----
-    suid_snapshot = SuidSnapshot.from_system(
-        user_whitelist=user_config.get_suid_whitelist() if user_config is not None else []
-    )
-    _sec("suid_audit", suid_snapshot, check_suid_audit)
+    _sec("suid_audit",
+         lambda: SuidSnapshot.from_system(
+             user_whitelist=user_config.get_suid_whitelist() if user_config is not None else []
+         ),
+         check_suid_audit)
 
     # ---- CHECK 38 — Docker container security audit ----
-    docker_audit_snapshot = DockerAuditSnapshot.from_system()
-    _sec("docker_hardening", docker_audit_snapshot, check_docker_audit,
+    _sec("docker_hardening", DockerAuditSnapshot.from_system, check_docker_audit,
          skip_if=lambda s: not s.docker_installed)
 
     # ---- CHECK 39 — Log rotation & system journaling ----
-    log_rotation_snapshot = LogRotationSnapshot.from_system()
-    _sec("log_rotation", log_rotation_snapshot, check_log_rotation)
+    _sec("log_rotation", LogRotationSnapshot.from_system, check_log_rotation)
 
     # ---- CHECK 14 — Kernel module audit ----
-    kernel_modules_snapshot = KernelModulesSnapshot.from_system()
-    _sec("kernel_modules", kernel_modules_snapshot, check_kernel_modules, profile_name=_pname)
+    _sec("kernel_modules", KernelModulesSnapshot.from_system, check_kernel_modules, profile_name=_pname)
 
     # ---- CHECK 34 — MAC policy (AppArmor / SELinux) ----
-    mac_policy_snapshot = MacPolicySnapshot.from_system()
-    _sec("mac_policy", mac_policy_snapshot, check_mac_policy, profile_name=_pname)
+    _sec("mac_policy", MacPolicySnapshot.from_system, check_mac_policy, profile_name=_pname)
 
     # ---- CHECK 15 — Cron job audit ----
-    cron_audit_snapshot = CronAuditSnapshot.from_system()
-    _sec("cron", cron_audit_snapshot, check_cron_audit)
+    _sec("cron", CronAuditSnapshot.from_system, check_cron_audit)
 
     # ---- CHECK 16 — Service state audit ----
     _sec("services_health", ServicesStateSnapshot.from_system, check_services_state)
@@ -737,28 +798,24 @@ def run_checks(
     _sec("systemd_hardening", ServiceHardeningSnapshot.from_system, check_service_hardening)
 
     # ---- CHECK 47 — Container self-hardening posture (only inside a container) ----
-    container_security_snapshot = ContainerSecuritySnapshot.from_system()
-    _sec("container_security", container_security_snapshot, check_container_security,
+    _sec("container_security", ContainerSecuritySnapshot.from_system, check_container_security,
          skip_if=lambda s: not s.in_container)
 
     # ---- CHECK 48 — Orphan / failed systemd socket units ----
     _sec("socket_units", SocketUnitsSnapshot.from_system, check_socket_units)
 
     # ---- CHECK 49 — Host-side cloud context (only on a cloud instance) ----
-    cloud_context_snapshot = CloudContextSnapshot.from_system()
-    _sec("cloud_context", cloud_context_snapshot, check_cloud_context,
+    _sec("cloud_context", CloudContextSnapshot.from_system, check_cloud_context,
          skip_if=lambda s: not s.is_cloud)
 
     # ---- CHECK 13 — System updates ----
     _sec("updates", UpdatesSnapshot.from_system, check_updates, profile_name=_pname)
 
     # ---- CHECK 41 — System umask ----
-    umask_snapshot = UmaskSnapshot.from_system()
-    _sec("umask", umask_snapshot, check_umask)
+    _sec("umask", UmaskSnapshot.from_system, check_umask)
 
     # ---- CHECK 23 — Memory & Swap ----
-    memory_snapshot = MemorySnapshot.from_system()
-    _sec("memory", memory_snapshot, check_memory, profile_name=_pname)
+    _sec("memory", MemorySnapshot.from_system, check_memory, profile_name=_pname)
 
     # ---- CHECK 22 — Disk health (SMART + partition usage) ----
     _sec("disk", DiskSnapshot.from_system, check_disk,
@@ -770,53 +827,42 @@ def run_checks(
     emit_group("detection_health")
 
     # ---- CHECK 35 — Backup solution ----
-    backup_snapshot = BackupSnapshot.from_system()
-    _sec("backup", backup_snapshot, check_backup, profile_name=_pname)
+    _sec("backup", BackupSnapshot.from_system, check_backup, profile_name=_pname)
 
     # ---- CHECK 31 — Linux Audit Framework (auditd) ----
-    auditd_snapshot = AuditdSnapshot.from_system()
-    _sec("auditd", auditd_snapshot, check_auditd, profile_name=_pname)
+    _sec("auditd", AuditdSnapshot.from_system, check_auditd, profile_name=_pname)
 
     # ---- CHECK 32 — Secure Boot ----
-    secure_boot_snapshot = SecureBootSnapshot.from_system()
-    _sec("secure_boot", secure_boot_snapshot, check_secure_boot, profile_name=_pname)
+    _sec("secure_boot", SecureBootSnapshot.from_system, check_secure_boot, profile_name=_pname)
 
     # ---- CHECK 29 — Fail2ban intrusion prevention ----
     fail2ban_snapshot = Fail2banSnapshot.from_system()
     _sec("fail2ban", fail2ban_snapshot, check_fail2ban)
 
     # ---- CHECK 25 — ClamAV antivirus audit ----
-    clamav_snapshot = ClamAVSnapshot.from_system()
-    _sec("clamav", clamav_snapshot, check_clamav)
+    _sec("clamav", ClamAVSnapshot.from_system, check_clamav)
 
     # ---- CHECK 33 — File integrity monitoring (AIDE / Tripwire) ----
-    file_integrity_snapshot = FileIntegritySnapshot.from_system()
-    _sec("file_integrity", file_integrity_snapshot, check_file_integrity)
+    _sec("file_integrity", FileIntegritySnapshot.from_system, check_file_integrity)
 
     # ---- CHECK 30 — Rootkit & integrity scan ----
-    rootkit_snapshot = RootkitSnapshot.from_system()
-    _sec("rootkit", rootkit_snapshot, check_rootkit)
+    _sec("rootkit", RootkitSnapshot.from_system, check_rootkit)
 
     # ---- CHECK 28 — NTP time synchronisation ----
-    ntp_snapshot = NtpSnapshot.from_system()
-    _sec("ntp", ntp_snapshot, check_ntp)
+    _sec("ntp", NtpSnapshot.from_system, check_ntp)
 
     # ---- CHECK 19 — Desktop application audit ----
-    desktop_snapshot = DesktopAppsSnapshot.from_system()
-    _sec("desktop_apps", desktop_snapshot, check_desktop_apps,
+    _sec("desktop_apps", DesktopAppsSnapshot.from_system, check_desktop_apps,
          skip_if=lambda s: not s.detected)
 
     # ---- CHECK 45 — Firmware & microcode audit ----
-    firmware_snapshot = FirmwareSnapshot.from_system()
-    _sec("firmware", firmware_snapshot, check_firmware)
+    _sec("firmware", FirmwareSnapshot.from_system, check_firmware)
 
     # ---- CHECK 44 — Systemd timers audit ----
-    timers_snapshot = SystemdTimersSnapshot.from_system()
-    _sec("systemd_timers", timers_snapshot, check_systemd_timers)
+    _sec("systemd_timers", SystemdTimersSnapshot.from_system, check_systemd_timers)
 
     # ---- CHECK 43 — TLS/SSL certificate expiry ----
-    ssl_certs_snapshot = SslCertsSnapshot.from_system()
-    _sec("ssl_certs", ssl_certs_snapshot, check_ssl_certs)
+    _sec("ssl_certs", SslCertsSnapshot.from_system, check_ssl_certs)
 
     # ---- Plugin checks (user-defined, checks.d/) ----
     for plugin in load_plugin_checks():
@@ -841,4 +887,5 @@ def run_checks(
         fw_active=fw_status.active,
         fw_policy=fw_status.incoming_policy or "unknown",
         network_context=network_context,
+        degraded_sections=tuple(_degraded),
     )

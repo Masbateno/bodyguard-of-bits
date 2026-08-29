@@ -109,6 +109,23 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   are mutation-tested; the previous tests set the field by hand.
 - docs: v0.14.0 release surfaces were dated 28 Aug, it shipped on the 29th.
 
+- Robustness batch from a local stress campaign: one failing check used to
+  destroy the whole audit (runner._sec had no exception handling; exit 3 and
+  zero bytes of stdout because one section could not read one file). A failing
+  section is now degraded in place, reported as a <section>.unavailable INFO
+  finding and listed in the new JSON field degraded_sections. Exit codes
+  unchanged. Required converting 29 eager snapshot sites to lazy factories.
+- UnicodeDecodeError escaped 33 "except OSError" guards (it is a ValueError):
+  a latin-1 byte in /etc/passwd GECOS, or an accented comment in ignore.yml,
+  killed every run. All guarded text reads now declare errors="replace".
+- history: a JSON-valid non-object line raised an uncaught AttributeError and
+  killed "bob --history".
+- --lang accepted an absolute path, loading an arbitrary JSON as the locale
+  (read as root under sudo). Shape validation added.
+- Report files open O_NOFOLLOW and chown through the held descriptor.
+- CSV formula injection neutralised in message/detail/fix_cmd/note.
+- --profile/--check/--skip reject a following flag and an empty value.
+- Tests 6590 -> 6671.
 * Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
 - BREAKING contract-fix bundle. The container/nftables "teeth" stay deferred:
   calibrating them needs a real container and a cloud instance.

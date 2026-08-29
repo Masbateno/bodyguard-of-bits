@@ -92,7 +92,7 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
     read/write failure (caller renders it to the user).
     """
     try:
-        text = entry.cron_path.read_text(encoding="utf-8")
+        text = entry.cron_path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         return str(exc)
     new_line = f"{schedule_expr}  root  {entry.script_path}"
@@ -130,7 +130,7 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
           (the caller may want to warn the user).
     """
     try:
-        lines = entry.cron_path.read_text(encoding="utf-8").splitlines()
+        lines = entry.cron_path.read_text(encoding="utf-8", errors="replace").splitlines()
         updated = [
             f"# email: {new_email}" if ln.startswith("# email:") else ln
             for ln in lines
@@ -143,7 +143,7 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
     subst_count = 0
     if entry.script_path.exists():
         try:
-            text = entry.script_path.read_text(encoding="utf-8")
+            text = entry.script_path.read_text(encoding="utf-8", errors="replace")
             # Match both NOTIFY_EMAILS= (current) and NOTIFY_EMAIL= (legacy)
             text, subst_count = re.subn(
                 r"^NOTIFY_EMAILS?=.*$",

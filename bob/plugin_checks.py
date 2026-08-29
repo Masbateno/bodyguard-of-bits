@@ -294,7 +294,7 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
 
     # --- Read source (no exec) ---
     try:
-        source = plugin_path.read_text(encoding="utf-8")
+        source = plugin_path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         logger.warning("Plugin %s: cannot read: %s — skipped", plugin_path.name, exc)
         return None

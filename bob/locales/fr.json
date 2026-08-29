@@ -844,6 +844,7 @@
     "ufw_disabled_listeners_link_local": "{count} service(s) en écoute sur IPv6 (::) mais UFW IPv6 est désactivé — adresses link-local uniquement, aucune exposition internet"
   },
   "audit": {
+    "section_unavailable": "Section non évaluée ({section}) — une erreur interne a empêché ce contrôle de s'exécuter",
     "starting": "Démarrage de l'audit",
     "audit_profile": "Profil d'audit : {profile}",
     "profile_not_found": "Profil '{profile}' introuvable — utilisation du profil par défaut (server)",

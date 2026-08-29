@@ -452,6 +452,7 @@ def _run(argv=None) -> int:
             ipv6_snapshot      = result.ipv6_snapshot
             fw_active          = result.fw_active
             fw_policy          = result.fw_policy
+            degraded_sections  = result.degraded_sections
 
             engine.finalize()
             from bob.domain_scores import apply_domain_score_override as _apply_dso
@@ -591,6 +592,7 @@ def _run(argv=None) -> int:
                 ipv6_snapshot=ipv6_snapshot,
                 schema_version="3",
                 profile=active_profile, config=config,
+                degraded_sections=degraded_sections,
             )
             print(_json.dumps(data, ensure_ascii=False, indent=2))
 

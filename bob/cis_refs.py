@@ -12,7 +12,7 @@ _DATA_FILE = Path(__file__).parent / "data" / "cis_refs.json"
 @lru_cache(maxsize=1)
 def _load() -> dict[str, dict]:
     try:
-        return json.loads(_DATA_FILE.read_text(encoding="utf-8"))
+        return json.loads(_DATA_FILE.read_text(encoding="utf-8", errors="replace"))
     except (OSError, json.JSONDecodeError):
         return {}
 

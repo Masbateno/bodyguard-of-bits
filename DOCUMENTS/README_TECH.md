@@ -645,6 +645,7 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `alert_count` | int | Number of ALERT-level findings (renamed from `alerts` in v0.12.0) |
 | `warning_count` | int | Number of WARN-level findings (renamed from `warnings` in v0.12.0) |
 | `info_count` | int | Number of INFO-level findings (new in v2) |
+| `degraded_sections` | array | Section names whose check raised and was degraded in place rather than aborting the audit (new in v0.14.1, additive within v3). Empty on a healthy run. Each also appears as a `<section>.unavailable` INFO finding. Lets a consumer tell "score 9 with every section evaluated" from "score 9 with two sections never run". |
 | `deductions` | array | Score deductions (filtered: `points > 0`) |
 | `domain_scores` | object | Per-domain sub-scores |
 | `posture_escalation` | object | Posture-driven risk-level adjustment context (new in v2) |

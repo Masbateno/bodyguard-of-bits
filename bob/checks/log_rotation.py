@@ -281,7 +281,7 @@ def _read_journald_conf() -> tuple[str, str, str]:
 
     for conf in [_JOURNALD_CONF]:
         try:
-            _parse(conf.read_text(encoding="utf-8"))
+            _parse(conf.read_text(encoding="utf-8", errors="replace"))
         except OSError:
             pass
 
@@ -289,7 +289,7 @@ def _read_journald_conf() -> tuple[str, str, str]:
     try:
         for drop in sorted(_JOURNALD_CONF_D.glob("*.conf")):
             try:
-                _parse(drop.read_text(encoding="utf-8"))
+                _parse(drop.read_text(encoding="utf-8", errors="replace"))
             except OSError:
                 pass
     except OSError:
@@ -310,13 +310,13 @@ def _detect_remote_syslog() -> tuple[str, bool]:
         texts: list[str] = []
         for p in [_RSYSLOG_CONF]:
             try:
-                texts.append(p.read_text(encoding="utf-8"))
+                texts.append(p.read_text(encoding="utf-8", errors="replace"))
             except OSError:
                 pass
         try:
             for drop in sorted(_RSYSLOG_CONF_D.glob("*.conf")):
                 try:
-                    texts.append(drop.read_text(encoding="utf-8"))
+                    texts.append(drop.read_text(encoding="utf-8", errors="replace"))
                 except OSError:
                     pass
         except OSError:
@@ -328,7 +328,7 @@ def _detect_remote_syslog() -> tuple[str, bool]:
     # syslog-ng
     if _command_exists("syslog-ng"):
         try:
-            text = _SYSLOG_NG_CONF.read_text(encoding="utf-8")
+            text = _SYSLOG_NG_CONF.read_text(encoding="utf-8", errors="replace")
             has_remote = bool(_SYSLOGNG_REMOTE_RE.search(text))
         except OSError:
             has_remote = False

@@ -77,7 +77,7 @@ def load_ignore_keys(path: Path | None = None) -> frozenset[str]:
         return frozenset()
     keys: set[str] = set()
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             m = _KEY_LINE_RE.match(line)
             if m:
                 keys.add(m.group(1))
@@ -119,7 +119,7 @@ def add_ignore_key(key: str, path: Path | None = None) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         chown_to_sudo_user(path.parent)
         if path.exists():
-            content = path.read_text(encoding="utf-8")
+            content = path.read_text(encoding="utf-8", errors="replace")
             if "ignore:" in content:
                 content = content.rstrip("\n") + f"\n  - key: {key}\n"
             else:
@@ -170,7 +170,7 @@ def remove_ignore_key(key: str, path: Path | None = None) -> bool:
     if key not in load_ignore_keys(path):
         return False
     try:
-        original = path.read_text(encoding="utf-8")
+        original = path.read_text(encoding="utf-8", errors="replace")
         new_lines: list[str] = []
         removed = False
         for line in original.splitlines(keepends=True):

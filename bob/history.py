@@ -97,7 +97,7 @@ def save_score(
 def _rotate_if_needed() -> None:
     """Truncate history.jsonl to the last _MAX_HISTORY_ENTRIES lines."""
     try:
-        lines = [l for l in _HISTORY_FILE.read_text(encoding="utf-8").splitlines() if l.strip()]
+        lines = [l for l in _HISTORY_FILE.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
         if len(lines) > _MAX_HISTORY_ENTRIES:
             content = "\n".join(lines[-_MAX_HISTORY_ENTRIES:]) + "\n"
             atomic_write(_HISTORY_FILE, content, mode=0o600)
@@ -112,14 +112,23 @@ def load_history(max_entries: int = 50) -> list[dict]:
         return []
     entries: list[dict] = []
     try:
-        for line in _HISTORY_FILE.read_text(encoding="utf-8").splitlines():
+        for line in _HISTORY_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                entries.append(_clamp_entry(json.loads(line)))
+                parsed = json.loads(line)
             except (json.JSONDecodeError, ValueError):
                 continue
+            # v0.14.1: a line that is valid JSON but not an object (``null``,
+            # ``[1,2]``, ``"str"``) reached _clamp_entry and raised
+            # AttributeError — which this loop does not catch, so a single
+            # such line aborted ``bob --history`` with a fatal error. The
+            # loop's whole intent is to skip malformed lines; make that true
+            # for every malformed shape, not just unparseable ones.
+            if not isinstance(parsed, dict):
+                continue
+            entries.append(_clamp_entry(parsed))
     except OSError:
         return []
     return entries[-max_entries:]

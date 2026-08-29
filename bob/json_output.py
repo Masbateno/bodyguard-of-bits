@@ -66,6 +66,12 @@ SCHEMA_V3_REQUIRED_KEYS = frozenset({
     "deductions",
     "domain_scores",
     "posture_escalation",     # A-4 (new — exposes Phase 1 escalation context)
+    # v0.14.1: sections whose check raised and were degraded in place by the
+    # ``runner._sec`` fault barrier instead of aborting the audit. Empty list
+    # on a healthy run. Additive within schema v3 — a consumer that ignores
+    # the key keeps working, one that reads it can tell "score 9 with every
+    # section evaluated" from "score 9 with two sections never run".
+    "degraded_sections",
 })
 
 # Additional top-level keys present in v3 only when ``full=True``.
@@ -97,6 +103,7 @@ def build_json_data(
     schema_version: str = DEFAULT_SCHEMA_VERSION,
     profile=None,
     config=None,
+    degraded_sections: "tuple[str, ...] | list[str]" = (),
 ) -> dict:
     """Serialize audit results to a JSON-ready dict.
 
@@ -128,6 +135,7 @@ def build_json_data(
         engine, sys_info, network_context, public_ip, snapshots,
         ports_snapshot, stack_snapshot, net_snapshot, full, version,
         hardening_snapshot, ipv6_snapshot, profile=profile, config=config,
+        degraded_sections=degraded_sections,
     )
 
 
@@ -154,6 +162,7 @@ def _build_v3(
     ipv6_snapshot: IPv6Snapshot | None,
     profile=None,
     config=None,
+    degraded_sections: "tuple[str, ...] | list[str]" = (),
 ) -> dict:
     """v2 producer — v0.7.0 schema.
 
@@ -204,6 +213,7 @@ def _build_v3(
         "alert_count":     engine.alert_count,
         "warning_count":   engine.warn_count,
         "info_count":      engine.info_count,
+        "degraded_sections": list(degraded_sections),
         "deductions": [
             {
                 "reason":        d.reason,

@@ -35,7 +35,7 @@ def _normalize(raw: str) -> str:
 def _get_proc_umask() -> str | None:
     """Read the effective umask from /proc/self/status (Linux 4.7+)."""
     try:
-        content = Path("/proc/self/status").read_text(encoding="utf-8")
+        content = Path("/proc/self/status").read_text(encoding="utf-8", errors="replace")
         m = re.search(r"^Umask:\s+([0-7]{4})", content, re.MULTILINE)
         if m:
             return _normalize(m.group(1))

@@ -95,7 +95,7 @@ class UserAccountsSnapshot:
         login_shells: dict[str, str] = {}  # username → shell
         uids:         dict[str, int] = {}  # username → uid
         try:
-            for line in _PASSWD_PATH.read_text(encoding="utf-8").splitlines():
+            for line in _PASSWD_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
                 parts = line.split(":")
                 if len(parts) < 7:
                     continue
@@ -114,7 +114,7 @@ class UserAccountsSnapshot:
 
         # ---- /etc/shadow — password and expiry checks (requires root) -------
         try:
-            shadow_text = _SHADOW_PATH.read_text(encoding="utf-8")
+            shadow_text = _SHADOW_PATH.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return snap
 

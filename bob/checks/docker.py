@@ -235,7 +235,7 @@ def _check_daemon_json() -> tuple[bool, bool]:
         Tuple of (file_exists: bool, iptables_disabled: bool).
     """
     try:
-        content = DAEMON_JSON_PATH.read_text(encoding="utf-8")
+        content = DAEMON_JSON_PATH.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return False, False
     except OSError as exc:

@@ -111,6 +111,20 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
 }
 
 
+# v0.14.1: prefixes that belong in the "firewall" catch-all *by design* —
+# the firewall domain is documented as "Firewall rules, ports, services, logs
+# (everything else)". Pre-v0.14.1 the debug log below fired for every one of
+# them, ~40 lines per run, which drowned the very signal it exists to carry:
+# "a developer added a check and forgot to map its prefix". Listing the
+# deliberate ones keeps the log meaningful — it now fires only for a genuinely
+# unmapped prefix.
+_INTENTIONAL_CATCHALL: frozenset[str] = frozenset({
+    "ddns", "desktop_apps", "docker", "firewall", "firewall_drivers",
+    "firewall_iptables", "firewall_rules", "ipv6", "network_context",
+    "ports", "prerequisites", "risk", "services", "smtp",
+})
+
+
 def key_to_domain(key: str | None) -> str | None:
     """
     Map a deduction key (e.g. 'ssh.password_auth') to its domain.
@@ -124,11 +138,13 @@ def key_to_domain(key: str | None) -> str | None:
     domain = _PREFIX_TO_DOMAIN.get(prefix)
     if domain is None:
         # New check key without a domain mapping → falls back to firewall.
-        # Log so packagers/devs notice unmapped prefixes when they add checks.
-        logger.debug(
-            "domain_scores: prefix %r has no entry in _PREFIX_TO_DOMAIN, "
-            "defaulting to 'firewall'", prefix,
-        )
+        # Log so packagers/devs notice unmapped prefixes when they add checks —
+        # but stay quiet for the prefixes that are catch-all on purpose.
+        if prefix not in _INTENTIONAL_CATCHALL:
+            logger.debug(
+                "domain_scores: prefix %r has no entry in _PREFIX_TO_DOMAIN, "
+                "defaulting to 'firewall'", prefix,
+            )
         return "firewall"
     return domain
 

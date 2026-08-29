@@ -289,7 +289,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
 def _read_userns_remap() -> bool:
     """Return True if userns-remap is set in /etc/docker/daemon.json."""
     try:
-        config = json.loads(_DAEMON_JSON.read_text(encoding="utf-8"))
+        config = json.loads(_DAEMON_JSON.read_text(encoding="utf-8", errors="replace"))
         return bool(config.get("userns-remap", ""))
     except (OSError, json.JSONDecodeError):
         return False

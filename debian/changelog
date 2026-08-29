@@ -25,6 +25,42 @@ bodyguard-of-bits (0.14.1-1) UNRELEASED; urgency=low
     the v0.14.0 surfaces only — v0.13.3 and v0.13.4 genuinely shipped on the
     28th and keep their dates. The weekday moves with it.
 
+  * Robustness batch from a local stress campaign. One failing check used to
+    destroy the whole audit: runner._sec had no exception handling, so any
+    exception from a snapshot collector or a check propagated to the top-level
+    handler — exit 3, zero bytes of stdout, no score, no report, because one
+    section could not read one file. A single latin-1 byte in an /etc/passwd
+    GECOS field reproduced it. A failing section is now degraded in place: the
+    audit completes, the failure is reported as a <section>.unavailable INFO
+    finding in every output format, and the section is listed in the new
+    top-level JSON field degraded_sections (additive within schema v3). Exit
+    codes are deliberately unchanged. Making the barrier effective required
+    converting 29 eager snapshot call sites to lazy factories, which also
+    delivers the performance win deferred since 0.13.3. The always-on firewall
+    core stays deliberately unguarded — it is a data pipeline, not independent
+    sections.
+  * UnicodeDecodeError is a ValueError, not an OSError, so a non-UTF-8 byte
+    escaped 33 "except OSError" guards. Reproduced twice: the GECOS field
+    above, and an accented comment in ~/.config/bob/ignore.yml written with a
+    latin-1 editor, which bricked every subsequent run. Every guarded text read
+    now declares errors="replace", pinned by an AST guard over the package.
+  * history: a line holding valid JSON that is not an object (null, [1,2])
+    reached _clamp_entry and raised an uncaught AttributeError, killing
+    "bob --history". The loop now skips every malformed shape.
+  * --lang was passed straight to i18n.init(), which builds
+    LOCALES_DIR / f"{lang}.json"; pathlib replaces the base when the value is
+    absolute, so --lang=/tmp/x loaded /tmp/x.json as the translation table,
+    read as root under sudo. Shape validation added; --lang=de still falls
+    back to English as before.
+  * Report files are opened O_NOFOLLOW and chowned through the descriptor
+    already held. The name is fully predictable and the open runs as root, so
+    a shared --output-dir could otherwise let someone pre-plant a symlink.
+  * CSV: leading spreadsheet formula characters (= + - @) in message, detail,
+    fix_cmd and note are prefixed with a single quote. Minor CSV format change.
+  * --profile, --check and --skip now reject a value starting with "-" (they
+    swallowed the following flag), and an empty or separator-only value no
+    longer degrades to "no filter", which silently ran the full audit.
+  * Tests 6590 -> 6671.
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 29 Aug 2026 23:00:00 +0200
 
 bodyguard-of-bits (0.14.0-1) UNRELEASED; urgency=low

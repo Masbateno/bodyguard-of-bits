@@ -65,7 +65,7 @@ def list_installed_crons() -> list[CronEntry]:
 def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
     """Parse a BOB cron file and return a CronEntry, or None if unrecognised."""
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
 

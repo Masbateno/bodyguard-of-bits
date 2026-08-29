@@ -48,9 +48,150 @@ Corrigé sur les seules surfaces v0.14.0 — la ligne de changelog et l'en-tête
 
 **v0.13.3 et v0.13.4 gardent leurs dates au 2026-08-28** — elles ont réellement été publiées ce jour-là, leurs workflows horodatés 17:31 et 18:00 UTC le 28. Seule v0.14.0 a franchi minuit.
 
+### Un lot robustesse, issu d'une campagne de stress test locale
+
+Le travail v0.14.1 a été suivi d'une passe de stress délibérée contre l'outil : 1 209 combinaisons d'argv hostiles, fichiers d'état corrompus soumis à chaque parser, balayage de tous les checks sous user namespace restreint, 8 exécutions concurrentes, tube rompu, stdout fermé, attaques par lien symbolique et par encodage. Sept défauts en sont sortis. Trois coûtaient à l'opérateur l'audit entier.
+
+#### 1. Un seul check en échec détruisait tout l'audit
+
+`runner._sec` — le helper qui distribue ~34 des sections de l'audit — n'avait aucune gestion d'exception :
+
+```python
+result = check_fn(snapshot, t=t, **check_kwargs)
+engine.apply(result)
+display_result(...)
+```
+
+Toute exception levée par un collecteur de snapshot ou une fonction de check remontait hors de `run_checks` jusqu'au handler global de `bob/__main__.py`. L'opérateur obtenait **exit 3 et zéro octet sur stdout** — pas de score, pas de findings, pas de rapport — parce qu'une section n'avait pas pu lire un fichier.
+
+Reproduit en live, avec une fixture bind-montée sur `/etc/passwd` dans un user namespace :
+
+```
+$ sudo bob --format=json
+EXIT=3 stdout=0B
+Fatal error: 'utf-8' codec can't decode byte 0xe9 in position 3278: invalid continuation byte
+```
+
+Le déclencheur était un unique octet latin-1 dans un champ GECOS — `José García` — ce qui est banal sur les systèmes antérieurs au défaut UTF-8.
+
+**Le correctif.** Une section en échec est dégradée sur place. L'audit va au bout, l'échec est émis par le chemin normal `engine.apply` sous forme d'un finding INFO `<section>.unavailable` — il atteint donc le texte, JSON, CSV, Markdown, HTML et le rapport `-d` — et le nom de la section est consigné dans `ChecksResult.degraded_sections`, exposé comme nouveau champ JSON de premier niveau :
+
+```
+EXIT=2 stdout=2344B
+score: 8 | alert: 1 warn: 5 info: 67
+degraded_sections: ['user_accounts']
+```
+
+`degraded_sections` est **additif dans le schéma v3** (sans bump — le même traitement que les champs ajoutés en v0.12.1). Il existe pour qu'un pipeline distingue « score 9, toutes sections évaluées » de « score 9, deux sections jamais exécutées » sans parser les findings.
+
+**Les codes de sortie sont délibérément inchangés.** Router une section dégradée vers `EXIT_ERROR` a été envisagé puis écarté : cela entrerait en collision avec l'exit 4 de `--target` — rendant à nouveau inatteignable le contrat de cible documenté, ce que v0.14.0 venait précisément de réparer — et détruirait la distinction existante entre « BOB est cassé » (rien n'a tourné) et « un fichier était illisible » (un audit a été produit). Le coût accepté est qu'un cron ne lisant que le code de sortie pourrait voir 0 alors qu'une section n'a pas tourné ; c'est pourquoi la dégradation est bruyante dans tous les formats rendus et détectable par machine dans le JSON.
+
+**La barrière était inerte à sa première écriture.** 29 des 34 sites d'appel de `_sec` collectaient leur snapshot *une ligne au-dessus* de l'appel :
+
+```python
+user_accounts_snapshot = UserAccountsSnapshot.from_system()   # ← la lecture se fait ici
+_sec("user_accounts", user_accounts_snapshot, check_user_accounts)
+```
+
+La collecte de snapshot est précisément l'endroit où se font les lectures de fichiers — et donc les crashes — si bien qu'entourer la seule fonction de check ne protégeait rien. Le premier re-test renvoyait toujours exit 3. Convertir ces 29 sites en fabriques paresseuses était un prérequis pour que la barrière ait un sens, et livre au passage le gain de performance lazy-snapshot différé depuis v0.13.3 : `--check=ssh` ne paie plus 29 snapshots qu'il n'utilisera pas — mesuré sur cet hôte, en alternant ancien/nouveau trois fois, **2,60 s → 1,91 s (−27 %)**. `hardening_snapshot` reste impatient et est documenté comme l'exception — il alimente aussi `ChecksResult` pour le bloc sysctl de `--json-full`.
+
+**Périmètre délibérément borné.** Le noyau always-on (`firewall`, `firewall_rules`, `ufw_logging`, `firewall_iptables`, `firewall_drivers`, `network_context`, `services`, `ports`, `logs`, `ddns`, `docker`, `virtualization`) n'est **pas** protégé. C'est un pipeline de données, pas un ensemble de sections indépendantes : `fw_status`, `ports_snapshot`, `ufw_numbered`, `network_context` et `audited_ports` circulent entre elles puis vers les appels `_sec`. Y avaler une erreur laisserait le code aval lire des noms jamais liés — une cascade de `NameError`, strictement pire que l'abandon actuel. Si le noyau pare-feu est illisible, il n'y a génuinement pas d'audit à rendre.
+
+#### 2. Un octet non-UTF-8 échappait à 33 gardes `except OSError`
+
+`UnicodeDecodeError` est une sous-classe de `ValueError`, pas d'`OSError` : elle traversait donc sans encombre tout garde de la forme :
+
+```python
+try:
+    text = path.read_text(encoding="utf-8")
+except OSError:
+    ...
+```
+
+Deux reproductions en live. Le champ GECOS d'`/etc/passwd` ci-dessus — et, pire, un commentaire accentué dans `~/.config/bob/ignore.yml` écrit avec un éditeur latin-1, qui **briquait toutes les exécutions suivantes** de cet utilisateur :
+
+```
+$ bob --format=json --check=ssh
+EXIT=3
+Fatal error: 'utf-8' codec can't decode byte 0xe8 in position 3: invalid continuation byte
+```
+
+Un opérateur francophone écrivant `# règle ignorée` dans le mauvais encodage désactivait définitivement son propre auditeur, et l'erreur rendue était un message de codec Python non traduit.
+
+Toute lecture de texte sous garde déclare désormais `errors="replace"`. Un garde AST balaie l'ensemble du paquet et échoue si un `read_text()` sans politique `errors=` réapparaît un jour dans un `try` ne capturant qu'`OSError`.
+
+*Une correction à consigner :* le premier balayage annonçait **66** sites et était faux. Il n'inspectait que la clause `except` et ignorait le mot-clé `errors=`, si bien qu'il signalait `auth_log.py` et `ssh/_parsers.py`, qui passent déjà `errors="replace"` / `errors="ignore"` et ne peuvent pas lever. Pire, trois de ses « correctifs » passaient `errors=` à `file.read()`, qui n'accepte qu'une taille — ils auraient levé `TypeError` à l'exécution, et deux de ces sites décodaient déjà explicitement. Corrigé à 33 sites réels.
+
+#### 3. `bob --history` mourait sur une seule ligne malformée
+
+```python
+try:
+    entries.append(_clamp_entry(json.loads(line)))
+except (json.JSONDecodeError, ValueError):
+    continue
+```
+
+Une ligne contenant du JSON valide mais non-objet — `null`, `[1,2]`, `"str"` — se parse sans problème, puis atteint `_clamp_entry`, qui appelle `.get` dessus : `AttributeError`, que ce handler n'attrape pas, et le handler externe ne capture qu'`OSError`. La boucle a pour seule raison d'être d'ignorer les lignes malformées ; c'est désormais vrai pour toutes les formes de malformation, pas seulement pour celles qui ne se parsent pas.
+
+#### 4. `--lang` acceptait un chemin absolu
+
+La valeur allait directement à `i18n.init()`, qui construit `_LOCALES_DIR / f"{lang}.json"`. `pathlib` remplace toute la base quand la partie droite est absolue :
+
+```python
+>>> Path("bob/locales") / "/etc/hosts.json"
+PosixPath('/etc/hosts.json')
+```
+
+Ainsi `--lang=/tmp/x` chargeait `/tmp/x.json` comme table de traduction — confirmé via le CLI — et sous `sudo` cette lecture s'effectue en root. Ce n'est pas un franchissement de frontière de privilège (l'opérateur possède déjà sa ligne de commande), mais c'est un argument non validé atteignant un chemin arbitraire du système de fichiers, dans un outil qui valide `SUDO_USER` par regex trois modules plus loin.
+
+La validation porte sur la **forme** uniquement : `^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`. Un code bien formé mais non supporté (`--lang=de`) retombe toujours sur l'anglais avec un avertissement, exactement comme avant — seules les valeurs en forme de chemin sont rejetées.
+
+#### 5. Les fichiers de rapport étaient ouverts sans `O_NOFOLLOW`
+
+Le nom du rapport est entièrement prédictible à la seconde (`bob_%Y%m%d_%H%M%S.log`), l'ouverture s'exécute en root sous `sudo` avec `O_CREAT|O_TRUNC`, et le `chown_to_sudo_user(path)` qui suit re-résout le nom et suit les liens symboliques. Un attaquant capable d'écrire dans le répertoire cible pourrait pré-planter des liens sur une plage d'horodatages et faire tronquer par root — puis lui céder la propriété d' — un fichier arbitraire.
+
+Le répertoire par défaut est le `~/.local/share/bob/logs` de l'utilisateur appelant : ce n'est donc **pas exploitable en sortie de boîte** ; il faut que l'opérateur ait pointé `--output-dir` vers un répertoire ouvert en écriture à d'autres. Le correctif est assez peu coûteux pour que la précondition ne justifie pas de le laisser : `O_NOFOLLOW` à l'ouverture, plus un nouveau `sysinfo.chown_fd_to_sudo_user()` opérant sur le descripteur déjà détenu, ce qui ferme la fenêtre TOCTOU entre l'ouverture et le chown.
+
+#### 6. Injection de formules CSV
+
+`csv.DictWriter` échappe correctement selon RFC 4180, mais Excel et LibreOffice évaluent quand même une cellule quotée commençant par `=`, `+`, `-` ou `@`. Du texte de rapport qui ne fait que *transiter* par BOB — une ligne de commande cron, un nom de conteneur, un chemin SUID — pouvait s'exécuter à l'ouverture de l'export :
+
+```
+x,2026-08-29T17:28:33+00:00,10,low,0,1,warn,action,"=cmd|""/C calc""!A1",@SUM(1+1)*cmd,+1234,
+```
+
+Les caractères de formule en tête de `message`, `detail`, `fix_cmd` et `note` sont désormais préfixés par une apostrophe — la mitigation standard. La cellule s'affiche comme du texte et la valeur d'origine est préservée verbatim après le préfixe. C'est un **changement mineur de format CSV** pour les consommateurs lisant ces quatre colonnes.
+
+#### 7. Trois options n'avaient jamais reçu la garde tiret de v0.7.3 M-4
+
+`--webhook`, `--ignore`, `--unignore`, `--output-dir`, `--explain` et `--diff` rejettent tous une valeur commençant par `-`. `-p/--profile`, `--check` et `--skip` n'ont jamais eu le même traitement, d'où :
+
+```
+bob -p --quiet          → profile="--quiet", et --quiet est avalé
+bob --skip --quiet      → skip_checks={"--quiet"}, et --quiet est avalé
+bob --check ""          → filtre vide (falsy) → lance l'audit COMPLET, en silence
+bob --check ","         → idem
+```
+
+Les deux derniers sont les plus tranchants : `--check=` levait correctement une erreur, tandis que la forme séparée par une espace dégradait en « aucun filtre » sans un mot. Les quatre cas échouent désormais proprement.
+
+#### Plus : un log de debug qui noyait son propre signal
+
+`domain_scores.key_to_domain` journalise dès qu'un préfixe de clé de finding n'a pas d'entrée dans `_PREFIX_TO_DOMAIN`, pour qu'un développeur ajoutant un check remarque qu'il a oublié de le mapper. Mais `firewall` est le domaine catch-all documenté : le log se déclenchait donc ~40 fois par exécution pour des préfixes non mappés *à dessein* (`services`, `ports`, `docker`, `smtp`, `ipv6`…). Les préfixes délibérés sont maintenant listés dans `_INTENTIONAL_CATCHALL` et restent silencieux ; un garde échoue si l'un d'eux devient un jour mappé, pour que la liste ne puisse pas devenir silencieusement mensongère.
+
+### Vérifié sain
+
+La même campagne n'a trouvé aucun défaut dans les surfaces suivantes, qu'il n'est pas utile de ré-auditer : le parser d'argv (1 209 combinaisons hostiles, zéro exception hors `CLIError`), les 46 sections balayées individuellement sous user namespace restreint (zéro crash), 8 exécutions concurrentes (aucune corruption de fichier d'état, 0600 préservé, toutes les lignes d'historique intactes), tube rompu et stdout entièrement fermé, l'application du schéma webhook (`file://`, `gopher://`, `javascript:`, et `http://` en clair, tous rejetés), l'échappement HTML et Markdown, la gestion de `SUDO_USER`, la couverture `--explain` de tous les findings actionnables, et le parser `cap_last_cap` de v0.14.1 lui-même face à 13 entrées hostiles (zéro, négatif, 64, énorme, vide, non numérique, hexadécimal, flottant, NUL — tous retombent dans les bornes sans danger).
+
+### Gardes
+
++64 tests dans `tests/test_v0141_robustness.py`, tous mutation-testés : neuf défauts ont été injectés un à un — restreindre la barrière à une sous-classe, réintroduire un site de snapshot impatient, retirer le champ `degraded_sections`, retirer `errors="replace"`, revenir sur la vérification de type de l'historique, retirer la validation de `--lang`, retirer `O_NOFOLLOW`, retirer le préfixe CSV, retirer la garde tiret — et chacun a produit un échec avant restauration du fichier.
+
+Les gardes de la barrière sont structurels (assertions AST sur la vraie source de `runner.py`) plutôt que comportementaux, parce que `run_checks` n'est délibérément pas exercé dans la couche pytest — il relève de la matrice d'intégration, comme le documente `tests/test_runner.py`. La preuve comportementale est la reproduction live ci-dessus, avant et après.
+
 ### Tests
 
-6590 → **6607**. 0 régression, ruff 0 finding.
+6590 → **6671** (+81 sur v0.14.0 : 17 pour la sémantique privileged, 64 pour le lot robustesse). 0 régression.
 
 Mise à jour : `pipx upgrade bodyguard-of-bits` — aucune action de migration. Les audits conteneur rapportent désormais le finding exact ; tout le reste est inchangé.
 

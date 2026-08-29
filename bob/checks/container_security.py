@@ -134,7 +134,7 @@ def _detect_container() -> str:
 def _read_proc_status() -> dict[str, str]:
     out: dict[str, str] = {}
     try:
-        for line in Path("/proc/self/status").read_text(encoding="utf-8").splitlines():
+        for line in Path("/proc/self/status").read_text(encoding="utf-8", errors="replace").splitlines():
             if ":" in line:
                 k, _, v = line.partition(":")
                 out[k.strip()] = v.strip()
@@ -166,7 +166,7 @@ def _effective_uid_zero(uid_line: str) -> bool:
 def _has_user_namespace() -> bool:
     """True when /proc/self/uid_map is a non-identity mapping (userns active)."""
     try:
-        line = Path("/proc/self/uid_map").read_text(encoding="utf-8").split("\n")[0]
+        line = Path("/proc/self/uid_map").read_text(encoding="utf-8", errors="replace").split("\n")[0]
     except OSError:
         return False
     parts = line.split()
@@ -178,7 +178,7 @@ def _has_user_namespace() -> bool:
 
 def _rootfs_writable() -> bool:
     try:
-        for line in Path("/proc/mounts").read_text(encoding="utf-8").splitlines():
+        for line in Path("/proc/mounts").read_text(encoding="utf-8", errors="replace").splitlines():
             parts = line.split()
             if len(parts) >= 4 and parts[1] == "/":
                 opts = parts[3].split(",")

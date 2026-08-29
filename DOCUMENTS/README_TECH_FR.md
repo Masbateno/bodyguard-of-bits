@@ -645,6 +645,7 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `alert_count` | int | Nombre de findings ALERT (renommé depuis `alerts` en v0.12.0) |
 | `warning_count` | int | Nombre de findings WARN (renommé depuis `warnings` en v0.12.0) |
 | `info_count` | int | Nombre de findings INFO (nouveau en v2) |
+| `degraded_sections` | array | Noms des sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (nouveau en v0.14.1, additif dans v3). Vide sur une exécution saine. Chacune apparaît aussi comme un finding INFO `<section>.unavailable`. Permet de distinguer « score 9, toutes sections évaluées » de « score 9, deux sections jamais exécutées ». |
 | `deductions` | array | Déductions de score (filtrées : `points > 0`) |
 | `domain_scores` | object | Sous-scores par domaine |
 | `posture_escalation` | object | Contexte de l'ajustement du niveau de risque par la posture (nouveau en v2) |

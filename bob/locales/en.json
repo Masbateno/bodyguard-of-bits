@@ -844,6 +844,7 @@
     "ufw_disabled_listeners_link_local": "{count} service(s) listening on IPv6 (::) but UFW IPv6 is disabled — link-local addresses only, no internet exposure"
   },
   "audit": {
+    "section_unavailable": "Section not evaluated ({section}) — an internal error prevented this check from running",
     "starting": "Starting audit",
     "audit_profile": "Audit profile: {profile}",
     "profile_not_found": "Profile '{profile}' not found — using default (server)",

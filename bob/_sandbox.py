@@ -727,7 +727,7 @@ class SandboxRunner:
 
         # --- Static validation ----------------------------------------------
         try:
-            source = plugin_path.read_text(encoding="utf-8")
+            source = plugin_path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             # from exc: which OSError (EACCES? ENOENT?) is exactly what a plugin
             # author needs to see under BOB_DEBUG.

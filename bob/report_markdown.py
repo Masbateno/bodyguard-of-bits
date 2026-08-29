@@ -667,7 +667,7 @@ def send_audit_log_as_html_email(
         return False
 
     try:
-        log_text = log_file.read_text(encoding="utf-8")
+        log_text = log_file.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         logger.error(f"Cannot read log file: {exc}")
         return False

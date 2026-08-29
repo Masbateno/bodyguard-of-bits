@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -186,6 +187,41 @@ class CLIError(ValueError):
     """Raised when an unrecognised or malformed argument is encountered."""
 
 
+# v0.14.1: ``--lang`` was passed straight to ``i18n.init()``, which builds
+# ``_LOCALES_DIR / f"{lang}.json"``. pathlib replaces the whole base when the
+# right-hand side is absolute, so ``--lang=/tmp/x`` loaded /tmp/x.json as the
+# translation table — an unvalidated argument reaching an arbitrary filesystem
+# read (as root under sudo). This validates the SHAPE only: a well-formed but
+# unknown code (``--lang=de``) still falls back to English with a warning, as
+# before. Same discipline already applied to SUDO_USER in bob/sysinfo.py.
+_LANG_RE = re.compile(r"^[A-Za-z]{2,3}(?:[_-][A-Za-z]{2,4})?$")
+
+
+def _parse_section_list(value: str, opt: str) -> frozenset[str]:
+    """Split a --check / --skip value into section tokens.
+
+    v0.14.1: an all-separator value (``--check ","``) previously produced an
+    empty frozenset, which is falsy — so ``--check`` silently degraded to "no
+    filter" and ran the FULL audit, while the ``--check=`` form raised. Both
+    forms now reject a value that yields no token.
+    """
+    tokens = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
+    if not tokens:
+        raise CLIError(
+            f"{opt} requires a comma-separated list of check names, got: {value!r}"
+        )
+    return tokens
+
+
+def _validate_lang(value: str) -> str:
+    """Return *value* if it is a plausible language code, else raise CLIError."""
+    if not _LANG_RE.match(value):
+        raise CLIError(
+            f"--lang requires a language code such as 'en' or 'fr', got: {value!r}"
+        )
+    return value
+
+
 # M-2 (v0.7.4): options that take a value AND have no valid no-arg form.
 # When such an option is the LAST argv element (or is immediately followed
 # by another flag), the parser would previously fall through to "Unknown
@@ -308,7 +344,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             value = arg.split("=", 1)[1]
             if not value:
                 raise CLIError("--lang= requires a language code (e.g. en, fr)")
-            config.lang = value
+            config.lang = _validate_lang(value)
             lang_explicit = True
 
         # M-2 (v0.7.3): also accept the space-separated form `--lang VALUE`
@@ -320,7 +356,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             value = argv[i]
             if not value:
                 raise CLIError("--lang requires a language code (e.g. en, fr)")
-            config.lang = value
+            config.lang = _validate_lang(value)
             lang_explicit = True
 
         elif arg in ("-l", "--log-days") and i + 1 < len(argv):
@@ -367,9 +403,14 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
                 raise CLIError("--profile= requires a profile name (e.g. server, desktop, workstation, container)")
             config.profile = value
 
-        elif arg in ("-p", "--profile") and i + 1 < len(argv):
+        elif arg in ("-p", "--profile") and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            # v0.14.1: the M-4 (v0.7.3) dash guard was never applied here, so
+            # ``bob -p --quiet`` set profile="--quiet" AND swallowed --quiet.
             i += 1
-            config.profile = argv[i].strip()
+            value = argv[i].strip()
+            if not value:
+                raise CLIError("--profile requires a profile name (e.g. server, desktop, workstation, container)")
+            config.profile = value
 
         elif arg == "--reset-baseline":
             config.reset_baseline = True
@@ -590,26 +631,30 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             if value.lower() == "list":
                 config.list_checks = True
             else:
-                config.check_only = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
+                config.check_only = _parse_section_list(value, "--check")
 
-        elif arg == "--check" and i + 1 < len(argv):
+        elif arg == "--check" and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
             i += 1
             value = argv[i].strip()
+            if not value:
+                raise CLIError("--check requires a comma-separated list of check names, or 'list' to show all")
             if value.lower() == "list":
                 config.list_checks = True
             else:
-                config.check_only = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
+                config.check_only = _parse_section_list(value, "--check")
 
         elif arg.startswith("--skip="):
             value = arg.split("=", 1)[1].strip()
             if not value:
                 raise CLIError("--skip= requires a comma-separated list of check names")
-            config.skip_checks = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
+            config.skip_checks = _parse_section_list(value, "--skip")
 
-        elif arg == "--skip" and i + 1 < len(argv):
+        elif arg == "--skip" and i + 1 < len(argv) and not argv[i + 1].startswith("-"):
             i += 1
             value = argv[i].strip()
-            config.skip_checks = frozenset(n.strip().lower() for n in value.split(",") if n.strip())
+            if not value:
+                raise CLIError("--skip requires a comma-separated list of check names")
+            config.skip_checks = _parse_section_list(value, "--skip")
 
         elif arg.startswith("--output-dir="):
             value = arg.split("=", 1)[1].strip()

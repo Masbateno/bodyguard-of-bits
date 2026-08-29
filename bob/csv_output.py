@@ -47,6 +47,23 @@ _HEADERS = [
 ]
 
 
+# v0.14.1: characters that make a spreadsheet treat a cell as a formula.
+# csv.DictWriter quotes correctly per RFC 4180, but Excel / LibreOffice still
+# evaluate a quoted field that begins with one of these — so an audit report
+# opened in a spreadsheet could execute content that merely passed *through*
+# BOB (a cron command line, a container name, a SUID path). Neutralised by
+# prefixing a single quote, the standard mitigation: the cell renders as text
+# and the original value is preserved verbatim after it.
+_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """Neutralise spreadsheet formula injection in a free-text CSV field."""
+    if value and value.startswith(_FORMULA_LEAD):
+        return "'" + value
+    return value
+
+
 def build_csv_output(
     engine: ScoreEngine,
     sys_info: SystemInfo,
@@ -86,10 +103,10 @@ def build_csv_output(
                 **meta,
                 "level":   f.level.value,
                 "nature":  f.nature   or "",
-                "message": f.message  or "",
-                "detail":  f.detail   or "",
-                "fix_cmd": f.cmd      or "",
-                "note":    f.note     or "",
+                "message": _csv_safe(f.message or ""),
+                "detail":  _csv_safe(f.detail  or ""),
+                "fix_cmd": _csv_safe(f.cmd     or ""),
+                "note":    _csv_safe(f.note    or ""),
             })
 
     return buf.getvalue()

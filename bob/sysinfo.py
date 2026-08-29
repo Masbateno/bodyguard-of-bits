@@ -34,6 +34,25 @@ def get_user_home() -> Path:
     return Path.home()
 
 
+def chown_fd_to_sudo_user(fd: int) -> None:
+    """chown an *already-open* file descriptor back to the invoking user.
+
+    v0.14.1: the path-based :func:`chown_to_sudo_user` follows symlinks and
+    re-resolves the name, leaving a TOCTOU window between ``os.open`` and the
+    chown. Operating on the descriptor the caller already holds removes both
+    problems — it is the same object that was opened under ``O_NOFOLLOW``.
+    """
+    sudo_user = os.environ.get("SUDO_USER", "")
+    if not sudo_user or not re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
+        return
+    try:
+        import pwd
+        pw = pwd.getpwnam(sudo_user)
+        os.fchown(fd, pw.pw_uid, pw.pw_gid)
+    except (KeyError, OSError) as exc:
+        _log.debug("chown_fd_to_sudo_user(%s) failed: %s", fd, exc)
+
+
 def chown_to_sudo_user(path: Path) -> None:
     """
     When running under sudo, chown a file or directory back to the invoking user.

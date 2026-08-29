@@ -96,7 +96,7 @@ class PasswordPolicySnapshot:
 
         # ---- /etc/login.defs ------------------------------------------------
         try:
-            login_defs_text = _LOGIN_DEFS_PATH.read_text(encoding="utf-8")
+            login_defs_text = _LOGIN_DEFS_PATH.read_text(encoding="utf-8", errors="replace")
             snap.login_defs_readable = True
 
             m = _PASS_MAX_DAYS_RE.search(login_defs_text)
@@ -113,7 +113,7 @@ class PasswordPolicySnapshot:
         # ---- /etc/pam.d/common-password -------------------------------------
         pam_minlen_inline: int | None = None
         try:
-            pam_text = _COMMON_PASSWORD.read_text(encoding="utf-8")
+            pam_text = _COMMON_PASSWORD.read_text(encoding="utf-8", errors="replace")
             for line in pam_text.splitlines():
                 stripped = line.strip()
                 if stripped.startswith("#"):
@@ -136,7 +136,7 @@ class PasswordPolicySnapshot:
         # ---- /etc/security/pwquality.conf -----------------------------------
         # pwquality.conf takes precedence over inline PAM option for minlen.
         try:
-            pwq_text = _PWQUALITY_CONF.read_text(encoding="utf-8")
+            pwq_text = _PWQUALITY_CONF.read_text(encoding="utf-8", errors="replace")
             m = _PWQUALITY_MINLEN_RE.search(pwq_text)
             if m:
                 snap.pam_minlen = int(m.group(1))
