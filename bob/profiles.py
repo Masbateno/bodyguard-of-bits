@@ -50,6 +50,7 @@ from pathlib import Path
 
 from bob.scoring import CheckResult, FindingLevel
 from bob.sysinfo import get_user_home
+from bob._atomic import read_text_capped
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +228,7 @@ def _recognised_override_keys() -> set[str] | None:
     try:
         for f in checks_dir.rglob("*.py"):
             try:
-                src = f.read_text(encoding="utf-8", errors="replace")
+                src = read_text_capped(f)
             except OSError:
                 continue
             for m in re.finditer(

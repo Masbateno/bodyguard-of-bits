@@ -278,8 +278,18 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
     Returns ``PluginCheck`` on success, ``None`` if the file should be
     skipped.
     """
-    # --- Size check ---
+    # --- Regular-file check ---
+    # v0.14.1: ``st_size`` is not a length for anything but a regular file.
+    # A plugin path that is a symlink to a character device — ``ln -s /dev/zero
+    # ~/.config/bob/checks.d/p.py`` — reports ``st_size == 0``, sailed straight
+    # through the size cap below, and then ``read_text()`` read NUL bytes until
+    # the machine ran out of memory: the audit died (exit 3, zero bytes of
+    # stdout) or was killed outright by the OOM killer. Only regular files are
+    # plugins.
     try:
+        if not plugin_path.is_file():
+            logger.warning("Plugin %s: not a regular file — skipped", plugin_path.name)
+            return None
         size = plugin_path.stat().st_size
     except OSError as exc:
         logger.warning("Plugin %s: cannot stat: %s — skipped", plugin_path.name, exc)
@@ -293,10 +303,21 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
         return None
 
     # --- Read source (no exec) ---
+    # Bounded read, mirroring ``i18n._load_locale``: the cap above is advisory
+    # (a file can grow between stat and read, and some file types lie about
+    # their size), so the read itself must not be able to run away.
     try:
-        source = plugin_path.read_text(encoding="utf-8", errors="replace")
+        with plugin_path.open(encoding="utf-8", errors="replace") as fh:
+            source = fh.read(_MAX_PLUGIN_SIZE + 1)
     except OSError as exc:
         logger.warning("Plugin %s: cannot read: %s — skipped", plugin_path.name, exc)
+        return None
+
+    if len(source) > _MAX_PLUGIN_SIZE:
+        logger.warning(
+            "Plugin %s: exceeds %d KB on read — skipped",
+            plugin_path.name, _MAX_PLUGIN_SIZE // 1024,
+        )
         return None
 
     # --- Syntax check (AST parse only, no exec) ---

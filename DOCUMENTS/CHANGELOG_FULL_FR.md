@@ -189,9 +189,100 @@ La même campagne n'a trouvé aucun défaut dans les surfaces suivantes, qu'il n
 
 Les gardes de la barrière sont structurels (assertions AST sur la vraie source de `runner.py`) plutôt que comportementaux, parce que `run_checks` n'est délibérément pas exercé dans la couche pytest — il relève de la matrice d'intégration, comme le documente `tests/test_runner.py`. La preuve comportementale est la reproduction live ci-dessus, avant et après.
 
+### Deuxième manche — la campagne retournée contre ses propres correctifs
+
+Le durcissement de la première manche a lui-même été attaqué, en même temps que la frontière système de fichiers qui le porte. Sept défauts de plus.
+
+#### 1. La barrière pouvait être mise en échec depuis son propre handler
+
+`_degrade_section` enregistrait la section, puis rendait l'échec — mais le rendu (`report.write_raw`, `t()`, `output.sanitize`, `add_finding`) se trouvait *hors* de son `try` interne. Une exception dans l'un d'eux s'échappait **depuis l'intérieur du gestionnaire d'exception**, remontait hors de `run_checks`, et reproduisait exit 3 avec zéro octet sur stdout : exactement la perte que la barrière existe pour empêcher, un niveau plus haut.
+
+Quatre sondes ont été tirées ; deux sont passées par leurs propres mérites — un `t()` qui lève (clé de locale absente ou malformée), et une exception dont `__str__` lève. Les deux autres (un `sanitize` qui lève, un `write_raw` en échec) cassaient d'abord le noyau always-on, non protégé par conception.
+
+Ce sont désormais deux étapes dans un ordre explicite : **enregistrer** — l'ajout à `_degraded` ne peut pas échouer, et c'est lui qui garde la section visible dans `degraded_sections` même quand plus rien d'autre ne peut s'exécuter — puis **rendre**, en best-effort, chaque étape faillible gardée individuellement, avec deux helpers totaux (`_safe_exc_text`, `_safe_section_message`) qui ne peuvent pas lever.
+
+#### 2. Un disque plein coûtait l'audit entier
+
+`AuditReport._writeln` était un `write()` + `flush()` nu, sans aucune gestion d'erreur, atteignable depuis environ 200 sites d'appel `report.write_*` répartis dans tout l'audit. `close()` était pire : il vidait le tampon sans garde à l'ultime étape, après que tout le travail était fait.
+
+Reproduit sur un vrai tmpfs de 64 Ko :
+
+```
+$ sudo bob -d --output-dir=<système de fichiers plein>
+EXIT=3 stdout=0B
+Fatal error: [Errno 28] No space left on device
+```
+
+Un `/var` plein ou une partition de logs saturée est l'une des situations les plus ordinaires pour un administrateur — et précisément l'une de celles où il lancerait un audit de durcissement. Le rapport est un *artefact secondaire* ; le résultat de l'audit ne doit jamais en dépendre. Il se désactive maintenant à la première erreur d'E/S, le dit une fois sur stderr (stdout reste propre pour les formats machine), et l'audit se termine normalement.
+
+#### 3. `--ignore` faisait taire le score, pas l'écran
+
+`display_result()` parcourt le `CheckResult` brut, pas `engine.findings`. `engine.apply()` triait les findings ignorés dans `ignored_findings` sans les retirer du résultat : le terminal continuait donc de les afficher intégralement.
+
+Mesuré, avant et après l'ajout d'une clé à `ignore.yml` :
+
+```
+AVANT   warning_count 14   ⚠ [WARNING] Fail2ban ... : 1 ligne
+APRÈS   warning_count 13   ⚠ [WARNING] Fail2ban ... : 1 ligne
+```
+
+Le score et le JSON honoraient l'option. L'opérateur voyait toujours le finding — ce qui est toute la raison d'être de l'option. Avec `--show-ignored`, il était même affiché deux fois : une fois en avertissement, une fois dans le bloc gris des ignorés.
+
+`engine.apply()` retire désormais les findings ignorés du `CheckResult` lui-même. `--show-ignored` n'est pas affecté : il rend depuis `engine.ignored_findings`. Ce défaut est aussi ancien que la fonctionnalité.
+
+#### 4. Des séquences d'échappement terminal atteignaient le terminal
+
+`output.sanitize()` existe, est documentée « à appliquer à toute donnée venant du système … avant affichage terminal », et elle est solide — elle retire ANSI, caractères de contrôle, forçages RTL et caractères de largeur nulle. Elle était appelée depuis **7 sites dans tout le code**.
+
+Le texte des findings interpole partout ailleurs des valeurs venues du système : noms de fichiers, d'unités, d'utilisateurs, de paquets, sujets de certificats. Démontré avec un script world-writable dans `/etc/cron.daily` dont le *nom de fichier* portait une séquence OSC de changement de titre :
+
+```
+⚠ [WARNING] 1 script(s) ... world-writable: /etc/cron.daily/evil^[[31m^[]0;HIJACKED^Gjob
+║       /etc/cron.daily/evil^[[31m^[]0;HIJACKED^Gjob                    ║
+```
+
+La séquence réécrivait le titre de la fenêtre et corrompait la boîte de résumé. Avec des séquences de déplacement du curseur, le même vecteur permet de réécrire des lignes d'audit déjà affichées — c'est-à-dire de faire mentir le rapport sur d'*autres* findings, ce qui pèse plus lourd dans un auditeur de sécurité que dans la plupart des outils.
+
+L'assainissement se fait désormais dans `CheckResult.add_finding` — le point unique par lequel passe chaque finding — de sorte que terminal, JSON, CSV, Markdown et HTML sont couverts par un seul changement. `cmd` conserve ses sauts de ligne via une nouvelle `sanitize_multiline()` (14 blocs de remédiation multi-lignes légitimes) et perd tout le reste. Sans effet mesuré sur du contenu normal : sur une exécution complète, 119 findings ne portaient aucun caractère de contrôle dans `message` / `detail` / `note`.
+
+#### 5. Lectures non bornées sur des chemins non réguliers
+
+Le chargeur de plugins avait un plafond de 64 Ko — appliqué via `stat().st_size`, qui n'est une longueur que pour un fichier régulier. Un périphérique caractère déclare `0` :
+
+```
+$ ln -s /dev/zero ~/.config/bob/checks.d/p.py
+$ sudo bob            # → tué par l'OOM killer (exit 137)
+```
+
+La même classe de défaut traversait tous les lecteurs d'état, qui utilisaient tous un `read_text()` nu :
+
+| chemin | avant |
+|---|---|
+| `--diff=/dev/zero` | mémoire épuisée, exit 3 |
+| `--diff=<fifo>` | **blocage indéfini** |
+| `ignore.yml` → `/dev/zero` | toutes les exécutions fatales |
+| `last_baseline.json` → `/dev/zero` | toutes les exécutions fatales |
+| `history.jsonl` → `/dev/zero` | `bob --history` fatal |
+
+Le FIFO est le pire du lot : un cron reste suspendu au lieu d'échouer, et recommence à chaque exécution suivante. Et `--diff=PATH` accepte un chemin arbitraire fourni par l'opérateur : une simple faute de frappe y mène, pas seulement une auto-sabotage.
+
+Un nouveau `bob._atomic.read_text_capped()` partagé refuse tout ce qui n'est pas un fichier régulier (ce qui couvre périphériques, FIFO, répertoires et sockets) et borne la lecture elle-même, reprenant le motif de lecture bornée que `i18n._load_locale` utilise depuis toujours. L'ordre y compte : un fichier *absent* doit toujours lever `FileNotFoundError`, car `compare.load_baseline` s'en sert pour produire le message « baseline introuvable » distinct de v0.9.2 — s'être trompé sur ce point a été rattrapé par les gardes de cette release-là.
+
+#### 6. Ctrl-C affichait un traceback
+
+Interrompre un audit long déversait une pile Python brute se terminant par `KeyboardInterrupt`. Le code de sortie était déjà le 130 conventionnel ; seul le bruit était fautif. `main()` l'attrape désormais et affiche une ligne localisée (EN + FR).
+
+### Vérifié sain
+
+Aucun défaut trouvé, et à ne pas ré-auditer : **12 000 combinaisons d'argv** de 2 à 4 options (zéro exception hors `CLIError`, zéro état contradictoire — les drapeaux de format de sortie conflictuels sont correctement rejetés, contrairement à une hypothèse de la première manche) ; le dry-run `--fix`, instrumenté au niveau de `subprocess.run` — **zéro** appel provenant de `bob/fixes.py` ; le déterminisme de l'audit (trois exécutions structurellement identiques) ; SIGINT / SIGTERM / SIGHUP / SIGPIPE (130/143/129/141) ; `HOME` non défini, inexistant, ou pointant vers un système de fichiers en lecture seule ; `--watch` y compris son chemin d'interruption ; un log UFW de 34 Mo et 300 000 lignes parsé en 3,5 s sous espace d'adressage borné ; `sanitize()` face à 16 charges d'échappement dont OSC, CSI, forçage RTL et largeur nulle ; 6 des 7 plugins adversariaux déjà gérés par le bac à sable existant ; et les données de paquet corrompues, qui échouent vite avec des erreurs descriptives.
+
+### Gardes
+
++32 tests dans `tests/test_v0141_hostile_io.py`, tous mutation-testés. Six défauts ont été réinjectés un à un et chacun a produit un échec avant restauration du fichier. L'un d'eux mérite d'être signalé : retirer la vérification « fichier régulier » ne fait pas *échouer* le test FIFO — il le fait **bloquer**, ce qui est précisément le symptôme de production que la garde existe pour empêcher.
+
 ### Tests
 
-6590 → **6671** (+81 sur v0.14.0 : 17 pour la sémantique privileged, 64 pour le lot robustesse). 0 régression.
+6590 → **6703** (+113 sur v0.14.0 : 17 pour la sémantique privileged, 64 pour le premier lot robustesse, 32 pour le second). 0 régression.
 
 Mise à jour : `pipx upgrade bodyguard-of-bits` — aucune action de migration. Les audits conteneur rapportent désormais le finding exact ; tout le reste est inchangé.
 

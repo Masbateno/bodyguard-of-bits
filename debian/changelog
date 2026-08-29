@@ -61,6 +61,34 @@ bodyguard-of-bits (0.14.1-1) UNRELEASED; urgency=low
     swallowed the following flag), and an empty or separator-only value no
     longer degrades to "no filter", which silently ran the full audit.
   * Tests 6590 -> 6671.
+  * Second stress campaign, aimed at the first one's fixes. The fault barrier
+    itself could be defeated from inside its own handler: _degrade_section did
+    its rendering outside the inner try, so a raising t() or an exception whose
+    __str__ raises escaped and reproduced exit 3 with no stdout. It now records
+    the section first, then renders best-effort with every step guarded.
+  * Report writes had no error handling at all. On a real 64 KB tmpfs,
+    "bob -d --output-dir=<full fs>" returned exit 3 and no audit — a full /var
+    is precisely when an operator runs a hardening audit. The report now
+    disables itself on the first I/O error and the audit completes.
+  * --ignore silenced the score and the JSON counts but not the terminal:
+    display_result renders the raw CheckResult, so an ignored finding kept
+    printing in full (measured: warning_count 14 -> 13, warning line unchanged).
+    engine.apply now drops ignored findings from the result; --show-ignored
+    still lists them.
+  * Terminal escape sequences from system-derived values reached the terminal
+    (a world-writable /etc/cron.daily script whose filename carried an OSC
+    title-set sequence rewrote the window title and corrupted the summary box).
+    Finding text is now sanitized in CheckResult.add_finding, covering the
+    terminal, JSON, CSV, Markdown and HTML at once.
+  * Unbounded reads on non-regular files: the plugin loader trusted
+    stat().st_size, which is 0 for a character device, so a plugin symlinked to
+    /dev/zero was read until the OOM killer stepped in. Every state reader had
+    the same flaw — --diff=/dev/zero exhausted memory and --diff=<fifo> blocked
+    forever. New shared read_text_capped() refuses non-regular files and caps
+    the read.
+  * Ctrl-C printed a raw Python traceback; it now prints one localised line and
+    returns 130.
+  * Tests 6671 -> 6703.
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 29 Aug 2026 23:00:00 +0200
 
 bodyguard-of-bits (0.14.0-1) UNRELEASED; urgency=low

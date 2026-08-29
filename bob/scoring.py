@@ -235,10 +235,35 @@ class CheckResult:
             raise ValueError(
                 f"invalid cmd_type {cmd_type!r}: expected 'fix' or 'check'"
             )
+        # v0.14.1: strip ANSI escapes and control characters from every
+        # operator-visible string, here — the single point through which all
+        # findings are built, so it covers the terminal, JSON, CSV, Markdown
+        # and HTML at once.
+        #
+        # Finding text interpolates system-derived values (file names, unit
+        # names, user names, package names, certificate subjects) and only 7
+        # call sites in the whole codebase sanitized theirs. Demonstrated: a
+        # world-writable script in /etc/cron.daily whose *filename* carried
+        # ``\033]0;HIJACKED\007`` had the sequence rendered verbatim to the
+        # terminal — it rewrote the window title and corrupted the summary box.
+        # With cursor-movement sequences the same vector can overwrite
+        # already-printed audit lines, i.e. make the report lie about other
+        # findings, which matters rather more in a security auditor than in
+        # most tools. Measured across a full run: 119 findings carried zero
+        # control characters in message/detail/note, so this is a no-op for
+        # well-behaved content. ``cmd`` keeps its newlines (14 legitimate
+        # multi-line remediation blocks) but loses everything else.
+        from bob.output import sanitize, sanitize_multiline
         self.findings.append(
             Finding(
-                level=level, message=message, detail=detail,
-                nature=nature, cmd=cmd, cmd_type=cmd_type, note=note, key=key,
+                level=level,
+                message=sanitize(message, max_len=2048),
+                detail=sanitize(detail, max_len=2048),
+                nature=nature,
+                cmd=sanitize_multiline(cmd),
+                cmd_type=cmd_type,
+                note=sanitize(note, max_len=2048),
+                key=key,
                 template_vars=dict(template_vars) if template_vars else {},
             )
         )
@@ -431,11 +456,22 @@ class ScoreEngine:
         for deduction in result.deductions:
             if not _is_ignored(deduction.key):
                 self._apply_deduction(deduction)
+        kept: list[Finding] = []
         for finding in result.findings:
             if _is_ignored(finding.key):
                 self.ignored_findings.append(finding)
             else:
                 self.findings.append(finding)
+                kept.append(finding)
+        # v0.14.1: drop ignored findings from the CheckResult too.
+        # ``display_result()`` renders the raw result, not ``engine.findings``,
+        # so an ignored finding was still printed to the terminal in full: a
+        # measured ``--ignore fail2ban.no_jails`` took warning_count from 14 to
+        # 13 and left the ``⚠ [WARNING]`` line exactly where it was. The score
+        # and the JSON honoured the flag; the operator still saw the finding,
+        # which is the entire point of the flag. ``--show-ignored`` is
+        # unaffected — it lists them from ``self.ignored_findings``.
+        result.findings = kept
         for cap in result.caps:
             self.cap(maximum=cap.maximum, reason=cap.reason, key=cap.key)
 

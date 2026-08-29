@@ -662,6 +662,14 @@ def main(argv=None) -> int:
     except PermissionError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_ERROR
+    except KeyboardInterrupt:
+        # v0.14.1: Ctrl-C on a long audit dumped a raw Python traceback ending
+        # in ``KeyboardInterrupt`` — noise on the most ordinary way to stop the
+        # tool. 130 is the conventional shell code for SIGINT and is what the
+        # process already returned; only the traceback was wrong.
+        print(_t_or_hardcoded("cli.error.interrupted", "\n  Interrupted."),
+              file=sys.stderr)
+        return 130
     except Exception as exc:  # noqa: BLE001
         # M-6 (v0.6.1): one-line summary + traceback under BOB_DEBUG=1 so
         # bug reports are actionable. Without the hint, users get "Fatal

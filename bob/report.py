@@ -430,10 +430,24 @@ class AuditReport:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """Flush and close the report file."""
+        """Flush and close the report file — best-effort.
+
+        v0.14.1: the final flush can raise on a full filesystem even when every
+        individual write appeared to succeed (buffered data is only pushed out
+        here). Unguarded, that cost the whole audit at the very last step,
+        after all the work was done. Same rule as ``_writeln``: the report is a
+        side artifact and must never take the audit down with it.
+        """
         if self._fh and not self._fh.closed:
-            self._fh.flush()
-            self._fh.close()
+            try:
+                self._fh.flush()
+            except (OSError, ValueError) as exc:
+                self.enabled = False
+                logger.warning("Report flush failed on %s: %s", self.path, exc)
+            try:
+                self._fh.close()
+            except (OSError, ValueError) as exc:
+                logger.warning("Report close failed on %s: %s", self.path, exc)
             logger.debug("Report closed: %s", self.path)
 
     # ------------------------------------------------------------------
@@ -441,9 +455,34 @@ class AuditReport:
     # ------------------------------------------------------------------
 
     def _writeln(self, text: str) -> None:
-        """Write a line and flush immediately."""
-        self._fh.write(text + "\n")
-        self._fh.flush()
+        """Write a line and flush immediately — best-effort.
+
+        v0.14.1: the report is a *side artifact*; the audit result must never
+        depend on being able to write it. Pre-v0.14.1 this method had no error
+        handling at all, so a single failed write raised ``OSError`` from any
+        of the ~200 ``report.write_*`` call sites scattered through the audit
+        and cost the operator the ENTIRE run — exit 3, zero bytes of stdout.
+        Reproduced on a real 64 KB tmpfs: ``sudo bob -d --output-dir=<full fs>``
+        produced no audit at all. A full ``/var`` is precisely the kind of
+        situation in which an operator reaches for a hardening audit.
+
+        On the first failure the report disables itself, so one bad write
+        cannot produce hundreds of identical log lines, and the operator is
+        told once on stderr (stdout stays clean for machine formats).
+        """
+        if not self.enabled:
+            return
+        try:
+            self._fh.write(text + "\n")
+            self._fh.flush()
+        except (OSError, ValueError) as exc:
+            # ValueError covers "I/O operation on closed file".
+            self.enabled = False
+            logger.warning("Report writing disabled after an I/O error on %s: %s",
+                           self.path, exc)
+            import sys as _sys
+            print(f"  ! Report writing disabled ({self.path}): {exc}",
+                  file=_sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Null report — no-op implementation for when --detailed is not active

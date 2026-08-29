@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob._atomic import atomic_write
+from bob._atomic import atomic_write, read_text_capped
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # avoid circular imports at runtime
@@ -245,7 +245,7 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
 
     src = path or (_CONFIG_DIR / _BASELINE_FILENAME)
     try:
-        raw = json.loads(src.read_text(encoding="utf-8"))
+        raw = json.loads(read_text_capped(src))
     except FileNotFoundError as exc:
         if strict:
             msg = t_or_hardcoded(

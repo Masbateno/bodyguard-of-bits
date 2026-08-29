@@ -189,9 +189,100 @@ The same campaign found no defect in these, which are worth not re-auditing: the
 
 The fault-barrier guards are structural (AST assertions on the real `runner.py` source) rather than behavioural, because `run_checks` is deliberately not exercised in the pytest layer — it belongs to the integration matrix, as `tests/test_runner.py` documents. The behavioural proof is the live reproduction above, before and after.
 
+### Round two — the stress campaign turned on its own fixes
+
+The round-one hardening was itself put under attack, together with the file-system boundary underneath it. Seven more defects.
+
+#### 1. The fault barrier could be defeated from inside its own handler
+
+`_degrade_section` recorded the section, then rendered the failure — but the rendering (`report.write_raw`, `t()`, `output.sanitize`, `add_finding`) sat *outside* its inner `try`. An exception in any of those escaped **from inside the exception handler**, propagated out of `run_checks`, and reproduced exit 3 with zero bytes of stdout: the exact loss the barrier exists to prevent, one level up.
+
+Four probes were fired at it; two got through on their own merits — a `t()` that raises (a missing or malformed locale key), and an exception whose `__str__` raises. The other two (a raising `sanitize`, a failing `write_raw`) turned out to break the always-on core first, which is unguarded by design.
+
+It is now two steps with an explicit order: **record** — appending to `_degraded` cannot fail, and it is what keeps the section visible in `degraded_sections` even when nothing else can run — then **render**, best-effort, with every fallible step individually guarded and two total helpers (`_safe_exc_text`, `_safe_section_message`) that cannot raise.
+
+#### 2. A full disk cost the whole audit
+
+`AuditReport._writeln` was a bare `write()` + `flush()` with no error handling, reachable from roughly 200 `report.write_*` call sites scattered through the audit. `close()` was worse: it flushed buffered data unguarded at the very last step, after all the work was done.
+
+Reproduced on a real 64 KB tmpfs:
+
+```
+$ sudo bob -d --output-dir=<full filesystem>
+EXIT=3 stdout=0B
+Fatal error: [Errno 28] No space left on device
+```
+
+A full `/var` or a full log partition is one of the most ordinary situations a sysadmin meets — and precisely one in which they would reach for a hardening audit. The report is a *side artifact*; the audit result must never depend on it. It now disables itself on the first I/O error, tells the operator once on stderr (stdout stays clean for machine formats), and the audit completes normally.
+
+#### 3. `--ignore` silenced the score but not the screen
+
+`display_result()` renders the raw `CheckResult`, not `engine.findings`. `engine.apply()` sorted ignored findings into `ignored_findings` without removing them from the result, so the terminal kept printing them in full.
+
+Measured, before and after adding one key to `ignore.yml`:
+
+```
+BEFORE  warning_count 14   ⚠ [WARNING] Fail2ban ... : 1 line
+AFTER   warning_count 13   ⚠ [WARNING] Fail2ban ... : 1 line
+```
+
+The score and the JSON honoured the flag. The operator still saw the finding — which is the entire point of the flag. With `--show-ignored` it was printed twice, once as a warning and once in the grey ignored block.
+
+`engine.apply()` now drops ignored findings from the `CheckResult` too. `--show-ignored` is unaffected: it renders from `engine.ignored_findings`. This defect is as old as the feature.
+
+#### 4. Terminal escape sequences reached the terminal
+
+`output.sanitize()` exists, is documented as "apply to all data coming from the system … before terminal display", and is robust — it strips ANSI, control characters, RTL overrides and zero-width characters. It was called from **7 sites in the entire codebase**.
+
+Finding text interpolates system-derived values everywhere else: file names, unit names, user names, package names, certificate subjects. Demonstrated with a world-writable script in `/etc/cron.daily` whose *filename* carried an OSC title-set sequence:
+
+```
+⚠ [WARNING] 1 script(s) ... world-writable: /etc/cron.daily/evil^[[31m^[]0;HIJACKED^Gjob
+║       /etc/cron.daily/evil^[[31m^[]0;HIJACKED^Gjob                    ║
+```
+
+The sequence rewrote the terminal title and corrupted the summary box. With cursor-movement sequences, the same vector can overwrite audit lines already printed — that is, make the report lie about *other* findings, which matters more in a security auditor than in most tools.
+
+Sanitisation now happens in `CheckResult.add_finding` — the single point every finding passes through — so the terminal, JSON, CSV, Markdown and HTML are all covered by one change. `cmd` keeps its newlines via a new `sanitize_multiline()` (14 legitimate multi-line remediation blocks) and loses everything else. Measured no-op on well-behaved content: across a full run, 119 findings carried zero control characters in `message` / `detail` / `note`.
+
+#### 5. Unbounded reads on paths that are not regular files
+
+The plugin loader had a 64 KB cap — enforced through `stat().st_size`, which is not a length for anything but a regular file. A character device reports `0`:
+
+```
+$ ln -s /dev/zero ~/.config/bob/checks.d/p.py
+$ sudo bob            # → killed by the OOM killer (exit 137)
+```
+
+The same class of defect ran through every state reader, all of which used a bare `read_text()`:
+
+| path | before |
+|---|---|
+| `--diff=/dev/zero` | memory exhausted, exit 3 |
+| `--diff=<fifo>` | **blocked forever** |
+| `ignore.yml` → `/dev/zero` | every run fatal |
+| `last_baseline.json` → `/dev/zero` | every run fatal |
+| `history.jsonl` → `/dev/zero` | `bob --history` fatal |
+
+The FIFO is the worst of the set: a cron job hangs instead of failing, and hangs again on every subsequent run. And `--diff=PATH` takes an arbitrary operator-supplied path, so it is reachable by a plain typo rather than only by self-sabotage.
+
+A new shared `bob._atomic.read_text_capped()` refuses anything that is not a regular file (covering devices, FIFOs, directories and sockets) and caps the read itself, mirroring the bounded-read pattern `i18n._load_locale` has always used. Order matters in it: a *missing* file must still raise `FileNotFoundError`, because `compare.load_baseline` branches on that to produce v0.9.2's distinct "baseline not found" message — getting this wrong was caught by that release's own guards.
+
+#### 6. Ctrl-C printed a traceback
+
+Interrupting a long audit dumped a raw Python stack ending in `KeyboardInterrupt`. The exit code was already the conventional 130; only the noise was wrong. `main()` now catches it and prints one localised line (EN + FR).
+
+### Verified clean
+
+Found no defect, and worth not re-auditing: **12 000 argv combinations** of 2–4 options (zero non-`CLIError` exceptions, zero contradictory states — conflicting output-format flags are properly rejected, contrary to a round-one hypothesis); the `--fix` dry run, instrumented at `subprocess.run` — **zero** calls originating in `bob/fixes.py`; audit determinism (three structurally identical runs); SIGINT / SIGTERM / SIGHUP / SIGPIPE (130/143/129/141); `HOME` unset, missing, or pointing at a read-only filesystem; `--watch` including its interrupt path; a 34 MB, 300 000-line UFW log parsed in 3.5 s under a bounded address space; `sanitize()` against 16 escape payloads including OSC, CSI, RTL override and zero-width; 6 of 7 adversarial plugins already handled by the existing sandbox; and corrupted shipped package data, which fails fast with descriptive errors.
+
+### Guards
+
++32 tests in `tests/test_v0141_hostile_io.py`, each mutation-tested. Six defects were re-injected one at a time and every one produced a failure before the file was restored. One of them is worth singling out: removing the regular-file check does not make the FIFO test *fail* — it makes it **hang**, which is precisely the production symptom the guard exists to prevent.
+
 ### Tests
 
-6590 → **6671** (+81 over v0.14.0: 17 for the privileged semantics, 64 for the robustness batch). 0 regression.
+6590 → **6703** (+113 over v0.14.0: 17 for the privileged semantics, 64 for the first robustness batch, 32 for the second). 0 regression.
 
 Upgrade: `pipx upgrade bodyguard-of-bits` — no migration action. Container audits now report the accurate finding, an audit no longer dies because one section could not read one file, and CSV consumers reading `message` / `detail` / `fix_cmd` / `note` may see a leading `'` on cells that begin with a spreadsheet formula character.
 

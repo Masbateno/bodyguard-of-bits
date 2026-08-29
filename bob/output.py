@@ -42,6 +42,20 @@ def sanitize(value: str, max_len: int = 256) -> str:
     return value
 
 
+def sanitize_multiline(value: str, max_len: int = 4096) -> str:
+    """Like :func:`sanitize`, but keeps newlines.
+
+    For text that is legitimately multi-line — remediation command blocks —
+    where stripping ``\n`` would mangle the content. Every other control
+    character, and every ANSI escape, is still removed.
+    """
+    value = _ANSI_ESCAPE_RE.sub("", value)
+    value = "".join(c for c in value if c.isprintable() or c == "\n")
+    if len(value) > max_len:
+        value = value[:max_len] + "…"
+    return value
+
+
 # ---------------------------------------------------------------------------
 # ANSI colour codes
 # ---------------------------------------------------------------------------

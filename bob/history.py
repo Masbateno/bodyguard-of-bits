@@ -15,7 +15,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from bob._atomic import atomic_write
+from bob._atomic import atomic_write, read_text_capped
 from bob.checks._run import TranslationFunc
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
@@ -97,7 +97,7 @@ def save_score(
 def _rotate_if_needed() -> None:
     """Truncate history.jsonl to the last _MAX_HISTORY_ENTRIES lines."""
     try:
-        lines = [l for l in _HISTORY_FILE.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
+        lines = [l for l in read_text_capped(_HISTORY_FILE).splitlines() if l.strip()]
         if len(lines) > _MAX_HISTORY_ENTRIES:
             content = "\n".join(lines[-_MAX_HISTORY_ENTRIES:]) + "\n"
             atomic_write(_HISTORY_FILE, content, mode=0o600)
@@ -112,7 +112,7 @@ def load_history(max_entries: int = 50) -> list[dict]:
         return []
     entries: list[dict] = []
     try:
-        for line in _HISTORY_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in read_text_capped(_HISTORY_FILE).splitlines():
             line = line.strip()
             if not line:
                 continue

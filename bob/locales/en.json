@@ -788,6 +788,7 @@
       "fatal_prefix": "Fatal error: ",
       "webhook_failed_prefix": "Warning: webhook failed: ",
       "warning_prefix": "Warning: ",
+      "interrupted": "\n  Interrupted.",
       "bob_debug_hint": "  Set BOB_DEBUG=1 for full traceback."
     },
     "runner": {

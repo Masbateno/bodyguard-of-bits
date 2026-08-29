@@ -18,7 +18,7 @@ import logging
 import re
 from pathlib import Path
 
-from bob._atomic import atomic_write
+from bob._atomic import atomic_write, read_text_capped
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 _log = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def load_ignore_keys(path: Path | None = None) -> frozenset[str]:
         return frozenset()
     keys: set[str] = set()
     try:
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in read_text_capped(path).splitlines():
             m = _KEY_LINE_RE.match(line)
             if m:
                 keys.add(m.group(1))
@@ -119,7 +119,7 @@ def add_ignore_key(key: str, path: Path | None = None) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         chown_to_sudo_user(path.parent)
         if path.exists():
-            content = path.read_text(encoding="utf-8", errors="replace")
+            content = read_text_capped(path)
             if "ignore:" in content:
                 content = content.rstrip("\n") + f"\n  - key: {key}\n"
             else:
@@ -170,7 +170,7 @@ def remove_ignore_key(key: str, path: Path | None = None) -> bool:
     if key not in load_ignore_keys(path):
         return False
     try:
-        original = path.read_text(encoding="utf-8", errors="replace")
+        original = read_text_capped(path)
         new_lines: list[str] = []
         removed = False
         for line in original.splitlines(keepends=True):

@@ -13,7 +13,7 @@ import json
 import logging
 from pathlib import Path
 
-from bob._atomic import atomic_write
+from bob._atomic import atomic_write, read_text_capped
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 _log = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def load_recurrence(path: Path | None = None) -> dict[str, int]:
     """
     src = path or _RECURRENCE_PATH
     try:
-        text = src.read_text(encoding="utf-8")
+        text = read_text_capped(src)
         data = json.loads(text)
         if isinstance(data, dict):
             return {

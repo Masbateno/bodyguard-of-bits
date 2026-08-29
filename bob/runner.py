@@ -465,34 +465,83 @@ def run_checks(
         except Exception as exc:  # noqa: BLE001 — deliberate section-level barrier
             _degrade_section(section, exc)
 
+    def _safe_exc_text(exc: BaseException) -> str:
+        """Describe *exc* without trusting its own ``__str__``.
+
+        An exception object is arbitrary user code: formatting one can raise.
+        Falling back through class name to a constant keeps the barrier's
+        reporting path total.
+        """
+        try:
+            return f"{type(exc).__name__}: {exc}"
+        except Exception:  # noqa: BLE001
+            try:
+                return type(exc).__name__
+            except Exception:  # noqa: BLE001
+                return "unknown error"
+
+    def _safe_section_message(section: str) -> str:
+        """Localised "section not evaluated" text, with an English fallback.
+
+        Mirrors the ``bob._i18n_safe`` pattern: a missing or malformed locale
+        key must not be able to abort the audit from inside the handler that
+        exists to keep it alive.
+        """
+        try:
+            return t("audit.section_unavailable", section=t(f"sections.{section}"))
+        except Exception:  # noqa: BLE001
+            return (f"Section not evaluated ({section}) — an internal error "
+                    f"prevented this check from running")
+
     def _degrade_section(section: str, exc: BaseException) -> None:
         """Record a section that raised, without aborting the audit.
 
-        The failure is emitted as an INFO finding through the normal
-        ``engine.apply`` path so it reaches every output format (text, JSON,
-        CSV, Markdown, HTML) and the ``-d`` report, and the section name is
-        appended to ``_degraded`` for the top-level ``degraded_sections``
-        JSON field.
-        """
-        from bob.scoring import CheckResult, FindingLevel
+        Two steps, in this order and for this reason:
 
+        1. **Record** — appending to ``_degraded`` cannot fail, and it is what
+           makes the degradation visible in ``degraded_sections`` even when the
+           rendering below cannot complete.
+        2. **Render** — best-effort, and *entirely* wrapped. A v0.14.1 stress
+           pass found four ways to defeat the barrier from inside its own
+           handler: ``report.write_raw`` on a full disk, a raising
+           ``output.sanitize``, a missing locale key, and an exception whose
+           ``__str__`` raises. Each reproduced the exact loss the barrier
+           exists to prevent — exit 3 with zero bytes of stdout — one level up.
+           Nothing in this step may propagate.
+
+        The finding is emitted through the normal ``engine.apply`` path so it
+        reaches every output format (text, JSON, CSV, Markdown, HTML) and the
+        ``-d`` report.
+        """
         if section not in _degraded:
             _degraded.append(section)
-        # The traceback goes to the debug log (BOB_DEBUG=1) and to the detailed
-        # report — never to stdout, which must stay machine-parseable.
-        logger.debug("Section %r failed: %s", section, traceback.format_exc())
-        report.write_raw(
-            f"\n  !! section {section} failed: {exc!r}\n{traceback.format_exc()}"
-        )
 
-        result = CheckResult()
-        result.add_finding(
-            level=FindingLevel.INFO,
-            message=t("audit.section_unavailable", section=t(f"sections.{section}")),
-            detail=output.sanitize(f"{type(exc).__name__}: {exc}", max_len=200),
-            key=f"{section}.unavailable",
-        )
         try:
+            detail = _safe_exc_text(exc)
+            try:
+                # Traceback goes to the debug log (BOB_DEBUG=1) and the detailed
+                # report — never to stdout, which must stay machine-parseable.
+                trace = traceback.format_exc()
+            except Exception:  # noqa: BLE001
+                trace = "<traceback unavailable>"
+            logger.debug("Section %r failed: %s", section, trace)
+            try:
+                report.write_raw(f"\n  !! section {section} failed: {detail}\n{trace}")
+            except Exception:  # noqa: BLE001 — a full disk must not cost the audit
+                logger.debug("Could not write the failure of %r to the report", section)
+
+            from bob.scoring import CheckResult, FindingLevel
+            try:
+                safe_detail = output.sanitize(detail, max_len=200)
+            except Exception:  # noqa: BLE001
+                safe_detail = ""
+            result = CheckResult()
+            result.add_finding(
+                level=FindingLevel.INFO,
+                message=_safe_section_message(section),
+                detail=safe_detail,
+                key=f"{section}.unavailable",
+            )
             engine.apply(result)
             display_result(result, report, config.verbose,
                            quiet=config.quiet, recurrence=_pr)

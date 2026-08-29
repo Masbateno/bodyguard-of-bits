@@ -125,7 +125,23 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - Report files open O_NOFOLLOW and chown through the held descriptor.
 - CSV formula injection neutralised in message/detail/fix_cmd/note.
 - --profile/--check/--skip reject a following flag and an empty value.
-- Tests 6590 -> 6671.
+- Second stress campaign against the first one's fixes: the fault barrier
+  could be defeated from inside its own handler (rendering sat outside the
+  inner try); it now records first, then renders best-effort.
+- Report writes had no error handling: a full disk under "bob -d" cost the
+  entire audit (exit 3, no stdout). The report now disables itself instead.
+- --ignore silenced the score and JSON counts but not the terminal, because
+  display renders the raw CheckResult. engine.apply now drops ignored
+  findings from it; --show-ignored is unaffected.
+- Terminal escape sequences in system-derived values (a cron script filename)
+  reached the terminal. Finding text is sanitized in add_finding, covering
+  every output format at once.
+- Unbounded reads on non-regular files: a plugin symlinked to /dev/zero was
+  read until OOM (stat().st_size is 0 for a device), --diff=/dev/zero
+  exhausted memory and --diff=<fifo> blocked forever. New read_text_capped()
+  refuses non-regular files and caps the read.
+- Ctrl-C no longer prints a Python traceback.
+- Tests 6671 -> 6703.
 * Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
 - BREAKING contract-fix bundle. The container/nftables "teeth" stay deferred:
   calibrating them needs a real container and a cloud instance.

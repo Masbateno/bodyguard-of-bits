@@ -1,4 +1,4 @@
-"""Atomic file write — single source of truth for crash-safe file persistence.
+"""Shared file I/O — crash-safe writes, and bounded reads.
 
 Consolidates the temp-write + ``os.replace`` pattern previously duplicated
 across ``bob/cron/_io.py``, ``bob/config.py``, ``bob/compare.py``,
@@ -22,9 +22,60 @@ the docstring promised "crash-safe" but the impl skipped both fsyncs.
 
 from __future__ import annotations
 
+import errno
 import os
 import tempfile
 from pathlib import Path
+
+# v0.14.1: generous ceiling for any state file BOB reads back. None of them is
+# meant to approach it (history.jsonl is rotation-capped, a baseline is tens of
+# KB); it exists so a read can never run away.
+_DEFAULT_READ_CAP = 8 * 1024 * 1024  # 8 MB
+
+
+def read_text_capped(
+    path: Path,
+    *,
+    max_bytes: int = _DEFAULT_READ_CAP,
+    encoding: str = "utf-8",
+    errors: str = "replace",
+) -> str:
+    """Read a *regular* file, never more than ``max_bytes``.
+
+    v0.14.1 — every state-file reader used a bare ``read_text()``, which is
+    unbounded and will happily read anything the path resolves to. Measured:
+
+      * ``--diff=/dev/zero``, or ``~/.config/bob/ignore.yml`` symlinked to it,
+        read NUL bytes until the process died (exit 3, or an outright OOM kill);
+      * ``--diff=<fifo>`` **blocked forever** — the worst outcome of the two,
+        because a cron job hangs instead of failing, and does so again on every
+        subsequent run.
+
+    ``--diff=PATH`` takes an arbitrary operator-supplied path, so this is
+    reachable by a plain typo, not only by self-sabotage.
+
+    Rejecting non-regular files also covers directories and sockets.
+    ``Path.is_file()`` follows symlinks, so a symlink to a real file still
+    reads normally.
+
+    Raises:
+        OSError: if *path* is not a regular file, or exceeds ``max_bytes``.
+                 Every caller already degrades on ``OSError``.
+    """
+    # Order matters: a missing file must still raise FileNotFoundError, exactly
+    # as ``read_text()`` did. ``bob.compare.load_baseline`` branches on it to
+    # tell "baseline not found" (a normal first run, or a bad --diff path) from
+    # "baseline unreadable", and v0.9.2 shipped distinct localised messages for
+    # the two.
+    if not path.exists():
+        raise FileNotFoundError(errno.ENOENT, "no such file", str(path))
+    if not path.is_file():
+        raise OSError(errno.EINVAL, "not a regular file", str(path))
+    with path.open(encoding=encoding, errors=errors) as fh:
+        data = fh.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise OSError(errno.EFBIG, f"file exceeds {max_bytes} bytes", str(path))
+    return data
 
 
 def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
