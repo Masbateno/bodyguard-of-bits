@@ -818,6 +818,10 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
 
     section("AUDIT — what to check and how")
     opt("-p, --profile=NAME",    "Audit profile: server (default), desktop, workstation, container")
+    # v0.14.1: the persistence was real since v0.12.1 but documented nowhere the
+    # user looks — a one-off ``-p container`` silently became their permanent
+    # default. Stating it here is the whole fix; the behaviour is deliberate.
+    opt("",                      "  (a valid name is SAVED as your default for later runs)")
     opt("-l N, --log-days=N",    "Analyse last N days of UFW logs (default: 7)")
     opt("-D, --diff[=PATH]",     "Show only changes since last audit baseline; pass a file path to compare against an arbitrary baseline (cross-machine)")
     opt("    --watch[=N]",       "Re-run audit every N seconds (default: 60) — Ctrl+C to quit")

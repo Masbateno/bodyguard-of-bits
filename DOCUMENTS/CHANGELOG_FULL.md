@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.14.1] — 2026-08-29
+## [v0.14.1] — 2026-08-30
 
 **Correctness patch. The container surface is INFO-only, so no score, output field or exit code changes; one additive finding key.**
 
@@ -280,9 +280,53 @@ Found no defect, and worth not re-auditing: **12 000 argv combinations** of 2–
 
 +32 tests in `tests/test_v0141_hostile_io.py`, each mutation-tested. Six defects were re-injected one at a time and every one produced a failure before the file was restored. One of them is worth singling out: removing the regular-file check does not make the FIFO test *fail* — it makes it **hang**, which is precisely the production symptom the guard exists to prevent.
 
+### Round three — what the tool says, rather than what it does
+
+#### 1. The active profile appeared in the terminal and nowhere else
+
+Since v0.14.0 the audit profile genuinely changes finding severities, `warning_count` and therefore the exit code. It was reported only as an INFO line in the terminal text output — JSON, Markdown, HTML and CSV carried nothing.
+
+The consequences are practical: two JSON payloads for the same host can differ in their counts with nothing in either explaining why; a pipeline aggregating hosts cannot group by profile; and an archived Markdown or HTML report never states what it was audited against.
+
+A `profile` field is now emitted in JSON — additive within schema v3, the same treatment as `degraded_sections` — and rendered in the Markdown and HTML header blocks (EN + FR labels). **CSV is deliberately left alone**: adding a column would shift index-based readers a second time in a single release, and the formula-injection prefix already changes that format. Recorded here rather than done quietly, so the omission is a decision and not an oversight.
+
+#### 2. `-p NAME` silently becomes your permanent default
+
+`bob/__main__.py` persists a valid profile through `user_config.set_profile()`. This is deliberate — v0.12.1 fixed a related defect where an *invalid* name was persisted — but it is documented in neither `--help` nor the READMEs.
+
+So `sudo bob -p container`, typed once to see what the container profile says, rewrites the operator's saved profile for every later run. It caught this campaign: ten minutes were spent puzzling over an audit reporting `container` on a desktop before the cause became obvious, and the session had to restore the machine's real `config.conf`.
+
+The behaviour stays; `--help` and both README usage blocks now say so.
+
+#### 3. Both READMEs documented `-d` as "French output"
+
+```
+sudo bob -d                       # French output        ← wrong
+```
+
+`-d` is `--detailed` — save the full report to a log file. `--french` is the language flag. The line shipped in both READMEs and survived the v0.13.4 documentation-accuracy pass.
+
+Fixed in EN and FR, with two guards: one parses every README usage example through the real `parse_args` (catching invented or renamed flags), and one rejects any example whose comment claims French output when the command carries no language flag.
+
+#### 4. The release date had drifted again
+
+The v0.14.1 surfaces were still dated 2026-08-29, which is no longer reachable. Moved to **2026-08-30** (a Sunday) across the changelog rows and section headings, the debian and rpm entries, the three man page `.TH` lines and the SNAPSHOT header and "release surface dated" row. This is the same drift v0.14.0 was corrected for — caught this time before publication rather than after. If the push slips past the 30th it needs doing again.
+
+### Verified clean
+
+- **The whole i18n key space.** 966 literal keys extracted from the source, plus **637 runtime-built expansions** — `sections.*` for all 46 runner sections, `groups.*`, `domain_scores.*`, `scoring.level.*`, `explain.*.{title,why,how}` for all 169 keys, `service_risk.*` for all 38 registered services — every one resolves in **both** locales. Nothing can reach an operator as a bracketed `[key]`. `bob/cli.py` calls `t()` nowhere, so the v0.9.1 hotfix class (translating before `i18n.init`) stays closed. This matters more since v0.14.1: `_degrade_section` resolves `sections.<name>` for whichever section failed.
+- **Scoring invariants over 6 000 random engine states**: score and every domain score within 0–10; `alert_count` / `warning_count` / `info_count` matching the findings actually kept; no negative deduction; the F1 rule ("10/10 is reserved for an audit with nothing to fix") never violated; domain caps enforced. This also re-validates the round-two change that drops ignored findings from the `CheckResult`.
+- **The profile loader** against circular (`a → b → a`), self-referential, 15-deep, malformed-binary, path-traversing, absolute-path and `/dev/zero`-symlinked profiles: every one degrades to the default with a visible warning, none hangs or crashes.
+- **JSON schema conformance across 16 payloads** — 4 profiles × 2 formats × 2 locales — with no missing required key, no undeclared key, no full-only key leaking into non-full output, and correct types for the new `degraded_sections` and `profile` fields.
+- **`--watch` over repeated iterations**: file descriptors stable, no growth trend established over the iterations observed.
+
+### Guards
+
++16 tests in `tests/test_v0141_contract_surfaces.py`, each mutation-tested: removing the `profile` schema key, reverting the `--help` persistence line, restoring the wrong README example, removing a `sections.*` locale entry, and disabling the F1 cap — five injections, five confirmed failures.
+
 ### Tests
 
-6590 → **6703** (+113 over v0.14.0: 17 for the privileged semantics, 64 for the first robustness batch, 32 for the second). 0 regression.
+6590 → **6719** (+129 over v0.14.0: 17 for the privileged semantics, 64 + 32 for the two robustness batches, 16 for the contract surfaces). 0 regression.
 
 Upgrade: `pipx upgrade bodyguard-of-bits` — no migration action. Container audits now report the accurate finding, an audit no longer dies because one section could not read one file, and CSV consumers reading `message` / `detail` / `fix_cmd` / `note` may see a leading `'` on cells that begin with a spreadsheet formula character.
 

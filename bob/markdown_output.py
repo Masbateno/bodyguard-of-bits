@@ -74,6 +74,7 @@ _FALLBACK_LABELS = {
     "markdown_output.field_alerts":           "Alerts",
     "markdown_output.field_warnings":         "Warnings",
     "markdown_output.field_host":             "Host",
+    "markdown_output.field_profile":          "Audit profile",
     "markdown_output.field_os":               "OS",
     "markdown_output.field_kernel":           "Kernel",
     "markdown_output.field_timestamp":        "Timestamp",
@@ -161,6 +162,10 @@ def build_markdown_output(
     lines.append(f"| **{t('markdown_output.field_alerts')}** | {engine.alert_count} |")
     lines.append(f"| **{t('markdown_output.field_warnings')}** | {engine.warn_count} |")
     lines.append(f"| **{t('markdown_output.field_host')}** | `{sys_info.hostname}` |")
+    # v0.14.1: an archived report must say what it was audited against — the
+    # profile changes severities and counts (v0.14.0) and was terminal-only.
+    lines.append(f"| **{t('markdown_output.field_profile')}** | "
+                 f"`{getattr(profile, 'name', '') or 'server'}` |")
     lines.append(f"| **{t('markdown_output.field_os')}** | {sys_info.os_name} |")
     lines.append(f"| **{t('markdown_output.field_kernel')}** | {sys_info.kernel} |")
     lines.append(f"| **{t('markdown_output.field_timestamp')}** | {ts} |")

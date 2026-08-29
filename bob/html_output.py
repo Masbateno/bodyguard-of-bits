@@ -50,6 +50,7 @@ _FALLBACK_LABELS = {
     "html_output.field_alerts":        "Alerts",
     "html_output.field_warnings":      "Warnings",
     "html_output.field_host":          "Host",
+    "html_output.field_profile":       "Audit profile",
     "html_output.field_os":            "OS",
     "html_output.field_kernel":        "Kernel",
     "html_output.field_timestamp":     "Timestamp",
@@ -206,6 +207,9 @@ def build_html_output(
     a(f"<dt>{_h(t('html_output.field_alerts'))}</dt><dd>{engine.alert_count}</dd>")
     a(f"<dt>{_h(t('html_output.field_warnings'))}</dt><dd>{engine.warn_count}</dd>")
     a(f"<dt>{_h(t('html_output.field_host'))}</dt><dd><code>{_h(sys_info.hostname)}</code></dd>")
+    # v0.14.1: see markdown_output — the profile was terminal-only.
+    a(f"<dt>{_h(t('html_output.field_profile'))}</dt>"
+      f"<dd><code>{_h(getattr(profile, 'name', '') or 'server')}</code></dd>")
     a(f"<dt>{_h(t('html_output.field_os'))}</dt><dd>{_h(sys_info.os_name)}</dd>")
     a(f"<dt>{_h(t('html_output.field_kernel'))}</dt><dd>{_h(sys_info.kernel)}</dd>")
     a(f"<dt>{_h(t('html_output.field_timestamp'))}</dt><dd>{_h(ts)}</dd>")

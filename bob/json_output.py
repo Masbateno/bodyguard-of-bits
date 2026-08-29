@@ -72,6 +72,12 @@ SCHEMA_V3_REQUIRED_KEYS = frozenset({
     # the key keeps working, one that reads it can tell "score 9 with every
     # section evaluated" from "score 9 with two sections never run".
     "degraded_sections",
+    # v0.14.1: the audit profile that produced this result. Since v0.14.0 the
+    # profile genuinely changes finding severities, ``warning_count`` and
+    # therefore the exit code — yet the profile name appeared ONLY in the
+    # terminal text output, so two JSON payloads for the same host could differ
+    # in their counts with nothing in either explaining why. Additive within v3.
+    "profile",
 })
 
 # Additional top-level keys present in v3 only when ``full=True``.
@@ -214,6 +220,7 @@ def _build_v3(
         "warning_count":   engine.warn_count,
         "info_count":      engine.info_count,
         "degraded_sections": list(degraded_sections),
+        "profile":         getattr(profile, "name", "") or "server",
         "deductions": [
             {
                 "reason":        d.reason,

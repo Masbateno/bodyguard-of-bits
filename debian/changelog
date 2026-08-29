@@ -89,7 +89,24 @@ bodyguard-of-bits (0.14.1-1) UNRELEASED; urgency=low
   * Ctrl-C printed a raw Python traceback; it now prints one localised line and
     returns 130.
   * Tests 6671 -> 6703.
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 29 Aug 2026 23:00:00 +0200
+  * Third campaign, on what the tool reports rather than what it does. The
+    active audit profile appeared only in the terminal — not in JSON, Markdown,
+    HTML or CSV — although since 0.14.0 it changes severities, warning_count
+    and the exit code. A "profile" field is now emitted in JSON (additive in
+    schema v3) and rendered in the Markdown and HTML headers. CSV is left
+    alone on purpose: a new column would shift index-based readers a second
+    time in one release.
+  * "-p NAME" silently becomes the operator's permanent default (__main__
+    persists a valid profile via set_profile — deliberate since 0.12.1, but
+    documented nowhere the user looks). Now stated in --help and both READMEs.
+  * Both READMEs documented "-d" as "French output". -d is --detailed (save
+    the full report to a file); --french is the language flag. Fixed in EN and
+    FR, with guards that parse every README example through parse_args and
+    reject a French claim without a language flag.
+  * Release surfaces moved to 2026-08-30: 0.14.1 was still dated the 29th,
+    which is no longer reachable.
+  * Tests 6703 -> 6719.
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 30 Aug 2026 01:00:00 +0200
 
 bodyguard-of-bits (0.14.0-1) UNRELEASED; urgency=low
 

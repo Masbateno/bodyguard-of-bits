@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.14.1] — 29-08-2026
+## [v0.14.1] — 30-08-2026
 
 **Patch d'exactitude. La surface conteneur est INFO-only : aucun changement de score, de champ de sortie ni de code de retour ; une clé de finding additive.**
 
@@ -280,9 +280,53 @@ Aucun défaut trouvé, et à ne pas ré-auditer : **12 000 combinaisons d'argv**
 
 +32 tests dans `tests/test_v0141_hostile_io.py`, tous mutation-testés. Six défauts ont été réinjectés un à un et chacun a produit un échec avant restauration du fichier. L'un d'eux mérite d'être signalé : retirer la vérification « fichier régulier » ne fait pas *échouer* le test FIFO — il le fait **bloquer**, ce qui est précisément le symptôme de production que la garde existe pour empêcher.
 
+### Troisième manche — ce que l'outil dit, plutôt que ce qu'il fait
+
+#### 1. Le profil actif n'apparaissait que dans le terminal
+
+Depuis v0.14.0, le profil d'audit change réellement les sévérités des findings, `warning_count` et donc le code de sortie. Il n'était rapporté que sous forme d'une ligne INFO dans la sortie texte du terminal — JSON, Markdown, HTML et CSV n'en portaient aucune trace.
+
+Les conséquences sont concrètes : deux charges JSON du même hôte peuvent différer par leurs compteurs sans que rien ne l'explique ; un pipeline agrégeant des hôtes ne peut pas les regrouper par profil ; et un rapport Markdown ou HTML archivé n'indique jamais contre quoi il a été audité.
+
+Un champ `profile` est désormais émis en JSON — additif dans le schéma v3, le même traitement que `degraded_sections` — et rendu dans les blocs d'en-tête Markdown et HTML (libellés EN + FR). **Le CSV est délibérément laissé de côté** : ajouter une colonne décalerait une seconde fois les lecteurs par index dans une même release, et le préfixage anti-injection de formules modifie déjà ce format. Consigné ici plutôt que fait en silence, pour que l'omission soit une décision et non un oubli.
+
+#### 2. `-p NOM` devient silencieusement votre défaut permanent
+
+`bob/__main__.py` persiste un profil valide via `user_config.set_profile()`. C'est délibéré — v0.12.1 avait corrigé un défaut voisin où un nom *invalide* était persisté — mais ce n'est documenté ni dans `--help` ni dans les READMEs.
+
+Ainsi `sudo bob -p container`, tapé une fois pour voir ce que dit le profil conteneur, réécrit le profil enregistré de l'opérateur pour toutes les exécutions suivantes. Cette campagne s'y est fait prendre : dix minutes passées à s'étonner d'un audit annonçant `container` sur un poste de bureau avant que la cause ne devienne évidente, et il a fallu restaurer le `config.conf` réel de la machine.
+
+Le comportement reste ; `--help` et les deux blocs d'usage des READMEs le disent désormais.
+
+#### 3. Les deux READMEs documentaient `-d` comme « sortie en français »
+
+```
+sudo bob -d                       # sortie en français        ← faux
+```
+
+`-d` est `--detailed` — enregistrer le rapport complet dans un fichier. `--french` est l'option de langue. La ligne était livrée dans les deux READMEs et avait survécu à la passe d'exactitude documentaire de v0.13.4.
+
+Corrigée en EN et FR, avec deux gardes : l'un fait passer chaque exemple d'usage des READMEs par le vrai `parse_args` (ce qui attrape une option inventée ou renommée), l'autre rejette tout exemple dont le commentaire annonce du français alors que la commande ne porte aucune option de langue.
+
+#### 4. La date de release avait de nouveau dérivé
+
+Les surfaces v0.14.1 étaient encore datées du 2026-08-29, désormais inatteignable. Passées au **2026-08-30** (un dimanche) sur les lignes de tableau et les titres de section des changelogs, les entrées debian et rpm, les trois lignes `.TH` des pages de man, ainsi que l'en-tête et la ligne « release surface dated » du SNAPSHOT. C'est la dérive même pour laquelle v0.14.0 avait été corrigée — rattrapée cette fois avant publication et non après. Si la publication glisse au-delà du 30, il faudra recommencer.
+
+### Vérifié sain
+
+- **Tout l'espace de clés i18n.** 966 clés littérales extraites de la source, plus **637 expansions construites à l'exécution** — `sections.*` pour les 46 sections du runner, `groups.*`, `domain_scores.*`, `scoring.level.*`, `explain.*.{title,why,how}` pour les 169 clés, `service_risk.*` pour les 38 services enregistrés — toutes résolvent dans les **deux** locales. Rien ne peut atteindre un opérateur sous forme de `[clé]` entre crochets. `bob/cli.py` n'appelle `t()` nulle part : la classe du hotfix v0.9.1 (traduire avant `i18n.init`) reste fermée. Ce point pèse davantage depuis v0.14.1 : `_degrade_section` résout `sections.<nom>` pour la section qui a échoué.
+- **Les invariants de score sur 6 000 états de moteur aléatoires** : score et scores de domaine entre 0 et 10 ; `alert_count` / `warning_count` / `info_count` conformes aux findings réellement conservés ; aucune déduction négative ; la règle F1 (« le 10/10 est réservé à un audit sans rien à corriger ») jamais violée ; plafonds de domaine respectés. Cela revalide au passage la modification de la deuxième manche qui retire les findings ignorés du `CheckResult`.
+- **Le chargeur de profils** face à des profils circulaires (`a → b → a`), auto-référentiels, profonds de 15 niveaux, binaires malformés, en traversée de chemin, en chemin absolu et liés à `/dev/zero` : chacun dégrade vers le défaut avec un avertissement visible, aucun ne bloque ni ne plante.
+- **La conformité du schéma JSON sur 16 charges utiles** — 4 profils × 2 formats × 2 langues — sans clé requise manquante, sans clé non déclarée, sans clé réservée au mode complet fuitant dans le mode normal, et avec les types corrects pour les nouveaux champs `degraded_sections` et `profile`.
+- **`--watch` sur des itérations répétées** : descripteurs de fichiers stables, aucune tendance de croissance établie sur les itérations observées.
+
+### Gardes
+
++16 tests dans `tests/test_v0141_contract_surfaces.py`, tous mutation-testés : retrait de la clé de schéma `profile`, retour en arrière sur la ligne de persistance de `--help`, restauration de l'exemple erroné du README, suppression d'une entrée de locale `sections.*`, et désactivation du plafond F1 — cinq injections, cinq échecs confirmés.
+
 ### Tests
 
-6590 → **6703** (+113 sur v0.14.0 : 17 pour la sémantique privileged, 64 pour le premier lot robustesse, 32 pour le second). 0 régression.
+6590 → **6719** (+129 sur v0.14.0 : 17 pour la sémantique privileged, 64 + 32 pour les deux lots robustesse, 16 pour les surfaces de contrat). 0 régression.
 
 Mise à jour : `pipx upgrade bodyguard-of-bits` — aucune action de migration. Les audits conteneur rapportent désormais le finding exact ; tout le reste est inchangé.
 

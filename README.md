@@ -97,8 +97,9 @@ pipx uninstall bodyguard-of-bits
 ```
 sudo bob                          # full audit, server profile
 sudo bob --verbose                # add CIS refs and remediation commands per finding
-sudo bob -d                       # French output
-sudo bob --profile workstation    # workstation profile
+sudo bob --french                 # French output
+sudo bob -d                       # save the full report to a log file
+sudo bob --profile workstation    # workstation profile (SAVED as your default)
 sudo bob --check ssh,hardening    # run only selected domains
 sudo bob --format json > out.json # machine output
 bob --explain ssh.password_auth   # explain a finding (no sudo)

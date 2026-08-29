@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.1-1
+* Sun Aug 30 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.1-1
 - Correctness patch, INFO-only surface: no score or exit-code change.
 - container_security: "privileged" meant "CAP_SYS_ADMIN present", so
   --cap-add SYS_ADMIN was reported as PRIVILEGED with the headline "full
@@ -141,7 +141,15 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   exhausted memory and --diff=<fifo> blocked forever. New read_text_capped()
   refuses non-regular files and caps the read.
 - Ctrl-C no longer prints a Python traceback.
-- Tests 6671 -> 6703.
+- Third campaign, on what the tool reports: the active audit profile appeared
+  only in the terminal though it changes severities, warning_count and the
+  exit code since 0.14.0. A "profile" field is now emitted in JSON (additive
+  in v3) and in the Markdown/HTML headers; CSV deliberately unchanged.
+- "-p NAME" silently becomes the permanent default; now documented in --help
+  and both READMEs.
+- Both READMEs documented "-d" as "French output" (-d is --detailed).
+- Release surfaces moved to 2026-08-30.
+- Tests 6703 -> 6719.
 * Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
 - BREAKING contract-fix bundle. The container/nftables "teeth" stay deferred:
   calibrating them needs a real container and a cloud instance.
