@@ -1,6 +1,6 @@
 # BOB — Project snapshot
 
-> **Purpose.** A single-page bird's-eye view of the codebase as of **v0.14.0** (2026-08-28, surgically refreshed from the v0.10.2 baseline across the v0.11.x → v0.13.x arc — header + counters + new modules; the deep per-module LoC figures below predate v0.11.0 and are indicative). Designed to be loaded once before a refactor pass or an audit so you don't have to re-discover the structure module by module. Stats are derived from the actual source files; conventions and contracts are observable in the code, not aspirational.
+> **Purpose.** A single-page bird's-eye view of the codebase as of **v0.14.0** (2026-08-29, surgically refreshed from the v0.10.2 baseline across the v0.11.x → v0.13.x arc — header + counters + new modules; the deep per-module LoC figures below predate v0.11.0 and are indicative). Designed to be loaded once before a refactor pass or an audit so you don't have to re-discover the structure module by module. Stats are derived from the actual source files; conventions and contracts are observable in the code, not aspirational.
 
 > **Snapshot history.** v0.4.6 → v0.6.0 drift, in one paragraph: the v0.5.x branch ran a deep-audit campaign on 25 modules + ~25 spot-checks (4 phases of refactor v0.5.0–v0.5.4, then 4 hardening releases v0.5.5–v0.5.8), introduced `CheckResult.{warn,alert}_with_deduction` helpers (~120 call sites migrated, net −519 LoC across `bob/checks/*.py`), unified private-IP detection to `sysinfo._is_private_or_loopback_ipv4/_ipv6`, added the `_atomic_write(path, content, mode=)` contract with explicit mode parameter, split `_BadDirective` / `_LEVEL_DISPATCH` declarative tables, and added AST-based locale parity tests. **v0.6.0** then landed two architectural splits: `bob/checks/ssh.py` (1296 L monolith) → `bob/checks/ssh/` package with 4 submodules, `bob/cron.py` (1204 L monolith) → `bob/cron/` package with 4 submodules — both contract-preserving via `__init__.py` re-exports. The `UFW_AUDIT_SHARE` legacy env var was removed (deprecation chain v0.4.2 → v0.5.4 → v0.6.0).
 >
@@ -791,7 +791,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Doc files | 16 public markdown + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"2"` only (since v0.7.0; legacy `"1"` + `--json-v1` retired v0.9.0 F-3) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 4 (integration-first / smoke-after-commit / version-consistency / smoke-plugin) | `.github/workflows/*.yml` |
-| Public version | v0.14.0 (release surface dated 2026-08-28); the container/nftables "teeth" remain deferred pending field-test hardware | `pyproject.toml::version` |
+| Public version | v0.14.0 (release surface dated 2026-08-29); the container/nftables "teeth" remain deferred pending field-test hardware | `pyproject.toml::version` |
 | Supported branch | v0.10.x (v0.7.x EOL formalised in v0.8.1, v0.6.x in v0.7.2) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

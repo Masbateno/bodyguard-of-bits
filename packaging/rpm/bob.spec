@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Fri Aug 28 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
+* Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
 - BREAKING contract-fix bundle. The container/nftables "teeth" stay deferred:
   calibrating them needs a real container and a cloud instance.
 - scoring: ScoreEngine carries the audit profile and applies it inside

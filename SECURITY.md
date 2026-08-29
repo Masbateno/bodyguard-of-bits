@@ -19,7 +19,7 @@ are not backported.
 
 Patches release as `0.14.x+1`. A breaking change bumps the minor (`0.15.0`).
 
-**v0.13.x is end-of-life as of 2026-08-28** (the day v0.14.0 ships, per the
+**v0.13.x is end-of-life as of 2026-08-29** (the day v0.14.0 ships, per the
 "latest minor line only" policy above). No security fixes will be backported.
 Users on v0.13.x must `pipx upgrade bodyguard-of-bits` to v0.14.x. The upgrade
 carries two **behavioural** changes: audits under the `desktop` / `workstation`

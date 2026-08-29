@@ -18,7 +18,7 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 Les correctifs sortent en `0.14.x+1`. Un breaking change bump le minor (`0.15.0`).
 
-**v0.13.x est en fin de vie depuis le 28-08-2026** (jour du ship de v0.14.0,
+**v0.13.x est en fin de vie depuis le 29-08-2026** (jour du ship de v0.14.0,
 selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun
 correctif de sécurité ne sera backporté. Les utilisateurs sur v0.13.x doivent
 `pipx upgrade bodyguard-of-bits` vers v0.14.x. La mise à jour comporte deux

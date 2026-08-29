@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.14.0] — 28-08-2026
+## [v0.14.0] — 29-08-2026
 
 **Bundle BREAKING de corrections de contrat. Les « dents » auxquelles cette version était réservée restent reportées.**
 

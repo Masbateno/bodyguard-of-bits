@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.14.0] — 2026-08-28
+## [v0.14.0] — 2026-08-29
 
 **BREAKING contract-fix bundle. The "teeth" this version was reserved for stay deferred.**
 
