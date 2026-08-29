@@ -6,6 +6,56 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.14.1] — 29-08-2026
+
+**Patch d'exactitude. La surface conteneur est INFO-only : aucun changement de score, de champ de sortie ni de code de retour ; une clé de finding additive.**
+
+### « Privilégié » signifiait « CAP_SYS_ADMIN est présente »
+
+`bob/checks/container_security.py` calculait :
+
+```python
+snap.privileged = bool(snap.cap_bnd & (1 << _CAP_SYS_ADMIN_BIT))
+```
+
+Un conteneur lancé avec `--cap-add SYS_ADMIN` — un octroi ciblé, courant pour les montages FUSE ou les conteneurs imbriqués, avec seccomp toujours actif — était donc rapporté **PRIVILÉGIÉ**, sous ce titre :
+
+> Le conteneur semble PRIVILÉGIÉ — jeu complet de capabilities Linux disponible
+
+Mesuré sur de vrais conteneurs podman (`cap_last_cap = 40`, le jeu complet vaut donc `(1 << 41) - 1`) :
+
+```
+défaut rootless       cap_bnd 2147747323     seccomp 2   privileged False
+--privileged          cap_bnd 2199023255551  seccomp 0   privileged True
+--cap-add SYS_ADMIN   cap_bnd 2149844475     seccomp 2   privileged True   <-- affirmation fausse
+```
+
+La ligne de détail était déjà prudente — *« Un conteneur privilégié (ou doté de CAP_SYS_ADMIN) »*. Seul le titre mentait, et c'est le titre que l'opérateur lit en premier.
+
+**Le correctif.** `privileged` signifie désormais le bounding set **complet**, dérivé de `/proc/sys/kernel/cap_last_cap` plutôt que d'une constante en dur — le fichier est lisible dans les conteneurs aussi, et le lecteur est borné, parce qu'une valeur aberrante décalerait le masque au point de faire passer tout conteneur pour non privilégié. Une CAP_SYS_ADMIN isolée obtient son propre finding, la nouvelle clé additive `container_security.cap_sys_admin`, qui énonce clairement que le conteneur n'est *pas* privilégié mais détient la capability sur laquelle reposent la plupart des évasions documentées. Les deux messages sont réécrits en EN et FR.
+
+**Pourquoi cela dépasse la formulation.** La déduction conteneur prévue pour v0.15.0 devait être keyée sur `privileged`. La livrer contre l'ancienne sémantique aurait pénalisé un conteneur à portée FUSE exactement autant qu'un conteneur pleinement privilégié — et le backlog liste `privileged` et `CAP_SYS_ADMIN` comme conditions *distinctes*, que le code avait silencieusement fusionnées.
+
+**Pourquoi cela a survécu.** Les tests existants posaient `privileged=True` ou `privileged=False` directement sur le snapshot, sans jamais dériver le champ d'un bounding set réaliste ; `test_privileged_bit_detection` vérifiait le bit, jamais la sémantique. Rien n'exerçait le cas CAP_SYS_ADMIN seule.
+
+Le piège se retend facilement : la **première version des nouveaux gardes réimplémentait la logique de masque à l'intérieur du test**, et passait tranquillement quand l'ancienne ligne buguée était restaurée. Ils ont été réécrits pour piloter le vrai `from_system()` avec les masques mesurés sur podman, et sont désormais mutation-testés deux fois — revenir à l'ancienne classification en fait échouer deux, retirer la nouvelle branche d'émission en fait échouer deux autres.
+
+### La date de release de v0.14.0 était fausse
+
+Les surfaces de release ont été figées au 2026-08-28 au démarrage du travail, mais le push et la publication PyPI ont eu lieu le lendemain : le workflow qui a uploadé 0.14.0 est horodaté `2026-08-29T16:46:08Z`.
+
+Corrigé sur les seules surfaces v0.14.0 — la ligne de changelog et l'en-tête de section, les entrées debian et rpm de `0.14.0-1`, les trois lignes `.TH` des pages de man, l'en-tête du SNAPSHOT et sa ligne « release surface dated », et la date de fin de vie de v0.13.x dans `SECURITY{,_FR}.md` (qui est par définition le jour du ship de v0.14.0). Le jour de la semaine suit : le 2026-08-29 est un samedi, et le garde de jours de semaine ajouté en v0.14.0 le confirme.
+
+**v0.13.3 et v0.13.4 gardent leurs dates au 2026-08-28** — elles ont réellement été publiées ce jour-là, leurs workflows horodatés 17:31 et 18:00 UTC le 28. Seule v0.14.0 a franchi minuit.
+
+### Tests
+
+6590 → **6607**. 0 régression, ruff 0 finding.
+
+Mise à jour : `pipx upgrade bodyguard-of-bits` — aucune action de migration. Les audits conteneur rapportent désormais le finding exact ; tout le reste est inchangé.
+
+---
+
 ## [v0.14.0] — 29-08-2026
 
 **Bundle BREAKING de corrections de contrat. Les « dents » auxquelles cette version était réservée restent reportées.**

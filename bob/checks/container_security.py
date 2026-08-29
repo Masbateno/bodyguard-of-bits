@@ -40,6 +40,21 @@ _DANGEROUS_CAPS: dict[int, str] = {
 }
 _CAP_SYS_ADMIN_BIT = 21
 
+# Highest capability number the running kernel knows, from
+# /proc/sys/kernel/cap_last_cap. 40 covers Linux 5.9+ (CAP_CHECKPOINT_RESTORE)
+# and is only a fallback: the file is readable inside containers too.
+_CAP_LAST_CAP_FALLBACK = 40
+
+
+def _read_cap_last_cap() -> int:
+    """Return the kernel's highest capability number, or the fallback."""
+    try:
+        value = int(Path("/proc/sys/kernel/cap_last_cap").read_text().strip())
+    except (OSError, ValueError):
+        return _CAP_LAST_CAP_FALLBACK
+    # Guard against a nonsense value shifting a mask into absurdity.
+    return value if 0 < value < 64 else _CAP_LAST_CAP_FALLBACK
+
 
 # ---------------------------------------------------------------------------
 # Snapshot
@@ -54,7 +69,9 @@ class ContainerSecuritySnapshot:
     in_container: bool = False
     runtime: str = ""                       # docker / podman / lxc / "container"
     cap_bnd: int = 0                         # capability bounding set bitmask
-    privileged: bool = False                 # CAP_SYS_ADMIN present
+    cap_last_cap: int = _CAP_LAST_CAP_FALLBACK  # highest capability the kernel knows
+    privileged: bool = False                 # the FULL capability set is present
+    cap_sys_admin: bool = False              # CAP_SYS_ADMIN granted (may be alone)
     dangerous_caps: list[str] = field(default_factory=list)
     seccomp: int = -1                        # /proc/self/status Seccomp (0/1/2), -1 unknown
     no_new_privs: bool = False
@@ -72,7 +89,16 @@ class ContainerSecuritySnapshot:
 
         status = _read_proc_status()
         snap.cap_bnd = _parse_hex(status.get("CapBnd", ""))
-        snap.privileged = bool(snap.cap_bnd & (1 << _CAP_SYS_ADMIN_BIT))
+        snap.cap_last_cap = _read_cap_last_cap()
+        # v0.14.1: "privileged" now means what it says — the *full* bounding
+        # set. It used to be an alias for "CAP_SYS_ADMIN is present", so a
+        # container started with `--cap-add SYS_ADMIN` (one targeted grant,
+        # seccomp still enforcing) was reported as PRIVILEGED with the
+        # headline "full Linux capability set available", which was measurably
+        # false: cap_bnd 2149844475 against 2199023255551 for a real one.
+        full_mask = (1 << (snap.cap_last_cap + 1)) - 1
+        snap.privileged = (snap.cap_bnd & full_mask) == full_mask
+        snap.cap_sys_admin = bool(snap.cap_bnd & (1 << _CAP_SYS_ADMIN_BIT))
         snap.dangerous_caps = [
             name for bit, name in sorted(_DANGEROUS_CAPS.items())
             if snap.cap_bnd & (1 << bit)
@@ -189,6 +215,17 @@ def check_container_security(
                        caps=", ".join(snapshot.dangerous_caps)),
             detail=_t("container_security.privileged_detail"),
             key="container_security.privileged",
+        )
+    elif snapshot.cap_sys_admin:
+        # CAP_SYS_ADMIN without the full set — a targeted grant (FUSE mounts,
+        # for instance), not a privileged container. Still the single most
+        # escape-prone capability, so it gets its own finding rather than
+        # being folded into the generic dangerous-caps line.
+        result.info(
+            message=_t("container_security.cap_sys_admin",
+                       caps=", ".join(snapshot.dangerous_caps)),
+            detail=_t("container_security.cap_sys_admin_detail"),
+            key="container_security.cap_sys_admin",
         )
     elif snapshot.dangerous_caps:
         result.info(

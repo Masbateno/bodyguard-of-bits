@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.14.0
+Version:        0.14.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,20 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.1-1
+- Correctness patch, INFO-only surface: no score or exit-code change.
+- container_security: "privileged" meant "CAP_SYS_ADMIN present", so
+  --cap-add SYS_ADMIN was reported as PRIVILEGED with the headline "full
+  Linux capability set available" — measurably false (2149844475 vs
+  2199023255551). It now means the full set, read via cap_last_cap, and a
+  lone CAP_SYS_ADMIN gets its own finding stating it is not privileged.
+- The planned container deduction was to be keyed on `privileged`; keying it
+  on the old semantics would have punished a FUSE-scoped container as hard
+  as a fully privileged one.
+- Guards drive the real from_system() with bitmasks measured on podman and
+  are mutation-tested; the previous tests set the field by hand.
+- docs: v0.14.0 release surfaces were dated 28 Aug, it shipped on the 29th.
+
 * Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
 - BREAKING contract-fix bundle. The container/nftables "teeth" stay deferred:
   calibrating them needs a real container and a cloud instance.

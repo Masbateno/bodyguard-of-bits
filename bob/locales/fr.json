@@ -2923,13 +2923,15 @@
   },
   "container_security": {
     "detected": "Exécution dans un conteneur {runtime} — audit de la posture d'isolation du conteneur",
-    "privileged": "Le conteneur semble PRIVILÉGIÉ — jeu complet de capabilities Linux disponible ({caps})",
-    "privileged_detail": "Un conteneur privilégié (ou doté de CAP_SYS_ADMIN) peut largement agir comme root sur l'hôte — c'est le chemin d'évasion de conteneur le plus courant. Droppez les capabilities inutiles : --cap-drop=ALL --cap-add=<seulement le nécessaire>, et évitez --privileged.",
+    "privileged": "Le conteneur est PRIVILÉGIÉ — le jeu complet de capabilities Linux est disponible ({caps})",
+    "privileged_detail": "Un conteneur privilégié peut largement agir comme root sur l'hôte — c'est le chemin d'évasion le plus courant. Toutes les capabilities que le noyau connaît sont dans le bounding set, et seccomp est généralement désactivé avec. Droppez ce dont vous n'avez pas besoin : --cap-drop=ALL --cap-add=<uniquement ce que la charge exige>, et évitez --privileged sauf si la charge gère réellement l'hôte.",
     "dangerous_caps": "Le conteneur détient des capabilities élevées : {caps}",
     "caps_restricted": "Le jeu de capabilities est restreint (aucune capability à haut risque) — bien",
     "no_seccomp": "Aucun filtre seccomp actif — envisagez un profil seccomp (le défaut du runtime suffit généralement)",
     "root_no_userns": "Le conteneur s'exécute en root sans user namespace — le root du conteneur correspond au root de l'hôte",
-    "rootfs_writable": "Le système de fichiers racine est accessible en écriture — envisagez un rootfs en lecture seule (--read-only) avec des volumes explicites"
+    "rootfs_writable": "Le système de fichiers racine est accessible en écriture — envisagez un rootfs en lecture seule (--read-only) avec des volumes explicites",
+    "cap_sys_admin": "CAP_SYS_ADMIN accordée — pas un conteneur privilégié, mais la capability la plus propice à l'évasion ({caps})",
+    "cap_sys_admin_detail": "CAP_SYS_ADMIN seule permet mount, pivot_root et une grande part de ce que fait root sur l'hôte ; elle est couramment décrite comme « le nouveau root ». Ce conteneur ne détient PAS le jeu complet de capabilities, il n'est donc pas privilégié — mais un seul octroi ciblé suffit à la plupart des évasions documentées. Elle est souvent ajoutée pour des montages FUSE ou des conteneurs imbriqués ; vérifiez que la charge en a encore besoin, et préférez une capability plus étroite s'il en existe une."
   },
   "socket_units": {
     "no_tool": "systemctl indisponible — analyse des unités socket ignorée",

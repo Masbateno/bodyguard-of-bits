@@ -2923,13 +2923,15 @@
   },
   "container_security": {
     "detected": "Running inside a {runtime} container — auditing the container's own isolation posture",
-    "privileged": "Container appears PRIVILEGED — full Linux capability set available ({caps})",
-    "privileged_detail": "A privileged container (or one granted CAP_SYS_ADMIN) can largely act as root on the host — it is the most common container-escape path. Drop unneeded capabilities: --cap-drop=ALL --cap-add=<only what's needed>, and avoid --privileged.",
+    "privileged": "Container is PRIVILEGED — the full Linux capability set is available ({caps})",
+    "privileged_detail": "A privileged container can largely act as root on the host — it is the most common container-escape path. Every capability the kernel knows is in the bounding set, and seccomp is usually disabled with it. Drop what you do not need: --cap-drop=ALL --cap-add=<only what the workload requires>, and avoid --privileged unless the workload genuinely manages the host.",
     "dangerous_caps": "Container holds elevated capabilities: {caps}",
     "caps_restricted": "Capability bounding set is restricted (no high-risk capabilities) — good",
     "no_seccomp": "No seccomp filter is active — consider running with a seccomp profile (the runtime default is usually enough)",
     "root_no_userns": "Container runs as root without a user namespace — root in the container maps to root on the host",
-    "rootfs_writable": "Root filesystem is writable — consider a read-only rootfs (--read-only) with explicit writable volumes"
+    "rootfs_writable": "Root filesystem is writable — consider a read-only rootfs (--read-only) with explicit writable volumes",
+    "cap_sys_admin": "CAP_SYS_ADMIN granted — not a privileged container, but the most escape-prone capability ({caps})",
+    "cap_sys_admin_detail": "CAP_SYS_ADMIN alone permits mount, pivot_root and much of what root does on the host; it is widely described as \"the new root\". This container does NOT hold the full capability set, so it is not privileged — but a single targeted grant is enough for most documented escapes. It is often added for FUSE mounts or nested containers; check whether the workload still needs it, and prefer a narrower capability if one exists."
   },
   "socket_units": {
     "no_tool": "systemctl not available — socket-unit analysis skipped",

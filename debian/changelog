@@ -1,3 +1,32 @@
+bodyguard-of-bits (0.14.1-1) UNRELEASED; urgency=low
+
+  * Correctness patch. INFO-only surface, so no score, output field or exit
+    code changes; one additive finding key.
+  * container_security: "privileged" meant "CAP_SYS_ADMIN is present", so a
+    container started with `--cap-add SYS_ADMIN` — one targeted grant, with
+    seccomp still enforcing — was reported as PRIVILEGED under the headline
+    "full Linux capability set available". Measured on real containers, that
+    claim was false: bounding set 2149844475 against 2199023255551 for a
+    genuinely privileged one. "privileged" now means the full set, derived
+    from /proc/sys/kernel/cap_last_cap, and CAP_SYS_ADMIN granted on its own
+    gets its own finding (container_security.cap_sys_admin) saying plainly
+    that the container is not privileged but holds the most escape-prone
+    capability. Both messages rewritten, EN and FR.
+  * This matters beyond wording: the planned container deduction was to be
+    keyed on `privileged`, which would have penalised a FUSE-scoped container
+    exactly as hard as a fully privileged one.
+  * The existing tests could not catch it — they set privileged=True/False
+    directly on the snapshot and never derived it from a realistic bounding
+    set. The new guards drive the real from_system() with the bitmasks
+    measured on podman, and are mutation-tested against both the old
+    classification and a removed emission branch.
+  * docs: the v0.14.0 release surfaces were dated 28 Aug; it shipped on the
+    29th (the publish workflow is stamped 2026-08-29T16:46:08Z). Corrected on
+    the v0.14.0 surfaces only — v0.13.3 and v0.13.4 genuinely shipped on the
+    28th and keep their dates. The weekday moves with it.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 29 Aug 2026 23:00:00 +0200
+
 bodyguard-of-bits (0.14.0-1) UNRELEASED; urgency=low
 
   * BREAKING contract-fix bundle. The "teeth" originally planned for this

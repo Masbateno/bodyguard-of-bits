@@ -6,6 +6,56 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.14.1] — 2026-08-29
+
+**Correctness patch. The container surface is INFO-only, so no score, output field or exit code changes; one additive finding key.**
+
+### "Privileged" meant "CAP_SYS_ADMIN is present"
+
+`bob/checks/container_security.py` computed:
+
+```python
+snap.privileged = bool(snap.cap_bnd & (1 << _CAP_SYS_ADMIN_BIT))
+```
+
+So a container started with `--cap-add SYS_ADMIN` — one targeted grant, commonly for FUSE mounts or nested containers, with seccomp still enforcing — was reported as **PRIVILEGED**, under this headline:
+
+> Container appears PRIVILEGED — full Linux capability set available
+
+Measured on real podman containers (`cap_last_cap = 40`, so the full set is `(1 << 41) - 1`):
+
+```
+default rootless      cap_bnd 2147747323     seccomp 2   privileged False
+--privileged          cap_bnd 2199023255551  seccomp 0   privileged True
+--cap-add SYS_ADMIN   cap_bnd 2149844475     seccomp 2   privileged True   <-- claim false
+```
+
+The detail line was already careful — *"A privileged container (or one granted CAP_SYS_ADMIN)"*. Only the headline lied, and the headline is what the operator reads first.
+
+**The fix.** `privileged` now means the **full** bounding set, derived from `/proc/sys/kernel/cap_last_cap` rather than a hardcoded constant — the file is readable inside containers too, and the reader is bounds-checked, because a nonsense value would shift the mask far enough to make every container look unprivileged. A lone CAP_SYS_ADMIN gets its own finding, the new additive key `container_security.cap_sys_admin`, which states plainly that the container is *not* privileged but holds the capability most documented escapes rely on. Both messages rewritten in EN and FR.
+
+**Why this is more than wording.** The container deduction planned for v0.15.0 was to be keyed on `privileged`. Shipping it against the old semantics would have penalised a FUSE-scoped container exactly as hard as a fully privileged one — and the backlog lists `privileged` and `CAP_SYS_ADMIN` as *distinct* conditions, which the code had quietly collapsed into one.
+
+**Why it survived.** The existing tests set `privileged=True` or `privileged=False` directly on the snapshot and never derived the field from a realistic bounding set; `test_privileged_bit_detection` checked the bit, never the semantics. Nothing exercised the CAP_SYS_ADMIN-alone case at all.
+
+That trap is easy to fall back into: the **first draft of the new guards reimplemented the mask logic inside the test**, and passed happily when the old buggy line was restored. They were rewritten to drive the real `from_system()` with the bitmasks measured on podman, and are now mutation-tested twice over — reverting the classification fails two of them, removing the new emission branch fails two others.
+
+### The v0.14.0 release date was wrong
+
+The release surfaces were frozen at 2026-08-28 when the work started, but the push and the PyPI publish happened the next day: the workflow run that uploaded 0.14.0 is stamped `2026-08-29T16:46:08Z`.
+
+Corrected on the v0.14.0 surfaces only — the changelog row and section heading, the debian and rpm entries for `0.14.0-1`, the three man page `.TH` lines, the SNAPSHOT header and its "release surface dated" row, and the v0.13.x end-of-life date in `SECURITY{,_FR}.md` (which is by definition the day v0.14.0 ships). The weekday moves with it: 2026-08-29 is a Saturday, and the packaging-weekday guard added in v0.14.0 confirms it.
+
+**v0.13.3 and v0.13.4 keep their 2026-08-28 dates** — both were genuinely published that day, their publish workflows stamped 17:31 and 18:00 UTC on the 28th. Only v0.14.0 slipped past midnight.
+
+### Tests
+
+6590 → **6607**. 0 regression, ruff 0 finding.
+
+Upgrade: `pipx upgrade bodyguard-of-bits` — no migration action. Container audits now report the accurate finding; everything else is unchanged.
+
+---
+
 ## [v0.14.0] — 2026-08-29
 
 **BREAKING contract-fix bundle. The "teeth" this version was reserved for stay deferred.**
