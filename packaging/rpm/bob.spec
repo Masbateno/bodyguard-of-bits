@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.13.4
+Version:        0.14.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,19 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Aug 28 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
+- BREAKING contract-fix bundle. The container/nftables "teeth" stay deferred:
+  calibrating them needs a real container and a cloud instance.
+- scoring: ScoreEngine carries the audit profile and applies it inside
+  apply(). Only 2 of 14 engine.apply() sites used to apply it, leaving 8
+  shipped desktop/workstation overrides dead and making exit 0 unreachable
+  on a LAN host with Samba behind a UFW rule.
+- output: colour auto-detected — no ANSI when stdout is not a terminal.
+  FORCE_COLOR=1 restores the old behaviour. --help now obeys the same rule.
+- help: the ambiguous "NO_COLOR=" wording replaced by explicit env entries.
+- lint: B904/B905 addressed; ruff config ignores nothing.
+- packaging: 8 wrong weekdays fixed across the debian and rpm changelogs.
+
 * Fri Aug 28 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.13.4-1
 - Documentation accuracy pass. Factual corrections only.
 - SECURITY_FR.md "Plugin checks" was factually inverted: it claimed plugins are

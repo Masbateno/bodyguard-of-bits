@@ -1,3 +1,40 @@
+bodyguard-of-bits (0.14.0-1) UNRELEASED; urgency=low
+
+  * BREAKING contract-fix bundle. The "teeth" originally planned for this
+    version (container/nftables scoring deductions) stay deferred: they need
+    a real container and a real cloud instance to calibrate, and guessing
+    would violate the project's own rule.
+  * scoring: the audit profile is now carried by ScoreEngine and applied
+    inside apply(), the single choke point every check result passes
+    through. Previously the caller had to invoke apply_profile() first, and
+    only 2 of the 14 engine.apply() sites in bob/runner.py did — the 12
+    hand-rolled always-on sections never applied it, leaving 8 shipped
+    overrides in desktop.conf and workstation.conf silently dead. The most
+    visible consequence: services.exposure.open_local stayed WARN on every
+    profile, so a host running Samba restricted to the LAN by a UFW rule —
+    the recommended configuration — could never return exit 0, although 0 is
+    documented as "No issues detected" and the exit codes are a stable
+    public API. BREAKING on desktop/workstation (warning_count drops); server
+    is unchanged, it ships zero overrides by design.
+  * output: colour is auto-detected. `bob > report.txt` and `bob | less` no
+    longer contain ANSI escape codes; set FORCE_COLOR=1 for the old
+    behaviour. supports_color() had existed all along, correct and called
+    from nowhere. Resolution order: --no-color, then NO_COLOR, then
+    FORCE_COLOR, then isatty(). print_help hardcoded its own bold escape, so
+    `bob --no-color --help` printed bold anyway — it now goes through the
+    same decision, with a guard forbidding literal escapes in bob/cli.py.
+  * help: the --no-color line said "NO_COLOR= also work", which reads either
+    as the assignment or as the empty value — and the empty value is exactly
+    the case that does not disable colour. Replaced by an explicit entry for
+    NO_COLOR and FORCE_COLOR.
+  * lint: B904 and B905, deferred through v0.13.x because they change
+    runtime behaviour, are addressed; .ruff.toml now ignores nothing.
+  * packaging: 5 debian and 3 rpm changelog entries named the wrong weekday
+    (lintian debian-changelog-has-wrong-day-of-week); all 46 entries in each
+    file are now correct, with a guard that recomputes the day from the date.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 28 Aug 2026 22:00:00 +0200
+
 bodyguard-of-bits (0.13.4-1) UNRELEASED; urgency=low
 
   * Documentation accuracy pass. Factual corrections only — no rewriting of

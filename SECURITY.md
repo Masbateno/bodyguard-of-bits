@@ -9,14 +9,24 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.13.x         | ✅ current          |
+| 0.14.x         | ✅ current          |
+| 0.13.x         | ❌ end of life      |
 | 0.12.x         | ❌ end of life      |
 | 0.8.x – 0.11.x | ❌ end of life      |
 | 0.7.x          | ❌ end of life      |
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.13.x+1`. A breaking change bumps the minor (`0.14.0`).
+Patches release as `0.14.x+1`. A breaking change bumps the minor (`0.15.0`).
+
+**v0.13.x is end-of-life as of 2026-08-28** (the day v0.14.0 ships, per the
+"latest minor line only" policy above). No security fixes will be backported.
+Users on v0.13.x must `pipx upgrade bodyguard-of-bits` to v0.14.x. The upgrade
+carries two **behavioural** changes: audits under the `desktop` / `workstation`
+profiles report fewer warnings (their profile overrides were silently inert
+before, so a host could never return exit 0), and output redirected to a file
+or a pipe no longer contains ANSI colour codes — set `FORCE_COLOR=1` to restore
+the previous behaviour.
 
 **v0.12.x is end-of-life as of 2026-06-20** (the day v0.13.0 ships and the EOL
 is formally declared, per the "latest minor line only" policy above). No

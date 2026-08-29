@@ -8,14 +8,26 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.13.x         | ✅ courante         |
+| 0.14.x         | ✅ courante         |
+| 0.13.x         | ❌ fin de vie       |
 | 0.12.x         | ❌ fin de vie       |
 | 0.8.x – 0.11.x | ❌ fin de vie       |
 | 0.7.x          | ❌ fin de vie       |
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.13.x+1`. Un breaking change bump le minor (`0.14.0`).
+Les correctifs sortent en `0.14.x+1`. Un breaking change bump le minor (`0.15.0`).
+
+**v0.13.x est en fin de vie depuis le 28-08-2026** (jour du ship de v0.14.0,
+selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun
+correctif de sécurité ne sera backporté. Les utilisateurs sur v0.13.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.14.x. La mise à jour comporte deux
+changements **de comportement** : les audits sous les profils `desktop` /
+`workstation` rapportent moins d'avertissements (leurs overrides de profil
+étaient silencieusement inertes auparavant, si bien qu'un hôte ne pouvait
+jamais retourner exit 0), et la sortie redirigée vers un fichier ou un pipe ne
+contient plus de codes couleur ANSI — posez `FORCE_COLOR=1` pour retrouver le
+comportement précédent.
 
 **v0.12.x est en fin de vie depuis le 20-06-2026** (jour du ship v0.13.0 où l'EOL est formellement déclarée, selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun correctif de sécurité ne sera backporté en v0.12.x. Les utilisateurs sur v0.12.x doivent `pipx upgrade bodyguard-of-bits` vers v0.13.x pour recevoir les patchs — l'upgrade est entièrement rétro-compatible (v0.13.0 *ajoute* seulement deux checks INFO-only ; aucun champ de sortie ni code de sortie existant ne change). Les lignes v0.8.x – v0.11.x sont également en fin de vie, chacune remplacée par le minor suivant ; v0.13.x est la seule ligne supportée.
 

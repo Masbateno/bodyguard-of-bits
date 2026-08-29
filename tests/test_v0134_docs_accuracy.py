@@ -201,7 +201,10 @@ class TestLocaleSectionParity:
             "different heading-depth sequence — positional pairing is unsafe"
         )
         thin = []
-        for (t_en, w_en), (_t_fr, w_fr) in zip(en, fr):
+        # strict=True: the equal-length assertion above already
+        # guarantees it, and it keeps the pairing honest if that
+        # assertion is ever relaxed.
+        for (t_en, w_en), (_t_fr, w_fr) in zip(en, fr, strict=True):
             if w_en < _MIN_WORDS:
                 continue
             ratio = w_fr / w_en
@@ -328,3 +331,62 @@ class TestPackagingChangelogWeekdays:
             if f"{datetime.date(int(y), _MONTHS[mon], int(d)):%a}" != wd
         ]
         assert not wrong, "bob.spec weekday mismatch:\n" + "\n".join(wrong)
+
+
+# ---------------------------------------------------------------------------
+# 5 — the release documents must agree on the test count
+# ---------------------------------------------------------------------------
+
+class TestDocumentedTestCountIsConsistent:
+    """SNAPSHOT and the four changelogs quote a test count for the release.
+
+    Nothing recomputes it, and coupling it to the *live* count would make the
+    guard fail on every commit that adds a test — the number describes a
+    release, not the working tree. What is checkable with zero noise is that
+    the documents agree with each other: during the v0.14.0 release the
+    changelogs were written with 6591 (an arithmetic slip: 6547 + 29 = 6576)
+    while SNAPSHOT, computed from an actual collection run, said 6576.
+    """
+
+    _SOURCES = [
+        ("DOCUMENTS/SNAPSHOT.md", r"(\d{4,}) unit tests"),
+        ("CHANGELOG.md", r"\*\*Tests\*\* [\d ]+→ \*\*(\d{4,})\*\*"),
+        ("CHANGELOG_FR.md", r"\*\*Tests\*\* [\d ]+→ \*\*(\d{4,})\*\*"),
+        ("DOCUMENTS/CHANGELOG_FULL.md", r"→ \*\*(\d{4,})\*\*"),
+        ("DOCUMENTS/CHANGELOG_FULL_FR.md", r"→ \*\*(\d{4,})\*\*"),
+    ]
+
+    def test_all_release_documents_quote_the_same_count(self):
+        found = {}
+        for rel, pattern in self._SOURCES:
+            text = (_REPO_ROOT / rel).read_text(encoding="utf-8")
+            m = re.search(pattern, text)
+            assert m, f"no test count found in {rel} (pattern {pattern!r})"
+            found[rel] = int(m.group(1))
+        counts = set(found.values())
+        assert len(counts) == 1, (
+            "the release documents disagree on the test count:\n"
+            + "\n".join(f"  {k}: {v}" for k, v in found.items())
+        )
+
+    def test_documented_count_matches_a_real_collection(self):
+        """Cheap sanity bound: the documented figure must be in the right
+        ballpark of what pytest actually collects, so a stale release number
+        cannot drift by hundreds unnoticed."""
+        text = (_REPO_ROOT / "DOCUMENTS" / "SNAPSHOT.md").read_text(encoding="utf-8")
+        documented = int(re.search(r"(\d{4,}) unit tests", text).group(1))
+        # NOT -q: the quiet collector prints per-file counts and omits the
+        # "N tests collected" summary line this guard reads.
+        out = subprocess.run(
+            [sys.executable, "-m", "pytest", "-p", "no:cacheprovider",
+             "--collect-only"],
+            capture_output=True, text=True, cwd=_REPO_ROOT,
+        ).stdout
+        m = re.search(r"(\d+) tests collected", out)
+        if not m:
+            pytest.skip("could not read the collected count")
+        live = int(m.group(1))
+        assert abs(live - documented) <= 50, (
+            f"SNAPSHOT documents {documented} tests, pytest collects {live} — "
+            "the release figure has drifted; refresh it at ship time"
+        )

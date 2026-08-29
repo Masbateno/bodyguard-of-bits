@@ -6,6 +6,115 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.14.0] — 2026-08-28
+
+**BREAKING contract-fix bundle. The "teeth" this version was reserved for stay deferred.**
+
+v0.14.0 was planned as the release that turns the v0.13.x runtime signals into score deductions — privileged containers, nftables scoring parity. Calibrating those needs a real container and a real cloud instance to field-test against, and neither is available. The backlog's own rule is *ne pas deviner*, so they wait.
+
+What ships instead are three contract defects found by auditing the tool against itself, plus the lint and packaging items deferred through v0.13.x.
+
+### 🔴 The audit profile never reached 12 of the 14 check-result paths
+
+Until now the caller had to invoke `apply_profile()` before `engine.apply()`. In `bob/runner.py`, of the 14 `engine.apply()` sites, exactly two did: the generic `_sec` helper and the plugin path. The other twelve — every hand-rolled always-on section — did not:
+
+```
+firewall · firewall_rules · ufw_logging · firewall_iptables · firewall_drivers
+network_context · services · ports · logs · ddns · docker · virtualization
+```
+
+So every profile override targeting one of them was inert. Eight of them ship in the box:
+
+| Override (desktop.conf and workstation.conf) | Effect until v0.14.0 |
+|---|---|
+| `ddns.warn = info` | dead |
+| `services.exposed.avahi = info` | dead |
+| `services.exposure.open_local = info` | dead |
+| `firewall_drivers.ip_forward_enabled = info` | dead |
+
+Measured live before the fix, `services.exposure.open_local` reported WARN on **all three** profiles, including the two whose `.conf` declares it INFO.
+
+The consequence is not cosmetic. `warning_count` counts by *level*, not by nature, and `bob/__main__.py` maps `warning_count > 0` to `EXIT_WARNINGS`. A host running Samba restricted to the LAN by a UFW rule — the configuration BOB itself recommends — therefore returned exit 1 permanently, and `exit 0` ("No issues detected", part of the stable exit-code API) was unreachable no matter how the host was configured.
+
+`ScoreEngine` now takes `profile=` and applies the overrides inside `apply()` — the single choke point every result must pass through. The alternative, repeating the call in front of each `engine.apply()`, was rejected: that is precisely the design that drifted, and the next hand-rolled section would be written without it.
+
+Applying the profile happens *first* in `apply()`, before deductions and findings are accumulated, because a profile can drop a deduction or remove a finding outright (`skip`). The import is lazy — `bob.profiles` imports `CheckResult` and `FindingLevel` from `bob.scoring`, so a top-level import would be circular.
+
+`bob/watch.py` builds its own engine and is easy to miss; it would have silently lost overrides in watch mode. It passes `profile=` too, and a guard asserts every construction site does.
+
+**Verified live, 4 profiles × 2 locales:**
+
+```
+server       warn 13 -> 13    (strict baseline preserved — it ships no overrides)
+desktop      warn  4 ->  2    (two open_local findings become INFO)
+workstation  warn  4 ->  2
+container    warn       ->  2
+```
+
+Score is unchanged everywhere: `open_local` carried no deduction. EN and FR identical on every profile.
+
+**On why this survived so long:** the full suite passed *before* the fix too. `tests/test_profiles.py` exercises `apply_profile` in isolation; nothing tested that the runner actually called it. The new guards are therefore behavioural rather than structural — the old design was "correct" at every call site that remembered.
+
+### Colour is auto-detected (BREAKING)
+
+`bob > report.txt` wrote ANSI escape codes into the file. `bob | less` showed them raw. `output.supports_color()` had existed since early on: correct, and called from nowhere.
+
+Resolution order in `output.init()`, first match wins:
+
+1. `--no-color` / `--no-colour` — explicit request, always wins
+2. `NO_COLOR` non-empty (v0.13.3; an empty value is ignored, per [no-color.org](https://no-color.org))
+3. `FORCE_COLOR` non-empty — **new**, the escape hatch for `bob | less -R` or capturing a coloured log on purpose
+4. `stdout.isatty()` — the actual change
+
+`supports_color()` also stops raising on a detached or closed stdout: some capture harnesses replace `sys.stdout` with an object whose `isatty()` throws.
+
+`print_help` hardcoded `\033[1m` for its section headers, so `bob --no-color --help` printed bold anyway and `bob --help > file` wrote escapes into it. That predates this release — the help text simply never went through the colour machinery. It does now, and a guard forbids literal escapes in `bob/cli.py` so the bypass cannot return.
+
+Measured: audit path 0 escapes piped / 50 with `FORCE_COLOR`; `--help` 0 piped, 10 forced, 0 with `--no-color` even when forced.
+
+Four existing tests asserted the old contract ("default is colour"). They now assert the two halves of the real one. `tests/test_v0133_release.py`'s `NO_COLOR` probe sets `FORCE_COLOR` throughout so the new TTY dimension cannot decide the outcome — without that it would pass for the wrong reason, since pytest's stdout is not a terminal.
+
+### `--help` wording
+
+Deferred here from v0.13.4 on purpose, so the text describes the final behaviour instead of being patched twice. The line read:
+
+```
+-n, --no-color   Disable colour output (--no-colour and NO_COLOR= also work)
+```
+
+`NO_COLOR=` reads either as the assignment `NO_COLOR=1` or as the empty value — and the empty value is exactly the case that does *not* disable colour. It is now an explicit entry naming both environment variables and stating that colour is auto-detected.
+
+### B904 / B905 — the last ruff ignores are gone
+
+Deferred through v0.13.x because their fixes change runtime behaviour, which did not belong in a patch. Four `B904` sites, two different answers, because the right one depends on whether the original exception carries diagnostic value:
+
+- **`bob/cli.py` (2 sites) — `from None`.** The `ValueError` from `int()` is an implementation detail of argument parsing. Under `BOB_DEBUG=1`, which prints the full traceback, the user would otherwise get *"during handling of the above exception"* in front of a plain typo. Verified: `__suppress_context__` is now `True`.
+- **`bob/_sandbox.py` (2 sites) — `from exc`.** The opposite holds: which `OSError` (EACCES? ENOENT?) and where the `SyntaxError` landed is exactly what a plugin author needs. Verified: `__cause__` is preserved.
+
+`B905` — one `zip()` in `bob/cron/_parse.py` pairing the 5 cron fields against `_CRON_FIELD_BOUNDS`. The regex immediately above already guarantees exactly 5 fields and the table has 5 entries, so `strict=True` cannot fire today; it documents the invariant, and if a 6th bound is ever added without touching the regex the validator fails loudly instead of silently checking only the first five.
+
+No new test for these: the gate itself is the guard now that `.ruff.toml` ignores nothing.
+
+### Packaging changelog weekdays
+
+Five `debian/changelog` and three `bob.spec` entries named the wrong day for their date — `lintian debian-changelog-has-wrong-day-of-week`, which would surface at the first real Debian packaging review. Two of the debian ones came from v0.13.3 and v0.13.4; the rest pre-date them. All 46 entries in each file are now correct, with a guard that recomputes the weekday from the date.
+
+### Guards
+
++31 across three files, every one mutation-tested: a real defect is injected, the failure confirmed, the file restored.
+
+- `tests/test_v0140_profile_wiring.py` — an override must reach the engine; a downgrade must drop the deduction, not just the label; `apply` must stay idempotent so a manual `apply_profile` cannot double-punish; `runner.py` must not call `apply_profile` again; every `ScoreEngine` construction must pass `profile=`.
+- `tests/test_v0140_colour_resolution.py` — the full 8-case precedence matrix, an AST check that `init()` actually calls `supports_color()`, the detached-stdout path, four end-to-end `--help` cases, and no literal escapes in `bob/cli.py`.
+- `tests/test_v0134_docs_accuracy.py` — the two weekday guards.
+
+### Tests
+
+6547 → **6578**. 0 regression. ruff: 0 finding with nothing ignored.
+
+Upgrade: `pipx upgrade bodyguard-of-bits`. **BREAKING** — desktop/workstation audits report fewer warnings and may now exit 0 where they always exited 1; piped output loses its colour unless `FORCE_COLOR=1` is set.
+
+---
+
 ## [v0.13.4] — 2026-08-28
 
 **Documentation accuracy pass. Factual corrections only — no rewriting of text that was already correct, and no audit behaviour change.**

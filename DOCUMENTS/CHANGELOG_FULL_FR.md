@@ -6,6 +6,115 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.14.0] — 28-08-2026
+
+**Bundle BREAKING de corrections de contrat. Les « dents » auxquelles cette version était réservée restent reportées.**
+
+La v0.14.0 était prévue comme la release transformant les signaux runtime de v0.13.x en déductions de score — conteneurs privilégiés, parité de scoring nftables. Les calibrer exige un vrai conteneur et une vraie instance cloud pour le field test, et aucun des deux n'est disponible. La règle inscrite au backlog est *ne pas deviner* : elles attendent.
+
+À la place, trois défauts de contrat trouvés en auditant l'outil contre lui-même, plus les items de lint et de packaging différés tout au long de v0.13.x.
+
+### 🔴 Le profil d'audit n'atteignait jamais 12 des 14 chemins de résultat
+
+Jusqu'ici, il incombait à l'appelant d'invoquer `apply_profile()` avant `engine.apply()`. Dans `bob/runner.py`, sur les 14 sites `engine.apply()`, exactement deux le faisaient : le helper générique `_sec` et le chemin plugin. Les douze autres — toutes les sections always-on écrites à la main — non :
+
+```
+firewall · firewall_rules · ufw_logging · firewall_iptables · firewall_drivers
+network_context · services · ports · logs · ddns · docker · virtualization
+```
+
+Tout override de profil visant l'une d'elles était donc inerte. Huit sont livrés d'origine :
+
+| Override (desktop.conf et workstation.conf) | Effet jusqu'à v0.14.0 |
+|---|---|
+| `ddns.warn = info` | mort |
+| `services.exposed.avahi = info` | mort |
+| `services.exposure.open_local = info` | mort |
+| `firewall_drivers.ip_forward_enabled = info` | mort |
+
+Mesuré en live avant le fix, `services.exposure.open_local` remontait WARN sur les **trois** profils, y compris les deux dont le `.conf` le déclare INFO.
+
+La conséquence dépasse le cosmétique. `warning_count` compte par *niveau*, pas par nature, et `bob/__main__.py` mappe `warning_count > 0` sur `EXIT_WARNINGS`. Un hôte avec Samba restreint au LAN par une règle UFW — la configuration que BOB recommande lui-même — retournait donc exit 1 en permanence, et l'`exit 0` (« No issues detected », partie de l'API stable des codes de sortie) était inatteignable quelle que soit la configuration.
+
+`ScoreEngine` reçoit désormais `profile=` et applique les overrides dans `apply()` — le point de passage unique par lequel chaque résultat doit transiter. L'alternative, répéter l'appel devant chaque `engine.apply()`, a été écartée : c'est précisément le design qui a dérivé, et la prochaine section écrite à la main l'oublierait à son tour.
+
+L'application du profil intervient **en premier** dans `apply()`, avant l'accumulation des déductions et des findings, parce qu'un profil peut retirer une déduction ou supprimer entièrement un finding (`skip`). L'import est paresseux — `bob.profiles` importe `CheckResult` et `FindingLevel` depuis `bob.scoring`, un import au niveau module serait circulaire.
+
+`bob/watch.py` construit son propre engine et se laisse facilement oublier ; il aurait silencieusement perdu les overrides en mode watch. Il transmet `profile=` lui aussi, et un garde vérifie que tous les sites de construction le font.
+
+**Vérifié en live, 4 profils × 2 locales :**
+
+```
+server       warn 13 -> 13    (baseline stricte préservée — aucun override livré)
+desktop      warn  4 ->  2    (deux findings open_local passent INFO)
+workstation  warn  4 ->  2
+container    warn       ->  2
+```
+
+Le score est inchangé partout : `open_local` ne portait aucune déduction. EN et FR identiques sur chaque profil.
+
+**Pourquoi cela a survécu si longtemps :** la suite complète passait *aussi* avant le fix. `tests/test_profiles.py` exerce `apply_profile` en isolation ; rien ne testait que le runner l'appelait réellement. Les nouveaux gardes sont donc comportementaux plutôt que structurels — l'ancien design était « correct » à chaque site qui y pensait.
+
+### La couleur est auto-détectée (BREAKING)
+
+`bob > rapport.txt` écrivait des séquences ANSI dans le fichier. `bob | less` les affichait brutes. `output.supports_color()` existait depuis longtemps : correcte, et appelée nulle part.
+
+Ordre de résolution dans `output.init()`, première correspondance gagnante :
+
+1. `--no-color` / `--no-colour` — demande explicite, gagne toujours
+2. `NO_COLOR` non vide (v0.13.3 ; une valeur vide est ignorée, selon [no-color.org](https://no-color.org))
+3. `FORCE_COLOR` non vide — **nouveau**, l'échappatoire pour `bob | less -R` ou pour capturer volontairement un log couleur
+4. `stdout.isatty()` — le changement proprement dit
+
+`supports_color()` ne lève plus non plus sur un stdout détaché ou fermé : certains harnais de capture remplacent `sys.stdout` par un objet dont `isatty()` échoue.
+
+`print_help` codait `\033[1m` en dur pour ses en-têtes de section, donc `bob --no-color --help` affichait du gras malgré tout et `bob --help > fichier` y écrivait des séquences. Cela précède cette release — le texte d'aide ne passait simplement jamais par la machinerie couleur. C'est désormais le cas, et un garde interdit les séquences littérales dans `bob/cli.py` pour que le contournement ne revienne pas.
+
+Mesuré : chemin d'audit 0 séquence en pipe / 50 avec `FORCE_COLOR` ; `--help` 0 en pipe, 10 forcé, 0 avec `--no-color` même forcé.
+
+Quatre tests existants affirmaient l'ancien contrat (« par défaut = couleur »). Ils affirment maintenant les deux moitiés du vrai. La sonde `NO_COLOR` de `tests/test_v0133_release.py` pose `FORCE_COLOR` en permanence pour que la nouvelle dimension TTY ne puisse pas décider du résultat — sans cela elle passerait pour la mauvaise raison, stdout n'étant pas un terminal sous pytest.
+
+### Formulation de `--help`
+
+Reportée ici depuis la v0.13.4 à dessein, pour que le texte décrive le comportement final au lieu d'être corrigé deux fois. La ligne disait :
+
+```
+-n, --no-color   Disable colour output (--no-colour and NO_COLOR= also work)
+```
+
+`NO_COLOR=` se lit soit comme l'affectation `NO_COLOR=1`, soit comme la valeur vide — or la valeur vide est exactement le cas qui ne désactive *pas* la couleur. C'est désormais une entrée explicite nommant les deux variables d'environnement et indiquant que la couleur est auto-détectée.
+
+### B904 / B905 — les derniers ignores ruff disparaissent
+
+Différés tout au long de v0.13.x parce que leurs corrections changent le comportement à l'exécution, ce qui n'avait pas sa place dans un patch. Quatre sites `B904`, deux réponses différentes, car la bonne dépend de la valeur diagnostique de l'exception d'origine :
+
+- **`bob/cli.py` (2 sites) — `from None`.** La `ValueError` d'`int()` est un détail d'implémentation du parsing d'arguments. Sous `BOB_DEBUG=1`, qui affiche la traceback complète, l'utilisateur verrait sinon *« during handling of the above exception »* devant une simple faute de frappe. Vérifié : `__suppress_context__` vaut désormais `True`.
+- **`bob/_sandbox.py` (2 sites) — `from exc`.** L'inverse s'applique : quelle `OSError` (EACCES ? ENOENT ?) et où la `SyntaxError` est tombée, c'est exactement ce dont un auteur de plugin a besoin. Vérifié : `__cause__` est préservé.
+
+`B905` — un `zip()` dans `bob/cron/_parse.py` appariant les 5 champs cron à `_CRON_FIELD_BOUNDS`. La regex juste au-dessus garantit déjà exactement 5 champs et la table en contient 5, donc `strict=True` ne peut pas se déclencher aujourd'hui ; il documente l'invariant, et si une 6ᵉ borne est un jour ajoutée sans toucher la regex, le validateur échoue bruyamment au lieu de ne vérifier silencieusement que les cinq premiers.
+
+Aucun test nouveau pour ces points : la barrière elle-même est le garde, maintenant que `.ruff.toml` n'ignore plus rien.
+
+### Jours de semaine des changelogs de packaging
+
+Cinq entrées de `debian/changelog` et trois de `bob.spec` nommaient le mauvais jour pour leur date — `lintian debian-changelog-has-wrong-day-of-week`, qui remonterait à la première vraie revue de packaging Debian. Deux des entrées debian viennent de v0.13.3 et v0.13.4 ; les autres leur sont antérieures. Les 46 entrées de chaque fichier sont désormais correctes, avec un garde qui recalcule le jour depuis la date.
+
+### Gardes
+
++31 sur trois fichiers, tous mutation-testés : un vrai défaut est injecté, l'échec confirmé, le fichier restauré.
+
+- `tests/test_v0140_profile_wiring.py` — un override doit atteindre l'engine ; un downgrade doit retirer la déduction, pas seulement l'étiquette ; `apply` doit rester idempotent pour qu'un `apply_profile` manuel ne double-pénalise pas ; `runner.py` ne doit plus appeler `apply_profile` ; toute construction de `ScoreEngine` doit passer `profile=`.
+- `tests/test_v0140_colour_resolution.py` — la matrice de précédence complète à 8 cas, un contrôle AST que `init()` appelle bien `supports_color()`, le chemin stdout détaché, quatre cas `--help` de bout en bout, et aucune séquence littérale dans `bob/cli.py`.
+- `tests/test_v0134_docs_accuracy.py` — les deux gardes de jours de semaine.
+
+### Tests
+
+6547 → **6578**. 0 régression. ruff : 0 finding, plus rien d'ignoré.
+
+Mise à jour : `pipx upgrade bodyguard-of-bits`. **BREAKING** — les audits desktop/workstation rapportent moins d'avertissements et peuvent désormais sortir en 0 là où ils sortaient toujours en 1 ; la sortie redirigée perd ses couleurs sauf si `FORCE_COLOR=1` est posé.
+
+---
+
 ## [v0.13.4] — 28-08-2026
 
 **Passe d'exactitude documentaire. Corrections factuelles uniquement — aucune réécriture d'un texte déjà correct, aucun changement de comportement d'audit.**
