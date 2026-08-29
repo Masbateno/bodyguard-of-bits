@@ -55,14 +55,23 @@ class TestInit:
         assert output._c.reset == ""
         assert output._c.green == ""
 
-    def test_init_color_enables_ansi(self):
+    # v0.14.0 F (BREAKING): colour is no longer unconditional — init() now
+    # consults supports_color(), so a non-TTY stdout (which is what pytest
+    # provides) means no colour. These two used to assert "default is
+    # colour"; they now assert the two halves of the real contract.
+    def test_init_color_enables_ansi_when_forced(self, monkeypatch):
+        monkeypatch.setenv("FORCE_COLOR", "1")
         output.init(no_color=False)
         assert output._c.reset != ""
         assert output._c.green != ""
 
-    def test_init_default_is_color(self):
+    def test_init_default_is_plain_when_stdout_is_not_a_tty(self, monkeypatch):
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
+        monkeypatch.delenv("NO_COLOR", raising=False)
         output.init()
-        assert output._c.reset != ""
+        assert output._c.reset == "", (
+            "piping BOB into a file must not write ANSI escape codes"
+        )
 
 
 class TestStripAnsi:

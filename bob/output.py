@@ -158,13 +158,30 @@ def init(no_color: bool = False, quiet: bool = False, min_level: str = "") -> No
         quiet:     If True, all print_* functions are silenced.
         min_level: Minimum severity to display: '' (all), 'warn', or 'alert'.
 
-    The ``NO_COLOR`` environment variable (https://no-color.org) is honoured
-    as an additional way to reach the same state as ``--no-color`` — per the
-    spec, *any* non-empty value disables colour. Added in v0.13.3; strictly
-    additive, since it can only ever turn colour off.
+    Colour is resolved in this order, first match wins:
+
+      1. ``--no-color`` / ``--no-colour`` — an explicit request, always wins.
+      2. ``NO_COLOR`` set to any non-empty value (https://no-color.org). An
+         empty value is ignored, per the spec.
+      3. ``FORCE_COLOR`` set to any non-empty value — keeps colour on even
+         when stdout is not a terminal (piping into ``less -R``, capturing
+         a coloured log on purpose).
+      4. Otherwise: on when stdout is a TTY, off when it is not.
+
+    Step 4 is **v0.14.0 and BREAKING**. Until then BOB emitted ANSI
+    unconditionally, so ``bob --breakdown > report.txt`` wrote escape codes
+    into the file and ``bob | less`` showed them raw. ``supports_color()``
+    had existed since early on, correct and called from nowhere; this wires
+    it, and ``FORCE_COLOR`` is the escape hatch for anyone who relied on the
+    old behaviour.
     """
     global _c, _no_color, _quiet, _min_level_threshold
-    _no_color = no_color or bool(os.environ.get("NO_COLOR"))
+    if no_color or os.environ.get("NO_COLOR"):
+        _no_color = True
+    elif os.environ.get("FORCE_COLOR"):
+        _no_color = False
+    else:
+        _no_color = not supports_color()
     _quiet    = quiet
     _c = _COLOURS_OFF if (_no_color or quiet) else _COLOURS_ON
     _min_level_threshold = _LEVEL_RANK.get(min_level.lower(), 0)
@@ -629,9 +646,17 @@ def _visual_width(text: str) -> int:
 
 
 def supports_color() -> bool:
-    """Return True if the current terminal supports ANSI colours."""
-    return (
-        hasattr(sys.stdout, "isatty")
-        and sys.stdout.isatty()
-        and sys.platform != "win32"
-    )
+    """Return True if stdout is a terminal that can render ANSI colours.
+
+    Wired into ``init()`` since v0.14.0. ``isatty`` is guarded with hasattr
+    because stdout is replaced by a plain object in some capture harnesses.
+    """
+    try:
+        return (
+            hasattr(sys.stdout, "isatty")
+            and sys.stdout.isatty()
+            and sys.platform != "win32"
+        )
+    except (ValueError, OSError):
+        # Detached / closed stdout — assume no colour rather than crash.
+        return False

@@ -191,7 +191,16 @@ class TestNoColorEnv:
 
     @staticmethod
     def _probe(value):
+        """Resolve _no_color for a given NO_COLOR value.
+
+        FORCE_COLOR is set throughout so the TTY dimension added in v0.14.0
+        cannot decide the outcome: under pytest stdout is not a terminal, so
+        without it every case would come back "no colour" and the test would
+        pass for the wrong reason. NO_COLOR must still win over FORCE_COLOR —
+        that ordering is asserted here too.
+        """
         os.environ.pop("NO_COLOR", None)
+        os.environ["FORCE_COLOR"] = "1"
         if value is not None:
             os.environ["NO_COLOR"] = value
         import bob.output as o
@@ -201,6 +210,7 @@ class TestNoColorEnv:
             return o._no_color
         finally:
             os.environ.pop("NO_COLOR", None)
+            os.environ.pop("FORCE_COLOR", None)
             importlib.reload(o)
             o.init(no_color=False, quiet=False)
 

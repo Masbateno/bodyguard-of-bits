@@ -750,8 +750,15 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
 def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for future i18n
     """Print the CLI help message, grouped by category."""
 
+    # v0.14.0 F: the section headers used to hardcode the bold escape, so
+    # `bob --no-color --help` still emitted ANSI and `bob --help > file`
+    # wrote escape codes into it. Route through the output module so --help
+    # obeys the same rule as the rest of the tool (--no-color / NO_COLOR /
+    # FORCE_COLOR / TTY detection).
     def section(title: str) -> None:
-        print(f"\n\033[1m{title}\033[0m")
+        from bob import output as _o
+        bold, reset = (_o._c.bold, _o._c.reset) if not _o._no_color else ("", "")
+        print(f"\n{bold}{title}{reset}")
 
     def opt(flags: str, desc: str, col: int = 28) -> None:
         print(f"  {flags:<{col}}  {desc}")
@@ -776,7 +783,9 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("-v, --verbose",          "Show detailed port exposure for each service")
     opt("-d, --detailed",         "Save full audit report to a log file")
     opt("-q, --quiet",            "Suppress all output — use exit code to detect issues")
-    opt("-n, --no-color",         "Disable colour output (--no-colour and NO_COLOR= also work)")
+    opt("-n, --no-color",         "Disable colour output (alias --no-colour)")
+    opt("    NO_COLOR / FORCE_COLOR", "Env vars: force colour off / on (colour is")
+    opt("",                       "auto-detected — off when output is not a terminal)")
     opt("    --format=FORMAT",    "Output format: json | json-full | csv | markdown | html")
     opt("    --output=FORMAT",    "Alias of --format (not to be confused with --output-dir)")
     opt("-j / -J",                "Shorthands: --format=json / --format=json-full")
