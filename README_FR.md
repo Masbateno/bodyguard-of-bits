@@ -42,7 +42,7 @@ Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre 
 
 - Un score 10/10 sur un poste de travail en LAN ne signifie **pas** un 10/10 sur le même hôte déplacé sur un cloud public — re-auditer avec le profil approprié.
 - Un finding marqué `improvement` au lieu de `action` reflète le contexte réseau (ex. l'authentification SSH par mot de passe est une hygiène acceptable sur un hôte LAN-only, mais à durcir avant d'exposer l'hôte directement sur internet).
-- Le profil d'audit (`server` / `workstation` / `container`) encode le modèle de menace. Changer de profil change le verdict — c'est par design.
+- Le profil d'audit (`server` / `desktop` / `workstation` / `container`) encode le modèle de menace. Changer de profil change le verdict — c'est par design.
 - La détection de contexte réseau (NAT / IP publique / état des interfaces) est **heuristique**, pas un probing actif de joignabilité. Elle indique ce que BOB infère depuis le système local, pas ce qu'un attaquant observerait de l'extérieur.
 
 Un mode CIS strict (sans modulation contextuelle) est prévu sur la roadmap.
@@ -278,13 +278,20 @@ Les patterns sont appliqués sur le basename du binaire via `fnmatch`. Les binai
 
 ## Codes de sortie
 
-| Code | Signification |
-|------|--------------|
-| `0` | Score ≥ 7 — aucun problème significatif |
-| `1` | Score 4–6 — avertissements présents |
-| `2` | Score 1–3 — alertes présentes |
-| `3` | Score 0 — problèmes critiques |
-| `4` | Score sous le seuil `--target N` (gate personnalisable, ex : `bob --target 8` échoue en CI si le score < 8) |
+> **API publique stable** — ces codes ne changeront pas au sein d'une version majeure.
+
+Le code reflète les *findings*, pas le score :
+
+| Code | Constante | Signification |
+|------|-----------|---------------|
+| `0` | `EXIT_OK` | Audit propre — aucune alerte, aucun avertissement |
+| `1` | `EXIT_WARNINGS` | Avertissements détectés (améliorations suggérées) |
+| `2` | `EXIT_ALERTS` | Alertes détectées — action requise |
+| `3` | `EXIT_ERROR` | Erreur technique (parsing CLI, E/S, interne) |
+| `4` | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N |
+
+Notez que `3` est une **erreur technique**, pas un mauvais score : un audit qui
+échoue ne sort jamais en 3. Utilisez `--target N` pour poser un seuil de score en CI.
 
 ---
 

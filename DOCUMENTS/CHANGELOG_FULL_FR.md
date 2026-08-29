@@ -101,11 +101,31 @@ Cinq entrées de `debian/changelog` et trois de `bob.spec` nommaient le mauvais 
 
 ### Gardes
 
-+31 sur trois fichiers, tous mutation-testés : un vrai défaut est injecté, l'échec confirmé, le fichier restauré.
++43 sur quatre fichiers, tous mutation-testés : un vrai défaut est injecté, l'échec confirmé, le fichier restauré.
 
 - `tests/test_v0140_profile_wiring.py` — un override doit atteindre l'engine ; un downgrade doit retirer la déduction, pas seulement l'étiquette ; `apply` doit rester idempotent pour qu'un `apply_profile` manuel ne double-pénalise pas ; `runner.py` ne doit plus appeler `apply_profile` ; toute construction de `ScoreEngine` doit passer `profile=`.
 - `tests/test_v0140_colour_resolution.py` — la matrice de précédence complète à 8 cas, un contrôle AST que `init()` appelle bien `supports_color()`, le chemin stdout détaché, quatre cas `--help` de bout en bout, et aucune séquence littérale dans `bob/cli.py`.
 - `tests/test_v0134_docs_accuracy.py` — les deux gardes de jours de semaine.
+
+### README — la table des codes de sortie était fausse, et non gardée
+
+Vérifier les README contre cette release a fait remonter un défaut plus ancien qu'elle : `README.md` et `README_FR.md` mappaient chaque code de sortie sur une **plage de score** —
+
+```
+| 0 | Score >= 7 — aucun problème significatif |
+| 3 | Score 0 — problèmes critiques            |
+```
+
+— alors que les codes sont pilotés par le *nombre* de findings, et que `3` est `EXIT_ERROR`, une **erreur technique**. Un audit qui échoue ne sort jamais en 3. `--help`, `DOCUMENTS/README_TECH.md` et `bob/__main__.py` étaient tous d'accord entre eux ; seuls les deux documents les plus lus ne l'étaient pas. Les deux portent désormais le vrai contrat avec le nom des constantes, plus une note explicite indiquant que `3` n'est pas un mauvais score et que `--target N` est le moyen de poser un seuil en CI.
+
+Un garde (`TestExitCodesAreDocumentedCorrectly`) épingle chaque ligne `` `N` | `EXIT_*` `` des quatre documents contre les vraies constantes de `bob.__main__`, exige que chaque constante soit documentée, et rejette catégoriquement toute formulation en plage de score dans cette table. Mutation-testé en restaurant la ligne d'origine.
+
+Corrigé au passage :
+
+- **Le cadrage de la couleur** — `README_TECH{,_FR}.md` annonçait *« `--no-color` pour une sortie propre dans les pipes et fichiers log »*. Vrai, mais obsolète : depuis cette release c'est automatique. Réécrit pour décrire l'auto-détection, avec `--no-color` / `NO_COLOR` / `FORCE_COLOR` comme forçages.
+- **Une nouvelle table de variables d'environnement** dans `README_TECH{,_FR}.md`. `NO_COLOR`, `FORCE_COLOR`, `BOB_DEBUG` et `BOB_SHARE` étaient documentées dans `SECURITY.md` mais absentes du README technique — `FORCE_COLOR`, nouvelle échappatoire visible par l'utilisateur, n'y figurait nulle part. La table énonce la chaîne de précédence de la couleur.
+- **Les exemples `ScoreEngine()`** — `README_DEV{,_FR}.md` (diagramme de flux et extrait de calcul du score) ainsi que le contrat d'usage de `SNAPSHOT.md` montraient tous un `ScoreEngine()` nu. Après cette release, c'est précisément la construction qui n'applique **aucun** override de profil — le défaut que la release corrige. Tous montrent maintenant `ScoreEngine(profile=active_profile)` avec la raison.
+- **La liste des profils** dans la prose de `README{,_FR}.md` nommait `server` / `workstation` / `container` en omettant `desktop`, alors que la table juste en dessous listait les quatre.
 
 ### Validation — ce qui est couvert, et ce qui ne l'est pas
 
@@ -157,7 +177,7 @@ seccomp=unconfined    cap_bnd 2147747323     seccomp 0   privileged False
 
 ### Tests
 
-6547 → **6578**. 0 régression. ruff : 0 finding, plus rien d'ignoré.
+6547 → **6590**. 0 régression. ruff : 0 finding, plus rien d'ignoré.
 
 Mise à jour : `pipx upgrade bodyguard-of-bits`. **BREAKING** — les audits desktop/workstation rapportent moins d'avertissements et peuvent désormais sortir en 0 là où ils sortaient toujours en 1 ; la sortie redirigée perd ses couleurs sauf si `FORCE_COLOR=1` est posé.
 

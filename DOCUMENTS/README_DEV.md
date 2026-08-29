@@ -639,7 +639,7 @@ main()
   ├── ServiceRegistry.load()    → load services.json
   ├── UserConfig.load()         → load user config
   ├── AuditReport.open() / .null()
-  ├── ScoreEngine()
+  ├── ScoreEngine(profile=active_profile)
   │
   ├── CHECK 1 — Firewall
   │     FirewallStatus.from_system()
@@ -691,8 +691,8 @@ main()
 The score starts at 10/10. Each `Deduction` subtracts points. After all checks run, the global score is replaced by the domain-averaged value.
 
 ```python
-engine = ScoreEngine()
-engine.apply(check_result)              # apply findings and deductions
+engine = ScoreEngine(profile=active_profile)   # v0.14.0: the engine carries the profile
+engine.apply(check_result)              # applies profile overrides, then findings + deductions
 engine.cap(maximum=3, key="firewall.inactive")  # cap score if firewall inactive
 engine.finalize()                       # apply cap, clamp to [0, 10]
 apply_domain_score_override(engine)     # set global = mean of active domain scores

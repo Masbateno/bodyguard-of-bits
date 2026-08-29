@@ -42,7 +42,7 @@ If you already run Lynis, BOB is not a replacement — it's a different lens, on
 
 - A 10/10 score on a desktop in a LAN does **not** mean a 10/10 on the same host moved to a public cloud — re-audit with the appropriate profile.
 - A finding flagged as `improvement` rather than `action` reflects the network context (e.g. SSH password auth is acceptable hygiene on a LAN-only host, but should be tightened before exposing the host directly to the internet).
-- The audit profile (`server` / `workstation` / `container`) encodes the threat model. Changing profile changes the verdict — that is the design.
+- The audit profile (`server` / `desktop` / `workstation` / `container`) encodes the threat model. Changing profile changes the verdict — that is the design.
 - BOB's network-context detection (NAT / public IP / interface state) is **heuristic**, not active reachability probing. It tells you what BOB infers from the local system, not what an attacker would observe from outside.
 
 A pure CIS-strict mode (no contextual modulation) is on the roadmap.
@@ -278,13 +278,20 @@ Patterns are matched against the binary basename using `fnmatch`. Suppressed bin
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| `0` | Score ≥ 7 — no significant issues |
-| `1` | Score 4–6 — warnings present |
-| `2` | Score 1–3 — alerts present |
-| `3` | Score 0 — critical issues |
-| `4` | Score below `--target N` threshold (custom gate, e.g. `bob --target 8` fails CI if score < 8) |
+> **Stable public API** — these codes will not change within a major version.
+
+The code reflects the *findings*, not the score:
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| `0` | `EXIT_OK` | Clean audit — no alerts, no warnings |
+| `1` | `EXIT_WARNINGS` | Warnings detected (improvements suggested) |
+| `2` | `EXIT_ALERTS` | Alerts detected — action required |
+| `3` | `EXIT_ERROR` | Technical error (CLI parsing, IO, internal) |
+| `4` | `EXIT_TARGET_MISSED` | `--target N` specified and score < N |
+
+Note that `3` is a **technical error**, not a bad score: a failing audit never
+exits 3. Use `--target N` if you want a score threshold to gate CI.
 
 ---
 

@@ -390,3 +390,61 @@ class TestDocumentedTestCountIsConsistent:
             f"SNAPSHOT documents {documented} tests, pytest collects {live} — "
             "the release figure has drifted; refresh it at ship time"
         )
+
+
+# ---------------------------------------------------------------------------
+# 6 — the documented exit codes must match the real constants
+# ---------------------------------------------------------------------------
+
+class TestExitCodesAreDocumentedCorrectly:
+    """The exit codes are a stable public API, and the root README had them
+    wrong: it mapped each code to a *score band* (``0`` = score >= 7, ``3`` =
+    score 0) when the codes are driven by finding counts and ``3`` is a
+    technical error. Nothing caught it — the version guards pin versions, the
+    counter guard pins counters, but nobody checked the contract itself.
+    """
+
+    _DOCS = ["README.md", "README_FR.md",
+             "DOCUMENTS/README_TECH.md", "DOCUMENTS/README_TECH_FR.md"]
+    _ROW = re.compile(r"\|\s*`(\d)`\s*\|\s*`(EXIT_[A-Z_]+)`\s*\|")
+
+    @staticmethod
+    def _constants() -> dict[str, int]:
+        import bob.__main__ as m
+        return {k: getattr(m, k) for k in dir(m) if k.startswith("EXIT_")}
+
+    @pytest.mark.parametrize("rel_path", _DOCS)
+    def test_documented_codes_match_the_real_constants(self, rel_path):
+        text = (_REPO_ROOT / rel_path).read_text(encoding="utf-8")
+        rows = self._ROW.findall(text)
+        assert rows, (
+            f"{rel_path} documents no `N` | `EXIT_*` row — the exit-code "
+            "table is missing or its shape changed"
+        )
+        consts = self._constants()
+        errors = []
+        for code, name in rows:
+            if name not in consts:
+                errors.append(f"  {rel_path}: unknown constant {name}")
+            elif consts[name] != int(code):
+                errors.append(f"  {rel_path}: documents {name} as {code}, "
+                              f"real value is {consts[name]}")
+        assert not errors, "exit-code drift:\n" + "\n".join(errors)
+
+    @pytest.mark.parametrize("rel_path", _DOCS)
+    def test_every_constant_is_documented(self, rel_path):
+        text = (_REPO_ROOT / rel_path).read_text(encoding="utf-8")
+        documented = {name for _, name in self._ROW.findall(text)}
+        missing = sorted(set(self._constants()) - documented)
+        assert not missing, f"{rel_path} omits exit code(s): {missing}"
+
+    @pytest.mark.parametrize("rel_path", _DOCS)
+    def test_no_score_band_wording_in_the_exit_table(self, rel_path):
+        """`3` is EXIT_ERROR, not "score 0". Score bands in that table are the
+        exact defect this guard exists for."""
+        text = (_REPO_ROOT / rel_path).read_text(encoding="utf-8")
+        bad = re.findall(r"\|\s*`\d`\s*\|\s*(?:Score|score)\s*[>=\u2265 0-9]", text)
+        assert not bad, (
+            f"{rel_path} maps an exit code to a score band; the codes are "
+            f"driven by finding counts: {bad}"
+        )

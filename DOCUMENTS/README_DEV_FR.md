@@ -639,7 +639,7 @@ main()
   ├── ServiceRegistry.load()    → charge services.json
   ├── UserConfig.load()         → charge config utilisateur
   ├── AuditReport.open() / .null()
-  ├── ScoreEngine()
+  ├── ScoreEngine(profile=active_profile)
   │
   ├── CHECK 1 — Firewall
   │     FirewallStatus.from_system()
@@ -691,8 +691,8 @@ main()
 Le score démarre à 10/10. Chaque `Deduction` soustrait des points. Après l'exécution de toutes les vérifications, le score global est remplacé par la valeur moyennée par domaine.
 
 ```python
-engine = ScoreEngine()
-engine.apply(check_result)              # applique findings et déductions
+engine = ScoreEngine(profile=active_profile)   # v0.14.0 : l'engine porte le profil
+engine.apply(check_result)              # applique les overrides du profil, puis findings + déductions
 engine.cap(maximum=3, key="firewall.inactive")  # plafonne si pare-feu inactif
 engine.finalize()                       # applique le plafond, clamp à [0, 10]
 apply_domain_score_override(engine)     # score global = moyenne des domaines actifs

@@ -78,7 +78,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 ### Output & UX
 
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
-- **No-colour mode** — `--no-color` for clean output in pipes and log files
+- **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail
 - **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 169 explainable keys across 45 prefixes; 19 keys show profile-specific sections; interactive TUI; no root required; `--explain list` shows all keys
 - **Domain scores** — per-domain 0–10 sub-scores (SSH / Samba / Files & Access / Updates / Hardening / Disk Health / Firewall & Services); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
@@ -475,7 +475,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `-f`, `--fix`           | Propose and apply corrections interactively                        |
 | `-y`, `--yes`           | Apply all corrections without confirmation (use with `-f`)         |
 | `-r`, `--reconfigure`   | Reconfigure all custom ports                                       |
-| `-n`, `--no-color`      | Disable ANSI colour output                                         |
+| `-n`, `--no-color`      | Force ANSI colour off (colour is auto-detected from the TTY)       |
 | `--format=FORMAT`       | Unified output flag: `json \| json-full \| csv \| markdown \| html` |
 | `--json`                | Export summary as JSON (alias for `--format=json`)                |
 | `--json-full`           | Export full audit details as JSON (alias for `--format=json-full`)|
@@ -558,6 +558,21 @@ Service definitions are validated against `bob/data/schemas/service.schema.json`
 See `bob/data/schemas/plugin-file.schema.json` for the wrapper meta-schema. Validate externally with any JSON Schema 2020-12 tool (e.g. `check-jsonschema`, `ajv`).
 
 **Schema scope.** The schema validates structure and syntactic shape. It does **not** enforce: cross-service uniqueness of `id` (runtime check) and Python reserved-keyword exclusion for `config_key` (runtime check). A document that validates against the schema may still be rejected at load time if those runtime invariants are violated — the canonical source of truth remains `bob.registry.Service.from_dict()`.
+
+---
+
+## Environment variables
+
+All are opt-in; none is required for normal operation.
+
+| Variable | Effect |
+|---|---|
+| `NO_COLOR` | Any non-empty value forces colour off, like `--no-color`. An empty value is ignored ([no-color.org](https://no-color.org)). |
+| `FORCE_COLOR` | Any non-empty value forces colour **on** even when stdout is not a terminal — for `bob \| less -R`, or to capture a coloured log on purpose. Added in v0.14.0 alongside TTY auto-detection. |
+| `BOB_DEBUG` | Diagnostics: prints the full Python traceback on an `EXIT_ERROR` exit, and installs a real logging handler so the internal `logger.debug` / `logger.warning` records become visible (notably `_run()`'s per-subprocess failure trace). |
+| `BOB_SHARE` | Overrides the auto-detected package data directory (`bob/data/`). For distro packagers shipping the data files outside the Python package tree. |
+
+Precedence for colour, first match wins: `--no-color` → `NO_COLOR` → `FORCE_COLOR` → `stdout.isatty()`.
 
 ---
 

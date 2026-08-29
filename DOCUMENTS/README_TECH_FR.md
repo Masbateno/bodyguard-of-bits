@@ -78,7 +78,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 ### Sortie & UX
 
 - **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` / `--english` (ou `--lang=fr` / `--lang=en`)
-- **Mode sans couleur** — `--no-color` pour une sortie propre dans les pipes et fichiers log
+- **Gestion de la couleur** — auto-détectée depuis la v0.14.0 : l'ANSI n'est émis que si stdout est un terminal, donc rediriger vers un fichier ou un pipe est propre sans aucune option. `--no-color` (ou `NO_COLOR=1`) la force à off ; `FORCE_COLOR=1` la force à on pour `less -R` ou un log volontairement coloré
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit
 - **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 169 clés sur 45 préfixes ; 19 clés avec sections par profil ; TUI interactif ; sans droit root ; `--explain list` liste toutes les clés
 - **Scores par domaine** — sous-scores 0–10 (SSH / Samba / Fichiers & Accès / Mises à jour / Durcissement / Santé Disque / Pare-feu & Services) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
@@ -475,7 +475,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `-f`, `--fix`           | Proposer et appliquer les corrections interactivement              |
 | `-y`, `--yes`           | Appliquer toutes les corrections sans confirmation (avec `-f`)     |
 | `-r`, `--reconfigure`   | Reconfigurer tous les ports personnalisés                          |
-| `-n`, `--no-color`      | Désactiver la sortie ANSI couleur                                  |
+| `-n`, `--no-color`      | Forcer la couleur à off (elle est auto-détectée depuis le TTY)     |
 | `--format=FORMAT`       | Flag unifié : `json \| json-full \| csv \| markdown \| html`      |
 | `--json`                | Exporter le résumé en JSON (alias `--format=json`)                 |
 | `--json-full`           | Exporter l'audit complet en JSON (alias `--format=json-full`)      |
@@ -558,6 +558,21 @@ Les définitions de services sont validées contre `bob/data/schemas/service.sch
 Voir `bob/data/schemas/plugin-file.schema.json` pour le méta-schéma du wrapper. Valider en externe avec n'importe quel outil JSON Schema 2020-12 (e.g. `check-jsonschema`, `ajv`).
 
 **Scope du schéma.** Le schéma valide la structure et la forme syntaxique. Il **n'applique pas** : l'unicité cross-service de `id` (check runtime) et l'exclusion des reserved keywords Python pour `config_key` (check runtime). Un document conforme au schéma peut quand même être rejeté au chargement si ces invariants runtime sont violés — la source de vérité canonique reste `bob.registry.Service.from_dict()`.
+
+---
+
+## Variables d'environnement
+
+Toutes sont opt-in ; aucune n'est requise pour un fonctionnement normal.
+
+| Variable | Effet |
+|---|---|
+| `NO_COLOR` | Toute valeur non vide force la couleur à off, comme `--no-color`. Une valeur vide est ignorée ([no-color.org](https://no-color.org)). |
+| `FORCE_COLOR` | Toute valeur non vide force la couleur à **on** même si stdout n'est pas un terminal — pour `bob \| less -R`, ou pour capturer volontairement un log coloré. Ajoutée en v0.14.0 avec l'auto-détection TTY. |
+| `BOB_DEBUG` | Diagnostic : affiche la traceback Python complète sur une sortie `EXIT_ERROR`, et installe un vrai handler de logging pour rendre visibles les enregistrements internes `logger.debug` / `logger.warning` (notamment la trace d'échec par subprocess de `_run()`). |
+| `BOB_SHARE` | Force le chemin du dossier de données du package (`bob/data/`). Pour les packageurs distro qui livrent les données hors de l'arbre Python. |
+
+Précédence de la couleur, première correspondance gagnante : `--no-color` → `NO_COLOR` → `FORCE_COLOR` → `stdout.isatty()`.
 
 ---
 

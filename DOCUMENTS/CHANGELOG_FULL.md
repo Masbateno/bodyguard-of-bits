@@ -101,11 +101,31 @@ Five `debian/changelog` and three `bob.spec` entries named the wrong day for the
 
 ### Guards
 
-+31 across three files, every one mutation-tested: a real defect is injected, the failure confirmed, the file restored.
++43 across four files, every one mutation-tested: a real defect is injected, the failure confirmed, the file restored.
 
 - `tests/test_v0140_profile_wiring.py` — an override must reach the engine; a downgrade must drop the deduction, not just the label; `apply` must stay idempotent so a manual `apply_profile` cannot double-punish; `runner.py` must not call `apply_profile` again; every `ScoreEngine` construction must pass `profile=`.
 - `tests/test_v0140_colour_resolution.py` — the full 8-case precedence matrix, an AST check that `init()` actually calls `supports_color()`, the detached-stdout path, four end-to-end `--help` cases, and no literal escapes in `bob/cli.py`.
 - `tests/test_v0134_docs_accuracy.py` — the two weekday guards.
+
+### READMEs — the exit-code table was wrong, and unguarded
+
+Checking the READMEs against this release surfaced a defect older than it: `README.md` and `README_FR.md` mapped each exit code to a **score band** —
+
+```
+| 0 | Score >= 7 — no significant issues |
+| 3 | Score 0 — critical issues          |
+```
+
+— when the codes are driven by finding *counts*, and `3` is `EXIT_ERROR`, a **technical error**. A failing audit never exits 3. `--help`, `DOCUMENTS/README_TECH.md` and `bob/__main__.py` all agreed with each other; only the two most-read documents did not. Both now carry the real contract with the constant names, plus an explicit note that `3` is not a bad score and that `--target N` is the way to gate CI on one.
+
+A guard (`TestExitCodesAreDocumentedCorrectly`) pins every `` `N` | `EXIT_*` `` row in the four documents against the real constants in `bob.__main__`, requires every constant to be documented, and rejects score-band wording in that table outright. Mutation-tested by restoring the original line.
+
+Also corrected while there:
+
+- **Colour framing** — `README_TECH{,_FR}.md` advertised *"`--no-color` for clean output in pipes and log files"*. True, but obsolete: since this release it is automatic. Rewritten to describe the auto-detection, with `--no-color` / `NO_COLOR` / `FORCE_COLOR` as the overrides.
+- **A new environment-variable table** in `README_TECH{,_FR}.md`. `NO_COLOR`, `FORCE_COLOR`, `BOB_DEBUG` and `BOB_SHARE` were documented in `SECURITY.md` but absent from the technical README — `FORCE_COLOR`, a new user-facing escape hatch, had no mention there at all. The table states the colour precedence chain.
+- **`ScoreEngine()` examples** — `README_DEV{,_FR}.md` (call-flow diagram and the score-calculation snippet) and `SNAPSHOT.md`'s usage contract all showed a bare `ScoreEngine()`. After this release that is precisely the construction that applies *no* profile overrides — the defect the release fixes. All now show `ScoreEngine(profile=active_profile)` with the reason.
+- **The profile list** in `README{,_FR}.md` prose named `server` / `workstation` / `container` and omitted `desktop`, while the table below it listed all four.
 
 ### Validation — what was covered, and what was not
 
@@ -157,7 +177,7 @@ seccomp=unconfined    cap_bnd 2147747323     seccomp 0   privileged False
 
 ### Tests
 
-6547 → **6578**. 0 regression. ruff: 0 finding with nothing ignored.
+6547 → **6590**. 0 regression. ruff: 0 finding with nothing ignored.
 
 Upgrade: `pipx upgrade bodyguard-of-bits`. **BREAKING** — desktop/workstation audits report fewer warnings and may now exit 0 where they always exited 1; piped output loses its colour unless `FORCE_COLOR=1` is set.
 
