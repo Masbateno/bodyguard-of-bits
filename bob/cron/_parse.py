@@ -334,7 +334,12 @@ def _validate_custom_cron(expr: str) -> str:
     if not re.match(r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+$", expr):
         return "expected 5 fields: minute hour dom month dow"
     fields = expr.split()
-    for value, (name, lo, hi) in zip(fields, _CRON_FIELD_BOUNDS):
+    # strict=True documents the invariant the regex above already
+    # guarantees (exactly 5 fields; _CRON_FIELD_BOUNDS has 5 entries).
+    # It cannot fire today — if someone adds a 6th bound without
+    # touching the regex it fails loudly instead of silently
+    # validating only the first five.
+    for value, (name, lo, hi) in zip(fields, _CRON_FIELD_BOUNDS, strict=True):
         err = _validate_cron_field(value, name, lo, hi)
         if err:
             return err

@@ -14,14 +14,9 @@ target-version = "py310"
 [lint]
 select = ["E9", "F", "B"]
 
-# Deferred, not waived — both are real signals whose fixes change runtime
-# behaviour, which does not belong in a patch release:
-#   B904  `raise ... from err` inside except — 4 sites (_sandbox, cli). Alters
-#         exception chaining and the traceback users see on a CLI error.
-#   B905  `zip(strict=)` — 1 site (cron/_parse). Turning it on makes a length
-#         mismatch raise where it currently truncates silently.
-# Revisit in v0.14.0 alongside the other behaviour-affecting changes.
-ignore = ["B904", "B905"]
+# Nothing is ignored. B904 and B905 were deferred through v0.13.x because
+# their fixes change runtime behaviour (exception chaining, zip strictness),
+# which did not belong in a patch release; both were addressed in v0.14.0.
 
 
 # NOTE: no [lint.per-file-ignores] block on purpose. The v0.6.0 re-export

@@ -729,12 +729,14 @@ class SandboxRunner:
         try:
             source = plugin_path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise SandboxRejected(f"Cannot read plugin {plugin_path!r}: {exc}")
+            # from exc: which OSError (EACCES? ENOENT?) is exactly what a plugin
+            # author needs to see under BOB_DEBUG.
+            raise SandboxRejected(f"Cannot read plugin {plugin_path!r}: {exc}") from exc
 
         try:
             compile(source, str(plugin_path), "exec")
         except SyntaxError as exc:
-            raise SandboxRejected(f"Plugin syntax error: {exc}")
+            raise SandboxRejected(f"Plugin syntax error: {exc}") from exc
 
         # AST-based presence check — accepts ``def run_check`` AND
         # ``run_check = ...`` (I-3). Shared with plugin_checks._load_one

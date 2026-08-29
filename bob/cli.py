@@ -431,7 +431,10 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             try:
                 n = int(value)
             except ValueError:
-                raise CLIError(f"--watch=N requires an integer ≥ 10, got: {value!r}")
+                # from None: the int() ValueError is an implementation detail; under
+                # BOB_DEBUG the user should see the CLI error, not "during handling
+                # of the above exception".
+                raise CLIError(f"--watch=N requires an integer ≥ 10, got: {value!r}") from None
             if n < 10:
                 raise CLIError(f"--watch=N: interval must be ≥ 10 seconds, got: {n}")
             config.watch_mode = True
@@ -446,7 +449,7 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
             try:
                 n = int(value)
             except ValueError:
-                raise CLIError(f"--watch N requires an integer ≥ 10, got: {value!r}")
+                raise CLIError(f"--watch N requires an integer ≥ 10, got: {value!r}") from None
             if n < 10:
                 raise CLIError(f"--watch N: interval must be ≥ 10 seconds, got: {n}")
             config.watch_mode = True
