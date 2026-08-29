@@ -107,6 +107,54 @@ Cinq entrées de `debian/changelog` et trois de `bob.spec` nommaient le mauvais 
 - `tests/test_v0140_colour_resolution.py` — la matrice de précédence complète à 8 cas, un contrôle AST que `init()` appelle bien `supports_color()`, le chemin stdout détaché, quatre cas `--help` de bout en bout, et aucune séquence littérale dans `bob/cli.py`.
 - `tests/test_v0134_docs_accuracy.py` — les deux gardes de jours de semaine.
 
+### Validation — ce qui est couvert, et ce qui ne l'est pas
+
+Une seconde passe de validation a été menée une fois la release assemblée, ciblant les chemins d'interaction que la première n'avait pas exercés. Elle n'a trouvé **aucun défaut** ; rien n'a été modifié dans cette release en conséquence. Ce qu'elle a couvert :
+
+| Chemin | Résultat |
+|---|---|
+| Action `skip` d'un profil (retire entièrement un finding) | correct via `engine.apply()` |
+| Downgrade retirant la déduction attachée | correct — le score remonte à 10 |
+| Ordre profil × `ignore.yml`, 4 combinaisons | correct, et le cas sans profil se comporte toujours comme en v0.13.4 |
+| Mode `--watch`, itérations réelles | profile-aware — server 8/10, desktop 9/10, cohérent avec l'audit normal |
+| Findings de plugin | reçoivent le profil : server WARN, desktop INFO |
+| Sorties machine (json, json-full, csv, markdown, html) | zéro ANSI, en pipe **et** sur TTY |
+| Couleur de `--breakdown` sur un vrai terminal | 16 séquences, identique à v0.13.4 — pas de régression |
+
+Régression complète contre v0.13.4, sur les quatre profils :
+
+```
+server       score 8 warn 13  128 findings   IDENTIQUE
+desktop      score 9 warn  4 → 2             seul services.exposure.open_local change
+workstation  score 9 warn  4 → 2             idem
+container    score 9 warn  4 → 2             idem (extends = desktop, hérite l'override)
+```
+
+Exactement une clé de finding change de niveau, sur exactement les profils qui déclarent l'override. Aucun dommage collatéral.
+
+**Ce qui n'est _pas_ validé, et ne doit pas être lu comme tel :**
+
+- **Le comportement cloud à l'exécution.** Seul le chemin de détection du provider par DMI a été exercé, en bind-montant des fixtures sur `/sys/class/dmi/id` dans un conteneur : 11 providers détectés, 2 négatifs rejetés. Ces fixtures ont été *écrites pour le test* — cela vérifie que le matcher fonctionne **étant données** ces valeurs DMI, pas que Hetzner, Linode ou Alibaba les publient réellement. Les findings que le check émet à l'exécution — `cloud_context.imds_reachable` et le cas user-data lisible par tous — **ne se sont jamais déclenchés**. Ils exigent une vraie instance cloud.
+- **Trois des quatre overrides de profil ressuscités.** `ddns.warn`, `services.exposed.avahi` et `firewall_drivers.ip_forward_enabled` sont vérifiés par test ciblé contre les vrais fichiers `.conf` livrés et le vrai engine (8 cas sur 8, aucun skippé), mais cet hôte n'émet pas ces findings : aucun n'a donc été observé sur un audit live. Seul `services.exposure.open_local` l'a été.
+- **Les checks `docker` et `docker_hardening`.** Ils gatent sur `_command_exists("docker")`, et le runtime retenu pour le field test est podman — délibérément, parce qu'installer Docker ajouterait un daemon, des règles iptables et un bridge, modifiant la posture de l'hôte qui sert justement de référence de comparaison. Ces deux checks restent non exercés contre un vrai hôte Docker.
+
+### Deux constats issus du field test, non corrigés ici
+
+Tous deux relèvent des « dents » différées ; ils sont consignés plutôt que corrigés, pour que la prochaine release parte de preuves et non d'hypothèses.
+
+**Le titre de `container_security.privileged` sur-affirme.** Avec un vrai conteneur disponible pour la première fois, la matrice à quatre cas donne :
+
+```
+défaut rootless       cap_bnd 2147747323     seccomp 2   privileged False
+--privileged          cap_bnd 2199023255551  seccomp 0   privileged True
+--cap-add SYS_ADMIN   cap_bnd 2149844475     seccomp 2   privileged True   <--
+seccomp=unconfined    cap_bnd 2147747323     seccomp 0   privileged False
+```
+
+`privileged` est *défini* comme « CAP_SYS_ADMIN est présent » (`container_security.py:75`), et le détail du finding est prudent — *« Un conteneur privilégié (ou doté de CAP_SYS_ADMIN) »*. Le titre ne l'est pas : *« Le conteneur semble PRIVILÉGIÉ — jeu complet de capabilities Linux disponible »*. Pour un conteneur doté d'une seule capability ciblée, le jeu complet n'est démonstrativement **pas** disponible, et seccomp filtre toujours. Cela compte pour la déduction prévue : le backlog liste `privileged` et `CAP_SYS_ADMIN` comme deux conditions distinctes alors que le code les confond — keyer une déduction sur `privileged` tel que calculé aujourd'hui pénaliserait un conteneur à portée étroite (un montage FUSE, par exemple) exactement autant qu'un conteneur pleinement privilégié.
+
+**La parité de scoring nftables n'a en réalité jamais été bloquée.** Le backlog la classait parmi les dents en attente de matériel de field test, mais ce blocage portait sur les conteneurs et les instances cloud. `nft` et `iptables-nft` sont présents sur une station de travail ordinaire : le travail de parité peut être calibré dès qu'il sera planifié — aucun matériel ne manque pour lui.
+
 ### Tests
 
 6547 → **6578**. 0 régression. ruff : 0 finding, plus rien d'ignoré.

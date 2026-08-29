@@ -107,6 +107,54 @@ Five `debian/changelog` and three `bob.spec` entries named the wrong day for the
 - `tests/test_v0140_colour_resolution.py` — the full 8-case precedence matrix, an AST check that `init()` actually calls `supports_color()`, the detached-stdout path, four end-to-end `--help` cases, and no literal escapes in `bob/cli.py`.
 - `tests/test_v0134_docs_accuracy.py` — the two weekday guards.
 
+### Validation — what was covered, and what was not
+
+A second validation pass ran after the release was assembled, targeting the interaction paths the first pass had not exercised. It found **no defect**; nothing in this release was changed as a result. What it covered:
+
+| Path | Result |
+|---|---|
+| Profile `skip` action (removes a finding outright) | correct through `engine.apply()` |
+| Downgrade removing the attached deduction | correct — score returns to 10 |
+| Profile × `ignore.yml` ordering, 4 combinations | correct, and the no-profile case still behaves as v0.13.4 |
+| `--watch` mode, real iterations | profile-aware — server 8/10, desktop 9/10, matching the non-watch audit |
+| Plugin findings | receive the profile: server WARN, desktop INFO |
+| Machine outputs (json, json-full, csv, markdown, html) | zero ANSI, piped **and** on a TTY |
+| `--breakdown` colour on a real terminal | 16 escapes, identical to v0.13.4 — no regression |
+
+Full regression against v0.13.4, all four profiles:
+
+```
+server       score 8 warn 13  128 findings   IDENTICAL
+desktop      score 9 warn  4 → 2             only services.exposure.open_local changed
+workstation  score 9 warn  4 → 2             idem
+container    score 9 warn  4 → 2             idem (extends = desktop, inherits the override)
+```
+
+Exactly one finding key changes level, on exactly the profiles that declare the override. No collateral.
+
+**What is _not_ validated, and should not be read as validated:**
+
+- **Cloud runtime behaviour.** Only the DMI provider-detection path was exercised, by bind-mounting fixtures over `/sys/class/dmi/id` inside a container: 11 providers detected, 2 negatives rejected. Those fixtures were *authored for the test* — this verifies the matcher works **given** those DMI values, not that Hetzner, Linode or Alibaba actually publish them. The findings the check emits at runtime — `cloud_context.imds_reachable` and the world-readable user-data case — **have never fired**. They need a real cloud instance.
+- **Three of the four resurrected profile overrides.** `ddns.warn`, `services.exposed.avahi` and `firewall_drivers.ip_forward_enabled` are verified by targeted test against the real shipped `.conf` files and the real engine (8 of 8 cases, none skipped), but this host does not emit those findings, so none was observed in a live audit. Only `services.exposure.open_local` was.
+- **The `docker` and `docker_hardening` checks.** They gate on `_command_exists("docker")`, and the field-test runtime chosen here is podman — deliberately, because installing Docker would add a daemon, iptables rules and a bridge, altering the very host posture used as the comparison baseline. Those two checks remain unexercised against a real Docker host.
+
+### Two findings surfaced by the field-test work, not fixed here
+
+Both belong to the deferred "teeth" and are recorded rather than patched, so the next release starts from evidence instead of assumption.
+
+**`container_security.privileged` overstates in its headline.** With a real container available for the first time, the four-case matrix reads:
+
+```
+default rootless      cap_bnd 2147747323     seccomp 2   privileged False
+--privileged          cap_bnd 2199023255551  seccomp 0   privileged True
+--cap-add SYS_ADMIN   cap_bnd 2149844475     seccomp 2   privileged True   <--
+seccomp=unconfined    cap_bnd 2147747323     seccomp 0   privileged False
+```
+
+`privileged` is *defined* as "CAP_SYS_ADMIN is present" (`container_security.py:75`), and the finding's detail is careful — *"A privileged container (or one granted CAP_SYS_ADMIN)"*. The headline is not: *"Container appears PRIVILEGED — full Linux capability set available"*. For a container granted one targeted capability the full set is demonstrably **not** available, and seccomp is still enforcing. This matters for the planned deduction: the backlog lists `privileged` and `CAP_SYS_ADMIN` as distinct conditions while the code conflates them, so keying a deduction on `privileged` as computed today would penalise a narrowly-scoped container (a FUSE mount, for instance) exactly as hard as a fully privileged one.
+
+**nftables scoring parity was never actually blocked.** The backlog filed it under the teeth awaiting field-test hardware, but that blocker was about containers and cloud instances. `nft` and `iptables-nft` are present on an ordinary workstation, so the parity work can be calibrated whenever it is scheduled — no hardware is missing for it.
+
 ### Tests
 
 6547 → **6578**. 0 regression. ruff: 0 finding with nothing ignored.
