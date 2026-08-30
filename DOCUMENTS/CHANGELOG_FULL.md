@@ -326,7 +326,7 @@ The v0.14.1 surfaces were still dated 2026-08-29, which is no longer reachable. 
 
 ### Documentation
 
-A full pass over the documentation corpus — the READMEs, `SECURITY`, `AUTOMATION`, `TESTING`, `TUTORIAL`, the technical and developer references and the `SNAPSHOT` — aligning them with this release and reconciling EN/FR parity.
+A full pass over the documentation corpus — the READMEs, `SECURITY`, `AUTOMATION`, `TESTING`, `TUTORIAL`, the technical and developer references and the `SNAPSHOT` — aligning them with this release and reconciling EN/FR parity. The `SNAPSHOT` was additionally verified claim-by-claim against the code it describes.
 
 ### Tests
 

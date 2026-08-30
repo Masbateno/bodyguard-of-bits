@@ -810,7 +810,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Doc files | 19 public markdown (13 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"3"` only (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 5 — 3 workflow-level (integration-first / smoke-after-commit / smoke-plugin) + 2 pytest guards (`tests/test_version_consistency.py`, `tests/test_doc_version_consistency.py`) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
-| Version | v0.14.1 (release surface dated 2026-08-30) — **tagged locally, not yet pushed**; latest published tag is v0.14.0. The container/nftables "teeth" remain deferred, but see the v0.14.1 finding above: nftables parity was never actually hardware-blocked | `pyproject.toml::version` |
+| Version | v0.14.1, released 2026-08-30. The container/nftables "teeth" remain deferred, but see the v0.14.1 finding above: nftables parity was never actually hardware-blocked | `pyproject.toml::version` |
 | Supported branch | v0.14.x (everything ≤ v0.13.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

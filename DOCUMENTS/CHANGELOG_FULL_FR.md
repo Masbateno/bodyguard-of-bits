@@ -326,7 +326,7 @@ Les surfaces v0.14.1 étaient encore datées du 2026-08-29, désormais inatteign
 
 ### Documentation
 
-Une passe complète sur le corpus documentaire — les READMEs, `SECURITY`, `AUTOMATION`, `TESTING`, `TUTORIAL`, les références technique et développeur et le `SNAPSHOT` — pour les aligner sur cette release et réconcilier la parité EN/FR.
+Une passe complète sur le corpus documentaire — les READMEs, `SECURITY`, `AUTOMATION`, `TESTING`, `TUTORIAL`, les références technique et développeur et le `SNAPSHOT` — pour les aligner sur cette release et réconcilier la parité EN/FR. Le `SNAPSHOT` a de plus été vérifié affirmation par affirmation contre le code qu'il décrit.
 
 ### Tests
 
