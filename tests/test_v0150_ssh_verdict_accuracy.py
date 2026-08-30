@@ -19,9 +19,13 @@ from pathlib import Path
 
 import pytest
 
-from bob.checks.ssh._parsers import _parse_config_file, _strip_inline_comment
+from bob.checks.ssh._parsers import (
+    _parse_client_config,
+    _parse_config_file,
+    _strip_inline_comment,
+)
 from bob.checks.ssh._snapshot import SSHSnapshot
-from bob.checks.ssh._subchecks import _check_sshd_config
+from bob.checks.ssh._subchecks import _check_client_config, _check_sshd_config
 from bob.scoring import CheckResult
 
 
@@ -116,3 +120,69 @@ class TestPermitRootLoginValueSpace:
         v = _verdicts("PermitRootLogin without-password\n")
         assert v.get("ssh.permit_root_login_restricted") == "ok"
         assert "ssh.permit_root_login" not in v
+
+
+def _client_verdicts(body: str) -> dict[str, str]:
+    """Parse a ~/.ssh/config body and return {finding key: level}."""
+    with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as fh:
+        fh.write(body)
+        path = Path(fh.name)
+    try:
+        snap = SSHSnapshot(
+            sshd_installed=True, sshd_active=True, ssh_dir_exists=True,
+            client_config_exists=True,
+            client_config_entries=_parse_client_config(path),
+        )
+        result = CheckResult()
+        _check_client_config(snap, result, lambda k, **kw: k)
+        return {f.key: f.level.value for f in result.findings if f.key}
+    finally:
+        path.unlink(missing_ok=True)
+
+
+class TestClientConfigValueSpace:
+    """~/.ssh/config carried the same exact-match assumptions as sshd_config,
+    plus value spellings OpenSSH accepts and BOB did not. Every expectation
+    below was read off `ssh -G` (OpenSSH 9.6)."""
+
+    @pytest.mark.parametrize("value", ["no", "off", "false"])
+    def test_host_key_checking_disabled_is_caught_in_every_spelling(self, value):
+        """`ssh -G` resolves no, off and false alike to
+        `stricthostkeychecking false`. Matching only "no" meant a client with
+        host-key checking switched off was reported clean — and that setting is
+        what makes a man-in-the-middle silent."""
+        v = _client_verdicts(f"Host *\n  StrictHostKeyChecking {value}\n")
+        assert v.get("ssh.client_strict_host_no") == "alert"
+
+    def test_host_key_checking_survives_a_trailing_comment(self):
+        v = _client_verdicts("Host *\n  StrictHostKeyChecking no # lab box\n")
+        assert v.get("ssh.client_strict_host_no") == "alert"
+
+    @pytest.mark.parametrize("value", ["yes", "true"])
+    def test_agent_forwarding_is_caught_in_both_spellings(self, value):
+        v = _client_verdicts(f"Host *\n  ForwardAgent {value}\n")
+        assert v.get("ssh.client_forward_agent") == "warn"
+
+    @pytest.mark.parametrize("value", ["yes", "true"])
+    def test_x11_forwarding_is_caught_in_both_spellings(self, value):
+        v = _client_verdicts(f"Host *\n  ForwardX11 {value}\n")
+        assert v.get("ssh.x11.forwarding.client") == "warn"
+
+    def test_forward_agent_socket_path_is_not_a_boolean(self):
+        """Since OpenSSH 8.4 ForwardAgent also takes an explicit socket path,
+        so `off` / `1` / `0` are paths, not booleans — `ssh -G` echoes them
+        back verbatim. They must not be read as "forwarding enabled", which is
+        why the alias set is exactly {yes, true} and not the wider boolean set
+        used for StrictHostKeyChecking."""
+        assert "ssh.client_forward_agent" not in _client_verdicts(
+            "Host *\n  ForwardAgent off\n")
+
+    def test_client_parser_strips_inline_comments(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as fh:
+            fh.write("Host *\n  ForwardX11 yes # needed for gui\n")
+            path = Path(fh.name)
+        try:
+            entries = _parse_client_config(path)
+            assert [e.value for e in entries] == ["yes"]
+        finally:
+            path.unlink(missing_ok=True)

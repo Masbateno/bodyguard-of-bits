@@ -372,7 +372,7 @@ def _parse_client_config(path: Path) -> list[ClientConfigEntry]:
         if not m:
             continue
         key   = m.group(1).lower()
-        value = m.group(2).strip()
+        value = _strip_inline_comment(m.group(2)).strip()
         if key == "host":
             current_host = value
             continue

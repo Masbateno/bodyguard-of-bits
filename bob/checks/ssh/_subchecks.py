@@ -490,7 +490,11 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
         # A bounded subdomain wildcard (``Host *.example.com``) stays scoped.
         scoped = "*" not in entry.host.split()
 
-        if k == "stricthostkeychecking" and v == "no":
+        # `no`, `off` and `false` all resolve to "do not check" — `ssh -G`
+        # prints `stricthostkeychecking false` for all three. Matching only
+        # "no" missed the other two spellings, i.e. missed host-key checking
+        # being disabled, which is what makes a MITM silent.
+        if k == "stricthostkeychecking" and v in ("no", "off", "false"):
             result.alert_with_deduction(
                 key="ssh.client_strict_host_no",
                 message=_t("ssh.client_strict_host_no"),
@@ -512,7 +516,7 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
             )
             found_issue = True
 
-        elif k == "forwardagent" and v == "yes":
+        elif k == "forwardagent" and v in ("yes", "true"):
             if scoped:
                 result.info(
                     key="ssh.client_forward_agent_scoped",
@@ -535,7 +539,7 @@ def _check_client_config(snapshot: SSHSnapshot, result: CheckResult, _t) -> None
         # client-side risk is orthogonal: forwarding an X11 display INTO
         # an untrusted host lets that host take screenshots and inject
         # keystrokes through the X protocol's wide-open security model.
-        elif k == "forwardx11" and v == "yes":
+        elif k == "forwardx11" and v in ("yes", "true"):
             if scoped:
                 result.info(
                     key="ssh.x11.forwarding.client_scoped",
