@@ -32,9 +32,13 @@ class TestIsPrivate:
     def test_another_public_ip(self):
         assert not _is_private("93.184.216.34")
 
-    def test_invalid_returns_true(self):
-        # Unparseable IPs are treated as private to avoid alerting on log noise
-        assert _is_private("not-an-ip")
+    def test_a_hostname_is_not_evidence_of_a_private_origin(self):
+        # v0.15.0 reversed this. It used to return True, "private", so a host
+        # with UseDNS enabled — where sshd logs a hostname rather than an IP —
+        # reported no public SSH logins at all, and auth_log.public_login could
+        # never fire. An unresolvable name is unknown, not internal.
+        assert not _is_private("not-an-ip")
+        assert not _is_private("host.example.com")
 
     def test_ipv6_loopback_is_private(self):
         assert _is_private("::1")
@@ -340,12 +344,14 @@ class TestCheckAuthLog:
         assert "10.0.0.3" in summary.message
         assert "10.0.0.4" not in summary.message  # 4th IP must NOT appear
 
-    def test_invalid_ip_in_log_not_flagged_as_public(self):
-        # Unparseable IPs must be treated as private — no false-positive WARN
-        entries = [LoginEntry("publickey", "so6", "not-an-ip", is_public=not _is_private("not-an-ip"))]
+    def test_a_login_from_a_hostname_is_reported(self):
+        """With UseDNS on, this is what every remote login looks like."""
+        src = "host.example.com"
+        entries = [LoginEntry("publickey", "so6", src, is_public=not _is_private(src))]
         result = check_auth_log(self._snap_with(entries))
         warns = [f for f in result.findings if f.key == "auth_log.public_login"]
-        assert len(warns) == 0
+        assert len(warns) == 1
+        assert src in warns[0].message
 
 
 class TestAuthLogSnapshotMocked:

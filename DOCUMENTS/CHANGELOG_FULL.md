@@ -210,13 +210,36 @@ Every field now defaults to `None`. The JSON `hardening` block mirrors an unread
 parameter as `null` instead of asserting a value it never saw — strictly more
 information than before, and only where the previous value was fabricated.
 
+### With UseDNS on, a host reported no public SSH logins at all
+
+The sweep that produced the two sysctl fixes examined all 100 exception handlers
+in the tree that return a substantive value. Most fail in the alarming
+direction, which is correct for an auditor: `DockerPort.is_public` assumes
+public on an unrecognised address, `_has_shell_ops` assumes unsafe on malformed
+quoting, `_read_kernel_ipv6` assumes enabled. One did not.
+
+`auth_log._is_private` returned True — "private" — for anything
+`ipaddress.ip_address()` could not parse, to keep log noise out of the summary.
+But the source is captured by `from\s+(\S+)\s+port` out of an sshd line, and
+sshd logs a **hostname** there whenever `UseDNS` is on. On such a host every
+remote login parsed to a non-IP, was filed as internal, and
+`auth_log.public_login` could not fire. A machine accepting SSH logins from the
+internet was told it accepted none.
+
+An unresolvable name is unknown, not internal. Two helpers in the same tool
+answering "is this address public" in opposite directions is how one of them
+ends up wrong, and this was the one. `workstation.lan` will now be listed, which
+is the cheaper error: a false alarm naming a source the operator can read is
+recoverable, a silence is not. That trade-off is pinned by a test so it stays a
+decision rather than an accident.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6890**.
+**Tests** 6719 → **6905**.
 
 ---
 

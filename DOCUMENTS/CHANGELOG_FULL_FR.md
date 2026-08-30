@@ -227,13 +227,38 @@ un paramètre non lu par `null` au lieu d'affirmer une valeur jamais observée �
 strictement plus d'information qu'avant, et uniquement là où la valeur
 précédente était fabriquée.
 
+### Avec UseDNS activé, une machine ne signalait aucune connexion SSH publique
+
+Le balayage qui a produit les deux correctifs sysctl a passé en revue les 100
+gestionnaires d'exception de l'arbre qui renvoient une valeur substantielle. La
+plupart échouent dans la direction alarmante, ce qui est correct pour un
+auditeur : `DockerPort.is_public` suppose public sur une adresse non reconnue,
+`_has_shell_ops` suppose dangereux sur un guillemetage malformé,
+`_read_kernel_ipv6` suppose activé. Un seul faisait l'inverse.
+
+`auth_log._is_private` renvoyait True — « privé » — pour tout ce que
+`ipaddress.ip_address()` ne savait pas analyser, afin d'écarter le bruit du
+résumé. Mais la source est capturée par `from\s+(\S+)\s+port` dans une ligne
+sshd, et sshd y journalise un **nom d'hôte** dès que `UseDNS` est actif. Sur une
+telle machine, chaque connexion distante donnait un non-IP, était classée
+interne, et `auth_log.public_login` ne pouvait pas se déclencher. Une machine
+acceptant des connexions SSH depuis Internet s'entendait dire qu'elle n'en
+acceptait aucune.
+
+Un nom non résolu est inconnu, pas interne. Deux fonctions du même outil
+répondant en sens inverse à « cette adresse est-elle publique » : voilà comment
+l'une des deux finit par avoir tort, et c'était celle-ci. `workstation.lan` sera
+désormais listé, ce qui est l'erreur la moins chère : une fausse alerte nommant
+une source que l'opérateur peut lire se rattrape, un silence non. Ce compromis
+est verrouillé par un test pour qu'il reste une décision et non un accident.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6890**.
+**Tests** 6719 → **6905**.
 
 ---
 

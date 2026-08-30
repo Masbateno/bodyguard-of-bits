@@ -96,7 +96,24 @@ def _is_private(ip_str: str) -> bool:
         addr = ipaddress.ip_address(ip_str)
         return any(addr in net for net in _PRIVATE_NETWORKS)
     except ValueError:
-        return True  # unparseable IP: treat as private to avoid alerting on log noise
+        # Not an IP literal. sshd logs a *hostname* here whenever UseDNS is on,
+        # and the capture is `from (\S+) port`, so this is the ordinary shape of
+        # a remote login on such a host — not log noise.
+        #
+        # Until v0.15.0 this returned True, "private", to keep noise out of the
+        # summary. The effect was that a host with UseDNS enabled reported no
+        # public SSH logins at all: every one of them arrived as a hostname and
+        # was filed as internal, and the `auth_log.public_login` warning could
+        # not fire. A machine accepting logins from the internet was told it
+        # accepted none.
+        #
+        # An unresolvable name is not evidence of a private origin. The same
+        # question is already answered the other way elsewhere in this tool —
+        # `DockerPort.is_public` assumes public on an unrecognised address — and
+        # two helpers disagreeing about "is this address public" is exactly how
+        # one of them ends up wrong. A false alarm naming a source the operator
+        # can read is recoverable; a silence is not.
+        return False
 
 @dataclass
 class LoginEntry:
