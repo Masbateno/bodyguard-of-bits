@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple, Tuple
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _identity_t, join_continuations
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -132,24 +132,10 @@ def _strip_sudoers_comment(line: str) -> str:
     m = _SUDOERS_COMMENT_RE.search(line)
     return (line[:m.start()] if m else line).rstrip()
 
-def _join_continuations(lines: list[str]) -> list[str]:
-    """Fold sudoers backslash-continuations into single logical lines.
-
-    A rule may be wrapped anywhere, including between the `NOPASSWD:` tag and
-    the command it applies to, so a line-at-a-time reader sees neither half as
-    unrestricted sudo.
-    """
-    out: list[str] = []
-    buf = ""
-    for raw in lines:
-        if raw.endswith("\\"):
-            buf += raw[:-1] + " "
-            continue
-        out.append(buf + raw)
-        buf = ""
-    if buf:
-        out.append(buf)
-    return out
+# A sudoers rule may be wrapped anywhere, including between the `NOPASSWD:` tag
+# and the command it applies to, so a line-at-a-time reader sees neither half as
+# unrestricted sudo. Shared with the PAM parser, which has the same problem.
+_join_continuations = join_continuations
 
 
 def _collect_nopasswd_entries() -> tuple[list[str], list[str]]:

@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _identity_t, join_continuations
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -36,6 +36,13 @@ from bob.scoring import CheckResult
 _LOGIN_DEFS_PATH    = Path("/etc/login.defs")
 _COMMON_PASSWORD    = Path("/etc/pam.d/common-password")
 _PWQUALITY_CONF     = Path("/etc/security/pwquality.conf")
+# libpwquality reads the drop-in directory *first*, in ASCII order, then the
+# main file — so the main file wins where both set a value, and a drop-in
+# applies wherever the main file is silent. Debian ships pwquality.conf with
+# every setting commented out, which makes "silent" the common case, and the
+# drop-in the place hardening actually lands. Verified against libpwquality
+# 1.4.5 itself, not inferred from the man page (whose wording is ambiguous).
+_PWQUALITY_CONF_D   = Path("/etc/security/pwquality.conf.d")
 
 # PASS_MAX_DAYS threshold above which we consider expiry effectively disabled.
 _MAX_DAYS_THRESHOLD = 365
@@ -50,8 +57,46 @@ _DEDUCTION_WEAK_MINLEN       = 1
 # Regexes
 _PASS_MAX_DAYS_RE   = re.compile(r"^\s*PASS_MAX_DAYS\s+(\d+)", re.MULTILINE)
 _PASS_MIN_DAYS_RE   = re.compile(r"^\s*PASS_MIN_DAYS\s+(\d+)", re.MULTILINE)
+
+
+def _last_int(pattern: "re.Pattern[str]", text: str) -> "int | None":
+    """Return the value of the *last* match, or None.
+
+    Both login.defs and pwquality.conf are last-one-wins: shadow's own
+    ``useradd`` applies the final ``PASS_MAX_DAYS`` in the file, and
+    libpwquality the final ``minlen``. Reading the first match inverted the
+    verdict for the most ordinary way there is to harden either file —
+    appending the hardened value to the end. Confirmed by running
+    ``useradd --prefix`` against a duplicated login.defs and by calling
+    libpwquality on a duplicated pwquality.conf.
+    """
+    last = None
+    for m in pattern.finditer(text):
+        last = m
+    return int(last.group(1)) if last else None
 _PAM_MINLEN_RE      = re.compile(r"\bminlen=(\d+)", re.IGNORECASE)
 _PWQUALITY_MINLEN_RE = re.compile(r"^\s*minlen\s*=\s*(\d+)", re.IGNORECASE | re.MULTILINE)
+
+
+def _pwquality_files() -> "list[Path]":
+    """Return the pwquality config files in libpwquality's own parse order.
+
+    Drop-ins from ``pwquality.conf.d`` in ASCII order, then the main file.
+    Missing or unreadable paths are skipped rather than raising: this runs
+    inside ``from_system``, which is documented never to raise.
+    """
+    files: list[Path] = []
+    try:
+        if _PWQUALITY_CONF_D.is_dir():
+            files.extend(sorted(
+                f for f in _PWQUALITY_CONF_D.iterdir()
+                if f.is_file() and f.name.endswith(".conf")
+            ))
+    except OSError:
+        pass
+    files.append(_PWQUALITY_CONF)
+    return files
+
 
 # ---------------------------------------------------------------------------
 # System snapshot
@@ -99,13 +144,13 @@ class PasswordPolicySnapshot:
             login_defs_text = _LOGIN_DEFS_PATH.read_text(encoding="utf-8", errors="replace")
             snap.login_defs_readable = True
 
-            m = _PASS_MAX_DAYS_RE.search(login_defs_text)
-            if m:
-                snap.pass_max_days = int(m.group(1))
+            v = _last_int(_PASS_MAX_DAYS_RE, login_defs_text)
+            if v is not None:
+                snap.pass_max_days = v
 
-            m = _PASS_MIN_DAYS_RE.search(login_defs_text)
-            if m:
-                snap.pass_min_days = int(m.group(1))
+            v = _last_int(_PASS_MIN_DAYS_RE, login_defs_text)
+            if v is not None:
+                snap.pass_min_days = v
 
         except OSError:
             pass
@@ -114,7 +159,10 @@ class PasswordPolicySnapshot:
         pam_minlen_inline: int | None = None
         try:
             pam_text = _COMMON_PASSWORD.read_text(encoding="utf-8", errors="replace")
-            for line in pam_text.splitlines():
+            # PAM stacks wrap with a trailing backslash — pam.conf(5) uses a
+            # wrapped line as its own worked example. Unjoined, a module and the
+            # `minlen=` it was given sit on different lines and never meet.
+            for line in join_continuations(pam_text.splitlines()):
                 stripped = line.strip()
                 if stripped.startswith("#"):
                     continue
@@ -135,13 +183,16 @@ class PasswordPolicySnapshot:
 
         # ---- /etc/security/pwquality.conf -----------------------------------
         # pwquality.conf takes precedence over inline PAM option for minlen.
-        try:
-            pwq_text = _PWQUALITY_CONF.read_text(encoding="utf-8", errors="replace")
-            m = _PWQUALITY_MINLEN_RE.search(pwq_text)
-            if m:
-                snap.pam_minlen = int(m.group(1))
-        except OSError:
-            pass
+        # Drop-ins first, in ASCII order, then the main file — libpwquality's
+        # own parse order, so the last value seen is the effective one.
+        for path in _pwquality_files():
+            try:
+                v = _last_int(_PWQUALITY_MINLEN_RE,
+                              path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            if v is not None:
+                snap.pam_minlen = v
 
         # Fall back to inline value if pwquality.conf did not specify minlen.
         if snap.pam_minlen is None:

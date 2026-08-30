@@ -178,6 +178,33 @@ def _is_safe_user_path(path, owner_home) -> bool:
 # the subprocess env. Even when commands are forced to LC_ALL=C via _C_LOCALE_ENV,
 # a Python process running under LC_TIME=fr_FR.UTF-8 will fail to parse "May 14"
 # because it expects "mai 14". This helper bypasses LC_TIME entirely.
+
+def join_continuations(lines: "list[str]") -> "list[str]":
+    """Fold backslash-continuations into single logical lines.
+
+    Several of the files BOB parses let a directive be wrapped across lines
+    with a trailing ``\\`` — sudoers rules, and PAM stacks, whose own
+    ``pam.conf(5)`` man page uses a wrapped ``pam_pwquality.so`` line as its
+    worked example. Read one line at a time, a wrapped directive is invisible:
+    the half carrying the keyword and the half carrying its value never meet.
+
+    Shared rather than reimplemented per module. Every defect found in the
+    v0.15.0 verdict-accuracy pass had the same origin — line-level config
+    handling written once per check, correct in some copies and forgotten in
+    others.
+    """
+    out: list[str] = []
+    buf = ""
+    for raw in lines:
+        if raw.endswith("\\"):
+            buf += raw[:-1] + " "
+            continue
+        out.append(buf + raw)
+        buf = ""
+    if buf:
+        out.append(buf)
+    return out
+
 _ENGLISH_MONTH_ABBR = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
     "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,

@@ -114,13 +114,54 @@ l'audit, cela le ferait **mentir** : une table de ports illisible se rendrait en
 limite est verrouillée par un test pour qu'on ne la franchisse pas par souci de
 rangement.
 
+### Politique de mots de passe : trois fichiers, trois autorités, trois désaccords
+
+`bob/checks/password_policy.py` lit `/etc/login.defs`,
+`/etc/pam.d/common-password` et `/etc/security/pwquality.conf`. Il était en
+désaccord avec le véritable propriétaire des trois, et l'erreur commune était de
+lire la *première* correspondance.
+
+**`login.defs` et `pwquality.conf` retiennent la dernière valeur.** Vérifié avec
+le `useradd --prefix` de shadow lui-même sur un `login.defs` dupliqué, en
+relisant le champ effectivement écrit dans shadow, et en appelant libpwquality
+1.4.5 par ctypes sur un `pwquality.conf` dupliqué. Ajouter la valeur durcie à la
+fin du fichier — ce qu'écrivent tous les guides de durcissement, et ce que fait
+`echo >>` — laissait BOB rapporter la valeur que l'opérateur venait justement
+d'écraser. Les deux directions sont fausses et la seconde est pire : une distro
+livrant `PASS_MAX_DAYS 90` avec `99999` ajouté n'a plus aucune expiration, et
+BOB annonçait 90.
+
+**`/etc/security/pwquality.conf.d/` n'était jamais ouvert.** libpwquality lit
+d'abord le répertoire de dépôts, en ordre ASCII, puis le fichier principal.
+Debian livre `pwquality.conf` avec tous les réglages commentés, ce qui fait du
+dépôt l'endroit où le durcissement atterrit réellement. L'ordre d'analyse a été
+mesuré, non repris de la page de manuel dont la formulation admet les deux
+lectures : un namespace de montage avec un `/etc/security` synthétique, et la
+bibliothèque interrogée directement.
+
+**Les piles PAM se coupent en plusieurs lignes.** `pam.conf(5)` prend justement
+une ligne `pam_pwquality.so` coupée comme exemple. Lue ligne par ligne, le
+module et le `minlen=` qu'on lui donne se retrouvent sur des lignes différentes
+et ne se rencontrent jamais : BOB détectait le module de qualité et annonçait
+aucune longueur minimale.
+
+`join_continuations` passe dans `bob/checks/_run.py` et est désormais partagé
+avec l'analyseur sudoers. C'est le fond du sujet plus qu'un rangement : chaque
+défaut de ce cycle vient d'un traitement de configuration ligne à ligne réécrit
+une fois par contrôle, juste dans certaines copies et oublié dans d'autres.
+
+Une question reste ouverte plutôt que devinée : savoir si un `minlen=` inline
+PAM prime sur `pwquality.conf` ou l'inverse. `pam_pwquality.so` n'est pas
+installé ici, donc il n'existe pas d'oracle local, et ce cycle ne troque pas un
+verdict mesuré contre un verdict supposé.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6826**.
+**Tests** 6719 → **6839**.
 
 ---
 

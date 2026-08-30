@@ -107,13 +107,51 @@ firewall as a firewall with no rules. **A failed audit an operator can see is
 worth more than a clean one that is wrong.** The line is pinned by a test so it
 cannot be crossed by someone tidying up.
 
+### Password policy: three files, three owners, three disagreements
+
+`bob/checks/password_policy.py` reads `/etc/login.defs`,
+`/etc/pam.d/common-password` and `/etc/security/pwquality.conf`. It disagreed
+with the real owner of all three, and the unifying error was reading the
+*first* match.
+
+**login.defs and pwquality.conf are last-one-wins.** Verified with shadow's own
+`useradd --prefix` against a duplicated login.defs, reading back the field it
+wrote into shadow, and by calling libpwquality 1.4.5 through ctypes on a
+duplicated pwquality.conf. Appending the hardened value to the end of the file
+— what every hardening guide writes, and what `echo >>` does — left BOB
+reporting the value the operator had just overridden. Both directions are wrong
+and the second is worse: a distro shipping `PASS_MAX_DAYS 90` with `99999`
+appended has no expiry at all, and BOB reported 90.
+
+**`/etc/security/pwquality.conf.d/` was never opened.** libpwquality reads the
+drop-in directory first, in ASCII order, then the main file. Debian ships
+pwquality.conf with every setting commented out, which makes the drop-in the
+place hardening actually lands. The parse order was measured, not taken from
+the man page, whose wording admits both readings: a mount namespace with a
+synthetic `/etc/security` and the library asked directly.
+
+**PAM stacks wrap.** `pam.conf(5)` uses a wrapped `pam_pwquality.so` line as its
+own worked example. Read one line at a time, the module and the `minlen=` it was
+given sit on different lines and never meet: BOB detected the quality module and
+reported no minimum length.
+
+`join_continuations` moves to `bob/checks/_run.py` and is now shared with the
+sudoers parser. That is the point rather than tidiness — every defect in this
+cycle came from line-level config handling written once per check, correct in
+some copies and forgotten in others.
+
+One question is left open rather than guessed: whether an inline PAM `minlen=`
+overrides `pwquality.conf` or the reverse. `pam_pwquality.so` is not installed
+here, so there is no local oracle, and this cycle does not trade a measured
+verdict for a believed one.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6826**.
+**Tests** 6719 → **6839**.
 
 ---
 
