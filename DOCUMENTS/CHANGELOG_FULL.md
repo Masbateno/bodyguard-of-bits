@@ -255,13 +255,49 @@ Second defect, same function: `df` prints mount points unescaped and
 was reported as `/media/so6/My` — a path that does not exist, in a finding
 telling the operator it is 95% full.
 
+### A failed security service was invisible to the check that reports failed
+### security services
+
+`systemctl list-units` prefixes a unit systemd considers "not ok" with a status
+glyph, which shifts every column by one. Which glyph depends on the locale: `●`
+under UTF-8, `*` under the `LC_ALL=C` environment `_run` uses by default — so
+BOB's own captures carry the asterisk. 27 units on the development host print
+this way.
+
+`services_state` read `split()[0]` as the unit name and `[2]` as the active
+state:
+
+    * auditd.service  loaded failed failed Security Auditing Service
+      unit  = "*"        -> not a known security service, skipped
+      state = "loaded"   -> not inactive or failed, skipped
+
+An enabled-but-failed security service is exactly what this check exists to
+report, and exactly the case systemd marks with the glyph. The check could not
+see its own subject. `systemd_hardening._running_services` had the same read.
+
+The tool already knew: `socket_units` scans tokens for the `.socket` suffix and
+documents the glyph in a comment, and `systemd_timers` matches by regex. Two
+parsers out of four handled it — the same shape as the trailing-comment family
+earlier in this cycle, where `_check_duplicates` stripped comments and its
+neighbours did not. `strip_unit_glyph` now lives in `bob/checks/_run.py` and
+handles both glyphs.
+
+Also in `systemd_hardening`: the `_MAX_UNITS` cap was applied to the
+`systemd-analyze` output *before* the running-services filter, so on a host with
+more analysed units than the cap it bounded which running services were
+considered at all, alphabetically, rather than how many results were kept. Scope
+first, then cap.
+
+Scoping itself was verified exact against `systemd-analyze security --json=short`
+and `systemctl list-units`: 44 running, 74 analysed, 44 kept, no divergence.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6934**.
+**Tests** 6719 → **6949**.
 
 ---
 

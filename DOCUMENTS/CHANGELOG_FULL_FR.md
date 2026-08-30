@@ -277,13 +277,50 @@ Second défaut, même fonction : `df` affiche les points de montage sans
 `/media/so6/My Passport` était rapporté comme `/media/so6/My` — un chemin qui
 n'existe pas, dans un finding annonçant à l'opérateur qu'il est plein à 95 %.
 
+### Un service de sécurité en échec était invisible pour le contrôle qui
+### signale les services de sécurité en échec
+
+`systemctl list-units` préfixe d'un glyphe d'état toute unité que systemd juge
+« pas en ordre », ce qui décale toutes les colonnes d'un cran. Le glyphe dépend
+de la locale : `●` en UTF-8, `*` sous l'environnement `LC_ALL=C` qu'utilise
+`_run` par défaut — les captures de BOB portent donc l'astérisque. 27 unités de
+la machine de développement s'affichent ainsi.
+
+`services_state` lisait `split()[0]` comme nom d'unité et `[2]` comme état :
+
+    * auditd.service  loaded failed failed Security Auditing Service
+      unité = "*"        -> pas un service de sécurité connu, ignoré
+      état  = "loaded"   -> ni inactive ni failed, ignoré
+
+Un service de sécurité activé mais en échec est exactement ce que ce contrôle
+existe pour signaler, et exactement le cas que systemd marque du glyphe. Le
+contrôle ne voyait pas son propre sujet. `systemd_hardening._running_services`
+faisait la même lecture.
+
+L'outil le savait déjà : `socket_units` cherche le token par son suffixe
+`.socket` et documente le glyphe en commentaire, `systemd_timers` passe par des
+regex. Deux analyseurs sur quatre le traitaient — la même forme que la famille
+du commentaire en fin de ligne plus tôt dans ce cycle, où `_check_duplicates`
+dépouillait les commentaires et pas ses voisins. `strip_unit_glyph` vit
+désormais dans `bob/checks/_run.py` et gère les deux glyphes.
+
+Également dans `systemd_hardening` : le plafond `_MAX_UNITS` s'appliquait à la
+sortie de `systemd-analyze` *avant* le filtrage sur les services actifs. Sur une
+machine comptant plus d'unités analysées que le plafond, il bornait donc quels
+services actifs étaient examinés — par ordre alphabétique — au lieu de borner le
+nombre de résultats conservés. On filtre d'abord, on plafonne ensuite.
+
+Le cadrage lui-même a été vérifié exact contre
+`systemd-analyze security --json=short` et `systemctl list-units` : 44 actifs, 74
+analysés, 44 retenus, aucune divergence.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6934**.
+**Tests** 6719 → **6949**.
 
 ---
 

@@ -84,6 +84,33 @@ def _run(*args: str, timeout: int = _CMD_TIMEOUT, env: "dict | None" = None) -> 
         return ""
 
 
+
+# systemd prefixes a unit it considers "not ok" with a status glyph in
+# `systemctl list-units`. Which glyph depends on the locale: "●" under UTF-8,
+# and "*" under the LC_ALL=C environment `_run` uses by default — so BOB's
+# captures carry the asterisk form.
+_UNIT_GLYPHS = ("\u25cf", "*")
+
+
+def strip_unit_glyph(line: str) -> str:
+    """Return a ``systemctl list-units`` line without its leading status glyph.
+
+    The glyph marks exactly the units an audit cares about most — failed ones —
+    and it shifts every column by one. A parser reading ``line.split()[0]`` as
+    the unit name therefore read the glyph, and ``[2]`` as the active state read
+    "loaded", on precisely the units it existed to report.
+
+    ``--plain`` would also remove it, but stripping works on captured output and
+    on every systemd version, and does not depend on a flag being honoured.
+    """
+    stripped = line.lstrip()
+    for glyph in _UNIT_GLYPHS:
+        if stripped.startswith(glyph):
+            rest = stripped[len(glyph):]
+            if rest[:1].isspace():
+                return rest.lstrip()
+    return line
+
 def _command_exists(name: str) -> bool:
     """Return True if the command is available in PATH."""
     return shutil.which(name) is not None

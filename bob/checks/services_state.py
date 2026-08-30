@@ -21,7 +21,7 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, strip_unit_glyph
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,10 @@ class ServicesStateSnapshot:
         seen: set[str] = set()
 
         for line in out.splitlines():
-            parts = line.split()
+            # A failed unit is printed with a leading status glyph, which shifts
+            # every column by one — and a failed-but-enabled security service is
+            # the exact finding this check exists to produce.
+            parts = strip_unit_glyph(line).split()
             # Format: UNIT LOAD ACTIVE SUB [DESCRIPTION...]
             if len(parts) < 3:
                 continue

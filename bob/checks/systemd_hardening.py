@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, strip_unit_glyph
 from bob.scoring import CheckResult
 
 # Hard cap on units parsed, to never stall on a large deployment.
@@ -75,7 +75,7 @@ class ServiceHardeningSnapshot:
             return snap
 
         rows: list[tuple[str, float, str]] = []
-        for entry in data[:_MAX_UNITS]:
+        for entry in data:
             if not isinstance(entry, dict):
                 continue
             unit = str(entry.get("unit", ""))
@@ -83,6 +83,12 @@ class ServiceHardeningSnapshot:
             # list-units call failed (empty set) fall back to all analysed units.
             if running and unit not in running:
                 continue
+            # The cap bounds how many results are kept, applied *after* the
+            # scope filter. Slicing `data` first made it bound which running
+            # services were considered at all, alphabetically, on any host
+            # whose analysed-unit count exceeds it.
+            if len(rows) >= _MAX_UNITS:
+                break
             try:
                 exposure = float(entry.get("exposure", 0) or 0)
             except (ValueError, TypeError):
@@ -102,7 +108,7 @@ def _running_services() -> set[str]:
                "--state=running", "--no-legend")
     names: set[str] = set()
     for line in out.splitlines():
-        parts = line.split()
+        parts = strip_unit_glyph(line).split()
         if parts and parts[0].endswith(".service"):
             names.add(parts[0])
     return names
