@@ -228,7 +228,7 @@ def _validate_lang(value: str) -> str:
 # option" — confusing, since the option *is* known. We now raise an
 # explicit "requires a value" error. ``-e/--explain`` and ``--watch``
 # are intentionally absent — they have a documented no-arg behaviour
-# (interactive picker / default 30 s loop respectively).
+# (interactive picker / default 60 s loop respectively).
 _VALUE_TAKING_OPTS = frozenset({
     "--lang",
     "-l", "--log-days",
