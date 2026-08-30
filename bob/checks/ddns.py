@@ -207,7 +207,7 @@ def check_ddns(
 
     # No DDNS client found
     if not snapshot.installed:
-        result.ok(message=_t("ddns.none"))
+        result.ok(message=_t("ddns.none"), key="ddns.none")
         return result
 
     # Installed but inactive
@@ -241,7 +241,7 @@ def check_ddns(
     )
 
     if not open_ports:
-        result.ok(message=_t("ddns.no_open_ports"))
+        result.ok(message=_t("ddns.no_open_ports"), key="ddns.no_open_ports")
         return result
 
     # Open ports detected — warn and deduct.

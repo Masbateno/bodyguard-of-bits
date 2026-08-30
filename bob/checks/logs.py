@@ -270,14 +270,14 @@ def check_logs(
     result = CheckResult()
 
     if not snapshot.log_found:
-        result.info(message=_t("logs.no_logfile"))
+        result.info(message=_t("logs.no_logfile"), key="logs.no_logfile")
         return result, None
 
     if snapshot.log_source == "journald":
-        result.info(message=_t("logs.source_journald"))
+        result.info(message=_t("logs.source_journald"), key="logs.source_journald")
 
     if snapshot.total == 0:
-        result.ok(message=_t("logs.empty"))
+        result.ok(message=_t("logs.empty"), key="logs.empty")
         return result, None
 
     # Top IPs and ports

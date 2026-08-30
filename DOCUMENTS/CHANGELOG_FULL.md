@@ -50,13 +50,39 @@ miss**.
 
 Each fix is mutation-tested: the defect is re-injected and the new guard must fail.
 
+### The audit's own main loop had never been executed by a test
+
+Three test files reach `run_checks` through `ast` and assert things about its
+source. None ran it. The v0.14.1 fault barrier, the 38 section call sites and
+the snapshot factories feeding every check were therefore covered by
+inspection alone — which is how a barrier gets verified to *exist* without
+ever being verified to *work*.
+
+`tests/test_v0150_runner_end_to_end.py` runs the real audit in-process,
+unprivileged and isolated from the user's own config. Unprivileged is the
+harsher case: most checks hit EACCES on `/etc/shadow` and friends, which is
+exactly what the degradation paths are for.
+
+It found a defect on its first execution. **Five findings were constructed
+without a key** — two in `ddns`, three in `logs`. A keyless finding is
+unreachable by `--explain`, cannot be suppressed with `--ignore`, is not
+tracked by recurrence, and reaches the JSON output anonymous. 275 of the 280
+construction sites passed a key: the signature of an invariant held by
+convention rather than by construction, and conventions drift one call site at
+a time. The live run surfaced one of the five; the other four sit on code
+paths this host does not take, so a static guard now covers all of them.
+
+The run also asserts that no finding and no printed line renders as a bare
+`[some.key]` in either locale — the failure mode v0.9.1 was hotfixed for,
+which the static locale guards had passed over.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6813**.
+**Tests** 6719 → **6822**.
 
 ---
 

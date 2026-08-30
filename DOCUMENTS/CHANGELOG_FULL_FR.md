@@ -51,13 +51,43 @@ est rigoureux, plus la détection échoue**.
 
 Chaque correctif est testé par mutation : le défaut est réinjecté et la nouvelle garde doit échouer.
 
+### La boucle principale de l'audit n'avait jamais été exécutée par un test
+
+Trois fichiers de test atteignent `run_checks` via `ast` et affirment des
+choses sur son source. Aucun ne l'exécutait. La barrière de faute de v0.14.1,
+les 38 sites d'appel de section et les fabriques de snapshot qui alimentent
+chaque contrôle n'étaient donc couverts que par inspection — c'est ainsi
+qu'une barrière se voit vérifiée *existante* sans jamais être vérifiée
+*fonctionnelle*.
+
+`tests/test_v0150_runner_end_to_end.py` exécute le véritable audit en
+processus, sans privilèges et isolé de la configuration de l'utilisateur. Sans
+privilèges est le cas le plus dur : la plupart des contrôles se heurtent à
+EACCES sur `/etc/shadow` et consorts, ce à quoi servent précisément les
+chemins de dégradation.
+
+Il a trouvé un défaut dès sa première exécution. **Cinq findings étaient
+construits sans clé** — deux dans `ddns`, trois dans `logs`. Un finding sans
+clé est inatteignable par `--explain`, ne peut pas être supprimé par
+`--ignore`, n'est pas suivi par la récurrence, et parvient anonyme à la sortie
+JSON. 275 des 280 sites de construction passaient une clé : la signature d'un
+invariant tenu par convention plutôt que par construction, et les conventions
+dérivent un site d'appel à la fois. L'exécution live en a révélé un sur cinq ;
+les quatre autres sont sur des chemins que cette machine ne prend pas, d'où
+une garde statique qui les couvre tous.
+
+L'exécution vérifie aussi qu'aucun finding ni aucune ligne affichée ne se rend
+sous la forme d'une clé nue `[une.cle]` dans l'une ou l'autre langue — le mode
+de défaillance corrigé en urgence par v0.9.1, que les gardes statiques de
+locale avaient laissé passer.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6813**.
+**Tests** 6719 → **6822**.
 
 ---
 
