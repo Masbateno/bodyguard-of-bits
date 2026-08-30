@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import logging
 import sys
@@ -493,6 +494,42 @@ def run_checks(
             return (f"Section not evaluated ({section}) — an internal error "
                     f"prevented this check from running")
 
+
+    @contextlib.contextmanager
+    def _core(section: str):
+        """Fault barrier for an always-on core block that is a *leaf*.
+
+        The v0.14.1 note on ``_sec`` said the always-on core is deliberately
+        unguarded because it is "a data pipeline, not a set of sections", and
+        that swallowing a failure there would leave downstream code reading
+        names that were never bound. Checked against the actual data flow, that
+        holds for three of its twelve collections. The other nine are ordinary
+        sections that happen not to be profile-gated: nothing outside their own
+        block reads them.
+
+        Measured by injecting a decode error into each core collector before
+        this barrier existed: seven of eight lost the whole audit, and they lost
+        it *late* — the fail2ban snapshot aborted after 29 962 bytes of output
+        had already reached the operator, who then got exit 3 with no score, no
+        summary and no JSON. That is the exact failure v0.14.1 set out to end,
+        surviving in the half of the runner the barrier did not reach.
+
+        Two collections stay unguarded on purpose, and the reason is not the
+        NameError cascade — it is verdict honesty. ``fw_status`` and
+        ``ports_snapshot`` are read by nearly every check below. Substituting an
+        empty default for either would not degrade the audit, it would make it
+        *lie*: an unreadable port table would render as "nothing is listening",
+        and an unreadable firewall as a firewall with no rules. A failed audit
+        an operator can see is worth more than a clean one that is wrong.
+
+        Any variable a guarded block assigns must be bound to a safe default
+        *before* the block, or not read after it.
+        """
+        try:
+            yield
+        except Exception as exc:  # noqa: BLE001 — deliberate core-leaf barrier
+            _degrade_section(section, exc)
+
     def _degrade_section(section: str, exc: BaseException) -> None:
         """Record a section that raised, without aborting the audit.
 
@@ -602,35 +639,42 @@ def run_checks(
     # ---- CHECK 46 — iptables / nftables (UFW inactive only) ----
     if not fw_status.active and _section_enabled("firewall_iptables", config, profile):
         emit_section("firewall_iptables")
-        ipt_snapshot  = IptablesNftSnapshot.from_system()
-        ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, t=t)
-        engine.apply(ipt_result)
-        display_result(ipt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+        with _core("firewall_iptables"):
+            ipt_snapshot  = IptablesNftSnapshot.from_system()
+            ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, t=t)
+            engine.apply(ipt_result)
+            display_result(ipt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if not config.quiet:
             print()
 
     # ---- CHECK 2b — Firewall stack analysis ----
     emit_section("firewall_drivers")
 
-    stack_snapshot = FirewallStackSnapshot.from_system()
-    stack_result   = check_firewall_stack(stack_snapshot, t=t)
-    engine.apply(stack_result)
-    display_result(stack_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    stack_snapshot = FirewallStackSnapshot()
+    with _core("firewall_drivers"):
+        stack_snapshot = FirewallStackSnapshot.from_system()
+        stack_result   = check_firewall_stack(stack_snapshot, t=t)
+        engine.apply(stack_result)
+        display_result(stack_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     if not config.quiet:
         print()
 
     # ---- CHECK 2c — Network context (interfaces + connections) ----
     emit_section("network_context")
 
-    net_snapshot = NetworkContextSnapshot.from_system()
-    net_result   = check_network_context(net_snapshot, t=t)
-    engine.apply(net_result)
-    display_result(net_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
-    if not config.quiet:
-        display_network_context(net_snapshot, t, output)
+    net_snapshot = NetworkContextSnapshot()
+    with _core("network_context"):
+        net_snapshot = NetworkContextSnapshot.from_system()
+        net_result   = check_network_context(net_snapshot, t=t)
+        engine.apply(net_result)
+        display_result(net_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+        if not config.quiet:
+            display_network_context(net_snapshot, t, output)
 
     # ---- CHECK 10 — IPv6 consistency ----
-    ipv6_snapshot = IPv6Snapshot.from_system()
+    ipv6_snapshot = IPv6Snapshot()
+    with _core("ipv6"):
+        ipv6_snapshot = IPv6Snapshot.from_system()
     _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active)
 
     # =========================================================================
@@ -641,11 +685,13 @@ def run_checks(
     # ---- CHECK 3 — Network services ----
     # Upgrade network_context to "ddns" when DDNS is active with open ports
     # so that service exposure deductions are scored at public-equivalent weight.
-    ddns_snapshot = DdnsSnapshot.from_system()
-    if network_context == "local":
-        network_context = ddns_effective_context(
-            ddns_snapshot, ufw_numbered, loopback_only_ports, active_external_ports,
-        )
+    ddns_snapshot = None
+    with _core("ddns"):
+        ddns_snapshot = DdnsSnapshot.from_system()
+        if network_context == "local":
+            network_context = ddns_effective_context(
+                ddns_snapshot, ufw_numbered, loopback_only_ports, active_external_ports,
+            )
 
     # SSH exposure known here: used both in services loop (risk context note)
     # and later in CHECK 11 (ssh_exposed flag).
@@ -727,54 +773,60 @@ def run_checks(
     if not config.quiet:
         print_section(t("sections.logs"))
 
-    logs_snapshot = LogsSnapshot.from_system(log_days=config.log_days)
-    display_geoip_notice(geoip2_status(), t, output, quiet=config.quiet)
-    logs_result, logs_report = check_logs(logs_snapshot, audited_ports=audited_ports, t=t)
-    engine.apply(logs_result)
-    display_log_results(logs_result, logs_snapshot, logs_report, config, t, report)
+    with _core("logs"):
+        logs_snapshot = LogsSnapshot.from_system(log_days=config.log_days)
+        display_geoip_notice(geoip2_status(), t, output, quiet=config.quiet)
+        logs_result, logs_report = check_logs(logs_snapshot, audited_ports=audited_ports, t=t)
+        engine.apply(logs_result)
+        display_log_results(logs_result, logs_snapshot, logs_report, config, t, report)
 
     # ---- CHECK 6 — DDNS / external exposure ----
     emit_section("ddns")
 
-    ddns_result   = check_ddns(
-        ddns_snapshot, ufw_rules=ufw_numbered, t=t,
-        loopback_ports=loopback_only_ports,
-        active_ports=active_external_ports,
-    )
-    engine.apply(ddns_result)
-    display_result(ddns_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    with _core("ddns"):
+        if ddns_snapshot is None:
+            raise RuntimeError("DDNS snapshot unavailable")
+        ddns_result   = check_ddns(
+            ddns_snapshot, ufw_rules=ufw_numbered, t=t,
+            loopback_ports=loopback_only_ports,
+            active_ports=active_external_ports,
+        )
+        engine.apply(ddns_result)
+        display_result(ddns_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     # v0.4.4: the port list is now interpolated into the WARN message itself
     # (see ddns.py); we no longer print "→ 22/tcp" sub-items here.
 
     # ---- CHECK 7 — Docker ----
     emit_section("docker")
 
-    docker_snapshot = DockerSnapshot.from_system()
-    docker_result   = check_docker(docker_snapshot, network_context=network_context, t=t)
-    engine.apply(docker_result)
-    display_result(docker_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    with _core("docker"):
+        docker_snapshot = DockerSnapshot.from_system()
+        docker_result   = check_docker(docker_snapshot, network_context=network_context, t=t)
+        engine.apply(docker_result)
+        display_result(docker_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
-    # I-1 (v0.7.4): gate the exposed-ports block on --quiet to honour the
-    # `bob -q` empty-stdout contract. Pre-v0.7.4 this block printed even in
-    # quiet mode whenever Docker containers exposed ports.
-    if docker_snapshot.exposed_ports and not config.quiet:
-        output.print_dim(t("docker.exposed_ports") + " :")
-        for port in docker_snapshot.exposed_ports:
-            safe_name = output.sanitize(port.container_name, max_len=128)
-            output.print_dim(
-                f"  {safe_name}: {port.port_proto} → "
-                f"{port.container_port}/{port.proto}"
-            )
+        # I-1 (v0.7.4): gate the exposed-ports block on --quiet to honour the
+        # `bob -q` empty-stdout contract. Pre-v0.7.4 this block printed even in
+        # quiet mode whenever Docker containers exposed ports.
+        if docker_snapshot.exposed_ports and not config.quiet:
+            output.print_dim(t("docker.exposed_ports") + " :")
+            for port in docker_snapshot.exposed_ports:
+                safe_name = output.sanitize(port.container_name, max_len=128)
+                output.print_dim(
+                    f"  {safe_name}: {port.port_proto} → "
+                    f"{port.container_port}/{port.proto}"
+                )
     if not config.quiet:
         print()
 
     # ---- CHECK 8 — Virtualisation ----
     emit_section("virtualization")
 
-    virt_snapshot = VirtSnapshot.from_system()
-    virt_result   = check_virtualization(virt_snapshot, t=t)
-    engine.apply(virt_result)
-    display_result(virt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    with _core("virtualization"):
+        virt_snapshot = VirtSnapshot.from_system()
+        virt_result   = check_virtualization(virt_snapshot, t=t)
+        engine.apply(virt_result)
+        display_result(virt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     if not config.quiet:
         print()
 
@@ -811,7 +863,12 @@ def run_checks(
     emit_group("system_hardening")
 
     # ---- CHECK 9 — System hardening ----
-    hardening_snapshot = HardeningSnapshot.from_system()
+    # Eager, unlike its neighbours: the snapshot is returned in ``ChecksResult``
+    # and read by the caller, so it cannot be a lazy factory. Bound to a default
+    # first so a failed collection degrades instead of aborting the audit.
+    hardening_snapshot = HardeningSnapshot()
+    with _core("hardening"):
+        hardening_snapshot = HardeningSnapshot.from_system()
     _sec("hardening", hardening_snapshot, check_hardening)
 
     # ---- CHECK 36 — Kernel hardening ----
@@ -885,8 +942,11 @@ def run_checks(
     _sec("secure_boot", SecureBootSnapshot.from_system, check_secure_boot, profile_name=_pname)
 
     # ---- CHECK 29 — Fail2ban intrusion prevention ----
-    fail2ban_snapshot = Fail2banSnapshot.from_system()
-    _sec("fail2ban", fail2ban_snapshot, check_fail2ban)
+    # Nothing reads this snapshot outside its own check, so it takes the lazy
+    # factory form: ``_sec`` then covers the collection with the same barrier
+    # that already covered the check, and a run that skips the section pays
+    # nothing for it.
+    _sec("fail2ban", Fail2banSnapshot.from_system, check_fail2ban)
 
     # ---- CHECK 25 — ClamAV antivirus audit ----
     _sec("clamav", ClamAVSnapshot.from_system, check_clamav)

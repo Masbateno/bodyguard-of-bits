@@ -81,13 +81,46 @@ sous la forme d'une clé nue `[une.cle]` dans l'une ou l'autre langue — le mod
 de défaillance corrigé en urgence par v0.9.1, que les gardes statiques de
 locale avaient laissé passer.
 
+### Le cœur toujours-actif interrompait l'audit ; il se dégrade désormais
+
+v0.14.1 a posé une barrière de faute sur les sections distribuées par `_sec`, et
+documentait le cœur toujours-actif comme délibérément exclu : c'est « un
+pipeline de données, pas un ensemble de sections », et y avaler une panne
+laisserait le code aval lire des noms jamais liés.
+
+Confronté au flux de données réel, cet argument couvre deux des douze collectes
+du cœur. Les dix autres sont des sections ordinaires qui ne sont simplement pas
+filtrées par profil — rien hors de leur propre bloc ne les lit. En injectant une
+erreur de décodage dans chaque collecteur, avant ce changement, l'audit entier
+était perdu dans sept cas sur huit, et perdu *tard* : le snapshot fail2ban
+interrompait tout après **29 962 octets** déjà parvenus à l'opérateur, qui
+obtenait ensuite un code 3, sans score, sans résumé et sans JSON. La panne que
+v0.14.1 entendait supprimer restait vivante dans la moitié du runner que la
+barrière n'atteignait pas.
+
+`with _core(section)` couvre maintenant `firewall_iptables`,
+`firewall_drivers`, `network_context`, `ipv6`, `ddns`, `logs`, `docker`,
+`virtualization` et `hardening` ; `fail2ban` passe à la forme fabrique
+paresseuse et hérite de la barrière `_sec`. Les collectes dont le snapshot est
+renvoyé dans `ChecksResult` sont liées à une valeur par défaut avant le bloc
+protégé, de sorte qu'une panne dégrade au lieu de laisser le nom non lié.
+
+`fw_status` et `ports_snapshot` restent non protégés, et la raison n'est pas la
+cascade de `NameError` — c'est l'honnêteté du verdict. Presque tous les
+contrôles en aval les lisent. Y substituer une valeur vide ne dégraderait pas
+l'audit, cela le ferait **mentir** : une table de ports illisible se rendrait en
+« rien n'écoute », un pare-feu illisible en pare-feu sans règles. **Un audit
+échoué que l'opérateur voit vaut mieux qu'un audit propre qui est faux.** La
+limite est verrouillée par un test pour qu'on ne la franchisse pas par souci de
+rangement.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6822**.
+**Tests** 6719 → **6826**.
 
 ---
 

@@ -76,13 +76,44 @@ The run also asserts that no finding and no printed line renders as a bare
 `[some.key]` in either locale — the failure mode v0.9.1 was hotfixed for,
 which the static locale guards had passed over.
 
+### The always-on core aborted the audit; now it degrades
+
+v0.14.1 put a fault barrier on the sections dispatched through `_sec`, and
+documented the always-on core as deliberately excluded: it is "a data pipeline,
+not a set of sections", and swallowing a failure there would leave downstream
+code reading names that were never bound.
+
+Checked against the actual data flow, that argument covers two of the core's
+twelve collections. The other ten are ordinary sections that merely are not
+profile-gated — nothing outside their own block reads them. Injecting a decode
+error into each collector, before this change, lost the whole audit in seven of
+eight cases, and lost it *late*: the fail2ban snapshot aborted after **29 962
+bytes** of output had already reached the operator, who then got exit 3 with no
+score, no summary and no JSON. The failure v0.14.1 set out to end was still
+alive in the half of the runner the barrier did not reach.
+
+`with _core(section)` now covers `firewall_iptables`, `firewall_drivers`,
+`network_context`, `ipv6`, `ddns`, `logs`, `docker`, `virtualization` and
+`hardening`; `fail2ban` moves to the lazy factory form and inherits the `_sec`
+barrier instead. Collections whose snapshot is returned in `ChecksResult` are
+bound to a default before the guarded block, so a failure degrades rather than
+leaving the name unbound.
+
+`fw_status` and `ports_snapshot` stay unguarded, and the reason is not the
+NameError cascade — it is verdict honesty. Nearly every check below reads them.
+Substituting an empty default would not degrade the audit, it would make it
+*lie*: an unreadable port table renders as "nothing is listening", an unreadable
+firewall as a firewall with no rules. **A failed audit an operator can see is
+worth more than a clean one that is wrong.** The line is pinned by a test so it
+cannot be crossed by someone tidying up.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6822**.
+**Tests** 6719 → **6826**.
 
 ---
 
