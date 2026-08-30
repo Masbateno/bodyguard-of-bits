@@ -261,7 +261,7 @@ is now ignored; plugins always execute in the spawn'd sandbox child.
 Finding messages interpolate values BOB reads from the system — file names,
 unit names, user names, package names, certificate subjects. Since
 **v0.14.1** every finding's `message`, `detail` and `note` is stripped of
-ANSI escapes and control characters in `CheckResult.add_finding()`, the
+ANSI escapes and control characters in `Finding.__post_init__()`, the
 single point through which all findings are built, so the terminal, JSON,
 CSV, Markdown and HTML outputs are covered by one guarantee.
 (`cmd` keeps its newlines — remediation blocks are legitimately multi-line —

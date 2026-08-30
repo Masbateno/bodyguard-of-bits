@@ -562,7 +562,7 @@ def check_xxx(snapshot: XxxSnapshot, t=None) -> CheckResult:
    system file degrades instead of raising. A bare `read_text()` inside an
    `except OSError` block is rejected by an AST guard over the whole package.
 
-3. **Do not sanitise finding text yourself.** `CheckResult.add_finding()`
+3. **Do not sanitise finding text yourself.** `Finding.__post_init__()`
    strips ANSI escapes and control characters from `message` / `detail` /
    `note` (and from `cmd`, preserving newlines) at the single point every
    finding passes through. Interpolate system-derived values directly.

@@ -243,7 +243,7 @@ Finding text interpolates system-derived values everywhere else: file names, uni
 
 The sequence rewrote the terminal title and corrupted the summary box. With cursor-movement sequences, the same vector can overwrite audit lines already printed — that is, make the report lie about *other* findings, which matters more in a security auditor than in most tools.
 
-Sanitisation now happens in `CheckResult.add_finding` — the single point every finding passes through — so the terminal, JSON, CSV, Markdown and HTML are all covered by one change. `cmd` keeps its newlines via a new `sanitize_multiline()` (14 legitimate multi-line remediation blocks) and loses everything else. Measured no-op on well-behaved content: across a full run, 119 findings carried zero control characters in `message` / `detail` / `note`.
+Sanitisation now happens in `Finding.__post_init__` — which every construction path goes through by definition, including `bob/_sandbox.py` rebuilding a `Finding` from plugin-returned JSON — so the terminal, JSON, CSV, Markdown and HTML are all covered by one change. `cmd` keeps its newlines via a new `sanitize_multiline()` (14 legitimate multi-line remediation blocks) and loses everything else. Measured no-op on well-behaved content: across a full run, 119 findings carried zero control characters in `message` / `detail` / `note`.
 
 #### 5. Unbounded reads on paths that are not regular files
 

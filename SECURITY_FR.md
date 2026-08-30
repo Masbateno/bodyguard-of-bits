@@ -196,7 +196,7 @@ Les messages de findings interpolent des valeurs que BOB lit sur le système —
 noms de fichiers, d'unités, d'utilisateurs, de paquets, sujets de certificats.
 Depuis la **v0.14.1**, les champs `message`, `detail` et `note` de chaque
 finding sont débarrassés des séquences ANSI et des caractères de contrôle dans
-`CheckResult.add_finding()`, le point unique par lequel tous les findings sont
+`Finding.__post_init__()`, par lequel tous les findings sont
 construits : le terminal, JSON, CSV, Markdown et HTML sont donc couverts par une
 seule garantie. (`cmd` conserve ses sauts de ligne — les blocs de remédiation
 sont légitimement multi-lignes — et perd tout le reste.)

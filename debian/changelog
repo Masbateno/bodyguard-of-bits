@@ -78,7 +78,7 @@ bodyguard-of-bits (0.14.1-1) UNRELEASED; urgency=low
   * Terminal escape sequences from system-derived values reached the terminal
     (a world-writable /etc/cron.daily script whose filename carried an OSC
     title-set sequence rewrote the window title and corrupted the summary box).
-    Finding text is now sanitized in CheckResult.add_finding, covering the
+    Finding text is now sanitized in Finding.__post_init__, covering the
     terminal, JSON, CSV, Markdown and HTML at once.
   * Unbounded reads on non-regular files: the plugin loader trusted
     stat().st_size, which is 0 for a character device, so a plugin symlinked to

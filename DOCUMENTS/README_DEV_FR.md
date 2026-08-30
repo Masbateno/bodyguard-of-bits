@@ -563,7 +563,7 @@ def check_xxx(snapshot: XxxSnapshot, t=None) -> CheckResult:
    `read_text()` nu dans un bloc `except OSError` est rejeté par un garde AST
    qui balaie tout le paquet.
 
-3. **Ne pas assainir soi-même le texte des findings.** `CheckResult.add_finding()`
+3. **Ne pas assainir soi-même le texte des findings.** `Finding.__post_init__()`
    retire les séquences ANSI et les caractères de contrôle de `message` /
    `detail` / `note` (et de `cmd`, en préservant les sauts de ligne), au point
    unique par lequel passe chaque finding. Interpole directement les valeurs

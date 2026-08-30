@@ -134,7 +134,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   display renders the raw CheckResult. engine.apply now drops ignored
   findings from it; --show-ignored is unaffected.
 - Terminal escape sequences in system-derived values (a cron script filename)
-  reached the terminal. Finding text is sanitized in add_finding, covering
+  reached the terminal. Finding text is sanitized in Finding.__post_init__, covering
   every output format at once.
 - Unbounded reads on non-regular files: a plugin symlinked to /dev/zero was
   read until OOM (stat().st_size is 0 for a device), --diff=/dev/zero

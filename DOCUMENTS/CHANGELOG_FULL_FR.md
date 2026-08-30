@@ -243,7 +243,7 @@ Le texte des findings interpole partout ailleurs des valeurs venues du système 
 
 La séquence réécrivait le titre de la fenêtre et corrompait la boîte de résumé. Avec des séquences de déplacement du curseur, le même vecteur permet de réécrire des lignes d'audit déjà affichées — c'est-à-dire de faire mentir le rapport sur d'*autres* findings, ce qui pèse plus lourd dans un auditeur de sécurité que dans la plupart des outils.
 
-L'assainissement se fait désormais dans `CheckResult.add_finding` — le point unique par lequel passe chaque finding — de sorte que terminal, JSON, CSV, Markdown et HTML sont couverts par un seul changement. `cmd` conserve ses sauts de ligne via une nouvelle `sanitize_multiline()` (14 blocs de remédiation multi-lignes légitimes) et perd tout le reste. Sans effet mesuré sur du contenu normal : sur une exécution complète, 119 findings ne portaient aucun caractère de contrôle dans `message` / `detail` / `note`.
+L'assainissement se fait désormais dans `Finding.__post_init__` — par lequel passe toute construction par définition, y compris `bob/_sandbox.py` qui reconstruit un `Finding` depuis le JSON renvoyé par un plugin — de sorte que terminal, JSON, CSV, Markdown et HTML sont couverts par un seul changement. `cmd` conserve ses sauts de ligne via une nouvelle `sanitize_multiline()` (14 blocs de remédiation multi-lignes légitimes) et perd tout le reste. Sans effet mesuré sur du contenu normal : sur une exécution complète, 119 findings ne portaient aucun caractère de contrôle dans `message` / `detail` / `note`.
 
 #### 5. Lectures non bornées sur des chemins non réguliers
 
