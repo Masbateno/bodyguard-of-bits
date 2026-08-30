@@ -165,13 +165,38 @@ socket can open or close between the `ss` call and the `/proc` read — and a
 guard that fails for reasons unrelated to the code is a guard people learn to
 ignore. The deterministic output shapes are pinned instead.
 
+### An absent kernel control was reported as an enabled one
+
+`_sysctl_int(key, default)` returned a *hardened* default whenever `/proc/sys`
+could not be read — ptrace_scope fell back to 1, kptr_restrict to 1, ASLR to 2.
+`CONFIG_SECURITY_YAMA` is a kernel option, and the sysctl is equally absent when
+`yama` is missing from the boot `lsm=` list, so on such a kernel BOB emitted:
+
+    [OK] kernel_hardening.ptrace_ok    ptrace restricted (scope=1)
+    [OK] kernel_hardening.kptr_ok      kernel pointers hidden
+
+Neither protection existed. Reporting a missing control as an enabled one is the
+worst answer an auditing tool can give, and here it was the *default* answer —
+reached by every read failure, whether the knob was absent, `/proc` restricted,
+or the read simply denied.
+
+Every field now defaults to `None`, meaning "not read", which is a distinct
+answer from any value and never a stand-in for one. The knobs a kernel does not
+expose are reported once, together, as an INFO: an absent control is neither a
+pass nor a scoreable failure. Five tests in `test_kernel_hardening.py` pinned the
+old defaults and so pinned the defect; they are replaced by one asserting that
+nothing is assumed before a read.
+
+Where the knobs do exist BOB was already exact, checked against `sysctl -n` for
+all five.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6866**.
+**Tests** 6719 → **6871**.
 
 ---
 

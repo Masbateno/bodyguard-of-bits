@@ -992,7 +992,9 @@
     "kptr_exposed_detail": "When kptr_restrict=0, kernel symbol addresses appear in /proc files and can be read by unprivileged users, making KASLR bypass much easier.",
     "dmesg_ok": "dmesg access restricted to privileged users (dmesg_restrict=1)",
     "dmesg_exposed": "dmesg accessible to all users (dmesg_restrict=0) — kernel messages may reveal exploitable information",
-    "dmesg_exposed_detail": "When dmesg_restrict=0, any local user can read kernel log messages, which may reveal memory layout, loaded modules, or hardware details useful for exploitation."
+    "dmesg_exposed_detail": "When dmesg_restrict=0, any local user can read kernel log messages, which may reveal memory layout, loaded modules, or hardware details useful for exploitation.",
+    "params_unavailable": "Kernel parameters not exposed by this kernel: {params}",
+    "params_unavailable_detail": "These knobs do not exist on this system — typically a kernel built without the matching option (Yama, for kernel.yama.ptrace_scope), or an LSM absent from the boot lsm= list. BOB reports neither a pass nor a failure for them: the control is not off, it is not there."
   },
   "suid_audit": {
     "scan_skipped": "SUID/SGID scan timed out or failed — check skipped",

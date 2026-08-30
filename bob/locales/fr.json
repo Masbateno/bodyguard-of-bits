@@ -992,7 +992,9 @@
     "kptr_exposed_detail": "Quand kptr_restrict=0, les adresses des symboles noyau sont lisibles dans /proc par des utilisateurs non privilégiés, rendant le contournement de KASLR beaucoup plus facile.",
     "dmesg_ok": "Accès à dmesg restreint aux utilisateurs privilégiés (dmesg_restrict=1)",
     "dmesg_exposed": "dmesg accessible à tous les utilisateurs (dmesg_restrict=0) — les messages noyau peuvent révéler des informations exploitables",
-    "dmesg_exposed_detail": "Quand dmesg_restrict=0, tout utilisateur local peut lire les messages du noyau, qui peuvent révéler la disposition mémoire, les modules chargés ou des détails matériels utiles à l'exploitation."
+    "dmesg_exposed_detail": "Quand dmesg_restrict=0, tout utilisateur local peut lire les messages du noyau, qui peuvent révéler la disposition mémoire, les modules chargés ou des détails matériels utiles à l'exploitation.",
+    "params_unavailable": "Paramètres noyau non exposés par ce noyau : {params}",
+    "params_unavailable_detail": "Ces réglages n'existent pas sur ce système — typiquement un noyau compilé sans l'option correspondante (Yama, pour kernel.yama.ptrace_scope), ou un LSM absent de la liste lsm= au démarrage. BOB n'annonce ni réussite ni échec pour eux : le contrôle n'est pas désactivé, il est absent."
   },
   "suid_audit": {
     "scan_skipped": "Analyse SUID/SGID expirée ou échouée — vérification ignorée",

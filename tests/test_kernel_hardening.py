@@ -264,21 +264,19 @@ class TestCombinedDeductions:
 # ---------------------------------------------------------------------------
 
 class TestSnapshotDefaults:
-    def test_default_aslr_is_2(self):
-        assert KernelHardeningSnapshot().aslr == 2
+    """v0.15.0 changed this contract, and the old tests here pinned the defect.
 
-    def test_default_ptrace_scope_is_1(self):
-        assert KernelHardeningSnapshot().ptrace_scope == 1
+    Each field used to default to a *hardened* value — ASLR 2, ptrace_scope 1,
+    kptr_restrict 1 — which the reader also returned whenever /proc/sys could
+    not be read. A kernel built without Yama therefore produced an OK finding
+    saying ptrace was restricted. The default now carries no opinion: None means
+    "not read", and the check reports it as such rather than as a pass.
+    """
 
-    def test_default_suid_dumpable_is_0(self):
-        assert KernelHardeningSnapshot().suid_dumpable == 0
-
-    def test_default_kptr_restrict_is_1(self):
-        assert KernelHardeningSnapshot().kptr_restrict == 1
-
-    def test_default_dmesg_restrict_is_0(self):
-        # Default is 0 (most systems don't restrict dmesg by default)
-        assert KernelHardeningSnapshot().dmesg_restrict == 0
+    def test_nothing_is_assumed_before_a_read(self):
+        snap = KernelHardeningSnapshot()
+        assert (snap.aslr, snap.ptrace_scope, snap.suid_dumpable,
+                snap.kptr_restrict, snap.dmesg_restrict) == (None,) * 5
 
 
 # ---------------------------------------------------------------------------

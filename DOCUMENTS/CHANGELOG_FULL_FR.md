@@ -178,13 +178,40 @@ et la lecture de `/proc` — et une garde qui échoue pour des raisons étrangè
 code est une garde qu'on apprend à ignorer. Ce sont les formes de sortie
 déterministes qui sont verrouillées à la place.
 
+### Un contrôle noyau absent était rapporté comme activé
+
+`_sysctl_int(key, default)` renvoyait un défaut *durci* dès que `/proc/sys`
+n'était pas lisible — `ptrace_scope` retombait à 1, `kptr_restrict` à 1, l'ASLR à
+2. `CONFIG_SECURITY_YAMA` est une option de compilation, et le sysctl est tout
+aussi absent quand `yama` ne figure pas dans la liste `lsm=` au démarrage : sur
+un tel noyau, BOB affichait
+
+    [OK] kernel_hardening.ptrace_ok    ptrace restreint (scope=1)
+    [OK] kernel_hardening.kptr_ok      pointeurs noyau masqués
+
+Aucune de ces protections n'existait. Annoncer un contrôle absent comme activé
+est la pire réponse que puisse donner un outil d'audit, et c'était ici la réponse
+*par défaut* — atteinte par n'importe quel échec de lecture : réglage absent,
+`/proc` restreint, ou lecture simplement refusée.
+
+Chaque champ vaut désormais `None` par défaut, c'est-à-dire « non lu » : une
+réponse distincte de toute valeur, et jamais un substitut. Les réglages que le
+noyau n'expose pas sont signalés une fois, ensemble, en INFO — un contrôle absent
+n'est ni une réussite ni un échec chiffrable. Cinq tests de
+`test_kernel_hardening.py` verrouillaient les anciens défauts et verrouillaient
+donc le défaut lui-même ; ils sont remplacés par un seul, qui exige que rien ne
+soit supposé avant lecture.
+
+Là où les réglages existent, BOB était déjà exact — vérifié contre `sysctl -n`
+pour les cinq.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6866**.
+**Tests** 6719 → **6871**.
 
 ---
 
