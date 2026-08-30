@@ -193,6 +193,11 @@ Since **v0.7.0**, plugins run in a **restricted in-process sandbox**:
     list of well-known-secret paths (`/etc/shadow`, `~/.ssh/id_*`,
     `/dev/mem`, …).
   - `pathlib.Path` write methods monkey-patched to `PermissionError`.
+  - **Loader hardening** (v0.14.1): a plugin must be a *regular file*, and
+    the source is read through a bounded read. The 64 KB cap used to be
+    enforced via `stat().st_size`, which is `0` for a character device — so
+    `ln -s /dev/zero ~/.config/bob/checks.d/p.py` sailed through the cap and
+    was read until the OOM killer intervened.
   - Extensive strip of dangerous `os` module attributes
     (subprocess/spawn, raw fd I/O, FS writes, privilege changes,
     env mutations, …).
@@ -251,6 +256,29 @@ the sandbox entirely and run the plugin in the parent process — surfaced
 a CRITICAL log entry + flashy stderr WARNING on every run. The env var
 is now ignored; plugins always execute in the spawn'd sandbox child.
 
+## Rendering untrusted text
+
+Finding messages interpolate values BOB reads from the system — file names,
+unit names, user names, package names, certificate subjects. Since
+**v0.14.1** every finding's `message`, `detail` and `note` is stripped of
+ANSI escapes and control characters in `CheckResult.add_finding()`, the
+single point through which all findings are built, so the terminal, JSON,
+CSV, Markdown and HTML outputs are covered by one guarantee.
+(`cmd` keeps its newlines — remediation blocks are legitimately multi-line —
+and loses everything else.)
+
+This is not cosmetic. A world-writable script in `/etc/cron.daily` whose
+*filename* carried `\033]0;…\007` had the sequence rendered verbatim to the
+operator's terminal: it rewrote the window title and corrupted the summary
+box. With cursor-movement sequences, the same vector can overwrite audit
+lines already printed — that is, make the report lie about *other* findings,
+which matters rather more in a security auditor than in most tools.
+
+CSV exports additionally neutralise spreadsheet formula injection: a cell
+beginning with `=`, `+`, `-` or `@` is prefixed with a single quote, so
+content that merely passed *through* BOB cannot execute when the operator
+opens the export.
+
 ## Environment variables
 
 BOB reads the following environment variables. All are opt-in; none are
@@ -285,14 +313,32 @@ BOB never phones home.
 
   - **Reports**: Detailed `-d` reports are written to the user-configured
     log directory (default: `~/.local/share/bob/logs/`). File permissions
-    are `0644` (readable by the owning user; root if invoked under sudo and
-    no log dir is overridden).
+    are `0600` (owner-only; chowned back to `$SUDO_USER` when invoked under
+    sudo). The report name is fully predictable (`bob_%Y%m%d_%H%M%S.log`)
+    and the file is created as root under sudo, so since **v0.14.1** it is
+    opened with `O_NOFOLLOW` and chowned through the descriptor already held
+    (`os.fchown`) rather than by name: without that, anyone able to write in
+    the target directory — reachable when an operator points `--output-dir`
+    at a shared location — could pre-plant a symlink and have root truncate,
+    then hand ownership of, an arbitrary file.
+  - **Report writes are best-effort** (v0.14.1). The report is a side
+    artifact and must never take the audit down with it: on the first I/O
+    error the report disables itself, says so once on stderr, and the audit
+    completes normally. Before v0.14.1 a full filesystem cost the entire
+    run — exit 3 with no audit at all.
   - **Config**: `~/.config/bob/config.conf` is `0600` (owner-only).
   - **Baseline**: `~/.config/bob/last_baseline.json` is `0600`. Contains
     only finding keys, scores, and port lists — no secrets, no file
     contents, no PII other than the hostname.
   - **History**: `~/.config/bob/history.jsonl` is `0600`. One line per
     audit: timestamp + score + level. Rotated at 1000 entries.
+  - **All state reads are bounded** (v0.14.1). Every state file, and the
+    operator-supplied `--diff=PATH`, is read through
+    `bob._atomic.read_text_capped()`, which refuses anything that is not a
+    regular file and caps the read. Before that, a path resolving to a
+    character device (`--diff=/dev/zero`, or `ignore.yml` symlinked to it)
+    exhausted memory, and a FIFO blocked the process **forever** — a cron
+    job that hangs instead of failing, on every subsequent run.
 
 When BOB is invoked via `sudo`, files in `~/.config/bob/` are automatically
 chowned back to `$SUDO_USER` (since v0.3.6) so they remain readable/editable

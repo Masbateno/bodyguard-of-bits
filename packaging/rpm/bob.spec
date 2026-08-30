@@ -149,6 +149,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   and both READMEs.
 - Both READMEs documented "-d" as "French output" (-d is --detailed).
 - Release surfaces moved to 2026-08-30.
+- Full documentation pass across the corpus, including EN/FR parity.
 - Tests 6703 -> 6719.
 * Sat Aug 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.0-1
 - BREAKING contract-fix bundle. The container/nftables "teeth" stay deferred:

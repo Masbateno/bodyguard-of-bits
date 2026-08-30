@@ -492,6 +492,8 @@ def _run(argv=None) -> int:
                         _webhook_url, engine, sys_info, VERSION,
                         fmt=_webhook_fmt,
                         t=t,
+                        profile=getattr(active_profile, "name", "") or "server",
+                        degraded_sections=degraded_sections,
                     )
                     if not config.quiet:
                         # T74 (v0.8.1): scrub embedded credentials before

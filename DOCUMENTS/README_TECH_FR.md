@@ -589,6 +589,7 @@ En mode `--quiet`, le code de retour indique le résultat de l'audit :
 | `2`  | `EXIT_ALERTS`        | Alertes détectées — action requise |
 | `3`  | `EXIT_ERROR`         | Erreur technique (parsing CLI, IO, interne) |
 | `4`  | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N |
+| `130`| *(convention signal)* | Interrompu par Ctrl-C. Depuis la v0.14.1, `main()` attrape `KeyboardInterrupt` et affiche une ligne localisée au lieu d'un traceback Python. Ce n'est pas une constante de `bob.__main__` — c'est le `128 + SIGINT` du shell. |
 
 Les constantes sont exposées dans `bob.__main__` pour un usage programmatique :
 
@@ -645,6 +646,7 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `alert_count` | int | Nombre de findings ALERT (renommé depuis `alerts` en v0.12.0) |
 | `warning_count` | int | Nombre de findings WARN (renommé depuis `warnings` en v0.12.0) |
 | `info_count` | int | Nombre de findings INFO (nouveau en v2) |
+| `profile` | string | Le profil d'audit qui a produit ce résultat (`server` / `desktop` / `workstation` / `container`). Nouveau en v0.14.1, additif dans v3. Depuis la v0.14.0 le profil change les sévérités des findings, `warning_count` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et c'est ce champ qui l'explique. |
 | `degraded_sections` | array | Noms des sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (nouveau en v0.14.1, additif dans v3). Vide sur une exécution saine. Chacune apparaît aussi comme un finding INFO `<section>.unavailable`. Permet de distinguer « score 9, toutes sections évaluées » de « score 9, deux sections jamais exécutées ». |
 | `deductions` | array | Déductions de score (filtrées : `points > 0`) |
 | `domain_scores` | object | Sous-scores par domaine |
@@ -775,19 +777,22 @@ sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
 
 Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--explain` — elles ne changeront pas sans bump majeur du schéma.
 
-### Audit EXPLAIN_KEYS (baseline v0.7.0)
+### Audit EXPLAIN_KEYS
 
 À partir de v0.11.x, le set de clés `--explain` contient **169 clés** réparties sur **45 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
 
-- **Pattern :** `<prefix>.<finding_id>` (single dot, snake_case)
-- **Exception :** `file_perms.<path>.<finding_id>` (segments path intermédiaires, résolus par `bob.explain.normalize_key`)
+- **Pattern :** `<prefix>.<finding_id>` (un seul point, snake_case)
+- **Exceptions :** `file_perms.<path>.<finding_id>` (segments de chemin intermédiaires) et `services.{exposure,state}.<finding_id>` (taxonomie à deux niveaux), toutes deux résolues par `bob.explain.normalize_key`
 - **Pas de retrait :** une fois publiée, une clé reste callable pendant la durée de vie du `schema_version` majeur
 - **Aliases :** les renommages de clés passent par `EXPLAIN_KEY_ALIASES` pour la rétrocompatibilité
 - **Ajouts :** de nouvelles clés peuvent être ajoutées dans n'importe quel minor
+- **Garde de couverture :** tout finding WARN/ALERT émis par `bob/checks/*.py` doit avoir une entrée `EXPLAIN_KEYS` ou figurer dans `tests/test_explain_coverage.py::_KNOWN_GAPS` (actuellement vide — le drift batch v0.8.0 a comblé 51 entrées manquantes)
 
-Vocabulaire des préfixes (alphabétique) : `auditd, auth_log, clamav, cron_audit, disk, docker_audit, file_integrity, file_perms, firewall, firmware, hardening, ipv6, kernel_hardening, kernel_modules, memory, password_policy, prerequisites, risk, rules, samba, secure_boot, services_state, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
+Vocabulaire des préfixes (alphabétique) : `auditd, auth_log, backup, clamav, cron_audit, ddns, disk, docker, docker_audit, fail2ban, file_integrity, file_perms, firewall, firewall_stack, firmware, hardening, iptables_nft, ipv6, kernel_hardening, kernel_modules, log_rotation, logs, mac_policy, memory, network_context, ntp, password_policy, ports, prerequisites, risk, rootkit, rules, samba, secure_boot, services, services_state, smtp, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
 
 Ajouter un nouveau préfixe dans une release future fait échouer `TestExplainPrefixDiscipline::test_key_prefix_is_known` jusqu'à ce que le mainteneur update explicitement `KNOWN_PREFIXES` — surfaçant l'ajout comme décision délibérée en code review.
+
+Historique de référence : audit v0.7.0 = 117 clés / 30 préfixes / 100 % de conformité de nommage. Le drift batch v0.8.0 a ajouté 51 entrées explain pour des findings WARN/ALERT jusque-là non couverts, introduisant 15 nouveaux préfixes (`backup, ddns, docker, fail2ban, firewall_stack, iptables_nft, log_rotation, logs, mac_policy, network_context, ntp, ports, rootkit, services, smtp`).
 
 ---
 

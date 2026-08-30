@@ -544,6 +544,36 @@ def check_xxx(snapshot: XxxSnapshot, t=None) -> CheckResult:
 
 **Règle absolue :** `check_xxx()` ne fait jamais appel à subprocess. Toute la collecte est dans `from_system()`.
 
+**Depuis la v0.14.1 — trois règles qui découlent de la barrière d'isolation :**
+
+1. **Enregistrer le collecteur, pas le snapshot.** `runner._sec` prend
+   `XxxSnapshot.from_system` (un callable), jamais `XxxSnapshot.from_system()`
+   (un objet déjà construit). Le collecteur est invoqué *à l'intérieur* de la
+   barrière : une panne à cet endroit dégrade la section au lieu d'interrompre
+   l'audit — et une section exclue par `--check` / `--skip` / le profil ne coûte
+   rien. Passer un snapshot pré-construit déplace silencieusement la collecte
+   hors de la barrière ; `tests/test_v0141_robustness.py` fait échouer le build
+   si un site d'appel le fait. (`hardening_snapshot` est l'exception documentée
+   — il alimente aussi `ChecksResult` pour le bloc sysctl de `--json-full`.)
+
+2. **Lire les fichiers via `bob._atomic.read_text_capped()`**, pas `read_text()`.
+   Il refuse tout ce qui n'est pas un fichier régulier (périphérique, FIFO,
+   répertoire) et borne la lecture, et il déclare `errors="replace"` pour qu'un
+   octet non-UTF-8 dans un fichier système dégrade au lieu de lever. Un
+   `read_text()` nu dans un bloc `except OSError` est rejeté par un garde AST
+   qui balaie tout le paquet.
+
+3. **Ne pas assainir soi-même le texte des findings.** `CheckResult.add_finding()`
+   retire les séquences ANSI et les caractères de contrôle de `message` /
+   `detail` / `note` (et de `cmd`, en préservant les sauts de ligne), au point
+   unique par lequel passe chaque finding. Interpole directement les valeurs
+   venues du système.
+
+Un check qui lève n'est plus fatal, mais il n'est pas gratuit pour autant : la
+section est rapportée comme un finding INFO `<section>.unavailable` et listée
+dans le `degraded_sections` du JSON. Dégrader proprement dans le check reste
+préférable à s'en remettre à la barrière.
+
 ### CheckResult
 
 ```python

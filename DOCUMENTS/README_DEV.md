@@ -544,6 +544,34 @@ def check_xxx(snapshot: XxxSnapshot, t=None) -> CheckResult:
 
 **Absolute rule:** `check_xxx()` never calls subprocess. All data collection is in `from_system()`.
 
+**Since v0.14.1 — three rules that follow from the fault barrier:**
+
+1. **Register the collector, not the snapshot.** `runner._sec` takes
+   `XxxSnapshot.from_system` (a callable), never `XxxSnapshot.from_system()`
+   (an already-built object). The collector is invoked *inside* the barrier,
+   so a failure there degrades the section instead of aborting the audit — and
+   a section excluded by `--check` / `--skip` / the profile costs nothing.
+   Passing a pre-built snapshot silently moves the collection outside the
+   barrier; `tests/test_v0141_robustness.py` fails the build if any call site
+   does. (`hardening_snapshot` is the one documented exception — it also feeds
+   `ChecksResult` for the `--json-full` sysctl block.)
+
+2. **Read files through `bob._atomic.read_text_capped()`**, not `read_text()`.
+   It refuses anything that is not a regular file (device, FIFO, directory) and
+   caps the read, and it declares `errors="replace"` so a non-UTF-8 byte in a
+   system file degrades instead of raising. A bare `read_text()` inside an
+   `except OSError` block is rejected by an AST guard over the whole package.
+
+3. **Do not sanitise finding text yourself.** `CheckResult.add_finding()`
+   strips ANSI escapes and control characters from `message` / `detail` /
+   `note` (and from `cmd`, preserving newlines) at the single point every
+   finding passes through. Interpolate system-derived values directly.
+
+A check that raises is no longer fatal, but it is not free either: the section
+is reported as a `<section>.unavailable` INFO finding and listed in the JSON
+`degraded_sections`. Degrading gracefully inside the check is still better than
+relying on the barrier.
+
 ### CheckResult
 
 ```python

@@ -155,10 +155,21 @@ def detect_format(url: str, requested: str) -> str:
 # ---------------------------------------------------------------------------
 
 def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
-                          version: str) -> dict:
+                          version: str, *,
+                          profile: str = "server",
+                          degraded_sections: "tuple[str, ...] | list[str]" = ()) -> dict:
     """
     Build a generic JSON payload suitable for Grafana annotations,
     custom HTTP receivers, and automation pipelines.
+
+    v0.14.1 adds ``profile`` and ``degraded_sections``, closing the same
+    format-parity gap T27 (v0.8.1) closed for ``detail``/``note``. The webhook
+    is the sink built for machines — nobody reads a terminal in a monitoring
+    stack — so it is precisely where "this audit was incomplete" and "these
+    numbers came from the desktop profile" have to be legible. Without them a
+    receiver seeing ``score: 9, alerts: 0`` cannot tell a clean host from one
+    where two sections never ran, nor compare two hosts audited under
+    different profiles. Additive keys: existing receivers are unaffected.
     """
     from bob.scoring import FindingLevel
 
@@ -175,6 +186,8 @@ def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         "risk":      engine.effective_level.value,
         "alerts":    engine.alert_count,
         "warnings":  engine.warn_count,
+        "profile":   profile or "server",
+        "degraded_sections": list(degraded_sections),
         "domain_scores": {
             domain: _ds[domain]["score"] for domain in DOMAINS
         },
@@ -268,6 +281,8 @@ def send_webhook(
     fmt:      str = "auto",
     timeout:  int = _TIMEOUT_SECONDS,
     t=None,
+    profile:  str = "server",
+    degraded_sections: "tuple[str, ...] | list[str]" = (),
 ) -> int:
     """
     POST the audit result as JSON to *url*.
@@ -278,6 +293,10 @@ def send_webhook(
         sys_info: System information object (provides hostname).
         version: BOB version string.
         fmt:     Payload format: 'auto' (default), 'generic', or 'slack'.
+        profile: Active audit profile name — v0.14.1, generic payload only.
+        degraded_sections: Sections degraded by the runner's fault barrier —
+                 v0.14.1, generic payload only. Lets a monitoring stack tell a
+                 clean audit from an incomplete one.
         timeout: HTTP request timeout in seconds.
         t:       Optional translation function ``t(key, **kwargs) -> str``
                  used to format WebhookError messages. When ``None`` (legacy
@@ -317,7 +336,9 @@ def send_webhook(
     if effective_fmt == "slack":
         payload = build_slack_payload(engine, sys_info, version)
     else:
-        payload = build_generic_payload(engine, sys_info, version)
+        payload = build_generic_payload(
+            engine, sys_info, version,
+            profile=profile, degraded_sections=degraded_sections)
 
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req  = urllib.request.Request(

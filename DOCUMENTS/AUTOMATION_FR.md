@@ -216,7 +216,7 @@ Le payload générique est volontairement minimal et stable :
 ```json
 {
   "source": "bob",
-  "version": "0.12.0",
+  "version": "0.14.1",
   "host": "example.local",
   "timestamp": "2026-06-11T18:42:01+00:00",
   "score": 8,
@@ -224,6 +224,8 @@ Le payload générique est volontairement minimal et stable :
   "risk": "low",
   "alerts": 1,
   "warnings": 2,
+  "profile": "server",
+  "degraded_sections": [],
   "domain_scores": {"ssh": 8, "firewall": 10},
   "findings": [
     {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Connexion root autorisée via SSH", "detail": "", "note": ""}
@@ -232,6 +234,13 @@ Le payload générique est volontairement minimal et stable :
 ```
 
 Cette enveloppe générique a son **propre** contrat plat (distinct du schéma d'audit `bob --json`) : clés top-level `source`/`max_score`/`timestamp` et une map plate `domain_scores` de `{domaine: score}`. `alerts` et `warnings` sont des **compteurs (entiers)** ; le tableau `findings` énumère toujours les findings de niveau ALERT et WARN (chacun avec `level`/`key`/`message`/`detail`/`note`). `risk` est le niveau **effectif** (avec escalade de posture), en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"`). Note : le webhook garde les noms `alerts`/`warnings` — seul le schéma d'audit `bob --json` les a renommés en `alert_count`/`warning_count` en v0.12.0 (F9).
+
+**Deux champs ajoutés en v0.14.1**, tous deux additifs — les récepteurs existants ne sont pas affectés :
+
+  - **`profile`** — le profil d'audit qui a produit ces chiffres. Depuis la v0.14.0 le profil change les sévérités des findings, `warnings` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et sans ce champ rien ne l'explique. À utiliser pour regrouper ou comparer des hôtes.
+  - **`degraded_sections`** — les sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (liste vide sur une exécution saine). **C'est le champ sur lequel alerter.** Un récepteur voyant `score: 9, alerts: 0` ne peut pas distinguer autrement un hôte sain d'un hôte où deux sections n'ont jamais tourné ; le code de sortie reste délibérément piloté par les findings réels, donc l'incomplétude n'est visible qu'ici (et via les findings INFO `<section>.unavailable`, que l'enveloppe générique n'énumère pas — elle ne porte que les ALERT et WARN).
+
+Une règle de supervision raisonnable est donc « alerter sur `alerts > 0`, et avertir séparément dès que `degraded_sections` est non vide » — la seconde condition signifie que c'est l'audit lui-même qui est en mauvaise santé, pas l'hôte.
 
 ### Comportement
 

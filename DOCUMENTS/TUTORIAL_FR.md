@@ -140,11 +140,20 @@ BOB ship 4 profils :
 Choisis une fois par host :
 
 ```bash
-sudo bob -p desktop                         # one-shot
-sudo bob -p desktop -d                      # one-shot avec rapport détaillé
+sudo bob -p desktop                         # ENREGISTRE aussi desktop comme défaut
+sudo bob -p desktop -d                      # idem, avec rapport détaillé
+sudo bob                                    # les runs suivants réutilisent le profil
 ```
 
-BOB ne mémorise rien : passe `-p` à chaque fois, ou wrap dans ton job cron (voir Étape 7).
+**BOB mémorise ton choix.** Un `-p NOM` valide est écrit dans
+`~/.config/bob/config.conf` sous la clé `audit_profile=` et devient le défaut de
+toutes les exécutions suivantes — inutile de répéter l'option, ni en cron ni
+ailleurs. Pour en changer, repasse `-p` ; pour vérifier le profil courant,
+`bob --format=json | jq -r .profile`, ou lis la ligne `Profil d'audit :` en tête
+d'un audit normal.
+
+Un nom invalide n'est *pas* enregistré : BOB avertit et retombe sur le défaut,
+sans toucher à ton vrai profil.
 
 ---
 
@@ -158,7 +167,14 @@ bob --unignore ssh.x11_forwarding           # retire
 sudo bob --show-ignored                     # voir les findings mutés en gris à côté de la sortie normale
 ```
 
-Les findings ignorés déduisent zéro points mais restent visibles si tu demandes. Préférable à `--skip=` (qui retire l'audit de la section entière).
+Un finding ignoré déduit zéro point **et disparaît de la sortie** — c'est
+l'objet même de l'option. Passe `--show-ignored` pour lister les findings mutés
+en gris à côté de la sortie normale. Préférable à `--skip=`, qui retire l'audit
+de la section entière plutôt qu'un seul finding.
+
+(Avant la v0.14.1, le score et les compteurs JSON honoraient `--ignore` mais le
+finding continuait de s'afficher intégralement ; si tu l'avais constaté, c'est
+corrigé.)
 
 ---
 
@@ -214,11 +230,23 @@ BOB peut émettre JSON / CSV / Markdown / HTML pour les pipelines :
 ```bash
 sudo bob --format=json | jq '.score'        # score en JSON
 sudo bob --format=csv  > audit.csv          # spreadsheet-friendly
-sudo bob --format=markdown -o /tmp/         # .md humain-lisible
-sudo bob --format=html -o /tmp/             # rapport HTML
+sudo bob --format=markdown > /tmp/audit.md  # .md humain-lisible (stdout)
+sudo bob --format=html     > /tmp/audit.html # rapport HTML (stdout)
 ```
 
 `-J` et `-j` sont des raccourcis pour `--format=json-full` / `--format=json`. Combine avec `--min-level=warn` pour filtrer.
+
+Deux champs JSON valent d'être connus si tu rediriges la sortie quelque part (tous deux depuis la v0.14.1) :
+
+```bash
+sudo bob --format=json | jq -r .profile              # quel profil a produit ces chiffres
+sudo bob --format=json | jq -r '.degraded_sections'  # [] sur une exécution saine
+```
+
+`degraded_sections` liste les sections dont le check a échoué et qui ont été
+écartées au lieu d'interrompre tout l'audit. Le code de sortie reste piloté par
+les findings réels : c'est donc le seul endroit où un pipeline peut voir que
+l'audit était **incomplet**.
 
 ---
 

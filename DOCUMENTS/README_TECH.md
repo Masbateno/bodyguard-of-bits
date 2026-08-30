@@ -589,6 +589,7 @@ When using `--quiet`, the exit code tells you the audit result:
 | `2`  | `EXIT_ALERTS`        | Alerts detected — action required |
 | `3`  | `EXIT_ERROR`         | Technical error (CLI parsing, IO, internal) |
 | `4`  | `EXIT_TARGET_MISSED` | `--target N` specified and score < N |
+| `130`| *(signal convention)* | Interrupted with Ctrl-C. Since v0.14.1 `main()` catches `KeyboardInterrupt` and prints one localised line instead of a Python traceback. Not a `bob.__main__` constant — it is the shell's `128 + SIGINT`. |
 
 The constants are exposed in `bob.__main__` for programmatic access:
 
@@ -645,6 +646,7 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `alert_count` | int | Number of ALERT-level findings (renamed from `alerts` in v0.12.0) |
 | `warning_count` | int | Number of WARN-level findings (renamed from `warnings` in v0.12.0) |
 | `info_count` | int | Number of INFO-level findings (new in v2) |
+| `profile` | string | The audit profile that produced this result (`server` / `desktop` / `workstation` / `container`). New in v0.14.1, additive within v3. Since v0.14.0 the profile changes finding severities, `warning_count` and therefore the exit code, so two payloads for the same host can legitimately disagree — this field is what explains the difference. |
 | `degraded_sections` | array | Section names whose check raised and was degraded in place rather than aborting the audit (new in v0.14.1, additive within v3). Empty on a healthy run. Each also appears as a `<section>.unavailable` INFO finding. Lets a consumer tell "score 9 with every section evaluated" from "score 9 with two sections never run". |
 | `deductions` | array | Score deductions (filtered: `points > 0`) |
 | `domain_scores` | object | Per-domain sub-scores |

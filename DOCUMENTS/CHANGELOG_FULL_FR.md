@@ -324,6 +324,10 @@ Les surfaces v0.14.1 étaient encore datées du 2026-08-29, désormais inatteign
 
 +16 tests dans `tests/test_v0141_contract_surfaces.py`, tous mutation-testés : retrait de la clé de schéma `profile`, retour en arrière sur la ligne de persistance de `--help`, restauration de l'exemple erroné du README, suppression d'une entrée de locale `sections.*`, et désactivation du plafond F1 — cinq injections, cinq échecs confirmés.
 
+### Documentation
+
+Une passe complète sur le corpus documentaire — les READMEs, `SECURITY`, `AUTOMATION`, `TESTING`, `TUTORIAL`, les références technique et développeur et le `SNAPSHOT` — pour les aligner sur cette release et réconcilier la parité EN/FR.
+
 ### Tests
 
 6590 → **6719** (+129 sur v0.14.0 : 17 pour la sémantique privileged, 64 + 32 pour les deux lots robustesse, 16 pour les surfaces de contrat). 0 régression.

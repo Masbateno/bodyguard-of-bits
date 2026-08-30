@@ -324,6 +324,10 @@ The v0.14.1 surfaces were still dated 2026-08-29, which is no longer reachable. 
 
 +16 tests in `tests/test_v0141_contract_surfaces.py`, each mutation-tested: removing the `profile` schema key, reverting the `--help` persistence line, restoring the wrong README example, removing a `sections.*` locale entry, and disabling the F1 cap — five injections, five confirmed failures.
 
+### Documentation
+
+A full pass over the documentation corpus — the READMEs, `SECURITY`, `AUTOMATION`, `TESTING`, `TUTORIAL`, the technical and developer references and the `SNAPSHOT` — aligning them with this release and reconciling EN/FR parity.
+
 ### Tests
 
 6590 → **6719** (+129 over v0.14.0: 17 for the privileged semantics, 64 + 32 for the two robustness batches, 16 for the contract surfaces). 0 regression.

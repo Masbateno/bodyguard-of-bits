@@ -13,6 +13,10 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.14.1 | 6719 | **Premier patch v0.14.x — sémantique `privileged` + trois campagnes de stress test (30-08-2026).** **Sémantique :** `container_security.privileged` valait `cap_bnd & (1 << CAP_SYS_ADMIN)` — littéralement « CAP_SYS_ADMIN présente » — donc `--cap-add SYS_ADMIN` était rapporté PRIVILÉGIÉ sous le titre *« jeu complet de capabilities »*. Mesuré sur podman : 2149844475 contre **2199023255551** = `(1 << 41) - 1`. C'est désormais le bounding set complet lu depuis `/proc/sys/kernel/cap_last_cap` (borné), plus la clé additive `container_security.cap_sys_admin`. **Campagne 1 — résilience :** `runner._sec` n'avait aucune gestion d'exception, donc un seul check en échec coûtait l'audit ENTIER (exit 3, zéro octet sur stdout) — reproduit avec un octet latin-1 dans un champ GECOS d'`/etc/passwd`. Les sections dégradent maintenant sur place (finding INFO `<section>.unavailable` + nouveau champ JSON `degraded_sections`) ; codes de sortie délibérément inchangés. A nécessité la conversion de 29 sites de snapshot `_sec` impatients en fabriques paresseuses (`--check=ssh` 2,60 s → 1,91 s). `UnicodeDecodeError` échappait à 33 gardes `except OSError` ; `load_history` mourait sur une ligne JSON valide non-objet ; `--lang` acceptait un chemin absolu ; les rapports n'avaient pas `O_NOFOLLOW` ; injection de formules CSV ; garde tiret manquante sur `--profile`/`--check`/`--skip`. **Campagne 2 — les correctifs eux-mêmes :** la barrière pouvait être mise en échec depuis son propre handler (rendu hors du try interne) ; les écritures de rapport n'avaient aucune gestion d'erreur (un tmpfs plein de 64 Ko coûtait tout l'audit) ; `--ignore` faisait taire le score mais pas le terminal (`display_result` parcourt le `CheckResult` brut) ; des séquences d'échappement issues de valeurs système atteignaient le terminal (un *nom de fichier* de script cron portant `\033]0;…\007` réécrivait le titre de la fenêtre) — assaini désormais dans `add_finding`, point unique pour tous les formats ; lectures non bornées sur fichiers non réguliers (plugin lié à `/dev/zero` → OOM ; `--diff=<fifo>` → **blocage indéfini**) fermées par `_atomic.read_text_capped()` ; Ctrl-C affichait un traceback. **Campagne 3 — ce que l'outil dit :** le profil actif n'apparaissait que dans le terminal (désormais champ `profile` en JSON/webhook + en-têtes Markdown/HTML ; CSV délibérément intact) ; `-p NOM` persiste silencieusement comme défaut (non documenté depuis v0.12.1) ; les deux READMEs documentaient `-d` comme « sortie en français ». **Vérifié sain :** 12 000 combinaisons d'argv, 46 sections sous userns restreint, concurrence à 8, tout l'espace de clés i18n (966 littérales + 637 expansions à l'exécution dans les deux locales), invariants de score sur 6 000 états de moteur aléatoires, schéma JSON sur 16 charges utiles, dry-run `--fix` (0 appel subprocess), déterminisme, signaux, un log UFW de 34 Mo. **6590 → 6719 (+129** : 17 privileged + 64 + 32 robustesse + 16 surfaces de contrat). 0 régression. 20 mutations injectées, 20 gardes confirmés les tuer. |
+| v0.14.0 | 6590 | **Première release v0.14.x — bundle BREAKING de corrections de contrat (29-08-2026).** **🔴 Le profil d'audit n'atteignait jamais 12 des 14 chemins de résultat** : il incombait à l'appelant d'invoquer `apply_profile()` avant `engine.apply()`, et seuls `_sec` et le chemin plugin le faisaient — 8 overrides livrés dans `desktop.conf`/`workstation.conf` étaient donc inertes, et un hôte LAN avec Samba derrière une règle UFW retournait exit 1 en permanence, rendant inatteignable l'`exit 0` documenté. `ScoreEngine` reçoit désormais `profile=` et applique les overrides dans `apply()`, le point de passage unique. BREAKING sur desktop/workstation (`warning_count` 4 → 2 mesuré en live) ; `server` intact. **La couleur était émise inconditionnellement (BREAKING)** : `bob > fichier` écrivait des codes ANSI ; `supports_color()` existait et n'était appelée nulle part. Câblée avec `--no-color` → `NO_COLOR` → `FORCE_COLOR` → `isatty()`. **Formulation de `--help`** pour les variables de couleur. **Plus** B904/B905, 8 jours de semaine faux dans le packaging, et la table des codes de sortie du README racine (bandes de score inventées → le vrai contrat). **6547 → 6590 (+43**, mutation-testés ; les gardes du profil sont comportementaux et non structurels — l'ancien design était « correct » à chaque site qui y pensait, ce qui explique que la suite passait aussi avant le fix). |
+| v0.13.4 | 6545 | **Passe d'exactitude documentaire — corrections factuelles uniquement (28-08-2026).** Audit machine de tout le corpus documentaire. La section sécurité FR était **factuellement inversée** depuis 7 releases mineures ; 5 options CLI étaient indécouvrables ; 29 liens cassés ou fuités. Plus 3 gardes (liens, parité EN/FR par section, surface CLI). **6533 → 6545 (+12).** |
+| v0.13.3 | 6533 | **Premier patch de durcissement v0.13.x après la croissance de périmètre de la branche (28-08-2026, additif, sans changement de score).** Hygiène de journalisation (`NullHandler` + `BOB_DEBUG`), performance des runs filtrés (−52 % sur `--check`), un garde de dérive des compteurs documentaires, et une barrière ruff de correction (E9/F/B, rien d'ignoré). **6511 → 6533 (+22).** |
 | v0.13.2 | 6511 | **Patch same-day cohérence/sécurité des commandes de finding (21-06-2026, additif, sans changement de score).** Passe de cohérence sémantique par sub-agent sur ~144 commandes (déclenchée par un user remarquant `apt purge` sous « Vérifier : »). **docker `userns_not_configured` 🔴** : la remédiation `tee /etc/docker/daemon.json` écrasait tout le fichier (perte de données) — désormais création-si-absent uniquement (`test -f … \|\| {…}`, sans texte humain), le detail avertit de sauvegarder + fusionner (EN+FR). **kernel `kernels_obsolete`** : `apt purge` destructif déplacé de `cmd_type="check"` (Vérifier ℹ) vers `"fix"` (Que faire →). **kernel `kernels_update_available`** : `cmd_type="action"` invalide → `"fix"`. **garde-fou** : `add_finding` lève sur cmd_type hors `("fix","check")`. L'audit a confirmé que ce sont les seuls bugs de présentation (toutes les autres check-cmds sont des lectures, toutes les fix-cmds des actions, parité de sens EN/FR OK). **6504 → 6511 (+7** : 6 `test_v0132_cmd_semantics.py` + 1 `test_kernel_modules.py`). 0 régression. Validé live EN+FR. v0.12.x reste EOL ; v0.13.x seule ligne supportée. |
 | v0.13.1 | 6504 | **Premier patch hardening v0.13.x — checks de contexte runtime additifs (21-06-2026, INFO-only, non-BREAKING, sans changement de score).** Poursuit le virage runtime in-branch ; les dents (scoring conteneur/nftables) gardées pour le bundle BREAKING planifié v0.14.0. **Unités socket systemd orphelines** (`socket_units`) : signale une `.socket` encore active alors que son `.service` backing est cassé — absent (masqué/introuvable) ou crashé (`ActiveState=failed`) — ou la socket elle-même en `failed` ; orpheline si l'un de plusieurs triggers est cassé ; un service backing simplement inactive est sain ; marque les binds non-loopback ; les internes systemd à `Triggers` vide jamais flaguées. **Contexte cloud côté hôte** (`cloud_context`) : supprimée hors cloud ; détection conservatrice (fournisseur DMI, ou cloud-init corroboré par IMDS on-link — une VM homelab à simple cloud-init n'est pas signalée) ; remonte IMDS joignable on-link (rappel IMDSv2) + user-data lisible par tous — strictement côté hôte, aucune API/identifiant cloud. **Robustesse ddns + ssh** : un chemin sous un répertoire non-parcourable (`/root` durci, userns) levait `PermissionError` — dans ddns ça avortait l'audit (`_config_present()` dégrade en « absent ») ; le field test live a révélé la même classe dans `ssh/_snapshot.py` (`~/.ssh` sous un home non-parcourable fuitait la chaîne d'erreur), maintenant gardé aussi. Sections 36 → 38. **6461 → 6504 (+43** : 21 `test_socket_units.py` + 18 `test_cloud_context.py` + 3 `test_ddns.py` + 1 `test_ssh.py`). 0 régression. Validé live EN+FR (socket négatif+positif ; cloud négatif live + positif forgé ; ddns EACCES via répertoire mode-000). v0.12.x reste EOL ; v0.13.x seule ligne supportée. |
 | v0.13.0 | 6461 | **Première release v0.13.x — extension de scope : deux nouveaux checks INFO-only (20-06-2026).** Première vraie croissance de couverture après le long cycle de durcissement interne ; les deux additifs, non-BREAKING, sans déduction. **`systemd-analyze security`** (`systemd_hardening`) : remonte le score d'exposition systemd des services en cours (parsé depuis `--json=short`) — résumé par prédicat (UNSAFE/EXPOSED/OK) + services les moins durcis + pointeur `systemd-analyze security <unit>` ; aucune déduction (non-durci par défaut = normal). **Posture conteneur** (`container_security`) : ne tourne que dans un conteneur (supprimée sur un hôte via `skip_if`) ; lit CapBnd → détection privilégié/CAP_SYS_ADMIN, seccomp, userns (uid_map), rootfs en écriture depuis `/proc` ; INFO-only (WARN conteneur privilégié = fast-follow). systemd field-testé live EN+FR ; conteneur validé contre de vraies données noyau `/proc` dans des user namespaces `unshare` (privilégié + non-privilégié + branche userns-supprime-warning-root, EN+FR). Sections 35 → 36. **6442 → 6461 (+19**: 7 + 12). 0 régression. **v0.12.x déclarée EOL** (politique ligne-minor-récente) ; v0.8.x–v0.11.x également EOL ; v0.13.x seule ligne supportée. v0.7.x / v0.6.x restent EOL. |
@@ -65,7 +69,16 @@ pytest tests/ -q
 4600 passed in ~7s
 ```
 
-**Net : +17 (4583 → 4600).** Première release hardening sur v0.6.x. Sub-agent d'audit a produit 14 findings ; 6 important + 4 mineur shippés. Tous les +17 tests pinent la couverture de régression.
+**Net : +17 (4583 → 4600).** Première release de durcissement sur v0.6.x. Le sub-agent d'audit a produit 14 findings ; 6 importants + 4 mineurs livrés. Les +17 tests épinglent tous la couverture de régression :
+
+| Classe de test | Nombre | Finding épinglé |
+|---|---|---|
+| `TestAtomicWritePublicAPI` (test_atomic_v061.py) | 4 | Contrat `atomic_write` — mode préservé, contenu écrasé proprement, atomicité sur échec simulé |
+| `TestCronLegacyAliasStillWorks` | 1 | `bob.cron._io._atomic_write is bob._atomic.atomic_write` (rétrocompatibilité des patchs de test) |
+| `TestHistoryFileMode` | 2 | I-5 première écriture en 0o600 + mode préservé en append |
+| `TestIgnoreAtomic` | 2 | I-6 écriture atomique + échec simulé d'`os.replace` laissant le contenu intact |
+| `TestSafeInput` | 3 | I-2 `safe_input()` renvoie "" sur EOF + `prompt_wizard()` renvoie None sur EOF |
+| `TestStepBoundedToFieldRange` (test_cron.py) | 5 | I-3 bornes de pas pour minute / heure / limite / zéro / expression complète |
 
 #### Timeline du compteur de tests mise à jour
 
@@ -81,7 +94,16 @@ v0.6.1  →  4600 tests  (+17 — atomic-write + EOF + cron step bounds)
 
 #### Test terrain
 
-Sortie wire bit-identique à v0.6.0 — seul `--watch=N` error string change. Tous les autres changes sont internes. Tous les 4600 tests passent en ~7s.
+Approche standard de couverture cross-distro. La sortie wire (plain-text + JSON) est bit-identique à v0.6.0 — seule la chaîne d'erreur de `--watch=N` diffère (« entier ≥ 10 » au lieu de « entier positif »). Tous les autres changements sont internes :
+- La migration atomic-write est bit-identique aux 5 implémentations préexistantes
+- La gestion EOF est bit-identique pour les entrées non-EOF (seul le crash devient une sortie propre)
+- I-3 ne rejette que de nouvelles entrées (du type `*/200`) auparavant acceptées mais produisant un cron cassé
+- I-4 n'affecte que la sémantique `--fix --apply` sur des chemins comportant des espaces
+- I-5 ne change que le mode à la première création (les `history.jsonl` existants ne sont pas touchés)
+
+Testé par un run sudo sur so6desktop avant livraison pour vérifier que le score de référence v0.5.x (9/10) est préservé.
+
+Les 4600 tests passent en ~7s sur Python 3.12 / Linux Mint 22.3.
 
 ---
 
@@ -483,7 +505,20 @@ pytest tests/ -q
 
 #### Couverture tests `_BAD_DIRECTIVES`
 
-Les 8 directives migrées ont chacune entre 2 et 6 tests dans `test_ssh.py`. Migration validée par le passage de tous ces tests sur le chemin table-driven.
+Les 8 directives migrées ont chacune entre 2 et 6 tests dans `test_ssh.py`. La migration a été validée par :
+
+| Directive | Tests avant migration | Résultat après migration |
+|---|---|---|
+| `PermitEmptyPasswords` | `test_permit_empty_passwords_yes`, `test_permit_empty_passwords_no_no_finding` | ✓ |
+| `X11Forwarding` | `test_x11_forwarding_yes`, `test_x11_forwarding_default_no` | ✓ |
+| `IgnoreRhosts` | `test_ignore_rhosts_no` | ✓ |
+| `HostbasedAuthentication` | `test_host_based_auth_yes` | ✓ |
+| `PermitUserEnvironment` | `test_permit_user_env_yes` | ✓ |
+| `StrictModes` | `test_strict_modes_no` | ✓ |
+| `AllowTcpForwarding` | `test_allow_tcp_forwarding_yes`, `test_allow_tcp_forwarding_no_ok`, `test_allow_tcp_forwarding_local_ok` | ✓ (y compris le cas `safe_values=("no", "local")`) |
+| `PubkeyAuthentication` | `test_pubkey_auth_disabled` | ✓ |
+
+Tous les tests passent sur le chemin table-driven.
 
 La validation `__post_init__` (mutual exclusion de `bad_values` et `safe_values`) est exercée au chargement du module — si un futur contributeur ajoute une entrée `_BadDirective` mal formée, l'import échoue avec un message d'erreur clair.
 
@@ -1339,13 +1374,71 @@ pytest tests/ -q
 
 **Nouveaux tests (+32) :**
 
-| Fichier | Nouveaux tests | Couverture |
-|---------|----------------|-----------|
-| `tests/test_kernel_modules.py` | +6 | Helper `_strip_unsigned` · variantes Debian signé/non-signé · vrai redémarrage toujours détecté |
-| `tests/test_cron.py` | +6 | `_detect_mta` — sans sendmail, Postfix, Exim, msmtp, ssmtp, inconnu |
-| `tests/test_scoring.py` | +6 | `set_global_score` — override, clamp, niveau, score brut inchangé |
-| `tests/test_domain_scores.py` | +14 | Plafonds (rootkit/clamav/file_integrity) · `compute_global_from_domains` · `apply_domain_score_override` · scénario Debian 13 |
-| `tests/test_logs.py` | 0 (+3 corrigés) | Dominance IoT : niveau WARN · déduction 1 pt · sous le seuil inchangé |
+#### `tests/test_kernel_modules.py` (+6)
+
+| Test | Couverture |
+|------|------------|
+| `TestKernelRebootPending.test_no_reboot_pending_debian_signed_plus_unsigned_same_version` | `amd64` en cours avec `amd64-unsigned` installé → aucun avertissement de redémarrage |
+| `TestKernelRebootPending.test_reboot_still_pending_when_genuinely_newer_debian_kernel` | Une version réellement plus récente déclenche toujours le redémarrage en attente |
+| `TestStripUnsigned.test_strips_unsigned_suffix` | Suffixe `-unsigned` retiré |
+| `TestStripUnsigned.test_no_change_without_suffix` | Chaîne sans suffixe inchangée |
+| `TestStripUnsigned.test_no_change_ubuntu_style` | Noyau au format Ubuntu inchangé |
+| `TestStripUnsigned.test_no_change_empty` | Chaîne vide sans danger |
+
+#### `tests/test_cron.py` (+6)
+
+| Test | Couverture |
+|------|------------|
+| `TestDetectMta.test_no_sendmail_returns_false` | Pas de sendmail → `(False, "")` |
+| `TestDetectMta.test_postfix_detected_via_config_file` | `/etc/postfix/main.cf` présent → `(True, "Postfix")` |
+| `TestDetectMta.test_exim_detected` | `exim4` dans le PATH → `(True, "Exim")` |
+| `TestDetectMta.test_msmtp_detected` | `msmtp` dans le PATH → `(True, "msmtp")` |
+| `TestDetectMta.test_ssmtp_detected` | `ssmtp` dans le PATH → `(True, "ssmtp")` |
+| `TestDetectMta.test_unknown_mta_returns_empty_name` | sendmail trouvé, fournisseur inconnu → `(True, "")` |
+
+#### `tests/test_scoring.py` (+6)
+
+| Test | Couverture |
+|------|------------|
+| `TestSetGlobalScore.test_override_replaces_raw_score` | Valeur d'override retournée par `engine.score` |
+| `TestSetGlobalScore.test_no_override_by_default` | Score brut utilisé quand aucun override n'est posé |
+| `TestSetGlobalScore.test_override_clamps_above_max` | Valeurs > 10 ramenées à 10 |
+| `TestSetGlobalScore.test_override_clamps_below_zero` | Valeurs < 0 ramenées à 0 |
+| `TestSetGlobalScore.test_level_reflects_overridden_score` | `engine.level` dérivé de l'override |
+| `TestSetGlobalScore.test_raw_score_unchanged_after_override` | `engine._raw_score` intact |
+
+#### `tests/test_domain_scores.py` (+14)
+
+**TestToolCaps (7 tests)**
+
+| Test | Couverture |
+|------|------------|
+| `test_rootkit_two_findings_capped_at_one` | 2 déductions `rootkit.*` → le domaine en reçoit 1 |
+| `test_clamav_two_findings_capped_at_one` | 2 déductions `clamav.*` → le domaine en reçoit 1 |
+| `test_file_integrity_two_findings_capped_at_one` | 2 déductions `file_integrity.*` → le domaine en reçoit 1 |
+| `test_uncapped_prefix_accumulates_fully` | `hardening.*` s'accumule sans plafond |
+| `test_caps_do_not_bleed_across_tools` | Le plafond rootkit ne réduit pas l'allocation clamav |
+| `test_cap_respects_first_deduction_points` | Une déduction unique de 2 pts contre un plafond de 1 → contribue 1 |
+| `test_tool_caps_dict_contains_expected_keys` | `_TOOL_CAPS` contient rootkit, clamav, file_integrity |
+
+**TestComputeGlobalFromDomains (4 tests)**
+
+| Test | Couverture |
+|------|------------|
+| `test_average_of_two_active_domains` | Moyenne de deux scores de domaine, arrondie |
+| `test_no_active_domains_returns_max` | Ensemble actif vide → MAX_SCORE |
+| `test_result_clamped_to_max` | Résultat ≤ 10 |
+| `test_result_non_negative` | Résultat ≥ 0 |
+
+**TestApplyDomainScoreOverride (3 tests)**
+
+| Test | Couverture |
+|------|------------|
+| `test_engine_score_changes_after_override` | `engine.score` diffère du brut après override |
+| `test_score_in_valid_range` | Override dans [0, 10] |
+| `test_debian13_scenario` | 8 déductions, brut = 2, moyenne des domaines ≥ 5 |
+
+#### `tests/test_logs.py` (0 nouveau, 3 corrigés)
 
 **3 tests corrigés dans `tests/test_logs.py` :**
 
@@ -1885,6 +1978,49 @@ sudo ufw status numbered
 
 ---
 
+## Catégorie E — Ports loopback uniquement 
+
+### C8 — SSH restreint au LAN (chemin OPEN_LOCAL)
+
+```bash
+sudo ufw delete allow 22/tcp
+sudo ufw allow from 192.168.1.0/24 to any port 22 proto tcp
+sudo bob
+```
+
+| Attendu | Résultat |
+|---------|----------|
+| `⚠ [AVERTISSEMENT]` Port 22/tcp — restreint au réseau local par règle UFW | ✔ v0.1.0 |
+| Pas de déduction score (OPEN_LOCAL ≠ OPEN_WORLD) | ✔ v0.1.0 |
+| Panorama : SSH `✔` (restriction LAN = config correcte) | ✔ v0.1.0 |
+| DDNS : `ℹ` Port 22/tcp restreint au réseau local (pas d'ALERTE) | ✔ v0.1.0 |
+| Contexte risque CRITIQUE toujours affiché | ✔ v0.1.0 |
+
+> **Nettoyage :** `sudo ufw delete allow from 192.168.1.0/24 to any port 22 proto tcp && sudo ufw allow 22/tcp`
+
+---
+
+
+
+### E1 — Port écoutant sur localhost uniquement, sans règle UFW — INFO pas ALERTE
+
+```bash
+# Tout processus lié exclusivement à 127.0.0.1 sans règle UFW
+# Redis par défaut : bind 127.0.0.1 — aucune règle UFW nécessaire
+sudo bob
+```
+
+| Attendu | Résultat |
+|----------|----------|
+| `ℹ [INFO]` Port 6379/tcp — lié uniquement à localhost — aucune règle UFW requise (couvert par refus par défaut) | ✔ v0.1.0.0 |
+| Pas d'ALERTE, pas de déduction de score | ✔ v0.1.0.0 |
+| Panorama Redis ✔ | ✔ v0.1.0.0 |
+| Message utilise la clé locale `services.exposure.loopback_no_rule` (ajoutée avec le fix `Exposure.LOOPBACK_NO_RULE`) | ✔ v0.1.0.0 |
+
+> **Note :** Le message attendu initialement référençait `ports.uncovered_local`. En pratique, Redis sur loopback sans règle UFW est traité par le chemin services (`Exposure.LOOPBACK_NO_RULE`), pas le chemin ports. La clé `ports.uncovered_local` s'applique aux ports de processus non couverts par le registre de services.
+
+---
+
 ## Observations supplémentaires
 
 ### Obs — Avahi affiche ✖ au panorama malgré message INFO (v0.1.0)
@@ -1957,46 +2093,6 @@ Pas encore testé — priorité pratique basse car CLI UFW le prévient.
 
 ---
 
-## Catégorie E — Ports loopback uniquement 
-
-### C8 — SSH restreint au LAN (chemin OPEN_LOCAL)
-
-```bash
-sudo ufw delete allow 22/tcp
-sudo ufw allow from 192.168.1.0/24 to any port 22 proto tcp
-sudo bob
-```
-
-| Attendu | Résultat |
-|---------|----------|
-| `⚠ [AVERTISSEMENT]` Port 22/tcp — restreint au réseau local par règle UFW | ✔ v0.1.0 |
-| Pas de déduction score (OPEN_LOCAL ≠ OPEN_WORLD) | ✔ v0.1.0 |
-| Panorama : SSH `✔` (restriction LAN = config correcte) | ✔ v0.1.0 |
-| DDNS : `ℹ` Port 22/tcp restreint au réseau local (pas d'ALERTE) | ✔ v0.1.0 |
-| Contexte risque CRITIQUE toujours affiché | ✔ v0.1.0 |
-
-> **Nettoyage :** `sudo ufw delete allow from 192.168.1.0/24 to any port 22 proto tcp && sudo ufw allow 22/tcp`
-
----
-
-
-
-### E1 — Port écoutant sur localhost uniquement, sans règle UFW — INFO pas ALERTE
-
-```bash
-# Tout processus lié exclusivement à 127.0.0.1 sans règle UFW
-# Redis par défaut : bind 127.0.0.1 — aucune règle UFW nécessaire
-sudo bob
-```
-
-| Attendu | Résultat |
-|----------|----------|
-| `ℹ [INFO]` Port 6379/tcp — lié uniquement à localhost — aucune règle UFW requise (couvert par refus par défaut) | ✔ v0.1.0.0 |
-| Pas d'ALERTE, pas de déduction de score | ✔ v0.1.0.0 |
-| Panorama Redis ✔ | ✔ v0.1.0.0 |
-| Message utilise la clé locale `services.exposure.loopback_no_rule` (ajoutée avec le fix `Exposure.LOOPBACK_NO_RULE`) | ✔ v0.1.0.0 |
-
-> **Note :** Le message attendu initialement référençait `ports.uncovered_local`. En pratique, Redis sur loopback sans règle UFW est traité par le chemin services (`Exposure.LOOPBACK_NO_RULE`), pas le chemin ports. La clé `ports.uncovered_local` s'applique aux ports de processus non couverts par le registre de services.
 
 ---
 

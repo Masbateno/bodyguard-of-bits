@@ -128,6 +128,7 @@ Depuis la **v0.7.0**, les plugins s'exécutent dans un **sandbox in-process rest
     courte liste de chemins notoirement sensibles (`/etc/shadow`, `~/.ssh/id_*`,
     `/dev/mem`, …).
   - Méthodes d'écriture de `pathlib.Path` monkey-patchées en `PermissionError`.
+  - **Durcissement du chargeur** (v0.14.1) : un plugin doit être un *fichier régulier*, et le source est lu par une lecture bornée. Le plafond de 64 Ko était appliqué via `stat().st_size`, qui vaut `0` pour un périphérique caractère — si bien que `ln -s /dev/zero ~/.config/bob/checks.d/p.py` passait le plafond et était lu jusqu'à l'intervention de l'OOM killer.
   - Retrait extensif des attributs dangereux du module `os`
     (subprocess/spawn, E/S sur descripteurs bruts, écritures FS, changements de
     privilèges, mutations d'environnement, …).
@@ -189,6 +190,30 @@ parent — cela produisait une entrée de log CRITICAL + un WARNING voyant sur
 stderr à chaque exécution. La variable d'environnement est désormais ignorée ;
 les plugins s'exécutent toujours dans le processus enfant sandboxé.
 
+## Rendu de texte non fiable
+
+Les messages de findings interpolent des valeurs que BOB lit sur le système —
+noms de fichiers, d'unités, d'utilisateurs, de paquets, sujets de certificats.
+Depuis la **v0.14.1**, les champs `message`, `detail` et `note` de chaque
+finding sont débarrassés des séquences ANSI et des caractères de contrôle dans
+`CheckResult.add_finding()`, le point unique par lequel tous les findings sont
+construits : le terminal, JSON, CSV, Markdown et HTML sont donc couverts par une
+seule garantie. (`cmd` conserve ses sauts de ligne — les blocs de remédiation
+sont légitimement multi-lignes — et perd tout le reste.)
+
+Ce n'est pas cosmétique. Un script world-writable dans `/etc/cron.daily` dont le
+*nom de fichier* portait `\033]0;…\007` voyait la séquence rendue verbatim dans
+le terminal de l'opérateur : elle réécrivait le titre de la fenêtre et
+corrompait la boîte de résumé. Avec des séquences de déplacement du curseur, le
+même vecteur permet de réécrire des lignes d'audit déjà affichées — donc de
+faire mentir le rapport sur d'*autres* findings, ce qui pèse plus lourd dans un
+auditeur de sécurité que dans la plupart des outils.
+
+Les exports CSV neutralisent en outre l'injection de formules de tableur : une
+cellule commençant par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe, de
+sorte qu'un contenu qui ne fait que *transiter* par BOB ne puisse pas s'exécuter
+à l'ouverture de l'export.
+
 ## Variables d'environnement
 
 BOB lit les variables d'environnement suivantes. Toutes sont opt-in ; aucune n'est requise pour un fonctionnement normal.
@@ -214,10 +239,12 @@ Pas de télémétrie, pas d'analytics, pas de vérification de mise à jour auto
 
 ## Manipulation des données
 
-  - **Rapports** : Les rapports détaillés `-d` sont écrits vers le répertoire de log configuré par l'utilisateur (par défaut : `~/.local/share/bob/logs/`). Les permissions de fichier sont `0644` (lisible par l'utilisateur propriétaire ; root si invoqué sous sudo et aucun log dir n'est surchargé).
+  - **Rapports** : Les rapports détaillés `-d` sont écrits vers le répertoire de log configuré par l'utilisateur (par défaut : `~/.local/share/bob/logs/`). Les permissions de fichier sont `0600` (propriétaire uniquement ; chownés de retour vers `$SUDO_USER` quand l'invocation passe par sudo). Le nom du rapport est entièrement prédictible (`bob_%Y%m%d_%H%M%S.log`) et le fichier est créé en root sous sudo : depuis la **v0.14.1** il est donc ouvert avec `O_NOFOLLOW` et chowné via le descripteur déjà détenu (`os.fchown`) plutôt que par son nom. Sans cela, quiconque peut écrire dans le répertoire cible — cas atteignable dès qu'un opérateur pointe `--output-dir` vers un emplacement partagé — pourrait pré-planter un lien symbolique et faire tronquer par root, puis lui céder la propriété d', un fichier arbitraire.
+  - **Les écritures de rapport sont best-effort** (v0.14.1). Le rapport est un artefact secondaire et ne doit jamais entraîner l'audit dans sa chute : à la première erreur d'E/S il se désactive, le signale une fois sur stderr, et l'audit se termine normalement. Avant la v0.14.1, un système de fichiers plein coûtait l'exécution entière — exit 3 et aucun audit.
   - **Config** : `~/.config/bob/config.conf` est `0600` (propriétaire uniquement).
   - **Baseline** : `~/.config/bob/last_baseline.json` est `0600`. Contient uniquement des clés de findings, scores, et listes de ports — pas de secrets, pas de contenus de fichiers, pas de PII autre que le nom d'hôte.
   - **Historique** : `~/.config/bob/history.jsonl` est `0600`. Une ligne par audit : timestamp + score + niveau. Rotation à 1000 entrées.
+  - **Toutes les lectures d'état sont bornées** (v0.14.1). Chaque fichier d'état, ainsi que le `--diff=CHEMIN` fourni par l'opérateur, passe par `bob._atomic.read_text_capped()`, qui refuse tout ce qui n'est pas un fichier régulier et borne la lecture. Auparavant, un chemin pointant vers un périphérique caractère (`--diff=/dev/zero`, ou `ignore.yml` lié vers lui) épuisait la mémoire, et un FIFO bloquait le processus **indéfiniment** — un cron qui reste suspendu au lieu d'échouer, et à chaque exécution suivante.
 
 Quand BOB est invoqué via `sudo`, les fichiers dans `~/.config/bob/` sont automatiquement chownés de retour vers `$SUDO_USER` (depuis v0.3.6) afin qu'ils restent lisibles/éditables sans sudo par la suite.
 

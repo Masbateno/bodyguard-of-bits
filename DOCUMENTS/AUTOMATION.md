@@ -216,7 +216,7 @@ The generic payload is intentionally minimal and stable:
 ```json
 {
   "source": "bob",
-  "version": "0.12.0",
+  "version": "0.14.1",
   "host": "example.local",
   "timestamp": "2026-06-11T18:42:01+00:00",
   "score": 8,
@@ -224,6 +224,8 @@ The generic payload is intentionally minimal and stable:
   "risk": "low",
   "alerts": 1,
   "warnings": 2,
+  "profile": "server",
+  "degraded_sections": [],
   "domain_scores": {"ssh": 8, "firewall": 10},
   "findings": [
     {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Root login allowed via SSH", "detail": "", "note": ""}
@@ -232,6 +234,13 @@ The generic payload is intentionally minimal and stable:
 ```
 
 This generic envelope is its **own** flat contract (distinct from the `bob --json` audit schema): top-level `source`/`max_score`/`timestamp` and a flat `domain_scores` map of `{domain: score}`. `alerts` and `warnings` are **counts (integers)**; the `findings` array always enumerates the ALERT- and WARN-level findings (each with `level`/`key`/`message`/`detail`/`note`). `risk` is the **effective** (posture-escalated) level, lowercase (`"low"` / `"medium"` / `"high"` / `"critical"`). Note: the webhook keeps the `alerts`/`warnings` names — only the `bob --json` audit schema renamed them to `alert_count`/`warning_count` in v0.12.0 (F9).
+
+**Two fields added in v0.14.1**, both additive — existing receivers are unaffected:
+
+  - **`profile`** — the audit profile that produced these numbers. Since v0.14.0 the profile changes finding severities, `warnings` and therefore the exit code, so two payloads from the same host can legitimately disagree; without this field nothing explains why. Use it to group or compare hosts.
+  - **`degraded_sections`** — the sections whose check raised and were degraded in place instead of aborting the audit (empty list on a healthy run). **This is the field to alert on.** A receiver seeing `score: 9, alerts: 0` cannot otherwise tell a clean host from one where two sections never ran; the exit code deliberately stays driven by the real findings, so incompleteness is only visible here (and as `<section>.unavailable` INFO findings, which the generic envelope does not enumerate — it carries ALERT and WARN only).
+
+A reasonable monitoring rule is therefore *"page on `alerts > 0`, and warn separately whenever `degraded_sections` is non-empty"* — the second condition means the audit itself is unhealthy, not the host.
 
 ### Behaviour
 
