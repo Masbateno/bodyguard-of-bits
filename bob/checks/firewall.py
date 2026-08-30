@@ -224,11 +224,23 @@ def check_rules(
     return result
 
 
+def _strip_comment(text: str) -> str:
+    """Drop a UFW rule comment (``... # note``) before matching.
+
+    v0.15.0 — ``ufw allow ... comment 'x'`` appends ``# x`` to every line of
+    ``ufw status numbered``. ``_check_duplicates`` stripped it; the other
+    sub-checks did not, and their patterns are anchored on the end of the line.
+    The consequence on ``_check_open_any`` was total: a rule allowing
+    everything from anywhere went undetected as soon as it carried a comment —
+    an ALERT and a 2-point deduction silently gone, on the single most
+    dangerous rule UFW can hold. Commenting firewall rules is good practice,
+    so the safer the operator, the likelier the miss.
+    """
+    return re.sub(r"\s*#.*$", "", text).strip()
+
+
 def _check_duplicates(lines: list[str], t, result: CheckResult) -> None:
     """Detect duplicate and proto-redundant UFW rules."""
-
-    def _strip_comment(text: str) -> str:
-        return re.sub(r"\s*#.*$", "", text).strip()
 
     def _rule_without_index(line: str) -> str:
         return re.sub(r"\[\s*\d+\]\s*", "", line).strip()
@@ -286,7 +298,7 @@ def _check_open_any(lines: list[str], t, result: CheckResult) -> None:
     """Detect 'Anywhere ALLOW IN Anywhere' wildcard rules."""
     found_open_any = False
     for line in lines:
-        if _OPEN_ANY_RE.search(line):
+        if _OPEN_ANY_RE.search(_strip_comment(line)):
             idx_match  = re.match(r"\[\s*(\d+)\]", line)
             real_index = int(idx_match.group(1)) if idx_match else None
             result.alert(
@@ -360,8 +372,9 @@ def _check_ipv6_coverage(
     Suppressed when IPv6 is disabled in /etc/default/ufw to avoid
     false positives on systems that intentionally run IPv4-only.
     """
-    ipv4_count = sum(1 for ln in lines if "(v6)" not in ln)
-    ipv6_count = sum(1 for ln in lines if "(v6)" in ln)
+    _bodies = [_strip_comment(ln) for ln in lines]
+    ipv4_count = sum(1 for ln in _bodies if "(v6)" not in ln)
+    ipv6_count = sum(1 for ln in _bodies if "(v6)" in ln)
 
     if ipv4_count > 0 and ipv6_count == 0:
         if ipv6_enabled:
