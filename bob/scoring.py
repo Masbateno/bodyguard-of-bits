@@ -156,6 +156,39 @@ class Finding:
     key:           str = ""
     template_vars: dict = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Strip ANSI escapes and control characters from operator-visible text.
+
+        v0.14.1 first put this in ``CheckResult.add_finding`` and called it "the
+        single point every finding passes through". It was not: ``Finding`` is
+        constructed directly in two other places, and one of them —
+        ``bob/_sandbox.py``, rebuilding findings from the JSON a *plugin*
+        returned — carries the least trustworthy strings in the program. A
+        plugin could therefore put raw escape sequences (or a bare CR, which
+        also produces malformed CSV) straight into the terminal, the report and
+        every export. Doing it in ``__post_init__`` covers every construction
+        path by definition, which is what the claim asserted all along.
+
+        ``cmd`` keeps its newlines — remediation blocks are legitimately
+        multi-line — and loses everything else.
+        """
+        from bob.output import sanitize, sanitize_multiline
+
+        def _flatten(text: str) -> str:
+            # Turn the whitespace control characters into a space rather than
+            # deleting them: sanitize() drops non-printables outright, which
+            # would glue "line1\nline2" into "line1line2". Markdown already
+            # flattened newlines to spaces for its table cells; doing it here
+            # keeps that behaviour for every format at once.
+            return text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
+
+        self.message = sanitize(_flatten(self.message), max_len=2048)
+        self.detail  = sanitize(_flatten(self.detail),  max_len=2048)
+        self.note    = sanitize(_flatten(self.note),    max_len=2048)
+        # cmd keeps its newlines — remediation blocks are legitimately
+        # multi-line — but a stray CR or tab still becomes a space.
+        self.cmd     = sanitize_multiline(self.cmd.replace("\r\n", "\n").replace("\r", " ").replace("\t", " "))
+
 @dataclass
 class ScoreCap:
     """
@@ -253,17 +286,10 @@ class CheckResult:
         # control characters in message/detail/note, so this is a no-op for
         # well-behaved content. ``cmd`` keeps its newlines (14 legitimate
         # multi-line remediation blocks) but loses everything else.
-        from bob.output import sanitize, sanitize_multiline
         self.findings.append(
             Finding(
-                level=level,
-                message=sanitize(message, max_len=2048),
-                detail=sanitize(detail, max_len=2048),
-                nature=nature,
-                cmd=sanitize_multiline(cmd),
-                cmd_type=cmd_type,
-                note=sanitize(note, max_len=2048),
-                key=key,
+                level=level, message=message, detail=detail,
+                nature=nature, cmd=cmd, cmd_type=cmd_type, note=note, key=key,
                 template_vars=dict(template_vars) if template_vars else {},
             )
         )

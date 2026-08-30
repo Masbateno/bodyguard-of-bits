@@ -310,8 +310,13 @@ class TestCsvFormulaInjection:
     quoted field starting with = + - @ — so report content that merely passed
     through BOB (a cron command line, a container name) could execute."""
 
+    # Only the printable formula leaders belong here. A control character can
+    # no longer reach _csv_safe at all — Finding.__post_init__ strips it — and
+    # prefixing "'" to a value that still held a bare CR produced a field the
+    # csv module itself refuses to read back on Python 3.10. See
+    # test_control_chars_never_reach_the_csv below.
     @pytest.mark.parametrize("payload", [
-        '=cmd|"/C calc"!A1', "+1234", "-1+1", "@SUM(1+1)", "\tlead", "\rlead",
+        '=cmd|"/C calc"!A1', "+1234", "-1+1", "@SUM(1+1)",
     ])
     def test_leading_formula_chars_are_neutralised(self, payload):
         import inspect
@@ -333,6 +338,68 @@ class TestCsvFormulaInjection:
         for col in ("message", "detail", "fix_cmd", "note"):
             assert rows[0][col].startswith("'"), f"{col} not neutralised"
             assert rows[0][col][1:] == payload, f"{col} value not preserved verbatim"
+
+    def test_control_chars_never_reach_the_csv(self):
+        """A CR in a field would make the export unreadable by csv itself.
+
+        Reproduced on CI (Python 3.10): a value neutralised to "'\rlead" is
+        written unquoted, and csv.DictReader then raises "new-line character
+        seen in unquoted field". The fix is upstream — the character is gone
+        before the writer sees it — so this pins the round-trip, not the prefix.
+        """
+        import csv as _csv
+        import inspect
+        import io
+
+        from bob.csv_output import build_csv_output
+        from bob.report import SystemInfo
+        from bob.scoring import Finding, FindingLevel, ScoreEngine
+
+        engine = ScoreEngine()
+        for payload in ("\rlead", "\tlead", "a\rb", "x\x00y"):
+            engine.findings.append(Finding(level=FindingLevel.WARN, key="cron.risky",
+                                           message=payload, detail=payload,
+                                           cmd=payload, note=payload))
+        params = inspect.signature(SystemInfo).parameters
+        si = SystemInfo(**{k: ("x" if v.default is inspect._empty else v.default)
+                           for k, v in params.items()})
+        out = build_csv_output(engine, si)
+        rows = list(_csv.DictReader(io.StringIO(out)))   # must not raise
+        assert len(rows) == 4
+        for r in rows:
+            for col in ("message", "detail", "fix_cmd", "note"):
+                assert "\r" not in r[col] and "\t" not in r[col] and "\x00" not in r[col]
+
+    def test_plugin_supplied_text_is_sanitised(self):
+        """The v0.14.1 claim was "one choke point for every format". It was not.
+
+        ``bob/_sandbox.py`` rebuilds a Finding directly from the JSON a plugin
+        returned — the least trustworthy strings in the program — and so
+        bypassed the sanitisation that lived in ``add_finding``. Moving it to
+        ``Finding.__post_init__`` is what makes the claim true.
+        """
+        from bob.scoring import Finding, FindingLevel
+
+        hostile = "\x1b]0;HIJACK\x07evil\r\x1b[2J"
+        f = Finding(level=FindingLevel.WARN, message=hostile, detail=hostile,
+                    note=hostile, cmd="line1\n" + hostile, key="plugin.x")
+        for field in (f.message, f.detail, f.note):
+            assert all(ord(c) >= 32 and ord(c) != 127 for c in field), field
+        assert "\n" in f.cmd, "cmd must keep its newlines"
+        assert "\x1b" not in f.cmd and "\r" not in f.cmd
+
+    def test_sanitisation_lives_in_the_dataclass_not_the_helper(self):
+        """Guard the fix's location: add_finding is not the only constructor."""
+        import ast
+        src = (REPO / "bob" / "scoring.py").read_text()
+        tree = ast.parse(src)
+        finding = next(n for n in ast.walk(tree)
+                       if isinstance(n, ast.ClassDef) and n.name == "Finding")
+        assert any(isinstance(n, ast.FunctionDef) and n.name == "__post_init__"
+                   for n in finding.body), (
+            "Finding must sanitise in __post_init__ — bob/_sandbox.py builds "
+            "Finding() directly from plugin-supplied JSON and would otherwise "
+            "bypass it")
 
     def test_benign_text_is_untouched(self):
         from bob.csv_output import _csv_safe
