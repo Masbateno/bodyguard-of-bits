@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import re
 import shlex
 import stat
 from dataclasses import dataclass, field
@@ -119,6 +120,38 @@ class FilePermsSnapshot:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# `#` opens a comment in sudoers *anywhere* on a line, not only at column 0 —
+# `NOPASSWD: ALL # temporary` and even `NOPASSWD: ALL#tmp` both grant
+# unrestricted sudo. The one exception is `#` immediately followed by a digit,
+# which sudo lexes as a numeric id: `#1000 ALL=(ALL) NOPASSWD: ALL` is a user
+# spec for uid 1000, and `ALL=(#1000)` is a runas uid. Both must survive.
+_SUDOERS_COMMENT_RE = re.compile(r"#(?!\d)")
+
+def _strip_sudoers_comment(line: str) -> str:
+    """Return `line` with any trailing sudoers comment removed."""
+    m = _SUDOERS_COMMENT_RE.search(line)
+    return (line[:m.start()] if m else line).rstrip()
+
+def _join_continuations(lines: list[str]) -> list[str]:
+    """Fold sudoers backslash-continuations into single logical lines.
+
+    A rule may be wrapped anywhere, including between the `NOPASSWD:` tag and
+    the command it applies to, so a line-at-a-time reader sees neither half as
+    unrestricted sudo.
+    """
+    out: list[str] = []
+    buf = ""
+    for raw in lines:
+        if raw.endswith("\\"):
+            buf += raw[:-1] + " "
+            continue
+        out.append(buf + raw)
+        buf = ""
+    if buf:
+        out.append(buf)
+    return out
+
+
 def _collect_nopasswd_entries() -> tuple[list[str], list[str]]:
     """
     Parse /etc/sudoers and /etc/sudoers.d/* for NOPASSWD entries.
@@ -147,9 +180,12 @@ def _collect_nopasswd_entries() -> tuple[list[str], list[str]]:
             text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        for line in text.splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
+        for line in _join_continuations(text.splitlines()):
+            # Strip the comment first: it both reveals rules hidden behind a
+            # trailing comment and stops a rule that merely *mentions*
+            # NOPASSWD in its comment from being counted as one.
+            stripped = _strip_sudoers_comment(line).strip()
+            if not stripped:
                 continue
             if "NOPASSWD" not in stripped.upper():
                 continue

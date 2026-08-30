@@ -1,3 +1,28 @@
+bodyguard-of-bits (0.15.0-1) UNRELEASED; urgency=low
+
+  * Verdict accuracy. In progress on branch v0.15.x; this entry grows with
+    the branch and is finalised at release time.
+  * Each fix is differential-tested against the parser that owns the file:
+    sshd -T, ssh -G, cvtsudoers -f json. Expectations record what the system
+    grants, not what the configuration line looks like.
+  * One defect class dominates: a check's patterns were written against the
+    tidy form of a line and stopped matching once an operator added a
+    trailing comment, so the more disciplined the administrator, the likelier
+    the miss.
+  * ssh: inline comments were carried into the parsed value, server and
+    client side; StrictHostKeyChecking off/false and ForwardAgent/ForwardX11
+    true were not recognised as spellings OpenSSH accepts.
+  * firewall: "ufw allow ... comment 'x'" appends "# x" to every line of
+    "ufw status numbered", and _check_open_any is anchored on end-of-line, so
+    a commented "Anywhere ALLOW IN Anywhere" rule — every port from every
+    source — produced no alert and no deduction at all.
+  * file_perms: "#" opens a comment anywhere on a sudoers line, so
+    "NOPASSWD: ALL # temporary" was downgraded from a 2-point warning to a
+    scoreless info. Backslash continuations and the numeric-uid user form
+    (#1000 ALL=(ALL) NOPASSWD: ALL) were also missed.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 30 Aug 2026 12:00:00 +0200
+
 bodyguard-of-bits (0.14.1-1) UNRELEASED; urgency=low
 
   * Correctness patch. INFO-only surface, so no score, output field or exit

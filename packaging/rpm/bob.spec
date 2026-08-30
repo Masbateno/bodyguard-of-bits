@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.14.1
+Version:        0.15.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,21 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Aug 30 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.0-1
+- Verdict accuracy. In progress on branch v0.15.x, finalised at release.
+- Fixes are differential-tested against the parser that owns the file:
+  sshd -T, ssh -G, cvtsudoers -f json.
+- One defect class dominates: patterns written against the tidy form of a
+  line stopped matching once an operator added a trailing comment.
+- ssh: inline comments carried into the parsed value, server and client side;
+  StrictHostKeyChecking off/false and ForwardAgent/ForwardX11 true were not
+  recognised as spellings OpenSSH accepts.
+- firewall: a commented "Anywhere ALLOW IN Anywhere" ufw rule — every port
+  from every source — produced no alert and no deduction at all.
+- file_perms: "NOPASSWD: ALL # temporary" was downgraded from a 2-point
+  warning to a scoreless info; backslash continuations and the numeric-uid
+  user form were also missed.
+
 * Sun Aug 30 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.14.1-1
 - Correctness patch, INFO-only surface: no score or exit-code change.
 - container_security: "privileged" meant "CAP_SYS_ADMIN present", so

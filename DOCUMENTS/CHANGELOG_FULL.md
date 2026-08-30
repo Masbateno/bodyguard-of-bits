@@ -6,6 +6,59 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.15.0] — unreleased
+
+**Verdict accuracy. In progress on branch `v0.15.x`; this section grows with the branch and is finalised at ship time.**
+
+The cycle objective, set before any code was written: make what BOB *says* correct, before adding new deductions.
+A wrong verdict discredits the tool more than a missing one.
+
+### Method
+
+Every fix here is differential-tested against the parser that actually owns the file:
+
+| Surface | Oracle |
+|---------|--------|
+| `sshd_config` | `sshd -T` |
+| `ssh_config`  | `ssh -G`  |
+| `sudoers`     | `cvtsudoers -f json` |
+| `ufw status`  | rule forms produced by `ufw` itself |
+
+The expectations in the guard files are read off those oracles rather than written by hand, so they record what the
+system grants, not what the configuration line looks like.
+
+### One defect class dominates: the trailing comment
+
+A check's patterns were written against the tidy form of a line and stopped matching as soon as an operator added a
+comment. Commenting security rules is good practice, so **the more disciplined the administrator, the likelier the
+miss**.
+
+- **SSH, server side** (`bob/checks/ssh/_parsers.py`) — an inline comment was carried into the parsed value.
+- **SSH, client side** (same module) — same omission on `ssh_config`, plus `StrictHostKeyChecking off/false` and
+  `ForwardAgent/ForwardX11 true` were not recognised as the spellings OpenSSH accepts.
+- **Firewall** (`bob/checks/firewall.py`) — `ufw allow ... comment 'x'` appends `# x` to every line of
+  `ufw status numbered`. `_check_open_any` is anchored on end-of-line, so `Anywhere ALLOW IN Anywhere # temporary`
+  — every port from every source, the most dangerous rule UFW can hold — produced **no ALERT and no deduction at
+  all**. `_check_ipv6_coverage` had a variant: it counted `"(v6)" in line`, so a comment mentioning `(v6)` suppressed
+  the IPv6-missing warning.
+- **Sudoers** (`bob/checks/file_perms.py`) — `#` opens a comment *anywhere* on a sudoers line, glued (`ALL#tmp`)
+  included, and `NOPASSWD: ALL # temporary` was therefore classified as a restricted grant: WARN plus a 2-point
+  deduction became a scoreless INFO. Two further gaps surfaced from the same audit: backslash continuations were read
+  a line at a time, so a rule wrapped between `NOPASSWD:` and its command was invisible; and `#1000 ALL=(ALL)
+  NOPASSWD: ALL` — the numeric-uid user form — was skipped outright as a comment line.
+
+Each fix is mutation-tested: the defect is re-injected and the new guard must fail.
+
+### Documentation routine
+
+Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
+release-surface files are opened when the branch opens. The existing doc guards then work *during* development
+instead of only at the tag.
+
+**Tests** 6719 → **6798**.
+
+---
+
 ## [v0.14.1] — 2026-08-30
 
 **Correctness patch. The container surface is INFO-only, so no score, output field or exit code changes; one additive finding key.**

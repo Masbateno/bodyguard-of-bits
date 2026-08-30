@@ -6,6 +6,60 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.15.0] — non publiée
+
+**Exactitude des verdicts. En cours sur la branche `v0.15.x` ; cette section grandit avec la branche et sera finalisée au moment de la publication.**
+
+L'objectif du cycle, fixé avant d'écrire la moindre ligne de code : rendre juste ce que BOB *affirme*, avant
+d'ajouter de nouvelles déductions. Un verdict faux discrédite plus l'outil qu'un verdict manquant.
+
+### Méthode
+
+Chaque correctif est testé en différentiel contre l'analyseur qui fait autorité sur le fichier :
+
+| Surface | Oracle |
+|---------|--------|
+| `sshd_config` | `sshd -T` |
+| `ssh_config`  | `ssh -G`  |
+| `sudoers`     | `cvtsudoers -f json` |
+| `ufw status`  | formes de règles produites par `ufw` lui-même |
+
+Les attentes des fichiers de garde sont relevées sur ces oracles plutôt qu'écrites à la main : elles consignent donc
+ce que le système accorde, et non ce à quoi la ligne de configuration ressemble.
+
+### Une classe de défaut domine : le commentaire en fin de ligne
+
+Les motifs d'un contrôle avaient été écrits sur la forme *propre* d'une ligne et cessaient de correspondre dès qu'un
+opérateur ajoutait un commentaire. Commenter ses règles de sécurité est une bonne pratique : **plus l'administrateur
+est rigoureux, plus la détection échoue**.
+
+- **SSH, côté serveur** (`bob/checks/ssh/_parsers.py`) — un commentaire en ligne était emporté dans la valeur analysée.
+- **SSH, côté client** (même module) — même omission sur `ssh_config`, et `StrictHostKeyChecking off/false` ainsi que
+  `ForwardAgent/ForwardX11 true` n'étaient pas reconnus comme les orthographes qu'OpenSSH accepte.
+- **Pare-feu** (`bob/checks/firewall.py`) — `ufw allow ... comment 'x'` ajoute `# x` à chaque ligne de
+  `ufw status numbered`. `_check_open_any` est ancré sur la fin de ligne : `Anywhere ALLOW IN Anywhere # temporaire`
+  — tous les ports depuis toutes les sources, la règle la plus dangereuse qu'UFW puisse contenir — ne produisait
+  **ni ALERTE ni déduction, rien du tout**. `_check_ipv6_coverage` présentait une variante : il comptait
+  `"(v6)" in line`, donc un commentaire mentionnant `(v6)` supprimait l'avertissement d'absence d'IPv6.
+- **Sudoers** (`bob/checks/file_perms.py`) — `#` ouvre un commentaire *n'importe où* sur une ligne sudoers, y compris
+  collé (`ALL#tmp`) ; `NOPASSWD: ALL # temporaire` était donc classé comme un octroi restreint : un WARN assorti
+  d'une déduction de 2 points devenait un INFO sans score. Deux autres manques sont sortis du même audit : les
+  continuations par barre oblique inverse étaient lues ligne par ligne, donc une règle coupée entre `NOPASSWD:` et sa
+  commande était invisible ; et `#1000 ALL=(ALL) NOPASSWD: ALL` — la forme utilisateur par uid numérique — était
+  purement et simplement ignorée comme une ligne de commentaire.
+
+Chaque correctif est testé par mutation : le défaut est réinjecté et la nouvelle garde doit échouer.
+
+### Routine de documentation
+
+À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
+publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
+existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
+
+**Tests** 6719 → **6798**.
+
+---
+
 ## [v0.14.1] — 30-08-2026
 
 **Patch d'exactitude. La surface conteneur est INFO-only : aucun changement de score, de champ de sortie ni de code de retour ; une clé de finding additive.**
