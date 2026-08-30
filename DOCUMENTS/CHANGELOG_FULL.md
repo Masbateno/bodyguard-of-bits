@@ -145,13 +145,33 @@ overrides `pwquality.conf` or the reverse. `pam_pwquality.so` is not installed
 here, so there is no local oracle, and this cycle does not trade a measured
 verdict for a believed one.
 
+### The `ss` parser: a negative result, recorded as one
+
+Parsed against the kernel's own socket tables — `/proc/net/{tcp,tcp6,udp,udp6}`,
+filtered to the states `ss -l` reports — BOB agreed exactly: 33 sockets, 20
+distinct (proto, port) pairs, nothing missed in either direction. The parser is
+sound, and that is worth writing down as plainly as a defect would be.
+
+One gap did surface from the shapes this host does not produce. `%scope` was
+split off the address into `iface` for IPv4 and not for IPv6, so the JSON
+`address` field read `fe80::1%eth0` and `iface` came back empty — the IPv4
+branch honoured the function's docstring and the IPv6 branch quietly did not.
+No verdict moved, which is exactly why it survived: a scoped address never
+matched the all-interfaces pattern either way, so both paths reached the right
+answer and one of them reached it for the wrong reason.
+
+The live kernel comparison is deliberately **not** in the suite. It races — a
+socket can open or close between the `ss` call and the `/proc` read — and a
+guard that fails for reasons unrelated to the code is a guard people learn to
+ignore. The deterministic output shapes are pinned instead.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6839**.
+**Tests** 6719 → **6866**.
 
 ---
 

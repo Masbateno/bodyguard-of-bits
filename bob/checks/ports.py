@@ -488,10 +488,19 @@ def _split_addr_port(local_addr: str) -> tuple[str | None, str | None, str]:
       - "[::1]:631"
       - "192.168.1.255:137"
     """
-    # IPv6 bracket notation: [addr]:port
+    # IPv6 bracket notation: [addr]:port, with an optional %scope inside the
+    # brackets. The scope was previously left glued to the address and `iface`
+    # returned empty — so the IPv4 branch honoured this docstring and the IPv6
+    # branch quietly did not, and a JSON consumer read "fe80::1%eth0" as the
+    # address. No verdict moved (a scoped address never matched
+    # `_ALL_INTERFACES` anyway), which is why it survived.
     ipv6_match = re.match(r"^\[([^\]]+)\]:(\d+)$", local_addr)
     if ipv6_match:
-        return ipv6_match.group(1), ipv6_match.group(2), ""
+        addr = ipv6_match.group(1)
+        iface = ""
+        if "%" in addr:
+            addr, _, iface = addr.partition("%")
+        return addr, ipv6_match.group(2), iface
 
     # Wildcard notation: *:port (some ss versions)
     wild_match = re.match(r"^\*:(\d+)$", local_addr)

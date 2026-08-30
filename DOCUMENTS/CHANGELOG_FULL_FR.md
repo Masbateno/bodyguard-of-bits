@@ -155,13 +155,36 @@ PAM prime sur `pwquality.conf` ou l'inverse. `pam_pwquality.so` n'est pas
 installé ici, donc il n'existe pas d'oracle local, et ce cycle ne troque pas un
 verdict mesuré contre un verdict supposé.
 
+### L'analyseur `ss` : un résultat négatif, consigné comme tel
+
+Confronté aux tables de sockets du noyau lui-même —
+`/proc/net/{tcp,tcp6,udp,udp6}`, filtrées sur les états que `ss -l` rapporte —
+BOB était exactement d'accord : 33 sockets, 20 couples (proto, port) distincts,
+rien de manqué dans un sens comme dans l'autre. L'analyseur est sain, et cela
+mérite d'être écrit aussi clairement qu'un défaut.
+
+Un écart est tout de même sorti des formes que cette machine ne produit pas. Le
+`%scope` était détaché de l'adresse vers `iface` pour IPv4 et pas pour IPv6 : le
+champ JSON `address` valait donc `fe80::1%eth0` et `iface` revenait vide — la
+branche IPv4 honorait la docstring de la fonction, la branche IPv6 non, en
+silence. Aucun verdict n'a bougé, et c'est précisément pourquoi l'écart a
+survécu : une adresse scopée ne correspondait de toute façon jamais au motif
+« toutes interfaces », donc les deux chemins arrivaient à la bonne réponse et
+l'un d'eux y arrivait pour la mauvaise raison.
+
+La comparaison live avec le noyau n'est **délibérément pas** dans la suite. Elle
+comporte une course — une socket peut s'ouvrir ou se fermer entre l'appel à `ss`
+et la lecture de `/proc` — et une garde qui échoue pour des raisons étrangères au
+code est une garde qu'on apprend à ignorer. Ce sont les formes de sortie
+déterministes qui sont verrouillées à la place.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6839**.
+**Tests** 6719 → **6866**.
 
 ---
 
