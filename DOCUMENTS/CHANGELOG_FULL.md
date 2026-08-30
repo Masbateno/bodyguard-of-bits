@@ -190,13 +190,33 @@ nothing is assumed before a read.
 Where the knobs do exist BOB was already exact, checked against `sysctl -n` for
 all five.
 
+### The same defect, ten knobs wide, in the hardening section
+
+A sweep for the pattern found in `kernel_hardening` turned it up again in
+`bob/checks/hardening.py`, larger. `_read_sysctl_int(key, default)` and
+`_read_sysctl_bool(key, default)` returned the default on any read failure, and
+every one of the ten call sites passed the *hardened* value — rp_filter 1,
+accept_redirects False, log_martians True, syncookies 1, and so on down the
+list. An unreadable `/proc/sys` therefore produced a perfectly hardened network
+stack: ten passes for ten parameters BOB had not read, under the SYSTEM
+HARDENING header.
+
+The realistic trigger is not exotic. Boot with `ipv6.disable=1` and
+`/proc/sys/net/ipv6` does not exist at all, so `net.ipv6.conf.all.accept_redirects`
+was answered from the default alone — and BOB's own IPv6 check already treats a
+disabled stack as an ordinary state, so the tool contradicted itself.
+
+Every field now defaults to `None`. The JSON `hardening` block mirrors an unread
+parameter as `null` instead of asserting a value it never saw — strictly more
+information than before, and only where the previous value was fabricated.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6871**.
+**Tests** 6719 → **6890**.
 
 ---
 

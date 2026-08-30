@@ -48,16 +48,18 @@ class HardeningSnapshot:
         protected_hardlinks:          True if fs.protected_hardlinks == 1.
         protected_symlinks:           True if fs.protected_symlinks == 1.
     """
-    rp_filter:                   int  = 1
-    accept_redirects:            bool = False
-    log_martians:                bool = True
-    icmp_echo_ignore_broadcasts: bool = True
-    tcp_syncookies:              int  = 1
-    accept_source_route:         bool = False
-    accept_redirects_v6:         bool = False
-    send_redirects:              bool = False
-    protected_hardlinks:         bool = True
-    protected_symlinks:          bool = True
+    # None on every field means "this kernel does not expose the knob" — never
+    # a stand-in for a value. The JSON output mirrors that as null.
+    rp_filter:                   "int | None"  = None
+    accept_redirects:            "bool | None" = None
+    log_martians:                "bool | None" = None
+    icmp_echo_ignore_broadcasts: "bool | None" = None
+    tcp_syncookies:              "int | None"  = None
+    accept_source_route:         "bool | None" = None
+    accept_redirects_v6:         "bool | None" = None
+    send_redirects:              "bool | None" = None
+    protected_hardlinks:         "bool | None" = None
+    protected_symlinks:          "bool | None" = None
 
     @classmethod
     def from_system(cls) -> "HardeningSnapshot":
@@ -69,16 +71,16 @@ class HardeningSnapshot:
             reflected as safe/default values.
         """
         # --- kernel sysctl parameters ---
-        rp_filter                   = _read_sysctl_int("net.ipv4.conf.all.rp_filter",    default=1)
-        accept_redirects            = _read_sysctl_bool("net.ipv4.conf.all.accept_redirects", default=False)
-        log_martians                = _read_sysctl_bool("net.ipv4.conf.all.log_martians",     default=True)
-        icmp_echo_ignore_broadcasts = _read_sysctl_bool("net.ipv4.icmp_echo_ignore_broadcasts", default=True)
-        tcp_syncookies              = _read_sysctl_int("net.ipv4.tcp_syncookies",             default=1)
-        accept_source_route         = _read_sysctl_bool("net.ipv4.conf.all.accept_source_route", default=False)
-        accept_redirects_v6         = _read_sysctl_bool("net.ipv6.conf.all.accept_redirects",    default=False)
-        send_redirects              = _read_sysctl_bool("net.ipv4.conf.all.send_redirects",      default=False)
-        protected_hardlinks         = _read_sysctl_bool("fs.protected_hardlinks",                default=True)
-        protected_symlinks          = _read_sysctl_bool("fs.protected_symlinks",                 default=True)
+        rp_filter                   = _read_sysctl_int("net.ipv4.conf.all.rp_filter")
+        accept_redirects            = _read_sysctl_bool("net.ipv4.conf.all.accept_redirects")
+        log_martians                = _read_sysctl_bool("net.ipv4.conf.all.log_martians")
+        icmp_echo_ignore_broadcasts = _read_sysctl_bool("net.ipv4.icmp_echo_ignore_broadcasts")
+        tcp_syncookies              = _read_sysctl_int("net.ipv4.tcp_syncookies")
+        accept_source_route         = _read_sysctl_bool("net.ipv4.conf.all.accept_source_route")
+        accept_redirects_v6         = _read_sysctl_bool("net.ipv6.conf.all.accept_redirects")
+        send_redirects              = _read_sysctl_bool("net.ipv4.conf.all.send_redirects")
+        protected_hardlinks         = _read_sysctl_bool("fs.protected_hardlinks")
+        protected_symlinks          = _read_sysctl_bool("fs.protected_symlinks")
 
         return cls(
             rp_filter=rp_filter,
@@ -111,10 +113,15 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
     """
     _t = t if t is not None else _identity_t
     result = CheckResult()
+    # Knobs this kernel does not expose. Reported once, together, as an INFO:
+    # an absent parameter is neither a pass nor a scoreable failure.
+    _missing: list[str] = []
 
     # --- rp_filter (reverse path filtering) ---
     # 0 = disabled (insecure), 1 = strict mode (best), 2 = loose mode (weaker)
-    if snapshot.rp_filter == 1:
+    if snapshot.rp_filter is None:
+        _missing.append(_SYSCTL_NAMES["rp_filter"])
+    elif snapshot.rp_filter == 1:
         result.ok(message=_t("hardening.rp_filter_ok"),
                   key="hardening.rp_filter_ok")
     elif snapshot.rp_filter == 2:
@@ -129,7 +136,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             nature="action",
         )
     # --- ICMP redirects ---
-    if not snapshot.accept_redirects:
+    if snapshot.accept_redirects is None:
+        _missing.append(_SYSCTL_NAMES["accept_redirects"])
+    elif not snapshot.accept_redirects:
         result.ok(message=_t("hardening.redirects_ok"),
                   key="hardening.redirects_ok")
     else:
@@ -141,7 +150,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             nature="action",
         )
     # --- log_martians ---
-    if snapshot.log_martians:
+    if snapshot.log_martians is None:
+        _missing.append(_SYSCTL_NAMES["log_martians"])
+    elif snapshot.log_martians:
         result.ok(message=_t("hardening.log_martians_ok"),
                   key="hardening.log_martians_ok")
     else:
@@ -153,7 +164,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         )
 
     # --- ICMP broadcast echo ---
-    if snapshot.icmp_echo_ignore_broadcasts:
+    if snapshot.icmp_echo_ignore_broadcasts is None:
+        _missing.append(_SYSCTL_NAMES["icmp_echo_ignore_broadcasts"])
+    elif snapshot.icmp_echo_ignore_broadcasts:
         result.ok(message=_t("hardening.icmp_broadcast_ok"),
                   key="hardening.icmp_broadcast_ok")
     else:
@@ -163,7 +176,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         )
 
     # --- tcp_syncookies (SYN flood protection) ---
-    if snapshot.tcp_syncookies >= 1:
+    if snapshot.tcp_syncookies is None:
+        _missing.append(_SYSCTL_NAMES["tcp_syncookies"])
+    elif snapshot.tcp_syncookies >= 1:
         result.ok(
             message=_t("hardening.tcp_syncookies_ok", value=snapshot.tcp_syncookies),
             key="hardening.tcp_syncookies_ok",
@@ -178,7 +193,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             nature="action",
         )
     # --- accept_source_route (IP source routing) ---
-    if not snapshot.accept_source_route:
+    if snapshot.accept_source_route is None:
+        _missing.append(_SYSCTL_NAMES["accept_source_route"])
+    elif not snapshot.accept_source_route:
         result.ok(
             message=_t("hardening.accept_source_route_ok"),
             key="hardening.accept_source_route_ok",
@@ -192,7 +209,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             nature="action",
         )
     # --- IPv6 ICMP redirects ---
-    if not snapshot.accept_redirects_v6:
+    if snapshot.accept_redirects_v6 is None:
+        _missing.append(_SYSCTL_NAMES["accept_redirects_v6"])
+    elif not snapshot.accept_redirects_v6:
         result.ok(
             message=_t("hardening.accept_redirects_v6_ok"),
             key="hardening.accept_redirects_v6_ok",
@@ -206,7 +225,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             nature="action",
         )
     # --- send_redirects ---
-    if not snapshot.send_redirects:
+    if snapshot.send_redirects is None:
+        _missing.append(_SYSCTL_NAMES["send_redirects"])
+    elif not snapshot.send_redirects:
         result.ok(
             message=_t("hardening.send_redirects_ok"),
             key="hardening.send_redirects_ok",
@@ -221,7 +242,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             nature="action",
         )
     # --- fs.protected_hardlinks ---
-    if snapshot.protected_hardlinks:
+    if snapshot.protected_hardlinks is None:
+        _missing.append(_SYSCTL_NAMES["protected_hardlinks"])
+    elif snapshot.protected_hardlinks:
         result.ok(
             message=_t("hardening.protected_hardlinks_ok"),
             key="hardening.protected_hardlinks_ok",
@@ -235,7 +258,9 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             nature="action",
         )
     # --- fs.protected_symlinks ---
-    if snapshot.protected_symlinks:
+    if snapshot.protected_symlinks is None:
+        _missing.append(_SYSCTL_NAMES["protected_symlinks"])
+    elif snapshot.protected_symlinks:
         result.ok(
             message=_t("hardening.protected_symlinks_ok"),
             key="hardening.protected_symlinks_ok",
@@ -248,6 +273,13 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             cmd="sudo sysctl -w fs.protected_symlinks=1 && echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf",
             nature="action",
         )
+    if _missing:
+        result.info(
+            message=_t("hardening.params_unavailable", params=", ".join(_missing)),
+            detail=_t("hardening.params_unavailable_detail"),
+            key="hardening.params_unavailable",
+        )
+
     return result
 
 
@@ -256,20 +288,49 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
 # ---------------------------------------------------------------------------
 
 
-def _read_sysctl_int(key: str, default: int) -> int:
-    """Read a sysctl value as int via /proc/sys."""
+# Field name -> the sysctl an operator would look for, used by the single
+# "not exposed by this kernel" finding.
+_SYSCTL_NAMES = {
+    'rp_filter'                   : 'net.ipv4.conf.all.rp_filter',
+    'accept_redirects'            : 'net.ipv4.conf.all.accept_redirects',
+    'log_martians'                : 'net.ipv4.conf.all.log_martians',
+    'icmp_echo_ignore_broadcasts' : 'net.ipv4.icmp_echo_ignore_broadcasts',
+    'tcp_syncookies'              : 'net.ipv4.tcp_syncookies',
+    'accept_source_route'         : 'net.ipv4.conf.all.accept_source_route',
+    'accept_redirects_v6'         : 'net.ipv6.conf.all.accept_redirects',
+    'send_redirects'              : 'net.ipv4.conf.all.send_redirects',
+    'protected_hardlinks'         : 'fs.protected_hardlinks',
+    'protected_symlinks'          : 'fs.protected_symlinks',
+}
+
+def _read_sysctl_int(key: str) -> "int | None":
+    """Read a sysctl value as int via /proc/sys, or None if it cannot be read.
+
+    See ``_read_sysctl_bool`` for why there is no default.
+    """
     path = Path("/proc/sys") / key.replace(".", "/")
     try:
         return int(path.read_text(encoding="ascii", errors="ignore").strip())
     except (OSError, ValueError):
-        return default
+        return None
 
 
-def _read_sysctl_bool(key: str, default: bool) -> bool:
-    """Read a sysctl value and return True if it equals "1"."""
+def _read_sysctl_bool(key: str) -> "bool | None":
+    """Read a sysctl value as a flag, or None if it cannot be read.
+
+    Until v0.15.0 both readers took a ``default`` used on any read failure, and
+    every one of the ten call sites passed the *hardened* value. So an
+    unreadable /proc/sys produced a perfectly hardened network stack — this is
+    the SYSTEM HARDENING section, and it would report ten passes for ten
+    parameters it had not read. The realistic trigger is not exotic: boot with
+    ``ipv6.disable=1`` and ``/proc/sys/net/ipv6`` does not exist at all, so
+    ``net.ipv6.conf.all.accept_redirects`` was answered from the default alone.
+
+    None means "not read", which is a distinct answer from any value.
+    """
     path = Path("/proc/sys") / key.replace(".", "/")
     try:
         val = path.read_text(encoding="ascii", errors="ignore").strip()
         return val == "1"
     except OSError:
-        return default
+        return None

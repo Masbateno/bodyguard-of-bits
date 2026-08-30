@@ -205,13 +205,35 @@ soit supposé avant lecture.
 Là où les réglages existent, BOB était déjà exact — vérifié contre `sysctl -n`
 pour les cinq.
 
+### Le même défaut, sur dix réglages, dans la section durcissement
+
+Un balayage du motif trouvé dans `kernel_hardening` l'a retrouvé dans
+`bob/checks/hardening.py`, en plus large. `_read_sysctl_int(key, default)` et
+`_read_sysctl_bool(key, default)` renvoyaient le défaut à tout échec de lecture,
+et les dix sites d'appel passaient tous la valeur *durcie* — rp_filter 1,
+accept_redirects False, log_martians True, syncookies 1, et ainsi de suite. Un
+`/proc/sys` illisible produisait donc une pile réseau parfaitement durcie : dix
+réussites pour dix paramètres que BOB n'avait pas lus, sous l'en-tête
+« ANALYSE DU DURCISSEMENT SYSTÈME ».
+
+Le déclencheur réaliste n'a rien d'exotique. Démarrez avec `ipv6.disable=1` et
+`/proc/sys/net/ipv6` n'existe pas du tout : `net.ipv6.conf.all.accept_redirects`
+était alors répondu par le seul défaut — alors que le contrôle IPv6 de BOB traite
+déjà une pile désactivée comme un état ordinaire. L'outil se contredisait
+lui-même.
+
+Chaque champ vaut désormais `None` par défaut. Le bloc JSON `hardening` reflète
+un paramètre non lu par `null` au lieu d'affirmer une valeur jamais observée —
+strictement plus d'information qu'avant, et uniquement là où la valeur
+précédente était fabriquée.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6871**.
+**Tests** 6719 → **6890**.
 
 ---
 

@@ -673,7 +673,9 @@
     "protected_hardlinks_ok": "Protection des liens durs activée (fs.protected_hardlinks=1)",
     "protected_hardlinks_disabled": "Protection des liens durs désactivée (fs.protected_hardlinks=0) — permet des attaques par lien dur pour l'élévation de privilèges",
     "protected_symlinks_ok": "Protection des liens symboliques activée (fs.protected_symlinks=1)",
-    "protected_symlinks_disabled": "Protection des liens symboliques désactivée (fs.protected_symlinks=0) — permet des attaques par lien symbolique via les race conditions /tmp"
+    "protected_symlinks_disabled": "Protection des liens symboliques désactivée (fs.protected_symlinks=0) — permet des attaques par lien symbolique via les race conditions /tmp",
+    "params_unavailable": "Paramètres noyau non exposés par ce noyau : {params}",
+    "params_unavailable_detail": "Ces sysctls n'existent pas sur ce système — le plus souvent IPv6 non compilé ou désactivé au démarrage (ipv6.disable=1 supprime entièrement /proc/sys/net/ipv6), un noyau compilé sans l'option correspondante, ou un /proc restreint. BOB n'annonce ni réussite ni échec pour eux : le paramètre n'a pas une valeur faible, il est absent."
   },
   "disk": {
     "ok": "Tous les disques ont passé le contrôle SMART — aucun attribut critique détecté",

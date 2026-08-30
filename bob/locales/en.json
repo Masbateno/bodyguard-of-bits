@@ -673,7 +673,9 @@
     "protected_hardlinks_ok": "Hard link protection enabled (fs.protected_hardlinks=1)",
     "protected_hardlinks_disabled": "Hard link protection disabled (fs.protected_hardlinks=0) — allows hard link attacks for privilege escalation",
     "protected_symlinks_ok": "Symbolic link protection enabled (fs.protected_symlinks=1)",
-    "protected_symlinks_disabled": "Symbolic link protection disabled (fs.protected_symlinks=0) — allows symlink attacks via /tmp race conditions"
+    "protected_symlinks_disabled": "Symbolic link protection disabled (fs.protected_symlinks=0) — allows symlink attacks via /tmp race conditions",
+    "params_unavailable": "Kernel parameters not exposed by this kernel: {params}",
+    "params_unavailable_detail": "These sysctls do not exist on this system — most often IPv6 compiled out or disabled at boot (ipv6.disable=1 removes /proc/sys/net/ipv6 entirely), a kernel built without the matching option, or a restricted /proc. BOB reports neither a pass nor a failure for them: the parameter is not set to a weak value, it is absent."
   },
   "disk": {
     "ok": "All disks passed SMART health check — no critical attributes detected",
