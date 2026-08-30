@@ -82,8 +82,40 @@ def _parse_config_file(
         m = re.match(r"^(\w+)[\s=]+(.+)$", stripped)
         if m:
             key   = m.group(1).lower()
-            value = m.group(2).strip().strip('"')
+            value = _strip_inline_comment(m.group(2)).strip().strip('"')
             config.setdefault(key, value)  # first-value-wins
+
+def _strip_inline_comment(value: str) -> str:
+    """Cut an sshd_config value at an unquoted ``#``, as OpenSSH does.
+
+    v0.15.0 — the parser previously kept the whole remainder of the line, so
+    ``PermitRootLogin yes # TODO remove`` yielded the value
+    ``"yes # TODO remove"``. Every sub-check compares values exactly
+    (``prl == "yes"``, ``v in bad_values``, ``v not in safe_values``), so one
+    trailing comment silently changed the verdict — and in both directions:
+
+      * ``bad_values`` directives stopped matching → the finding vanished.
+        Measured on one file: ``PermitRootLogin yes`` went ALERT → INFO, and
+        ``PermitEmptyPasswords``, ``PasswordAuthentication`` and
+        ``X11Forwarding`` disappeared entirely. The host scored *higher* for
+        being commented.
+      * ``safe_values`` directives stopped matching too, so a *correct*
+        setting was reported as bad. ``MaxAuthTries 2 # strict`` failed
+        ``int()``, fell back to the default 6, and 6 > 3 raised a warning on a
+        properly hardened host.
+
+    Verified against ``sshd -T`` (OpenSSH 9.6): an unquoted ``#`` starts a
+    comment, a ``#`` inside double quotes is literal.
+    """
+    out, in_quotes = [], False
+    for ch in value:
+        if ch == '"':
+            in_quotes = not in_quotes
+        elif ch == "#" and not in_quotes:
+            break
+        out.append(ch)
+    return "".join(out)
+
 
 def _collect_private_keys(ssh_dir: Path) -> list[PrivateKeyInfo]:
     """Return PrivateKeyInfo for each private key file found in ssh_dir."""

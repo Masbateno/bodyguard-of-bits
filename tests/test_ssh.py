@@ -175,9 +175,20 @@ class TestSshdConfig:
         assert "ssh.permit_root_login" not in _deduction_keys(result)
 
     def test_permit_root_login_unknown_value_is_info(self):
-        snap = base_snapshot(sshd_config={"permitrootlogin": "without-password"})
+        # NB: this used to use "without-password" as its example of an unknown
+        # value, which encoded a v0.15.0 bug as expected behaviour — that is the
+        # pre-6.7 spelling of "prohibit-password" and OpenSSH accepts it. Use a
+        # value sshd would genuinely reject.
+        snap = base_snapshot(sshd_config={"permitrootlogin": "banana"})
         result = check_ssh(snap)
         assert _has_finding(result, "ssh.permit_root_login", FindingLevel.INFO)
+
+    def test_permit_root_login_without_password_is_restricted(self):
+        """`without-password` == `prohibit-password` (OpenSSH < 6.7 spelling)."""
+        snap = base_snapshot(sshd_config={"permitrootlogin": "without-password"})
+        result = check_ssh(snap)
+        assert _has_finding(result, "ssh.permit_root_login_restricted", FindingLevel.OK)
+        assert "ssh.permit_root_login" not in _deduction_keys(result)
 
     def test_password_auth_yes_is_warn(self):
         snap = base_snapshot(sshd_config={"passwordauthentication": "yes"})

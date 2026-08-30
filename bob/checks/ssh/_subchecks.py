@@ -160,7 +160,12 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             message=_t("ssh.permit_root_login_disabled"),
             key="ssh.permit_root_login_disabled",
         )
-    elif prl in ("prohibit-password", "forced-commands-only"):
+    # ``without-password`` is the pre-6.7 spelling of ``prohibit-password``;
+    # OpenSSH still accepts it and canonicalises it (``sshd -T`` prints
+    # ``without-password`` for both). Legacy configs carry it, and before
+    # v0.15.0 they fell through to the INFO branch — the host was correctly
+    # hardened and got no credit for it.
+    elif prl in ("prohibit-password", "without-password", "forced-commands-only"):
         result.ok(
             message=_t("ssh.permit_root_login_restricted", value=prl),
             key="ssh.permit_root_login_restricted",
