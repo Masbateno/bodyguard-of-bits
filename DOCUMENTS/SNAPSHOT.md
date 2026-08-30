@@ -1,6 +1,6 @@
 # BOB — Project snapshot
 
-> **Purpose.** A single-page bird's-eye view of the codebase as of **v0.14.1** (2026-08-30, surgically refreshed from the v0.10.2 baseline across the v0.11.x → v0.13.x arc — header + counters + new modules; the deep per-module LoC figures below predate v0.11.0 and are indicative). Designed to be loaded once before a refactor pass or an audit so you don't have to re-discover the structure module by module. Stats are derived from the actual source files; conventions and contracts are observable in the code, not aspirational.
+> **Purpose.** A single-page bird's-eye view of the codebase as of **v0.14.1** (2026-08-30, surgically refreshed from the v0.10.2 baseline across the v0.11.x → v0.13.x arc — header + counters + new modules; the deep per-module LoC figures below predate v0.11.0 and are indicative — measured at v0.14.1, 63 of the 99 annotated rows are exact and the aggregate is +3.0 % (doc 40,222 vs real 41,447); the worst single drift is `domain_scores.py` 350 → 552). Designed to be loaded once before a refactor pass or an audit so you don't have to re-discover the structure module by module. Stats are derived from the actual source files; conventions and contracts are observable in the code, not aspirational.
 
 > **Snapshot history.** v0.4.6 → v0.6.0 drift, in one paragraph: the v0.5.x branch ran a deep-audit campaign on 25 modules + ~25 spot-checks (4 phases of refactor v0.5.0–v0.5.4, then 4 hardening releases v0.5.5–v0.5.8), introduced `CheckResult.{warn,alert}_with_deduction` helpers (~120 call sites migrated, net −519 LoC across `bob/checks/*.py`), unified private-IP detection to `sysinfo._is_private_or_loopback_ipv4/_ipv6`, added the `_atomic_write(path, content, mode=)` contract with explicit mode parameter, split `_BadDirective` / `_LEVEL_DISPATCH` declarative tables, and added AST-based locale parity tests. **v0.6.0** then landed two architectural splits: `bob/checks/ssh.py` (1296 L monolith) → `bob/checks/ssh/` package with 4 submodules, `bob/cron.py` (1204 L monolith) → `bob/cron/` package with 4 submodules — both contract-preserving via `__init__.py` re-exports. The `UFW_AUDIT_SHARE` legacy env var was removed (deprecation chain v0.4.2 → v0.5.4 → v0.6.0).
 >
@@ -28,13 +28,13 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob v0.14.1    ~33.5 kLoC Python · 0 runtime deps outside stdlib        │
+│  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
 │                 6719 unit tests · 19 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
 
-    bob/__main__.py  ← orchestrator (648 L)
+    bob/__main__.py  ← orchestrator (708 L)
         │
         ├──► bob/cli.py             ← AuditConfig + parse_args() (829 L)
         ├──► bob/runner.py          ← run_checks(), _sec closure (841 L)
@@ -72,7 +72,8 @@ LAYER (top→bottom = imports flow down)
         │  ├ disk / memory / backup                                       (hardware — 3)
         │  ├ auditd / file_integrity / rootkit / clamav / fail2ban / auth_log  (security tools — 6)
         │  └ ssl_certs / systemd_timers / ntp / desktop_apps / virtualization / samba / smtp / firewall_iptables / ipv6 / log_rotation  (misc — 10)
-        │  Total: 7+2+6+5+4+3+6+10 = 43 ✓
+        │  ├ systemd_hardening / container_security / socket_units / cloud_context  (runtime posture — 4, v0.13.x)
+        │  Total: 7+2+6+5+4+3+6+10+4 = 47 ✓
         │
         ▼
     bob/display.py + bob/output.py + bob/panorama.py + bob/breakdown.py
@@ -80,7 +81,7 @@ LAYER (top→bottom = imports flow down)
     bob/json_output.py + html_output.py + csv_output.py + markdown_output.py + report_markdown.py
         ← export formatters
     bob/formatter.py + bob/i18n.py + bob/_i18n_safe.py + bob/locales/{en,fr}.json
-        ← locale-independent reconstruction + i18n (~1948 keys per language;
+        ← locale-independent reconstruction + i18n (2014 keys per language;
           _i18n_safe.py since v0.8.2 = shared make_fallback_t + t_or_hardcoded)
 
 DATA (read-only at runtime, shipped in the package)
@@ -121,19 +122,19 @@ INTERNAL CONTRACTS (load-bearing — do not re-introduce the legacy patterns)
 ```
 bodyguard-of-bits/
 ├── bob/                       ← Python package (the tool)
-│   ├── __init__.py            ← __version__ string only
-│   ├── __main__.py            ← orchestrator, 648 L, ~18 outgoing imports
+│   ├── __init__.py            ← __version__ + NullHandler / BOB_DEBUG logging setup (v0.13.3, 31 L)
+│   ├── __main__.py            ← orchestrator, 708 L, 31 outgoing bob.* imports
 │   ├── runner.py              ← run_checks(), 841 L, _sec closure (38 filterable + 10 always-on sections via unified `_SECTIONS` tuple, v0.9.0 D-2)
 │   ├── cli.py                 ← parse_args() + AuditConfig + _VALUE_TAKING_OPTS (v0.7.4) + --diff/--reset-baseline wiring (v0.9.0 F-2); --json-v1 retired (v0.9.0 F-3 — now hits CLIError with hardcoded EN fallback per v0.9.1) — 829 L
 │   ├── config.py              ← UserConfig, EmailStore, ~/.config/bob/
-│   ├── profiles.py            ← audit profile loader (3 built-in + user); workstation alias retired (v0.8.1 BREAKING)
+│   ├── profiles.py            ← audit profile loader (**4 built-in** + user); v0.8.1 BREAKING retired the *alias* — workstation is now first-class
 │   ├── scoring.py             ← ScoreEngine, Finding, Deduction, FindingLevel, warn_with_deduction/alert_with_deduction (v0.5.x), set_posture/effective_level/posture_escalation/set_posture_from_engine (v0.7.0+); ScoreEngine.apply consults `any_legacy_ignore_matches` for v0.9.x ignore.yml back-compat (v0.10.0 D-4); `set_posture_from_engine` matches canonical `firewall_iptables.input_accept` (v0.10.2 I-1 — was stale `iptables_nft.*` literal dead since v0.9.0 D-1) — 749 L
 │   ├── domain_scores.py       ← 7-domain attribution, active set, capping
 │   ├── _atomic.py             ← **v0.6.1** single source atomic_write(path, content, mode=) with fsync(fd)+fsync(dir_fd) (v0.7.1 M-2), tempfile.NamedTemporaryFile unique tmp (v0.7.2 M-7) + **v0.14.1** read_text_capped() — 139 L
 │   ├── _sandbox.py            ← **v0.7.0 T3** SandboxRunner (Tier 2) for plugin_checks; **BOB_SANDBOX_LEGACY trap door removed v0.9.0 TD-1**; threat-model recadré post-audit (defence-in-depth, not security boundary) — 881 L
 │   ├── _i18n_safe.py          ← **NEW v0.8.2** shared `make_fallback_t(labels)` factory + `t_or_hardcoded(key, fallback)` helper; consolidates the 4 pre-v0.8.2 private `_fallback_t` sites (config/webhook/markdown_output/html_output) into a single contract — 89 L
 │   ├── _v090_renames.py       ← **NEW v0.9.2** `SECTION_RENAMES_V090` dict (7 D-1 renames) + `remap_finding_key()` shim; extracted from `bob/runner.py` to break the circular import with `bob/compare.py::load_baseline` (cross-version baseline migration) — 66 L
-│   ├── _v100_subcheck_renames.py ← **NEW v0.10.0** `SUBCHECK_RENAMES_V100` dict (14 legacy entries → fnmatch-glob canonical patterns covering Rank 1–8 D-4 splits) + `matches_legacy_ignore` / `any_legacy_ignore_matches` helpers; ignore.yml-only back-compat (NOT baseline diff — see module docstring) — 145 L
+│   ├── _v100_subcheck_renames.py ← **v0.10.0** `SUBCHECK_RENAMES_V100` dict (**1** live entry since the v0.11.0 D-4 KILL removed the 13 inert ones) + `matches_legacy_ignore` / `any_legacy_ignore_matches` helpers; ignore.yml-only back-compat (NOT baseline diff — see module docstring) — 145 L
 │   ├── checks/                ← 47 check modules, see Module index below
 │   │   ├── _run.py            ← shared subprocess helper with _C_LOCALE_ENV (centrality anchor — see Dependency graph)
 │   │   └── ssh/               ← split package since v0.6.0 (was 1296 L monolith)
@@ -157,7 +158,7 @@ bodyguard-of-bits/
 │   ├── breakdown.py           ← --breakdown score computation transparency
 │   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
-│   ├── i18n.py                ← t(key, **vars), ~1873 keys per locale (strict parity)
+│   ├── i18n.py                ← t(key, **vars), 2014 keys per locale (strict parity)
 │   ├── locales/
 │   │   ├── en.json            ← English translation keys
 │   │   └── fr.json            ← French translation keys (strict parity)
@@ -167,7 +168,7 @@ bodyguard-of-bits/
 │   │   ├── profiles/          ← server.conf, desktop.conf, container.conf
 │   │   ├── schemas/           ← 3 JSON Schemas (Draft 2020-12)
 │   │   └── bob.bash-completion ← bash completion script
-│   ├── explain.py             ← --explain TUI, EXPLAIN_KEYS (169 keys, 45 prefixes), v0.8.0 backfill of 51 WARN/ALERT gaps + v0.10.1 ssh.client_x11_forwarding; `EXPLAIN_KEY_ALIASES` dict emptied (v0.9.0 D-3 — drift fix at source) then first live entry v0.10.1 (ssh.x11 D-4 Rank 1 split migration path)
+│   ├── explain.py             ← --explain TUI, EXPLAIN_KEYS (169 keys, 45 prefixes), v0.8.0 backfill of 51 WARN/ALERT gaps + v0.10.1 `ssh.x11.forwarding.client`; `EXPLAIN_KEY_ALIASES` dict emptied (v0.9.0 D-3 — drift fix at source) then first live entry v0.10.1 (ssh.x11 D-4 Rank 1 split migration path)
 │   ├── cis_refs.py            ← lookup get_cis_ref() / get_cis_code()
 │   ├── compare.py             ← AuditBaseline + AuditDelta + diff; **v0.9.0 F-2** added `AuditBaseline.hostname` + `BaselineLoadError` + `--diff [PATH]` strict-mode loader for cross-machine compare; **v0.9.2** wired `bob/_v090_renames.remap_finding_key` into `load_baseline` (kills "resolved+new" diff noise post-upgrade) + i18n on BaselineLoadError via `_i18n_safe.t_or_hardcoded` (4 new `compare.baseline_load.*` locale keys) — 482 L
 │   ├── correlation.py         ← 6 compound-risk rules
@@ -190,7 +191,9 @@ bodyguard-of-bits/
 │   ├── sysinfo.py             ← system info, network context, get_user_home(), _is_private_or_loopback_ipv4/_ipv6 (single source of truth since v0.5.x)
 │   ├── _paths.py              ← BOB_SHARE resolution (UFW_AUDIT_SHARE removed in v0.6.0)
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
-├── tests/                     ← 118 test files, ~4461 functions, ~6268 collected (v0.10.2)
+├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
+├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
+├── tests/                     ← 136 test files, ~4756 functions, 6719 collected (v0.14.1)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -205,7 +208,7 @@ bodyguard-of-bits/
 
 ---
 
-## Module index — bob/ root (42 modules) + bob/cron/ + bob/checks/ssh/ + bob/tui/cron.py
+## Module index — bob/ root (43 modules) + bob/cron/ + bob/checks/ssh/ + bob/tui/cron.py
 
 | Module | LoC | Role |
 |---|---:|---|
@@ -213,7 +216,7 @@ bodyguard-of-bits/
 | `runner.py` | 841 | Audit engine: `run_checks()`, `_sec` closure factory (38 filterable + 10 always-on sections via unified `_SECTIONS: tuple[_Section, ...]` since v0.9.0 D-2; `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` kept as back-compat derived views), `_section_enabled()`, `validate_check_filters()` (v0.7.0 M-7 recognises always-on tokens; v0.9.0 D-1 raises fatal migration error via `_RENAMED_SECTIONS_V090 = SECTION_RENAMES_V090` re-import from `bob/_v090_renames.py`) |
 | `cli.py` | 829 | `parse_args()`, `AuditConfig` dataclass, `--help` text, CLIError, `_VALUE_TAKING_OPTS` frozenset (v0.7.4 M); `--diff [PATH]` flag (v0.9.0 F-2); `--json-v1` retired (v0.9.0 F-3) — typing the flag now hits a hardcoded EN CLIError (`v0.9.1 hotfix`: inline string instead of pre-init `t()` to dodge bracketed-fallback `[cli.error.json_v1_retired]`); test guards `test_v091_cli_i18n_safety.py` pin both AST and emitted content |
 | `config.py` | 427 | `UserConfig` (key/value config store) + `EmailStore` (email book) + `get_suid_whitelist()` accessor. `bob.config._EMAIL_RE` single source of truth (v0.5.x). Uses `_i18n_safe.make_fallback_t` since v0.8.2. Interactive prompts live in `manage_logs.py`, not here. |
-| `profiles.py` | 415 | Profile loader: server/desktop/container + ~/.config/bob/profiles/*.conf; **workstation alias retired v0.8.1 BREAKING** |
+| `profiles.py` | 415 | Profile loader: server/desktop/**workstation**/container + ~/.config/bob/profiles/*.conf. v0.8.1 BREAKING retired the `workstation → desktop` *alias*; `workstation.conf` is a first-class profile with its own overrides. A valid `-p NAME` is persisted as the operator's default (v0.12.1). |
 | `scoring.py` | 749 | `ScoreEngine`, `Finding`, `Deduction`, `FindingLevel`, `ScoreCap`, `warn_with_deduction/alert_with_deduction` (v0.5.x), `set_posture/effective_level/posture_escalation` (v0.7.0 T1), `unpack_posture_escalation/set_posture_from_engine` helpers (v0.7.3); `ScoreEngine.apply` consults `bob._v100_subcheck_renames.any_legacy_ignore_matches` so v0.9.x ignore.yml umbrella entries (`ssh.x11_forwarding`, …) keep silencing the post-D-4 split sub-keys (v0.10.0); **v0.10.2 I-1**: `set_posture_from_engine` now matches `firewall_iptables.input_accept` (the v0.9.0 D-1 rename had left a stale `iptables_nft.input_accept` literal → iptables-only posture escalation silently dead 3 majors, masked by `firewall_inactive` branch) |
 | `domain_scores.py` | 350 | `compute_domain_scores()`, `active_domains_from_engine()`, `apply_domain_score_override()` — 7 domains; `_PREFIX_TO_DOMAIN` explicit mapping (~32 prefixes since v0.5.x, fail2ban→ssh / virt→hardening / docker_audit→hardening now mapped) |
 | `_atomic.py` | 139 | **v0.6.1** `atomic_write(path, content, *, mode=0o600)` — single source of truth. fsync(fd) + fsync(dir_fd) for crash-safety (v0.7.1 M-2), `tempfile.NamedTemporaryFile` unique tmp name (v0.7.2 M-7). **v0.14.1** adds the read side: `read_text_capped(path, *, max_bytes=8 MB)` refuses anything that is not a regular file (device / FIFO / directory) and bounds the read, after `--diff=/dev/zero` exhausted memory and `--diff=<fifo>` hung forever. Used by `_io.py`, `config.py`, `compare.py`, `history.py`, `recurrence.py`, `ignore.py`, `profiles.py`, `cron/_install.py`, `tui/cron.py` |
@@ -229,7 +232,7 @@ bodyguard-of-bits/
 | `breakdown.py` | 180 | `--breakdown` / `-B` score computation transparency display |
 | `exposure.py` | 202 | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | 119 | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
-| `i18n.py` | 291 | `t(key, **vars)`, locale auto-detect (POSIX), ~1948 keys EN/FR |
+| `i18n.py` | 291 | `t(key, **vars)`, locale auto-detect (POSIX), 2014 keys EN/FR |
 | `compare.py` | 482 | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()`. **v0.9.0 F-2**: `AuditBaseline.hostname` field + `BaselineLoadError` + strict-mode `load_baseline(path, strict=True)` for `--diff [PATH]` cross-machine compare. **v0.9.2**: `load_baseline` calls `bob._v090_renames.remap_finding_key` per entry to remap legacy section prefixes at load + `BaselineLoadError` raise sites use `_i18n_safe.t_or_hardcoded` for 4 new `compare.baseline_load.*` keys. |
 | `correlation.py` | 134 | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | 102 | Recurring finding tracker: consecutive-audit counters |
@@ -282,7 +285,7 @@ bodyguard-of-bits/
 | `kernel_modules.py` | 483 | hardening | risky modules + apt kernel updates + installed listing (dpkg `ii` filter since v0.4.6) |
 | `mac_policy.py` | 297 | hardening | AppArmor / SELinux state, 0-profile case |
 | `updates.py` | 363 | updates | `apt-get -s dist-upgrade`, stale cache, cross-check (since v0.4.4); cache-age INFO option C when no security/regular finding (v0.5.3+) |
-| `ssh/` (package) | **1508** | ssh | **Split in v0.6.0** from 1296 L monolith. `__init__.py` (64) re-exports for backwards-compat · `_directives.py` (202) `_BadDirective` + `_BAD_DIRECTIVES` + `_apply_bad_directive` + `_WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX` · `_snapshot.py` (198) 5 dataclasses (HostKeyInfo, PrivateKeyInfo, AuthorizedKeyEntry, KnownHostEntry, ClientConfigEntry) + SSHSnapshot · `_parsers.py` (446) pure parsers + RSA-bits + collect_host_keys + install probe · `_subchecks.py` (598) `check_ssh` + all `_check_*` helpers + v0.10.1 D-4 Rank 1 client-side `ForwardX11` detection (`ssh.client_x11_forwarding`) |
+| `ssh/` (package) | **1524** | ssh | **Split in v0.6.0** from 1296 L monolith. `__init__.py` (64) re-exports for backwards-compat · `_directives.py` (202) `_BadDirective` + `_BAD_DIRECTIVES` + `_apply_bad_directive` + `_WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX` · `_snapshot.py` (198) 5 dataclasses (HostKeyInfo, PrivateKeyInfo, AuthorizedKeyEntry, KnownHostEntry, ClientConfigEntry) + SSHSnapshot · `_parsers.py` (446) pure parsers + RSA-bits + collect_host_keys + install probe · `_subchecks.py` (598) `check_ssh` + all `_check_*` helpers + v0.10.1 D-4 Rank 1 client-side `ForwardX11` detection (`ssh.client_x11_forwarding`) |
 | `file_perms.py` | 303 | file_perms | /etc/passwd, /etc/shadow, sudoers, SSH host keys |
 | `suid_audit.py` | 291 | hardening | SUID/SGID with whitelist (config.conf), targeted-roots scan |
 | `user_accounts.py` | 238 | file_perms | UID 0 non-root, empty passwords, expired accounts |
@@ -312,18 +315,20 @@ bodyguard-of-bits/
 
 ## Dependency graph
 
-### Centrality — modules most depended upon (top 15 in-degree)
+### Centrality — modules most depended upon (top in-degree; recomputed at v0.14.1)
 
 These are the **stability anchors**. Refactoring them needs care because many modules read from them.
 
 | In-degree | Module | Why central |
 |---:|---|---|
-| 60 | `scoring` | Every check returns `CheckResult`; `Finding`, `Deduction` types touched everywhere |
-| 47 | `checks._run` | Shared subprocess helper with `_C_LOCALE_ENV`, used by every check |
-| 12 | `sysinfo` | `collect_system_info()`, `detect_network_context()`, `get_user_home()` (sudo-aware) |
-| 7 | `report` | `AuditReport` + `NullReport` used by orchestrator + plugin checks |
-| 6 | `domain_scores` | `apply_domain_score_override()`, `key_to_domain()`, etc. |
-| 5 | `output`, `config`, `checks.ports`, `checks.services` | UI primitives + user config + 2 core checks reused by display/exposure |
+| 66 | `scoring` | Every check returns `CheckResult`; `Finding`, `Deduction` types touched everywhere |
+| 53 | `checks._run` | Shared subprocess helper with `_C_LOCALE_ENV`, used by every check |
+| 15 | `sysinfo` | `collect_system_info()`, `detect_network_context()`, `get_user_home()` (sudo-aware) |
+| 14 | `output` | Terminal primitives + `sanitize()` / `sanitize_multiline()` — a genuine anchor, previously understated |
+| 9 | `_atomic` | `atomic_write()` + `read_text_capped()` (v0.14.1) — the file-I/O choke point |
+| 8 | `report` | `AuditReport` + `NullReport` used by orchestrator + plugin checks |
+| 8 | `domain_scores` | `apply_domain_score_override()`, `key_to_domain()`, etc. |
+| 5 | `config`, `checks.ports`, `checks.services` | User config + 2 core checks reused by display/exposure |
 
 ### Out-degree — modules with most outgoing imports (top 5)
 
@@ -331,42 +336,44 @@ These are the **integration points**. They're the entry/orchestration layer.
 
 | Out-degree | Module | Why fan-out |
 |---:|---|---|
-| 54 | `runner.py` | Imports every check + scoring + display |
-| 29 | `__main__.py` | Orchestrator wires runner + cli + report + i18n + sysinfo |
-| 9 | `display.py` | Renders findings from many sub-modules |
+| 60 | `runner.py` | Imports every check + scoring + display |
+| 31 | `__main__.py` | Orchestrator wires runner + cli + report + i18n + sysinfo |
+| 12 | `watch.py` | Wraps the full audit loop |
+| 10 | `display.py` | Renders findings from many sub-modules |
 | 9 | `json_output.py` | Builds full payload from many snapshots |
-| 9 | `watch.py` | Wraps the full audit loop |
 
 ### Refactoring implication
 
 - **scoring.py** and **checks/_run.py** are bedrock — touching them = risk of broad regression. Cover with extra tests before changing.
-- **runner.py** has 54 outgoing imports → if you change a check's signature (e.g. `Finding.template_vars` migration), the impact lands here first.
+- **runner.py** has 60 outgoing imports → if you change a check's signature (e.g. `Finding.template_vars` migration), the impact lands here first.
 - The orchestration layer (`__main__.py` + `runner.py`) is the **only place with heavy fan-out**. Everything else is a focused module → safe to refactor in isolation.
 
 ---
 
 ## Hotspots
 
-### Biggest source files (top 12)
+### Biggest source files (top 12 — figures recomputed at v0.14.1)
+
+> Ordering note: `runner.py` (940) and `cli.py` (915) are now 4th and 5th, ahead of `display.py`; `domain_scores.py` grew 350 → 552 and belongs in this range too.
 
 > Since v0.6.0, the two former 1k+ L monoliths (`bob/checks/ssh.py`, `bob/cron.py`) are split packages. The biggest *single file* is now the curses TUI at 1037 L, followed by `explain.py` (1005 L, swelled by v0.8.0 backfill of 51 entries + v0.10.1 client x11 key). Note: `_sandbox.py` shrank to 881 L after v0.9.0 TD-1 removed the legacy bypass path.
 
 | LoC | File | Hotspot reason |
 |---:|---|---|
 | 1037 | `bob/manage_logs.py` | Full curses TUI: list + preview + score chart + multi-directory view |
-| 1005 | `bob/explain.py` | EXPLAIN_KEYS (169 keys / 45 prefixes after v0.8.0 backfill + v0.10.1 client x11) + alias map (emptied v0.9.0 D-3, first live entry v0.10.1) + interactive TUI |
+| 1017 | `bob/explain.py` | EXPLAIN_KEYS (169 keys / 45 prefixes after v0.8.0 backfill + v0.10.1 client x11) + alias map (emptied v0.9.0 D-3, first live entry v0.10.1) + interactive TUI |
 | 949 | `bob/tui/cron.py` | Curses TUI for cron wizards (extracted v0.4.1) |
-| 892 | `bob/display.py` | Renders all sections + risk context blocks + summary box + posture annotation helper (v0.7.2 M-10) + A1 hypotheses footer (v0.8.0) |
+| 903 | `bob/display.py` | Renders all sections + risk context blocks + summary box + posture annotation helper (v0.7.2 M-10) + A1 hypotheses footer (v0.8.0) |
 | 881 | `bob/_sandbox.py` | v0.7.0 T3 plugin SandboxRunner (Tier 2 in-process restrictions); net −75 L vs v0.7.4 after v0.9.0 TD-1 retired `_run_legacy` + `BOB_SANDBOX_LEGACY` trap door |
-| 829 | `bob/cli.py` | `parse_args()` covers ~40+ options + `_VALUE_TAKING_OPTS` frozenset (v0.7.4) + `--diff [PATH]` (v0.9.0 F-2); `--json-v1` rejection branch with hardcoded EN fallback (v0.9.1 hotfix) |
+| 915 | `bob/cli.py` | `parse_args()` covers ~40+ options + `_VALUE_TAKING_OPTS` frozenset (v0.7.4) + `--diff [PATH]` (v0.9.0 F-2); `--json-v1` rejection branch with hardcoded EN fallback (v0.9.1 hotfix) |
 | 816 | `bob/report_markdown.py` | Markdown report + HTML email (MIME multipart) |
-| 815 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
-| 749 | `bob/scoring.py` | ScoreEngine + Finding + Deduction + posture API (v0.7.0 T1) + v0.10.0 D-4 legacy-ignore shim wiring + v0.10.2 I-1 firewall_iptables literal fix |
+| 940 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
+| 839 | `bob/scoring.py` | ScoreEngine + Finding + Deduction + posture API (v0.7.0 T1) + v0.10.0 D-4 legacy-ignore shim wiring + v0.10.2 I-1 firewall_iptables literal fix |
 | 727 | `bob/checks/logs.py` | UFW log parser + bruteforce + GeoIP + IoT detection |
-| 648 | `bob/__main__.py` | Orchestrator: argv → AuditConfig → snapshots → run_checks() → display |
-| 630 | `bob/output.py` | Low-level terminal primitives (grew with v0.5.x helpers) |
+| 708 | `bob/__main__.py` | Orchestrator: argv → AuditConfig → snapshots → run_checks() → display |
+| 675 | `bob/output.py` | Low-level terminal primitives (grew with v0.5.x helpers) |
 | 615 | `bob/checks/services.py` | 38 services × detection paths × risk classification (32 → 38 via v0.8.0 T2) |
-| 598 | `bob/checks/ssh/_subchecks.py` | Biggest submodule of the ssh/ package (check_ssh + per-area helpers + v0.10.1 client x11 detection) |
+| 605 | `bob/checks/ssh/_subchecks.py` | Biggest submodule of the ssh/ package (check_ssh + per-area helpers + v0.10.1 client x11 detection) |
 
 > The biggest *split package* totals: `bob/checks/ssh/` at 1508 L (across 5 files, largest sub 598 — grew with the v0.10.1 D-4 Rank 1 client x11 detection) and `bob/cron/` at 1394 L (across 5 files, largest sub 452). Both are net-larger than the pre-split monolith because the split added docstrings and re-export boilerplate, but per-file LoC is now well under the 1000-L soft ceiling.
 >
@@ -432,7 +439,7 @@ def check_xxx(snapshot: XxxSnapshot, t: TranslationFunc | None = None) -> CheckR
     return result
 ```
 
-> Note: 41 of 47 checks use positional `, t` as above (incl. the four v0.13.x additions `systemd_hardening`, `container_security`, `socket_units`, `cloud_context`). The 6 keyword-only checks (`cron_audit`, `disk`, `file_perms`, `password_policy`, `services_state`, `user_accounts`) use `, *, t`. Both forms are valid — the codebase is mid-convergence, no decision yet on which becomes canonical.
+> Note: **36 of 47** checks use positional `, t` as above (incl. the four v0.13.x additions `systemd_hardening`, `container_security`, `socket_units`, `cloud_context`). The **11** keyword-only checks (`backup`, `cron_audit`, `disk`, `file_perms`, `kernel_modules`, `mac_policy`, `memory`, `password_policy`, `services_state`, `updates`, `user_accounts`) use `, *, t`. No module mixes the two forms. Both forms are valid — the codebase is mid-convergence, no decision yet on which becomes canonical.
 >
 > Note (v0.5.x): `CheckResult.warn_with_deduction()` and `.alert_with_deduction()` fuse the two-step `warn/alert(...) + add_deduction(...)` pattern into a single call. ~120 sites in `bob/checks/*.py` were migrated during the v0.5.0–v0.5.4 refactor (net −519 LoC). The two-step pattern still works (additive change), but new code should use the fused helpers.
 
@@ -463,7 +470,7 @@ result.warn(
 )
 ```
 
-`template_vars` is **additive** since v0.4.1 — three pilot checks (ssh, hardening, firewall) populate it. The remaining 40 checks ship without it and rely on `message` being pre-rendered. **Phase 2 Option A** is to migrate all checks to set `template_vars`, enabling fully locale-independent JSON output. Deferred to v0.5.0+.
+`template_vars` is **additive** since v0.4.1 — three pilot checks (ssh, hardening, firewall) populate it. The remaining 44 checks ship without it and rely on `message` being pre-rendered. **Phase 2 Option A** is to migrate all checks to set `template_vars`, enabling fully locale-independent JSON output. Deferred to v0.5.0+.
 
 ### 5. The active domain set (v0.4.6 fix)
 
@@ -507,9 +514,9 @@ level = engine.level           # RiskLevel.LOW / MEDIUM / HIGH / CRITICAL
 - Nested dicts follow the same rule
 - Breaking changes bump to `"4"` (next major)
 
-Top-level always-present keys (v3): `schema_version`, `version`, `host`, `timestamp_utc`, `score`, `score_max`, `risk`, `network_context` (object `{context: …}`), `public_ip`, `alert_count`, `warning_count`, `info_count`, `deductions`, `posture_escalation` (object `applied`/`reason_key`/`score_level`), `domain_scores` (object; per domain `score` + `label` + `deductions` + **`active` + `reason`** — the last two new in v0.12.1 so a machine consumer can tell scored from shown-but-not-scored domains and reproduce the headline average). The v3 surface is pinned in `tests/test_json_schema_v2.py`.
+Top-level always-present keys (v3): `schema_version`, `version`, `host`, `timestamp_utc`, `score`, `score_max`, `risk`, `network_context` (object `{context: …}`), `public_ip`, `alert_count`, `warning_count`, `info_count`, `deductions`, `posture_escalation` (object `applied`/`reason_key`/`score_level`), `domain_scores` (object; per domain `score` + `label` + `deductions` + **`active` + `reason`** — the last two new in v0.12.1 so a machine consumer can tell scored from shown-but-not-scored domains and reproduce the headline average). The v3 surface is pinned in `tests/test_json_schema_v2.py`. **Plus, since v0.14.x: `profile`** (the audit profile that produced the result — it changes severities and therefore the exit code) **and `degraded_sections`** (sections whose check raised and were degraded in place; empty list on a healthy run). `SCHEMA_V3_REQUIRED_KEYS` holds 17 keys.
 
-`--json-full` additionally emits: `findings`, `services`, `open_ports`, `firewall_stack` (always when full=True), plus `hardening` and `ipv6` (only when the respective `hardening_snapshot` / `ipv6_snapshot` parameters are passed to `build_json_data`). **Caveat**: in `--json-full`, `network_context` changes type from a string (`"public"` / `"private"`) to a richer dict containing `interfaces` (list of interface objects). Clients that read `network_context` from `--json` and `--json-full` interchangeably need to type-check first.
+`--json-full` additionally emits: `findings`, `services`, `open_ports`, `open_ports_all`, `deductions_raw`, `firewall_drivers` (always when full=True), plus `hardening` and `ipv6` (only when the respective snapshot is passed in). `firewall_stack` was renamed `firewall_drivers` by the v0.9.0 D-1 section rename. `network_context` is a dict in BOTH modes — the A-2 fix (v0.7.0) made it always an object; full mode only *enriches* it with `interfaces` / `connections_count` / `top_remote_ips`, it never changes its type.
 
 ### 2. Exit codes (stable public API)
 
@@ -567,7 +574,7 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 | `--breakdown`, `-B` | Display | Show full score computation path |
 | `--check=A,B,...` | Filters | Run only named sections |
 | `--detailed`, `-d` | Audit | Write full report file (`~/.local/share/bob/logs/bob_*.log`) |
-| `--diff`, `-D` | Comparison | Show only baseline delta |
+| `--diff[=PATH]`, `-D` | Comparison | Show only baseline delta; the value is optional — with a path, compares against an arbitrary baseline file (v0.9.0 F-2, cross-machine) |
 | `--explain=KEY`, `-e` | Inspection | Structured per-finding explanation; `--explain list` for all |
 | `--fix`, `-f` | Remediation | Interactive fix mode with [y/N] prompts |
 | `--format=FMT` | Output | One of `json`/`json-full`/`csv`/`markdown`/`html`. Text is the default output when no format flag is set — it is not a valid value of `--format=`. |
@@ -578,8 +585,8 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 | `--ignore=KEY` | Setup | Add a finding key to `~/.config/bob/ignore.yml` and exit (does not run the audit) |
 | `--install-completion` | Setup | Install bash completion + sudo symlink |
 | `--install-cron`, `-c` | Automation | Cron wizard (curses TUI + plain fallback) |
-| `--json`, `-j` | Output | JSON short form (alias for `--format=json`); emits schema v2 by default since v0.7.0 |
-| `--json-full`, `-J` | Output | JSON full form (alias for `--format=json-full`); emits schema v2 by default since v0.7.0 |
+| `--json`, `-j` | Output | JSON short form (alias for `--format=json`); emits schema v3 (v2 retired in v0.12.0 F9) |
+| `--json-full`, `-J` | Output | JSON full form (alias for `--format=json-full`); emits schema v3 (v2 retired in v0.12.0 F9) |
 | ~~`--json-v1`~~ | Output | **Retired in v0.9.0 F-3** — passing it now raises a CLIError (hardcoded EN fallback per v0.9.1 hotfix). Schema v2 is the only emitted format. |
 | `--lang=CODE` | i18n | Force language (`en` / `fr`); else POSIX auto-detect |
 | `--log-days=N`, `-l N` | Audit | UFW log analysis window (default 7) |
@@ -588,18 +595,21 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 | `--min-level=LEVEL` | Filters | Hide findings below severity. Valid values: `warn` or `alert` only (NOT `info` — `info` is the implicit floor). |
 | `--no-color`, `-n` (alias `--no-colour`) | Output | Disable ANSI escapes |
 | `--offline`, `-o` | Network | No outbound HTTP (public IP lookup + webhook off) |
-| `--output=FMT` | Output | Alias for `--format=` accepting `csv`/`json`/`markdown` only (no html, no json-full) |
+| `--output=FMT` | Output | Full alias of `--format=` — accepts `csv` / `json` / `json-full` / `markdown` / `html`, case-insensitive (v0.12.1 E-fix + ADV-D2) |
 | `--output-dir=PATH` | Audit | Override log dir for this run (non-persistent) |
-| `--profile=NAME`, `-p NAME` | Audit | Apply profile (`server`/`desktop`/`container` + user) |
+| `--profile=NAME`, `-p NAME` | Audit | Apply profile (`server`/`desktop`/`workstation`/`container` + user). **A valid name is persisted** as the operator's default for later runs (v0.12.1); an invalid one warns and leaves the saved profile untouched |
 | `--quiet`, `-q` | Output | Suppress all output, use exit code |
 | `--reconfigure`, `-r` | Setup | Re-run first-launch config wizard |
+| `--english` | Config | Force English output (symmetric counterpart of `--french`; overrides `$LANG` detection) |
 | `--reset-baseline` | Comparison | Wipe `last_baseline.json` |
+| `--test-webhook` | Integrations | POST a minimal smoke payload to the configured webhook and exit — no audit runs |
+| `--unignore=KEY` | Filters | Remove a key from `ignore.yml` (counterpart of `--ignore`) |
 | `--show-ignored` | Display | Show previously-ignored findings as dimmed lines during the audit (doesn't list `ignore.yml` entries — for that, read the file directly) |
 | `--skip=A,B,...` | Filters | Inverse of `--check` |
 | `--target=N` | Audit | Score gate; exit code 4 if score < N |
 | `--verbose`, `-v` | Output | Show detailed port exposure per service |
 | `--version`, `-V` | Misc | Print version |
-| `--watch=N` | Comparison | Re-run every N seconds |
+| `--watch[=N]` | Comparison | Re-run every N seconds; the value is optional (default 60), minimum 10 |
 | `--webhook=URL`, `-w` | Network | POST audit to webhook (Slack auto / generic) |
 | `--webhook-format=FMT` | Network | Force webhook format (`auto`/`slack`/`generic`) |
 | `--yes`, `-y` | Remediation | Auto-confirm all prompts |
@@ -616,12 +626,12 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 |---|---|---|---|
 | `~/.config/bob/config.conf` | `0600` | User config (custom ports, log dir, suid_whitelist, email book, webhook defaults) | Created on first run; reconfigure with `--reconfigure` |
 | `~/.config/bob/services.d/*.json` | r | User plugin services (extends `services.json`) | Created manually by user |
-| `~/.config/bob/checks.d/*.py` | r | User plugin checks (Python files) | Created manually; NOT sandboxed (runs as root) |
+| `~/.config/bob/checks.d/*.py` | r | User plugin checks (Python files) | Created manually; **executed inside the `SandboxRunner` spawn child** (v0.7.0 T3) — see frozen contract #10. The parent never `exec`s plugin source. Since v0.14.1 the loader also rejects non-regular files and bounds the read. |
 | `~/.config/bob/profiles/*.conf` | r | User audit profiles | Created manually |
-| `~/.config/bob/ignore.yml` | umask | Persistent ignore list — `path.write_text()` uses default mode (typically `0644`) | Built with `--ignore=KEY` |
+| `~/.config/bob/ignore.yml` | `0600` | Persistent ignore list — written via `atomic_write(..., mode=0o600)` since v0.6.1 I-6 | Built with `--ignore=KEY` |
 | `~/.config/bob/last_baseline.json` | `0600` | Baseline for `--diff` | Auto-rewritten after each audit; `--reset-baseline` clears |
 | `~/.config/bob/history.jsonl` | `0600` | Score history (rotates at 1000) | Append-only after each audit |
-| `~/.config/bob/recurrence.json` | umask | Consecutive-audit finding counter — `tmp.open("w")` uses default mode (typically `0644`) | Updated each audit |
+| `~/.config/bob/recurrence.json` | `0600` | Consecutive-audit finding counter — `atomic_write(..., mode=0o600)`; relying on umask would leave it world-readable | Updated each audit |
 | `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` | `0600` | Detailed audit report (`-d`) — `os.open(..., 0o600)` | One per `-d` run; managed via `--manage-logs` |
 | `/usr/local/bin/bob` | exec | Sudo PATH symlink to pipx venv binary | Created by `--install-completion` |
 | `/etc/bash_completion.d/bob` | r | Bash completion script | Created by `--install-completion` |
@@ -636,17 +646,20 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 |---|---|
 | `BOB_SHARE` | Override package data dir (locales/, data/) — for distro packaging (`/usr/share/bob/`) |
 | ~~`UFW_AUDIT_SHARE`~~ | **Removed in v0.6.0** after v0.4.2 → v0.5.4 deprecation chain. Installers still setting it will see no effect — update them to `BOB_SHARE`. |
+| `BOB_DEBUG` | Set to any non-empty value to install a real logging handler (`bob/__init__.py`, v0.13.3) and print the full traceback on a fatal error |
+| `NO_COLOR` | Any non-empty value disables colour ([no-color.org](https://no-color.org) semantics) — honoured since v0.13.3 |
+| `FORCE_COLOR` | Any non-empty value forces colour ON even when stdout is not a terminal — the v0.14.0 escape hatch for the new TTY auto-detection |
 | `BOB_WEBHOOK_ALLOW_INSECURE` | Set to `"1"` to permit `http://` webhook URLs. Default behaviour rejects plaintext to avoid leaking audit metadata (added v0.7.1 I-4). |
 | ~~`BOB_SANDBOX_LEGACY`~~ | **Removed in v0.9.0 TD-1.** Previously bypassed the v0.7.0 T3 plugin sandbox; no longer honored — the `SandboxRunner` is now the only execution path. |
 | `SUDO_USER` | Auto-detected — controls config path resolution and chown-back |
 | `LC_ALL` / `LC_MESSAGES` / `LANG` | POSIX locale detection (`fr_*` → French, else English fallback) |
 | `LC_TIME` | Not read directly, but forced to C through `LC_ALL=C` in `_C_LOCALE_ENV` for subprocesses — avoids `strptime("%b ...")` regressions under `LC_TIME=fr_FR.UTF-8` (v0.4.3 fix) |
 
-> **Honoured since v0.13.3**: `NO_COLOR` env var — read in `bob/output.py::init()`, reaching the same state as the `--no-color`/`-n` CLI flag ([no-color.org](https://no-color.org) semantics: any non-empty value disables, empty is ignored). Still **NOT** honoured: TTY auto-detection — `output.supports_color()` exists and is correct but is wired nowhere, so BOB emits ANSI even when stdout is a pipe. Enabling it is BREAKING (it would strip colour from `bob | less -R`) and is reserved for v0.14.0 together with a `FORCE_COLOR` escape hatch.
+> **Honoured since v0.13.3**: `NO_COLOR` env var — read in `bob/output.py::init()`, reaching the same state as the `--no-color`/`-n` CLI flag ([no-color.org](https://no-color.org) semantics: any non-empty value disables, empty is ignored). **Honoured since v0.14.0**: TTY auto-detection — `output.supports_color()` is now wired into `init()`, with resolution order `--no-color` → `NO_COLOR` → `FORCE_COLOR` (new escape hatch) → `isatty()`. Redirected output no longer carries ANSI; set `FORCE_COLOR=1` to restore the old behaviour. This was the BREAKING change flagged here as reserved for v0.14.0.
 
 ---
 
-## Tests-to-source mapping (118 test files cover ~99 modules)
+## Tests-to-source mapping (136 test files cover ~98 non-`__init__` modules)
 
 Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` or `bob/checks/<module>.py`. Some shared tests:
 
@@ -657,7 +670,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 | `test_domain_scores_mapping_complete.py` | AST-based parity check: every check prefix has a `_PREFIX_TO_DOMAIN` entry (v0.5.x) |
 | `test_breakdown.py` | `bob/breakdown.py` (score transparency display) |
 | `test_golden_scenarios.py` | End-to-end scoring scenarios — 32 tests across 9 classes (clean, hardened, desktop, poorly configured, firewall inactive, Debian minimal, tool caps, stability, multi-domain), introduced v0.3.0 |
-| `test_json_schema.py` | JSON output contract — frozen + drift detection |
+| `test_json_schema_v2.py` | JSON output contract — frozen + drift detection (name kept from the v2 era; it pins the current v3 schema) |
 | `test_services_schema.py` | Plugin services JSON Schema (Draft 2020-12) |
 | `test_locale_coverage.py` | All `t()`/`_t()` keys exist in both `en.json` and `fr.json` (AST-based since v0.4.5; AST-coverage hardened in v0.5.x) |
 | `test_template_vars_migration.py` | Phase 2 migration debt visibility (v0.4.2) |
@@ -682,7 +695,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 - **Zero runtime deps outside stdlib**. Major asset for distro packaging; preserve at all costs.
 - **Snapshot + check_xxx separation**. Enables ~6268 tests with no mocks.
 - **Equal-domain weighting** in global score. All active domains contribute equally — intentional, retained through v0.10.x. The "main architectural question for v0.3.0" was answered: keep equal weighting.
-- **JSON schema_version dispatch** (v0.7.0 T2). `DEFAULT_SCHEMA_VERSION="2"`; the `"1"` legacy path and `--json-v1` were retired in v0.9.0 F-3 (any non-`"2"` value now raises `ValueError`). Breaking changes = `"3"` + major bump.
+- **JSON schema_version dispatch** (v0.7.0 T2). `DEFAULT_SCHEMA_VERSION="3"` since v0.12.0 F9; the `"1"` legacy path and `--json-v1` were retired in v0.9.0 F-3, `"2"` in v0.12.0 (any non-`"3"` value now raises `ValueError`). Breaking changes = `"4"` + major bump.
 - **EXPLAIN_KEYS frozen** with alias map for renames. 169 keys / 45 prefixes as of v0.10.1 (v0.7.0 baseline was 117 / 30; v0.8.0 drift batch backfilled 51 missing WARN/ALERT findings → 168 / 45; v0.10.1 D-4 Rank 1 added `ssh.client_x11_forwarding` → 169 and registered the first live `EXPLAIN_KEY_ALIASES` entry since v0.9.0 D-3 emptied it — see `tests/test_explain_coverage.py` whitelist for the closed-gap ledger).
 - **`OK` in active domain set** (Bug 2 fix in v0.4.6). `INFO`-only domains stay hidden by design — terrain-validated boundary.
 - **`bob/_atomic.py::atomic_write(path, content, *, mode=)` single source of truth** (v0.6.1). Every persistent write goes through a tmp + `os.replace` rename + explicit mode (no umask surprises) + `fsync(fd)` + `fsync(dir_fd)` for crash-safety (v0.7.1 M-2) + `tempfile.NamedTemporaryFile` unique tmp name (v0.7.2 M-7). The mode parameter exists specifically to support the cron wrapper script (0o755) regression seen in v0.5.7. Used by `_io.py`, `config.py`, `compare.py`, `history.py`, `recurrence.py`, `ignore.py`, `cron/_install.py`, `tui/cron.py`. **Do not re-introduce hand-rolled `open(tmp, 'w')` + `os.replace` snippets.**
@@ -701,24 +714,24 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 - **Pre-v0.7.3 CSV column header `"section"`** carrying `Finding.nature` strings — discarded as a misleading label. Header is now `"nature"` (breaking, audited via `test_csv_output.py`).
 - **Hand-rolled IPv4/IPv6 private-range matching** in checks — discarded; delegate to `sysinfo._is_private_or_loopback_ipv4/_ipv6`.
 
-### Deferred (still open after v0.10.2)
+### Deferred (still open after v0.14.1)
 
-- **Phase 2 Option A — full `Finding.template_vars` migration** on the 40 non-pilot checks. Currently `template_vars` is additive on 3 pilots (ssh, hardening, firewall). Full migration would allow `Finding.message` to be derived from `(key, template_vars)` entirely, enabling locale-independent JSON output. **Largest single chunk of refactor work pending.** Did not land across v0.5.x → v0.10.x.
+- **Phase 2 Option A — full `Finding.template_vars` migration** on the 44 non-pilot checks. Currently `template_vars` is additive on 3 pilots (ssh, hardening, firewall). Full migration would allow `Finding.message` to be derived from `(key, template_vars)` entirely, enabling locale-independent JSON output. **Largest single chunk of refactor work pending.** Did not land across v0.5.x → v0.10.x.
 - **F-1 parallel checks** — `ThreadPoolExecutor` snapshot+check fan-out (Option B per the v0.10.0 thread-safety audit). **Tranché DEFER indéfiniment in the v0.11.0 plan — do not re-propose each cycle.**
-- **D-4 Rank 2–8 sub-check splits** — the remaining 7 ranked candidates (ssh dsa/weak crypto, samba shares, kernel modules, auditd rules, journald, firewall duplicates) after Rank 1 (ssh.x11) shipped in v0.10.1. Planned as a KILL bundle in v0.11.0. The `SUBCHECK_RENAMES_V100` shim already covers all 8 ranks for ignore.yml back-compat.
-- **M-3 ssh client `Host`-scope semantics** — `_check_client_config` ignores `entry.host`, so directives in restricted `Host` blocks fire as if global (a contract leak surfaced by the v0.10.1 explain text recommending per-`Host` restriction). Needs design (which `Host` scopes WARN vs INFO?), applies to 4 directives at once. Planned for v0.11.0.
+- ~~**D-4 Rank 2–8 sub-check splits**~~ — **KILLED in v0.11.0**: the 13 inert shim entries were removed (behaviour-preserving); `SUBCHECK_RENAMES_V100` keeps the single live Rank 1 entry. Original note: — the remaining 7 ranked candidates (ssh dsa/weak crypto, samba shares, kernel modules, auditd rules, journald, firewall duplicates) after Rank 1 (ssh.x11) shipped in v0.10.1. Planned as a KILL bundle in v0.11.0. The `SUBCHECK_RENAMES_V100` shim already covers all 8 ranks for ignore.yml back-compat.
+- ~~**M-3 ssh client `Host`-scope semantics**~~ — **SHIPPED in v0.11.0** (BREAKING): directives inside a restricted `Host` block are now scope-aware and emit `ssh.x11.forwarding.client_scoped` as INFO without deduction. Original note: — `_check_client_config` ignores `entry.host`, so directives in restricted `Host` blocks fire as if global (a contract leak surfaced by the v0.10.1 explain text recommending per-`Host` restriction). Needs design (which `Host` scopes WARN vs INFO?), applies to 4 directives at once. Planned for v0.11.0.
 - **M3 cosmetic** — `os.path` → `pathlib` in remaining files. Pure cosmetic; partially absorbed during v0.5.x audits, but not driven to completion.
 - **AUR PKGBUILD** — community contribution welcome.
 - **Tighter AppArmor lock-down** — read-only on /etc/, /proc/, /sys/; deny exec of non-whitelisted; restrict network egress to known endpoints. Deferred to a future hardening pass — also the **real boundary** for plugin sandbox (see Discarded above).
-- ~~**v0.8.0 deferred contract (D-1 to D-4)**~~ — D-1/D-2/D-3 shipped in v0.9.0; D-4 shim foundation v0.10.0, Rank 1 v0.10.1, Rank 2–8 planned v0.11.0.
+- ~~**v0.8.0 deferred contract (D-1 to D-4)**~~ — D-1/D-2/D-3 shipped in v0.9.0; D-4 shim foundation v0.10.0, Rank 1 shipped v0.10.1, Rank 2–8 KILLED in v0.11.0. Contract fully closed.
 - ~~**Compare breakdown diff**~~ — killed in v0.8.4 (zero user signal after 5 majors).
 
-### Known debt (post-v0.10.2)
+### Known debt (post-v0.14.1)
 
 - `bob/manage_logs.py` (1037 LoC) — UI heavy, curses, but tests/source ratio is 1.07×. Accept as-is.
 - `bob/_sandbox.py` (881 LoC, down from 956 after v0.9.0 TD-1 dropped the legacy bypass) — single-file sandbox runner. Soft-ceiling candidate but cohesive (single responsibility); split would scatter the in-process restriction policy. Accept as-is for now.
 - `bob/tui/cron.py` (949 LoC) is the largest single-file curses unit after the v0.6.0 splits. Soft-ceiling candidate but works — touching curses code is high-risk-for-low-reward, and the v0.5.7 targeted audit already swept it.
-- ~~`bob/checks/ssh.py` (1296 LoC)~~ **Done in v0.6.0** — split into the `bob/checks/ssh/` package (5 files, largest 534 L). Contract preserved via `__init__.py` re-exports.
+- ~~`bob/checks/ssh.py` (1296 LoC)~~ **Done in v0.6.0** — split into the `bob/checks/ssh/` package (5 files, largest `_subchecks.py` at 605 L). Contract preserved via `__init__.py` re-exports.
 - ~~`bob/cron.py` (1204 LoC)~~ **Done in v0.6.0** — split into the `bob/cron/` package (5 files, largest 452 L). Test file grew from 382 → ~850 L over the cycle.
 - `bob/runner.py` `_sec()` closure pattern works but adds an extra layer of indirection. Was a refactor in v0.3.5 (-295L from previous form). Could potentially flatten further, but not urgent.
 
@@ -753,7 +766,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 - **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 1400 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` itself does not whitelist languages — `--lang=` accepts any value and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
 - **Add a check** (full checklist):
   1. Create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)` (follow the pattern of an existing simple check, e.g. `ntp.py`).
-  2. Wire in `bob/runner.py`: add the import at the top, add the section name `"foo"` to `_ALL_SECTIONS` tuple (line ~74), and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
+  2. Wire in `bob/runner.py`: add the import at the top, add a `_Section` entry to the `_SECTIONS` tuple (`bob/runner.py`, v0.9.0 D-2) — `_ALL_SECTIONS` is *derived* from it (`tuple(s.name for s in _SECTIONS if not s.always_on)`) and cannot be appended to, and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
   3. Add locale keys to `bob/locales/{en,fr}.json`: at minimum a `sections.foo` title plus any `t("foo.xxx")` keys your check emits (validated by `test_locale_coverage.py`).
   4. Add the test file `tests/test_foo.py` (the suite will auto-discover it).
   5. Optional: add the prefix `"foo"` to `bob/domain_scores.py::_PREFIX_TO_DOMAIN` for scoring (else the check's findings fall into the `firewall` catch-all).
@@ -775,27 +788,27 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 
 | Metric | Value | Source |
 |---|---:|---|
-| Python source (bob/) | ~32,292 LoC across 99 files | `find bob -name '*.py' | xargs wc -l` |
+| Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
 | Tests | 118 test files, ~4461 functions, **6268 collected** (v0.10.2) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |
 | Python versions tested | 3.10, 3.11, 3.12, 3.13, 3.14 | `.github/workflows/tests.yml` + `pyproject.toml` classifiers |
-| Locale keys | ~1873 EN ↔ ~1873 FR | `bob/locales/{en,fr}.json` |
+| Locale keys | 2014 EN ↔ 2014 FR (strict parity) | `bob/locales/{en,fr}.json` |
 | EXPLAIN_KEYS | 169 (in 45 prefixes) | `bob.explain.EXPLAIN_KEYS` |
 | CIS references | 174 (107 Ubuntu 22.04 + 7 Docker + 60 best-practice) | `bob/data/cis_refs.json` |
 | Known services | 38 | `bob/data/services.json` |
 | Score domains | 7 | `bob.domain_scores.DOMAINS` |
-| `_PREFIX_TO_DOMAIN` mappings | ~32 (since v0.5.x explicit table) | `bob.domain_scores._PREFIX_TO_DOMAIN` |
-| Filterable sections (`--check` / `--skip`) | 34 | `bob --check=list` |
+| `_PREFIX_TO_DOMAIN` mappings | 36 (since v0.5.x explicit table) | `bob.domain_scores._PREFIX_TO_DOMAIN` |
+| Filterable sections (`--check` / `--skip`) | 38 | `bob --check=list` |
 | Always-on sections (recognised by `--check` since v0.7.0 M-7) | 10 | `bob.runner._ALWAYS_ON_SECTIONS` |
-| Audit profiles | 4 built-in (server / desktop / container + workstation alias) + user | `bob/data/profiles/` |
-| CLI options | ~40+ long-form + ~17 short | `bob.cli.parse_args` |
-| Doc files | 16 public markdown + 3 man pages | `DOCUMENTS/` + `man/` |
+| Audit profiles | 4 built-in (server / desktop / workstation / container — all first-class) + user | `bob/data/profiles/` |
+| CLI options | 43 long-form + 21 short | `bob.cli.parse_args` |
+| Doc files | 19 public markdown (13 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"2"` only (since v0.7.0; legacy `"1"` + `--json-v1` retired v0.9.0 F-3) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
-| Release-engineering CI guards | 4 (integration-first / smoke-after-commit / version-consistency / smoke-plugin) | `.github/workflows/*.yml` |
+| Release-engineering CI guards | 5 (integration-first / smoke-after-commit / version-consistency / smoke-plugin / doc-version-consistency) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
 | Public version | v0.14.1 (release surface dated 2026-08-30); the container/nftables "teeth" remain deferred pending field-test hardware | `pyproject.toml::version` |
-| Supported branch | v0.10.x (v0.7.x EOL formalised in v0.8.1, v0.6.x in v0.7.2) | `SECURITY.md` |
+| Supported branch | v0.14.x (everything ≤ v0.13.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 
 ---
