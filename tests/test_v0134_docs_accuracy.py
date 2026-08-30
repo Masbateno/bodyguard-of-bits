@@ -392,6 +392,60 @@ class TestDocumentedTestCountIsConsistent:
         )
 
 
+
+class TestDocumentedTestInventoryIsAccurate:
+    """SNAPSHOT quotes the test inventory — file count, function count,
+    collected count — in more than one place, and nothing kept them in step.
+
+    Found during v0.15.0: the two lines had drifted apart *inside the same
+    document* (one said 140 files / 4791 functions, the other still 139 /
+    4785) while both agreed on the collected total, because only the total
+    had a guard. A SNAPSHOT that contradicts itself is worse than one that is
+    merely stale — a reader has no way to tell which half to trust.
+
+    Calibration, deliberate: the file count is an inventory and is checked
+    strictly; the function count is written with a `~` and gets a tolerance
+    band. Measuring strict LoC-style equality on every figure was rejected —
+    it fails on roughly half of all commits and trains people to ignore the
+    guard.
+    """
+
+    _INVENTORY_RE = re.compile(r"(\d+) test files, ~(\d+) functions, \*{0,2}(\d{4,})")
+
+    def _quotes(self) -> list[tuple[int, int, int]]:
+        text = (_REPO_ROOT / "DOCUMENTS" / "SNAPSHOT.md").read_text(encoding="utf-8")
+        found = [tuple(int(g) for g in m.groups())
+                 for m in self._INVENTORY_RE.finditer(text)]
+        assert found, "no test-inventory line found in SNAPSHOT.md"
+        return found
+
+    def test_snapshot_does_not_contradict_itself(self):
+        quotes = self._quotes()
+        assert len(set(quotes)) == 1, (
+            "SNAPSHOT.md quotes the test inventory more than once and the "
+            f"copies disagree: {quotes} — (files, functions, collected)"
+        )
+
+    def test_documented_file_count_is_exact(self):
+        files, _, _ = self._quotes()[0]
+        live = len(list((_REPO_ROOT / "tests").glob("test_*.py")))
+        assert files == live, (
+            f"SNAPSHOT.md documents {files} test files, the tree holds {live}"
+        )
+
+    def test_documented_function_count_is_close(self):
+        _, functions, _ = self._quotes()[0]
+        live = sum(
+            len(re.findall(r"^\s*def test_", f.read_text(encoding="utf-8"), re.M))
+            for f in (_REPO_ROOT / "tests").glob("test_*.py")
+        )
+        assert abs(live - functions) <= 50, (
+            f"SNAPSHOT.md documents ~{functions} test functions, the tree "
+            f"holds {live}"
+        )
+
+
+
 # ---------------------------------------------------------------------------
 # 6 — the documented exit codes must match the real constants
 # ---------------------------------------------------------------------------

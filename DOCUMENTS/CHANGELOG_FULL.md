@@ -46,6 +46,7 @@ miss**.
   deduction became a scoreless INFO. Two further gaps surfaced from the same audit: backslash continuations were read
   a line at a time, so a rule wrapped between `NOPASSWD:` and its command was invisible; and `#1000 ALL=(ALL)
   NOPASSWD: ALL` — the numeric-uid user form — was skipped outright as a comment line.
+- **Unattended upgrades** (`bob/checks/updates.py`) — the inverse direction, and the more dangerous one: here the comment did not hide a problem, it invented a reassurance. `apt.conf` accepts three comment syntaxes (`//`, `/* */`, `#`) and `20auto-upgrades` is exactly the file an administrator disables by commenting the line out. Matching the raw text, BOB reported unattended upgrades **enabled** on a host where apt reads nothing at all. Confirmed against `apt-config dump` for all three syntaxes.
 
 Each fix is mutation-tested: the defect is re-injected and the new guard must fail.
 
@@ -55,7 +56,7 @@ Starting with this cycle the SNAPSHOT counters are refreshed **as the branch pro
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6798**.
+**Tests** 6719 → **6813**.
 
 ---
 

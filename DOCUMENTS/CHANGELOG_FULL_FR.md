@@ -47,6 +47,7 @@ est rigoureux, plus la détection échoue**.
   continuations par barre oblique inverse étaient lues ligne par ligne, donc une règle coupée entre `NOPASSWD:` et sa
   commande était invisible ; et `#1000 ALL=(ALL) NOPASSWD: ALL` — la forme utilisateur par uid numérique — était
   purement et simplement ignorée comme une ligne de commentaire.
+- **Mises à jour automatiques** (`bob/checks/updates.py`) — la direction inverse, et la plus dangereuse : ici le commentaire n'a pas caché un problème, il a inventé une garantie. `apt.conf` accepte trois syntaxes de commentaire (`//`, `/* */`, `#`) et `20auto-upgrades` est précisément le fichier qu'un administrateur neutralise en commentant la ligne. Le motif étant appliqué au texte brut, BOB annonçait les mises à jour automatiques **actives** sur une machine où apt ne lit rien du tout. Vérifié contre `apt-config dump` pour les trois syntaxes.
 
 Chaque correctif est testé par mutation : le défaut est réinjecté et la nouvelle garde doit échouer.
 
@@ -56,7 +57,7 @@ Chaque correctif est testé par mutation : le défaut est réinjecté et la nouv
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6798**.
+**Tests** 6719 → **6813**.
 
 ---
 

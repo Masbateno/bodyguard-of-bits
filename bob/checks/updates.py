@@ -177,6 +177,39 @@ def _count_upgradable() -> int | None:
             count += 1
     return count
 
+# apt.conf accepts three comment syntaxes — `//` to end of line, `/* */`
+# blocks, and `#` to end of line — and `20auto-upgrades` is exactly the file an
+# administrator disables by commenting the line out rather than setting "0".
+# Matching the raw text therefore reported unattended upgrades as *enabled* on
+# a host where apt reads nothing at all: a reassuring verdict for a control
+# that is off. Confirmed against `apt-config dump` for all three syntaxes.
+_APT_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+def _strip_apt_comments(text: str) -> str:
+    """Return `text` with apt.conf comments removed.
+
+    `//` and `#` are honoured only outside a double-quoted string, so a value
+    such as ``"http://example.invalid"`` survives intact.
+    """
+    text = _APT_BLOCK_COMMENT_RE.sub(" ", text)
+    out: list[str] = []
+    for line in text.splitlines():
+        in_quotes = False
+        cut = len(line)
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if ch == '"':
+                in_quotes = not in_quotes
+            elif not in_quotes:
+                if ch == "#" or line.startswith("//", i):
+                    cut = i
+                    break
+            i += 1
+        out.append(line[:cut])
+    return "\n".join(out)
+
+
 def _check_unattended() -> tuple[bool, bool]:
     """
     Return (installed, enabled) for unattended-upgrades.
@@ -193,7 +226,9 @@ def _check_unattended() -> tuple[bool, bool]:
     apt_conf = Path("/etc/apt/apt.conf.d/20auto-upgrades")
     if apt_conf.exists():
         try:
-            content = apt_conf.read_text(encoding="utf-8", errors="ignore")
+            content = _strip_apt_comments(
+                apt_conf.read_text(encoding="utf-8", errors="ignore")
+            )
             if re.search(r'APT::Periodic::Unattended-Upgrade\s+"1"', content):
                 return True, True
         except OSError:
