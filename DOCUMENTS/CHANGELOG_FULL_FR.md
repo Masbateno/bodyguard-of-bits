@@ -252,13 +252,38 @@ désormais listé, ce qui est l'erreur la moins chère : une fausse alerte nomma
 une source que l'opérateur peut lire se rattrape, un silence non. Ce compromis
 est verrouillé par un test pour qu'il reste une décision et non un accident.
 
+### L'audit disque ignorait entièrement les racines ZFS
+
+Les pourcentages étaient exacts — vérifiés contre `os.statvfs`, l'appel système
+que `df` effectue lui-même, sur chaque partition de cette machine. Les deux
+défauts portaient sur les lignes *retenues* et sur la *portion* de chaque ligne
+lue.
+
+Le filtre était `device.startswith("/dev/")`, sous un commentaire affirmant
+qu'il couvrait la liste des pseudo-systèmes de fichiers. Il couvrait trop. Un
+dataset ZFS s'appelle `rpool/ROOT/pve-1`, pas `/dev/…` : sur toute machine à
+racine ZFS — Proxmox par défaut, Ubuntu en option d'installation — le système de
+fichiers racine était écarté de l'audit et un pool à 93 % ne produisait aucun
+finding. Le filtre travaille désormais sur le *type* de système de fichiers, via
+`df -PT`, ce que la docstring affirmait depuis toujours. C'est une liste
+d'exclusion à dessein : c'est une liste d'inclusion qui a échoué ici, donc un
+type auquel personne n'a pensé est maintenant audité au lieu d'être écarté en
+silence. Les types réseau y figurent explicitement plutôt que par accident — un
+partage NFS plein est un vrai problème, mais ce n'est pas le disque de cette
+machine.
+
+Second défaut, même fonction : `df` affiche les points de montage sans
+échappement et `line.split()[5]` n'en prend qu'un mot. Un disque monté sur
+`/media/so6/My Passport` était rapporté comme `/media/so6/My` — un chemin qui
+n'existe pas, dans un finding annonçant à l'opérateur qu'il est plein à 95 %.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6905**.
+**Tests** 6719 → **6934**.
 
 ---
 

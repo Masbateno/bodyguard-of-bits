@@ -425,29 +425,63 @@ def _parse_smart_attr(attrs_output: str, attr_id: int) -> int:
             pass
     return 0
 
+# Filesystem types excluded from the disk-space audit, by what they *are*
+# rather than by what their device node looks like.
+#
+# Until v0.15.0 the filter was `device.startswith("/dev/")`, with a comment
+# claiming it captured the pseudo-filesystem list. It over-captured: a ZFS
+# dataset is named `rpool/ROOT/pve-1`, not `/dev/…`, so on any ZFS-root host —
+# Proxmox by default, Ubuntu as an installer option — the root filesystem was
+# skipped entirely and a pool at 93% produced no finding at all.
+#
+# The network types are listed deliberately rather than by omission: a full NFS
+# or CIFS share is a real problem, but it is not this host's disk, and including
+# them would change what this check means.
+_PSEUDO_FS_TYPES = frozenset({
+    "autofs", "binfmt_misc", "bpf", "cgroup", "cgroup2", "configfs", "debugfs",
+    "devpts", "devtmpfs", "efivarfs", "fusectl", "hugetlbfs", "mqueue", "nsfs",
+    "overlay", "pstore", "proc", "ramfs", "rpc_pipefs", "securityfs",
+    "squashfs", "sysfs", "tmpfs", "tracefs",
+})
+_NETWORK_FS_TYPES = frozenset({
+    "9p", "afs", "ceph", "cifs", "fuse.sshfs", "gfs2", "glusterfs", "nfs",
+    "nfs4", "ocfs2", "smb3", "smbfs",
+})
+
+
 def _read_partition_usage() -> list[PartitionInfo]:
     """
-    Return usage info for mounted partitions via `df -P`.
+    Return usage info for mounted local partitions via `df -PT`.
 
-    Skips pseudo-filesystems (tmpfs, devtmpfs, squashfs, overlay, etc.).
+    Skips pseudo-filesystems by type, and network filesystems by type. `-T` adds
+    the type column; `--block-size` already restricts BOB to GNU df, so `-T`
+    costs no portability.
     """
-    out = _run("df", "-P", "--block-size=1G")
+    out = _run("df", "-PT", "--block-size=1G")
     if not out:
         return []
 
     partitions = []
     for line in out.splitlines()[1:]:   # skip header
         parts = line.split()
-        if len(parts) < 6:
+        if len(parts) < 7:
             continue
         device     = parts[0]
-        size_gb    = _safe_float(parts[1])
-        used_pct_s = parts[4].rstrip("%")
-        mountpoint = parts[5]
+        fstype     = parts[1].lower()
+        size_gb    = _safe_float(parts[2])
+        used_pct_s = parts[5].rstrip("%")
+        # A mount point may contain spaces — `df` prints it unescaped, and it is
+        # the last column, so everything from here on belongs to it. Splitting
+        # naively named "/media/so6/My" for a drive mounted at
+        # "/media/so6/My Passport": a path the operator cannot act on, in a
+        # finding telling them it is 95% full.
+        mountpoint = " ".join(parts[6:])
 
-        # The pseudo-FS list (tmpfs, devtmpfs, squashfs, overlay, proc, sysfs…)
-        # is captured by this single check — none of those start with "/dev/".
-        if not device.startswith("/dev/"):
+        if fstype in _PSEUDO_FS_TYPES or fstype in _NETWORK_FS_TYPES:
+            continue
+        # AppImages and similar mount themselves through FUSE as read-only
+        # images; they are not storage the operator manages.
+        if fstype.startswith("fuse."):
             continue
 
         try:

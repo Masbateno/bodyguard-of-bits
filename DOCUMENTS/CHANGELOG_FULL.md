@@ -233,13 +233,35 @@ is the cheaper error: a false alarm naming a source the operator can read is
 recoverable, a silence is not. That trade-off is pinned by a test so it stays a
 decision rather than an accident.
 
+### The disk audit skipped ZFS roots entirely
+
+Percentages were exact — checked against `os.statvfs`, the syscall `df` itself
+calls, on every partition of this host. Both defects were in *which* lines the
+parser kept and *how much* of each line it read.
+
+The filter was `device.startswith("/dev/")`, under a comment claiming it
+captured the pseudo-filesystem list. It over-captured. A ZFS dataset is named
+`rpool/ROOT/pve-1`, not `/dev/…`, so on any ZFS-root host — Proxmox by default,
+Ubuntu as an installer option — the root filesystem was dropped from the audit
+and a pool at 93% produced no finding at all. The filter now works on the
+filesystem *type*, via `df -PT`, which is what the docstring always claimed it
+did. It is a deny-list on purpose: an allow-list is exactly what failed here, so
+a filesystem type nobody thought of is now audited rather than silently skipped.
+Network types are listed explicitly rather than excluded by accident — a full
+NFS share is a real problem, but it is not this host's disk.
+
+Second defect, same function: `df` prints mount points unescaped and
+`line.split()[5]` takes one word of them. A drive at `/media/so6/My Passport`
+was reported as `/media/so6/My` — a path that does not exist, in a finding
+telling the operator it is 95% full.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6905**.
+**Tests** 6719 → **6934**.
 
 ---
 
