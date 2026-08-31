@@ -144,6 +144,36 @@ délibérément : la garde ne vérifie donc que la direction manquante.
   dans les deux sens sur une machine par ailleurs au repos. L'audit reflétait
   correctement le système ; c'est le système qui changeait.
 
+### Cinq angles de plus, tous propres
+
+* **Plafonds par outil.** Trois contrôles déclarent un plafond (`clamav`,
+  `file_integrity`, `rootkit`, 1 point chacun). Avec trois déductions rootkit, le
+  score brut tombe à 7 et le score rapporté reste à 9, chaque ligne plafonnée est
+  marquée *[capped — tool limit reached]*, et un INFO indique
+  « 3 pt raw → 1 pt counted ». L'écart entre les deux nombres n'est pas seulement
+  calculé juste, il est montré.
+* **Application du profil.** Aucune déduction n'atteint le moteur sans passer par
+  `apply()`, vérifié en AST — aucun appel direct à `_apply_deduction` hors de
+  `ScoreEngine`. Côté comportement, une clé surchargée retombe en INFO sans
+  déduction sur `desktop`, `container` et `workstation`, et reste un WARN à
+  2 points sur `server`, tandis qu'une clé non surchargée est inchangée. Le
+  câblage de v0.14.0 tient.
+* **`--check` / `--skip`.** `--check=ssh` donne ssh plus exactement les dix
+  sections toujours actives, conformément aux « 38 filtrables + 10 always-on »
+  documentés ; `--skip=ssh` la retire ; `--check=ssh,disk` donne les deux.
+* **Export CSV.** Les quatre préfixes de formule tableur (`=`, `+`, `-`, `@`)
+  sont neutralisés par une apostrophe ; séparateurs, guillemets, sauts de ligne
+  et retours chariot intégrés laissent le nombre de lignes correct.
+* **Rapport détaillé `-d`.** Durci en v0.7.3 et revérifié ici : `<script>` et
+  `<img onerror=>` arrivent échappés en texte inerte, et `_safe_url` ramène
+  `javascript:`, `data:` et `vbscript:` — ainsi que les URL relatives — à `#`.
+
+Une mesure de ce lot a failli devenir une fausse découverte : le cas
+`<img onerror>` a déclenché un détecteur grossier cherchant la chaîne
+`onerror=`, qui figure aussi dans la forme échappée. Le corps rendu est
+`&lt;img src=x onerror=alert(1)&gt;`, inerte. Vérifié avant d'être rapporté,
+comme les cinq autres artefacts de harnais de ce cycle.
+
 ### Passe documentaire reportée de v0.15.0
 
 Cinq inexactitudes mesurées, trouvées en répondant à « la documentation est-elle cohérente maintenant ? » — la réponse

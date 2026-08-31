@@ -136,6 +136,36 @@ only the missing direction.
   otherwise idle machine. The audit reflected the system correctly; it was the
   system that changed.
 
+### Five more angles, all clean
+
+* **Tool caps.** Three checks declare a per-tool ceiling (`clamav`,
+  `file_integrity`, `rootkit`, 1 point each). Driven with three rootkit
+  deductions, the raw score falls to 7 and the reported score stays at 9, each
+  capped line is marked *[capped — tool limit reached]*, and an INFO states
+  *"3 pt raw → 1 pt counted"*. The gap between the two numbers is not merely
+  computed correctly, it is shown.
+* **Profile application.** No deduction reaches the engine without passing
+  through `apply()`, verified by AST — there is no direct `_apply_deduction`
+  call outside `ScoreEngine`. Behaviourally, an overridden key drops to INFO
+  with zero deduction on `desktop`, `container` and `workstation` and stays a
+  2-point WARN on `server`, while a non-overridden key is unaffected. The
+  v0.14.0 wiring holds.
+* **`--check` / `--skip`.** `--check=ssh` yields ssh plus exactly the ten
+  always-on core sections, matching the documented "38 filterable + 10
+  always-on"; `--skip=ssh` removes it; `--check=ssh,disk` yields both.
+* **CSV export.** All four spreadsheet-formula prefixes (`=`, `+`, `-`, `@`) are
+  neutralised with a leading quote; embedded separators, quotes, newlines and
+  carriage returns keep the row count correct.
+* **The `-d` detailed report.** Hardened in v0.7.3 and re-checked here:
+  `<script>` and `<img onerror=>` arrive escaped as inert text, and `_safe_url`
+  reduces `javascript:`, `data:` and `vbscript:` — and relative URLs — to `#`.
+
+One measurement of this batch nearly became a false finding: the `<img onerror>`
+case tripped a crude detector that searched for the string `onerror=`, which
+appears in the escaped form too. The rendered body is
+`&lt;img src=x onerror=alert(1)&gt;`, inert. Checked before reporting, as with
+the five other harness artefacts this cycle.
+
 ### Documentation pass carried over from v0.15.0
 
 Five measured inaccuracies, found while answering "is the documentation coherent now?" — the answer was no.
