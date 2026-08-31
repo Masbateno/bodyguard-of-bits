@@ -21,9 +21,10 @@ Usage:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from bob.checks import _ufw
 from bob.checks._run import _identity_t, _is_safe_config_path, _run, is_unit_active
 from bob.scoring import CheckResult
 
@@ -103,11 +104,14 @@ class DdnsSnapshot:
         domain:       Configured domain extracted from config, or None.
         active:       True if the DDNS service is currently running.
         installed:    True if the DDNS client was found on the system.
+        ufw_apps:     UFW application-profile name -> port specs, so the open-port
+                      scan can resolve a rule written as `ufw allow OpenSSH`.
     """
     client_name: str | None
     domain:      str | None
     active:      bool
     installed:   bool
+    ufw_apps:    "dict[str, list[str]]" = field(default_factory=dict)
 
     @classmethod
     def from_system(cls) -> "DdnsSnapshot":
@@ -130,9 +134,11 @@ class DdnsSnapshot:
                 domain=domain,
                 active=active,
                 installed=True,
+                ufw_apps=_ufw.read_app_profiles(),
             )
 
-        return cls(client_name=None, domain=None, active=False, installed=False)
+        return cls(client_name=None, domain=None, active=False, installed=False,
+                   ufw_apps=_ufw.read_app_profiles())
 
     @classmethod
     def none(cls) -> "DdnsSnapshot":
@@ -173,7 +179,9 @@ def ddns_effective_context(
     """
     if not snapshot.active:
         return "local"
-    return "ddns" if _find_open_ports(ufw_rules, loopback_ports, active_ports) else "local"
+    return "ddns" if _find_open_ports(
+        ufw_rules, loopback_ports, active_ports, snapshot.ufw_apps
+    ) else "local"
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -238,6 +246,7 @@ def check_ddns(
     # Find open ports (ALLOW without source restriction, system ports and loopback excluded)
     open_ports = _find_open_ports(
         ufw_rules, loopback_ports=loopback_ports, active_ports=active_ports,
+        app_profiles=snapshot.ufw_apps,
     )
 
     if not open_ports:
@@ -406,6 +415,7 @@ def _find_open_ports(
     ufw_rules: str,
     loopback_ports: set[str] | None = None,
     active_ports: set[str] | None = None,
+    app_profiles: "dict[str, list[str]] | None" = None,
 ) -> list[str]:
     """
     Find ports with unrestricted ALLOW rules (no source IP restriction).
@@ -423,39 +433,29 @@ def _find_open_ports(
     open_ports: list[str] = []
 
     for line in ufw_rules.splitlines():
-        if not re.match(r"\s*\[\s*\d+\]", line):
+        rule = _ufw.parse_rule(line)
+        if rule is None or not rule.to_col:
             continue
-        if "ALLOW" not in line.upper():
+        if rule.action not in ("ALLOW", "LIMIT"):
             continue
-        # Skip rules with source restriction to private IP
-        if _PRIVATE_SOURCE.search(line):
+        # The source restriction lives in the From column. Reading the whole
+        # line let a private *destination* — `ufw allow from any to 192.168.1.5
+        # port 8080` prints `192.168.1.5 8080/tcp` — pass for a private source,
+        # so a world-open port was filed as restricted.
+        if _PRIVATE_SOURCE.search(rule.from_col):
             continue
-        # Skip rules that are "Anywhere ALLOW IN Anywhere" (default rules)
-        if re.search(r"Anywhere\s+ALLOW\s+IN\s+Anywhere", line, re.IGNORECASE):
+        # A blanket "Anywhere ALLOW IN Anywhere" is UFW's own default row, not a
+        # port to report.
+        if not rule.to_col or rule.to_col.lower().startswith("anywhere"):
             continue
 
-        # Extract port/proto from the rule
-        port_match = re.search(r"\b(\d+)/(tcp|udp)\b", line, re.IGNORECASE)
-        if port_match:
-            port_num   = int(port_match.group(1))
-            port_proto = f"{port_num}/{port_match.group(2).lower()}"
-            if port_num in _DDNS_SYSTEM_PORTS:
-                continue
-            if loopback_ports and port_proto in loopback_ports:
-                continue
-            if active_ports is not None and port_proto not in active_ports:
-                continue
-            if port_proto not in open_ports:
-                open_ports.append(port_proto)
-        else:
-            # Bare port rule (no /proto): covers both tcp and udp
-            bare_match = re.match(r"\[\s*\d+\]\s+(\d+)\s+ALLOW", line)
-            if bare_match:
-                port_num = int(bare_match.group(1))
+        for lo, hi, proto in _ufw.to_column_ranges(rule.to_col, app_profiles):
+            protos = (proto,) if proto else ("tcp", "udp")
+            for port_num in range(lo, hi + 1):
                 if port_num in _DDNS_SYSTEM_PORTS:
                     continue
-                for proto in ("tcp", "udp"):
-                    port_proto = f"{port_num}/{proto}"
+                for pr in protos:
+                    port_proto = f"{port_num}/{pr}"
                     if loopback_ports and port_proto in loopback_ports:
                         continue
                     if active_ports is not None and port_proto not in active_ports:

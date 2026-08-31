@@ -28,6 +28,7 @@ from bob.output import print_group, print_info, print_section, print_service_hea
 from bob.registry import ServiceRegistry
 from bob.report import AuditReport, Report
 from bob.scoring import ScoreEngine
+from bob.checks import _ufw
 from bob.checks.ddns import DdnsSnapshot, check_ddns, ddns_effective_context
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
 from bob.checks.docker import DockerSnapshot, check_docker
@@ -616,9 +617,13 @@ def run_checks(
 
     emit_section("firewall_rules")
 
+    # Application profiles resolve a rule written as `ufw allow OpenSSH`,
+    # which prints the profile name and no port in non-verbose output.
+    _ufw_app_profiles = _ufw.read_app_profiles()
     rules_result = check_rules(
         ufw_verbose, ufw_numbered, t, fw_status.ipv6_ufw_enabled,
         listening_ports=all_listening_ports,
+        app_profiles=_ufw_app_profiles,
     )
     engine.apply(rules_result)
     display_result(rules_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)

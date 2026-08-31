@@ -46,7 +46,52 @@ need the same capability, so iptables answers for both.
 One of the guards asserts the two modules agree, which is the property that
 surfaced this in the first place.
 
-**Tests** 7220 → **7231**.
+**Tests** 7220 → **7261**.
+
+### Three more private copies of the UFW grammar
+
+v0.15.0 unified `ports` and `services` onto `bob/checks/_ufw.py` after finding
+they disagreed. It never swept for *other* copies. There were three, and the
+third was found by the guard written for the first two rather than by hand.
+
+**`ipv6._extract_ufw_v6_covered`** was examined during v0.15.0 and cleared
+because it was correctly anchored on the rule number. Anchoring is not
+completeness: it matched a bare port and nothing else, so `OpenSSH (v6)`,
+`6000:6007/tcp (v6)` and `80,443/tcp (v6)` all read as *no v6 rule at all*.
+Measured on those three lines it returned an empty set — every one of those
+ports raised `ipv6.port_no_v6_rule`, a warning with a deduction, on a host that
+had the rules.
+
+**`ddns._find_open_ports`** was never examined. Searching the line for a single
+`\b(\d+)/(tcp|udp)\b`, a range yielded only its upper bound and a list only its
+last element, and an application profile yielded nothing: on four rules covering
+twelve ports it found two. It also tested the source restriction against the
+whole line, so `ufw allow from any to 192.168.1.5 port 8080` — private
+destination, public source — was filed as restricted. This one under-reports
+open ports, which is the reassuring direction.
+
+**`firewall._check_orphan_rules`** was found by the new guard, which asserts
+that no module parses `ufw status numbered` without the shared grammar. Same
+defect: two orphan ports reported out of eight. An orphan rule is a firewall
+hole left by a service that no longer runs, so under-reporting is quiet rather
+than loud. `firewall.py` now has no rule regex of its own at all — the line
+filter and the index strip moved to `_ufw.is_rule_line` and
+`_ufw.strip_rule_index` as well.
+
+The guard is the point. Six copies existed; unifying two and checking the rest
+by eye left three behind. A test that fails on *any* module carrying the
+grammar privately is what closed it.
+
+### A correction to the mutation method itself
+
+One mutation appeared to survive, and re-running it by hand gave a different
+answer than the test suite had. The cause was a stale `__pycache__`: restoring
+the source file does not always invalidate the cached bytecode, so a verdict can
+be measured against the mutated code after the mutation is gone. All three
+mutations for this change were re-run with the cache cleared between each — all
+three kill. Recorded because a mutation result measured against the wrong
+bytecode proves nothing, which is the same failure mode as a guard that passes
+for the wrong reason.
 
 ### Documentation pass carried over from v0.15.0
 

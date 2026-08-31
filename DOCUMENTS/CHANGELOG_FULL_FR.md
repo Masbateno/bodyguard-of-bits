@@ -50,7 +50,53 @@ pour les deux.
 L'une des gardes vérifie que les deux modules s'accordent, ce qui est la
 propriété qui a fait surgir le défaut.
 
-**Tests** 7220 → **7231**.
+**Tests** 7220 → **7261**.
+
+### Trois copies privées de plus de la grammaire UFW
+
+v0.15.0 a unifié `ports` et `services` sur `bob/checks/_ufw.py` après avoir
+constaté qu'ils se contredisaient. Il n'a jamais balayé les *autres* copies. Il y
+en avait trois, et la troisième a été trouvée par la garde écrite pour les deux
+premières, pas à la main.
+
+**`ipv6._extract_ufw_v6_covered`** avait été examiné pendant v0.15.0 et écarté
+parce qu'il était correctement ancré sur le numéro de règle. L'ancrage n'est pas
+la complétude : il ne reconnaissait qu'un port nu, si bien que `OpenSSH (v6)`,
+`6000:6007/tcp (v6)` et `80,443/tcp (v6)` se lisaient tous comme *aucune règle
+v6*. Mesuré sur ces trois lignes, il renvoyait un ensemble vide — chacun de ces
+ports levait donc `ipv6.port_no_v6_rule`, un avertissement avec déduction, sur
+une machine qui avait bel et bien les règles.
+
+**`ddns._find_open_ports`** n'avait jamais été examiné. Cherchant sur la ligne un
+unique `\b(\d+)/(tcp|udp)\b`, une plage ne donnait que sa borne haute et une
+liste que son dernier élément ; un profil applicatif ne donnait rien : sur quatre
+règles couvrant douze ports, il en trouvait deux. Il testait aussi la restriction
+de source sur toute la ligne, si bien que `ufw allow from any to 192.168.1.5 port
+8080` — destination privée, source publique — était classé restreint. Celui-ci
+sous-déclare les ports ouverts, c'est-à-dire la direction rassurante.
+
+**`firewall._check_orphan_rules`** a été trouvé par la nouvelle garde, qui exige
+qu'aucun module n'analyse `ufw status numbered` sans la grammaire partagée. Même
+défaut : deux ports orphelins signalés sur huit. Une règle orpheline est un trou
+de pare-feu laissé par un service qui ne tourne plus : sous-déclarer est
+silencieux, pas bruyant. `firewall.py` n'a désormais plus aucune expression
+régulière de règle en propre — le filtre de ligne et le retrait d'index sont eux
+aussi passés dans `_ufw.is_rule_line` et `_ufw.strip_rule_index`.
+
+La garde est le point important. Six copies existaient ; en unifier deux et
+vérifier le reste à l'œil en a laissé trois. C'est un test qui échoue sur
+*n'importe quel* module portant la grammaire en privé qui a refermé le sujet.
+
+### Une correction de la méthode de mutation elle-même
+
+Une mutation a semblé survivre, et la rejouer à la main donnait une réponse
+différente de celle de la suite. La cause était un `__pycache__` périmé :
+restaurer le fichier source n'invalide pas toujours le bytecode en cache, si bien
+qu'un verdict peut être mesuré contre le code muté alors que la mutation a
+disparu. Les trois mutations de ce changement ont été rejouées avec purge du
+cache entre chacune — les trois tuent. Consigné parce qu'un résultat de mutation
+mesuré contre le mauvais bytecode ne prouve rien, ce qui est exactement le même
+mode de défaillance qu'une garde qui passe pour la mauvaise raison.
 
 ### Passe documentaire reportée de v0.15.0
 

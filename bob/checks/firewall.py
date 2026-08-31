@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from bob.checks import _ufw
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
@@ -195,6 +196,7 @@ def check_rules(
     t,
     ipv6_enabled: bool = True,
     listening_ports: "set[str] | None" = None,
+    app_profiles: "dict[str, list[str]] | None" = None,
 ) -> "CheckResult":
     """
     Check UFW rules for duplicates, open-any wildcards, IPv6 consistency,
@@ -212,15 +214,12 @@ def check_rules(
         CheckResult with rule-level findings and deductions.
     """
     result = CheckResult()
-    lines = [
-        ln for ln in ufw_numbered.splitlines()
-        if re.match(r"\s*\[\s*\d+\]", ln)
-    ]
+    lines = [ln for ln in ufw_numbered.splitlines() if _ufw.is_rule_line(ln)]
     _check_duplicates(lines, t, result)
     _check_open_any(lines, t, result)
     _check_ipv6_coverage(lines, t, result, ipv6_enabled)
     if listening_ports is not None:
-        _check_orphan_rules(lines, listening_ports, t, result)
+        _check_orphan_rules(lines, listening_ports, t, result, app_profiles)
     return result
 
 
@@ -322,6 +321,7 @@ def _check_orphan_rules(
     listening_ports: "set[str]",
     t,
     result: "CheckResult",
+    app_profiles: "dict[str, list[str]] | None" = None,
 ) -> None:
     """Flag ALLOW IN rules for which no service is currently listening."""
     orphans: set[str] = set()
@@ -330,21 +330,24 @@ def _check_orphan_rules(
             continue
         if "(v6)" in line:
             continue  # skip IPv6 mirrors — covered by their v4 counterpart
-        m = _PORT_PROTO_RE.search(line)
-        if not m:
-            # Protocol-unspecified rule (e.g. "57621 ALLOW IN ...") — UFW
-            # applies it to both TCP and UDP.  Flag as orphan only if neither
-            # protocol has a listening service.
-            m2 = _PORT_BARE_RE.match(line)
-            if not m2:
-                continue  # genuine open-any rule, caught by _check_open_any
-            port = m2.group(1)
-            if f"{port}/tcp" not in listening_ports and f"{port}/udp" not in listening_ports:
-                orphans.add(port)
+        rule = _ufw.parse_rule(line)
+        if rule is None or not rule.to_col:
             continue
-        port_proto = m.group(1).lower()
-        if port_proto not in listening_ports:
-            orphans.add(port_proto)
+        # v0.15.1: this used to search the line for a single `<port>/<proto>`,
+        # so `6000:6007/tcp` yielded only 6007 and `80,443/tcp` only 443 — two
+        # orphan ports reported out of eight. The shared grammar expands ranges,
+        # lists and application profiles.
+        ranges = _ufw.to_column_ranges(rule.to_col, app_profiles)
+        for lo, hi, proto in ranges:
+            for port in range(lo, hi + 1):
+                if proto is None:
+                    # UFW applies a protocol-less rule to both; an orphan only
+                    # when neither protocol has a listener.
+                    if (f"{port}/tcp" not in listening_ports
+                            and f"{port}/udp" not in listening_ports):
+                        orphans.add(str(port))
+                elif f"{port}/{proto}" not in listening_ports:
+                    orphans.add(f"{port}/{proto}")
 
     for port_proto in sorted(orphans):
         # v0.11.1 F7: a protocol-unspecified rule is stored as a bare port

@@ -22,6 +22,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bob.checks import _ufw
 from bob.checks._run import TranslationFunc, _identity_t, _run
 from bob.scoring import CheckResult
 
@@ -77,7 +78,9 @@ class IPv6Snapshot:
         ipv6_listeners = sorted(_extract_ipv6_listeners(ss_out))
 
         ufw_out = _run("ufw", "status", "numbered") or ""
-        ufw_v6_covered = sorted(_extract_ufw_v6_covered(ufw_out))
+        ufw_v6_covered = sorted(
+            _extract_ufw_v6_covered(ufw_out, _ufw.read_app_profiles())
+        )
 
         return cls(
             kernel_ipv6_enabled=kernel_ipv6_enabled,
@@ -330,21 +333,33 @@ def _extract_ipv6_listeners(ss_output: str) -> set[str]:
     return listeners
 
 
-def _extract_ufw_v6_covered(ufw_numbered: str) -> set[str]:
-    """
-    Parse `ufw status numbered` and return the set of 'port/proto' strings
-    that have a (v6) UFW rule.
+def _extract_ufw_v6_covered(
+    ufw_numbered: str,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> set[str]:
+    r"""Return the 'port/proto' strings that have a ``(v6)`` UFW rule.
 
-    Example matching lines:
-        [ 2] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
-        [ 4] 80/tcp (v6)                ALLOW IN    Anywhere (v6)
+    Delegates the rule grammar to ``bob.checks._ufw``, shared with ``ports`` and
+    ``services``. Its own pattern —
+    ``\[\s*\d+\]\s+(\d+)(?:/(tcp|udp))?\s+\(v6\)`` — was anchored correctly and
+    was examined on that basis in v0.15.0, but anchoring is not completeness: it
+    matched a bare port and nothing else, so ``OpenSSH (v6)``, ``6000:6007/tcp
+    (v6)`` and ``80,443/tcp (v6)`` all read as *no v6 rule at all*. Measured on
+    those three lines it returned an empty set, which means every one of those
+    ports raised ``ipv6.port_no_v6_rule`` — a warning with a deduction, on a host
+    that had the rules.
     """
     covered: set[str] = set()
     for line in ufw_numbered.splitlines():
-        # Match: [ N] PORT[/proto] (v6) ...
-        m = re.match(r"\s*\[\s*\d+\]\s+(\d+)(?:/(tcp|udp))?\s+\(v6\)", line, re.IGNORECASE)
-        if m:
-            port  = m.group(1)
-            proto = (m.group(2) or "tcp").lower()
-            covered.add(f"{port}/{proto}")
+        if "(v6)" not in line:
+            continue
+        rule = _ufw.parse_rule(line)
+        if rule is None or not rule.to_col:
+            continue
+        for lo, hi, proto in _ufw.to_column_ranges(rule.to_col, app_profiles):
+            # A rule without an explicit protocol covers both.
+            protos = (proto,) if proto else ("tcp", "udp")
+            for port in range(lo, hi + 1):
+                for pr in protos:
+                    covered.add(f"{port}/{pr}")
     return covered
