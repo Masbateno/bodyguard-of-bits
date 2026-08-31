@@ -407,7 +407,17 @@ def _parse_smart_attr(attrs_output: str, attr_id: int) -> int:
 
     Lines look like:
       5 Reallocated_Sector_Ct   0x0032   100   100   000    Old_age   ...  0
-    The RAW_VALUE is the last whitespace-separated token on the line.
+
+    RAW_VALUE is the **tenth** column, not the last token on the line — the
+    docstring said "last token" until v0.15.0 while the code indexed [9], which
+    is an invitation to "simplify" it to parts[-1] and break it silently. Some
+    drives render a raw value with spaces inside it, e.g.
+
+      190 Airflow_Temperature_Cel 0x0022 065 045 000 Old_age Always - 35 (Min/Max 20/45)
+
+    where the last token is "20/45)" and int() fails, returning 0 for a value
+    that was read fine. Pinned by TestParseSmartAttr::test_raw_with_parenthetical,
+    which already fails if this is changed to parts[-1].
 
     Returns 0 if the attribute is not found or cannot be parsed.
     """
