@@ -6,9 +6,9 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.15.1] — unreleased
+## [v0.15.1] — 2026-08-31
 
-**A second hunt, to find out whether the first one made BOB resilient. In progress on branch `v0.15.x`.**
+**A second hunt, to find out whether the first one made BOB resilient. Six code defects and six documentation inaccuracies, from fifteen angles of which eleven came back clean.**
 
 v0.15.0 fixed 26 verdict defects by sweeping six signatures across the tree. Repeating those sweeps would mostly
 re-confirm its own fixes, so this pass deliberately attacks from angles the previous one never used.

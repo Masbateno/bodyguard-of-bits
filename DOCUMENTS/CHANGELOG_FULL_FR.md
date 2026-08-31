@@ -6,9 +6,9 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.15.1] — non publiée
+## [v0.15.1] — 31-08-2026
 
-**Une seconde chasse, pour savoir si la première a rendu BOB résilient. En cours sur la branche `v0.15.x`.**
+**Une seconde chasse, pour savoir si la première a rendu BOB résilient. Six défauts de code et six inexactitudes documentaires, sur quinze angles dont onze sont revenus propres.**
 
 v0.15.0 a corrigé 26 défauts de verdict en balayant six signatures dans tout l'arbre. Rejouer ces balayages ne ferait
 que reconfirmer ses propres correctifs : cette passe attaque donc délibérément par des angles que la précédente n'a
