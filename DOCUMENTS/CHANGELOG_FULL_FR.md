@@ -448,13 +448,39 @@ Vérifié sur le vrai `/etc/ufw/applications.d` de cette machine, y compris la
 double spécification de Samba `137,138/udp|139,445/tcp` et les noms de profils
 contenant des espaces.
 
+### Un état seccomp illisible était indiscernable d'un seccomp actif
+
+L'essentiel de `container_security` a été confronté à podman et s'accordait sur
+toutes les configurations qu'on peut lui demander — `--privileged`,
+`--cap-add SYS_ADMIN`, `--cap-drop=ALL`, `--read-only`,
+`--security-opt no-new-privileges`, `--userns=keep-id`, ainsi que la détection
+dans une image dépourvue de `systemd-detect-virt`. La passe de v0.14.1 sur ce
+fichier a fait son travail, et la sémantique `privileged` qu'elle a introduite
+tient face à un vrai conteneur privilégié (ensemble de bornage 2199023255551)
+contre un octroi ciblé (2149844475).
+
+Un manque y a survécu. `snapshot.seccomp` vaut -1 quand `/proc/self/status` ne
+comportait pas de ligne `Seccomp`, et le contrôle ne testait que `== 0` : -1
+passait donc en silence. La section conteneur ne disait rien de seccomp, ce que
+l'opérateur lit comme « seccomp est en place ».
+
+Or le noyau n'émet cette ligne que sous `CONFIG_SECCOMP`. Elle manque donc
+précisément sur un noyau sans aucun support seccomp : le cas où la remarque
+compte le plus était celui qui n'en produisait aucune. « Inconnu » est désormais
+une réponse à part entière, qui nomme la raison et la commande de vérification
+au lieu d'emprunter le silence réservé à un filtre actif.
+
+Même forme que les lecteurs sysctl plus tôt dans ce cycle — « n'a pas pu lire »
+et « tout va bien » aboutissant à la même sortie — dans le troisième module à la
+présenter.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7063**.
+**Tests** 6719 → **7072**.
 
 ---
 

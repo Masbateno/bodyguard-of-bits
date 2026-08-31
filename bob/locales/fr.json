@@ -2939,7 +2939,9 @@
     "root_no_userns": "Le conteneur s'exécute en root sans user namespace — le root du conteneur correspond au root de l'hôte",
     "rootfs_writable": "Le système de fichiers racine est accessible en écriture — envisagez un rootfs en lecture seule (--read-only) avec des volumes explicites",
     "cap_sys_admin": "CAP_SYS_ADMIN accordée — pas un conteneur privilégié, mais la capability la plus propice à l'évasion ({caps})",
-    "cap_sys_admin_detail": "CAP_SYS_ADMIN seule permet mount, pivot_root et une grande part de ce que fait root sur l'hôte ; elle est couramment décrite comme « le nouveau root ». Ce conteneur ne détient PAS le jeu complet de capabilities, il n'est donc pas privilégié — mais un seul octroi ciblé suffit à la plupart des évasions documentées. Elle est souvent ajoutée pour des montages FUSE ou des conteneurs imbriqués ; vérifiez que la charge en a encore besoin, et préférez une capability plus étroite s'il en existe une."
+    "cap_sys_admin_detail": "CAP_SYS_ADMIN seule permet mount, pivot_root et une grande part de ce que fait root sur l'hôte ; elle est couramment décrite comme « le nouveau root ». Ce conteneur ne détient PAS le jeu complet de capabilities, il n'est donc pas privilégié — mais un seul octroi ciblé suffit à la plupart des évasions documentées. Elle est souvent ajoutée pour des montages FUSE ou des conteneurs imbriqués ; vérifiez que la charge en a encore besoin, et préférez une capability plus étroite s'il en existe une.",
+    "seccomp_unknown": "Impossible de déterminer l'état de seccomp",
+    "seccomp_unknown_detail": "/proc/self/status n'a pas fourni de ligne Seccomp. Le noyau ne l'émet que s'il est compilé avec CONFIG_SECCOMP : son absence signifie généralement que le noyau ne prend pas seccomp en charge du tout — les appels système du conteneur ne sont pas filtrés. BOB n'affirme ici ni que seccomp est actif ni qu'il ne l'est pas, seulement qu'il n'a pas pu lire la réponse. Vérifier avec : grep Seccomp /proc/self/status"
   },
   "socket_units": {
     "no_tool": "systemctl indisponible — analyse des unités socket ignorée",

@@ -414,13 +414,37 @@ defect for a worse one.
 Verified on this host's real `/etc/ufw/applications.d`, including Samba's
 two-specification `137,138/udp|139,445/tcp` and profile names containing spaces.
 
+### An unreadable seccomp status was indistinguishable from an active one
+
+Most of `container_security` was checked against podman and agreed on every
+configuration it could be asked for — `--privileged`, `--cap-add SYS_ADMIN`,
+`--cap-drop=ALL`, `--read-only`, `--security-opt no-new-privileges`,
+`--userns=keep-id`, and container detection in an image with no
+`systemd-detect-virt`. The v0.14.1 pass on this file did its job, and the
+`privileged` semantics it introduced hold up against a real privileged container
+(bounding set 2199023255551) versus a targeted grant (2149844475).
+
+One gap survived it. `snapshot.seccomp` is -1 when `/proc/self/status` carried
+no `Seccomp` line, and the check only ever tested `== 0` — so -1 fell through in
+silence. The container section said nothing about seccomp, which an operator
+reads as "seccomp is in place".
+
+The kernel emits that line only under `CONFIG_SECCOMP`. It is therefore missing
+exactly on a kernel with no seccomp support at all: the case where the remark
+matters most produced no remark. Unknown is now its own answer, naming why it
+could not be read and how to check by hand, rather than borrowing the silence
+that belongs to an active filter.
+
+Same shape as the sysctl readers earlier in this cycle — "could not read" and
+"is fine" arriving at the same output — in the third module to show it.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7063**.
+**Tests** 6719 → **7072**.
 
 ---
 

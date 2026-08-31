@@ -239,8 +239,20 @@ def check_container_security(
             key="container_security.caps_restricted",
         )
 
-    # Seccomp (0 = disabled, 2 = filter active).
-    if snapshot.seccomp == 0:
+    # Seccomp (0 = disabled, 1 = strict, 2 = filter active, -1 = not readable).
+    #
+    # -1 used to fall through in silence, which read exactly like "seccomp is
+    # active": the container section simply said nothing about it. The line is
+    # emitted by /proc/self/status only under CONFIG_SECCOMP, so it is missing
+    # precisely on a kernel that has no seccomp at all — the case where the
+    # remark matters most. Unknown is now its own answer.
+    if snapshot.seccomp < 0:
+        result.info(
+            message=_t("container_security.seccomp_unknown"),
+            detail=_t("container_security.seccomp_unknown_detail"),
+            key="container_security.seccomp_unknown",
+        )
+    elif snapshot.seccomp == 0:
         result.info(
             message=_t("container_security.no_seccomp"),
             key="container_security.no_seccomp",

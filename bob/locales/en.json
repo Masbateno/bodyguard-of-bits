@@ -2939,7 +2939,9 @@
     "root_no_userns": "Container runs as root without a user namespace — root in the container maps to root on the host",
     "rootfs_writable": "Root filesystem is writable — consider a read-only rootfs (--read-only) with explicit writable volumes",
     "cap_sys_admin": "CAP_SYS_ADMIN granted — not a privileged container, but the most escape-prone capability ({caps})",
-    "cap_sys_admin_detail": "CAP_SYS_ADMIN alone permits mount, pivot_root and much of what root does on the host; it is widely described as \"the new root\". This container does NOT hold the full capability set, so it is not privileged — but a single targeted grant is enough for most documented escapes. It is often added for FUSE mounts or nested containers; check whether the workload still needs it, and prefer a narrower capability if one exists."
+    "cap_sys_admin_detail": "CAP_SYS_ADMIN alone permits mount, pivot_root and much of what root does on the host; it is widely described as \"the new root\". This container does NOT hold the full capability set, so it is not privileged — but a single targeted grant is enough for most documented escapes. It is often added for FUSE mounts or nested containers; check whether the workload still needs it, and prefer a narrower capability if one exists.",
+    "seccomp_unknown": "Seccomp status could not be determined",
+    "seccomp_unknown_detail": "/proc/self/status did not report a Seccomp line. The kernel emits it only when built with CONFIG_SECCOMP, so its absence usually means the kernel has no seccomp support at all — the container's syscalls are unfiltered. BOB does not claim seccomp is active or inactive here, only that it could not read the answer. Check with: grep Seccomp /proc/self/status"
   },
   "socket_units": {
     "no_tool": "systemctl not available — socket-unit analysis skipped",
