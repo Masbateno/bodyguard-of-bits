@@ -322,13 +322,43 @@ systemd-homed — are outside its scope, including a UID 0 account defined there
 means on directory-joined hosts, and that is a decision to take deliberately
 rather than as a side effect of a bug fix.
 
+### A certificate valid for another 23 hours was reported as EXPIRED
+
+Nine certificates were minted at the boundaries and every verdict compared
+against `openssl x509 -checkend 0`, the authority on whether a certificate is
+currently valid.
+
+`days_left` is a floored timedelta, and Python floors negative timedeltas too:
+
+    expires in 23h        ->  0
+    expires in 1h         ->  0
+    expired 1 minute ago  -> -1
+    expired 12h ago       -> -1
+
+So `days <= 0` covered the entire final day of a *still-valid* certificate. BOB
+raised `ssl_certs.expired` — an ALERT, a 2-point deduction, and a message saying
+it expired "0 days ago" — for a certificate openssl accepts. Two of the nine
+cases were wrong, both in the alarming direction: recoverable, but a false
+statement an operator disproves in one command, which is how a tool loses its
+credibility.
+
+`days == 0` now falls into the critical branch. Still an ALERT, still a
+deduction — downgrading the wording must not downgrade the urgency, and a test
+pins that — but the claim is true. `days < 0` is exactly "notAfter has passed",
+so the new boundary is not a tuned threshold, it is the arithmetic.
+
+The parser itself was sound, including the two renderings most likely to break
+it: a single-digit day, which openssl prints with a double space (`Sep  1`), and
+a notAfter beyond 2050, where the ASN.1 encoding switches from UTCTime to
+GeneralizedTime. Both are now pinned.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6964**.
+**Tests** 6719 → **6981**.
 
 ---
 

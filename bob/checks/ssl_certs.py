@@ -169,7 +169,16 @@ def check_ssl_certs(snapshot: SslCertsSnapshot, t: TranslationFunc | None = None
         days = cert.days_left
         short_path = Path(cert.path).name
 
-        if days is not None and days <= 0:
+        # `days_left` is a floored timedelta, so it is 0 for the whole final
+        # day of a still-valid certificate and at most -1 once the notAfter has
+        # actually passed — Python floors negative timedeltas, so even one
+        # minute past expiry gives -1. `days <= 0` therefore declared a
+        # certificate with 23 hours left EXPIRED, with an ALERT and a 2-point
+        # deduction, for its entire last day. Verified against
+        # `openssl x509 -checkend 0`, which called those same certificates
+        # valid. A day-zero certificate now lands in the critical branch below:
+        # the operator still gets the alert, and the statement is true.
+        if days is not None and days < 0:
             _cert_name = shlex.quote(Path(cert.path).parent.name)
             result.alert(
                 message=_t("ssl_certs.expired", path=short_path, days=abs(days)),

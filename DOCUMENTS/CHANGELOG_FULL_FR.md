@@ -348,13 +348,45 @@ défini. `getent passwd` les verrait, mais changer de source change ce que ce
 contrôle signifie sur une machine jointe à un annuaire : c'est une décision à
 prendre délibérément, pas un effet de bord d'une correction de bug.
 
+### Un certificat encore valide 23 heures était rapporté EXPIRÉ
+
+Neuf certificats ont été forgés aux limites et chaque verdict comparé à
+`openssl x509 -checkend 0`, qui fait autorité sur la validité courante d'un
+certificat.
+
+`days_left` est un delta de temps tronqué par plancher, et Python plafonne aussi
+les deltas négatifs vers le bas :
+
+    expire dans 23h        ->  0
+    expire dans 1h         ->  0
+    expiré il y a 1 minute -> -1
+    expiré il y a 12h      -> -1
+
+`days <= 0` couvrait donc toute la dernière journée d'un certificat *encore
+valide*. BOB levait `ssl_certs.expired` — une ALERTE, 2 points de déduction, et
+un message annonçant qu'il a expiré « il y a 0 jour » — pour un certificat
+qu'openssl accepte. Deux des neuf cas étaient faux, tous deux dans la direction
+alarmante : rattrapable, mais c'est une affirmation fausse que l'opérateur
+réfute en une commande, et c'est ainsi qu'un outil perd son crédit.
+
+`days == 0` tombe désormais dans la branche critique. Toujours une ALERTE,
+toujours une déduction — adoucir la formulation ne doit pas adoucir l'urgence, et
+un test le verrouille — mais l'affirmation est vraie. `days < 0` signifie
+exactement « la date notAfter est passée » : la nouvelle limite n'est pas un
+seuil réglé, c'est l'arithmétique.
+
+L'analyseur lui-même était sain, y compris sur les deux rendus les plus
+susceptibles de le casser : un jour à un chiffre, qu'openssl écrit avec un double
+espace (`Sep  1`), et un notAfter au-delà de 2050, où l'encodage ASN.1 passe de
+UTCTime à GeneralizedTime. Les deux sont désormais verrouillés.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6964**.
+**Tests** 6719 → **6981**.
 
 ---
 

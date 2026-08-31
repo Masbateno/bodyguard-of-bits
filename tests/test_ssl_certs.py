@@ -71,7 +71,11 @@ class TestCheckSslCerts:
         assert sum(d.points for d in result.deductions) == 2
 
     def test_expired_alert(self):
-        result = check_ssl_certs(_snap(_cert(days=0)))
+        # v0.15.0: days_left is a floored timedelta, so -1 is the first value a
+        # genuinely expired certificate can take — even one minute past
+        # notAfter. 0 means "still valid, under 24h left"; see the threshold
+        # test below and test_v0150_ssl_expiry_boundary.py.
+        result = check_ssl_certs(_snap(_cert(days=-1)))
         assert result.findings[0].level == FindingLevel.ALERT
         assert result.findings[0].key == "ssl_certs.expired"
 
@@ -217,8 +221,16 @@ class TestSslCertsCap:
 class TestSslCertsThresholds:
     """Boundary conditions around 0, 7, 30."""
 
-    def test_exactly_0_days_expired(self):
+    def test_exactly_0_days_is_critical_not_expired(self):
+        """0 is the whole final day of a *valid* certificate — `openssl x509
+        -checkend 0` accepts one with 23 hours left. It stays an ALERT with a
+        deduction, but it is not expired."""
         result = check_ssl_certs(_snap(_cert(days=0)))
+        assert result.findings[0].key == "ssl_certs.expiring_critical"
+        assert result.findings[0].level == FindingLevel.ALERT
+
+    def test_minus_one_day_is_expired(self):
+        result = check_ssl_certs(_snap(_cert(days=-1)))
         assert result.findings[0].key == "ssl_certs.expired"
 
     def test_exactly_7_days_critical(self):
