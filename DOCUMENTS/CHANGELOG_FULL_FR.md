@@ -414,13 +414,47 @@ avant le premier pipe, donc l'artificiel `echo curl | sh` est signalé. Cela
 penche vers la détection, direction que le reste de l'outil adopte déjà, et le
 finding cite la ligne : l'opérateur le voit immédiatement.
 
+### `ufw allow OpenSSH` laissait le port 22 paraître sans protection
+
+`ufw status numbered` était analysé par une seule expression régulière qui
+lisait le premier nombre de la colonne « To » et s'arrêtait là. Trois formes de
+règles ordinaires la mettaient en défaut, toutes confirmées contre le source
+d'ufw lui-même (`backend_iptables.get_status`) et ses profils livrés dans
+`/etc/ufw/applications.d`.
+
+**Profils d'application.** En mode non verbeux — celui que BOB lit — ufw
+affiche le *nom* du profil dans la colonne « To » et aucun port. `ufw allow
+OpenSSH` est précisément ce que la documentation d'Ubuntu demande de taper :
+une machine qui suivait les instructions s'entendait donc dire que son port SSH
+n'avait aucune règle de pare-feu. Samba, CUPS et Postfix subissaient le même
+sort.
+
+**Plages.** `6000:6007/tcp` ne faisait correspondre que « 6000 », et perdait le
+protocole au passage : 6001-6007 étaient lus comme non couverts *et* 6000/udp
+comme couvert — une seule règle, fausse dans les deux sens à la fois.
+
+**Listes.** `80,443/tcp` se comportait de même : 443 non couvert, 80/udp
+couvert.
+
+La couverture est désormais une liste de plages `(bas, haut, proto)` plutôt
+qu'un ensemble de ports exacts : une règle peut légitimement couvrir toute la
+plage éphémère, et une plage ne peut pas servir de clé d'ensemble sans être
+développée. La table des profils est collectée dans `from_system` et non lue
+dans le contrôle : `check_xxx` est pur par contrat, et un correctif qui glisserait
+discrètement des entrées-sorties dans une fonction pure échangerait un défaut
+contre un pire.
+
+Vérifié sur le vrai `/etc/ufw/applications.d` de cette machine, y compris la
+double spécification de Samba `137,138/udp|139,445/tcp` et les noms de profils
+contenant des espaces.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7029**.
+**Tests** 6719 → **7063**.
 
 ---
 

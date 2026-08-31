@@ -385,13 +385,42 @@ first pipe, so the contrived `echo curl | sh` is flagged. That errs toward
 detection, which is the direction the rest of this tool already takes, and the
 finding quotes the line so the operator sees it at once.
 
+### `ufw allow OpenSSH` left port 22 looking unprotected
+
+`ufw status numbered` was matched with a single regex that read the first
+number of the To column and stopped. Three ordinary rule forms defeated it, all
+confirmed against ufw's own source (`backend_iptables.get_status`) and its
+shipped profiles in `/etc/ufw/applications.d`.
+
+**Application profiles.** In non-verbose mode — the mode BOB reads — ufw prints
+the profile *name* in the To column and no port at all. `ufw allow OpenSSH` is
+what Ubuntu's own documentation tells the operator to run, so a host that
+followed the instructions was told its SSH port had no firewall rule. Samba,
+CUPS and Postfix behaved the same way.
+
+**Ranges.** `6000:6007/tcp` matched only "6000" and lost the protocol with it,
+so 6001-6007 read as uncovered *and* 6000/udp read as covered — one rule, wrong
+in both directions at once.
+
+**Lists.** `80,443/tcp` behaved identically: 443 uncovered, 80/udp covered.
+
+Coverage is now a list of `(low, high, proto)` ranges rather than a set of
+exact ports, because a rule may legitimately span the whole ephemeral range and
+a range cannot be a set key without expanding it. The profile map is collected
+in `from_system` rather than read inside the check: `check_xxx` is pure by
+contract, and a fix that quietly put file I/O in a pure function would trade one
+defect for a worse one.
+
+Verified on this host's real `/etc/ufw/applications.d`, including Samba's
+two-specification `137,138/udp|139,445/tcp` and profile names containing spaces.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7029**.
+**Tests** 6719 → **7063**.
 
 ---
 
