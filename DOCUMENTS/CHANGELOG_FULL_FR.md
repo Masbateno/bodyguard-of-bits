@@ -500,13 +500,32 @@ environnant restant calculé sur la lecture prudente plutôt que supprimé.
 La leçon est consignée parce qu'elle a coûté un défaut : un module écarté par
 raisonnement n'est pas un module écarté.
 
+### Un durcissement de umask ajouté en fin de fichier n'était pas vu
+
+Le même défaut que `password_policy`, dans un module que le premier balayage
+n'avait pas atteint. Tous les fichiers que lit `_scan` retiennent la dernière
+valeur, et il prenait la première.
+
+Mesuré plutôt que déduit. `/etc/login.defs` : le `useradd --prefix` de shadow
+lui-même, sur un fichier contenant UMASK deux fois, crée le répertoire personnel
+en **700** pour `022` puis `077`, et en **755** pour `077` puis `022` — c'est la
+dernière ligne que shadow applique, dans les deux ordres. `/etc/profile` :
+sourcer un fichier contenant `umask 022` puis `umask 027` laisse `0027`, ce qui
+est simplement la façon dont un shell lit un script.
+
+L'opérateur qui durcit de la manière ordinaire — en ajoutant la valeur plus
+stricte à la fin — s'entendait donc dire que la valeur d'origine de la distro
+était toujours en vigueur. Et l'inverse, qui est la direction qui compte : un
+umask strict affaibli par une ligne ajoutée était rapporté comme le strict qu'il
+avait remplacé.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7084**.
+**Tests** 6719 → **7095**.
 
 ---
 

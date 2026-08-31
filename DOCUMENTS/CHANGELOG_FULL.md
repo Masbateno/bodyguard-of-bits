@@ -464,13 +464,30 @@ cautious reading rather than suppressed.
 The lesson is recorded because it cost a defect: a module cleared by reasoning
 is not a module cleared.
 
+### umask hardening appended to the end of a file was not seen
+
+The same defect as `password_policy`, in a module the first sweep had not
+reached. Every file `_scan` reads is last-one-wins, and it took the first match.
+
+Measured rather than reasoned. `/etc/login.defs`: shadow's own
+`useradd --prefix` against a file holding UMASK twice creates the home directory
+**700** for `022` then `077`, and **755** for `077` then `022` — the final line
+is what shadow applies, in both orderings. `/etc/profile`: sourcing a file with
+`umask 022` then `umask 027` leaves `0027`, which is simply how a shell reads a
+script.
+
+So the operator who hardens the ordinary way — appending the stricter value —
+was told the distro's original value was still in force. And the reverse, which
+is the direction that matters: a strict umask weakened by an appended line was
+reported as the strict one it had replaced.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7084**.
+**Tests** 6719 → **7095**.
 
 ---
 

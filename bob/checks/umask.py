@@ -52,12 +52,33 @@ def _fix_cmd(source: str | None) -> str:
     return f"sudo sed -i 's/\\bumask [0-7]*/umask 022/' {source}"
 
 def _scan(path: Path, regex) -> str | None:
-    """Read *path* and return the first umask value matched by *regex*, or None."""
+    """Read *path* and return the **last** umask value matched, or None.
+
+    Every file scanned here is last-one-wins, and the reader used to take the
+    first match:
+
+    * ``/etc/login.defs`` — measured with shadow's own ``useradd --prefix``
+      against a file holding UMASK twice. With ``022`` then ``077`` the home
+      directory is created 700; with ``077`` then ``022`` it is created 755.
+      The final line is what shadow applies.
+    * ``/etc/profile`` and ``/etc/bash.bashrc`` — shell scripts, executed top
+      to bottom. Sourcing a file with ``umask 022`` then ``umask 027`` leaves
+      027.
+    * a PAM stack — each ``pam_umask.so`` session line runs in order.
+
+    So an operator hardening the ordinary way, by appending the stricter value
+    to the end of the file, was told the distro's original value was still in
+    force; and a value weakened by an appended line was reported as the
+    stricter one it had replaced. Wrong in both directions, and the reassuring
+    direction is the one that matters.
+    """
     try:
         content = path.read_text(encoding="utf-8", errors="ignore")
-        m = regex.search(content)
-        if m:
-            return _normalize(m.group(1))
+        last = None
+        for m in regex.finditer(content):
+            last = m
+        if last:
+            return _normalize(last.group(1))
     except OSError:
         pass
     return None
