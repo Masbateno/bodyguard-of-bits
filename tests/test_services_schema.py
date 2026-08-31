@@ -23,7 +23,20 @@ from pathlib import Path
 
 import pytest
 
-jsonschema = pytest.importorskip("jsonschema")
+# Collected-and-skipped rather than not collected at all: see the note in
+# test_v0150_ssl_expiry_boundary.py. `importorskip` here removed 43 tests from
+# the count on any machine without jsonschema, which is what the project's CI
+# is, so the documented figure could never match what CI measured.
+try:
+    import jsonschema
+    _HAVE_JSONSCHEMA = True
+except ImportError:                                              # pragma: no cover
+    jsonschema = None
+    _HAVE_JSONSCHEMA = False
+
+pytestmark = pytest.mark.skipif(
+    not _HAVE_JSONSCHEMA, reason="jsonschema is not installed"
+)
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]

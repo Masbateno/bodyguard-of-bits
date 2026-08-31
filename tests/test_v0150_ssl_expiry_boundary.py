@@ -38,12 +38,25 @@ from bob.checks.ssl_certs import (
     check_ssl_certs,
 )
 
-cryptography = pytest.importorskip("cryptography")
+# `importorskip` at module level aborts collection, so the tests below simply
+# vanish where cryptography is absent — which is the project's own CI, whose
+# install line is `pytest beautifulsoup4` and the package. The documented test
+# count then depends on which optional packages the machine happens to carry,
+# and the count guard failed on exactly that. A module-level `pytestmark`
+# collects every test and skips it instead, so the total is the same
+# everywhere.
+try:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    _HAVE_CRYPTOGRAPHY = True
+except ImportError:                                              # pragma: no cover
+    _HAVE_CRYPTOGRAPHY = False
 
-from cryptography import x509                                    # noqa: E402
-from cryptography.hazmat.primitives import hashes, serialization  # noqa: E402
-from cryptography.hazmat.primitives.asymmetric import rsa         # noqa: E402
-from cryptography.x509.oid import NameOID                         # noqa: E402
+pytestmark = pytest.mark.skipif(
+    not _HAVE_CRYPTOGRAPHY, reason="cryptography is not installed"
+)
 
 
 def _mint(tmp_path: Path, name: str, not_after: datetime.datetime) -> Path:
