@@ -193,26 +193,54 @@ les plugins s'exécutent toujours dans le processus enfant sandboxé.
 ## Rendu de texte non fiable
 
 Les messages de findings interpolent des valeurs que BOB lit sur le système —
-noms de fichiers, d'unités, d'utilisateurs, de paquets, sujets de certificats.
-Depuis la **v0.14.1**, les champs `message`, `detail` et `note` de chaque
-finding sont débarrassés des séquences ANSI et des caractères de contrôle dans
-`Finding.__post_init__()`, par lequel tous les findings sont
-construits : le terminal, JSON, CSV, Markdown et HTML sont donc couverts par une
-seule garantie. (`cmd` conserve ses sauts de ligne — les blocs de remédiation
-sont légitimement multi-lignes — et perd tout le reste.)
+noms de fichiers, d'unités, de processus, commandes cron, noms de paquets,
+sujets de certificats. Un attaquant capable de nommer un processus ou d'écrire
+une entrée cron sur la machine auditée peut donc placer du texte arbitraire dans
+le rapport. Deux défenses distinctes s'appliquent, et elles sont distinctes à
+dessein.
+
+**Couche 1 — les caractères de contrôle, à la construction.** Depuis la
+**v0.14.1**, les champs `message`, `detail` et `note` de chaque finding sont
+débarrassés des séquences ANSI et des caractères de contrôle dans
+`Finding.__post_init__()`, le point unique par lequel tous les findings sont
+construits. Cette garantie-là atteint toutes les sorties. (`cmd` conserve ses
+sauts de ligne — un bloc de remédiation est légitimement multiligne — et perd
+tout le reste.)
 
 Ce n'est pas cosmétique. Un script world-writable dans `/etc/cron.daily` dont le
-*nom de fichier* portait `\033]0;…\007` voyait la séquence rendue verbatim dans
-le terminal de l'opérateur : elle réécrivait le titre de la fenêtre et
-corrompait la boîte de résumé. Avec des séquences de déplacement du curseur, le
-même vecteur permet de réécrire des lignes d'audit déjà affichées — donc de
-faire mentir le rapport sur d'*autres* findings, ce qui pèse plus lourd dans un
+*nom de fichier* portait `\033]0;…\007` voyait la séquence rendue telle quelle
+dans le terminal de l'opérateur : elle réécrivait le titre de la fenêtre et
+corrompait l'encadré de synthèse. Avec des séquences de déplacement du curseur,
+le même vecteur peut écraser des lignes d'audit déjà imprimées — c'est-à-dire
+faire mentir le rapport sur *d'autres* findings, ce qui compte davantage dans un
 auditeur de sécurité que dans la plupart des outils.
 
-Les exports CSV neutralisent en outre l'injection de formules de tableur : une
-cellule commençant par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe, de
-sorte qu'un contenu qui ne fait que *transiter* par BOB ne puisse pas s'exécuter
-à l'ouverture de l'export.
+**Couche 2 — le balisage, au rendu, format par format.** La couche 1 retire les
+octets de contrôle ; elle ne retire pas le balisage et ne le peut pas, car ce
+qui constitue du balisage dépend entièrement de la destination du texte.
+Échapper à la construction corromprait le terminal et le JSON, qui ont besoin
+des caractères tels quels. Chaque écrivain échappe donc pour son propre format :
+
+| Sortie | Traitement |
+|---|---|
+| Terminal, JSON | rien au-delà de la couche 1 — aucun des deux n'interprète de balisage |
+| HTML | `html.escape(..., quote=True)` sur chaque valeur interpolée |
+| Markdown | `<` en entité, `[` et `]` échappés pour que liens et images ne se rendent pas, `\|` pour que le tableau survive ; `cmd` va dans un code span dont la clôture est dimensionnée à son contenu |
+| Slack | `&`, `<` et `>` échappés selon les règles propres à Slack |
+| CSV | une cellule commençant par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe, pour qu'un contenu ayant seulement *transité* par BOB ne puisse pas s'exécuter à l'ouverture de l'export |
+| Rapport HTML `-d` | `html.escape` plus `_safe_url`, qui ramène les URL `javascript:`, `data:` et `vbscript:` à `#` |
+
+**La v0.15.0 a trouvé cette couche absente chez deux écrivains.** Le rapport
+Markdown n'échappait que le séparateur de tableau : `<img src=x onerror=…>`
+s'exécutait dans tout rendu laissant passer le HTML, `[click](javascript:…)`
+s'affichait comme un lien actif, et `![x](https://…)` faisait télécharger une
+image distante par la machine de l'auditeur à l'ouverture. La charge Slack
+partait verbatim, où `<!channel>` notifie tout un espace de travail et
+`<http://ailleurs|paraît légitime>` s'affiche comme un lien dont le texte
+visible est sous le même contrôle que la destination. Les deux sont corrigés,
+les deux sont verrouillés par des tests. La leçon à retenir est que le point de
+passage unique de la couche 1 a été lu, un temps, comme couvrant plus qu'il ne
+couvrait.
 
 ## Variables d'environnement
 

@@ -54,7 +54,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 169-key canonical list in 45 prefixes, profile variants (19 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 169-key canonical list in 45 prefixes, profile variants (70 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
 | `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (174 entries: 107 formal CIS, 60 best-practice, 7 Docker) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 7-domain attribution (`backup` → `disk`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
@@ -172,7 +172,11 @@ bob/
 │   └── cron.py          # Curses TUI for --install-cron / --manage-cron
 ├── checks/
 │   ├── __init__.py
-│   ├── _run.py             # Shared _run() subprocess helper + C locale env
+│   ├── _run.py             # Shared _run() subprocess helper + C locale env,
+│   │                       #   join_continuations(), strip_unit_glyph(),
+│   │                       #   pipes_into_shell() — one copy of each rule
+│   ├── _ufw.py             # `ufw status numbered` grammar, shared by ports,
+│   │                       #   services, ipv6, ddns and firewall (v0.15.1)
 │   ├── firewall.py         # FirewallStatus + check_firewall() + check_rules()
 │   ├── firewall_stack.py   # FirewallStackSnapshot + check_firewall_stack()
 │   ├── iptables_nftables.py # IptablesNftablesSnapshot + check_iptables_nftables() — raw firewall audit
@@ -474,7 +478,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2008 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2034 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

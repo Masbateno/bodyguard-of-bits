@@ -97,7 +97,7 @@ No `sudo` needed — `--explain` is a standalone, profile-aware lookup. The outp
 You can list every explainable key :
 
 ```bash
-bob --explain list                          # 168 keys at v0.8.x
+bob --explain list                          # 169 keys at v0.15.x
 bob --explain                               # interactive picker (↑↓ navigate, Enter view, q quit)
 ```
 
@@ -275,7 +275,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, .log, JSON detail messages, webhook payloads, explain entries) is fully localised — 1941 keys × 2 locales as of v0.8.x.
+All output (terminal, .log, JSON detail messages, webhook payloads, explain entries) is fully localised — 2034 keys × 2 locales as of v0.8.x.
 
 ---
 

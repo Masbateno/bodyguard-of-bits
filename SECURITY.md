@@ -259,25 +259,49 @@ is now ignored; plugins always execute in the spawn'd sandbox child.
 ## Rendering untrusted text
 
 Finding messages interpolate values BOB reads from the system — file names,
-unit names, user names, package names, certificate subjects. Since
-**v0.14.1** every finding's `message`, `detail` and `note` is stripped of
-ANSI escapes and control characters in `Finding.__post_init__()`, the
-single point through which all findings are built, so the terminal, JSON,
-CSV, Markdown and HTML outputs are covered by one guarantee.
-(`cmd` keeps its newlines — remediation blocks are legitimately multi-line —
-and loses everything else.)
+unit names, process names, cron commands, package names, certificate subjects.
+An attacker who can name a process or write a cron entry on the audited host can
+therefore put arbitrary text into the report. Two separate defences apply, and
+they are separate on purpose.
+
+**Layer 1 — control characters, at construction.** Since **v0.14.1** every
+finding's `message`, `detail` and `note` is stripped of ANSI escapes and control
+characters in `Finding.__post_init__()`, the single point through which all
+findings are built. That one guarantee reaches every output. (`cmd` keeps its
+newlines — remediation blocks are legitimately multi-line — and loses everything
+else.)
 
 This is not cosmetic. A world-writable script in `/etc/cron.daily` whose
 *filename* carried `\033]0;…\007` had the sequence rendered verbatim to the
-operator's terminal: it rewrote the window title and corrupted the summary
-box. With cursor-movement sequences, the same vector can overwrite audit
-lines already printed — that is, make the report lie about *other* findings,
-which matters rather more in a security auditor than in most tools.
+operator's terminal: it rewrote the window title and corrupted the summary box.
+With cursor-movement sequences the same vector can overwrite audit lines already
+printed — that is, make the report lie about *other* findings, which matters
+rather more in a security auditor than in most tools.
 
-CSV exports additionally neutralise spreadsheet formula injection: a cell
-beginning with `=`, `+`, `-` or `@` is prefixed with a single quote, so
-content that merely passed *through* BOB cannot execute when the operator
-opens the export.
+**Layer 2 — markup, at render time, per format.** Layer 1 removes control bytes;
+it does not and cannot remove markup, because what counts as markup depends
+entirely on where the text is going. Escaping at construction would corrupt the
+terminal and the JSON, which need the characters as typed. Each writer therefore
+escapes for its own format:
+
+| Output | Treatment |
+|---|---|
+| Terminal, JSON | none needed beyond layer 1 — neither interprets markup |
+| HTML | `html.escape(..., quote=True)` on every interpolated value |
+| Markdown | `<` to an entity, `[` and `]` escaped so links and images do not render, `\|` so the table survives; `cmd` goes in a code span with a fence sized to its content |
+| Slack | `&`, `<` and `>` escaped per Slack's own rules |
+| CSV | a cell beginning with `=`, `+`, `-` or `@` is prefixed with a single quote, so content that merely passed *through* BOB cannot execute when the operator opens the export |
+| `-d` HTML report | `html.escape` plus `_safe_url`, which reduces `javascript:`, `data:` and `vbscript:` URLs to `#` |
+
+**v0.15.0 found this layer missing in two writers.** The Markdown report escaped
+only the table separator, so `<img src=x onerror=…>` executed in any renderer
+that passes HTML through, `[click](javascript:…)` rendered as a live link, and
+`![x](https://…)` made the auditor's own machine fetch a remote image on open.
+The Slack payload was sent verbatim, where `<!channel>` notifies an entire
+workspace and `<http://elsewhere|looks legitimate>` renders as a link whose
+visible text is under the same control as its destination. Both are fixed; both
+are pinned by tests. The lesson worth keeping is that layer 1's single choke
+point was read, for a while, as covering more than it did.
 
 ## Environment variables
 

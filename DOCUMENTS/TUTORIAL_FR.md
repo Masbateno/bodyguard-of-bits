@@ -97,7 +97,7 @@ Pas de `sudo` requis — `--explain` est un lookup standalone, profile-aware. La
 Tu peux lister chaque clé explainable :
 
 ```bash
-bob --explain list                          # 168 clés en v0.8.x
+bob --explain list                          # 169 clés en v0.15.x
 bob --explain                               # picker interactif (↑↓ naviguer, Enter voir, q quitter)
 ```
 
@@ -277,7 +277,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, .log, messages detail JSON, payloads webhook, entries explain) est totalement localisée — 1941 clés × 2 locales en v0.8.x.
+Toute la sortie (terminal, .log, messages detail JSON, payloads webhook, entries explain) est totalement localisée — 2034 clés × 2 locales en v0.8.x.
 
 ---
 

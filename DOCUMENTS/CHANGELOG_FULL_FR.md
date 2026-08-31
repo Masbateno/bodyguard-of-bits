@@ -50,7 +50,7 @@ pour les deux.
 L'une des gardes vérifie que les deux modules s'accordent, ce qui est la
 propriété qui a fait surgir le défaut.
 
-**Tests** 7220 → **7268**.
+**Tests** 7220 → **7288**.
 
 ### Trois copies privées de plus de la grammaire UFW
 
@@ -173,6 +173,63 @@ Une mesure de ce lot a failli devenir une fausse découverte : le cas
 `onerror=`, qui figure aussi dans la forme échappée. Le corps rendu est
 `&lt;img src=x onerror=alert(1)&gt;`, inerte. Vérifié avant d'être rapporté,
 comme les cinq autres artefacts de harnais de ce cycle.
+
+### La passe documentaire : six chiffres que personne ne vérifiait
+
+Reportée de v0.15.0, où la question « la documentation est-elle cohérente
+maintenant ? » a reçu une réponse mesurée plutôt qu'affirmée. Elle ne l'était
+pas.
+
+| Affirmation | Où | Réalité |
+|---|---|---|
+| « contient **exactement 2008** clés » | `README_DEV` | 2034 |
+| « 1941 clés × 2 locales » | `TUTORIAL` | 2034 |
+| « 168 clés en v0.8.x » | `TUTORIAL` | 169, et sept versions de retard |
+| « variantes par profil (19 clés × 3) » | `README_DEV` | 70 |
+| « 19 clés » | `README_TECH` | 70 |
+| `bob/checks/_ufw.py` | arborescence `README_DEV` | absent |
+
+Deux étaient présentées comme vérifiées — « contient exactement … (vérifié par
+le test de stricte parité) » — et le test de parité vérifie que EN correspond à
+FR, pas que le nombre annoncé corresponde au fichier. Une phrase qui s'appuie
+sur une garantie ne la couvrant pas, c'est la forme même des défauts de code
+corrigés dans ce cycle.
+
+L'omission dans l'arborescence compte plus qu'il n'y paraît : `_ufw.py` est
+l'endroit où vit la grammaire des règles UFW après y avoir unifié cinq copies,
+et un développeur lisant l'arbre n'aurait pas su que le module existe.
+
+Les chiffres historiques sont laissés tels quels. `README_TECH` dit « Baseline
+history: v0.7.0 audit = 117 keys / 30 prefixes », énoncé sur v0.7.0 et correct
+comme tel.
+
+### `SECURITY.md` décrivait une garantie plus large qu'elle ne l'était
+
+La section « Rendu de texte non fiable » affirmait que le point de passage
+`Finding.__post_init__` couvrait « les sorties terminal, JSON, CSV, Markdown et
+HTML … par une seule garantie ». Vrai des caractères de contrôle, et cela invite
+à lire que ces sorties sont couvertes *point* — ce qui est précisément ce qui a
+laissé les trous de balisage Markdown et Slack passer inaperçus jusqu'à ce que
+v0.15.0 aille regarder.
+
+La section décrit désormais deux couches et dit pourquoi elles ne peuvent pas
+n'en faire qu'une : la couche 1 retire les octets de contrôle à la construction
+et atteint toutes les sorties ; la couche 2 échappe le balisage au rendu et est
+nécessairement propre à chaque format, car ce qui constitue du balisage dépend
+de la destination, et échapper à la construction corromprait le terminal et le
+JSON. Un tableau donne le traitement de chaque écrivain, Slack compris — que la
+section ne mentionnait pas du tout.
+
+### Une garde pour la prose
+
+Les gardes documentaires existantes vérifient la cohérence des versions, les
+liens relatifs, la parité EN/FR et le compte de tests. Aucune ne lit une phrase
+pour la confronter au code, ce qui explique que six chiffres aient dérivé sans
+bruit. `tests/test_v0151_doc_prose_figures.py` vérifie désormais le compte de
+clés de locale, les comptes de clés et de préfixes explain, le compte de
+variantes de profil contre le mécanisme réel `_has_profile_variants`, le compte
+du registre de services, et la présence de chaque helper partagé
+`bob/checks/_*.py` dans l'arborescence. Quatre mutations injectées, quatre kills.
 
 ### Passe documentaire reportée de v0.15.0
 

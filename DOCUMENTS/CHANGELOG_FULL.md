@@ -46,7 +46,7 @@ need the same capability, so iptables answers for both.
 One of the guards asserts the two modules agree, which is the property that
 surfaced this in the first place.
 
-**Tests** 7220 → **7268**.
+**Tests** 7220 → **7288**.
 
 ### Three more private copies of the UFW grammar
 
@@ -165,6 +165,58 @@ case tripped a crude detector that searched for the string `onerror=`, which
 appears in the escaped form too. The rendered body is
 `&lt;img src=x onerror=alert(1)&gt;`, inert. Checked before reporting, as with
 the five other harness artefacts this cycle.
+
+### The documentation pass: six figures nobody was checking
+
+Carried over from v0.15.0, where the question "is the documentation coherent
+now?" was answered by measuring rather than asserting. It was not.
+
+| Claim | Where | Reality |
+|---|---|---|
+| "contains **exactly 2008** keys" | `README_DEV` | 2034 |
+| "1941 keys × 2 locales" | `TUTORIAL` | 2034 |
+| "168 keys at v0.8.x" | `TUTORIAL` | 169, and seven versions stale |
+| "profile variants (19 keys × 3)" | `README_DEV` | 70 |
+| "19 keys" | `README_TECH` | 70 |
+| `bob/checks/_ufw.py` | `README_DEV` file tree | absent |
+
+Two were asserted as verified — *"contains exactly … (verified with the strict
+parity test)"* — and the parity test verifies that EN matches FR, not that the
+stated number matches the file. A sentence resting on a guarantee that does not
+cover it is the same shape as the code defects this cycle has been fixing.
+
+The file-tree omission matters more than it looks: `_ufw.py` is where the UFW
+rule grammar lives after five copies were unified into it, and a developer
+reading the tree would not have known it existed.
+
+Historical figures are left alone. `README_TECH` says *"Baseline history: v0.7.0
+audit = 117 keys / 30 prefixes"*, which is a statement about v0.7.0 and correct
+as such.
+
+### `SECURITY.md` described a guarantee wider than it was
+
+The "Rendering untrusted text" section said the `Finding.__post_init__` choke
+point covered "the terminal, JSON, CSV, Markdown and HTML outputs … by one
+guarantee". True of control characters, and it invites the reading that those
+outputs are covered *period* — which is exactly what let the Markdown and Slack
+markup holes sit unnoticed until v0.15.0 went looking.
+
+The section now describes two layers and says why they cannot be one: layer 1
+strips control bytes at construction and reaches every output; layer 2 escapes
+markup at render time and is necessarily per-format, because what counts as
+markup depends on where the text is going, and escaping at construction would
+corrupt the terminal and the JSON. A table gives each writer's treatment,
+including Slack, which the section did not mention at all.
+
+### A guard for prose
+
+The existing doc guards check version consistency, relative links, EN/FR parity
+and the test count. None of them reads a sentence and compares it to the code,
+which is why six figures drifted unnoticed. `tests/test_v0151_doc_prose_figures.py`
+now verifies the locale-key count, the explain key and prefix counts, the
+profile-variant count against the real `_has_profile_variants` mechanism, the
+service-registry count, and that every shared `bob/checks/_*.py` helper appears
+in the file tree. Four mutations injected, four kills.
 
 ### Documentation pass carried over from v0.15.0
 
