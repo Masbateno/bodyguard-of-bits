@@ -36,6 +36,7 @@ from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
 
 # Regex: "   N profiles are in enforce mode."
+_AA_LOADED_RE = re.compile(r"^\s*(\d+)\s+profiles?\s+are\s+loaded", re.MULTILINE)
 _AA_COUNT_RE = re.compile(r"^\s*(\d+)\s+profiles?\s+are\s+in\s+(\w+)\s+mode", re.MULTILINE)
 
 
@@ -55,6 +56,7 @@ class MacPolicySnapshot:
                              service is responding.
         apparmor_enforcing:  Number of profiles currently in enforce mode.
         apparmor_complain:   Number of profiles currently in complain mode.
+        apparmor_profiles_readable: False when the profile set could not be read.
         selinux_installed:   True if ``getenforce`` is present.
         selinux_mode:        "Enforcing" | "Permissive" | "Disabled" | "".
     """
@@ -62,6 +64,9 @@ class MacPolicySnapshot:
     apparmor_active:    bool = False
     apparmor_enforcing: int  = 0
     apparmor_complain:  int  = 0
+    # False when aa-status reported the module but could not read the
+    # profile set — the counters above are then unknown, not zero.
+    apparmor_profiles_readable: bool = True
     selinux_installed:  bool = False
     selinux_mode:       str  = ""
 
@@ -81,6 +86,20 @@ class MacPolicySnapshot:
             aa_out = _run("aa-status") or ""
             if aa_out and "module is loaded" in aa_out.lower():
                 snap.apparmor_active    = True
+                # aa-status succeeds *partially* without the privilege to read
+                # the profile set: it prints "apparmor module is loaded." and
+                # then fails, with the explanation on stderr and exit 4. The
+                # counters then parse as 0 and the host is told it has no
+                # profiles — measured here on a machine carrying 120 in enforce
+                # mode, with a WARN and a point to go with it.
+                #
+                # A reachable profile set always yields a count line
+                # ("%zd profiles are loaded." is in the binary), so the absence
+                # of one is the discriminator.
+                snap.apparmor_profiles_readable = bool(
+                    _AA_COUNT_RE.search(aa_out)
+                    or _AA_LOADED_RE.search(aa_out)
+                )
                 snap.apparmor_enforcing = _parse_aa_count(aa_out, "enforce")
                 snap.apparmor_complain  = _parse_aa_count(aa_out, "complain")
         elif Path("/sys/module/apparmor").is_dir():
@@ -135,6 +154,19 @@ def check_mac_policy(
         result.ok(
             message=_t("mac_policy.selinux_enforcing"),
             key="mac_policy.selinux_enforcing",
+        )
+        return result
+
+    # --- AppArmor active, profile set unreadable ----------------------------
+    # The module is loaded, which is a real reading, but the counters below are
+    # not: aa-status printed the module line and then failed on the profile set.
+    # Reporting "no profiles" from that is a false statement with a point
+    # attached — measured on a host carrying 120 enforced profiles.
+    if snapshot.apparmor_active and not snapshot.apparmor_profiles_readable:
+        result.info(
+            message=_t("mac_policy.apparmor_profiles_unreadable"),
+            detail=_t("mac_policy.apparmor_profiles_unreadable_detail"),
+            key="mac_policy.apparmor_profiles_unreadable",
         )
         return result
 

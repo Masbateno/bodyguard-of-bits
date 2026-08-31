@@ -40,6 +40,9 @@ class IptablesNftSnapshot:
     has_loopback_rule:  bool
     has_conntrack_rule: bool
     raw_output:         str = field(default="", repr=False)
+    # True when a backend binary exists but every query came back empty,
+    # i.e. the ruleset could not be read rather than being absent.
+    query_failed:       bool = False
 
     @classmethod
     def from_system(cls) -> "IptablesNftSnapshot":
@@ -70,8 +73,26 @@ class IptablesNftSnapshot:
                     raw_output=raw,
                 )
 
+        # Nothing came back from either backend. That is two different
+        # situations, and they used to share one verdict worth −3 points.
+        #
+        # A working `iptables -S` always prints its policy lines, even on a
+        # host with no rules at all:
+        #
+        #     -P INPUT ACCEPT
+        #     -P FORWARD ACCEPT
+        #     -P OUTPUT ACCEPT
+        #
+        # So if the binary is there and the output is empty, the query was
+        # refused — measured here, where it writes "Permission denied (you must
+        # be root)" to stderr and leaves stdout empty. `nft list ruleset` prints
+        # nothing for a genuinely empty ruleset, so nft alone cannot tell the
+        # two apart; iptables can, and is present on effectively every host
+        # BOB targets, including as the nft-based compatibility wrapper.
+        query_failed = _command_exists("iptables")
         return cls(
             backend="none",
+            query_failed=query_failed,
             input_policy="unknown",
             forward_policy="unknown",
             has_loopback_rule=False,
@@ -147,6 +168,17 @@ def check_iptables_nftables(
     _t = t if t is not None else _identity_t
     result = CheckResult()
 
+
+    if snapshot.query_failed and snapshot.backend == "none":
+        # A backend binary is installed but its ruleset could not be read. The
+        # firewall state is unknown, not absent, and this used to cost 3 points
+        # — the largest single deduction in the check.
+        result.info(
+            message=_t("firewall_iptables.ruleset_unreadable"),
+            detail=_t("firewall_iptables.ruleset_unreadable_detail"),
+            key="firewall_iptables.ruleset_unreadable",
+        )
+        return result
     if snapshot.backend == "none":
         result.warn_with_deduction(
             key="firewall_iptables.no_backend",

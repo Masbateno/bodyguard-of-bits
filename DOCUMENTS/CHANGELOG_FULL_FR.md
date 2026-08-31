@@ -583,13 +583,46 @@ son propre discriminateur :
 Les deux signalent désormais l'échec en INFO, en nommant la commande à lancer à
 la main, et ne déduisent rien.
 
+### Deux protections de plus rapportées absentes faute d'avoir pu être lues
+
+Toutes deux trouvées en élargissant le balayage auditd/fail2ban, et toutes deux
+démontrables sur la machine de développement plutôt qu'hypothétiques.
+
+**AppArmor.** `aa-status` réussit *partiellement* sans le privilège de lire le
+jeu de profils : il imprime `apparmor module is loaded.` sur stdout, puis sort en
+code 4 avec l'explication sur stderr. BOB lisait la ligne du module — à juste
+titre — et extrayait les compteurs de profils de cette même sortie tronquée,
+obtenant 0. Cette machine porte **120 profils en mode enforce** et s'entendait
+dire qu'elle n'en avait aucun, avec un WARN et un point. Un jeu de profils
+joignable produit toujours une ligne de comptage (`%zd profiles are loaded.` est
+dans le binaire) : son absence est le discriminateur.
+
+Ce module avait été examiné plus tôt dans le cycle et écarté, au motif que ses
+chaînes de format correspondaient et que ses tests passaient. La même erreur que
+pour `ipv6`, une deuxième fois : **vérifier que l'analyseur est juste n'est pas
+vérifier que le verdict l'est**.
+
+**Jeu de règles du pare-feu.** `iptables -S` écrit « Permission denied (you must
+be root) » sur stderr et laisse stdout vide : le snapshot retombait donc sur
+`backend="none"` — `firewall_iptables.no_backend`, un WARN assorti d'une
+déduction de **3 points**, la plus lourde du contrôle. Un `iptables -S` qui
+fonctionne imprime toujours ses lignes de politique, même sur une machine sans
+aucune règle : un résultat vide venant d'un binaire installé signifie donc que la
+requête a été refusée. `nft list ruleset` n'imprime rien pour un jeu de règles
+réellement vide et ne peut donc pas distinguer les deux seul ; iptables le peut,
+et il est présent sur pratiquement toutes les machines visées par BOB, y compris
+comme couche de compatibilité au-dessus de nft.
+
+Ni un mauvais seuil ni un mauvais motif. Dans les deux cas, une lecture partielle
+ou refusée présentée comme complète.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7119**.
+**Tests** 6719 → **7130**.
 
 ---
 

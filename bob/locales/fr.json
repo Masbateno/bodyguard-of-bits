@@ -2892,7 +2892,9 @@
     "no_mac_reason": "Aucun framework MAC (AppArmor/SELinux) installé ou actif",
     "selinux_disabled": "SELinux installé mais désactivé",
     "selinux_disabled_detail": "SELinux est installé sur ce système mais a été explicitement désactivé. Exécutez 'sudo setenforce 1' pour réactiver l'application sans redémarrer, puis vérifiez avec 'sestatus'.",
-    "selinux_disabled_reason": "SELinux installé mais désactivé"
+    "selinux_disabled_reason": "SELinux installé mais désactivé",
+    "apparmor_profiles_unreadable": "AppArmor est actif, mais son jeu de profils n'a pas pu être lu",
+    "apparmor_profiles_unreadable_detail": "aa-status a signalé le module AppArmor comme chargé puis a échoué sur le jeu de profils — il sort en code 4 avec « You do not have enough privilege to read the profile set » sur stderr, après avoir déjà imprimé la ligne du module sur stdout. Le nombre de profils en mode enforce est donc inconnu, et non nul : BOB n'annonce pas une politique vide qu'il n'a pas lue. Vérifier avec : sudo aa-status"
   },
   "backup": {
     "active": "Solution de sauvegarde active : {tools}",
@@ -3142,7 +3144,9 @@
     "no_conntrack": "Aucune règle ESTABLISHED/RELATED — les connexions sortantes peuvent être bloquées en retour",
     "forward_accept": "Politique FORWARD par défaut : ACCEPT — le trafic de transit n'est pas filtré",
     "forward_ok": "Politique FORWARD par défaut : {policy} (recommandé)",
-    "forward_unknown": "Politique FORWARD par défaut : indéterminée — vérification manuelle recommandée"
+    "forward_unknown": "Politique FORWARD par défaut : indéterminée — vérification manuelle recommandée",
+    "ruleset_unreadable": "Impossible de lire le jeu de règles du pare-feu",
+    "ruleset_unreadable_detail": "Un binaire iptables ou nftables est installé, mais l'énumération du jeu de règles n'a rien produit. Un `iptables -S` qui fonctionne imprime toujours ses lignes de politique, même sans aucune règle chargée : un résultat vide signifie donc que la requête a été refusée — généralement une CAP_NET_ADMIN absente. L'état du pare-feu est inconnu, pas absent : BOB n'affirme ni l'un ni l'autre. Vérifier avec : sudo iptables -S"
   },
   "firewall_drivers": {
     "no_issues": "Aucune règle de pare-feu supplémentaire interférant avec UFW détectée",

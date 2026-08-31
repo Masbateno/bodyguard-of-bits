@@ -542,13 +542,44 @@ discriminator:
 Both now report the failure as an INFO naming the command to run by hand, and
 deduct nothing.
 
+### Two more protections reported as absent because they could not be read
+
+Both were found by widening the auditd/fail2ban sweep, and both are
+demonstrable on the development host rather than hypothetical.
+
+**AppArmor.** `aa-status` succeeds *partially* without the privilege to read the
+profile set: it prints `apparmor module is loaded.` on stdout, then exits 4 with
+the explanation on stderr. BOB read the module line — correctly — and parsed the
+profile counters out of the same truncated output, getting 0. This host carries
+**120 profiles in enforce mode** and was told it had none, with a WARN and a
+point. A reachable profile set always yields a count line (`%zd profiles are
+loaded.` is in the binary), so its absence is the discriminator.
+
+This module had been examined earlier in the cycle and cleared, on the strength
+of its format strings matching and its existing tests passing. The same mistake
+as `ipv6`, twice: **checking that the parser is right is not checking that the
+verdict is**.
+
+**Firewall ruleset.** `iptables -S` writes "Permission denied (you must be
+root)" to stderr and leaves stdout empty, so the snapshot fell through to
+`backend="none"` — `firewall_iptables.no_backend`, a WARN carrying a **3-point**
+deduction, the largest in the check. A working `iptables -S` always prints its
+policy lines, even on a host with no rules at all, so an empty result from an
+installed binary means the query was refused. `nft list ruleset` prints nothing
+for a genuinely empty ruleset and so cannot tell the two apart on its own;
+iptables can, and is present on effectively every host BOB targets, including as
+the nft-based compatibility wrapper.
+
+Neither is a wrong threshold or a bad pattern. Both are a partial or refused
+read presented as a complete one.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7119**.
+**Tests** 6719 → **7130**.
 
 ---
 

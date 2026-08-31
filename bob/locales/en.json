@@ -2892,7 +2892,9 @@
     "no_mac_reason": "No MAC framework (AppArmor/SELinux) installed or active",
     "selinux_disabled": "SELinux installed but disabled",
     "selinux_disabled_detail": "SELinux is installed on this system but has been explicitly disabled. Run 'sudo setenforce 1' to re-enable enforcement without rebooting, then verify with 'sestatus'.",
-    "selinux_disabled_reason": "SELinux installed but disabled"
+    "selinux_disabled_reason": "SELinux installed but disabled",
+    "apparmor_profiles_unreadable": "AppArmor is active, but its profile set could not be read",
+    "apparmor_profiles_unreadable_detail": "aa-status reported the AppArmor module as loaded and then failed on the profile set — it exits 4 with \"You do not have enough privilege to read the profile set\" on stderr, having already printed the module line on stdout. The number of enforced profiles is therefore unknown, not zero, and BOB does not report an empty policy it never read. Check with: sudo aa-status"
   },
   "backup": {
     "active": "Backup solution active: {tools}",
@@ -3142,7 +3144,9 @@
     "no_conntrack": "No ESTABLISHED/RELATED rule — return traffic for outgoing connections may be dropped",
     "forward_accept": "Default FORWARD policy: ACCEPT — transit traffic is not filtered",
     "forward_ok": "Default FORWARD policy: {policy} (recommended)",
-    "forward_unknown": "Default FORWARD policy: undetermined — manual verification recommended"
+    "forward_unknown": "Default FORWARD policy: undetermined — manual verification recommended",
+    "ruleset_unreadable": "Firewall ruleset could not be read",
+    "ruleset_unreadable_detail": "An iptables or nftables binary is installed, but listing the ruleset produced nothing. A working `iptables -S` always prints its policy lines, even with no rules loaded, so an empty result means the query was refused — normally a missing CAP_NET_ADMIN. The firewall state is unknown, not absent, so BOB reports neither. Check with: sudo iptables -S"
   },
   "firewall_drivers": {
     "no_issues": "No additional firewall rules interfering with UFW detected",
