@@ -552,13 +552,44 @@ La garde qui aurait attrapé cela dès le premier jour est maintenant dans le
 fichier : analyser la sortie `ss` réelle et la comparer ligne à ligne aux
 colonnes qu'ss a imprimées.
 
+### Une requête refusée était rapportée comme « rien de configuré », avec déduction
+
+`auditd` et `fail2ban` demandent tous deux sa configuration à un outil, et lisent
+tous deux une réponse vide comme une configuration vide. `_run` jette le code de
+retour : un appel échoué et un résultat réellement vide sont la même chaîne.
+
+Mesuré sur la machine de développement, les deux services tournant :
+
+    auditctl -l             ->  code 4,   stdout vide
+    fail2ban-client status  ->  code 255, stdout vide
+
+Chacun produisait un WARN et une déduction d'un point pour une configuration que
+BOB n'avait jamais lue — et `auditd` déduisait un *second* point pour des
+surveillances de fichiers sensibles absentes, dérivées de la même sortie vide. La
+direction est la prudente, ce qui explique sa survie à toutes les passes
+précédentes, mais cela reste une affirmation fausse assortie d'un score :
+exactement le genre que l'opérateur réfute en une commande, et c'est ainsi que les
+constats voisins perdent leur crédit.
+
+Aucune plomberie de code de retour n'a été nécessaire, chaque outil fournissant
+son propre discriminateur :
+
+* `auditctl` affiche littéralement `No rules` quand le système d'audit est
+  joignable et n'en contient aucune — la chaîne est dans le binaire. Une sortie
+  vide signifie donc que la requête a échoué.
+* `fail2ban-client status` émet toujours une ligne `Jail list:`, vide ou non
+  (`fail2ban/client/beautifier.py`).
+
+Les deux signalent désormais l'échec en INFO, en nommant la commande à lancer à
+la main, et ne déduisent rien.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7104**.
+**Tests** 6719 → **7119**.
 
 ---
 

@@ -35,11 +35,14 @@ class Fail2banSnapshot:
         service_active:  True if the fail2ban service is running.
         active_jails:    List of active jail names reported by fail2ban-client.
         ssh_jail:        Name of the SSH jail if one is active, else "".
+        status_readable: False when fail2ban-client could not be queried.
     """
     installed:      bool        = False
     service_active: bool        = False
     active_jails:   list[str]   = field(default_factory=list)
     ssh_jail:       str         = ""
+    # False when `fail2ban-client status` returned no jail list at all.
+    status_readable: bool      = True
 
     @classmethod
     def from_system(cls) -> "Fail2banSnapshot":
@@ -62,8 +65,17 @@ class Fail2banSnapshot:
         if not snap.service_active:
             return snap
 
-        # Active jails
+        # Active jails.
+        #
+        # A successful `fail2ban-client status` always carries a "Jail list:"
+        # line, even when the list is empty. Output without it means the query
+        # failed — refused, timed out, or the socket was not ready — which is
+        # not the same statement as "this host runs fail2ban with no jails",
+        # and used to cost it a point all the same.
         status_out = _run("fail2ban-client", "status") or ""
+        snap.status_readable = any(
+            "jail list" in line.lower() for line in status_out.splitlines()
+        )
         snap.active_jails = _parse_jails(status_out)
 
         # Detect SSH jail
@@ -131,6 +143,17 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
             detail=_t("fail2ban.service_inactive_detail"),
             cmd="sudo systemctl enable --now fail2ban",
             nature="action",
+        )
+        return result
+
+    if not snapshot.status_readable:
+        # No jail list came back at all: the query failed. That is not the same
+        # statement as "fail2ban is running with no jails", and it used to carry
+        # the same warning and the same deduction.
+        result.info(
+            message=_t("fail2ban.status_unreadable"),
+            detail=_t("fail2ban.status_unreadable_detail"),
+            key="fail2ban.status_unreadable",
         )
         return result
 

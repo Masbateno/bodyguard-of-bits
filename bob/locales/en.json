@@ -2808,7 +2808,9 @@
     "missing_sensitive_rules_detail": "The following sensitive files are not covered by auditd watch rules: {files}. Any access or modification to these files will not be logged.",
     "missing_sensitive_rules_reason": "auditd: sensitive files not watched — {files}",
     "active": "auditd active — {count} rule(s) loaded",
-    "sensitive_files_watched": "auditd watching sensitive files (/etc/passwd, /etc/shadow, /etc/sudoers)"
+    "sensitive_files_watched": "auditd watching sensitive files (/etc/passwd, /etc/shadow, /etc/sudoers)",
+    "rules_unreadable": "Audit rules could not be read",
+    "rules_unreadable_detail": "`auditctl -l` returned nothing while auditd is running, which means the query was refused rather than that no rules are loaded — it prints the literal \"No rules\" when the audit system is reachable and holds none. Usually a missing CAP_AUDIT_CONTROL. BOB does not report an empty rule set it never saw. Check with: sudo auditctl -l"
   },
   "secure_boot": {
     "enabled": "Secure Boot is enabled",
@@ -2848,7 +2850,9 @@
     "no_jails_detail": "Fail2ban is running but has no active jails configured. At minimum, enable the sshd jail in /etc/fail2ban/jail.local to protect SSH from brute-force attacks.",
     "no_jails_reason": "Fail2ban running with no active jails",
     "active": "Fail2ban active — {count} jail(s) enabled",
-    "ssh_jail_active": "SSH brute-force protection active (jail: {jail})"
+    "ssh_jail_active": "SSH brute-force protection active (jail: {jail})",
+    "status_unreadable": "fail2ban jail list could not be read",
+    "status_unreadable_detail": "`fail2ban-client status` returned no jail list while the service is active — refused, timed out, or the socket was not ready. A successful call always carries a \"Jail list:\" line, even when empty, so this is a failed query and not a host running fail2ban with nothing configured. Check with: sudo fail2ban-client status"
   },
   "rootkit": {
     "not_installed": "No rootkit scanner installed (rkhunter / chkrootkit)",

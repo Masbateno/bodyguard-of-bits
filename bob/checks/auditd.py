@@ -45,11 +45,15 @@ class AuditdSnapshot:
         service_active:   True if the auditd service is running.
         watched_files:    Set of file paths covered by -w watch rules.
         rule_count:       Total number of audit rules loaded.
+        rules_readable:   False when `auditctl -l` could not be queried.
     """
     installed:      bool        = False
     service_active: bool        = False
     watched_files:  Set[str]    = field(default_factory=set)
     rule_count:     int         = 0
+    # False when `auditctl -l` produced nothing at all, which means the
+    # query failed rather than that the rule set is empty.
+    rules_readable: bool        = True
 
     @classmethod
     def from_system(cls) -> "AuditdSnapshot":
@@ -72,8 +76,16 @@ class AuditdSnapshot:
         if not snap.service_active:
             return snap
 
-        # Load rules
+        # Load rules.
+        #
+        # `auditctl -l` prints the literal "No rules" when the audit system is
+        # reachable and holds none, so empty output means the *query* failed —
+        # measured on this host, where a non-root call exits 4 with nothing on
+        # stdout while auditd is running. `_run` discards the exit code, so
+        # before v0.15.0 that was indistinguishable from a configured-but-empty
+        # rule set and cost the host a point for rules BOB never saw.
         rules_out = _run("auditctl", "-l") or ""
+        snap.rules_readable = bool(rules_out.strip())
         snap.watched_files = _parse_watched_files(rules_out)
         snap.rule_count = _count_rules(rules_out)
 
@@ -156,6 +168,19 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
             detail=_t("auditd.service_inactive_detail"),
             cmd="sudo systemctl enable --now auditd",
             nature="improvement",
+        )
+        return result
+
+    if not snapshot.rules_readable:
+        # The query failed; the rule set is unknown, not empty. Reporting it as
+        # empty cost a point for rules that were never read — and the
+        # sensitive-file coverage below is derived from the same empty output,
+        # so it has to stop here too rather than deduct a second point for
+        # watches it could not see either.
+        result.info(
+            message=_t("auditd.rules_unreadable"),
+            detail=_t("auditd.rules_unreadable_detail"),
+            key="auditd.rules_unreadable",
         )
         return result
 

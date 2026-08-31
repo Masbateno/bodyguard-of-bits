@@ -2808,7 +2808,9 @@
     "missing_sensitive_rules_detail": "Les fichiers sensibles suivants ne sont pas couverts par des règles auditd : {files}. Tout accès ou modification de ces fichiers ne sera pas journalisé.",
     "missing_sensitive_rules_reason": "auditd : fichiers sensibles non surveillés — {files}",
     "active": "auditd actif — {count} règle(s) chargée(s)",
-    "sensitive_files_watched": "auditd surveille les fichiers sensibles (/etc/passwd, /etc/shadow, /etc/sudoers)"
+    "sensitive_files_watched": "auditd surveille les fichiers sensibles (/etc/passwd, /etc/shadow, /etc/sudoers)",
+    "rules_unreadable": "Impossible de lire les règles d'audit",
+    "rules_unreadable_detail": "`auditctl -l` n'a rien renvoyé alors qu'auditd tourne : la requête a été refusée, ce n'est pas qu'aucune règle n'est chargée — l'outil affiche littéralement « No rules » quand le système d'audit est joignable et n'en contient aucune. Généralement une CAP_AUDIT_CONTROL absente. BOB n'annonce pas un jeu de règles vide qu'il n'a pas vu. Vérifier avec : sudo auditctl -l"
   },
   "secure_boot": {
     "enabled": "Secure Boot est activé",
@@ -2848,7 +2850,9 @@
     "no_jails_detail": "Fail2ban fonctionne mais n'a aucun jail actif configuré. Activez au minimum le jail sshd dans /etc/fail2ban/jail.local pour protéger SSH des attaques par force brute.",
     "no_jails_reason": "Fail2ban actif sans aucun jail configuré",
     "active": "Fail2ban actif — {count} jail(s) activé(s)",
-    "ssh_jail_active": "Protection SSH contre la force brute active (jail : {jail})"
+    "ssh_jail_active": "Protection SSH contre la force brute active (jail : {jail})",
+    "status_unreadable": "Impossible de lire la liste des prisons fail2ban",
+    "status_unreadable_detail": "`fail2ban-client status` n'a renvoyé aucune liste de prisons alors que le service est actif — refus, délai dépassé, ou socket pas encore prête. Un appel réussi comporte toujours une ligne « Jail list: », même vide : c'est donc une requête échouée et non une machine faisant tourner fail2ban sans rien de configuré. Vérifier avec : sudo fail2ban-client status"
   },
   "rootkit": {
     "not_installed": "Aucun scanner de rootkit installé (rkhunter / chkrootkit)",

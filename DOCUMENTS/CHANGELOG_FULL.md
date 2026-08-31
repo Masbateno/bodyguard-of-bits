@@ -512,13 +512,43 @@ keeps working, and is pinned.
 The guard that would have caught this on day one is now in the file: parse the
 live `ss` output and compare it line for line against the columns ss printed.
 
+### A refused query was reported as "nothing configured", with a deduction
+
+`auditd` and `fail2ban` both ask a tool for their configuration, and both read
+an empty answer as an empty configuration. `_run` discards the exit code, so a
+failed call and a genuinely empty result are the same string.
+
+Measured on the development host, with both services running:
+
+    auditctl -l             ->  exit 4,   stdout empty
+    fail2ban-client status  ->  exit 255, stdout empty
+
+Each produced a WARN and a 1-point deduction for a configuration BOB had never
+read — and `auditd` deducted a *second* point for missing sensitive-file
+watches, derived from the same empty output. The direction is the cautious one,
+which is why it survived every earlier pass, but it is still a false statement
+with a score attached: exactly the kind an operator disproves in one command,
+which is how the surrounding findings lose their credit.
+
+No exit-code plumbing was needed, because each tool provides its own
+discriminator:
+
+* `auditctl` prints the literal `No rules` when the audit system is reachable
+  and holds none — the string is in the binary. Empty output therefore means
+  the query failed.
+* `fail2ban-client status` always emits a `Jail list:` line, empty or not
+  (`fail2ban/client/beautifier.py`).
+
+Both now report the failure as an INFO naming the command to run by hand, and
+deduct nothing.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7104**.
+**Tests** 6719 → **7119**.
 
 ---
 
