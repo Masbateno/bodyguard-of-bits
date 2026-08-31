@@ -788,6 +788,46 @@ les deux ne dérivent pas l'une vers l'autre.
   traite les formes `user:pass@`, `user@` et `:token@` et laisse intacte une URL
   sans identifiants.
 
+### Six surfaces de plus, toutes saines
+
+Le balayage a atteint la fin du code hors `checks/`. Rien n'a bougé, et cela
+mérite d'être écrit avec autant de précision qu'un défaut — une surface consignée
+comme examinée est une surface que le prochain audit peut sauter.
+
+* **Comptage de récurrence.** Une clé présente dans des audits consécutifs
+  s'incrémente ; une clé qui disparaît perd son compteur ; une clé qui revient
+  repart à 1. Éprouvé sur cinq audits successifs avec un finding corrigé puis
+  réapparu — le compteur ne se reporte pas, donc un problème qui revient n'est
+  pas annoncé comme ancien.
+* **Historique de score.** Aller-retour par `history.jsonl` ; fichier écrit en
+  0600 ; la rotation au-delà de 1000 entrées garde les mille *plus récentes* ;
+  une ligne corrompue est sautée au lieu de tuer la lecture ; les scores hors
+  bornes ou non numériques sont ramenés dans [0, 10].
+* **`--explain`.** Les 11 clés WARN/ALERT émises sur la machine de test ont une
+  entrée. Chaque clé ajoutée dans ce cycle est INFO : aucune n'a créé de dette
+  d'explication. Une clé inconnue sort en code 3 et la correspondance approchée
+  suggère juste — `ssh.root_logni` renvoie `ssh.permit_root_login`. Une
+  traversée de chemin ou un glob sont traités comme des clés inconnues
+  ordinaires.
+* **Sortie terminal.** Revérifiée contre l'injection ANSI avec cinq charges : un
+  hyperlien OSC 8, une remise à zéro de couleur tentant de peindre un faux OK
+  vert, un retour chariot tentant d'écraser la ligne, un effacement d'écran et un
+  changement de titre de terminal. Tout octet ESC est retiré : chacune s'affiche
+  en texte littéral inerte.
+* **Validation CLI.** Neuf invocations malformées — valeurs manquantes,
+  `--check`/`--skip` en conflit, `--output` invalide, traversée dans `--lang`,
+  `--log-days` négatif, `--json-v1` retiré, drapeaux de sortie combinés —
+  produisent toutes un message spécifique et sortent en 3, le 0 restant réservé
+  aux chemins informatifs.
+* **Appariement `ignore.yml`** et **transport du webhook**, consignés dans
+  l'entrée précédente.
+
+Deux artefacts de harnais ont été traqués avant de pouvoir être rapportés comme
+des découvertes : un code de retour 0 qui était celui de `head` et non de BOB, et
+une « charge non sérialisable » qui venait d'un argument passé dans le mauvais
+paramètre. Ils sont notés parce que la discipline qui les attrape est celle qui
+rend les vraies découvertes dignes de confiance.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la

@@ -730,6 +730,43 @@ reads. A test pins that distinction so the two do not drift into each other.
   handles `user:pass@`, `user@` and `:token@` forms and leaves a credential-free
   URL untouched.
 
+### Six more surfaces examined, all clean
+
+The sweep reached the end of the non-`checks/` code. Nothing moved, and that is
+worth writing down as precisely as a defect would be — a surface recorded as
+examined is a surface the next audit can skip.
+
+* **Recurrence counting.** A key present in consecutive audits increments; a key
+  that disappears loses its count; a key that comes back restarts at 1. Driven
+  through five successive audits with a finding fixed and then regressing —
+  the count does not carry over, so a returning problem is not reported as a
+  long-standing one.
+* **Score history.** Round-trips through `history.jsonl`; the file is written
+  0600; rotation past 1000 entries keeps the *newest* thousand; a corrupt line
+  is skipped rather than killing the read; out-of-range and non-numeric scores
+  are clamped to [0, 10].
+* **`--explain`.** All 11 WARN/ALERT keys emitted on the test host have an
+  entry. Every key added in this cycle is INFO, so none of them created explain
+  debt. An unknown key exits 3 and the fuzzy matcher suggests correctly —
+  `ssh.root_logni` returns `ssh.permit_root_login`. Path-traversal and glob
+  inputs are treated as ordinary unknown keys.
+* **Terminal output.** Re-checked against ANSI injection with five payloads: an
+  OSC 8 hyperlink, a colour reset trying to paint a fake green OK, a carriage
+  return trying to overwrite the line, a screen clear and a terminal-title set.
+  Every ESC byte is stripped, so each renders as inert literal text.
+* **CLI validation.** Nine malformed invocations — missing values, conflicting
+  `--check`/`--skip`, an invalid `--output`, a traversal in `--lang`, a negative
+  `--log-days`, the retired `--json-v1`, combined output flags — all produce a
+  specific message and exit 3, with 0 reserved for the informational paths.
+* **`ignore.yml` matching** and **webhook transport**, recorded in the previous
+  entry.
+
+Two harness artefacts were chased down before they could be reported as
+findings: an exit code of 0 that turned out to be `head`'s rather than BOB's,
+and a "non-serialisable payload" that was an argument passed into the wrong
+parameter. Both are noted because the discipline that catches them is the same
+one that makes the real findings trustworthy.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
