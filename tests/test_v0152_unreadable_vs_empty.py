@@ -213,3 +213,223 @@ class TestLocaleParity:
                 assert part in node, f"{locale}.json is missing {dotted}"
                 node = node[part]
             assert isinstance(node, str) and node.strip()
+
+
+# ---------------------------------------------------------------------------
+# The same class, three angles the first sweep did not cover:
+#   1. the alarm direction — a blinded tool inventing a problem
+#   2. a command that succeeds but says nothing usable
+#   3. files, not commands
+# ---------------------------------------------------------------------------
+
+class TestUnitStatePrimitive:
+    """`is_unit_active` collapsed "inactive" with "could not ask systemd"."""
+
+    def test_reports_a_real_state(self):
+        from unittest.mock import patch
+
+        from bob.checks import _run as mod
+        with patch.object(mod, "run_result",
+                          return_value=CommandResult("active\n", True)):
+            assert mod.unit_active_state("whatever") == "active"
+
+    def test_inactive_is_an_answer_despite_the_non_zero_exit(self):
+        """`systemctl is-active` exits non-zero to *report* an inactive unit."""
+        from unittest.mock import patch
+
+        from bob.checks import _run as mod
+        with patch.object(mod, "run_result",
+                          return_value=CommandResult("inactive\n", False)):
+            assert mod.unit_active_state("whatever") == "inactive"
+
+    def test_no_output_is_not_an_answer(self):
+        from unittest.mock import patch
+
+        from bob.checks import _run as mod
+        with patch.object(mod, "run_result", return_value=CommandResult("", False)):
+            assert mod.unit_active_state("whatever") is None
+
+    def test_output_systemd_would_never_print_is_not_an_answer(self):
+        """A wrapper, a stub or a mangled stream is not a state."""
+        from unittest.mock import patch
+
+        from bob.checks import _run as mod
+        with patch.object(mod, "run_result",
+                          return_value=CommandResult("\xc3(  garbage\n", True)):
+            assert mod.unit_active_state("whatever") is None
+
+    def test_is_unit_active_keeps_its_contract(self):
+        from unittest.mock import patch
+
+        from bob.checks import _run as mod
+        for out, expected in (("active", True), ("inactive", False), ("", False)):
+            with patch.object(mod, "run_result",
+                              return_value=CommandResult(out, out == "active")):
+                assert mod.is_unit_active("whatever") is expected
+
+
+class TestSSHServiceStateUnknown:
+    """A running sshd was warned about as "installed but not running"."""
+
+    def _findings(self, *, known, active):
+        from bob.checks.ssh import SSHSnapshot, check_ssh
+        snap = SSHSnapshot(sshd_installed=True, sshd_active=active,
+                           sshd_active_known=known)
+        return {f.key for f in check_ssh(snap).findings}
+
+    def test_unknown_state_does_not_warn(self):
+        keys = self._findings(known=False, active=False)
+        assert "ssh.not_active" not in keys
+        assert "ssh.active_unknown" in keys
+
+    def test_known_inactive_still_warns(self):
+        assert "ssh.not_active" in self._findings(known=True, active=False)
+
+    def test_known_active_still_reports_ok(self):
+        assert "ssh.active" in self._findings(known=True, active=True)
+
+
+class TestFirewallDriversGarbage:
+    """Exit status alone let unparseable output earn a clean bill of health."""
+
+    def _keys(self, input_out):
+        from bob.checks.firewall_stack import FirewallStackSnapshot, check_firewall_stack
+        snap = FirewallStackSnapshot(rules_readable=bool(input_out))
+        return {f.key for f in check_firewall_stack(snap).findings}
+
+    def test_chain_header_is_what_makes_a_listing_readable(self):
+        from bob.checks.firewall_stack import _IPTABLES_CHAIN_RE
+        assert _IPTABLES_CHAIN_RE.search("Chain INPUT (policy ACCEPT)\n")
+        assert not _IPTABLES_CHAIN_RE.search("\xc3(  garbage\n=== unexpected ===\n")
+        assert not _IPTABLES_CHAIN_RE.search("")
+
+    def test_unreadable_withholds_the_all_clear(self):
+        keys = self._keys(input_out="")
+        assert "firewall_drivers.no_issues" not in keys
+        assert "firewall_drivers.rules_unreadable" in keys
+
+
+class TestSudoersUnreadable:
+    """"No risky sudo rule" is a claim about a file that must have been read."""
+
+    def _keys(self, *, readable):
+        from bob.checks.file_perms import FilePermsSnapshot, check_file_perms
+        return {f.key for f in
+                check_file_perms(FilePermsSnapshot(sudoers_readable=readable)).findings}
+
+    def test_unreadable_is_reported_and_suppresses_the_all_clear(self):
+        keys = self._keys(readable=False)
+        assert "file_perms.sudoers_unreadable" in keys
+        assert "file_perms.ok" not in keys
+
+    def test_readable_and_clean_still_reports_all_clear(self):
+        assert "file_perms.ok" in self._keys(readable=True)
+
+
+class TestPasswdUnreadable:
+    """The UID 0 scan finding nothing must mean it looked."""
+
+    def _keys(self, *, readable):
+        from bob.checks.user_accounts import UserAccountsSnapshot, check_user_accounts
+        snap = UserAccountsSnapshot(passwd_readable=readable, shadow_readable=True)
+        return {f.key for f in check_user_accounts(snap).findings}
+
+    def test_unreadable_is_reported_and_suppresses_the_all_clear(self):
+        keys = self._keys(readable=False)
+        assert "user_accounts.no_passwd" in keys
+        assert "user_accounts.ok" not in keys
+
+    def test_readable_and_clean_still_reports_all_clear(self):
+        assert "user_accounts.ok" in self._keys(readable=True)
+
+
+class TestUmaskSourcesUnreadable:
+    """umask files are last-one-wins; one that never opened may hold the value."""
+
+    def _keys(self, unreadable):
+        from bob.checks.umask import UmaskSnapshot, check_umask
+        snap = UmaskSnapshot(umask_value="022", source="/etc/login.defs",
+                             all_sources={"/etc/login.defs": "022"},
+                             unreadable_sources=unreadable)
+        return {f.key for f in check_umask(snap).findings}
+
+    def test_an_unreadable_source_withholds_the_ok(self):
+        keys = self._keys(["/etc/profile"])
+        assert "umask.ok" not in keys
+        assert "umask.sources_unreadable" in keys
+
+    def test_all_sources_read_still_reports_ok(self):
+        assert "umask.ok" in self._keys([])
+
+
+class TestSshdConfigUnreadable:
+    """Unread directives fall back to OpenSSH's defaults, not to this host."""
+
+    def _keys(self, *, readable):
+        from bob.checks.ssh import SSHSnapshot, check_ssh
+        snap = SSHSnapshot(sshd_installed=True, sshd_active=True,
+                           sshd_active_known=True, sshd_config={},
+                           sshd_config_readable=readable)
+        return {f.key for f in check_ssh(snap).findings}
+
+    def test_unreadable_config_asserts_nothing_about_root_login(self):
+        keys = self._keys(readable=False)
+        assert "ssh.config_unreadable" in keys
+        assert "ssh.permit_root_login_restricted" not in keys
+        assert "ssh.permit_root_login" not in keys
+
+    def test_readable_config_still_applies_the_defaults(self):
+        """An empty but readable config genuinely means OpenSSH's defaults."""
+        assert "ssh.permit_root_login_restricted" in self._keys(readable=True)
+
+
+class TestExposureSshUnknown:
+    """The summary box must not tick green off unread directives."""
+
+    def _ssh_item(self, keys):
+        """Drive compute_exposure off a real engine carrying *keys* as INFO."""
+        from bob.exposure import compute_exposure
+        from bob.scoring import CheckResult, ScoreEngine
+
+        class _Ports:
+            ports = []
+            ports_readable = True
+
+        result = CheckResult()
+        for key in keys:
+            result.info(message=key, key=key)
+        engine = ScoreEngine()
+        engine.apply(result)
+        items = compute_exposure(
+            engine, _Ports(), fw_active=True, fw_policy="deny",
+            network_context="local", t=lambda k, **kw: k,
+        )
+        return next(i for i in items if i.label == "exposure.ssh")
+
+    def test_unreadable_config_is_not_a_green_tick(self):
+        item = self._ssh_item({"ssh.config_unreadable"})
+        assert item.icon != "✔"
+        assert item.detail == "exposure.ssh_config_unknown"
+
+
+class TestNewLocaleKeys:
+    @pytest.mark.parametrize("dotted", [
+        "ssh.active_unknown", "ssh.active_unknown_detail",
+        "ssh.config_unreadable", "ssh.config_unreadable_detail",
+        "file_perms.sudoers_unreadable", "file_perms.sudoers_unreadable_detail",
+        "user_accounts.no_passwd", "user_accounts.no_passwd_detail",
+        "umask.sources_unreadable", "umask.sources_unreadable_detail",
+        "exposure.ssh_config_unknown",
+    ])
+    def test_key_present_in_both_locales(self, dotted):
+        import json
+        from pathlib import Path
+        for locale in ("en", "fr"):
+            data = json.loads(
+                (Path("bob/locales") / f"{locale}.json").read_text(encoding="utf-8")
+            )
+            node = data
+            for part in dotted.split("."):
+                assert part in node, f"{locale}.json is missing {dotted}"
+                node = node[part]
+            assert isinstance(node, str) and node.strip()

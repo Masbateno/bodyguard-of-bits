@@ -78,7 +78,7 @@ class TestAuditd:
     def test_the_readability_signal(self, output, expected, monkeypatch):
         import bob.checks.auditd as m
         monkeypatch.setattr(m, "_command_exists", lambda n: True)
-        monkeypatch.setattr(m, "is_unit_active", lambda n: True)
+        monkeypatch.setattr(m, "unit_active_state", lambda n: "active")
         monkeypatch.setattr(m, "_run", lambda *a, **k: output)
         assert AuditdSnapshot.from_system().rules_readable is expected
 
@@ -113,6 +113,6 @@ class TestFail2ban:
     def test_the_readability_signal(self, output, expected, monkeypatch):
         import bob.checks.fail2ban as m
         monkeypatch.setattr(m, "_command_exists", lambda n: True)
-        monkeypatch.setattr(m, "is_unit_active", lambda n: True)
+        monkeypatch.setattr(m, "unit_active_state", lambda n: "active")
         monkeypatch.setattr(m, "_run", lambda *a, **k: output)
         assert Fail2banSnapshot.from_system().status_readable is expected

@@ -100,6 +100,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   run_result() reports stdout and exit status separately.
 - Five verdicts rebuilt on it (listening ports, IPv6 listeners, established
   connections, service listening state, systemd timers).
+- Three further angles: false alarms from a blinded systemctl, commands that
+  exit 0 with unusable output, and unreadable config files certified as clean.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

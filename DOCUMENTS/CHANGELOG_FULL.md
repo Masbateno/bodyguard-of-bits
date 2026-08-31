@@ -52,6 +52,62 @@ A sixth instance was found by sweeping rather than by eye: `systemd_timers` repo
 `systemctl list-timers` failed. It already distinguished "systemctl absent" from "no timers", but not "systemctl
 present and failing".
 
+### Three more angles, after the first sweep looked clean
+
+The command sweep above only looked for *reassuring* claims. Re-reading the
+same data for the opposite sign, and probing two conditions it never created,
+found the class alive in three more shapes.
+
+**The alarm direction.** `is_unit_active` collapses "inactive" and "systemd was
+never asked" into the same False. With systemctl blinded, BOB warned that a
+*running* sshd was "installed but not running" — `systemctl is-active ssh`
+answers `active` on the same host — and the summary box printed a green tick
+against "installed — not running", contradicting itself in one screen. New
+`unit_active_state()` returns the reported state or None; `is_unit_active`
+keeps its contract. `fail2ban` and `auditd` already had a more authoritative
+fallback (`fail2ban-client ping`, `auditctl -s`) that only ran when systemctl
+was *absent*; they now fall through to it whenever systemd gives no answer.
+
+**A command that succeeds but says nothing usable.** `run_result` distinguishes
+failure from silence, not sense from nonsense. With `iptables` and `nft`
+exiting 0 on unparseable output, `firewall_drivers.no_issues` still certified
+the firewall. The v0.15.1 flag tested for non-empty output; it now tests for
+the chain header a working `iptables -L` always prints — which is the very
+reasoning that release's own comment gave. `unit_active_state` likewise accepts
+only the states systemd itself emits.
+
+**Files, not commands.** The whole sweep so far was about subprocesses. Reads
+are guarded too — 87 `except OSError` across the checks — but the guard returns
+a default and the caller cannot tell. Four verdicts were built on that:
+
+| Unreadable file | What BOB stated |
+|---|---|
+| `/etc/sudoers` | "no issues detected" for sensitive files and sudoers |
+| `/etc/passwd` | all-clear on user accounts, UID 0 scan included |
+| `/etc/login.defs` | "system umask is 022 (secure)" |
+| `/etc/ssh/sshd_config` | "root login restricted to key-based auth" |
+
+The last is the sharpest: every directive falls back to OpenSSH's compiled-in
+default, so an unreadable config holding `PermitRootLogin yes` was reported as
+restricted, in the check *and* with a green tick in the summary box.
+
+Not every `except OSError` is a defect — a file that does not exist usually
+means the feature is not configured, which is a fact. The four fixed here are
+where "could not read" and "absent" have different truths and produced the same
+verdict.
+
+### A correction to the method
+
+The first run of the file experiment was invalid and its result was reported
+before that was caught. It bind-mounted a directory over each target path with
+stderr suppressed; `mount --bind <dir> <file>` fails, so BOB read the real
+files throughout, and every target returning results identical to the baseline
+was the tell — read at the time as "the audit is completely insensitive to its
+own ability to read", when it actually meant "nothing was changed". Redone by
+bind-mounting a root-owned `0640` file, which is genuinely unreadable inside
+the namespace, the picture was narrower and specific: four verdicts, not a
+wholesale insensitivity. Suppressing stderr is what hid it.
+
 ### The fix
 
 `run_result()` reports stdout and success separately, as a `CommandResult(stdout, ok)`. `_run` becomes a thin
@@ -76,6 +132,13 @@ discriminated nothing, and `"" in "=+-@"` — which is `True` in Python, flaggin
 ### Changed
 
 - New `bob/checks/_run.py::run_result()` and `CommandResult`; `_run` preserved exactly.
+- New `bob/checks/_run.py::unit_active_state()`; `is_unit_active` preserved exactly.
+- `ssh.active_unknown`, `ssh.config_unreadable`, `file_perms.sudoers_unreadable`,
+  `user_accounts.no_passwd`, `umask.sources_unreadable`, `exposure.ssh_config_unknown`
+  — six further keys for the three added angles, both locales.
+- `SSHSnapshot.sshd_active_known` / `.sshd_config_readable`,
+  `FilePermsSnapshot.sudoers_readable`, `UserAccountsSnapshot.passwd_readable`,
+  `UmaskSnapshot.unreadable_sources` — again defaulting to the readable case.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — five new finding/display keys, both locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -89,7 +152,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7312**.
+**Tests** 7288 → **7342**.
 
 ---
 

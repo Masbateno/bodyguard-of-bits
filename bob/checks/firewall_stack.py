@@ -29,6 +29,11 @@ from bob.scoring import CheckResult
 # System snapshot
 # ---------------------------------------------------------------------------
 
+# `iptables -L` opens every chain with this header under LC_ALL=C, rules or no
+# rules. Its absence means the listing did not come from iptables.
+_IPTABLES_CHAIN_RE = re.compile(r"^Chain\s+\S+", re.MULTILINE)
+
+
 @dataclass
 class FirewallStackSnapshot:
     """
@@ -80,11 +85,19 @@ class FirewallStackSnapshot:
         # a ruleset that was never seen.
         #
         # A working `iptables -L` always prints its chain headers, even with no
-        # rules loaded, so an installed binary plus empty output is a refused
-        # query. `nft list ruleset` prints nothing for a genuinely empty
-        # ruleset and cannot tell the two apart on its own; iptables can, and
-        # both commands need the same capability, so one answers for both.
-        rules_readable = not (_command_exists("iptables") and not input_out.strip())
+        # rules loaded, so an installed binary that does not produce one has
+        # not answered — whether it printed nothing, an error, or anything else
+        # unparseable. Testing for the header rather than for non-empty output
+        # is what separates "the ruleset is clean" from "we did not read it":
+        # a command that exits 0 with unusable output would otherwise earn the
+        # host an explicit clean bill of health. `nft list ruleset` prints
+        # nothing for a genuinely empty ruleset and cannot tell the two apart
+        # on its own; iptables can, and both need the same capability, so one
+        # answers for both.
+        rules_readable = (
+            not _command_exists("iptables")
+            or bool(_IPTABLES_CHAIN_RE.search(input_out))
+        )
 
         ip_forward = _read_ip_forward()
 

@@ -51,7 +51,13 @@ def check_ssh(snapshot: SSHSnapshot, t: TranslationFunc | None = None, ssh_expos
         return result
 
     # --- SSH not active ---
-    if not snapshot.sshd_active:
+    if not snapshot.sshd_active_known:
+        result.info(
+            message=_t("ssh.active_unknown"),
+            detail=_t("ssh.active_unknown_detail"),
+            key="ssh.active_unknown",
+        )
+    elif not snapshot.sshd_active:
         result.warn(
             message=_t("ssh.not_active"),
             detail=_t("ssh.not_active_detail"),
@@ -142,6 +148,16 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
     """Analyse /etc/ssh/sshd_config directives."""
     cfg = snapshot.sshd_config
     found_issue = False
+
+    if not snapshot.sshd_config_readable:
+        # Every value below would come from OpenSSH's compiled-in defaults
+        # rather than from this host. Say so once, and assert nothing.
+        result.info(
+            message=_t("ssh.config_unreadable"),
+            detail=_t("ssh.config_unreadable_detail"),
+            key="ssh.config_unreadable",
+        )
+        return
 
     # PermitRootLogin
     prl = cfg.get("permitrootlogin", "prohibit-password").lower()

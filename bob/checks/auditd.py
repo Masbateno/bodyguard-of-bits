@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Set
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, unit_active_state
 from bob.scoring import CheckResult
 
 # Files we consider essential to watch
@@ -65,9 +65,12 @@ class AuditdSnapshot:
 
         snap.installed = True
 
-        # Service status via systemctl
-        if _command_exists("systemctl"):
-            snap.service_active = is_unit_active("auditd")
+        # Service status via systemctl, falling back to auditd's own answer
+        # whenever systemd gives none — a present but failing systemctl used to
+        # short-circuit straight to "inactive".
+        state = unit_active_state("auditd") if _command_exists("systemctl") else None
+        if state is not None:
+            snap.service_active = state == "active"
         else:
             # Fallback: auditctl -s shows "enabled 1" when auditd is running
             status = _run("auditctl", "-s") or ""

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, unit_active_state
 from bob.scoring import CheckResult
 
 # Jail names that protect SSH (checked via substring match)
@@ -54,9 +54,13 @@ class Fail2banSnapshot:
 
         snap.installed = True
 
-        # Service status via systemctl
-        if _command_exists("systemctl"):
-            snap.service_active = is_unit_active("fail2ban")
+        # Service status via systemctl, falling back to fail2ban's own answer
+        # whenever systemd gives none — a present but failing systemctl used to
+        # short-circuit straight to "inactive", warning that a running
+        # fail2ban was down.
+        state = unit_active_state("fail2ban") if _command_exists("systemctl") else None
+        if state is not None:
+            snap.service_active = state == "active"
         else:
             # Fallback: try fail2ban-client ping (exit 0 when running)
             ping = _run("fail2ban-client", "ping") or ""

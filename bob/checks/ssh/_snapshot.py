@@ -14,7 +14,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _is_safe_user_path, is_unit_active
+from bob.checks._run import _command_exists, _is_safe_user_path, unit_active_state
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -90,6 +90,8 @@ class SSHSnapshot:
     """
     sshd_installed:          bool = False
     sshd_active:             bool = False
+    sshd_active_known:       bool = True
+    sshd_config_readable:    bool = True
     sshd_config:             dict = field(default_factory=dict)
 
     host_keys:               list[HostKeyInfo] = field(default_factory=list)
@@ -132,8 +134,16 @@ class SSHSnapshot:
             or Path("/sbin/sshd").exists()
         )
         if snap.sshd_installed and _command_exists("systemctl"):
+            # A unit systemd never reported on leaves sshd_active_known False,
+            # so the check withholds its verdict instead of warning that a
+            # running sshd is stopped.
+            snap.sshd_active_known = False
             for unit in ("ssh", "sshd"):
-                if is_unit_active(unit):
+                state = unit_active_state(unit)
+                if state is None:
+                    continue
+                snap.sshd_active_known = True
+                if state == "active":
                     snap.sshd_active = True
                     break
 
@@ -146,6 +156,15 @@ class SSHSnapshot:
             config: dict[str, str] = {}
             _parsers._parse_config_file(_SSHD_CONFIG_PATH, config, seen)
             snap.sshd_config = config
+            # The parser swallows a read error and returns an empty dict, and
+            # every subcheck then falls back to OpenSSH's compiled-in default —
+            # so an unreadable config holding `PermitRootLogin yes` earned the
+            # host a green "root login is restricted". Probe the file directly.
+            try:
+                with _SSHD_CONFIG_PATH.open("rb"):
+                    snap.sshd_config_readable = True
+            except OSError:
+                snap.sshd_config_readable = False
 
         # --- resolve the real user behind sudo ---
         sudo_user = os.environ.get("SUDO_USER", "")

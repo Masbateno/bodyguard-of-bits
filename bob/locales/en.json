@@ -874,9 +874,13 @@
     "summary": "{count} finding(s) silenced by ignore.yml — run with --show-ignored to display them"
   },
   "ssh": {
+    "config_unreadable": "sshd_config exists but could not be read",
+    "config_unreadable_detail": "Every directive below would fall back to OpenSSH's compiled-in default rather than to this host's setting, so a config holding `PermitRootLogin yes` would be reported as restricted. BOB analyses no directive at all instead. Check with: sudo sshd -T",
     "not_installed": "SSH server (sshd) is not installed",
     "not_installed_detail": "If SSH access is needed: {cmd}",
-    "not_active": "SSH server is installed but not running",
+        "active_unknown": "SSH server state could not be determined",
+    "active_unknown_detail": "systemd did not report a state for the ssh/sshd unit \u2014 `systemctl is-active` returned nothing usable, so the daemon may well be running. BOB withholds the verdict rather than warning that a running sshd is stopped. Check with: systemctl is-active ssh",
+"not_active": "SSH server is installed but not running",
     "not_active_detail": "The service is disabled — enable it if SSH access is needed.",
     "active": "SSH server is active",
     "permit_root_login": "Root login via SSH is permitted (PermitRootLogin = {value})",
@@ -961,6 +965,8 @@
     "ssh_host_key_perms": "SSH host key {path}: permissions {mode} (expected 0o600)",
     "ssh_host_key_perms_detail": "Host private keys must be readable only by root. Fix: sudo chmod 600 {path}",
     "ssh_host_key_perms_reason": "SSH host key permissions too open: {path}",
+    "sudoers_unreadable": "Sudoers rules could not be read",
+    "sudoers_unreadable_detail": "A file under /etc/sudoers or /etc/sudoers.d exists but could not be opened, so BOB skipped it. Any NOPASSWD grant it holds is invisible to this audit \u2014 the \"no risky sudo rule found\" verdict is withheld rather than stated. Check with: sudo visudo -c",
     "sudoers_nopasswd_all": "NOPASSWD:ALL in sudoers — unrestricted passwordless sudo: {line}",
     "sudoers_nopasswd_all_detail": "NOPASSWD:ALL grants full root access without password. Restrict to specific commands if possible.",
     "sudoers_nopasswd_all_reason": "NOPASSWD:ALL found in sudoers",
@@ -2058,7 +2064,7 @@
         "why": "Expired accounts may still be usable depending on PAM configuration and the value of INACTIVE in /etc/shadow. More importantly, they indicate accounts that are not actively maintained — forgotten accounts accumulate over time and represent a persistent attack surface if credentials are ever leaked.",
         "how": "1. List expired accounts:\n   sudo chage -l <username>  →  check 'Password expired'\n2. Renew the password if the account is active:\n   sudo passwd <username>\n3. Lock the account if it is no longer in use:\n   sudo passwd -l <username>  # or: sudo usermod -e 1 <username>\n4. Audit all accounts regularly:\n   sudo chage --list <username> for each login user"
       },
-      "no_shadow": {
+    "no_shadow": {
         "title": "/etc/shadow not readable — account security checks incomplete",
         "why": "/etc/shadow stores hashed passwords and account aging data. Without read access, bob cannot verify empty passwords, expiry policies, or UID 0 anomalies. This finding is informational only and means the audit is running without full privilege for account checks.",
         "how": "1. This is not a configuration problem — run the full audit as root:\n   sudo bob\n2. Ensure /etc/shadow has correct permissions (640, root:shadow):\n   sudo chmod 640 /etc/shadow\n   sudo chown root:shadow /etc/shadow"
@@ -2688,6 +2694,8 @@
     }
   },
   "user_accounts": {
+    "no_passwd": "/etc/passwd could not be read",
+    "no_passwd_detail": "The account list never opened, so the scan for a second UID 0 account found nothing for want of looking rather than for want of a finding. BOB withholds its all-clear on user accounts. Check with: awk -F: '$3==0' /etc/passwd",
     "no_shadow": "/etc/shadow not readable — empty-password and expiry checks skipped (run with sudo)",
     "uid_zero": "UID 0 account(s) other than root detected: {users}",
     "uid_zero_detail": "These accounts have full root-equivalent privileges. Only root should have UID 0. Lock or rename them.",
@@ -2775,6 +2783,8 @@
     "brute_force": "{count} failed SSH login attempt(s) over {days} day(s) — consider installing fail2ban"
   },
   "umask": {
+    "sources_unreadable": "Effective umask is {umask} from {source}, but {files} could not be read",
+    "sources_unreadable_detail": "The files that set a umask are last-one-wins, so a value in a file that would not open may be the one that actually applies. BOB reports the value it can see without certifying it as the effective one. Check with: sudo grep -r umask /etc/login.defs /etc/profile /etc/bash.bashrc",
     "ok": "System umask is {umask} (secure) — source: {source}",
     "group_writable": "System umask is {umask} — new files are group-writable by default (source: {source})",
     "world_writable": "System umask is {umask} — new files are world-writable by default (source: {source})",
@@ -3003,6 +3013,7 @@
     "remote_syslog_none_detail": "Forwarding logs to a remote syslog server (e.g. via rsyslog @@host:514) ensures logs are preserved even if the local system is compromised or wiped. Optional but recommended for servers."
   },
   "exposure": {
+    "ssh_config_unknown": "unknown \u2014 sshd_config could not be read",
     "section_title": "ATTACK SURFACE",
     "internet_facing": "Internet-facing",
     "internet_facing_detail": "machine has a direct public IP",

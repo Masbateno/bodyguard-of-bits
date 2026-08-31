@@ -216,6 +216,15 @@ def _command_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
 
+# The complete set `systemctl is-active` prints, from systemd's own
+# unit_active_state_to_string(). Anything else did not come from systemd —
+# a stub, a wrapper, a truncated or mis-encoded stream — and is not an answer.
+_UNIT_STATES = frozenset({
+    "active", "reloading", "inactive", "failed",
+    "activating", "deactivating", "maintenance", "refreshing", "unknown",
+})
+
+
 def is_unit_active(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
     """Return True if the systemd unit is in the 'active' state.
 
@@ -230,8 +239,29 @@ def is_unit_active(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
 
     For richer state detection (template services, active/enabled
     combinations) see ``bob.checks.services._detect_single_unit_state``.
+
+    Callers that must not confuse "inactive" with "could not ask systemd"
+    should use :func:`unit_active_state` instead.
     """
-    return _run("systemctl", "is-active", name, timeout=timeout).strip().lower() == "active"
+    return unit_active_state(name, timeout=timeout) == "active"
+
+
+def unit_active_state(name: str, timeout: int = _CMD_TIMEOUT) -> "str | None":
+    """Return the unit's reported state, or None when systemd could not be asked.
+
+    ``is_unit_active`` collapses "inactive" and "systemctl never answered" into
+    the same False, so a host whose systemctl is absent or refusing looks like
+    a host whose services are all stopped — BOB warned that a running sshd was
+    "installed but not running" on exactly that basis.
+
+    The success flag is deliberately *not* the discriminator here: `systemctl
+    is-active` exits non-zero to report a legitimately inactive unit, which is
+    an answer, not a failure. An empty stdout is the honest signal that no
+    answer was obtained — systemd prints the state on stdout whenever it can
+    determine one, and writes its own failures to stderr.
+    """
+    state = run_result("systemctl", "is-active", name, timeout=timeout).stdout.strip().lower()
+    return state if state in _UNIT_STATES else None
 
 
 def _identity_t(key: str, **kwargs) -> str:

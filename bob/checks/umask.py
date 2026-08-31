@@ -83,6 +83,20 @@ def _scan(path: Path, regex) -> str | None:
         pass
     return None
 
+def _is_readable(path: Path) -> bool:
+    """True when *path* can be opened.
+
+    Called only where a scan came back empty, to tell "this file sets no
+    umask" apart from "this file never opened" — `_scan` returns None for
+    both, and its None-on-absent contract is relied on elsewhere.
+    """
+    try:
+        with path.open("rb"):
+            return True
+    except OSError:
+        return False
+
+
 @dataclass
 class UmaskSnapshot:
     """
@@ -92,11 +106,15 @@ class UmaskSnapshot:
         umask_value:  Primary detected umask (3-digit octal string), or None.
         source:       Path of the primary source file.
         all_sources:  All files that define a umask, mapped to their values.
+        unreadable_sources: Files that exist but could not be opened. Their
+                      umask is unknown, and one of them may hold the value
+                      that actually applies.
                       Used to detect conflicting definitions.
     """
     umask_value: str | None = None
     source:      str | None = None
     all_sources: dict[str, str] = field(default_factory=dict)
+    unreadable_sources: list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(
@@ -119,10 +137,13 @@ class UmaskSnapshot:
             (_profile,     _UMASK_RE),
             (_bash_bashrc, _UMASK_RE),
         ]
+        unreadable: list[str] = []
         for path, regex in candidates:
             val = _scan(path, regex)
             if val is not None:
                 found[str(path)] = val
+            elif path.exists() and not _is_readable(path):
+                unreadable.append(str(path))
 
         # /etc/profile.d/*.sh
         try:
@@ -134,6 +155,7 @@ class UmaskSnapshot:
             pass
 
         snap.all_sources = found
+        snap.unreadable_sources = unreadable
 
         # Primary = first match in priority order
         for path, _ in candidates:
@@ -213,10 +235,20 @@ def check_umask(snapshot: UmaskSnapshot, t: TranslationFunc | None = None) -> Ch
             cmd=cmd,
             nature="improvement",
         )
-    elif umask in ("022", "027", "077"):
+    elif umask in ("022", "027", "077") and not snapshot.unreadable_sources:
         result.ok(
             message=_t("umask.ok", umask=umask, source=source),
             key="umask.ok",
+        )
+    elif umask in ("022", "027", "077"):
+        # A stricter or looser value may sit in the file that would not open,
+        # and these files are last-one-wins.
+        result.info(
+            message=_t("umask.sources_unreadable",
+                       umask=umask, source=source,
+                       files=", ".join(snapshot.unreadable_sources[:3])),
+            detail=_t("umask.sources_unreadable_detail"),
+            key="umask.sources_unreadable",
         )
     else:
         result.info(

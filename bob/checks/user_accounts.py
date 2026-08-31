@@ -62,6 +62,10 @@ class UserAccountsSnapshot:
     and /etc/shadow.
 
     Args:
+        passwd_readable:         True if /etc/passwd was readable. It normally
+                                 is (mode 0644), but when it is not, the UID 0
+                                 scan finds nothing and used to look exactly
+                                 like a host with no rogue root account.
         shadow_readable:         True if /etc/shadow was readable.
         uid_zero_accounts:       Usernames with UID 0 other than root.
         empty_password_accounts: Usernames with an empty password hash in
@@ -79,6 +83,7 @@ class UserAccountsSnapshot:
                                  That is a finding in itself, not something to
                                  resolve silently in either direction.
     """
+    passwd_readable:         bool            = True
     shadow_readable:         bool            = False
     uid_zero_accounts:       list[str]       = field(default_factory=list)
     empty_password_accounts: list[str]       = field(default_factory=list)
@@ -103,6 +108,7 @@ class UserAccountsSnapshot:
         # ---- /etc/passwd — UID 0 detection (always readable) ---------------
         login_shells: dict[str, str] = {}  # username → shell
         uids:         dict[str, int] = {}  # username → uid
+        snap.passwd_readable = False
         try:
             for line in _PASSWD_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
                 parts = line.split(":")
@@ -118,6 +124,7 @@ class UserAccountsSnapshot:
                 uids[username] = uid
                 if uid == 0 and username != "root":
                     snap.uid_zero_accounts.append(username)
+            snap.passwd_readable = True
         except OSError:
             pass
 
@@ -193,6 +200,17 @@ def check_user_accounts(snapshot: UserAccountsSnapshot, *, t: TranslationFunc | 
     _t = t or _identity_t
     result = CheckResult()
     has_finding = False
+
+    # ---- Passwd not readable -----------------------------------------------
+    if not snapshot.passwd_readable:
+        # The UID 0 scan produced nothing because the file never opened, not
+        # because the host has no second root account.
+        has_finding = True
+        result.info(
+            message=_t("user_accounts.no_passwd"),
+            detail=_t("user_accounts.no_passwd_detail"),
+            key="user_accounts.no_passwd",
+        )
 
     # ---- Shadow not readable -----------------------------------------------
     if not snapshot.shadow_readable:

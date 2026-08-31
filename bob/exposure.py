@@ -136,7 +136,15 @@ def compute_exposure(
     if "ssh.weak_ciphers" in bad_keys or "ssh.weak_kex" in bad_keys:
         ssh_issues.append(t("exposure.ssh_weak_crypto"))
 
-    if "ssh.not_installed" in all_keys:
+    if "ssh.config_unreadable" in all_keys:
+        # No directive was read, so "key-only, root login disabled" would be a
+        # statement about OpenSSH's defaults rather than about this host.
+        items.append(ExposureItem(
+            label=t("exposure.ssh"),
+            icon="⚠", color="warn",
+            detail=t("exposure.ssh_config_unknown"),
+        ))
+    elif "ssh.not_installed" in all_keys:
         items.append(ExposureItem(
             label=t("exposure.ssh"),
             icon="✔", color="ok",

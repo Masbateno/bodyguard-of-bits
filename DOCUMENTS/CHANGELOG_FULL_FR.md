@@ -53,6 +53,66 @@ Une sixième instance a été trouvée par balayage plutôt qu'à l'œil : `syst
 quand `systemctl list-timers` échouait. Il distinguait déjà « systemctl absent » de « aucun timer », mais pas
 « systemctl présent et en échec ».
 
+### Trois angles de plus, alors que le premier balayage semblait propre
+
+Le balayage des commandes ne cherchait que les affirmations *rassurantes*.
+Relire les mêmes données dans l'autre sens, et provoquer deux conditions qu'il
+ne créait jamais, a retrouvé la classe sous trois formes de plus.
+
+**La direction alarmante.** `is_unit_active` confond « inactif » et « systemd
+n'a jamais été interrogé » dans le même False. Avec systemctl aveuglé, BOB
+avertissait qu'un sshd *en marche* était « installé mais ne fonctionne pas » —
+`systemctl is-active ssh` répond `active` sur la même machine — et l'encadré de
+synthèse affichait un ✔ vert en face de « installed — not running », se
+contredisant sur un seul écran. Le nouveau `unit_active_state()` renvoie l'état
+rapporté ou None ; `is_unit_active` garde son contrat. `fail2ban` et `auditd`
+avaient déjà un repli plus fiable (`fail2ban-client ping`, `auditctl -s`) qui ne
+se déclenchait que si systemctl était *absent* ; ils y retombent désormais dès
+que systemd ne répond pas.
+
+**Une commande qui réussit sans rien dire d'exploitable.** `run_result`
+distingue l'échec du silence, pas le sens du non-sens. Avec `iptables` et `nft`
+sortant en 0 sur une sortie incompréhensible, `firewall_drivers.no_issues`
+certifiait toujours le pare-feu. Le drapeau de v0.15.1 testait la non-vacuité ;
+il teste maintenant l'en-tête de chaîne qu'un `iptables -L` qui marche imprime
+toujours — le raisonnement que le commentaire de cette version donnait déjà.
+`unit_active_state` n'accepte de même que les états émis par systemd.
+
+**Les fichiers, pas les commandes.** Tout le balayage portait sur les
+sous-processus. Les lectures sont gardées elles aussi — 87 `except OSError`
+dans les checks — mais le garde rend une valeur par défaut et l'appelant ne
+peut pas le savoir. Quatre verdicts reposaient dessus :
+
+| Fichier illisible | Ce que BOB affirmait |
+|---|---|
+| `/etc/sudoers` | « aucun problème détecté » sur les fichiers sensibles et sudoers |
+| `/etc/passwd` | satisfecit sur les comptes, recherche d'UID 0 comprise |
+| `/etc/login.defs` | « umask système 022 (sûr) » |
+| `/etc/ssh/sshd_config` | « connexion root restreinte à l'authentification par clé » |
+
+Le dernier est le plus tranchant : chaque directive retombe sur la valeur par
+défaut compilée d'OpenSSH, donc une config illisible contenant
+`PermitRootLogin yes` était rapportée comme restreinte, dans le check *et* avec
+un ✔ vert dans l'encadré de synthèse.
+
+Tout `except OSError` n'est pas un défaut — un fichier absent signifie
+généralement que la fonction n'est pas configurée, ce qui est un fait. Les
+quatre corrigés ici sont ceux où « illisible » et « absent » n'ont pas la même
+vérité et produisaient le même verdict.
+
+### Une correction de méthode
+
+Le premier passage de l'expérience sur les fichiers était invalide, et son
+résultat a été rapporté avant que ce soit vu. Il montait un répertoire par bind
+sur chaque chemin cible avec stderr supprimé ; or `mount --bind <rép> <fichier>`
+échoue, donc BOB a lu les vrais fichiers du début à la fin, et le fait que
+chaque cible rende un résultat identique à la référence était l'indice — lu sur
+le moment comme « l'audit est totalement insensible à sa capacité de lecture »,
+alors qu'il signifiait « rien n'a été modifié ». Refaite en montant un fichier
+root en `0640`, réellement illisible dans le namespace, l'image était plus
+étroite et précise : quatre verdicts, pas une insensibilité générale. C'est la
+suppression de stderr qui l'avait masqué.
+
 ### Le correctif
 
 `run_result()` rapporte séparément la sortie et le succès, sous la forme d'un `CommandResult(stdout, ok)`. `_run`
@@ -80,6 +140,13 @@ signalait toute cellule CSV vide comme une formule.
 ### Modifié
 
 - Nouveaux `bob/checks/_run.py::run_result()` et `CommandResult` ; `_run` préservé à l'identique.
+- Nouveau `bob/checks/_run.py::unit_active_state()` ; `is_unit_active` préservé à l'identique.
+- `ssh.active_unknown`, `ssh.config_unreadable`, `file_perms.sudoers_unreadable`,
+  `user_accounts.no_passwd`, `umask.sources_unreadable`, `exposure.ssh_config_unknown`
+  — six clés de plus pour les trois angles ajoutés, dans les deux locales.
+- `SSHSnapshot.sshd_active_known` / `.sshd_config_readable`,
+  `FilePermsSnapshot.sudoers_readable`, `UserAccountsSnapshot.passwd_readable`,
+  `UmaskSnapshot.unreadable_sources` — là encore, défaut sur le cas lisible.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — cinq nouvelles clés, dans les deux locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -94,7 +161,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7312**.
+**Tests** 7288 → **7342**.
 
 ---
 

@@ -25,7 +25,11 @@ from bob.checks.file_perms import (
 
 
 def _collect(text: str, tmp_path: Path, monkeypatch) -> tuple[list[str], list[str]]:
-    """Run the real collector against a single fake /etc/sudoers."""
+    """Run the real collector against a single fake /etc/sudoers.
+
+    The readability flag is dropped here: these cases all supply a file that
+    reads cleanly, and the flag has its own tests in test_v0152.
+    """
     f = tmp_path / "sudoers"
     f.write_text(text)
     real = fp.Path
@@ -33,7 +37,8 @@ def _collect(text: str, tmp_path: Path, monkeypatch) -> tuple[list[str], list[st
         fp, "Path",
         lambda p: f if str(p) == "/etc/sudoers" else real(tmp_path / "absent"),
     )
-    return fp._collect_nopasswd_entries()
+    nopasswd_all, nopasswd_specific, _readable = fp._collect_nopasswd_entries()
+    return nopasswd_all, nopasswd_specific
 
 
 # Verdicts confirmed against cvtsudoers; True == sudo grants NOPASSWD on ALL.

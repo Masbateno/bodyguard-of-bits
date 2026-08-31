@@ -874,9 +874,13 @@
     "summary": "{count} résultat(s) masqué(s) par ignore.yml — relancer avec --show-ignored pour les afficher"
   },
   "ssh": {
+    "config_unreadable": "sshd_config existe mais n'a pas pu \u00eatre lu",
+    "config_unreadable_detail": "Chaque directive retomberait sur la valeur par d\u00e9faut compil\u00e9e d'OpenSSH plut\u00f4t que sur le r\u00e9glage de cette machine : une config contenant `PermitRootLogin yes` serait donc rapport\u00e9e comme restreinte. BOB n'analyse aucune directive. V\u00e9rifier avec : sudo sshd -T",
     "not_installed": "Le serveur SSH (sshd) n'est pas installé",
     "not_installed_detail": "Si l'accès SSH est nécessaire : {cmd}",
-    "not_active": "Le serveur SSH est installé mais ne fonctionne pas",
+        "active_unknown": "L'\u00e9tat du serveur SSH n'a pas pu \u00eatre d\u00e9termin\u00e9",
+    "active_unknown_detail": "systemd n'a rapport\u00e9 aucun \u00e9tat pour l'unit\u00e9 ssh/sshd \u2014 `systemctl is-active` n'a rien renvoy\u00e9 d'exploitable, le d\u00e9mon tourne donc peut-\u00eatre. BOB s'abstient plut\u00f4t que d'avertir qu'un sshd en marche est arr\u00eat\u00e9. V\u00e9rifier avec : systemctl is-active ssh",
+"not_active": "Le serveur SSH est installé mais ne fonctionne pas",
     "not_active_detail": "Le service est désactivé — activez-le si l'accès SSH est nécessaire.",
     "active": "Le serveur SSH est actif",
     "permit_root_login": "La connexion root via SSH est autorisée (PermitRootLogin = {value})",
@@ -961,6 +965,8 @@
     "ssh_host_key_perms": "Clé hôte SSH {path} : permissions {mode} (attendu 0o600)",
     "ssh_host_key_perms_detail": "Les clés privées hôtes doivent être lisibles uniquement par root. Corriger : sudo chmod 600 {path}",
     "ssh_host_key_perms_reason": "Permissions trop ouvertes sur la clé hôte SSH : {path}",
+    "sudoers_unreadable": "Les r\u00e8gles sudoers n'ont pas pu \u00eatre lues",
+    "sudoers_unreadable_detail": "Un fichier sous /etc/sudoers ou /etc/sudoers.d existe mais n'a pas pu \u00eatre ouvert : BOB l'a saut\u00e9. Toute autorisation NOPASSWD qu'il contient est invisible pour cet audit \u2014 le verdict \u00ab aucune r\u00e8gle sudo risqu\u00e9e \u00bb est retenu plut\u00f4t qu'affirm\u00e9. V\u00e9rifier avec : sudo visudo -c",
     "sudoers_nopasswd_all": "NOPASSWD:ALL dans sudoers — sudo sans mot de passe illimité : {line}",
     "sudoers_nopasswd_all_detail": "NOPASSWD:ALL accorde un accès root complet sans mot de passe. Restreindre à des commandes spécifiques si possible.",
     "sudoers_nopasswd_all_reason": "NOPASSWD:ALL présent dans sudoers",
@@ -2058,7 +2064,7 @@
         "why": "Les comptes expirés peuvent toujours être utilisables selon la configuration PAM et la valeur INACTIVE dans /etc/shadow. Surtout, ils indiquent des comptes qui ne sont plus activement maintenus — les comptes oubliés s'accumulent et représentent une surface d'attaque persistante si des identifiants sont un jour divulgués.",
         "how": "1. Vérifiez les comptes expirés :\n   sudo chage -l <utilisateur>  →  vérifiez 'Password expired'\n2. Renouvelez le mot de passe si le compte est actif :\n   sudo passwd <utilisateur>\n3. Verrouillez le compte s'il n'est plus utilisé :\n   sudo passwd -l <utilisateur>  # ou : sudo usermod -e 1 <utilisateur>\n4. Auditez régulièrement tous les comptes :\n   sudo chage --list <utilisateur> pour chaque utilisateur actif"
       },
-      "no_shadow": {
+    "no_shadow": {
         "title": "/etc/shadow non lisible — vérifications de sécurité des comptes incomplètes",
         "why": "/etc/shadow contient les mots de passe hachés et les données d'expiration des comptes. Sans accès en lecture, bob ne peut pas vérifier les mots de passe vides, les politiques d'expiration ni les anomalies UID 0. Ce résultat est purement informatif et signifie que l'audit tourne sans privilège complet pour les vérifications de comptes.",
         "how": "1. Ce n'est pas un problème de configuration — lancez l'audit complet en root :\n   sudo bob\n2. Vérifiez que /etc/shadow a les bonnes permissions (640, root:shadow) :\n   sudo chmod 640 /etc/shadow\n   sudo chown root:shadow /etc/shadow"
@@ -2688,6 +2694,8 @@
     }
   },
   "user_accounts": {
+    "no_passwd": "/etc/passwd n'a pas pu \u00eatre lu",
+    "no_passwd_detail": "La liste des comptes ne s'est jamais ouverte : la recherche d'un second compte UID 0 n'a rien trouv\u00e9 faute d'avoir regard\u00e9, non faute de r\u00e9sultat. BOB retient son satisfecit sur les comptes. V\u00e9rifier avec : awk -F: '$3==0' /etc/passwd",
     "no_shadow": "/etc/shadow non lisible — vérifications mot de passe vide et expiration ignorées (lancer avec sudo)",
     "uid_zero": "Compte(s) UID 0 autres que root détecté(s) : {users}",
     "uid_zero_detail": "Ces comptes possèdent des privilèges équivalents à root. Seul root devrait avoir l'UID 0. Verrouillez ou renommez-les.",
@@ -2775,6 +2783,8 @@
     "brute_force": "{count} tentative(s) de connexion SSH échouée(s) sur {days} jour(s) — envisagez d’installer fail2ban"
   },
   "umask": {
+    "sources_unreadable": "Umask effectif {umask} d'apr\u00e8s {source}, mais {files} n'a pas pu \u00eatre lu",
+    "sources_unreadable_detail": "Les fichiers qui d\u00e9finissent un umask fonctionnent en \u00ab la derni\u00e8re valeur gagne \u00bb : une valeur dans un fichier qui ne s'ouvre pas peut donc \u00eatre celle qui s'applique r\u00e9ellement. BOB rapporte la valeur qu'il voit sans la certifier effective. V\u00e9rifier avec : sudo grep -r umask /etc/login.defs /etc/profile /etc/bash.bashrc",
     "ok": "Umask système : {umask} (sécurisé) — source : {source}",
     "group_writable": "Umask système : {umask} — les nouveaux fichiers sont accessibles en écriture par le groupe par défaut (source : {source})",
     "world_writable": "Umask système : {umask} — les nouveaux fichiers sont accessibles en écriture par tous par défaut (source : {source})",
@@ -3003,6 +3013,7 @@
     "remote_syslog_none_detail": "Transférer les logs vers un serveur syslog distant (ex. via rsyslog @@hote:514) garantit leur conservation même si le système local est compromis ou réinitialisé. Optionnel mais recommandé pour les serveurs."
   },
   "exposure": {
+    "ssh_config_unknown": "inconnu \u2014 sshd_config n'a pas pu \u00eatre lu",
     "section_title": "SURFACE D'ATTAQUE",
     "internet_facing": "Exposition internet",
     "internet_facing_detail": "la machine a une IP publique directe",

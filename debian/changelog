@@ -10,6 +10,11 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     listening" for every registry port, and a green tick in the summary box.
   * New `run_result()` reports stdout and success separately; `_run` keeps its
     contract for the call sites where empty and failed mean the same thing.
+  * Three further angles closed: the alarm direction (a blinded systemctl made
+    BOB warn that a running sshd was stopped), a command that exits 0 with
+    unusable output (iptables/nft garbage still earned a clean firewall bill),
+    and unreadable files — /etc/sudoers, /etc/passwd, /etc/login.defs and
+    /etc/ssh/sshd_config each produced an affirmative all-clear.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

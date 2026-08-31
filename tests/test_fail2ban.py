@@ -104,21 +104,21 @@ class TestFail2banFromSystemInstalled:
     def test_installed_true_when_binary_present(self):
         with patch("bob.checks.fail2ban._command_exists", side_effect=_cmd_exists_all), \
              patch("bob.checks.fail2ban._run", side_effect=_make_run_stub()), \
-             patch("bob.checks.fail2ban.is_unit_active", return_value=True):
+             patch("bob.checks.fail2ban.unit_active_state", return_value="active"):
             snap = Fail2banSnapshot.from_system()
         assert snap.installed
 
     def test_service_active_true(self):
         with patch("bob.checks.fail2ban._command_exists", side_effect=_cmd_exists_all), \
              patch("bob.checks.fail2ban._run", side_effect=_make_run_stub()), \
-             patch("bob.checks.fail2ban.is_unit_active", return_value=True):
+             patch("bob.checks.fail2ban.unit_active_state", return_value="active"):
             snap = Fail2banSnapshot.from_system()
         assert snap.service_active
 
     def test_service_inactive(self):
         with patch("bob.checks.fail2ban._command_exists", side_effect=_cmd_exists_all), \
              patch("bob.checks.fail2ban._run", side_effect=_make_run_stub()), \
-             patch("bob.checks.fail2ban.is_unit_active", return_value=False):
+             patch("bob.checks.fail2ban.unit_active_state", return_value="inactive"):
             snap = Fail2banSnapshot.from_system()
         assert not snap.service_active
 
@@ -126,14 +126,14 @@ class TestFail2banFromSystemInstalled:
         status = "`- Jail list:\tsshd, nginx-http-auth\n"
         with patch("bob.checks.fail2ban._command_exists", side_effect=_cmd_exists_all), \
              patch("bob.checks.fail2ban._run", side_effect=_make_run_stub(status_out=status)), \
-             patch("bob.checks.fail2ban.is_unit_active", return_value=True):
+             patch("bob.checks.fail2ban.unit_active_state", return_value="active"):
             snap = Fail2banSnapshot.from_system()
         assert snap.active_jails == ["sshd", "nginx-http-auth"]
 
     def test_ssh_jail_detected(self):
         with patch("bob.checks.fail2ban._command_exists", side_effect=_cmd_exists_all), \
              patch("bob.checks.fail2ban._run", side_effect=_make_run_stub()), \
-             patch("bob.checks.fail2ban.is_unit_active", return_value=True):
+             patch("bob.checks.fail2ban.unit_active_state", return_value="active"):
             snap = Fail2banSnapshot.from_system()
         assert snap.ssh_jail == "sshd"
 
@@ -141,14 +141,14 @@ class TestFail2banFromSystemInstalled:
         status = "`- Jail list:\tnginx-http-auth\n"
         with patch("bob.checks.fail2ban._command_exists", side_effect=_cmd_exists_all), \
              patch("bob.checks.fail2ban._run", side_effect=_make_run_stub(status_out=status)), \
-             patch("bob.checks.fail2ban.is_unit_active", return_value=True):
+             patch("bob.checks.fail2ban.unit_active_state", return_value="active"):
             snap = Fail2banSnapshot.from_system()
         assert snap.ssh_jail == ""
 
     def test_no_jails_when_service_inactive(self):
         with patch("bob.checks.fail2ban._command_exists", side_effect=_cmd_exists_all), \
              patch("bob.checks.fail2ban._run", side_effect=_make_run_stub()), \
-             patch("bob.checks.fail2ban.is_unit_active", return_value=False):
+             patch("bob.checks.fail2ban.unit_active_state", return_value="inactive"):
             snap = Fail2banSnapshot.from_system()
         assert snap.active_jails == []
 

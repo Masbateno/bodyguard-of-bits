@@ -66,6 +66,7 @@ class FilePermsSnapshot:
     ssh_host_key_issues:       list[Tuple[str, int]]     = field(default_factory=list)
     sudoers_nopasswd_all:      list[str]                 = field(default_factory=list)
     sudoers_nopasswd_specific: list[str]                 = field(default_factory=list)
+    sudoers_readable:          bool                      = True
 
     @classmethod
     def from_system(cls) -> "FilePermsSnapshot":
@@ -110,9 +111,10 @@ class FilePermsSnapshot:
                     pass
 
         # 3. Sudoers NOPASSWD entries
-        nopasswd_all, nopasswd_specific = _collect_nopasswd_entries()
+        nopasswd_all, nopasswd_specific, sudoers_readable = _collect_nopasswd_entries()
         snap.sudoers_nopasswd_all      = nopasswd_all
         snap.sudoers_nopasswd_specific = nopasswd_specific
+        snap.sudoers_readable          = sudoers_readable
 
         return snap
 
@@ -138,14 +140,19 @@ def _strip_sudoers_comment(line: str) -> str:
 _join_continuations = join_continuations
 
 
-def _collect_nopasswd_entries() -> tuple[list[str], list[str]]:
+def _collect_nopasswd_entries() -> "tuple[list[str], list[str], bool]":
     """
     Parse /etc/sudoers and /etc/sudoers.d/* for NOPASSWD entries.
 
     Returns:
-        (nopasswd_all, nopasswd_specific) where:
+        (nopasswd_all, nopasswd_specific, readable) where:
         - nopasswd_all      — lines granting unrestricted passwordless sudo
         - nopasswd_specific — lines granting passwordless access to specific commands only
+        - readable          — False when a sudoers file existed but could not be
+                              read. Skipping it silently made "no NOPASSWD rule
+                              found" indistinguishable from "sudoers was never
+                              opened", and the check answers that with an
+                              explicit all-clear.
     """
     nopasswd_all:      list[str] = []
     nopasswd_specific: list[str] = []
@@ -161,10 +168,12 @@ def _collect_nopasswd_entries() -> tuple[list[str], list[str]]:
             if f.is_file() and not f.name.startswith(".") and not f.name.endswith("~"):
                 paths.append(f)
 
+    readable = True
     for p in paths:
         try:
             text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
+            readable = False
             continue
         for line in _join_continuations(text.splitlines()):
             # Strip the comment first: it both reveals rules hidden behind a
@@ -180,7 +189,7 @@ def _collect_nopasswd_entries() -> tuple[list[str], list[str]]:
             else:
                 nopasswd_specific.append(stripped)
 
-    return nopasswd_all, nopasswd_specific
+    return nopasswd_all, nopasswd_specific, readable
 
 def _is_nopasswd_all(line: str) -> bool:
     """
@@ -313,6 +322,14 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
                        count=len(snapshot.sudoers_nopasswd_specific)),
             detail=_t("file_perms.sudoers_nopasswd_specific_detail"),
             key="file_perms.sudoers_nopasswd_specific",
+        )
+
+    # ---- Sudoers not read ---------------------------------------------------
+    if not snapshot.sudoers_readable:
+        result.info(
+            message=_t("file_perms.sudoers_unreadable"),
+            detail=_t("file_perms.sudoers_unreadable_detail"),
+            key="file_perms.sudoers_unreadable",
         )
 
     # ---- All clear ----------------------------------------------------------
