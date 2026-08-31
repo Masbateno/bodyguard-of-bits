@@ -76,10 +76,14 @@ class CronAuditSnapshot:
         pipe_to_shell_entries:  Lines matching curl/wget | sh patterns, with source path.
         world_writable_scripts: Script paths referenced in cron that are world-writable.
         unexpected_user_crons:  Usernames with crontabs that are not in the expected set.
+        unreadable_files:       Cron files that exist but could not be opened. A
+                                pipe-to-shell line in one of them is invisible
+                                here, so the all-clear is withheld.
     """
     pipe_to_shell_entries:  list[str] = field(default_factory=list)
     world_writable_scripts: list[str] = field(default_factory=list)
     unexpected_user_crons:  list[str] = field(default_factory=list)
+    unreadable_files:       list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "CronAuditSnapshot":
@@ -99,22 +103,25 @@ class CronAuditSnapshot:
         script_files: list[Path] = []
 
         # System crontab files (/etc/crontab — crontab format)
+        unreadable: list[str] = []
         for crontab_path in _SYSTEM_CRONTABS:
-            _read_cron_file(crontab_path, format_lines)
+            if not _read_cron_file(crontab_path, format_lines):
+                unreadable.append(str(crontab_path))
 
         # /etc/cron.d — crontab format
         for cron_dir in _CRON_FORMAT_DIRS:
             if cron_dir.is_dir():
                 for entry in sorted(cron_dir.iterdir()):
-                    if entry.is_file():
-                        _read_cron_file(entry, format_lines)
+                    if entry.is_file() and not _read_cron_file(entry, format_lines):
+                        unreadable.append(str(entry))
 
         # cron.daily/hourly/weekly/monthly — executable scripts
         for cron_dir in _CRON_SCRIPT_DIRS:
             if cron_dir.is_dir():
                 for entry in sorted(cron_dir.iterdir()):
                     if entry.is_file():
-                        _read_cron_file(entry, script_lines)
+                        if not _read_cron_file(entry, script_lines):
+                            unreadable.append(str(entry))
                         script_files.append(entry)
 
         # Pipe-to-shell: check both format and script lines, deduplicated
@@ -132,6 +139,7 @@ class CronAuditSnapshot:
         )
 
         snap.unexpected_user_crons = _find_unexpected_user_crons()
+        snap.unreadable_files = unreadable
 
         return snap
 
@@ -139,8 +147,12 @@ class CronAuditSnapshot:
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _read_cron_file(path: Path, out: list[tuple[str, str]]) -> None:
-    """Read a cron file and append (path_str, line) tuples to out.
+def _read_cron_file(path: Path, out: list[tuple[str, str]]) -> bool:
+    """Read a cron file, append (path_str, line) tuples to out, report success.
+
+    The return value separates "this file holds nothing suspicious" from "this
+    file was never opened" — the check answers the first with an explicit
+    all-clear, and must not answer the second the same way.
 
     Skips symlinks under user-controlled directories: an attacker with write
     access to /var/spool/cron/crontabs/ could symlink an arbitrary file (e.g.
@@ -148,15 +160,17 @@ def _read_cron_file(path: Path, out: list[tuple[str, str]]) -> None:
     SECURITY.md "user-controlled config files" trust boundary.
     """
     if not _is_safe_config_path(path):
-        return
+        # A deliberate security skip, not a read failure — see the docstring.
+        return True
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return
+        return False
     for line in text.splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith("#"):
             out.append((str(path), line))
+    return True
 
 def _find_world_writable_scripts(
     cron_lines: list[tuple[str, str]],
@@ -279,6 +293,16 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
         result.info(
             message=_t("cron.unexpected_users", users=users),
             key="cron.unexpected_users",
+        )
+
+    # --- Files that never opened --------------------------------------------
+    unreadable = snapshot.unreadable_files or []
+    if unreadable:
+        result.info(
+            message=_t("cron.unreadable_files", count=len(unreadable),
+                       files=", ".join(unreadable[:3])),
+            detail=_t("cron.unreadable_files_detail"),
+            key="cron.unreadable_files",
         )
 
     # --- All clear ----------------------------------------------------------

@@ -102,6 +102,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   connections, service listening state, systemd timers).
 - Three further angles: false alarms from a blinded systemctl, commands that
   exit 0 with unusable output, and unreadable config files certified as clean.
+- configparser.read skips unopenable files silently: samba and profile parsing
+  now raise, cron tracks unread files, journald storage is no longer inferred.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

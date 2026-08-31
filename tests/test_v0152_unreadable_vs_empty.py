@@ -433,3 +433,127 @@ class TestNewLocaleKeys:
                 assert part in node, f"{locale}.json is missing {dotted}"
                 node = node[part]
             assert isinstance(node, str) and node.strip()
+
+
+# ---------------------------------------------------------------------------
+# Found by enumerating every config path the checks read, rather than by
+# picking a handful by hand — which is how the first pass missed these.
+# ---------------------------------------------------------------------------
+
+class TestSambaConfigParserSilentSkip:
+    """`RawConfigParser.read` skips a file it cannot open, and says nothing.
+
+    samba.py already had a `conf_readable` flag and a check guarding on it, but
+    the guard was inert: the parser never raised, so an unreadable smb.conf
+    became an empty config, every setting fell back to its default, and the
+    host was told SMB1 was disabled by a parser that had read nothing.
+    """
+
+    def test_unreadable_file_raises_instead_of_parsing_to_nothing(self, tmp_path):
+        from bob.checks.samba import _read_smb_conf
+        missing = tmp_path / "not-there.conf"
+        with pytest.raises(OSError):
+            _read_smb_conf(missing)
+
+    def test_a_real_file_still_parses(self, tmp_path):
+        from bob.checks.samba import _read_smb_conf
+        conf = tmp_path / "smb.conf"
+        conf.write_text("[global]\n   min protocol = SMB2\n")
+        assert _read_smb_conf(conf)["global"]["min protocol"] == "SMB2"
+
+    def test_check_withholds_every_verdict_when_conf_unread(self):
+        from bob.checks.samba import SambaSnapshot, check_samba
+        snap = SambaSnapshot(installed=True, daemon_installed=True,
+                             conf_readable=False)
+        keys = {f.key for f in check_samba(snap).findings}
+        assert "samba.conf_unreadable" in keys
+        assert "samba.smb1_disabled" not in keys
+        assert "samba.null_passwords_ok" not in keys
+
+
+class TestProfileConfigParserSilentSkip:
+    """The same parser trap in profiles.py: a profile that quietly empties."""
+
+    def test_unreadable_profile_raises(self, tmp_path):
+        from bob.profiles import _load_from_path
+        with pytest.raises(OSError):
+            _load_from_path(tmp_path / "not-there.conf", depth=0)
+
+    def test_load_profile_falls_back_rather_than_crashing(self):
+        """`load_profile` catches everything — the raise must not escape."""
+        from bob.profiles import load_profile
+        assert load_profile("definitely-not-a-real-profile") is not None
+
+
+class TestCronFilesUnreadable:
+    """A cron file that never opened cannot support "no risky cron job"."""
+
+    def _keys(self, unreadable):
+        from bob.checks.cron_audit import CronAuditSnapshot, check_cron_audit
+        snap = CronAuditSnapshot(unreadable_files=unreadable)
+        return {f.key for f in check_cron_audit(snap).findings}
+
+    def test_unreadable_file_withholds_the_all_clear(self):
+        keys = self._keys(["/etc/cron.d/something"])
+        assert "cron.unreadable_files" in keys
+        assert "cron.ok" not in keys
+
+    def test_everything_read_still_reports_all_clear(self):
+        assert "cron.ok" in self._keys([])
+
+    def test_a_security_skip_is_not_a_read_failure(self, tmp_path):
+        """`_read_cron_file` reports success for a path it declines to follow."""
+        from unittest.mock import patch
+
+        from bob.checks import cron_audit as mod
+        target = tmp_path / "whatever"
+        target.write_text("* * * * * root true\n")
+        out: list = []
+        with patch.object(mod, "_is_safe_config_path", return_value=False):
+            assert mod._read_cron_file(target, out) is True
+        assert out == []
+
+
+class TestJournaldConfUnreadable:
+    """Storage='' means "unset", which journald reads as its persistent default."""
+
+    def _keys(self, *, readable, storage=""):
+        from bob.checks.log_rotation import LogRotationSnapshot, check_log_rotation
+        snap = LogRotationSnapshot(
+            journald_active=True, journald_storage=storage,
+            journal_persistent=True, journald_conf_readable=readable,
+        )
+        return {f.key for f in check_log_rotation(snap).findings}
+
+    def test_unread_conf_does_not_certify_persistence(self):
+        keys = self._keys(readable=False)
+        assert "log_rotation.journald_persistent" not in keys
+        assert "log_rotation.journald_conf_unreadable" in keys
+
+    def test_read_conf_with_storage_unset_still_certifies(self):
+        assert "log_rotation.journald_persistent" in self._keys(readable=True)
+
+    def test_an_explicit_value_is_trusted_even_if_the_file_reread_fails(self):
+        """A value already parsed is knowledge; only the inferred default is not."""
+        keys = self._keys(readable=False, storage="persistent")
+        assert "log_rotation.journald_persistent" in keys
+
+
+class TestBatchThreeLocaleKeys:
+    @pytest.mark.parametrize("dotted", [
+        "cron.unreadable_files", "cron.unreadable_files_detail",
+        "log_rotation.journald_conf_unreadable",
+        "log_rotation.journald_conf_unreadable_detail",
+    ])
+    def test_key_present_in_both_locales(self, dotted):
+        import json
+        from pathlib import Path
+        for locale in ("en", "fr"):
+            data = json.loads(
+                (Path("bob/locales") / f"{locale}.json").read_text(encoding="utf-8")
+            )
+            node = data
+            for part in dotted.split("."):
+                assert part in node, f"{locale}.json is missing {dotted}"
+                node = node[part]
+            assert isinstance(node, str) and node.strip()

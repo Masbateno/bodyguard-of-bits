@@ -96,6 +96,65 @@ means the feature is not configured, which is a fact. The four fixed here are
 where "could not read" and "absent" have different truths and produced the same
 verdict.
 
+### Enumerating the paths instead of guessing them
+
+The file angle above was probed with six files picked by hand. That is a
+sample, not a sweep, and it missed what a systematic pass found immediately:
+every `Path("/etc…")` literal in the checks — 82 of them, 29 present on the
+test host — made unreadable in turn, with the resulting verdicts diffed against
+a baseline. Of the sixteen readable at baseline, twelve produce no affirmative
+claim at all; three did.
+
+**`configparser` skips what it cannot open, silently.** `RawConfigParser.read`
+takes a list of candidate files and returns only those it managed to read —
+an unreadable file is not an error. samba.py already had a `conf_readable`
+flag and a check that returned early on it, but the guard was inert: no
+`OSError` ever reached the `except`, so an unreadable smb.conf became an empty
+config, every setting fell back to its default, and the host was told SMB1 was
+disabled and null passwords refused by a parser that had read nothing. Both
+call sites — samba.py and profiles.py — now raise when `read` comes back empty.
+In profiles.py the same trap turned an unreadable profile into an empty one
+named after its file, silently handing the operator the defaults they had asked
+to override; `load_profile` already falls back with a logged warning, so the
+raise converts a silent wrong answer into a visible one.
+
+**Cron files.** `_read_cron_file` swallowed its read error, so a
+pipe-to-shell line in a file BOB could not open was invisible and the check
+still answered `cron.ok`. It now reports which files never opened — on the
+development host itself, run without sudo, that is three real `/etc/cron.d`
+entries that were being certified clean.
+
+**journald storage.** An unreadable `journald.conf` leaves `Storage=` reading
+as the empty string, which is also what "unset" looks like — and unset means
+journald's `auto` default, reported as persistent when `/var/log/journal`
+exists. A config setting `Storage=volatile`, whose logs are lost on reboot, was
+therefore reported as persistent. A value already parsed is still trusted; only
+the inferred default is withheld.
+
+### Two angles measured and found clean
+
+**Readable but corrupted content** — the file counterpart of the garbage-output
+angle. sshd_config replaced with random binary, a truncated line, latin-1 bytes
+and a 200 000-character line: no crash, no traceback, no fabricated verdict
+beyond the default-fallback already described. Deliberately not "fixed": a
+config that parses to zero directives is indistinguishable from a legitimately
+minimal one, and a heuristic separating them would raise false alarms on
+correct hosts.
+
+**Commands that hang** rather than fail. `run_result` already reports the
+timeout path as a failure, so a hanging `ss` produces `ports.unreadable` like
+an absent one. Worth knowing operationally: each hung command costs its full
+timeout, and an audit against several took just under four minutes.
+
+### Two claims withdrawn
+
+Reported as defects before being checked, and they were not. `auth_log` keeps
+its "no failed logins" verdict when `/var/log/auth.log` is unreadable because
+it falls back to journald and gets a real answer — 27 days analysed, genuinely
+no SSH logins. And `logrotate_ok` does not depend on `/etc/rsyslog.conf` at
+all; the association came from grouping findings by key prefix rather than by
+what each one actually reads.
+
 ### A correction to the method
 
 The first run of the file experiment was invalid and its result was reported
@@ -139,6 +198,11 @@ discriminated nothing, and `"" in "=+-@"` — which is `True` in Python, flaggin
 - `SSHSnapshot.sshd_active_known` / `.sshd_config_readable`,
   `FilePermsSnapshot.sudoers_readable`, `UserAccountsSnapshot.passwd_readable`,
   `UmaskSnapshot.unreadable_sources` — again defaulting to the readable case.
+- `cron.unreadable_files`, `log_rotation.journald_conf_unreadable` — two more keys,
+  plus `CronAuditSnapshot.unreadable_files` and
+  `LogRotationSnapshot.journald_conf_readable`.
+- `_read_smb_conf` and `profiles._load_from_path` raise when `configparser.read`
+  returns no file read; `_read_cron_file` returns whether it read anything.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — five new finding/display keys, both locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -152,7 +216,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7342**.
+**Tests** 7288 → **7357**.
 
 ---
 

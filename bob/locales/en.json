@@ -2994,6 +2994,8 @@
     "ok": "Certificate {path} valid — expires in {days} day(s)"
   },
   "log_rotation": {
+    "journald_conf_unreadable": "journald storage could not be determined",
+    "journald_conf_unreadable_detail": "/etc/systemd/journald.conf exists but would not open, so Storage= reads as unset. Unset means journald's \"auto\" default, which is persistent when /var/log/journal exists — but a config setting Storage=volatile would look identical here, and its logs are lost on reboot. Check with: sudo grep -i storage /etc/systemd/journald.conf",
     "logrotate_missing": "logrotate not installed — log files will grow unbounded",
     "logrotate_missing_detail": "Without logrotate, log files in /var/log/ are never rotated or compressed. Disk exhaustion from runaway logs is a common cause of service outages.",
     "logrotate_missing_reason": "logrotate not installed — no log rotation",
@@ -3118,6 +3120,8 @@
     "detail_label": "Detail"
   },
   "cron": {
+    "unreadable_files": "{count} cron file(s) could not be read: {files}",
+    "unreadable_files_detail": "A scheduled job in a file BOB could not open is invisible to this audit, so the \"no risky cron job\" verdict is withheld. Check with: sudo cat /etc/crontab /etc/cron.d/*",
     "pipe_to_shell": "{count} cron job(s) pipe remote content into a shell (curl/wget | sh)",
     "pipe_to_shell_detail": "Piping remote downloads directly into a shell is a common supply-chain attack vector. Review and replace with explicit script downloads and integrity checks.",
     "pipe_to_shell_reason": "{count} cron job(s) pipe remote content into a shell",

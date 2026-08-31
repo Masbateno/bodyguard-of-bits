@@ -275,7 +275,13 @@ def _load_from_path(path: Path, depth: int) -> AuditProfile:
         allow_no_value=True,
         inline_comment_prefixes=("#",),
     )
-    cp.read(str(path), encoding="utf-8")
+    # `read` silently skips a file it cannot open. `_find_profile_file` has
+    # already established the path is a file, so failing here means it exists
+    # but would not open — and the profile would quietly become an empty one
+    # named after the file, handing the operator the defaults they asked to
+    # override.
+    if not cp.read(str(path), encoding="utf-8"):
+        raise OSError(f"{path} could not be read")
 
     # [profile] section
     name        = cp.get("profile", "name",        fallback=path.stem)

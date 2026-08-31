@@ -2994,6 +2994,8 @@
     "ok": "Certificat {path} valide — expire dans {days} jour(s)"
   },
   "log_rotation": {
+    "journald_conf_unreadable": "Le stockage journald n'a pas pu \u00eatre d\u00e9termin\u00e9",
+    "journald_conf_unreadable_detail": "/etc/systemd/journald.conf existe mais ne s'ouvre pas : Storage= est donc lu comme non d\u00e9fini. Non d\u00e9fini signifie le d\u00e9faut \u00ab auto \u00bb de journald, persistant si /var/log/journal existe \u2014 mais une config posant Storage=volatile serait indiscernable ici, et ses journaux sont perdus au red\u00e9marrage. V\u00e9rifier avec : sudo grep -i storage /etc/systemd/journald.conf",
     "logrotate_missing": "logrotate non installé — les fichiers journaux grossiront indéfiniment",
     "logrotate_missing_detail": "Sans logrotate, les fichiers dans /var/log/ ne sont jamais tournés ni compressés. L'épuisement du disque par des logs non maîtrisés est une cause fréquente d'interruption de service.",
     "logrotate_missing_reason": "logrotate non installé — aucune rotation des logs",
@@ -3118,6 +3120,8 @@
     "detail_label": "Détail"
   },
   "cron": {
+    "unreadable_files": "{count} fichier(s) cron n'ont pas pu \u00eatre lus : {files}",
+    "unreadable_files_detail": "Une t\u00e2che planifi\u00e9e dans un fichier que BOB n'a pas pu ouvrir est invisible pour cet audit : le verdict \u00ab aucune t\u00e2che cron risqu\u00e9e \u00bb est donc retenu. V\u00e9rifier avec : sudo cat /etc/crontab /etc/cron.d/*",
     "pipe_to_shell": "{count} tâche(s) cron envoie(nt) du contenu distant vers un shell (curl/wget | sh)",
     "pipe_to_shell_detail": "Rediriger des téléchargements distants vers un shell est un vecteur d'attaque courant sur la chaîne d'approvisionnement. Examinez et remplacez par des téléchargements explicites avec vérification d'intégrité.",
     "pipe_to_shell_reason": "{count} tâche(s) cron envoie(nt) du contenu distant vers un shell",

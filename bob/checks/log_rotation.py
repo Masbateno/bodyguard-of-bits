@@ -54,6 +54,12 @@ class LogRotationSnapshot:
         logrotate_rule_count:     Number of files in /etc/logrotate.d/.
         journald_active:          True if systemd-journald is running.
         journald_storage:         Raw value of Storage= (or '' if unset).
+        journald_conf_readable:   False when journald.conf exists but would not
+                                  open. Storage then reads as '' — the same as
+                                  unset, which is treated as journald's "auto"
+                                  default and therefore as persistent, so a
+                                  config saying Storage=volatile was reported
+                                  as persistent.
         journald_max_use:         Raw value of SystemMaxUse= (or '' if unset).
         journald_keep_free:       Raw value of SystemKeepFree= (or '' if unset).
         journal_persistent:       True if /var/log/journal/ exists and is a dir.
@@ -65,6 +71,7 @@ class LogRotationSnapshot:
     logrotate_rule_count:     int   = 0
     journald_active:          bool  = False
     journald_storage:         str   = ""
+    journald_conf_readable:   bool  = True
     journald_max_use:         str   = ""
     journald_keep_free:       str   = ""
     journal_persistent:       bool  = False
@@ -78,7 +85,7 @@ class LogRotationSnapshot:
         logrotate_rule_count = _count_logrotate_rules()
 
         journald_active   = _service_active("systemd-journald")
-        storage, max_use, keep_free = _read_journald_conf()
+        storage, max_use, keep_free, journald_readable = _read_journald_conf()
         journal_persistent = Path("/var/log/journal").is_dir()
 
         syslog_daemon, remote = _detect_remote_syslog()
@@ -88,6 +95,7 @@ class LogRotationSnapshot:
             logrotate_rule_count=logrotate_rule_count,
             journald_active=journald_active,
             journald_storage=storage,
+            journald_conf_readable=journald_readable,
             journald_max_use=max_use,
             journald_keep_free=keep_free,
             journal_persistent=journal_persistent,
@@ -168,6 +176,14 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
                 detail=_t("log_rotation.journald_volatile_detail"),
                 cmd='sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles --create --prefix /var/log/journal && sudo systemctl kill --kill-who=main --signal=SIGUSR1 systemd-journald',
                 nature="improvement",
+            )
+        elif is_persistent and not snapshot.journald_conf_readable and not storage:
+            # Persistence was inferred from journald's default, on a config
+            # that would not open — and that config may well set volatile.
+            result.info(
+                message=_t("log_rotation.journald_conf_unreadable"),
+                detail=_t("log_rotation.journald_conf_unreadable_detail"),
+                key="log_rotation.journald_conf_unreadable",
             )
         elif is_persistent:
             result.ok(
@@ -279,11 +295,13 @@ def _read_journald_conf() -> tuple[str, str, str]:
             elif key == "SystemKeepFree" and val:
                 keep_free = val
 
+    readable = True
     for conf in [_JOURNALD_CONF]:
         try:
             _parse(conf.read_text(encoding="utf-8", errors="replace"))
         except OSError:
-            pass
+            if conf.exists():
+                readable = False
 
     # Drop-ins override the base file
     try:
@@ -295,7 +313,7 @@ def _read_journald_conf() -> tuple[str, str, str]:
     except OSError:
         pass
 
-    return storage, max_use, keep_free
+    return storage, max_use, keep_free, readable
 
 
 def _detect_remote_syslog() -> tuple[str, bool]:

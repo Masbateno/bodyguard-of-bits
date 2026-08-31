@@ -319,7 +319,14 @@ def _read_smb_conf(path: Path) -> dict[str, dict[str, str]]:
     # Preserve keys with spaces (e.g. "min protocol") by only lowercasing
     parser.optionxform = lambda opt: opt.strip().lower()  # type: ignore[assignment]
 
-    parser.read(str(path), encoding="utf-8")
+    # `RawConfigParser.read` takes a *list* of candidate files and silently
+    # skips any it cannot open, returning only those it did read. That turned
+    # an unreadable smb.conf into an empty config rather than an error, so the
+    # caller's `except OSError` guard never fired and every setting fell back
+    # to its default — the host was told SMB1 was disabled and null passwords
+    # refused by a parser that had read nothing. Raise, so the guard works.
+    if not parser.read(str(path), encoding="utf-8"):
+        raise OSError(f"{path} could not be read")
 
     result: dict[str, dict[str, str]] = {}
     for section in parser.sections():

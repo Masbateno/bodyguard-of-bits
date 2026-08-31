@@ -100,6 +100,70 @@ généralement que la fonction n'est pas configurée, ce qui est un fait. Les
 quatre corrigés ici sont ceux où « illisible » et « absent » n'ont pas la même
 vérité et produisaient le même verdict.
 
+### Énumérer les chemins plutôt que les deviner
+
+L'angle « fichiers » ci-dessus a été sondé sur six fichiers choisis à la main.
+C'est un échantillon, pas un balayage, et il a manqué ce qu'un passage
+systématique a trouvé immédiatement : chaque littéral `Path("/etc…")` des
+checks — 82 au total, 29 présents sur la machine de test — rendu illisible à
+tour de rôle, verdicts comparés à une référence. Sur les seize lisibles à la
+référence, douze ne produisent aucune affirmation ; trois si.
+
+**`configparser` saute en silence ce qu'il ne peut pas ouvrir.**
+`RawConfigParser.read` prend une liste de fichiers candidats et ne renvoie que
+ceux qu'il a su lire — un fichier illisible n'est pas une erreur. samba.py avait
+déjà un drapeau `conf_readable` et un check qui sortait tôt dessus, mais le
+garde était inerte : aucune `OSError` n'atteignait jamais le `except`, donc un
+smb.conf illisible devenait une config vide, chaque réglage retombait sur son
+défaut, et la machine s'entendait dire que SMB1 était désactivé et les mots de
+passe nuls refusés par un parseur qui n'avait rien lu. Les deux sites d'appel —
+samba.py et profiles.py — lèvent désormais quand `read` revient vide. Dans
+profiles.py, le même piège transformait un profil illisible en profil vide
+nommé d'après son fichier, rendant silencieusement à l'opérateur les défauts
+qu'il demandait à surcharger ; `load_profile` retombe déjà avec un
+avertissement journalisé, donc la levée transforme une mauvaise réponse
+silencieuse en réponse visible.
+
+**Les fichiers cron.** `_read_cron_file` avalait son erreur de lecture : une
+ligne pipe-to-shell dans un fichier que BOB ne pouvait pas ouvrir était
+invisible et le check répondait quand même `cron.ok`. Il rapporte maintenant
+les fichiers jamais ouverts — sur la machine de développement elle-même,
+lancée sans sudo, ce sont trois entrées `/etc/cron.d` réelles qui étaient
+certifiées propres.
+
+**Le stockage journald.** Un `journald.conf` illisible laisse `Storage=` lu
+comme chaîne vide, ce qui est aussi l'aspect de « non défini » — et non défini
+signifie le défaut `auto` de journald, rapporté persistant si `/var/log/journal`
+existe. Une config posant `Storage=volatile`, dont les journaux sont perdus au
+redémarrage, était donc rapportée persistante. Une valeur déjà lue reste
+digne de confiance ; seul le défaut inféré est retenu.
+
+### Deux angles mesurés et trouvés propres
+
+**Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
+charabia ». sshd_config remplacé par du binaire aléatoire, une ligne tronquée,
+des octets latin-1 et une ligne de 200 000 caractères : aucun plantage, aucune
+trace, aucun verdict fabriqué au-delà du repli sur les défauts déjà décrit.
+Délibérément non « corrigé » : une config qui parse à zéro directive est
+indiscernable d'une config légitimement minimale, et une heuristique séparant
+les deux produirait de fausses alertes sur des machines correctes.
+
+**Les commandes qui pendent** au lieu d'échouer. `run_result` rapporte déjà le
+chemin timeout comme un échec : un `ss` bloqué produit donc `ports.unreadable`
+comme un `ss` absent. Bon à savoir en exploitation : chaque commande bloquée
+coûte son timeout entier, et un audit face à plusieurs a mis un peu moins de
+quatre minutes.
+
+### Deux affirmations retirées
+
+Rapportées comme défauts avant vérification, elles n'en étaient pas.
+`auth_log` conserve son verdict « aucune connexion échouée » quand
+`/var/log/auth.log` est illisible parce qu'il retombe sur journald et obtient
+une vraie réponse — 27 jours analysés, réellement aucune connexion SSH. Et
+`logrotate_ok` ne dépend pas du tout de `/etc/rsyslog.conf` ; l'association
+venait d'un regroupement des findings par préfixe de clé plutôt que par ce que
+chacun lit réellement.
+
 ### Une correction de méthode
 
 Le premier passage de l'expérience sur les fichiers était invalide, et son
@@ -147,6 +211,11 @@ signalait toute cellule CSV vide comme une formule.
 - `SSHSnapshot.sshd_active_known` / `.sshd_config_readable`,
   `FilePermsSnapshot.sudoers_readable`, `UserAccountsSnapshot.passwd_readable`,
   `UmaskSnapshot.unreadable_sources` — là encore, défaut sur le cas lisible.
+- `cron.unreadable_files`, `log_rotation.journald_conf_unreadable` — deux clés de plus,
+  avec `CronAuditSnapshot.unreadable_files` et
+  `LogRotationSnapshot.journald_conf_readable`.
+- `_read_smb_conf` et `profiles._load_from_path` lèvent quand `configparser.read`
+  ne rend aucun fichier lu ; `_read_cron_file` indique s'il a lu quelque chose.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — cinq nouvelles clés, dans les deux locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -161,7 +230,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7342**.
+**Tests** 7288 → **7357**.
 
 ---
 
