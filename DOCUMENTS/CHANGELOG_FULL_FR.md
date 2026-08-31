@@ -474,13 +474,39 @@ Même forme que les lecteurs sysctl plus tôt dans ce cycle — « n'a pas pu li
 et « tout va bien » aboutissant à la même sortie — dans le troisième module à la
 présenter.
 
+### Une pile IPv6 absente était lue comme active, et déclarée conforme
+
+Ce module avait été examiné plus tôt dans le même cycle et laissé passer sur le
+raisonnement qu'un défaut optimiste penche vers l'alarme : supposer IPv6 actif,
+et le contrôle cherchera ensuite les règles de pare-feu IPv6 manquantes pour
+avertir. L'exécuter au lieu de raisonner dessus a montré l'inverse. Les deux
+lectures échouant et sans écouteur IPv6, la sortie est `[OK] ipv6.config_ok` —
+une affirmation explicite que la configuration IPv6 est cohérente, à propos
+d'une pile que BOB n'a pas pu lire du tout.
+
+`/proc/sys/net/ipv6` est créé quand la pile IPv6 enregistre ses sysctls :
+démarrer avec `ipv6.disable=1` — ou un noyau compilé sans IPv6 — laisse donc
+l'arbre entier absent. Le fichier manquait *parce qu'*IPv6 était éteint, et
+`except OSError: return True  # assume enabled if unreadable` en concluait qu'il
+était allumé. Le déclencheur exact que le correctif `hardening` de ce cycle
+avait déjà nommé, dans un module écarté par argument plutôt que par mesure.
+
+Un arbre absent est désormais traité pour ce qu'il est : une réponse. Vérifié
+sous namespace de montage avec `/proc/sys/net` remplacé par un tmpfs vide, où le
+lecteur renvoie maintenant « éteint, et on le sait ». Une lecture qui échoue pour
+toute autre raison reste inconnue et obtient son propre INFO, le verdict
+environnant restant calculé sur la lecture prudente plutôt que supprimé.
+
+La leçon est consignée parce qu'elle a coûté un défaut : un module écarté par
+raisonnement n'est pas un module écarté.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7072**.
+**Tests** 6719 → **7084**.
 
 ---
 

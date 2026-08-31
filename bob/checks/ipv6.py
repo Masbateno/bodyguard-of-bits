@@ -37,6 +37,7 @@ class IPv6Snapshot:
 
     Args:
         kernel_ipv6_enabled: True if the kernel IPv6 stack is active
+        kernel_ipv6_readable: False when the stack state could not be read
                              (i.e. /proc/sys/net/ipv6/conf/all/disable_ipv6 == 0).
         ufw_ipv6_enabled:    True if UFW is configured to manage IPv6 rules
                              (IPV6=yes or absent in /etc/default/ufw).
@@ -50,6 +51,10 @@ class IPv6Snapshot:
                              reached via IPv6 from the internet in that case.
     """
     kernel_ipv6_enabled: bool       = True
+    # False only when /proc/sys/net/ipv6 exists but could not be read. An
+    # absent tree is a definite "IPv6 is off", not an unknown — see
+    # _read_kernel_ipv6.
+    kernel_ipv6_readable: bool      = True
     ufw_ipv6_enabled:    bool       = True
     ipv6_listeners:      list[str]  = field(default_factory=list)
     ufw_v6_covered:      list[str]  = field(default_factory=list)
@@ -64,7 +69,7 @@ class IPv6Snapshot:
             Populated IPv6Snapshot. Never raises — errors reflected as
             safe defaults (kernel IPv6 enabled, UFW IPv6 enabled, empty lists).
         """
-        kernel_ipv6_enabled = _read_kernel_ipv6()
+        kernel_ipv6_enabled, kernel_ipv6_readable = _read_kernel_ipv6()
         ufw_ipv6_enabled    = _read_ufw_ipv6()
         has_global_ipv6     = _read_global_ipv6()
 
@@ -76,6 +81,7 @@ class IPv6Snapshot:
 
         return cls(
             kernel_ipv6_enabled=kernel_ipv6_enabled,
+            kernel_ipv6_readable=kernel_ipv6_readable,
             ufw_ipv6_enabled=ufw_ipv6_enabled,
             ipv6_listeners=ipv6_listeners,
             ufw_v6_covered=ufw_v6_covered,
@@ -106,6 +112,13 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     found_issue = False
 
     # --- Kernel / UFW mismatch ---
+    if not snapshot.kernel_ipv6_readable:
+        result.info(
+            message=_t("ipv6.kernel_state_unknown"),
+            detail=_t("ipv6.kernel_state_unknown_detail"),
+            key="ipv6.kernel_state_unknown",
+        )
+
     if not snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled:
         # UFW will generate (v6) rules that the kernel ignores — confusing but not a
         # security gap (there is no IPv6 stack to exploit).
@@ -221,15 +234,34 @@ def _read_global_ipv6() -> bool:
     return False
 
 
-def _read_kernel_ipv6() -> bool:
-    """Return True if the kernel IPv6 stack is enabled."""
+_IPV6_SYSCTL_DIR  = Path("/proc/sys/net/ipv6")
+_IPV6_DISABLE_ALL = _IPV6_SYSCTL_DIR / "conf" / "all" / "disable_ipv6"
+
+
+def _read_kernel_ipv6() -> "tuple[bool, bool]":
+    """Return (ipv6_enabled, readable) for the kernel IPv6 stack.
+
+    The absent file is not an unknown, it is an answer. `/proc/sys/net/ipv6`
+    is created when the IPv6 stack registers its sysctls, so booting with
+    ``ipv6.disable=1`` — or a kernel built without IPv6 — leaves the whole tree
+    missing. Until v0.15.0 the reader returned True on any failure, "assume
+    enabled if unreadable", so the file was absent *because* IPv6 was off and
+    BOB concluded it was on. With no IPv6 listeners that produced
+    ``ipv6.config_ok``: an explicit statement that the IPv6 configuration was
+    fine, about a stack that did not exist.
+
+    A read that fails for any other reason is genuinely unknown, and is
+    reported as such rather than resolved in either direction.
+    """
     try:
-        val = Path("/proc/sys/net/ipv6/conf/all/disable_ipv6").read_text(
-            encoding="ascii", errors="ignore"
-        ).strip()
-        return val != "1"
+        val = _IPV6_DISABLE_ALL.read_text(encoding="ascii", errors="ignore").strip()
+        return val != "1", True
+    except FileNotFoundError:
+        return False, True
     except OSError:
-        return True  # assume enabled if unreadable
+        if not _IPV6_SYSCTL_DIR.is_dir():
+            return False, True
+        return True, False
 
 
 def _read_ufw_ipv6() -> bool:

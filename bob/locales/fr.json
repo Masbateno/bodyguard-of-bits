@@ -844,7 +844,9 @@
     "listeners_list": "Port(s) concerné(s) : {ports}",
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
-    "ufw_disabled_listeners_link_local": "{count} service(s) en écoute sur IPv6 (::) mais UFW IPv6 est désactivé — adresses link-local uniquement, aucune exposition internet"
+    "ufw_disabled_listeners_link_local": "{count} service(s) en écoute sur IPv6 (::) mais UFW IPv6 est désactivé — adresses link-local uniquement, aucune exposition internet",
+    "kernel_state_unknown": "Impossible de lire l'état IPv6 du noyau",
+    "kernel_state_unknown_detail": "/proc/sys/net/ipv6 existe mais conf/all/disable_ipv6 n'a pas pu être lu : BOB ne peut pas dire si la pile IPv6 est active. Il ne tranche pas. Les constats ci-dessous sont calculés comme si IPv6 était activé, la lecture la plus prudente. Vérifier avec : sysctl net.ipv6.conf.all.disable_ipv6"
   },
   "audit": {
     "section_unavailable": "Section non évaluée ({section}) — une erreur interne a empêché ce contrôle de s'exécuter",

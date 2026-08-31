@@ -438,13 +438,39 @@ that belongs to an active filter.
 Same shape as the sysctl readers earlier in this cycle — "could not read" and
 "is fine" arriving at the same output — in the third module to show it.
 
+### An absent IPv6 stack was read as an enabled one, and reported OK
+
+This module was examined earlier in the same cycle and waved through on the
+reasoning that an optimistic default errs toward alarming: assume IPv6 is on,
+and the check will then look for missing IPv6 firewall rules and warn. Running
+it instead of reasoning about it showed the opposite. With both reads failing
+and no IPv6 listeners, the output is `[OK] ipv6.config_ok` — an explicit
+statement that the IPv6 configuration is consistent, about a stack BOB could not
+read at all.
+
+`/proc/sys/net/ipv6` is created when the IPv6 stack registers its sysctls, so
+booting with `ipv6.disable=1` — or a kernel built without IPv6 — leaves the
+whole tree missing. The file was absent *because* IPv6 was off, and
+`except OSError: return True  # assume enabled if unreadable` concluded it was
+on. The same trigger the `hardening` fix earlier in this cycle already named,
+in a module that had been cleared by argument rather than by measurement.
+
+An absent tree is now treated as what it is: an answer. Verified under a mount
+namespace with `/proc/sys/net` replaced by an empty tmpfs, where the reader now
+returns "off, and known". A read that fails for any other reason stays unknown
+and gets its own INFO, with the surrounding verdict still computed on the
+cautious reading rather than suppressed.
+
+The lesson is recorded because it cost a defect: a module cleared by reasoning
+is not a module cleared.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7072**.
+**Tests** 6719 → **7084**.
 
 ---
 
