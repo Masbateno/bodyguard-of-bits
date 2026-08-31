@@ -103,8 +103,55 @@ _fallback_t = make_fallback_t(_FALLBACK_LABELS)
 
 
 def _md_escape(text: str) -> str:
-    """Escape pipe characters so they don't break Markdown tables."""
-    return text.replace("|", "\\|").replace("\n", " ")
+    """Neutralise a system-derived string for use inside a Markdown table cell.
+
+    Two different jobs, and until v0.15.0 only the first was done:
+
+    * **Table structure** — an unescaped ``|`` splits the row into extra
+      columns and corrupts the table.
+    * **Content semantics** — a Markdown cell renders inline HTML, links and
+      images. Finding messages carry system-derived values (process names,
+      cron commands, file paths, service names), so a crafted one reached the
+      report intact: ``<img src=x onerror=…>`` and ``<script>`` executed in any
+      renderer that passes HTML through, ``[click](javascript:…)`` rendered as
+      a live link, and ``![x](https://…)`` made the auditor's machine fetch a
+      remote image the moment they opened their own report.
+
+    The HTML writer escaped all of this via ``html.escape`` from the start;
+    this one did not. Same invariant, two output formats, one of them wrong.
+
+    ``<`` is turned into an entity rather than backslash-escaped because
+    Markdown does not honour a backslash before ``<``. Escaping ``[`` disables
+    both link and image syntax, since an image is a link with a ``!`` in front.
+    """
+    return (
+        text.replace("|", "\\|")
+            .replace("\n", " ")
+            .replace("<", "&lt;")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+    )
+
+
+def _md_code(text: str) -> str:
+    """Render *text* as a Markdown code span, fenced so its content survives.
+
+    A code span is not a place for entity escaping — ``&lt;`` inside backticks
+    displays as the five characters ``&lt;``, corrupting the command an
+    operator is meant to copy. What a code span does need is a fence longer
+    than the longest run of backticks inside it, and a space of padding when
+    the content starts or ends with one (CommonMark 6.3).
+    """
+    body = text.replace("|", "\\|").replace("\n", " ")
+    longest = 0
+    run = 0
+    for ch in body:
+        run = run + 1 if ch == "`" else 0
+        longest = max(longest, run)
+    fence = "`" * (longest + 1)
+    pad = " " if body.startswith("`") or body.endswith("`") else ""
+    return f"{fence}{pad}{body}{pad}{fence}"
+
 
 
 def build_markdown_output(
@@ -233,7 +280,7 @@ def build_markdown_output(
                     f"{_md_escape(f.note)}*"
                 )
             msg = "".join(msg_parts)
-            cmd = f"`{_md_escape(f.cmd)}`" if f.cmd else ""
+            cmd = _md_code(f.cmd) if f.cmd else ""
             lines.append(f"| {msg} | {cmd} |")
         lines.append("")
 

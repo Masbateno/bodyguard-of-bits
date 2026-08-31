@@ -694,13 +694,67 @@ fichier est en 0644 par défaut et BOB s'exécute en root, donc contrairement à
 `auditctl -l` ou `aa-status`, il n'existe pas de mode de défaillance qu'on puisse
 démontrer plutôt qu'imaginer.
 
+### Le rapport Markdown rendait ce que la machine auditée mettait dans un nom
+
+Les messages de findings portent des valeurs venues du système — noms de
+processus, commandes cron, chemins de fichiers, noms de services et de prisons.
+`_md_escape` échappait `|` pour ne pas casser le tableau, et s'arrêtait là. Or
+une cellule Markdown rend le HTML en ligne, les liens et les images : tout le
+reste passait intact.
+
+```text
+<img src=x onerror=alert(1)>      s'exécute dans tout rendu qui laisse passer le HTML
+[click](javascript:alert(1))      rendu comme un lien actif
+![x](https://evil.invalid/t.png)  télécharge une image distante à l'ouverture
+```
+
+La dernière est la plus intéressante : elle fait sortir une requête depuis la
+machine de **l'auditeur** vers un hôte choisi par l'attaquant, à cause d'une
+chaîne présente sur la machine **auditée**, au moment où l'opérateur ouvre son
+propre rapport.
+
+L'écrivain HTML échappait tout cela depuis toujours, et `report_markdown.py` —
+le rapport détaillé `-d` — avait été durci en v0.7.3 avec un `_safe_url`
+documenté après un XSS trouvé à l'époque. `markdown_output.py` était le
+troisième écrivain, et le seul restant. Le même invariant, tenu par deux formats
+de sortie sur trois : cinquième occurrence de cette forme dans le cycle.
+
+`cmd` n'est **délibérément pas** échappé en entités. Il est rendu dans un code
+span, où Markdown traite le contenu littéralement, et `&lt;` y afficherait cinq
+caractères là où une commande destinée à être copiée comporte un `<`. Ce dont un
+code span a besoin, c'est d'une clôture plus longue que la plus longue suite de
+backticks qu'il contient, plus un espace de remplissage si le contenu commence ou
+finit par un backtick (CommonMark 6.3) — ce que fait le nouveau `_md_code`, et ce
+que l'ancien encadrement par un seul backtick ratait.
+
+### Surfaces hors checks/, examinées et saines
+
+Le moteur de score, son détail, l'écrivain JSON et la comparaison de baseline ont
+tous été croisés, et aucun n'a bougé :
+
+* **Niveaux de risque** — chaque score de -1 à 11 confronté à son niveau ; les
+  seuils à 3/5/8 sont monotones, sans décalage d'une unité.
+* **Arithmétique du détail** — sur un audit réel, les déductions somment
+  exactement à `MAX_SCORE - score`, chacune porte un motif et une clé, et chacune
+  correspond à un finding. Quand les déductions dépassent le maximum, l'affichage
+  le dit en toutes lettres — « Raw score (sum of deductions): -8/10 » au-dessus
+  de « Final score: 0/10 » — au lieu de présenter en silence une arithmétique qui
+  ne tombe pas juste.
+* **Sortie JSON** — score, nombre de findings, compteurs d'alertes et
+  d'avertissements, sections dégradées, profil et nombre de déductions
+  correspondent exactement au moteur ; le document fait l'aller-retour par
+  `json.dumps`/`loads` ; aucune clé de finding n'est perdue.
+* **Comparaison de baseline** — `save` puis `load` rend un objet identique, une
+  baseline comparée à elle-même n'annonce aucun changement, et le fichier est
+  écrit en 0600.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7179**.
+**Tests** 6719 → **7199**.
 
 ---
 

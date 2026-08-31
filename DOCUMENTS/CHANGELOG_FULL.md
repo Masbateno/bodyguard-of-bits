@@ -644,13 +644,63 @@ elsewhere in this cycle. It is left as is: the file is 0644 by default and BOB
 runs as root, so unlike `auditctl -l` or `aa-status` there is no failure mode
 that can be demonstrated rather than imagined.
 
+### The Markdown report rendered whatever the audited host put in a name
+
+Finding messages carry system-derived values — process names, cron commands,
+file paths, service and jail names. `_md_escape` escaped `|` so the table would
+not break, and stopped there. A Markdown cell renders inline HTML, links and
+images, so everything else went through intact:
+
+```text
+<img src=x onerror=alert(1)>      executes in any renderer that passes HTML
+[click](javascript:alert(1))      renders as a live link
+![x](https://evil.invalid/t.png)  fetches a remote image when the report is opened
+```
+
+The last one is the interesting one: it makes the **auditor's** machine call out
+to a host of the attacker's choosing, because of a string on the **audited**
+machine, at the moment the operator opens their own report.
+
+The HTML writer escaped all of this from the start, and `report_markdown.py` —
+the `-d` detailed report — was hardened in v0.7.3 with a documented `_safe_url`
+after an earlier XSS finding. `markdown_output.py` was the third writer and the
+only one left. The same invariant, honoured in two output formats out of three:
+the fifth instance of that shape in this cycle.
+
+`cmd` is deliberately **not** entity-escaped. It renders inside a code span,
+where Markdown treats content literally, and `&lt;` there would show the
+operator five characters where a command they are meant to copy has a `<`. What
+a code span needs instead is a fence longer than the longest backtick run inside
+it, plus padding when the content starts or ends with one (CommonMark 6.3) —
+which is what the new `_md_code` does, and which the old single-backtick
+wrapping got wrong.
+
+### Surfaces outside checks/, examined and clean
+
+The score engine, its breakdown, the JSON writer and the baseline comparison
+were all cross-checked and none of them moved:
+
+* **Risk levels** — every score from -1 to 11 mapped to its level; the
+  thresholds at 3/5/8 are monotonic with no off-by-one.
+* **Breakdown arithmetic** — on a live audit, the deductions sum exactly to
+  `MAX_SCORE - score`, every deduction carries a reason and a key, and every one
+  corresponds to a finding. When deductions exceed the maximum the display says
+  so in as many words — "Raw score (sum of deductions): -8/10" above "Final
+  score: 0/10" — rather than quietly presenting arithmetic that does not add up.
+* **JSON output** — score, finding count, alert and warning counts, degraded
+  sections, profile and deduction count all match the engine exactly; the
+  document round-trips through `json.dumps`/`loads`; no finding key is dropped.
+* **Baseline comparison** — `save` then `load` returns an identical object, a
+  baseline diffed against itself reports no change, and the file is written
+  0600.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7179**.
+**Tests** 6719 → **7199**.
 
 ---
 
