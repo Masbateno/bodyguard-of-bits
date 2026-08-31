@@ -20,6 +20,11 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     samba's existing readability guard was inert and an unreadable smb.conf
     certified SMB1 disabled; unread cron files still earned cron.ok; an
     unreadable journald.conf made Storage=volatile read as persistent.
+  * A fourth pass took the directories the checks list: /etc/ssh at mode 0700
+    lost the entire audit (no report, exit 3) because Path.exists() re-raises
+    EACCES from an unguarded core collection. New path_exists() generalises the
+    workaround ddns carried alone; an unlistable /etc/logrotate.d no longer
+    reads as "no rules configured".
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

@@ -32,6 +32,7 @@ from bob.checks._run import (
     _C_LOCALE_ENV,
     _identity_t,
     _parse_english_month_day,
+    path_exists,
 )
 from bob.scoring import CheckResult
 
@@ -194,7 +195,7 @@ class LogsSnapshot:
         cutoff_dt = datetime.now() - timedelta(days=log_days)
 
         # --- Primary source: /var/log/ufw.log ---
-        if log_path.exists():
+        if path_exists(log_path):
             _MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
             # M-6 (v0.5.6): binary mode for the seek/tell arithmetic.
             # TextIOBase.tell() returns "an opaque number" per Python
@@ -495,7 +496,7 @@ def _geo_via_geoip2(ip: str) -> str:
     """
     for db_path in _GEOIP2_DB_PATHS:
         path = Path(db_path)
-        if not path.exists():
+        if not path_exists(path):
             continue
         try:
             with geoip2.database.Reader(str(path)) as reader:

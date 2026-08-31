@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active
+from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active, path_exists
 from bob.scoring import CheckResult
 
 # Age threshold (in seconds) above which the APT cache is considered stale.
@@ -224,7 +224,7 @@ def _check_unattended() -> tuple[bool, bool]:
 
     # Step 2 — configured to run upgrades automatically?
     apt_conf = Path("/etc/apt/apt.conf.d/20auto-upgrades")
-    if apt_conf.exists():
+    if path_exists(apt_conf):
         try:
             content = _strip_apt_comments(
                 apt_conf.read_text(encoding="utf-8", errors="ignore")

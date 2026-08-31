@@ -557,3 +557,153 @@ class TestBatchThreeLocaleKeys:
                 assert part in node, f"{locale}.json is missing {dotted}"
                 node = node[part]
             assert isinstance(node, str) and node.strip()
+
+
+# ---------------------------------------------------------------------------
+# Directories, and the exists() trap underneath them
+# ---------------------------------------------------------------------------
+
+class TestPathExistsNeverRaises:
+    """`Path.exists()` looks total but re-raises EACCES.
+
+    It swallows only ENOENT, ENOTDIR, EBADF and ELOOP. A config file under a
+    directory the auditor cannot traverse therefore raised PermissionError —
+    and from an unguarded core collection (a service's port auto-detection)
+    that aborted the entire audit: no report, no findings, exit 3.
+    """
+
+    def test_absent_path_is_false(self, tmp_path):
+        from bob.checks._run import path_exists
+        assert path_exists(tmp_path / "nope") is False
+
+    def test_present_path_is_true(self, tmp_path):
+        from bob.checks._run import path_exists
+        target = tmp_path / "yes"
+        target.write_text("")
+        assert path_exists(target) is True
+
+    def test_permission_error_is_false_rather_than_an_exception(self):
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from bob.checks._run import path_exists
+        target = Path("/nonexistent/whatever")
+        with patch.object(Path, "exists", side_effect=PermissionError(13, "denied")):
+            assert path_exists(target) is False
+
+    def test_the_bare_call_really_does_raise(self):
+        """Pin the stdlib behaviour this helper exists for."""
+        import errno
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with patch.object(Path, "exists",
+                          side_effect=PermissionError(errno.EACCES, "denied")):
+            with pytest.raises(PermissionError):
+                Path("/whatever").exists()
+
+    def test_no_check_calls_bare_exists(self):
+        """A regression guard: every check goes through the helper.
+
+        One bare call under an unreadable directory is enough to lose the whole
+        audit, so this is enforced rather than reviewed.
+        """
+        import re
+        from pathlib import Path
+
+        offenders = []
+        for path in sorted(Path("bob/checks").rglob("*.py")):
+            if path.name == "_run.py":
+                continue  # defines the helper, and wraps the one real call
+            for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                stripped = line.strip()
+                if stripped.startswith("#") or stripped.startswith("*"):
+                    continue
+                if re.search(r"\.exists\(\)", line) and "``" not in line:
+                    offenders.append(f"{path}:{number}")
+        assert not offenders, (
+            "these call Path.exists() directly instead of path_exists(); "
+            "EACCES there aborts the audit: " + ", ".join(offenders)
+        )
+
+
+class TestSshConfigProbeSeparatesThreeCases:
+    """absent / unreadable / readable are three different answers."""
+
+    def test_absent_config_leaves_the_defaults_trusted(self, tmp_path, monkeypatch):
+        from bob.checks.ssh import _snapshot as mod
+        monkeypatch.setattr(mod, "_SSHD_CONFIG_PATH", tmp_path / "absent")
+        monkeypatch.setattr(mod, "_command_exists", lambda name: False)
+        snap = mod.SSHSnapshot.from_system()
+        # sshd really would run on its compiled-in defaults here.
+        assert snap.sshd_config_readable is True
+        assert snap.sshd_config == {}
+
+    def test_unreadable_config_is_marked_as_such(self, tmp_path, monkeypatch):
+        from bob.checks.ssh import _snapshot as mod
+        target = tmp_path / "sshd_config"
+        target.write_text("PermitRootLogin yes\n")
+        target.chmod(0o000)
+        monkeypatch.setattr(mod, "_SSHD_CONFIG_PATH", target)
+        monkeypatch.setattr(mod, "_command_exists", lambda name: False)
+        try:
+            if target.open("rb"):  # running as root defeats the mode bits
+                pytest.skip("euid can read a 0000 file; mode-based denial N/A")
+        except OSError:
+            pass
+        snap = mod.SSHSnapshot.from_system()
+        assert snap.sshd_config_readable is False
+        assert snap.sshd_config == {}
+
+    def test_readable_config_is_parsed(self, tmp_path, monkeypatch):
+        from bob.checks.ssh import _snapshot as mod
+        target = tmp_path / "sshd_config"
+        target.write_text("PermitRootLogin yes\n")
+        monkeypatch.setattr(mod, "_SSHD_CONFIG_PATH", target)
+        monkeypatch.setattr(mod, "_command_exists", lambda name: False)
+        snap = mod.SSHSnapshot.from_system()
+        assert snap.sshd_config_readable is True
+        assert snap.sshd_config.get("permitrootlogin") == "yes"
+
+
+class TestLogrotateDirectoryUnlistable:
+    """A directory that will not list counts zero rules, like an empty one."""
+
+    def _keys(self, *, listed, count=0):
+        from bob.checks.log_rotation import LogRotationSnapshot, check_log_rotation
+        snap = LogRotationSnapshot(logrotate_installed=True,
+                                   logrotate_rule_count=count,
+                                   logrotate_dir_listed=listed)
+        return {f.key for f in check_log_rotation(snap).findings}
+
+    def test_unlistable_is_not_reported_as_no_rules(self):
+        keys = self._keys(listed=False)
+        assert "log_rotation.logrotate_no_rules" not in keys
+        assert "log_rotation.logrotate_dir_unreadable" in keys
+
+    def test_listed_and_empty_still_reports_no_rules(self):
+        assert "log_rotation.logrotate_no_rules" in self._keys(listed=True)
+
+    def test_listed_with_rules_reports_ok(self):
+        assert "log_rotation.logrotate_ok" in self._keys(listed=True, count=12)
+
+
+class TestBatchFourLocaleKeys:
+    @pytest.mark.parametrize("dotted", [
+        "log_rotation.logrotate_dir_unreadable",
+        "log_rotation.logrotate_dir_unreadable_detail",
+    ])
+    def test_key_present_in_both_locales(self, dotted):
+        import json
+        from pathlib import Path
+        for locale in ("en", "fr"):
+            data = json.loads(
+                (Path("bob/locales") / f"{locale}.json").read_text(encoding="utf-8")
+            )
+            node = data
+            for part in dotted.split("."):
+                assert part in node, f"{locale}.json is missing {dotted}"
+                node = node[part]
+            assert isinstance(node, str) and node.strip()

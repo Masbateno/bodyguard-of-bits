@@ -21,7 +21,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t, path_exists
 from bob.scoring import CheckResult
 
 _LOG_PATHS: list[Path] = [
@@ -166,7 +166,7 @@ class AuthLogSnapshot:
         lines_read: list[str] = []
 
         for path in _LOG_PATHS:
-            if not path.exists():
+            if not path_exists(path):
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")

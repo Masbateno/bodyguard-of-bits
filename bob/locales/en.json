@@ -2994,6 +2994,8 @@
     "ok": "Certificate {path} valid — expires in {days} day(s)"
   },
   "log_rotation": {
+    "logrotate_dir_unreadable": "/etc/logrotate.d could not be listed",
+    "logrotate_dir_unreadable_detail": "The rule directory would not open, so BOB cannot tell whether logs are rotated. A directory that will not list counts zero rules, exactly like an empty one \u2014 reported as unknown rather than as \"no rules configured\". Check with: sudo ls /etc/logrotate.d/",
     "journald_conf_unreadable": "journald storage could not be determined",
     "journald_conf_unreadable_detail": "/etc/systemd/journald.conf exists but would not open, so Storage= reads as unset. Unset means journald's \"auto\" default, which is persistent when /var/log/journal exists — but a config setting Storage=volatile would look identical here, and its logs are lost on reboot. Check with: sudo grep -i storage /etc/systemd/journald.conf",
     "logrotate_missing": "logrotate not installed — log files will grow unbounded",

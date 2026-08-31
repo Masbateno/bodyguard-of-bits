@@ -264,6 +264,27 @@ def unit_active_state(name: str, timeout: int = _CMD_TIMEOUT) -> "str | None":
     return state if state in _UNIT_STATES else None
 
 
+def path_exists(path: "Path") -> bool:
+    """Whether *path* exists, without raising when the answer is off-limits.
+
+    ``Path.exists()`` looks total but is not: it swallows ENOENT, ENOTDIR,
+    EBADF and ELOOP and re-raises everything else, so a file under a directory
+    the auditor cannot traverse raises PermissionError. One such directory
+    (`/etc/ssh` at mode 0700) aborted the entire audit from an unguarded core
+    collection — no report, no findings, exit 3 — because a service's port
+    auto-detection asked whether its config file existed.
+
+    Returning False here means "not usable from where BOB stands", which is the
+    right answer for callers deciding whether to open something. Callers that
+    must tell "absent" from "off-limits" have to probe the open itself; the
+    distinction matters to a verdict, and never to a control-flow guard.
+    """
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
 def _identity_t(key: str, **kwargs) -> str:
     """Fallback translation function — returns the key itself.
 

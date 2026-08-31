@@ -32,6 +32,7 @@ from bob.checks._run import (
     _identity_t,
     pipes_into_shell,
     run_result,
+    path_exists,
 )
 from bob.scoring import CheckResult
 
@@ -274,7 +275,7 @@ def _find_service_file(service: str) -> Path | None:
     """Return the first existing service unit file path, or None."""
     for d in _SERVICE_DIRS:
         p = d / service
-        if p.exists():
+        if path_exists(p):
             return p
     return None
 

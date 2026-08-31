@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active, path_exists  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -113,13 +113,13 @@ class ClamAVSnapshot:
         # even if systemctl is unavailable, e.g. inside containers).
         if not snap.clamd_active:
             for socket_path in _CLAMD_SOCKETS:
-                if socket_path.exists():
+                if path_exists(socket_path):
                     snap.clamd_active = True
                     break
 
         # --- virus database freshness ---
         for db_path in _DB_CANDIDATES:
-            if db_path.exists():
+            if path_exists(db_path):
                 try:
                     mtime_dt = datetime.fromtimestamp(
                         db_path.stat().st_mtime, tz=timezone.utc
@@ -272,7 +272,7 @@ def _find_last_scan_date() -> str | None:
     latest_dt: datetime | None = None
 
     for log_path in _SCAN_LOG_CANDIDATES:
-        if not log_path.exists():
+        if not path_exists(log_path):
             continue
         try:
             lines = _tail_lines(log_path, _LOG_TAIL_LINES)

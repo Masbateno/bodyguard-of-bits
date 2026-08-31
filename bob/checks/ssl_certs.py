@@ -37,6 +37,7 @@ from bob.checks._run import (
     _command_exists,
     _identity_t,
     _parse_english_month_day,
+    path_exists,
 )
 from bob.scoring import CheckResult
 
@@ -106,7 +107,7 @@ class SslCertsSnapshot:
 
         # --- postfix ---
         postfix_cf = Path("/etc/postfix/main.cf")
-        if postfix_cf.exists():
+        if path_exists(postfix_cf):
             try:
                 content = postfix_cf.read_text(encoding="utf-8", errors="ignore")
                 for m in _POSTFIX_RE.finditer(content):
@@ -253,7 +254,7 @@ def _add_path(path: Path, seen: set[str]) -> None:
     """Resolve symlinks and add to the set if file exists and is readable."""
     try:
         real = str(path.resolve())
-        if path.exists() and real not in seen:
+        if path_exists(path) and real not in seen:
             seen.add(real)
     except OSError:
         pass

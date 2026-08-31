@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active, path_exists  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 
@@ -52,6 +52,8 @@ class LogRotationSnapshot:
     Args:
         logrotate_installed:      True if logrotate binary is present.
         logrotate_rule_count:     Number of files in /etc/logrotate.d/.
+        logrotate_dir_listed:     False when that directory would not list, so
+                                  a count of zero means "not read", not "none".
         journald_active:          True if systemd-journald is running.
         journald_storage:         Raw value of Storage= (or '' if unset).
         journald_conf_readable:   False when journald.conf exists but would not
@@ -69,6 +71,7 @@ class LogRotationSnapshot:
     """
     logrotate_installed:      bool  = False
     logrotate_rule_count:     int   = 0
+    logrotate_dir_listed:     bool  = True
     journald_active:          bool  = False
     journald_storage:         str   = ""
     journald_conf_readable:   bool  = True
@@ -82,7 +85,7 @@ class LogRotationSnapshot:
     def from_system(cls) -> "LogRotationSnapshot":
         """Inspect the live system. Never raises."""
         logrotate_installed  = _command_exists("logrotate")
-        logrotate_rule_count = _count_logrotate_rules()
+        logrotate_rule_count, logrotate_dir_listed = _count_logrotate_rules()
 
         journald_active   = _service_active("systemd-journald")
         storage, max_use, keep_free, journald_readable = _read_journald_conf()
@@ -93,6 +96,7 @@ class LogRotationSnapshot:
         return cls(
             logrotate_installed=logrotate_installed,
             logrotate_rule_count=logrotate_rule_count,
+            logrotate_dir_listed=logrotate_dir_listed,
             journald_active=journald_active,
             journald_storage=storage,
             journald_conf_readable=journald_readable,
@@ -139,13 +143,20 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
         )
     else:
         if snapshot.logrotate_rule_count <= 0:
-            result.info(
-                message=_t("log_rotation.logrotate_no_rules"),
-                detail=_t("log_rotation.logrotate_no_rules_detail"),
-                cmd="ls /etc/logrotate.d/",
-                cmd_type="check",
-                key="log_rotation.logrotate_no_rules",
-            )
+            if not snapshot.logrotate_dir_listed:
+                result.info(
+                    message=_t("log_rotation.logrotate_dir_unreadable"),
+                    detail=_t("log_rotation.logrotate_dir_unreadable_detail"),
+                    key="log_rotation.logrotate_dir_unreadable",
+                )
+            else:
+                result.info(
+                    message=_t("log_rotation.logrotate_no_rules"),
+                    detail=_t("log_rotation.logrotate_no_rules_detail"),
+                    cmd="ls /etc/logrotate.d/",
+                    cmd_type="check",
+                    key="log_rotation.logrotate_no_rules",
+                )
         else:
             result.ok(
                 message=_t(
@@ -254,15 +265,20 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _count_logrotate_rules() -> int:
-    """Return the number of non-hidden regular files in /etc/logrotate.d/."""
+def _count_logrotate_rules() -> "tuple[int, bool]":
+    """Count non-hidden regular files in /etc/logrotate.d/, and say if we could.
+
+    A directory that will not list yields zero, which is also what a genuinely
+    empty one yields — and the check answers zero with "no logrotate rules
+    configured", an assertion about a directory it never read.
+    """
     try:
         return sum(
             1 for p in _LOGROTATE_D.iterdir()
             if p.is_file() and not p.name.startswith(".")
-        )
+        ), True
     except OSError:
-        return 0
+        return 0, False
 
 
 def _service_active(name: str) -> bool:
@@ -300,7 +316,7 @@ def _read_journald_conf() -> tuple[str, str, str]:
         try:
             _parse(conf.read_text(encoding="utf-8", errors="replace"))
         except OSError:
-            if conf.exists():
+            if path_exists(conf):
                 readable = False
 
     # Drop-ins override the base file

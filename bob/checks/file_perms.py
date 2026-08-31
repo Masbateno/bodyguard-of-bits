@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple, Tuple
 
-from bob.checks._run import TranslationFunc, _identity_t, join_continuations
+from bob.checks._run import TranslationFunc, _identity_t, join_continuations, path_exists
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ class FilePermsSnapshot:
         # 1. Sensitive system files
         for spec in _SENSITIVE_FILES:
             p = Path(spec.path)
-            if p.exists():
+            if path_exists(p):
                 try:
                     mode = stat.S_IMODE(p.stat().st_mode)
                 except OSError:
@@ -159,7 +159,7 @@ def _collect_nopasswd_entries() -> "tuple[list[str], list[str], bool]":
     paths: list[Path] = []
 
     sudoers = Path("/etc/sudoers")
-    if sudoers.exists():
+    if path_exists(sudoers):
         paths.append(sudoers)
 
     sudoers_d = Path("/etc/sudoers.d")

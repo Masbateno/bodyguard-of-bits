@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists
 from bob.scoring import CheckResult
 
 # Age thresholds (days)
@@ -93,7 +93,7 @@ class RootkitSnapshot:
 def _rkhunter_db_age() -> int | None:
     """Return age in days of the rkhunter database file, or None if absent."""
     try:
-        if not _RKHUNTER_DB.exists():
+        if not path_exists(_RKHUNTER_DB):
             return None
         mtime_dt = datetime.fromtimestamp(
             _RKHUNTER_DB.stat().st_mtime, tz=timezone.utc
@@ -115,7 +115,7 @@ def _rkhunter_last_scan() -> str | None:
          only, with no date on content lines).
     """
     try:
-        if not _RKHUNTER_LOG.exists():
+        if not path_exists(_RKHUNTER_LOG):
             return None
         stat = _RKHUNTER_LOG.stat()
         if stat.st_size == 0:
@@ -141,7 +141,7 @@ def _chkrootkit_last_scan() -> str | None:
     """Return the ISO date of the last chkrootkit scan, or None."""
     for log_path in (_CHKROOTKIT_LOG, _CHKROOTKIT_LOG_ALT):
         try:
-            if not log_path.exists():
+            if not path_exists(log_path):
                 continue
             mtime_dt = datetime.fromtimestamp(
                 log_path.stat().st_mtime, tz=timezone.utc

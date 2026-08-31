@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, path_exists
 from bob.scoring import CheckResult
 
 # Capability bit → name, limited to the ones whose presence in a container is a
@@ -117,9 +117,9 @@ def _detect_container() -> str:
         out = _run("systemd-detect-virt", "--container").strip()
         if out and out != "none":
             return out
-    if Path("/.dockerenv").exists():
+    if path_exists(Path("/.dockerenv")):
         return "docker"
-    if Path("/run/.containerenv").exists():
+    if path_exists(Path("/run/.containerenv")):
         return "podman"
     try:
         cgroup = Path("/proc/1/cgroup").read_text(encoding="utf-8", errors="replace")

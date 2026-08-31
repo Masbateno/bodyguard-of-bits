@@ -23,7 +23,7 @@ import configparser
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -87,12 +87,12 @@ class SambaSnapshot:
 
         # --- detect installation ---
         snap.daemon_installed = _command_exists("smbd") or _command_exists("samba")
-        snap.installed = snap.daemon_installed or _SMB_CONF_PATH.exists()
+        snap.installed = snap.daemon_installed or path_exists(_SMB_CONF_PATH)
         if not snap.installed:
             return snap
 
         # --- parse smb.conf ---
-        if not _SMB_CONF_PATH.exists():
+        if not path_exists(_SMB_CONF_PATH):
             return snap
 
         try:

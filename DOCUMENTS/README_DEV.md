@@ -178,6 +178,8 @@ bob/
 │   │                       #   "nothing found" (v0.15.2),
 │   │                       #   unit_active_state() — a unit's state or None
 │   │                       #   when systemd was never asked (v0.15.2),
+│   │                       #   path_exists() — Path.exists() re-raises EACCES;
+│   │                       #   one bare call lost a whole audit (v0.15.2),
 │   │                       #   join_continuations(), strip_unit_glyph(),
 │   │                       #   pipes_into_shell() — one copy of each rule
 │   ├── _ufw.py             # `ufw status numbered` grammar, shared by ports,
@@ -483,7 +485,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2057 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2059 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

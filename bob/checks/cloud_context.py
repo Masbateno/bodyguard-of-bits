@@ -48,6 +48,7 @@ from bob.checks._run import (
     TranslationFunc,
     _identity_t,
     _run,
+    path_exists,
 )
 from bob.scoring import CheckResult
 
@@ -175,7 +176,7 @@ def _imds_onlink() -> bool:
 def _path_exists(p: Path) -> bool:
     """Robust existence check (degrades to False on PermissionError etc.)."""
     try:
-        return p.exists()
+        return path_exists(p)
     except OSError:
         return False
 

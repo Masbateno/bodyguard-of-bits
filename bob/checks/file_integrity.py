@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists
 from bob.scoring import CheckResult
 
 # Age threshold before a stale check is flagged
@@ -68,7 +68,7 @@ class FileIntegritySnapshot:
 
         if _command_exists("aide"):
             snap.tool      = "aide"
-            snap.db_exists = any(p.exists() for p in _AIDE_DB_PATHS)
+            snap.db_exists = any(path_exists(p) for p in _AIDE_DB_PATHS)
             snap.last_check_date = _last_run_from_logs(_AIDE_LOG_PATHS)
             return snap
 
@@ -98,7 +98,7 @@ def _last_run_from_logs(log_paths: tuple) -> str | None:
     best_mtime: float = 0.0
     for p in log_paths:
         try:
-            if not p.exists():
+            if not path_exists(p):
                 continue
             mtime = p.stat().st_mtime
             if mtime > best_mtime:

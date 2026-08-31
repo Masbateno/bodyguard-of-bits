@@ -27,7 +27,7 @@ from enum import Enum
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, _run
+from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, _run, path_exists
 from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
 from bob.sysinfo import _is_private_or_loopback_ipv4, _is_private_or_loopback_ipv6
@@ -533,7 +533,7 @@ def _auto_detect_port(service: Service) -> str | None:
     """
     for config_file in service.detection.config_files:
         path = Path(config_file)
-        if not path.exists() or not _is_safe_config_path(path):
+        if not path_exists(path) or not _is_safe_config_path(path):
             continue
         try:
             content = path.read_text(encoding="utf-8", errors="ignore")

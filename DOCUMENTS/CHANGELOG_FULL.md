@@ -131,6 +131,41 @@ exists. A config setting `Storage=volatile`, whose logs are lost on reboot, was
 therefore reported as persistent. A value already parsed is still trusted; only
 the inferred default is withheld.
 
+### Directories, and the `exists()` trap underneath them
+
+Enumerating the *files* the checks read left the *directories* they list
+untouched — `sudoers.d`, `cron.d`, `profile.d`, `logrotate.d` and thirteen
+more. Made unlistable in turn, one produced a false statement and one produced
+something worse.
+
+**`/etc/logrotate.d`** that will not list counts zero rules, exactly like an
+empty one, and the check answered "no logrotate rules configured" — an
+assertion about a directory it never read.
+
+**`/etc/ssh` at mode 0700 lost the entire audit.** No report, no findings,
+exit 3, a single line on stderr. `Path.exists()` looks total but is not: it
+swallows ENOENT, ENOTDIR, EBADF and ELOOP and re-raises everything else, so a
+file under a directory the auditor cannot traverse raises PermissionError
+rather than returning False. A service's port auto-detection asked whether
+`sshd_config` existed, from the always-on core that is deliberately unguarded
+(guarding it would leave downstream code reading names never bound), and the
+exception took the run with it. Present since well before this cycle —
+reproduced identically on the v0.15.1 tag.
+
+The project already knew the mechanism: `ddns._config_present` carries a
+docstring describing this exact trap, written for a DuckDNS script under a
+hardened `/root`. The knowledge stayed local to the one module that had been
+bitten. `path_exists()` now generalises it, all 30 call sites in the checks go
+through it, and a test enforces that no bare `.exists()` comes back — one is
+enough to lose a run.
+
+The ssh config probe was rewritten while fixing this. Asking `exists()` first
+cannot separate the three cases that matter, and treating EACCES as "absent"
+would have reintroduced the whole defect class: an absent config means sshd
+genuinely runs on its compiled-in defaults, so reading them is right, while an
+unreadable one means those defaults describe nothing about this host. Probing
+the open tells absent from off-limits from readable.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -203,6 +238,10 @@ discriminated nothing, and `"" in "=+-@"` — which is `True` in Python, flaggin
   `LogRotationSnapshot.journald_conf_readable`.
 - `_read_smb_conf` and `profiles._load_from_path` raise when `configparser.read`
   returns no file read; `_read_cron_file` returns whether it read anything.
+- New `bob/checks/_run.py::path_exists()`; all 30 `.exists()` call sites in the
+  checks migrated, with a test forbidding a return to the bare call.
+- `log_rotation.logrotate_dir_unreadable` and `LogRotationSnapshot.logrotate_dir_listed`.
+- The sshd_config probe separates absent / unreadable / readable.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — five new finding/display keys, both locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -216,7 +255,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7357**.
+**Tests** 7288 → **7370**.
 
 ---
 

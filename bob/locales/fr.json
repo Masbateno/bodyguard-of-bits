@@ -2994,6 +2994,8 @@
     "ok": "Certificat {path} valide — expire dans {days} jour(s)"
   },
   "log_rotation": {
+    "logrotate_dir_unreadable": "/etc/logrotate.d n'a pas pu \u00eatre list\u00e9",
+    "logrotate_dir_unreadable_detail": "Le r\u00e9pertoire de r\u00e8gles ne s'ouvre pas : BOB ne peut pas dire si les journaux sont tourn\u00e9s. Un r\u00e9pertoire qui ne se liste pas compte z\u00e9ro r\u00e8gle, exactement comme un r\u00e9pertoire vide \u2014 signal\u00e9 comme inconnu plut\u00f4t que comme \u00ab aucune r\u00e8gle configur\u00e9e \u00bb. V\u00e9rifier avec : sudo ls /etc/logrotate.d/",
     "journald_conf_unreadable": "Le stockage journald n'a pas pu \u00eatre d\u00e9termin\u00e9",
     "journald_conf_unreadable_detail": "/etc/systemd/journald.conf existe mais ne s'ouvre pas : Storage= est donc lu comme non d\u00e9fini. Non d\u00e9fini signifie le d\u00e9faut \u00ab auto \u00bb de journald, persistant si /var/log/journal existe \u2014 mais une config posant Storage=volatile serait indiscernable ici, et ses journaux sont perdus au red\u00e9marrage. V\u00e9rifier avec : sudo grep -i storage /etc/systemd/journald.conf",
     "logrotate_missing": "logrotate non installé — les fichiers journaux grossiront indéfiniment",

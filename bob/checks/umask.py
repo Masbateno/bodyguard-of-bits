@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _identity_t, path_exists
 from bob.scoring import CheckResult
 
 _UMASK_RE = re.compile(r"^(?!\s*#)\s*(?:umask|UMASK)\s+([0-7]{3,4})\b", re.MULTILINE)
@@ -142,7 +142,7 @@ class UmaskSnapshot:
             val = _scan(path, regex)
             if val is not None:
                 found[str(path)] = val
-            elif path.exists() and not _is_readable(path):
+            elif path_exists(path) and not _is_readable(path):
                 unreadable.append(str(path))
 
         # /etc/profile.d/*.sh

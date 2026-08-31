@@ -567,7 +567,7 @@ class TestCountLogrotateRules:
         (d / "rsyslog").write_text("# rule")
         (d / ".hidden").write_text("# hidden")
         monkeypatch.setattr(lr_mod, "_LOGROTATE_D", d)
-        assert lr_mod._count_logrotate_rules() == 2
+        assert lr_mod._count_logrotate_rules()[0] == 2
 
     def test_directories_not_counted(self, tmp_path, monkeypatch):
         import bob.checks.log_rotation as lr_mod
@@ -576,14 +576,14 @@ class TestCountLogrotateRules:
         (d / "nginx").write_text("# rule")
         (d / "subdir").mkdir()
         monkeypatch.setattr(lr_mod, "_LOGROTATE_D", d)
-        assert lr_mod._count_logrotate_rules() == 1
+        assert lr_mod._count_logrotate_rules()[0] == 1
 
     def test_empty_dir_returns_zero(self, tmp_path, monkeypatch):
         import bob.checks.log_rotation as lr_mod
         d = tmp_path / "logrotate.d"
         d.mkdir()
         monkeypatch.setattr(lr_mod, "_LOGROTATE_D", d)
-        assert lr_mod._count_logrotate_rules() == 0
+        assert lr_mod._count_logrotate_rules()[0] == 0
 
     def test_only_hidden_files_returns_zero(self, tmp_path, monkeypatch):
         import bob.checks.log_rotation as lr_mod
@@ -592,9 +592,9 @@ class TestCountLogrotateRules:
         (d / ".keep").write_text("")
         (d / ".hidden").write_text("")
         monkeypatch.setattr(lr_mod, "_LOGROTATE_D", d)
-        assert lr_mod._count_logrotate_rules() == 0
+        assert lr_mod._count_logrotate_rules()[0] == 0
 
     def test_missing_dir_returns_zero(self, tmp_path, monkeypatch):
         import bob.checks.log_rotation as lr_mod
         monkeypatch.setattr(lr_mod, "_LOGROTATE_D", tmp_path / "nonexistent")
-        assert lr_mod._count_logrotate_rules() == 0
+        assert lr_mod._count_logrotate_rules()[0] == 0

@@ -138,6 +138,41 @@ existe. Une config posant `Storage=volatile`, dont les journaux sont perdus au
 redémarrage, était donc rapportée persistante. Une valeur déjà lue reste
 digne de confiance ; seul le défaut inféré est retenu.
 
+### Les répertoires, et le piège `exists()` en dessous
+
+Énumérer les *fichiers* lus par les checks laissait de côté les *répertoires*
+qu'ils parcourent — `sudoers.d`, `cron.d`, `profile.d`, `logrotate.d` et treize
+autres. Rendus non listables à tour de rôle, l'un produit une affirmation
+fausse et l'autre quelque chose de pire.
+
+**Un `/etc/logrotate.d`** qui ne se liste pas compte zéro règle, exactement
+comme un répertoire vide, et le check répondait « aucune règle logrotate
+configurée » — une affirmation sur un répertoire jamais lu.
+
+**Un `/etc/ssh` en mode 0700 faisait perdre l'audit entier.** Aucun rapport,
+aucun finding, code 3, une ligne sur stderr. `Path.exists()` a l'air total mais
+ne l'est pas : il avale ENOENT, ENOTDIR, EBADF et ELOOP et relève tout le
+reste, donc un fichier sous un répertoire que l'auditeur ne peut pas traverser
+lève `PermissionError` au lieu de renvoyer False. L'auto-détection du port d'un
+service demandait si `sshd_config` existait, depuis le cœur toujours-actif
+délibérément non gardé (le garder laisserait du code aval lire des noms jamais
+liés), et l'exception emportait le run. Présent bien avant ce cycle — reproduit
+à l'identique sur le tag v0.15.1.
+
+Le projet connaissait déjà le mécanisme : `ddns._config_present` porte une
+docstring décrivant exactement ce piège, écrite pour un script DuckDNS sous un
+`/root` durci. La connaissance était restée locale au seul module qui s'était
+fait mordre. `path_exists()` la généralise, les 30 sites d'appel des checks y
+passent, et un test interdit tout retour à un `.exists()` nu — un seul suffit à
+perdre un run.
+
+La sonde de config ssh a été réécrite au passage. Demander `exists()` d'abord
+ne sait pas séparer les trois cas qui comptent, et traiter EACCES comme
+« absent » aurait réintroduit toute la classe : une config absente signifie que
+sshd tourne réellement sur ses défauts compilés, donc les lire est juste, alors
+qu'une config illisible signifie que ces défauts ne décrivent rien de cette
+machine. Sonder l'ouverture distingue absent, interdit et lisible.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -216,6 +251,10 @@ signalait toute cellule CSV vide comme une formule.
   `LogRotationSnapshot.journald_conf_readable`.
 - `_read_smb_conf` et `profiles._load_from_path` lèvent quand `configparser.read`
   ne rend aucun fichier lu ; `_read_cron_file` indique s'il a lu quelque chose.
+- Nouveau `bob/checks/_run.py::path_exists()` ; les 30 sites `.exists()` des checks
+  migrés, avec un test interdisant tout retour à l'appel nu.
+- `log_rotation.logrotate_dir_unreadable` et `LogRotationSnapshot.logrotate_dir_listed`.
+- La sonde sshd_config sépare absent / illisible / lisible.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — cinq nouvelles clés, dans les deux locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -230,7 +269,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7357**.
+**Tests** 7288 → **7370**.
 
 ---
 

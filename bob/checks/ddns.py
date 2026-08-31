@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import _identity_t, _is_safe_config_path, _run, is_unit_active
+from bob.checks._run import _identity_t, _is_safe_config_path, _run, is_unit_active, path_exists
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ def _config_present(path: Path) -> bool:
     audit. See the ddns-robustness backlog note.
     """
     try:
-        return path.exists() and _is_safe_config_path(path)
+        return path_exists(path) and _is_safe_config_path(path)
     except OSError:
         return False
 

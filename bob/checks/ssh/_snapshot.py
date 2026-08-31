@@ -14,7 +14,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _is_safe_user_path, unit_active_state
+from bob.checks._run import _command_exists, _is_safe_user_path, unit_active_state, path_exists
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -130,8 +130,8 @@ class SSHSnapshot:
         # --- sshd installation and status ---
         snap.sshd_installed = (
             _command_exists("sshd")
-            or Path("/usr/sbin/sshd").exists()
-            or Path("/sbin/sshd").exists()
+            or path_exists(Path("/usr/sbin/sshd"))
+            or path_exists(Path("/sbin/sshd"))
         )
         if snap.sshd_installed and _command_exists("systemctl"):
             # A unit systemd never reported on leaves sshd_active_known False,
@@ -151,20 +151,33 @@ class SSHSnapshot:
         snap.host_keys = _parsers._collect_host_keys()
 
         # --- sshd_config (server) ---
-        if _SSHD_CONFIG_PATH.exists():
+        #
+        # Probe the open rather than asking `exists()` first. The parser
+        # swallows a read error and returns an empty dict, and every subcheck
+        # then falls back to OpenSSH's compiled-in default — so an unreadable
+        # config holding `PermitRootLogin yes` earned the host a green "root
+        # login is restricted". `exists()` cannot make the distinction either:
+        # under a directory the auditor cannot traverse it does not report
+        # False, it raises. Only the open separates the three cases.
+        try:
+            with _SSHD_CONFIG_PATH.open("rb"):
+                pass
+        except FileNotFoundError:
+            # Genuinely absent: sshd really would run on its defaults, so the
+            # subchecks reading them are right. Leave `sshd_config_readable`.
+            config_state = "absent"
+        except OSError:
+            config_state = "unreadable"
+        else:
+            config_state = "readable"
+
+        if config_state == "unreadable":
+            snap.sshd_config_readable = False
+        elif config_state == "readable":
             seen: set[str] = set()
             config: dict[str, str] = {}
             _parsers._parse_config_file(_SSHD_CONFIG_PATH, config, seen)
             snap.sshd_config = config
-            # The parser swallows a read error and returns an empty dict, and
-            # every subcheck then falls back to OpenSSH's compiled-in default —
-            # so an unreadable config holding `PermitRootLogin yes` earned the
-            # host a green "root login is restricted". Probe the file directly.
-            try:
-                with _SSHD_CONFIG_PATH.open("rb"):
-                    snap.sshd_config_readable = True
-            except OSError:
-                snap.sshd_config_readable = False
 
         # --- resolve the real user behind sudo ---
         sudo_user = os.environ.get("SUDO_USER", "")
