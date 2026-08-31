@@ -748,13 +748,53 @@ tous été croisés, et aucun n'a bougé :
   baseline comparée à elle-même n'annonce aucun changement, et le fichier est
   écrit en 0600.
 
+### Une chaîne sur la machine auditée pouvait pinger tout un espace Slack
+
+`build_slack_payload` envoyait les messages de findings verbatim, et l'analyseur
+mrkdwn de Slack interprète deux constructions qui comptent ici :
+
+```text
+<!channel>                            notifie tout le monde dans le canal
+<http://ailleurs|paraît légitime>     un lien dont le texte visible est sous le
+                                      même contrôle que la destination
+```
+
+Les messages de findings portent des valeurs venues du système : un nom de
+processus, une commande cron ou un nom de service sur la machine auditée
+arrivait donc dans le canal de sécurité avec la main sur son propre rendu. Les
+règles de formatage de Slack exigent que `&`, `<` et `>` soient envoyés
+échappés ; BOB ne le faisait pas.
+
+Même famille que le rapport Markdown corrigé en parallèle — du contenu venu de
+la machine auditée arrivant là où du balisage est rendu — et sixième occurrence
+dans ce cycle d'un invariant tenu par certains chemins de sortie et pas par
+d'autres.
+
+La charge générique (non-Slack) n'a délibérément pas d'équivalent : elle est
+consommée comme du JSON, pas comme du balisage, et y échapper corromprait les
+valeurs que lit le consommateur. Un test verrouille cette distinction pour que
+les deux ne dérivent pas l'une vers l'autre.
+
+### Deux surfaces de plus, examinées et saines
+
+* **Appariement `--ignore`.** Correspondance exacte de clé, plus une seule
+  correspondance héritée documentée (`ssh.x11_forwarding` →
+  `ssh.x11.forwarding.*`). Testé contre le sur-appariement dans neuf directions,
+  dont un `*` nu et un `ssh.*` écrits dans `ignore.yml` : ni l'un ni l'autre ne
+  correspond à quoi que ce soit, donc un opérateur ne peut pas réduire l'audit
+  au silence par accident.
+* **Transport du webhook.** Aucun contexte TLS non vérifié dans l'arbre ;
+  `urlopen` valide donc les certificats par défaut. `redact_url_credentials`
+  traite les formes `user:pass@`, `user@` et `:token@` et laisse intacte une URL
+  sans identifiants.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7199**.
+**Tests** 6719 → **7220**.
 
 ---
 

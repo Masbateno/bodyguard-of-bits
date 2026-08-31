@@ -694,13 +694,49 @@ were all cross-checked and none of them moved:
   baseline diffed against itself reports no change, and the file is written
   0600.
 
+### A string on the audited host could ping a whole Slack workspace
+
+`build_slack_payload` sent finding messages verbatim, and Slack's mrkdwn parser
+interprets two constructs that matter:
+
+```text
+<!channel>                            notifies everyone in the channel
+<http://elsewhere|looks legitimate>   a link whose visible text is under the
+                                      same control as its destination
+```
+
+Finding messages carry system-derived values, so a process name, a cron command
+or a service name on the audited machine reached the security channel with
+control over what it rendered as. Slack's own formatting rules require `&`, `<`
+and `>` to be sent escaped; BOB did not.
+
+Same family as the Markdown report fixed alongside it — content from the audited
+host arriving somewhere that renders markup — and the sixth instance this cycle
+of one invariant honoured in some output paths and not others.
+
+The generic (non-Slack) payload deliberately gets no equivalent: it is consumed
+as JSON, not as markup, and escaping there would corrupt the values a consumer
+reads. A test pins that distinction so the two do not drift into each other.
+
+### Two more surfaces examined and clean
+
+* **`--ignore` matching.** Exact key match plus one documented legacy mapping
+  (`ssh.x11_forwarding` → `ssh.x11.forwarding.*`). Checked for over-matching in
+  nine directions, including a bare `*` and a `ssh.*` written into `ignore.yml`:
+  neither matches anything, so an operator cannot silence the audit wholesale
+  by accident.
+* **Webhook transport.** No unverified TLS context anywhere in the tree;
+  `urlopen` therefore verifies certificates by default. `redact_url_credentials`
+  handles `user:pass@`, `user@` and `:token@` forms and leaves a credential-free
+  URL untouched.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7199**.
+**Tests** 6719 → **7220**.
 
 ---
 

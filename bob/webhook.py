@@ -212,6 +212,29 @@ def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
     }
 
 
+def _slack_escape(text: str) -> str:
+    """Escape the three characters Slack's mrkdwn parser reserves.
+
+    Slack's own formatting rules require ``&``, ``<`` and ``>`` to be sent as
+    ``&amp;``, ``&lt;`` and ``&gt;`` in message text. Until v0.15.0 finding
+    messages went out verbatim, and they carry system-derived values — process
+    names, cron commands, service names. Two constructs mattered:
+
+    * ``<!channel>`` (also ``<!here>``, ``<!everyone>``) notifies everyone in
+      the channel, so a string on the audited host could ping a whole
+      workspace from the security report.
+    * ``<http://elsewhere|looks legitimate>`` renders as a link whose visible
+      text is under the same control as its destination.
+
+    BOB's own markup — the ``*bold*`` and backticks in the summary line — is
+    added by the builder outside this function and is unaffected.
+
+    ``&`` is escaped first, or the ampersands introduced by the other two
+    substitutions would be escaped in turn.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
                         version: str) -> dict:
     """
@@ -229,7 +252,7 @@ def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         color = _SLACK_COLOR_OK
 
     summary = (
-        f"*BOB* v{version} — `{sys_info.hostname}`\n"
+        f"*BOB* v{_slack_escape(version)} — `{_slack_escape(sys_info.hostname)}`\n"
         f"Score: *{score_display}* | "
         f"Risk: *{engine.effective_level.value.upper()}* | "
         f"{engine.alert_count} alert(s), {engine.warn_count} warning(s)"
@@ -245,9 +268,9 @@ def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         if f.level not in (FindingLevel.ALERT, FindingLevel.WARN):
             continue
         prefix = "🚨 " if f.level == FindingLevel.ALERT else "⚠️  "
-        line   = prefix + f.message
+        line   = prefix + _slack_escape(f.message)
         if f.detail:
-            line += f" — {f.detail}"
+            line += f" — {_slack_escape(f.detail)}"
         finding_lines.append(line)
     findings_text = "\n".join(finding_lines)
     if len(findings_text) > _SLACK_FINDINGS_MAX:
@@ -258,7 +281,7 @@ def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         fields.append({"title": "Findings", "value": findings_text, "short": False})
 
     return {
-        "text": f"BOB report — {sys_info.hostname}",
+        "text": f"BOB report — {_slack_escape(sys_info.hostname)}",
         "attachments": [
             {
                 "color":  color,
