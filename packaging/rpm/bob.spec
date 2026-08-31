@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.15.0
+Version:        0.15.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,10 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
+- A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.
+- Carries the documentation pass deferred from v0.15.0.
+
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.0-1
 - Verdict accuracy. Twenty-six defects across the checks and output writers.
 - Fixes are differential-tested against the parser that owns the file:

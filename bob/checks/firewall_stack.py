@@ -40,6 +40,7 @@ class FirewallStackSnapshot:
         forward_raw_accepts: ACCEPT rules in the iptables FORWARD chain that
                              do NOT jump to a ufw-* chain.
         nftables_active:     True if nftables has non-UFW, non-iptables-compat tables.
+        rules_readable:      False when the ruleset could not be listed.
         ip_forward:          True if /proc/sys/net/ipv4/ip_forward == "1".
         docker_present:      True if Docker is installed/running.
         wireguard_present:   True if WireGuard is configured.
@@ -48,6 +49,9 @@ class FirewallStackSnapshot:
     input_raw_accepts:   list[str] = field(default_factory=list)
     forward_raw_accepts: list[str] = field(default_factory=list)
     nftables_active:     bool = False
+    # False when the ruleset could not be listed at all — distinct from
+    # having listed it and found nothing.
+    rules_readable:      bool = True
     ip_forward:          bool = False
     docker_present:      bool = False
     wireguard_present:   bool = False
@@ -62,11 +66,25 @@ class FirewallStackSnapshot:
             Populated FirewallStackSnapshot. Never raises — errors are
             reflected as empty/False values.
         """
-        input_raw   = _parse_raw_accepts(_run("iptables", "-L", "INPUT",   "-n"))
-        forward_raw = _parse_raw_accepts(_run("iptables", "-L", "FORWARD", "-n"))
+        input_out   = _run("iptables", "-L", "INPUT",   "-n")
+        forward_out = _run("iptables", "-L", "FORWARD", "-n")
+        input_raw   = _parse_raw_accepts(input_out)
+        forward_raw = _parse_raw_accepts(forward_out)
 
         nft_out         = _run("nft", "list", "ruleset") if _command_exists("nft") else ""
         nftables_active = _has_user_nft_rules(nft_out)
+
+        # Both `iptables -L` and `nft list ruleset` need CAP_NET_ADMIN and write
+        # their refusal to stderr, leaving stdout empty — which read as "no
+        # rules" and produced an explicit `firewall_drivers.no_issues` OK about
+        # a ruleset that was never seen.
+        #
+        # A working `iptables -L` always prints its chain headers, even with no
+        # rules loaded, so an installed binary plus empty output is a refused
+        # query. `nft list ruleset` prints nothing for a genuinely empty
+        # ruleset and cannot tell the two apart on its own; iptables can, and
+        # both commands need the same capability, so one answers for both.
+        rules_readable = not (_command_exists("iptables") and not input_out.strip())
 
         ip_forward = _read_ip_forward()
 
@@ -92,6 +110,7 @@ class FirewallStackSnapshot:
             input_raw_accepts=input_raw,
             forward_raw_accepts=forward_raw,
             nftables_active=nftables_active,
+            rules_readable=rules_readable,
             ip_forward=ip_forward,
             docker_present=docker_present,
             wireguard_present=wireguard_present,
@@ -172,7 +191,14 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
             )
             found_issue = True
 
-    if not found_issue and not snapshot.forward_raw_accepts:
+    if not snapshot.rules_readable:
+        # "No issues" would be a claim about a ruleset that was never listed.
+        result.info(
+            message=_t("firewall_drivers.rules_unreadable"),
+            detail=_t("firewall_drivers.rules_unreadable_detail"),
+            key="firewall_drivers.rules_unreadable",
+        )
+    elif not found_issue and not snapshot.forward_raw_accepts:
         result.ok(message=_t("firewall_drivers.no_issues"), key="firewall_drivers.no_issues")
 
     return result

@@ -3155,7 +3155,9 @@
     "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker/VPN",
     "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",
     "ip_forward_ok": "Transfert IP activé — démon de routage détecté (Docker, VPN ou KVM)",
-    "ip_forward_enabled": "Transfert IP activé sans VPN/Docker détecté — vérifiez que c'est intentionnel"
+    "ip_forward_enabled": "Transfert IP activé sans VPN/Docker détecté — vérifiez que c'est intentionnel",
+    "rules_unreadable": "Impossible de lister les règles des pilotes de pare-feu",
+    "rules_unreadable_detail": "`iptables -L` et `nft list ruleset` exigent tous deux CAP_NET_ADMIN et écrivent leur refus sur stderr, laissant stdout vide. Un `iptables -L` qui fonctionne imprime toujours ses en-têtes de chaîne, même sans aucune règle chargée : une sortie vide venant d'un binaire installé signifie donc que la requête a été refusée, et non que le jeu de règles est vide. BOB n'annonce ici ni conflit ni pile saine. Vérifier avec : sudo iptables -L -n"
   },
   "firewall_rules": {
     "no_duplicates": "Aucune règle UFW en doublon détectée",

@@ -3155,7 +3155,9 @@
     "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker/VPN routing",
     "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",
     "ip_forward_ok": "IP forwarding enabled — routing daemon detected (Docker, VPN or KVM)",
-    "ip_forward_enabled": "IP forwarding enabled without detected VPN/Docker — verify this is intentional"
+    "ip_forward_enabled": "IP forwarding enabled without detected VPN/Docker — verify this is intentional",
+    "rules_unreadable": "Firewall driver rules could not be listed",
+    "rules_unreadable_detail": "`iptables -L` and `nft list ruleset` both need CAP_NET_ADMIN and write their refusal to stderr, leaving stdout empty. A working `iptables -L` always prints its chain headers, even with no rules loaded, so empty output from an installed binary means the query was refused rather than that the ruleset is empty. BOB reports neither a conflict nor a clean stack here. Check with: sudo iptables -L -n"
   },
   "firewall_rules": {
     "no_duplicates": "No duplicate UFW rules detected",

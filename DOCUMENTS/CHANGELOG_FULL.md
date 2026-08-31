@@ -6,6 +6,54 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.15.1] — unreleased
+
+**A second hunt, to find out whether the first one made BOB resilient. In progress on branch `v0.15.x`.**
+
+v0.15.0 fixed 26 verdict defects by sweeping six signatures across the tree. Repeating those sweeps would mostly
+re-confirm its own fixes, so this pass deliberately attacks from angles the previous one never used.
+
+### The main new angle: checks that disagree with each other
+
+BOB has overlapping surfaces — `firewall`, `firewall_stack`, `iptables_nftables` and `ports` all describe the
+firewall; `ipv6` and `hardening` both read the IPv6 stack; `services` and `ports` both classify exposure. A
+module-by-module audit cannot see a contradiction between two of them, because each is internally consistent. Two
+checks that say different things about the same machine is a defect by construction, whichever one is wrong.
+
+### "No issues" about a ruleset that was never listed
+
+The first find of the new angle, and it came from comparing two checks rather
+than auditing either one. `firewall_stack` and `iptables_nftables` both describe
+the firewall drivers; asked about the same machine, one reported a refused query
+and the other reported a clean stack.
+
+`iptables -L` and `nft list ruleset` both need CAP_NET_ADMIN and write their
+refusal to stderr, leaving stdout empty. `_run` discards the exit code, so
+`_has_user_nft_rules("")` returned False, `nftables_active` became False, and the
+check emitted `[OK] firewall_drivers.no_issues` — an explicit clean bill of
+health for a ruleset it had never seen.
+
+`iptables_nftables` was fixed for exactly this in v0.15.0. `firewall_stack` was
+examined in the same cycle, but only for its line parsing, so the question was
+never put to it. A module examined for one signature is not a module cleared.
+
+The discriminator is the one already established: a working `iptables -L` always
+prints its chain headers, even with no rules loaded, so an installed binary plus
+empty output is a refused query. `nft list ruleset` prints nothing for a
+genuinely empty ruleset and cannot tell the two apart alone — but both commands
+need the same capability, so iptables answers for both.
+
+One of the guards asserts the two modules agree, which is the property that
+surfaced this in the first place.
+
+**Tests** 7220 → **7231**.
+
+### Documentation pass carried over from v0.15.0
+
+Five measured inaccuracies, found while answering "is the documentation coherent now?" — the answer was no.
+
+---
+
 ## [v0.15.0] — 2026-08-31
 
 **Verdict accuracy. Twenty-six defects fixed across the checks and the output writers, each one measured against the tool that owns the file or the command rather than reasoned about.**

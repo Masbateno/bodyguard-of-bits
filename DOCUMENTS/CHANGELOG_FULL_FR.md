@@ -6,6 +6,59 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.15.1] — non publiée
+
+**Une seconde chasse, pour savoir si la première a rendu BOB résilient. En cours sur la branche `v0.15.x`.**
+
+v0.15.0 a corrigé 26 défauts de verdict en balayant six signatures dans tout l'arbre. Rejouer ces balayages ne ferait
+que reconfirmer ses propres correctifs : cette passe attaque donc délibérément par des angles que la précédente n'a
+jamais employés.
+
+### L'angle neuf principal : des contrôles qui se contredisent
+
+BOB possède des surfaces qui se recouvrent — `firewall`, `firewall_stack`, `iptables_nftables` et `ports` décrivent
+tous le pare-feu ; `ipv6` et `hardening` lisent tous deux la pile IPv6 ; `services` et `ports` classent tous deux
+l'exposition. Un audit module par module ne peut pas voir une contradiction entre deux d'entre eux, puisque chacun est
+cohérent avec lui-même. Deux contrôles qui disent des choses différentes de la même machine forment un défaut par
+construction, quel que soit celui qui a tort.
+
+### « Aucun problème » à propos d'un jeu de règles jamais listé
+
+Première trouvaille du nouvel angle, et elle vient de la comparaison de deux
+contrôles plutôt que de l'audit de l'un d'eux. `firewall_stack` et
+`iptables_nftables` décrivent tous deux les pilotes de pare-feu ; interrogés sur
+la même machine, l'un rapportait une requête refusée et l'autre une pile saine.
+
+`iptables -L` et `nft list ruleset` exigent tous deux CAP_NET_ADMIN et écrivent
+leur refus sur stderr, laissant stdout vide. `_run` jette le code de retour :
+`_has_user_nft_rules("")` renvoyait donc False, `nftables_active` devenait False,
+et le contrôle émettait `[OK] firewall_drivers.no_issues` — un certificat de
+bonne santé explicite pour un jeu de règles jamais vu.
+
+`iptables_nftables` avait été corrigé précisément pour cela en v0.15.0.
+`firewall_stack` avait été examiné dans le même cycle, mais seulement pour son
+analyse de lignes : la question ne lui a jamais été posée. **Un module examiné
+pour une signature n'est pas un module écarté.**
+
+Le discriminateur est celui déjà établi : un `iptables -L` qui fonctionne
+imprime toujours ses en-têtes de chaîne, même sans règle chargée ; un binaire
+installé plus une sortie vide signifient donc une requête refusée. `nft list
+ruleset` n'imprime rien pour un jeu réellement vide et ne peut pas distinguer
+seul — mais les deux commandes exigent la même capacité, donc iptables répond
+pour les deux.
+
+L'une des gardes vérifie que les deux modules s'accordent, ce qui est la
+propriété qui a fait surgir le défaut.
+
+**Tests** 7220 → **7231**.
+
+### Passe documentaire reportée de v0.15.0
+
+Cinq inexactitudes mesurées, trouvées en répondant à « la documentation est-elle cohérente maintenant ? » — la réponse
+était non.
+
+---
+
 ## [v0.15.0] — 31-08-2026
 
 **Exactitude des verdicts. Vingt-six défauts corrigés dans les contrôles et les écrivains de sortie, chacun mesuré contre l'outil qui fait autorité sur le fichier ou la commande plutôt que déduit.**
