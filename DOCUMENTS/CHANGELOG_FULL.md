@@ -604,13 +604,53 @@ the parser did not match at all, so it passed without testing anything — and
 that in turn revealed a real gap, since `ufw allow from any to 192.168.1.5 port
 22` prints the destination in front of the port and was matching nothing.
 
+### Valid JSON that is not an object crashed the Docker checks
+
+`/etc/docker/daemon.json` was read with `json.loads` and then used as a mapping,
+catching only `json.JSONDecodeError`. But `[]`, `"text"`, `null`, `42` and
+`true` are all valid JSON and none of them has `.get()`, so each raised
+`AttributeError` out of `DockerSnapshot.from_system()` and
+`docker_audit._read_userns_remap()`.
+
+Since the v0.15.0 core barrier that no longer kills the audit — it degrades the
+Docker section — but the section is still lost, and the moment an operator runs
+an audit is exactly the moment daemon.json is broken, because Docker refuses to
+start on such a file. Both readers now treat a non-object as unparseable, the
+same as malformed JSON.
+
+The distinction that matters is pinned: a readable file saying
+`{"iptables": false}` still reports Docker bypassing the firewall, and the
+string `"false"` still does not, because Docker only honours the boolean.
+
+### Two negative results from the same round, recorded rather than acted on
+
+**The service registry.** All 38 entries were cross-checked against
+`/etc/services`, the system's own port registry: **zero divergences** across 50
+declared ports. No duplicate ids, no invalid port specification, a closed `risk`
+vocabulary. Ports shared between entries (80/443 across apache, nginx, nextcloud
+and caddy) are correct — only one of them is installed at a time.
+
+Four entries — postgresql, avahi, plex, syncthing — carry no optional
+`detection` block, so they are found through dpkg alone where the other 34 also
+look for a binary or a config file. That is the familiar shape, an invariant
+honoured by 34 of 38, and it is deliberately left alone: filling it in would mean
+writing installation paths for three packages that are not installed on any
+machine available here, which is guessing, and this cycle has been about not
+doing that. Recorded so the next person sees a decision rather than an oversight.
+
+**Unreadable daemon.json.** `_check_daemon_json` returns "iptables not disabled"
+when the file exists but cannot be read — the falsely-reassuring shape fixed
+elsewhere in this cycle. It is left as is: the file is 0644 by default and BOB
+runs as root, so unlike `auditctl -l` or `aa-status` there is no failure mode
+that can be demonstrated rather than imagined.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7156**.
+**Tests** 6719 → **7179**.
 
 ---
 

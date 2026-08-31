@@ -651,13 +651,56 @@ sans rien tester — ce qui a révélé un vrai manque, puisque
 `ufw allow from any to 192.168.1.5 port 22` imprime la destination devant le port
 et ne correspondait à rien.
 
+### Un JSON valide mais non-objet faisait planter les contrôles Docker
+
+`/etc/docker/daemon.json` était lu par `json.loads` puis utilisé comme
+dictionnaire, en ne capturant que `json.JSONDecodeError`. Or `[]`, `"texte"`,
+`null`, `42` et `true` sont tous du JSON valide et aucun ne possède `.get()` :
+chacun faisait donc remonter une `AttributeError` hors de
+`DockerSnapshot.from_system()` et de `docker_audit._read_userns_remap()`.
+
+Depuis la barrière de cœur de v0.15.0, cela ne tue plus l'audit — la section
+Docker est dégradée — mais la section est tout de même perdue, et le moment où un
+opérateur lance un audit est précisément celui où daemon.json est cassé, puisque
+Docker refuse de démarrer sur un tel fichier. Les deux lecteurs traitent
+désormais un non-objet comme illisible, au même titre qu'un JSON malformé.
+
+La distinction qui compte est verrouillée : un fichier lisible contenant
+`{"iptables": false}` signale toujours que Docker contourne le pare-feu, et la
+chaîne `"false"` toujours pas, puisque Docker n'honore que le booléen.
+
+### Deux résultats négatifs du même tour, consignés plutôt que traités
+
+**Le registre des services.** Les 38 entrées ont été croisées avec
+`/etc/services`, le registre de ports du système lui-même : **zéro divergence**
+sur 50 ports déclarés. Aucun identifiant dupliqué, aucune spécification de port
+invalide, un vocabulaire `risk` fermé. Les ports partagés entre entrées (80/443
+pour apache, nginx, nextcloud et caddy) sont corrects — un seul d'entre eux est
+installé à la fois.
+
+Quatre entrées — postgresql, avahi, plex, syncthing — n'ont pas de bloc
+`detection` optionnel : elles sont donc trouvées par dpkg seul là où les 34
+autres cherchent aussi un binaire ou un fichier de configuration. C'est la forme
+familière, un invariant tenu par 34 entrées sur 38, et il est délibérément laissé
+tel quel : le compléter reviendrait à écrire des chemins d'installation pour
+trois paquets absents de toute machine disponible ici, c'est-à-dire à deviner —
+ce que ce cycle s'interdit. Consigné pour que le prochain lecteur voie une
+décision et non un oubli.
+
+**daemon.json illisible.** `_check_daemon_json` renvoie « iptables non
+désactivé » quand le fichier existe mais n'est pas lisible — la forme faussement
+rassurante corrigée ailleurs dans ce cycle. Elle est laissée en l'état : le
+fichier est en 0644 par défaut et BOB s'exécute en root, donc contrairement à
+`auditctl -l` ou `aa-status`, il n'existe pas de mode de défaillance qu'on puisse
+démontrer plutôt qu'imaginer.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7156**.
+**Tests** 6719 → **7179**.
 
 ---
 

@@ -290,6 +290,10 @@ def _read_userns_remap() -> bool:
     """Return True if userns-remap is set in /etc/docker/daemon.json."""
     try:
         config = json.loads(_DAEMON_JSON.read_text(encoding="utf-8", errors="replace"))
-        return bool(config.get("userns-remap", ""))
     except (OSError, json.JSONDecodeError):
         return False
+    # `[]`, `"text"` and `null` are valid JSON without a .get(); catching only
+    # JSONDecodeError let them raise AttributeError out of the snapshot.
+    if not isinstance(config, dict):
+        return False
+    return bool(config.get("userns-remap", ""))

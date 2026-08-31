@@ -244,11 +244,21 @@ def _check_daemon_json() -> tuple[bool, bool]:
 
     try:
         config = json.loads(content)
-        iptables_disabled = config.get("iptables") is False
-        return True, iptables_disabled
     except json.JSONDecodeError as exc:
         logger.warning("Cannot parse %s: %s", DAEMON_JSON_PATH, exc)
         return True, False
+
+    # `[]`, `"text"` and `null` are all valid JSON and none of them has .get().
+    # Only json.JSONDecodeError was caught, so a daemon.json holding any of
+    # them raised AttributeError out of the snapshot and cost the whole Docker
+    # section. Docker itself refuses to start on such a file, which is exactly
+    # the moment an operator runs an audit.
+    if not isinstance(config, dict):
+        logger.warning("%s is valid JSON but not an object: %r",
+                       DAEMON_JSON_PATH, type(config).__name__)
+        return True, False
+
+    return True, config.get("iptables") is False
 
 def _get_exposed_ports() -> list[ExposedPort]:
     """
