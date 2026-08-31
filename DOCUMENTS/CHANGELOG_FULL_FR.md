@@ -314,13 +314,47 @@ Le cadrage lui-même a été vérifié exact contre
 `systemd-analyze security --json=short` et `systemctl list-units` : 44 actifs, 74
 analysés, 44 retenus, aucune divergence.
 
+### Un compte verrouillé aujourd'hui était rapporté comme sain
+
+Les deux attentes viennent ici de l'outillage de shadow lui-même, exécuté contre
+un `/etc/shadow` synthétique sous namespace utilisateur, plutôt que déduites du
+format.
+
+`chage(1)` définit le champ d'expiration comme « la date **à laquelle** le compte
+de l'utilisateur ne sera plus accessible ». BOB testait
+`0 < expire_days < today_days` — un `<` strict — donc un compte expirant
+aujourd'hui était annoncé sain le jour précis où l'opérateur a le plus besoin de
+l'apprendre. C'est désormais `<=`, et `chage` et BOB s'accordent sur la limite
+dans les deux sens.
+
+Le second cas est plus intéressant parce que la bonne réponse n'était pas de
+trancher. BOB ignorait un champ d'expiration valant exactement `0`. `shadow(5)`
+indique que cette valeur « ne devrait pas être utilisée car elle est interprétée
+soit comme une absence d'expiration, soit comme une expiration au 1er janvier
+1970 », et `chage` sur ce système retient la seconde lecture — il affiche
+**Jan 01, 1970**. La possibilité de se connecter dépend donc de
+l'implémentation.
+
+Choisir une lecture en silence aurait été tout aussi peu vérifié que le silence
+précédent. Une configuration dont l'effet dépend de l'implémentation est un
+finding en soi : elle est maintenant signalée comme ambiguë, en INFO seulement,
+avec les deux lectures nommées et les deux façons de la résoudre
+(`chage -E AAAA-MM-JJ` ou `chage -E -1`). Deux clés de locale, EN+FR.
+
+Constaté et délibérément non modifié : le contrôle lit directement `/etc/passwd`
+et `/etc/shadow`, donc les comptes servis par un backend NSS — LDAP, SSSD,
+systemd-homed — sont hors de sa portée, y compris un compte UID 0 qui y serait
+défini. `getent passwd` les verrait, mais changer de source change ce que ce
+contrôle signifie sur une machine jointe à un annuaire : c'est une décision à
+prendre délibérément, pas un effet de bord d'une correction de bug.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6949**.
+**Tests** 6719 → **6964**.
 
 ---
 

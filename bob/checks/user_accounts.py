@@ -68,13 +68,22 @@ class UserAccountsSnapshot:
                                  /etc/shadow and a login-capable shell.
         expired_accounts:        Mapping of username → ISO expiry date string
                                  for accounts whose expiry (field 7 of
-                                 /etc/shadow) is set, in the past, and belong
+                                 /etc/shadow) is set, reached, and belong
                                  to a non-system account (UID ≥ 1000).
+        ambiguous_expiry_accounts: Usernames whose expiry field is exactly 0.
+                                 shadow(5) states the value "should not be used
+                                 as it is interpreted as either an account with
+                                 no expiration, or as an expiration on Jan 1,
+                                 1970" — so the account may or may not be
+                                 locked out depending on the implementation.
+                                 That is a finding in itself, not something to
+                                 resolve silently in either direction.
     """
     shadow_readable:         bool            = False
     uid_zero_accounts:       list[str]       = field(default_factory=list)
     empty_password_accounts: list[str]       = field(default_factory=list)
     expired_accounts:        Dict[str, str]  = field(default_factory=dict)
+    ambiguous_expiry_accounts: list[str]     = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "UserAccountsSnapshot":
@@ -136,20 +145,27 @@ class UserAccountsSnapshot:
             if pw_hash == "" and not _is_no_login_shell(login_shells.get(username)):
                 snap.empty_password_accounts.append(username)
 
-            # Expired account: field 7 is a positive integer < today.
-            # Negative values are invalid shadow entries — skip them.
-            # System accounts (UID < 1000) are excluded — their expiry
-            # settings are managed by the package manager, not the admin.
-            if expire_raw and expire_raw != "0":
+            # Expired account. System accounts (UID < 1000) are excluded —
+            # their expiry settings are managed by the package manager, not the
+            # admin. Negative values are invalid shadow entries.
+            #
+            # The comparison is `<=`, not `<`: chage(1) defines the field as
+            # "the date ... ON WHICH the user's account will no longer be
+            # accessible", so an account expiring today is already locked out.
+            # A strict `<` reported it as fine on the one day the operator most
+            # needs to hear about it.
+            if expire_raw:
                 try:
                     expire_days = int(expire_raw)
-                    if 0 < expire_days < today_days:
-                        uid = uids.get(username, 0)
-                        if uid >= 1000:
-                            expiry_date = (epoch + datetime.timedelta(days=expire_days)).isoformat()
-                            snap.expired_accounts[username] = expiry_date
                 except ValueError:
-                    pass
+                    expire_days = None
+                if expire_days is not None and uids.get(username, 0) >= 1000:
+                    if expire_days == 0:
+                        # Not resolved in either direction — see the field docs.
+                        snap.ambiguous_expiry_accounts.append(username)
+                    elif 0 < expire_days <= today_days:
+                        expiry_date = (epoch + datetime.timedelta(days=expire_days)).isoformat()
+                        snap.expired_accounts[username] = expiry_date
 
         return snap
 
@@ -225,6 +241,16 @@ def check_user_accounts(snapshot: UserAccountsSnapshot, *, t: TranslationFunc | 
             message=_t("user_accounts.expired_account", users=users_str),
             detail=_t("user_accounts.expired_account_detail"),
             key="user_accounts.expired_account",
+        )
+        has_finding = True
+
+    # ---- Ambiguous expiry (field 7 == 0) -----------------------------------
+    if snapshot.ambiguous_expiry_accounts:
+        result.info(
+            message=_t("user_accounts.ambiguous_expiry",
+                       users=", ".join(snapshot.ambiguous_expiry_accounts)),
+            detail=_t("user_accounts.ambiguous_expiry_detail"),
+            key="user_accounts.ambiguous_expiry",
         )
         has_finding = True
 

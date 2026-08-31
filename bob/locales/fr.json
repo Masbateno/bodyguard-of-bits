@@ -2690,7 +2690,9 @@
     "empty_password_reason": "Compte(s) avec mot de passe vide : {users}",
     "expired_account": "Compte(s) dont la date d'expiration est dépassée : {users}",
     "expired_account_detail": "Ces comptes ont dépassé leur date d'expiration configurée. Pensez à les supprimer ou les verrouiller.",
-    "ok": "Tous les comptes utilisateurs sont sains"
+    "ok": "Tous les comptes utilisateurs sont sains",
+    "ambiguous_expiry": "Compte(s) dont la date d'expiration est ambiguë : {users}",
+    "ambiguous_expiry_detail": "Le champ d'expiration du compte vaut 0. shadow(5) précise que cette valeur « ne devrait pas être utilisée car elle est interprétée soit comme une absence d'expiration, soit comme une expiration au 1er janvier 1970 » — chage sur ce système retient la seconde lecture. La possibilité de se connecter dépend donc de l'implémentation. Fixez une vraie date avec `chage -E AAAA-MM-JJ` ou effacez-la avec `chage -E -1`."
   },
   "password_policy": {
     "no_quality_module": "Aucun module PAM de qualité des mots de passe configuré (pam_pwquality/pam_cracklib absent)",

@@ -2690,7 +2690,9 @@
     "empty_password_reason": "Account(s) with empty password: {users}",
     "expired_account": "Account(s) with a past expiry date: {users}",
     "expired_account_detail": "These accounts have passed their configured expiry date. Consider removing or locking them as housekeeping.",
-    "ok": "All user accounts are healthy"
+    "ok": "All user accounts are healthy",
+    "ambiguous_expiry": "Account(s) with an ambiguous expiry date: {users}",
+    "ambiguous_expiry_detail": "The account expiry field is set to 0. shadow(5) states this value \"should not be used as it is interpreted as either an account with no expiration, or as an expiration on Jan 1, 1970\" — chage on this system reports the latter. Whether the account can log in therefore depends on the implementation. Set a real date with `chage -E YYYY-MM-DD` or clear it with `chage -E -1`."
   },
   "password_policy": {
     "no_quality_module": "No PAM password quality module configured (pam_pwquality/pam_cracklib absent)",

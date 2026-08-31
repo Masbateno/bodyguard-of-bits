@@ -291,13 +291,44 @@ first, then cap.
 Scoping itself was verified exact against `systemd-analyze security --json=short`
 and `systemctl list-units`: 44 running, 74 analysed, 44 kept, no divergence.
 
+### An account locked out today was reported as fine
+
+Both expectations here come from shadow's own tooling, run against a synthetic
+`/etc/shadow` under a user namespace rather than reasoned from the format.
+
+`chage(1)` defines the account-expiry field as "the date ... **on which** the
+user's account will no longer be accessible". BOB tested
+`0 < expire_days < today_days` — a strict `<` — so an account that expires today
+was reported as fine on the one day the operator most needs to hear about it.
+Now `<=`, and `chage` and BOB agree on the boundary in both directions.
+
+The second case is more interesting because the right answer was not to pick
+one. BOB skipped an expiry field of exactly `0`. `shadow(5)` says the value
+"should not be used as it is interpreted as either an account with no
+expiration, or as an expiration on Jan 1, 1970", and `chage` on this system
+reads it the second way — reporting **Jan 01, 1970**. So whether such an account
+can log in depends on the implementation.
+
+Silently choosing either reading would have been just as unverified as the
+previous silence. A configuration whose effect depends on the implementation is
+a finding in itself, so it is now reported as ambiguous, INFO-only, with both
+readings named and the two ways to resolve it (`chage -E YYYY-MM-DD` or
+`chage -E -1`). Two locale keys, EN+FR.
+
+Noted and deliberately not changed: the check reads `/etc/passwd` and
+`/etc/shadow` directly, so accounts served by an NSS backend — LDAP, SSSD,
+systemd-homed — are outside its scope, including a UID 0 account defined there.
+`getent passwd` would see them, but switching sources changes what this check
+means on directory-joined hosts, and that is a decision to take deliberately
+rather than as a side effect of a bug fix.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6949**.
+**Tests** 6719 → **6964**.
 
 ---
 
