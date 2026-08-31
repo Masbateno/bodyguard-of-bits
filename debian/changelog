@@ -1,7 +1,7 @@
 bodyguard-of-bits (0.15.0-1) UNRELEASED; urgency=low
 
-  * Verdict accuracy. In progress on branch v0.15.x; this entry grows with
-    the branch and is finalised at release time.
+  * Verdict accuracy. Twenty-six defects fixed across the checks and the
+    output writers.
   * Each fix is differential-tested against the parser that owns the file:
     sshd -T, ssh -G, cvtsudoers -f json. Expectations record what the system
     grants, not what the configuration line looks like.
@@ -21,7 +21,7 @@ bodyguard-of-bits (0.15.0-1) UNRELEASED; urgency=low
     scoreless info. Backslash continuations and the numeric-uid user form
     (#1000 ALL=(ALL) NOPASSWD: ALL) were also missed.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 30 Aug 2026 12:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 12:00:00 +0200
 
 bodyguard-of-bits (0.14.1-1) UNRELEASED; urgency=low
 

@@ -6,9 +6,9 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.15.0] — non publiée
+## [v0.15.0] — 31-08-2026
 
-**Exactitude des verdicts. En cours sur la branche `v0.15.x` ; cette section grandit avec la branche et sera finalisée au moment de la publication.**
+**Exactitude des verdicts. Vingt-six défauts corrigés dans les contrôles et les écrivains de sortie, chacun mesuré contre l'outil qui fait autorité sur le fichier ou la commande plutôt que déduit.**
 
 L'objectif du cycle, fixé avant d'écrire la moindre ligne de code : rendre juste ce que BOB *affirme*, avant
 d'ajouter de nouvelles déductions. Un verdict faux discrédite plus l'outil qu'un verdict manquant.
@@ -827,6 +827,62 @@ des découvertes : un code de retour 0 qui était celui de `head` et non de BOB,
 une « charge non sérialisable » qui venait d'un argument passé dans le mauvais
 paramètre. Ils sont notés parce que la discipline qui les attrape est celle qui
 rend les vraies découvertes dignes de confiance.
+
+## Ce qui change pour un consommateur
+
+Tout dans cette version est additif ou correctif. Aucune clé n'a été renommée ni
+retirée, aucune version de schéma n'a changé, aucun code de retour n'a bougé.
+
+### Quatorze nouvelles clés de findings
+
+Neuf signalent un état que BOB ne savait pas distinguer d'un verdict — « je n'ai
+pas pu lire » au lieu de « tout va bien » ou « c'est cassé ». Les neuf sont en
+INFO et ne portent aucune déduction : un score ne peut pas bouger à cause d'elles.
+
+| Clé | Émise quand |
+|-----|-------------|
+| `auditd.rules_unreadable` | `auditctl -l` n'a rien renvoyé alors qu'auditd tourne |
+| `fail2ban.status_unreadable` | `fail2ban-client status` n'a renvoyé aucune liste de prisons |
+| `mac_policy.apparmor_profiles_unreadable` | `aa-status` a signalé le module mais pas le jeu de profils |
+| `firewall_iptables.ruleset_unreadable` | un binaire backend existe mais son jeu de règles est illisible |
+| `container_security.seccomp_unknown` | `/proc/self/status` ne comportait pas de ligne `Seccomp` |
+| `ipv6.kernel_state_unknown` | `/proc/sys/net/ipv6` existe mais n'a pas pu être lu |
+| `hardening.params_unavailable` | un ou plusieurs sysctls réseau ne sont pas exposés par ce noyau |
+| `kernel_hardening.params_unavailable` | idem, pour les cinq réglages de durcissement noyau |
+| `user_accounts.ambiguous_expiry` | le champ d'expiration d'un compte vaut `0`, que `shadow(5)` déclare ambigu |
+
+Cinq autres sont des findings qui existaient depuis toujours et n'avaient
+**aucune clé** : ils étaient inatteignables par `--explain`, non supprimables par
+`--ignore`, non suivis par la récurrence, et parvenaient anonymes à la sortie
+JSON — `ddns.none`, `ddns.no_open_ports`, `logs.no_logfile`,
+`logs.source_journald`, `logs.empty`.
+
+### Quatre changements de sortie
+
+* **JSON `hardening.*`** — un paramètre que le noyau n'expose pas vaut désormais
+  `null` au lieu d'un booléen fabriqué. Un test de véracité côté consommateur lit
+  `null` exactement comme il lisait le `false` inventé ; seule une comparaison
+  `is False` voit une différence, et seulement là où l'ancienne valeur était
+  inventée.
+* **JSON `ports[].address`** — une adresse IPv6 ne porte plus son suffixe
+  `%scope` ; la portée passe dans le champ `iface`, là où le chemin IPv4 l'a
+  toujours mise.
+* **`ssl_certs`** — un certificat dans ses dernières 24 heures rapporte désormais
+  `ssl_certs.expiring_critical` au lieu de `ssl_certs.expired`. Cela reste une
+  ALERTE avec la même déduction ; seule l'affirmation change, parce que le
+  certificat est encore valide.
+* **Sorties Markdown et Slack** — le texte des findings est désormais échappé
+  pour le format dans lequel il est écrit. Un message contenant `<`, `[` ou `&`
+  s'affiche comme ces caractères au lieu d'être interprété comme du balisage.
+
+### Deux comportements qui ne coûtent plus rien
+
+`auditd.no_rules` et `fail2ban.no_jails` ne se déclenchent plus quand la requête a
+échoué, et `firewall_iptables.no_backend` ne se déclenche plus quand le jeu de
+règles était simplement illisible. Une machine qui perdait jusqu'à cinq points
+sur ces trois-là peut donc obtenir un meilleur score après mise à jour — non
+parce qu'elle a changé, mais parce que BOB a cessé de déduire pour une
+configuration qu'il n'avait jamais lue.
 
 ### Routine de documentation
 

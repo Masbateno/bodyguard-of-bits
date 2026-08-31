@@ -6,9 +6,9 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.15.0] — unreleased
+## [v0.15.0] — 2026-08-31
 
-**Verdict accuracy. In progress on branch `v0.15.x`; this section grows with the branch and is finalised at ship time.**
+**Verdict accuracy. Twenty-six defects fixed across the checks and the output writers, each one measured against the tool that owns the file or the command rather than reasoned about.**
 
 The cycle objective, set before any code was written: make what BOB *says* correct, before adding new deductions.
 A wrong verdict discredits the tool more than a missing one.
@@ -766,6 +766,60 @@ findings: an exit code of 0 that turned out to be `head`'s rather than BOB's,
 and a "non-serialisable payload" that was an argument passed into the wrong
 parameter. Both are noted because the discipline that catches them is the same
 one that makes the real findings trustworthy.
+
+## What changed for a consumer
+
+Everything in this release is additive or a correction. No key was renamed or
+removed, no schema version changed, and no exit code moved.
+
+### Fourteen new finding keys
+
+Nine report a state BOB previously could not distinguish from a verdict — "I
+could not read this" instead of "this is fine" or "this is broken". All nine are
+INFO and carry no deduction, so a score cannot move because of them.
+
+| Key | Emitted when |
+|-----|--------------|
+| `auditd.rules_unreadable` | `auditctl -l` returned nothing while auditd is running |
+| `fail2ban.status_unreadable` | `fail2ban-client status` returned no jail list |
+| `mac_policy.apparmor_profiles_unreadable` | `aa-status` reported the module but not the profile set |
+| `firewall_iptables.ruleset_unreadable` | a backend binary exists but its ruleset could not be listed |
+| `container_security.seccomp_unknown` | `/proc/self/status` carried no `Seccomp` line |
+| `ipv6.kernel_state_unknown` | `/proc/sys/net/ipv6` exists but could not be read |
+| `hardening.params_unavailable` | one or more network sysctls are not exposed by this kernel |
+| `kernel_hardening.params_unavailable` | same, for the five kernel-hardening knobs |
+| `user_accounts.ambiguous_expiry` | an account's expiry field is `0`, which `shadow(5)` calls ambiguous |
+
+Five more are findings that existed all along and had **no key at all** — they
+were unreachable by `--explain`, could not be suppressed with `--ignore`, were
+not tracked by recurrence, and reached the JSON output anonymous:
+`ddns.none`, `ddns.no_open_ports`, `logs.no_logfile`, `logs.source_journald`,
+`logs.empty`.
+
+### Four output changes
+
+* **JSON `hardening.*`** — a parameter the kernel does not expose is now `null`
+  rather than a fabricated boolean. A consumer's truthiness test reads `null`
+  exactly as it read the invented `false`; only an `is False` comparison sees a
+  difference, and only where the old value was invented.
+* **JSON `ports[].address`** — an IPv6 address no longer carries its `%scope`
+  suffix; the scope moves to the `iface` field, which is where the IPv4 path
+  always put it.
+* **`ssl_certs`** — a certificate in its final 24 hours now reports
+  `ssl_certs.expiring_critical` instead of `ssl_certs.expired`. It remains an
+  ALERT with the same deduction; only the claim changed, because the
+  certificate is still valid.
+* **Markdown and Slack output** — finding text is now escaped for the format it
+  is written into. A message containing `<`, `[` or `&` renders as those
+  characters instead of as markup.
+
+### Two behaviours that now cost nothing
+
+`auditd.no_rules` and `fail2ban.no_jails` no longer fire when the query failed,
+and `firewall_iptables.no_backend` no longer fires when the ruleset merely could
+not be read. A host that previously lost up to five points to these can score
+higher after upgrading — not because it changed, but because BOB stopped
+deducting for configuration it had never read.
 
 ### Documentation routine
 

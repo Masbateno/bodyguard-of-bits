@@ -95,8 +95,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Sun Aug 30 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.0-1
-- Verdict accuracy. In progress on branch v0.15.x, finalised at release.
+* Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.0-1
+- Verdict accuracy. Twenty-six defects across the checks and output writers.
 - Fixes are differential-tested against the parser that owns the file:
   sshd -T, ssh -G, cvtsudoers -f json.
 - One defect class dominates: patterns written against the tidy form of a
