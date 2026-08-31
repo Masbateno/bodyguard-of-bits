@@ -616,13 +616,48 @@ comme couche de compatibilité au-dessus de nft.
 Ni un mauvais seuil ni un mauvais motif. Dans les deux cas, une lecture partielle
 ou refusée présentée comme complète.
 
+### Une adresse source faisait passer des ports sans rapport pour protégés
+
+`services._classify_exposure` cherchait le numéro de port sur toute la ligne de
+`ufw status numbered`. Une règle ordinaire :
+
+    [ 1] 80/tcp   ALLOW IN   192.168.1.22
+
+correspondait donc aux ports 1, 22, 168 et 192 autant qu'au 80, et chacun était
+rapporté OPEN_LOCAL — « ouvert, restreint au réseau local ». Le port 22 est le
+pire cas et le plus probable, étant le dernier octet le plus courant sur un
+réseau RFC1918 : une machine faisant tourner SSH **sans aucune règle de
+pare-feu** s'entendait dire que SSH était restreint au LAN. Faussement rassurant,
+sur le contrôle qui couvre 38 services.
+
+`ports.py` avait raison sur ce point, et disait pourquoi dans une docstring —
+« pour éviter de faire correspondre des numéros de port apparaissant plus loin
+sur la ligne, par exemple dans des IP sources comme 192.168.1.22 ». Deux
+implémentations d'une règle, une seule correcte : la quatrième occurrence de
+cette forme dans le cycle, après le commentaire de fin de ligne, le glyphe d'état
+systemd et le détecteur de pipe-to-shell.
+
+La grammaire vit désormais dans `bob/checks/_ufw.py` et les deux appelants s'en
+servent : `services` gagne donc aussi ce que `ports` avait appris plus tôt dans
+le cycle — profils d'application (`ufw allow OpenSSH`), plages
+(`6000:6007/tcp`) et listes (`80,443/tcp`). La restriction de source est lue dans
+la seule colonne From : la lire sur toute la ligne faisait passer une
+*destination* privée pour une source privée.
+
+Deux mutations ont dû être rejouées ici. La première a survécu, et à juste titre :
+le test censé verrouiller « une destination privée n'est pas une source privée »
+utilisait une règle que l'analyseur ne reconnaissait pas du tout, et passait donc
+sans rien tester — ce qui a révélé un vrai manque, puisque
+`ufw allow from any to 192.168.1.5 port 22` imprime la destination devant le port
+et ne correspondait à rien.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7130**.
+**Tests** 6719 → **7156**.
 
 ---
 

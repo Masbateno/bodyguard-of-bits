@@ -22,9 +22,9 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from pathlib import Path
 from enum import Enum
 
+from bob.checks import _ufw
 from bob.checks._run import TranslationFunc, _identity_t, _run
 from bob.scoring import CheckResult
 
@@ -358,78 +358,21 @@ def _categorize_port(
     return PortCategory.UNCOVERED_LOCAL
 
 
-_UFW_NUMBERED_RE = re.compile(r"^\s*\[\s*\d+\]\s*(.*)$")
-# The Action column, which terminates the "To" column.
-_UFW_ACTION_RE   = re.compile(r"\s(ALLOW|DENY|REJECT|LIMIT)\b", re.IGNORECASE)
-# A port specification: digits, with ranges (6000:6007) and lists (80,443),
-# and an optional protocol. This is exactly what ufw stores in `dport`.
-_UFW_PORTSPEC_RE = re.compile(r"^([\d,:]+)(?:/(tcp|udp))?$", re.IGNORECASE)
-
-_UFW_APPS_DIR = Path("/etc/ufw/applications.d")
+# The ufw rule grammar lives in bob/checks/_ufw.py, shared with `services`,
+# which had its own matcher and got it wrong: it searched the whole line, so a
+# rule "80/tcp ALLOW IN 192.168.1.22" made ports 1, 22, 168 and 192 all look
+# covered.
+_UFW_APPS_DIR = _ufw._APPS_DIR
 
 
-def _read_ufw_app_profiles(directory: "Path | None" = None) -> "dict[str, list[str]]":
-    """Map each UFW application profile name to its port specifications.
-
-    A profile file holds one or more ``[Name]`` sections with a ``ports=``
-    line; ufw splits that value on ``|``, so Samba's
-    ``137,138/udp|139,445/tcp`` is two specifications. Names may contain
-    spaces ("Postfix Submission").
-
-    I/O only — called from ``from_system``, never from the check.
-    """
-    apps: dict[str, list[str]] = {}
-    base = directory if directory is not None else _UFW_APPS_DIR
-    try:
-        entries = sorted(base.iterdir())
-    except OSError:
-        return apps
-    for path in entries:
-        try:
-            if not path.is_file():
-                continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        name: str | None = None
-        for line in text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                name = stripped[1:-1].strip()
-            elif name and stripped.lower().startswith("ports="):
-                apps[name] = [p for p in stripped.split("=", 1)[1].split("|") if p]
-    return apps
+def _read_ufw_app_profiles(directory=None):
+    """See :func:`bob.checks._ufw.read_app_profiles`. I/O only."""
+    return _ufw.read_app_profiles(directory)
 
 
-def _expand_port_spec(spec: str) -> "list[tuple[int, int, str | None]]":
-    """Expand one ufw port specification into (low, high, proto) ranges.
-
-    ``22/tcp`` -> [(22, 22, "tcp")]
-    ``6000:6007/tcp`` -> [(6000, 6007, "tcp")]
-    ``80,443/tcp`` -> [(80, 80, "tcp"), (443, 443, "tcp")]
-    ``631`` -> [(631, 631, None)] — no protocol means any protocol.
-
-    Ranges are kept as ranges rather than expanded: a rule may legitimately
-    span the whole ephemeral range, and membership is a comparison.
-    """
-    m = _UFW_PORTSPEC_RE.match(spec.strip())
-    if not m:
-        return []
-    proto = m.group(2).lower() if m.group(2) else None
-    out: list[tuple[int, int, str | None]] = []
-    for part in m.group(1).split(","):
-        if not part:
-            continue
-        lo_s, _, hi_s = part.partition(":")
-        try:
-            lo = int(lo_s)
-            hi = int(hi_s) if hi_s else lo
-        except ValueError:
-            continue
-        if lo > hi:
-            lo, hi = hi, lo
-        out.append((lo, hi, proto))
-    return out
+def _expand_port_spec(spec: str):
+    """See :func:`bob.checks._ufw.expand_port_spec`."""
+    return _ufw.expand_port_spec(spec)
 
 
 def _parse_ufw_covered_ports(
@@ -438,42 +381,15 @@ def _parse_ufw_covered_ports(
 ) -> "list[tuple[int, int, str | None]]":
     """Parse ``ufw status numbered`` into (low, high, proto) coverage ranges.
 
-    Three forms had to be handled that the previous single regex did not, all
-    of them ordinary rather than exotic:
-
-    * **Application profiles.** In non-verbose mode ufw prints the profile
-      *name* in the To column and no port at all, so ``ufw allow OpenSSH`` —
-      the way Ubuntu's own documentation tells you to open SSH — left port 22
-      looking uncovered. Resolved through ``app_profiles``.
-    * **Ranges.** ``6000:6007/tcp`` matched only its first number, so 6001-6007
-      read as uncovered while 6000/**udp** read as covered.
-    * **Lists.** ``80,443/tcp`` behaved the same way: 443 uncovered, 80/udp
-      covered.
-
-    Anchored on the rule number so a port appearing later on the line — inside
-    a source address such as ``192.168.1.22`` — is not mistaken for the target.
+    Application profiles, ranges and lists are all resolved — see the module
+    docstring of ``bob.checks._ufw`` for what each of them used to break.
     """
     covered: list[tuple[int, int, str | None]] = []
-    apps = app_profiles or {}
     for line in ufw_rules.splitlines():
-        m = _UFW_NUMBERED_RE.match(line)
-        if not m:
+        rule = _ufw.parse_rule(line)
+        if rule is None or not rule.to_col:
             continue
-        rest = m.group(1)
-        action = _UFW_ACTION_RE.search(rest)
-        to_col = (rest[:action.start()] if action else rest).strip()
-        # "(v6)" duplicates an existing rule; " on eth0" scopes it to an
-        # interface, which this check does not model either way.
-        to_col = to_col.replace("(v6)", "").strip()
-        to_col = re.sub(r"\s+on\s+\S+$", "", to_col).strip()
-        if not to_col:
-            continue
-
-        specs = [to_col]
-        if not _UFW_PORTSPEC_RE.match(to_col):
-            specs = apps.get(to_col, [])
-        for spec in specs:
-            covered.extend(_expand_port_spec(spec))
+        covered.extend(_ufw.to_column_ranges(rule.to_col, app_profiles))
     return covered
 
 
@@ -494,11 +410,7 @@ def _is_covered_by_ufw(
         covered = _parse_ufw_covered_ports(ufw_rules)
     else:
         covered = ufw_rules
-    want = proto.lower()
-    # A rule with an explicit proto covers only that proto; a rule without one
-    # covers any proto.
-    return any(lo <= port <= hi and (rule_proto is None or rule_proto == want)
-               for lo, hi, rule_proto in covered)
+    return _ufw.ranges_cover(covered, port, proto)
 
 
 def _system_port_name(port: int, proto: str) -> str:

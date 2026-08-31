@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from bob.checks import _ufw
 from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, _run
 from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
@@ -141,6 +142,7 @@ class ServiceSnapshot:
         ufw_rules: str,
         loopback_ports: set[str] | None,
         all_listening_ports: set[str] | None,
+        app_profiles: "dict[str, list[str]] | None" = None,
     ) -> "ServiceSnapshot":
         """
         Build a ServiceSnapshot for a single service, installed or not.
@@ -154,7 +156,7 @@ class ServiceSnapshot:
             state = _detect_state(service)
             ports = _resolve_ports(service)
             exposures = {
-                port: _classify_exposure(port, ufw_rules)
+                port: _classify_exposure(port, ufw_rules, app_profiles)
                 for port in ports
             }
 
@@ -210,10 +212,14 @@ class ServiceSnapshot:
         """
         if ufw_rules is None:
             ufw_rules = _run("ufw", "status", "numbered")
+        # `ufw allow OpenSSH` prints the profile name, not a port, in
+        # non-verbose output — the form Ubuntu's own documentation recommends.
+        app_profiles = _ufw.read_app_profiles()
         return [
             snap
             for snap in (
-                cls._build_snapshot(service, ufw_rules, loopback_ports, all_listening_ports)
+                cls._build_snapshot(service, ufw_rules, loopback_ports,
+                                    all_listening_ports, app_profiles)
                 for service in registry
             )
             if snap.installed
@@ -246,8 +252,12 @@ class ServiceSnapshot:
         """
         if ufw_rules is None:
             ufw_rules = _run("ufw", "status", "numbered")
+        # `ufw allow OpenSSH` prints the profile name, not a port, in
+        # non-verbose output — the form Ubuntu's own documentation recommends.
+        app_profiles = _ufw.read_app_profiles()
         return [
-            cls._build_snapshot(service, ufw_rules, loopback_ports, all_listening_ports)
+            cls._build_snapshot(service, ufw_rules, loopback_ports,
+                                    all_listening_ports, app_profiles)
             for service in registry
         ]
 
@@ -566,7 +576,11 @@ def _auto_detect_port(service: Service) -> str | None:
 
     return None
 
-def _classify_exposure(port: str, ufw_rules: str) -> Exposure:
+def _classify_exposure(
+    port: str,
+    ufw_rules: str,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> Exposure:
     """
     Classify how a port is handled by UFW rules.
 
@@ -583,6 +597,41 @@ def _classify_exposure(port: str, ufw_rules: str) -> Exposure:
     if not port_num.isdigit() or not (1 <= int(port_num) <= 65535):
         logger.warning("Invalid port number in registry: %r", port_num)
         return Exposure.NO_RULE
+    if proto not in ("tcp", "udp"):
+        logger.warning("Invalid protocol in registry: %r", proto)
+        return Exposure.NO_RULE
+
+    want = int(port_num)
+
+    # UFW uses first-match semantics — process rules in order and return on the
+    # first one that covers this port.
+    #
+    # The port is matched against the rule's To column only. Searching the whole
+    # line, as this did until v0.15.0, let a source address stand in for a
+    # target: one rule `80/tcp ALLOW IN 192.168.1.22` reported ports 1, 22, 168
+    # and 192 as OPEN_LOCAL, and 22 is the commonest last octet on an RFC1918
+    # network — so a host running SSH with no rule for it was told SSH was
+    # restricted to the local network. `ports` already anchored on the To column
+    # and said why in a docstring; the grammar now lives in one place.
+    for line in ufw_rules.splitlines():
+        rule = _ufw.parse_rule(line)
+        if rule is None or not rule.to_col:
+            continue
+        ranges = _ufw.to_column_ranges(rule.to_col, app_profiles)
+        if not _ufw.ranges_cover(ranges, want, proto):
+            continue
+
+        if rule.action == "DENY":
+            return Exposure.DENY
+        if rule.action in ("ALLOW", "LIMIT"):
+            # The source restriction lives in the From column. Reading the whole
+            # line here would let a private *destination* pass for a private
+            # source.
+            if _line_has_private_or_loopback(rule.from_col):
+                return Exposure.OPEN_LOCAL
+            return Exposure.OPEN_WORLD
+
+    return Exposure.NO_RULE
     if proto not in ("tcp", "udp"):
         logger.warning("Invalid protocol in registry: %r", proto)
         return Exposure.NO_RULE

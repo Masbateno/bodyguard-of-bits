@@ -573,13 +573,44 @@ the nft-based compatibility wrapper.
 Neither is a wrong threshold or a bad pattern. Both are a partial or refused
 read presented as a complete one.
 
+### A source address made unrelated ports look firewalled
+
+`services._classify_exposure` searched the whole `ufw status numbered` line for
+the port number. One ordinary rule:
+
+    [ 1] 80/tcp   ALLOW IN   192.168.1.22
+
+therefore matched ports 1, 22, 168 and 192 as well as 80, and reported each as
+OPEN_LOCAL — "open, restricted to the local network". Port 22 is the worst case
+and the likeliest, being the commonest last octet on an RFC1918 network: a host
+running SSH with **no firewall rule at all** was told SSH was restricted to the
+LAN. Falsely reassuring, on the check that covers 38 services.
+
+`ports.py` had this right, and said why in a docstring — "to avoid matching port
+numbers appearing later on the line (e.g. inside source IPs like 192.168.1.22)".
+Two implementations of one rule, one of them correct: the fourth time that shape
+appeared in this cycle, after the trailing comment, the systemd status glyph and
+the pipe-to-shell matcher.
+
+The grammar now lives in `bob/checks/_ufw.py` and both callers use it, so
+`services` also gained what `ports` learned earlier in the cycle: application
+profiles (`ufw allow OpenSSH`), ranges (`6000:6007/tcp`) and lists
+(`80,443/tcp`). The source restriction is read from the From column alone —
+reading the whole line let a private *destination* pass for a private source.
+
+Two mutations were needed twice here. The first survived and was right to: the
+test meant to pin "a private destination is not a private source" used a rule
+the parser did not match at all, so it passed without testing anything — and
+that in turn revealed a real gap, since `ufw allow from any to 192.168.1.5 port
+22` prints the destination in front of the port and was matching nothing.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7130**.
+**Tests** 6719 → **7156**.
 
 ---
 
