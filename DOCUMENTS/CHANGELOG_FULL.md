@@ -481,13 +481,44 @@ was told the distro's original value was still in force. And the reverse, which
 is the direction that matters: a strict umask weakened by an appended line was
 reported as the strict one it had replaced.
 
+### Every established connection was dropped, and a security check with it
+
+The worst finding of the cycle, and it was not a wrong verdict — it was a check
+that could not run at all.
+
+`NetworkContextSnapshot` runs `ss -tnp state established`. Given a state filter,
+ss already knows the state and **omits the State column**:
+
+    Recv-Q Send-Q  Local Address:Port   Peer Address:Port  Process
+    0      0       192.168.1.10:56692   104.18.39.21:443   users:(("brave",…
+
+The parser read Local at a fixed index 3 — which is the *peer* — and the peer at
+index 4, which is the process column. `_split_addr_port` rejects
+`users:(("brave",…))`, so the line was skipped. Every line, always. Measured on
+the development host: **ss reported 32 established connections and the snapshot
+reported 0**.
+
+`network_context` flags an established connection to an external IP on a
+sensitive port, with a 2-point deduction. It iterates that empty list, so it
+could never fire. The JSON `connections_count`, the top-remote-IP list and the
+summary display were zeroed by the same cause — a section that printed nothing
+and looked like a quiet machine.
+
+The two layouts are now told apart by the one thing that distinguishes them
+without guessing: a state keyword is never numeric and Recv-Q always is. The
+State-present form — `ss -tn`, and the example in the function's own docstring —
+keeps working, and is pinned.
+
+The guard that would have caught this on day one is now in the file: parse the
+live `ss` output and compare it line for line against the columns ss printed.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **7095**.
+**Tests** 6719 → **7104**.
 
 ---
 

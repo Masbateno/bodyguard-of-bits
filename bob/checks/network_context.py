@@ -259,16 +259,32 @@ def _parse_connections(ss_output: str) -> list[ConnectionInfo]:
     results: list[ConnectionInfo] = []
     for line in ss_output.splitlines():
         # Skip header
-        if line.startswith("State") or line.startswith("Netid"):
+        if line.startswith(("State", "Netid", "Recv-Q")):
             continue
         parts = line.split()
-        if len(parts) < 5:
+        # The State column is present or absent depending on the invocation,
+        # and the collector uses `ss -tnp state established` — where ss knows
+        # the state and omits the column:
+        #
+        #   Recv-Q Send-Q  Local Address:Port  Peer Address:Port  Process
+        #   0      0       192.168.1.10:56692  104.18.39.21:443   users:(("brave",…
+        #
+        # Reading Local at a fixed index 3 therefore took the *peer* as the
+        # local address and the process column as the peer. `_split_addr_port`
+        # rejected `users:(("brave",…))`, so every established connection was
+        # dropped: this host has dozens and the snapshot reported zero. That
+        # silenced the "established connection to an external IP on a sensitive
+        # port" finding entirely — it could not fire — and zeroed the
+        # connection count in both the JSON output and the summary display.
+        #
+        # A leading state keyword is never numeric and Recv-Q always is, which
+        # tells the two layouts apart without guessing.
+        off = 0 if (parts and parts[0].isdigit()) else 1
+        if len(parts) < off + 4:
             continue
-        # parts[0]=State/Netid, parts[1]=Recv-Q, parts[2]=Send-Q,
-        # parts[3]=Local, parts[4]=Peer, parts[5]=Process (optional)
-        local_raw = parts[3]
-        peer_raw  = parts[4]
-        process   = _extract_process(parts[5] if len(parts) > 5 else "")
+        local_raw = parts[off + 2]
+        peer_raw  = parts[off + 3]
+        process   = _extract_process(parts[off + 4] if len(parts) > off + 4 else "")
 
         local_addr, local_port = _split_addr_port(local_raw)
         remote_addr, remote_port = _split_addr_port(peer_raw)

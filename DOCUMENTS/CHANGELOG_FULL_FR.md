@@ -519,13 +519,46 @@ stricte à la fin — s'entendait donc dire que la valeur d'origine de la distro
 umask strict affaibli par une ligne ajoutée était rapporté comme le strict qu'il
 avait remplacé.
 
+### Toutes les connexions établies étaient perdues, et un contrôle avec elles
+
+Le pire constat du cycle, et ce n'était pas un verdict faux — c'était un
+contrôle qui ne pouvait pas s'exécuter du tout.
+
+`NetworkContextSnapshot` lance `ss -tnp state established`. Avec un filtre
+d'état, ss connaît déjà l'état et **supprime la colonne State** :
+
+    Recv-Q Send-Q  Local Address:Port   Peer Address:Port  Process
+    0      0       192.168.1.10:56692   104.18.39.21:443   users:(("brave",…
+
+L'analyseur lisait « Local » à l'index fixe 3 — qui est le *pair* — et le pair à
+l'index 4, qui est la colonne processus. `_split_addr_port` rejette
+`users:(("brave",…))` : la ligne était donc ignorée. Toutes les lignes, toujours.
+Mesuré sur la machine de développement : **ss annonçait 32 connexions établies et
+le snapshot en rapportait 0**.
+
+`network_context` signale une connexion établie vers une IP externe sur un port
+sensible, avec 2 points de déduction. Il parcourt cette liste vide : il ne
+pouvait jamais se déclencher. Le `connections_count` du JSON, la liste des IP
+distantes les plus fréquentes et l'affichage de synthèse étaient mis à zéro par
+la même cause — une section qui n'affichait rien et ressemblait à une machine
+tranquille.
+
+Les deux dispositions sont désormais distinguées par la seule chose qui les
+sépare sans deviner : un mot-clé d'état n'est jamais numérique et Recv-Q l'est
+toujours. La forme avec State — `ss -tn`, et l'exemple de la docstring de la
+fonction elle-même — continue de fonctionner, et est verrouillée.
+
+La garde qui aurait attrapé cela dès le premier jour est maintenant dans le
+fichier : analyser la sortie `ss` réelle et la comparer ligne à ligne aux
+colonnes qu'ss a imprimées.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **7095**.
+**Tests** 6719 → **7104**.
 
 ---
 
