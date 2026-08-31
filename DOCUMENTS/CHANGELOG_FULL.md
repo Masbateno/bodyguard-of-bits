@@ -352,13 +352,46 @@ it: a single-digit day, which openssl prints with a double space (`Sep  1`), and
 a notAfter beyond 2050, where the ASN.1 encoding switches from UTCTime to
 GeneralizedTime. Both are now pinned.
 
+### "curl | sudo bash" was not detected, and "curl | ssh host" was
+
+The rule "a download piped straight into a shell" existed twice, as two regexes
+that disagreed with each other and with reality:
+
+    cron_audit       \b(curl|wget)\b.*\|\s*\S*sh\b
+    systemd_timers   \|\s*(/[a-z/]*/)?(?:ba)?sh\b
+
+The first matched **any token ending in "sh"**, so `curl … | ssh backup@host`
+— an ordinary pipe to a remote machine — was reported as a supply-chain risk. It
+also required the token immediately after the pipe to *be* the shell, so
+`curl … | sudo bash` was missed entirely: the most published form of the
+one-liner, and the dangerous one, because it runs the downloaded script as root.
+`| sudo -E bash`, `| env bash`, `| nohup sh` and `| timeout 60 bash` went the
+same way.
+
+The second knew only `sh` and `bash`, so `| zsh` went unnoticed in timers while
+cron_audit caught it. One rule, two implementations, two different blind spots —
+the third time this shape appeared in this cycle, after the trailing comment and
+the systemd status glyph.
+
+`pipes_into_shell` now lives in `bob/checks/_run.py` and matches on the command
+word of each piped stage rather than on a suffix: it steps over a `sudo` / `env`
+/ `nice` / `timeout` wrapper and whatever belongs to that wrapper, strips the
+shell punctuation a unit file leaves on the last token
+(`ExecStart=/bin/bash -c "curl … | bash"`), and looks at later stages so
+`curl … | tee /tmp/x | sh` is caught.
+
+One deliberate imprecision, kept: the downloader is matched anywhere before the
+first pipe, so the contrived `echo curl | sh` is flagged. That errs toward
+detection, which is the direction the rest of this tool already takes, and the
+finding quotes the line so the operator sees it at once.
+
 ### Documentation routine
 
 Starting with this cycle the SNAPSHOT counters are refreshed **as the branch progresses**, not at ship time, and the
 release-surface files are opened when the branch opens. The existing doc guards then work *during* development
 instead of only at the tag.
 
-**Tests** 6719 → **6981**.
+**Tests** 6719 → **7029**.
 
 ---
 

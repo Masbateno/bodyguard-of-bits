@@ -26,7 +26,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, pipes_into_shell
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -35,8 +35,10 @@ from bob.scoring import CheckResult
 
 # Two-part detection: downloader present AND output piped to a shell.
 # Splitting avoids false negatives from path prefixes (/bin/bash, bash -c, etc.)
-_DOWNLOADER_RE    = re.compile(r"\b(curl|wget)\b", re.IGNORECASE)
-_PIPE_TO_SHELL_RE = re.compile(r"\|\s*(/[a-z/]*/)?(?:ba)?sh\b", re.IGNORECASE)
+# The download-piped-into-a-shell rule lives in bob/checks/_run.py, shared with
+# cron_audit. The local pair it replaces knew only sh and bash, so `| zsh` went
+# unnoticed here while cron_audit caught it — two copies of one rule, each with
+# its own blind spots.
 
 _EXEC_START_RE     = re.compile(r"^\s*ExecStart\s*=\s*(.+)", re.MULTILINE)
 _USER_DIRECTIVE_RE = re.compile(r"^\s*User\s*=\s*\S", re.MULTILINE)
@@ -105,7 +107,7 @@ class SystemdTimersSnapshot:
 
             for exec_start in exec_starts:
                 # Pipe-to-shell detection: downloader AND shell pipe must both be present
-                if _DOWNLOADER_RE.search(exec_start) and _PIPE_TO_SHELL_RE.search(exec_start):
+                if pipes_into_shell(exec_start):
                     trimmed = exec_start.strip()
                     if len(trimmed) > _MAX_EXEC_LENGTH:
                         trimmed = trimmed[:_MAX_EXEC_LENGTH] + "…"

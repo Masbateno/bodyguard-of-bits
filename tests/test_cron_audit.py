@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import pytest
 
+from bob.checks._run import pipes_into_shell
+
 from bob.checks.cron_audit import (
     CronAuditSnapshot,
     check_cron_audit,
     _chmod_cmd,
-    _PIPE_TO_SHELL_RE,
 )
 from bob.scoring import FindingLevel
 from tests.helpers import _deduction_keys, _deduction_points, _get_finding, _has_finding
@@ -252,7 +253,10 @@ class TestChmodCmd:
 # _PIPE_TO_SHELL_RE regex
 # ---------------------------------------------------------------------------
 
-class TestPipeToShellRegex:
+class TestPipeToShellDetection:
+    """v0.15.0 moved this rule to bob/checks/_run.py, shared with
+    systemd_timers, which had a second, differently-incomplete copy."""
+
     @pytest.mark.parametrize("line", [
         "curl http://example.com/install.sh | sh",
         "curl http://example.com/install.sh | bash",
@@ -264,18 +268,34 @@ class TestPipeToShellRegex:
         "curl http://x | bash -s",         # bash with flags
         "curl http://x | /bin/sh",         # absolute path to shell
         "wget http://x | zsh",             # zsh variant
+        # v0.15.0 — the published form of the one-liner, and the dangerous one:
+        # it runs as root. Missed by the old suffix match, which needed the
+        # token right after the pipe to end in "sh".
+        "curl -sSL http://x | sudo bash",
+        "curl -sSL http://x | sudo -E bash",
+        "wget -O - http://x | sudo sh",
+        "curl http://x | env bash",
+        "curl http://x | nohup sh",
+        "curl http://x | tee /tmp/a | sh",  # shell at a later stage
     ])
     def test_matches_risky_patterns(self, line):
-        assert _PIPE_TO_SHELL_RE.search(line), f"Should match: {line!r}"
+        assert pipes_into_shell(line), f"Should match: {line!r}"
 
     @pytest.mark.parametrize("line", [
         "curl http://example.com -o /tmp/file.sh",
         "wget http://example.com -O /tmp/file.sh",
         "/etc/cron.daily/backup.sh",
         "rsync -av /src /dst",
+        # v0.15.0 — "ssh" ends in "sh", and the old suffix match flagged a
+        # perfectly ordinary pipe to a remote host as a supply-chain risk.
+        "curl http://x | ssh backup@host 'cat > f'",
+        "curl http://x | grep foo",
+        "curl http://x | jq .",
+        "cat file | bash",                 # no downloader
+        "curl http://x > file",            # no pipe
     ])
     def test_does_not_match_safe_patterns(self, line):
-        assert not _PIPE_TO_SHELL_RE.search(line), f"Should not match: {line!r}"
+        assert not pipes_into_shell(line), f"Should not match: {line!r}"
 
 
 # ---------------------------------------------------------------------------

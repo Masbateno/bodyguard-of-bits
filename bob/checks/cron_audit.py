@@ -25,7 +25,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path
+from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, pipes_into_shell
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -33,11 +33,8 @@ from bob.scoring import CheckResult
 # ---------------------------------------------------------------------------
 
 # curl/wget piped directly into a shell — common supply-chain attack vector.
-# \S*sh\b covers sh, bash, zsh, /bin/sh, /usr/bin/bash, bash -s, etc.
-_PIPE_TO_SHELL_RE = re.compile(
-    r"\b(curl|wget)\b.*\|\s*\S*sh\b",
-    re.IGNORECASE,
-)
+# The rule lives in bob/checks/_run.py because systemd_timers needs the same
+# one; it used to be written twice, with two different sets of blind spots.
 _PATH_RE = re.compile(r"(/[^\s;|&<>]+\.sh)\b")
 
 # /etc/cron.d — files in crontab format; parsed for pipe-to-shell patterns
@@ -123,7 +120,7 @@ class CronAuditSnapshot:
         # Pipe-to-shell: check both format and script lines, deduplicated
         pipe_seen: set[str] = set()
         for source, line in format_lines + script_lines:
-            if _PIPE_TO_SHELL_RE.search(line):
+            if pipes_into_shell(line):
                 entry_str = f"{source}: {line.strip()}"
                 if entry_str not in pipe_seen:
                     snap.pipe_to_shell_entries.append(entry_str)

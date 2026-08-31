@@ -336,11 +336,15 @@ class TestPipeToShellDetection:
         ("curl http://x > file",                 False),  # no pipe to shell
         ("curl http://x | gzip",                 False),  # pipe to non-shell
         ("wget file.tar.gz && tar xf",           False),  # no shell pipe
+        # v0.15.0 — the local copy of this rule knew only sh and bash, so it
+        # missed zsh, and neither copy knew about a sudo wrapper.
+        ("curl http://x | zsh",                  True),
+        ("curl http://x | sudo bash",            True),
+        ("curl http://x | ssh host 'cmd'",       False),
     ])
     def test_detection(self, cmd, should_match):
-        from bob.checks.systemd_timers import _DOWNLOADER_RE, _PIPE_TO_SHELL_RE
-        result = bool(_DOWNLOADER_RE.search(cmd) and _PIPE_TO_SHELL_RE.search(cmd))
-        assert result == should_match
+        from bob.checks._run import pipes_into_shell
+        assert pipes_into_shell(cmd) == should_match
 
 
 # ---------------------------------------------------------------------------

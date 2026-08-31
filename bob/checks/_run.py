@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -110,6 +111,74 @@ def strip_unit_glyph(line: str) -> str:
             if rest[:1].isspace():
                 return rest.lstrip()
     return line
+
+
+# "Download something and pipe it straight into a shell" — the shape of most
+# supply-chain one-liners, and the reason a cron job or timer running it is
+# worth a finding.
+#
+# This lived twice, as two different regexes that disagreed. cron_audit used
+# `\b(curl|wget)\b.*\|\s*\S*sh\b`, which matched any token ending in "sh" —
+# so `| ssh backup@host` was flagged as a piped shell — and missed
+# `| sudo bash`, the most published form of the pattern and the dangerous one,
+# since it runs as root. systemd_timers used `\|\s*(/[a-z/]*/)?(?:ba)?sh\b`,
+# which knew only sh and bash and so missed `| zsh` as well.
+#
+# One implementation, matching on the command word rather than on a suffix.
+_DOWNLOADER_RE = re.compile(r"\b(?:curl|wget)\b", re.IGNORECASE)
+
+_SHELL_NAMES = frozenset({
+    "sh", "bash", "dash", "zsh", "ksh", "ash", "csh", "tcsh", "fish", "busybox",
+})
+
+# Commands that stand in front of the real one without changing what it is.
+_WRAPPER_ARG_RE = re.compile(r"\d+[smhd]?")
+
+_COMMAND_WRAPPERS = frozenset({
+    "sudo", "doas", "env", "nice", "ionice", "nohup", "time", "timeout",
+    "setsid", "stdbuf",
+})
+
+
+def pipes_into_shell(command: str) -> bool:
+    """Return True if *command* downloads something and pipes it into a shell.
+
+    The download must appear before the first pipe — `echo curl | sh` is not
+    this pattern. Each piped stage is then examined in turn, so
+    `curl … | tee /tmp/x | sh` is caught, and a leading `sudo`/`env`/`nice`
+    wrapper (with its own options) is stepped over to reach the command it
+    actually runs.
+    """
+    head, sep, _ = command.partition("|")
+    if not sep or not _DOWNLOADER_RE.search(head):
+        return False
+
+    for segment in command.split("|")[1:]:
+        tokens = segment.split()
+        i = 0
+        while i < len(tokens):
+            # A unit file writes the whole thing as
+            # `ExecStart=/bin/bash -c "curl … | bash"`, so the last token
+            # carries the closing quote. Strip the shell punctuation that can
+            # sit around a command word before comparing it.
+            base = tokens[i].strip("\"'`();&").rsplit("/", 1)[-1].lower()
+            if base in _COMMAND_WRAPPERS:
+                i += 1
+                # Step over what belongs to the wrapper rather than to the
+                # command it runs: its options, a bare duration or priority
+                # (`timeout 60 bash`, `nice 10 sh`), and `env`-style
+                # assignments.
+                while i < len(tokens) and (
+                    tokens[i].startswith("-")
+                    or _WRAPPER_ARG_RE.fullmatch(tokens[i])
+                    or "=" in tokens[i]
+                ):
+                    i += 1
+                continue
+            if base in _SHELL_NAMES:
+                return True
+            break          # this stage runs something else; try the next one
+    return False
 
 def _command_exists(name: str) -> bool:
     """Return True if the command is available in PATH."""

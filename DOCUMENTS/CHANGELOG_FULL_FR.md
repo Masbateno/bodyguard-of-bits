@@ -380,13 +380,47 @@ susceptibles de le casser : un jour à un chiffre, qu'openssl écrit avec un dou
 espace (`Sep  1`), et un notAfter au-delà de 2050, où l'encodage ASN.1 passe de
 UTCTime à GeneralizedTime. Les deux sont désormais verrouillés.
 
+### « curl | sudo bash » n'était pas détecté, et « curl | ssh host » l'était
+
+La règle « un téléchargement redirigé directement dans un shell » existait en
+deux exemplaires, deux expressions régulières en désaccord entre elles et avec
+la réalité :
+
+    cron_audit       \b(curl|wget)\b.*\|\s*\S*sh\b
+    systemd_timers   \|\s*(/[a-z/]*/)?(?:ba)?sh\b
+
+La première acceptait **tout token finissant par « sh »** : `curl … | ssh
+backup@host` — un pipe ordinaire vers une machine distante — était donc signalé
+comme risque de chaîne d'approvisionnement. Elle exigeait aussi que le token
+suivant immédiatement le pipe *soit* le shell, si bien que `curl … | sudo bash`
+passait entièrement au travers : la forme la plus publiée de ce one-liner, et la
+dangereuse, puisqu'elle exécute le script téléchargé en root. `| sudo -E bash`,
+`| env bash`, `| nohup sh` et `| timeout 60 bash` subissaient le même sort.
+
+La seconde ne connaissait que `sh` et `bash` : `| zsh` passait inaperçu dans les
+timers alors que cron_audit le voyait. Une règle, deux implémentations, deux
+angles morts différents — la troisième occurrence de cette forme dans ce cycle,
+après le commentaire de fin de ligne et le glyphe d'état systemd.
+
+`pipes_into_shell` vit désormais dans `bob/checks/_run.py` et compare le mot de
+commande de chaque étape du pipe au lieu d'un suffixe : il enjambe un wrapper
+`sudo` / `env` / `nice` / `timeout` ainsi que ce qui appartient à ce wrapper,
+retire la ponctuation shell qu'un fichier d'unité laisse sur le dernier token
+(`ExecStart=/bin/bash -c "curl … | bash"`), et examine les étapes suivantes pour
+attraper `curl … | tee /tmp/x | sh`.
+
+Une imprécision assumée, conservée : le téléchargeur est cherché n'importe où
+avant le premier pipe, donc l'artificiel `echo curl | sh` est signalé. Cela
+penche vers la détection, direction que le reste de l'outil adopte déjà, et le
+finding cite la ligne : l'opérateur le voit immédiatement.
+
 ### Routine de documentation
 
 À partir de ce cycle, les compteurs du SNAPSHOT sont rafraîchis **au fil de la branche**, et non au moment de la
 publication, et les fichiers de surface de version sont ouverts à l'ouverture de la branche. Les gardes doc
 existantes travaillent alors *pendant* le développement au lieu de ne servir qu'au tag.
 
-**Tests** 6719 → **6981**.
+**Tests** 6719 → **7029**.
 
 ---
 
