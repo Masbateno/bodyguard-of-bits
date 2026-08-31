@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _identity_t, _run
+from bob.checks._run import TranslationFunc, _identity_t, _run, run_result
 from bob.scoring import CheckResult
 
 
@@ -42,6 +42,9 @@ class IPv6Snapshot:
                              (i.e. /proc/sys/net/ipv6/conf/all/disable_ipv6 == 0).
         ufw_ipv6_enabled:    True if UFW is configured to manage IPv6 rules
                              (IPV6=yes or absent in /etc/default/ufw).
+        listeners_readable:  False when `ss` could not be run, so an empty
+                             listener list means "not looked at" rather than
+                             "nothing listening".
         ipv6_listeners:      Port/proto strings (e.g. "22/tcp") for services
                              that bind to the IPv6 wildcard address (::).
         ufw_v6_covered:      Port/proto strings that have a (v6) UFW rule.
@@ -56,6 +59,7 @@ class IPv6Snapshot:
     # absent tree is a definite "IPv6 is off", not an unknown — see
     # _read_kernel_ipv6.
     kernel_ipv6_readable: bool      = True
+    listeners_readable:  bool       = True
     ufw_ipv6_enabled:    bool       = True
     ipv6_listeners:      list[str]  = field(default_factory=list)
     ufw_v6_covered:      list[str]  = field(default_factory=list)
@@ -74,8 +78,8 @@ class IPv6Snapshot:
         ufw_ipv6_enabled    = _read_ufw_ipv6()
         has_global_ipv6     = _read_global_ipv6()
 
-        ss_out = _run("ss", "-tulnp") or ""
-        ipv6_listeners = sorted(_extract_ipv6_listeners(ss_out))
+        ss = run_result("ss", "-tulnp")
+        ipv6_listeners = sorted(_extract_ipv6_listeners(ss.stdout))
 
         ufw_out = _run("ufw", "status", "numbered") or ""
         ufw_v6_covered = sorted(
@@ -85,6 +89,7 @@ class IPv6Snapshot:
         return cls(
             kernel_ipv6_enabled=kernel_ipv6_enabled,
             kernel_ipv6_readable=kernel_ipv6_readable,
+            listeners_readable=ss.ok,
             ufw_ipv6_enabled=ufw_ipv6_enabled,
             ipv6_listeners=ipv6_listeners,
             ufw_v6_covered=ufw_v6_covered,
@@ -159,6 +164,12 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                     detail=_t("ipv6.listeners_list", ports=listeners_str),
                     key="ipv6.ufw_disabled_listeners_link_local",
                 )
+        elif not snapshot.listeners_readable:
+            # `ss` never answered, so "no IPv6 listeners" would be BOB's
+            # ignorance dressed up as reassurance.
+            result.info(message=_t("ipv6.listeners_unknown"),
+                        detail=_t("ipv6.listeners_unknown_detail"),
+                        key="ipv6.listeners_unknown")
         else:
             result.info(message=_t("ipv6.ufw_disabled_no_listeners"),
                         key="ipv6.ufw_disabled_no_listeners")

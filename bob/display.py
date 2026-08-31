@@ -374,9 +374,15 @@ def display_network_context(snapshot, t, output_mod) -> None:
     print()
 
     # ── Connections summary ───────────────────────────────────────────────
+    # Without a working `ss` the list is empty because nothing was read, not
+    # because nothing is connected — say so rather than printing "0".
     total = len(snapshot.connections)
     output_mod.print_dim(
-        f"  {t('network_context.connections_total', count=total)}"
+        "  " + (
+            t("network_context.connections_total", count=total)
+            if snapshot.connections_readable
+            else t("network_context.connections_unknown")
+        )
     )
 
     top = top_remote_ips(snapshot.connections, n=3)
@@ -714,9 +720,17 @@ def display_ports_overview(ports_snapshot, config, t, report, output) -> None:
     ]
     visible_raw = {lp.raw_line for lp in visible_ports}
 
+    # A count of zero is only worth printing when `ss` actually answered;
+    # otherwise the overview would contradict the ports section, which reports
+    # the read as failed.
+    overview = (
+        t("ports.listening_count", count=len(visible_ports))
+        if ports_snapshot.ports_readable
+        else t("ports.unreadable")
+    )
     if not config.quiet:
-        output.print_info(t("ports.listening_count", count=len(visible_ports)))
-    report.write_finding("INFO", t("ports.listening_count", count=len(visible_ports)))
+        output.print_info(overview)
+    report.write_finding("INFO", overview)
 
     if ports_snapshot.ss_output:
         # Rebuild filtered table: keep header/blank lines, drop ephemeral data lines
@@ -744,7 +758,8 @@ def display_ports_overview(ports_snapshot, config, t, report, output) -> None:
 # ---------------------------------------------------------------------------
 
 def display_services_panorama(registry, ufw_numbered: str,
-                               loopback_only_ports: set, all_listening_ports: set,
+                               loopback_only_ports: set,
+                               all_listening_ports: "set | None",
                                config, t) -> None:
     """Print the compact services panorama table (all 22 known services)."""
     from bob.output import print_section, print_services_panorama

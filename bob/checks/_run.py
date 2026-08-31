@@ -12,7 +12,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Callable, NamedTuple
 
 _CMD_TIMEOUT = 10  # seconds — default for short commands (ss, ufw, iptables, etc.)
 
@@ -66,8 +66,29 @@ _C_LOCALE_ENV = {**os.environ, "LC_ALL": "C", "LANG": "C", "LANGUAGE": ""}
 _C_UTF8_LOCALE_ENV = {**os.environ, "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "LANGUAGE": ""}
 
 
-def _run(*args: str, timeout: int = _CMD_TIMEOUT, env: "dict | None" = None) -> str:
-    """Run a command and return stdout. Returns empty string on error.
+class CommandResult(NamedTuple):
+    """What a command printed, and whether that output can be trusted.
+
+    ``ok`` is False when the command could not run at all (absent binary,
+    timeout, OSError) or ran and exited non-zero. It is the caller's job to
+    decide what that means: for ``ss`` a failure means the socket list is
+    simply unknown, while ``dpkg-query -W`` exits non-zero to *tell* the
+    caller the package is not installed. Only the caller knows which.
+    """
+
+    stdout: str
+    ok:     bool
+
+
+def run_result(
+    *args: str, timeout: int = _CMD_TIMEOUT, env: "dict | None" = None
+) -> CommandResult:
+    """Run a command and report both its stdout and whether it succeeded.
+
+    Prefer this over ``_run`` wherever an empty result would otherwise be
+    rendered as an affirmative "nothing found". A check that says "0 listening
+    ports" because ``ss`` is not installed is not reporting a fact about the
+    host, and BOB must not state it as one.
 
     ``env`` defaults to the English ``LC_ALL=C`` environment so regexes match
     regardless of the host locale. Pass ``env=_C_UTF8_LOCALE_ENV`` for commands
@@ -78,11 +99,21 @@ def _run(*args: str, timeout: int = _CMD_TIMEOUT, env: "dict | None" = None) -> 
             list(args), capture_output=True, text=True, timeout=timeout,
             env=env if env is not None else _C_LOCALE_ENV,
         )
-        return proc.stdout
+        return CommandResult(proc.stdout, proc.returncode == 0)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         logger.debug("Command %r failed: %s (stderr=%r)", args, exc,
                      getattr(exc, "stderr", None))
-        return ""
+        return CommandResult("", False)
+
+
+def _run(*args: str, timeout: int = _CMD_TIMEOUT, env: "dict | None" = None) -> str:
+    """Run a command and return stdout. Returns empty string on error.
+
+    Thin wrapper over :func:`run_result` that drops the success flag. Keep it
+    for the many call sites where an empty result and a failed command lead to
+    the same, correct conclusion.
+    """
+    return run_result(*args, timeout=timeout, env=env).stdout
 
 
 

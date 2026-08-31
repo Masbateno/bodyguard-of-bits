@@ -1,3 +1,18 @@
+bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
+
+  * A local stress test of the v0.15.0/v0.15.1 fixes found the "unreadable is
+    not empty" class still open at its root: `_run` returns stdout and drops
+    the exit status, so a refused, absent or failing command hands the caller
+    the same empty string as a healthy one with nothing to report.
+  * Five verdicts were built on that ambiguity. On a host with 34 listening
+    sockets, taking `ss` off PATH was enough to produce "0 listening ports
+    detected", "no IPv6 listeners", "0 established connections", "not actively
+    listening" for every registry port, and a green tick in the summary box.
+  * New `run_result()` reports stdout and success separately; `_run` keeps its
+    contract for the call sites where empty and failed mean the same thing.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
+
 bodyguard-of-bits (0.15.1-1) UNRELEASED; urgency=low
 
   * A second hunt, to find out whether v0.15.0 made BOB resilient. New angles

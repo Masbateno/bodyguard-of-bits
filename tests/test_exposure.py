@@ -54,8 +54,9 @@ class _FakeListeningPort:
 
 
 class _FakePortsSnapshot:
-    def __init__(self, ports):
+    def __init__(self, ports, ports_readable=True):
         self.ports = ports
+        self.ports_readable = ports_readable
 
 
 def _make_ports(*port_proto_addr) -> _FakePortsSnapshot:

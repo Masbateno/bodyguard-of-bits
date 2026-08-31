@@ -26,7 +26,13 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, pipes_into_shell
+from bob.checks._run import (
+    TranslationFunc,
+    _command_exists,
+    _identity_t,
+    pipes_into_shell,
+    run_result,
+)
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -76,12 +82,16 @@ class SystemdTimersSnapshot:
                                   (no User= directive).
         timer_count:              Total timers returned by list-timers.
         systemctl_available:      True if the systemctl binary is present.
+        timers_readable:          False when `systemctl list-timers` ran but
+                                  failed, so a zero count means "not listed"
+                                  rather than "no timers on this host".
     """
     pipe_to_shell_entries:    list[str] = field(default_factory=list)
     world_writable_scripts:   list[str] = field(default_factory=list)
     user_created_root_timers: list[str] = field(default_factory=list)
     timer_count:              int  = 0
     systemctl_available:      bool = True
+    timers_readable:          bool = True
 
     @classmethod
     def from_system(cls) -> "SystemdTimersSnapshot":
@@ -91,7 +101,7 @@ class SystemdTimersSnapshot:
         if not snap.systemctl_available:
             return snap
 
-        timer_units = _list_timer_units()
+        timer_units, snap.timers_readable = _list_timer_units()
         snap.timer_count = len(timer_units)
 
         pipe_seen:     set[str] = set()
@@ -155,6 +165,14 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
         result.info(
             message=_t("systemd_timers.no_systemctl"),
             key="systemd_timers.no_systemctl",
+        )
+        return result
+
+    if not snapshot.timers_readable:
+        result.info(
+            message=_t("systemd_timers.unreadable"),
+            detail=_t("systemd_timers.unreadable_detail"),
+            key="systemd_timers.unreadable",
         )
         return result
 
@@ -223,14 +241,18 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _list_timer_units() -> list[tuple[str, str]]:
+def _list_timer_units() -> "tuple[list[tuple[str, str]], bool]":
     """
-    Return (timer_unit, service_unit) pairs from systemctl list-timers.
+    Return (timer_unit, service_unit) pairs from systemctl list-timers, paired
+    with whether the listing actually succeeded.
 
     The ACTIVATES column is used when present; otherwise the service name is
-    derived by replacing .timer with .service.
+    derived by replacing .timer with .service. A refused or failing
+    `list-timers` prints nothing to stdout, which is indistinguishable from a
+    host that genuinely runs no timers — hence the flag.
     """
-    out = _run("systemctl", "list-timers", "--all", "--no-pager") or ""
+    listing = run_result("systemctl", "list-timers", "--all", "--no-pager")
+    out = listing.stdout
     result: list[tuple[str, str]] = []
     seen: set[str] = set()
 
@@ -246,7 +268,7 @@ def _list_timer_units() -> list[tuple[str, str]]:
         service = services[-1] if services else timer.replace(".timer", ".service")
         result.append((timer, service))
 
-    return result
+    return result, listing.ok
 
 def _find_service_file(service: str) -> Path | None:
     """Return the first existing service unit file path, or None."""

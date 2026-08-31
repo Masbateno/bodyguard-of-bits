@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _identity_t, _run
+from bob.checks._run import TranslationFunc, _identity_t, _run, run_result
 from bob.scoring import CheckResult
 
 # Ports above this threshold are considered ephemeral (kernel-assigned)
@@ -127,11 +127,16 @@ class PortsSnapshot:
                     `ufw allow OpenSSH` looked like it had no rule for 22.
                     Collected here rather than in the check because check_xxx
                     is pure by contract.
+        ports_readable: False when `ss` could not be run at all (absent on
+                    minimal images, or failing). Without it an empty socket
+                    list reads as "0 listening ports detected", which states
+                    a fact about the host that BOB never established.
     """
     ports:     list[ListeningPort]
     ufw_rules: str
     ss_output: str
     ufw_apps:  "dict[str, list[str]]" = field(default_factory=dict)
+    ports_readable: bool = True
 
     @classmethod
     def from_system(cls) -> "PortsSnapshot":
@@ -141,12 +146,13 @@ class PortsSnapshot:
         Returns:
             Populated PortsSnapshot. Never raises.
         """
-        ss_output  = _run("ss", "-tulnp")
+        ss         = run_result("ss", "-tulnp")
         ufw_rules  = _run("ufw", "status", "numbered")
-        ports      = _parse_ss_output(ss_output)
+        ports      = _parse_ss_output(ss.stdout)
 
-        return cls(ports=ports, ufw_rules=ufw_rules, ss_output=ss_output,
-                   ufw_apps=_read_ufw_app_profiles())
+        return cls(ports=ports, ufw_rules=ufw_rules, ss_output=ss.stdout,
+                   ufw_apps=_read_ufw_app_profiles(),
+                   ports_readable=ss.ok)
 
     @property
     def loopback_only_ports(self) -> set[str]:
@@ -193,6 +199,17 @@ def check_ports(
     """
     _t = t if t is not None else _identity_t
     result = CheckResult()
+
+    if not snapshot.ports_readable:
+        # `ss` never ran, so the empty port list is BOB's ignorance rather than
+        # the host's silence. Evaluating it would turn "I could not look" into
+        # "nothing is listening" — the loudest kind of wrong an auditor can be.
+        result.info(
+            message=_t("ports.unreadable"),
+            detail=_t("ports.unreadable_detail"),
+            key="ports.unreadable",
+        )
+        return result
 
     if audited_ports is None:
         audited_ports = set()

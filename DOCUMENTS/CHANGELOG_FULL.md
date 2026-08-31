@@ -6,6 +6,93 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.15.2] — 2026-08-31
+
+**A stress test of the two previous releases, and the defect class they attacked found still open at its root.**
+
+v0.15.0 and v0.15.1 were validated locally against real adversarial system states rather than mocks: a deliberately
+misconfigured `/etc` bind-mounted into a namespace and audited by the real collectors, the UFW grammar cross-checked
+against ufw's own parser, and hostile text driven end to end through every output format. All of those held. The
+stress test's value was elsewhere.
+
+### `_run` discards the exit status
+
+BOB's shared subprocess helper returns a command's stdout and drops its return code:
+
+    return proc.stdout          # the returncode is never consulted
+
+So a binary that is absent, refused or failing hands the caller exactly the same empty string as a healthy command
+with nothing to report. That ambiguity is deliberate at the primitive — a non-zero exit is often information rather
+than failure (`dpkg-query -W` exits non-zero to say "not installed", `systemctl is-active` to say "inactive"), and
+only the caller knows which. What was missing is any way for a caller that *does* care to find out.
+
+v0.15.0 and v0.15.1 closed this class check by check — `rules_readable`, `status_readable`, `query_failed`,
+`kernel_ipv6_readable`, `apparmor_profiles_readable` — without ever touching the shared primitive. 26 modules call
+`_run`; 7 guarded the result. The class was closed on the leaves already visited, not at the root.
+
+### Five verdicts still built on the ambiguity
+
+All reachable at once, and by an ordinary condition: `iproute2` is not installed on minimal images or in many
+containers, and BOB has audited containers since v0.13.0. On a host with 34 listening sockets, taking `ss` off
+`PATH` produced, with no degraded section and no warning anywhere:
+
+| Surface | What BOB stated | What BOB knew |
+|---|---|---|
+| `ports` | `0 listening port(s) detected on this system` | nothing — `ss` never ran |
+| `ipv6` | no IPv6 listeners (`ipv6.ufw_disabled_no_listeners`) | nothing |
+| `network_context` | `0 established TCP connection(s)` | nothing |
+| `services` | `not actively listening` for every registry port | nothing |
+| summary box | a green ✔ against "Listening ports" | nothing |
+
+The same screen simultaneously printed "Firewall driver rules could not be listed" — correct, because
+`firewall_stack` had received the v0.15.1 fix. The contrast within one screen is what the class looks like when it
+is half-closed.
+
+A sixth instance was found by sweeping rather than by eye: `systemd_timers` reported "no timers" when
+`systemctl list-timers` failed. It already distinguished "systemctl absent" from "no timers", but not "systemctl
+present and failing".
+
+### The fix
+
+`run_result()` reports stdout and success separately, as a `CommandResult(stdout, ok)`. `_run` becomes a thin
+wrapper that drops the flag, so its contract and behaviour are unchanged for the ~50 call sites where empty and
+failed lead to the same correct conclusion. Callers that need the distinction now carry an explicit readability
+flag through the snapshot, matching the pattern the earlier releases established.
+
+`services` needed no new flag: `all_listening_ports: set | None` already encoded "unknown" as `None`, and
+`check_rules` already guarded on it. The runner was simply passing an empty set whatever `ss` had done.
+
+### Method
+
+The sweep that found the sixth instance replaced eye inspection: 25 inspection commands were failed in turn, the
+full audit run against each, and the resulting verdicts diffed against a baseline — looking specifically for
+reassuring claims that appear *because* a tool went blind. It also established that nothing worse hides behind
+them: every finding lost when a tool fails is `ok` or `info`, so no warning or alert is silently dropped.
+
+Three probe defects were caught before being reported as findings, all in the harness rather than in BOB: a failed
+bind mount that made an apt result true by accident, two fixtures whose two variants ended on the same value and so
+discriminated nothing, and `"" in "=+-@"` — which is `True` in Python, flagging every empty CSV cell as a formula.
+
+### Changed
+
+- New `bob/checks/_run.py::run_result()` and `CommandResult`; `_run` preserved exactly.
+- `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
+  `exposure.open_ports_unknown`, `systemd_timers.unreadable` — five new finding/display keys, both locales.
+- `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
+  `NetworkContextSnapshot.connections_readable`, `SystemdTimersSnapshot.timers_readable` — all default `True`, so
+  existing constructions keep their meaning.
+- The runner passes `all_listening_ports=None` when the socket list was never read.
+
+### Consumer contract
+
+Additive. Five new finding keys can now appear; no existing key changed meaning, and no scoring changed — every new
+finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
+`ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
+
+**Tests** 7288 → **7312**.
+
+---
+
 ## [v0.15.1] — 2026-08-31
 
 **A second hunt, to find out whether the first one made BOB resilient. Six code defects and six documentation inaccuracies, from fifteen angles of which eleven came back clean.**

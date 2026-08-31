@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from bob.checks._run import CommandResult
 from bob.checks.systemd_timers import (
     SystemdTimersSnapshot,
     _find_service_file,
@@ -164,50 +165,50 @@ Fri 2026-04-24 00:00:00 UTC  4 days left  n/a                          n/a      
 """
 
     def test_parses_timer_names(self):
-        with patch("bob.checks.systemd_timers._run", return_value=self.SAMPLE_OUTPUT):
-            units = _list_timer_units()
+        with patch("bob.checks.systemd_timers.run_result", return_value=CommandResult(self.SAMPLE_OUTPUT, True)):
+            units, _ = _list_timer_units()
         names = [u[0] for u in units]
         assert "logrotate.timer" in names
         assert "apt-daily-upgrade.timer" in names
         assert "e2scrub_all.timer" in names
 
     def test_parses_service_names(self):
-        with patch("bob.checks.systemd_timers._run", return_value=self.SAMPLE_OUTPUT):
-            units = _list_timer_units()
+        with patch("bob.checks.systemd_timers.run_result", return_value=CommandResult(self.SAMPLE_OUTPUT, True)):
+            units, _ = _list_timer_units()
         by_timer = {u[0]: u[1] for u in units}
         assert by_timer["logrotate.timer"] == "logrotate.service"
         assert by_timer["apt-daily-upgrade.timer"] == "apt-daily-upgrade.service"
 
     def test_derives_service_when_missing(self):
         out = "  custom.timer  loaded active\n"
-        with patch("bob.checks.systemd_timers._run", return_value=out):
-            units = _list_timer_units()
+        with patch("bob.checks.systemd_timers.run_result", return_value=CommandResult(out, True)):
+            units, _ = _list_timer_units()
         assert ("custom.timer", "custom.service") in units
 
     def test_ambiguous_line_uses_last_service(self):
         """When a line contains multiple .service tokens, the last one wins (ACTIVATES column)."""
         out = "  foo.timer  other.service  foo.service\n"
-        with patch("bob.checks.systemd_timers._run", return_value=out):
-            units = _list_timer_units()
+        with patch("bob.checks.systemd_timers.run_result", return_value=CommandResult(out, True)):
+            units, _ = _list_timer_units()
         by_timer = {u[0]: u[1] for u in units}
         assert by_timer["foo.timer"] == "foo.service"
 
     def test_empty_output(self):
-        with patch("bob.checks.systemd_timers._run", return_value=""):
-            assert _list_timer_units() == []
+        with patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("", True)):
+            assert _list_timer_units() == ([], True)
 
     def test_no_duplicates(self):
         out = "  dup.timer  dup.service\n  dup.timer  dup.service\n"
-        with patch("bob.checks.systemd_timers._run", return_value=out):
-            units = _list_timer_units()
+        with patch("bob.checks.systemd_timers.run_result", return_value=CommandResult(out, True)):
+            units, _ = _list_timer_units()
         assert len([u for u in units if u[0] == "dup.timer"]) == 1
 
     def test_large_output_does_not_crash(self):
         """Parsing 200 timer lines must complete without error."""
         lines = [f"  timer{i}.timer  timer{i}.service\n" for i in range(200)]
         out = "".join(lines)
-        with patch("bob.checks.systemd_timers._run", return_value=out):
-            units = _list_timer_units()
+        with patch("bob.checks.systemd_timers.run_result", return_value=CommandResult(out, True)):
+            units, _ = _list_timer_units()
         assert len(units) == 200
 
 
@@ -396,7 +397,7 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run", return_value="  evil.timer  evil.service\n"),
+                patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("  evil.timer  evil.service\n", True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:
@@ -418,7 +419,7 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run", return_value="  timer.timer  timer.service\n"),
+                patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("  timer.timer  timer.service\n", True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:
@@ -436,7 +437,7 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run", return_value="  custom.timer  custom.service\n"),
+                patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("  custom.timer  custom.service\n", True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:
@@ -459,7 +460,7 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run", return_value="  managed.timer  managed.service\n"),
+                patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("  managed.timer  managed.service\n", True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:
@@ -485,7 +486,7 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run", return_value="".join(lines)),
+                patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("".join(lines), True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:
@@ -508,8 +509,8 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run",
-                      return_value="  timer1.timer  timer1.service\n  timer2.timer  timer2.service\n"),
+                patch("bob.checks.systemd_timers.run_result",
+                      return_value=CommandResult("  timer1.timer  timer1.service\n  timer2.timer  timer2.service\n", True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:
@@ -532,7 +533,7 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run", return_value="  mixed.timer  mixed.service\n"),
+                patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("  mixed.timer  mixed.service\n", True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:
@@ -554,7 +555,7 @@ class TestFromSystem:
         try:
             with (
                 patch("bob.checks.systemd_timers._command_exists", return_value=True),
-                patch("bob.checks.systemd_timers._run", return_value="  myapp.timer  myapp.service\n"),
+                patch("bob.checks.systemd_timers.run_result", return_value=CommandResult("  myapp.timer  myapp.service\n", True)),
             ):
                 snap = SystemdTimersSnapshot.from_system()
         finally:

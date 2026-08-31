@@ -173,6 +173,9 @@ bob/
 ├── checks/
 │   ├── __init__.py
 │   ├── _run.py             # Helper subprocess _run() partagé + env locale C,
+│   │                       #   run_result() — sortie ET code de retour, pour
+│   │                       #   les appelants qui ne doivent pas lire « n'a pas
+│   │                       #   pu tourner » comme « rien trouvé » (v0.15.2),
 │   │                       #   join_continuations(), strip_unit_glyph(),
 │   │                       #   pipes_into_shell() — une seule copie par règle
 │   ├── _ufw.py             # Grammaire `ufw status numbered`, partagée par ports,
@@ -478,7 +481,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2034 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2042 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

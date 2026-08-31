@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-__version__ = "0.15.1"
+__version__ = "0.15.2"
 __all__ = ["__version__"]
 
 # v0.13.3: BOB never configured logging, so every ``logger.warning`` /

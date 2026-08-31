@@ -613,7 +613,14 @@ def run_checks(
     ports_snapshot        = PortsSnapshot.from_system()
     loopback_only_ports   = ports_snapshot.loopback_only_ports
     active_external_ports = ports_snapshot.active_external_ports
-    all_listening_ports   = loopback_only_ports | active_external_ports
+    # `None` is the services check's own encoding for "the listening set is
+    # unknown"; it suppresses the "not actively listening" verdict rather than
+    # inferring it from an empty set that `ss` never filled.
+    all_listening_ports   = (
+        loopback_only_ports | active_external_ports
+        if ports_snapshot.ports_readable
+        else None
+    )
 
     emit_section("firewall_rules")
 

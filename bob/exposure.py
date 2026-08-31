@@ -112,6 +112,14 @@ def compute_exposure(
             color=color,
             detail=", ".join(exposed),
         ))
+    elif not ports_snapshot.ports_readable:
+        # A green tick here would be the whole audit's summary line asserting
+        # "nothing exposed" off a socket list that was never read.
+        items.append(ExposureItem(
+            label=t("exposure.open_ports"),
+            icon="⚠", color="warn",
+            detail=t("exposure.open_ports_unknown"),
+        ))
     else:
         items.append(ExposureItem(
             label=t("exposure.open_ports"),

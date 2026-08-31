@@ -6,6 +6,98 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.15.2] — 2026-08-31
+
+**Un test de résistance des deux versions précédentes, et la classe de défauts qu'elles visaient trouvée encore ouverte à sa racine.**
+
+v0.15.0 et v0.15.1 ont été validées localement face à de vrais états système hostiles plutôt que par des mocks : un
+`/etc` délibérément mal configuré monté par bind dans un namespace et audité par les vrais collecteurs, la grammaire
+UFW confrontée au parser de `ufw` lui-même, et du texte hostile poussé de bout en bout dans chaque format de sortie.
+Tout cela tient. L'intérêt du test était ailleurs.
+
+### `_run` jette le code de retour
+
+L'assistant de sous-processus partagé renvoie la sortie standard d'une commande et jette son code de retour :
+
+    return proc.stdout          # le returncode n'est jamais consulté
+
+Un binaire absent, refusé ou en échec rend donc exactement la même chaîne vide qu'une commande saine qui n'a rien à
+dire. Cette ambiguïté est délibérée au niveau de la primitive — un code non nul est souvent une information plutôt
+qu'un échec (`dpkg-query -W` sort en non nul pour dire « non installé », `systemctl is-active` pour dire
+« inactif ») — et seul l'appelant sait de quoi il s'agit. Ce qui manquait, c'était un moyen pour l'appelant qui s'en
+soucie de le savoir.
+
+v0.15.0 et v0.15.1 ont fermé cette classe check par check — `rules_readable`, `status_readable`, `query_failed`,
+`kernel_ipv6_readable`, `apparmor_profiles_readable` — sans jamais toucher à la primitive partagée. 26 modules
+appellent `_run` ; 7 gardaient le résultat. La classe était fermée sur les feuilles déjà visitées, pas à la racine.
+
+### Cinq verdicts reposaient encore sur l'ambiguïté
+
+Tous atteignables d'un coup, et par une condition ordinaire : `iproute2` n'est pas installé sur les images minimales
+ni dans beaucoup de conteneurs, et BOB audite des conteneurs depuis v0.13.0. Sur une machine avec 34 sockets en
+écoute, retirer `ss` du `PATH` produisait, sans aucune section dégradée ni le moindre avertissement :
+
+| Surface | Ce que BOB affirmait | Ce que BOB savait |
+|---|---|---|
+| `ports` | `0 listening port(s) detected on this system` | rien — `ss` n'a jamais tourné |
+| `ipv6` | aucun service IPv6 en écoute (`ipv6.ufw_disabled_no_listeners`) | rien |
+| `network_context` | `0 connexion TCP établie` | rien |
+| `services` | « n'écoute pas activement » pour chaque port du registre | rien |
+| encadré de synthèse | un ✔ vert en face de « Listening ports » | rien |
+
+Le même écran affichait simultanément « Firewall driver rules could not be listed » — correct, parce que
+`firewall_stack` avait reçu le correctif de v0.15.1. Ce contraste sur un seul écran, c'est à quoi ressemble la
+classe quand elle n'est fermée qu'à moitié.
+
+Une sixième instance a été trouvée par balayage plutôt qu'à l'œil : `systemd_timers` annonçait « aucun timer »
+quand `systemctl list-timers` échouait. Il distinguait déjà « systemctl absent » de « aucun timer », mais pas
+« systemctl présent et en échec ».
+
+### Le correctif
+
+`run_result()` rapporte séparément la sortie et le succès, sous la forme d'un `CommandResult(stdout, ok)`. `_run`
+devient une enveloppe mince qui jette le drapeau : son contrat et son comportement sont donc inchangés pour la
+cinquantaine d'appels où « vide » et « en échec » mènent à la même conclusion correcte. Les appelants qui ont besoin
+de la distinction portent désormais un drapeau de lisibilité explicite dans leur snapshot, selon le motif établi par
+les versions précédentes.
+
+`services` n'avait besoin d'aucun drapeau : `all_listening_ports: set | None` encodait déjà l'inconnu par `None`, et
+`check_rules` gardait déjà dessus. Le runner passait simplement un ensemble vide quoi qu'ait fait `ss`.
+
+### Méthode
+
+Le balayage qui a trouvé la sixième instance a remplacé l'inspection à l'œil : 25 commandes d'inspection mises en
+échec à tour de rôle, l'audit complet lancé contre chacune, et les verdicts obtenus comparés à une référence — en
+cherchant spécifiquement les affirmations rassurantes qui apparaissent *parce qu'*un outil est devenu aveugle. Il a
+aussi établi que rien de pire ne se cache derrière : tout finding perdu quand un outil échoue est de niveau `ok` ou
+`info`, donc aucun avertissement ni alerte n'est silencieusement supprimé.
+
+Trois défauts de sonde ont été attrapés avant d'être rapportés comme findings, tous dans le banc de test et non dans
+BOB : un montage bind échoué qui rendait un résultat apt vrai par accident, deux fixtures dont les deux variantes
+finissaient sur la même valeur et ne discriminaient donc rien, et `"" in "=+-@"` — qui vaut `True` en Python et
+signalait toute cellule CSV vide comme une formule.
+
+### Modifié
+
+- Nouveaux `bob/checks/_run.py::run_result()` et `CommandResult` ; `_run` préservé à l'identique.
+- `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
+  `exposure.open_ports_unknown`, `systemd_timers.unreadable` — cinq nouvelles clés, dans les deux locales.
+- `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
+  `NetworkContextSnapshot.connections_readable`, `SystemdTimersSnapshot.timers_readable` — toutes à `True` par
+  défaut, les constructions existantes gardent donc leur sens.
+- Le runner passe `all_listening_ports=None` quand la liste des sockets n'a jamais été lue.
+
+### Contrat consommateur
+
+Additif. Cinq nouvelles clés de finding peuvent apparaître ; aucune clé existante ne change de sens et aucun score
+ne change — chaque nouveau finding est INFO sans déduction, car une absence de connaissance n'est pas une mauvaise
+configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
+seule clé de cette section quand `ss` est indisponible.
+
+**Tests** 7288 → **7312**.
+
+---
+
 ## [v0.15.1] — 31-08-2026
 
 **Une seconde chasse, pour savoir si la première a rendu BOB résilient. Six défauts de code et six inexactitudes documentaires, sur quinze angles dont onze sont revenus propres.**

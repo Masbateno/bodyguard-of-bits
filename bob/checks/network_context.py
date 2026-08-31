@@ -24,7 +24,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _identity_t, _run
+from bob.checks._run import TranslationFunc, _identity_t, _run, run_result
 from bob.scoring import CheckResult
 
 
@@ -87,9 +87,12 @@ class NetworkContextSnapshot:
     Args:
         interfaces:  All non-loopback, non-veth interfaces found on the system.
         connections: All currently established TCP connections.
+        connections_readable: False when `ss` could not be run, so an empty
+                     connection list means "not looked at", not "none open".
     """
     interfaces:  list[InterfaceInfo] = field(default_factory=list)
     connections: list[ConnectionInfo] = field(default_factory=list)
+    connections_readable: bool = True
 
     @classmethod
     def from_system(cls) -> "NetworkContextSnapshot":
@@ -102,10 +105,11 @@ class NetworkContextSnapshot:
         iface_output = _run("ip", "-4", "addr", "show")
         interfaces   = _parse_interfaces(iface_output)
 
-        conn_output = _run("ss", "-tnp", "state", "established")
-        connections = _parse_connections(conn_output)
+        conn = run_result("ss", "-tnp", "state", "established")
+        connections = _parse_connections(conn.stdout)
 
-        return cls(interfaces=interfaces, connections=connections)
+        return cls(interfaces=interfaces, connections=connections,
+                   connections_readable=conn.ok)
 
 
 # ---------------------------------------------------------------------------
