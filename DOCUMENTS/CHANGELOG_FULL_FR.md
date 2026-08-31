@@ -50,7 +50,7 @@ pour les deux.
 L'une des gardes vérifie que les deux modules s'accordent, ce qui est la
 propriété qui a fait surgir le défaut.
 
-**Tests** 7220 → **7261**.
+**Tests** 7220 → **7268**.
 
 ### Trois copies privées de plus de la grammaire UFW
 
@@ -97,6 +97,52 @@ disparu. Les trois mutations de ce changement ont été rejouées avec purge du
 cache entre chacune — les trois tuent. Consigné parce qu'un résultat de mutation
 mesuré contre le mauvais bytecode ne prouve rien, ce qui est exactement le même
 mode de défaillance qu'une garde qui passe pour la mauvaise raison.
+
+### Deux rapports affichaient un `{pct}` et un `{path}` littéraux
+
+Encore un angle neuf : confronter chaque site d'appel `t("clé", **kwargs)` aux
+variables que son gabarit de locale contient réellement. `i18n.t` attrape le
+`KeyError` qui en résulte et renvoie le gabarit brut : la défaillance est donc
+invisible à l'exécution et visible seulement pour l'opérateur, sous forme
+d'accolade dans son rapport.
+
+Deux cas sur 399 sites d'appel :
+
+* `disk.partition_critical_reason` — la **raison de déduction**, c'est-à-dire ce
+  que le détail de score affiche pour expliquer un point perdu, se rendait en
+  « Partition /data is {pct}% full ». Le message de finding juste au-dessus
+  passait `pct` correctement ; seule la raison ne le faisait pas, donc le
+  rapport donnait le pourcentage et l'explication de la déduction non.
+* `file_perms.ssh_host_key_perms_detail` — se rendait en
+  « Corriger : sudo chmod 600 {path} », demandant à l'opérateur de lancer une
+  commande impossible à copier, alors que le champ `cmd` du même finding portait
+  le bon chemin.
+
+Les deux se rendent maintenant dans les deux langues, vérifié de bout en bout et
+non au site d'appel. Passer une variable qu'un gabarit n'utilise pas est
+inoffensif — `str.format` ignore les extras — et trois appels le font
+délibérément : la garde ne vérifie donc que la direction manquante.
+
+### Quatre angles de plus, tous propres
+
+* **Pureté des `check_*`.** Chaque `check_xxx` a été affirmé pur tout au long de
+  v0.15.0 sans jamais être vérifié. Un balayage AST cherchant `_run`, `open`,
+  `read_text`, `stat`, `glob` et consorts dans un corps de `check_*` en trouve
+  **zéro** — la séparation snapshot/contrôle tient par mesure, pas par
+  convention.
+* **Possibilité de suppression.** Les 399 clés littérales de findings de l'arbre
+  satisfont `is_valid_ignore_key`, sur 51 préfixes : aucun finding qu'un
+  opérateur ne puisse faire taire avec `--ignore`.
+* **Robustesse des analyseurs.** 66 parseurs à argument unique contre quatorze
+  charges hostiles — une ligne de 1 Mo, des octets nuls, des surrogates, des
+  séquences ANSI, une bombe regex, 500 niveaux de `../`. Aucun blocage, aucun
+  plantage sur un chemin atteignable.
+* **Idempotence.** Trois audits consécutifs produisent des findings, déductions
+  et dégradations identiques. Une différence est bien apparue — un compte de
+  services de 44 contre 45 — et a été remontée jusqu'à `user@1000.service` qui
+  démarre et s'arrête entre les exécutions, confirmé en voyant le compte bouger
+  dans les deux sens sur une machine par ailleurs au repos. L'audit reflétait
+  correctement le système ; c'est le système qui changeait.
 
 ### Passe documentaire reportée de v0.15.0
 

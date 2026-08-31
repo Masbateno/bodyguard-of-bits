@@ -276,7 +276,7 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
         result.warn(
             message=_t("file_perms.ssh_host_key_perms",
                        path=path, mode=oct(mode)),
-            detail=_t("file_perms.ssh_host_key_perms_detail"),
+            detail=_t("file_perms.ssh_host_key_perms_detail", path=path),
             cmd=f"sudo chmod 600 {shlex.quote(str(path))}",
             key=f"file_perms.ssh_host_key.{Path(path).name}",
         )

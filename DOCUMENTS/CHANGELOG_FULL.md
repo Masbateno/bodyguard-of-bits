@@ -46,7 +46,7 @@ need the same capability, so iptables answers for both.
 One of the guards asserts the two modules agree, which is the property that
 surfaced this in the first place.
 
-**Tests** 7220 → **7261**.
+**Tests** 7220 → **7268**.
 
 ### Three more private copies of the UFW grammar
 
@@ -92,6 +92,49 @@ mutations for this change were re-run with the cache cleared between each — al
 three kill. Recorded because a mutation result measured against the wrong
 bytecode proves nothing, which is the same failure mode as a guard that passes
 for the wrong reason.
+
+### Two reports rendered a literal `{pct}` and a literal `{path}`
+
+Another new angle: match every `t("key", **kwargs)` call site against the
+placeholders its locale template actually contains. `i18n.t` catches the
+resulting `KeyError` and returns the raw template, so the failure is invisible
+at runtime and visible only to the operator, as a brace in their report.
+
+Two among 399 call sites:
+
+* `disk.partition_critical_reason` — the **deduction reason**, which is what the
+  score breakdown prints to explain a lost point, rendered as
+  *"Partition /data is {pct}% full"*. The finding message immediately above it
+  passed `pct` correctly; only the reason did not, so the report stated the
+  percentage and the explanation for the deduction did not.
+* `file_perms.ssh_host_key_perms_detail` — rendered
+  *"Fix: sudo chmod 600 {path}"*, telling the operator to run a command that
+  cannot be copied, while the `cmd` field on the same finding carried the
+  correct path.
+
+Both now render in both locales, verified end to end rather than at the call
+site. Passing a variable a template does not use is harmless — `str.format`
+ignores extras — and three such calls exist deliberately, so the guard asserts
+only the missing direction.
+
+### Four more angles, all clean
+
+* **`check_*` purity.** Every `check_xxx` was asserted pure throughout v0.15.0
+  and never verified. An AST sweep for `_run`, `open`, `read_text`, `stat`,
+  `glob` and friends inside a `check_*` body finds **zero** — the
+  snapshot/check separation holds by measurement, not by convention.
+* **Suppressibility.** All 399 literal finding keys in the tree satisfy
+  `is_valid_ignore_key`, across 51 prefixes, so there is no finding an operator
+  cannot silence with `--ignore`.
+* **Parser robustness.** 66 single-argument parsers against fourteen hostile
+  payloads — a 1 MB line, embedded nulls, surrogates, ANSI control sequences, a
+  regex bomb, 500 levels of `../`. No hang, and no crash on a reachable path.
+* **Idempotence.** Three consecutive audits produce identical findings,
+  deductions and degraded sections. One difference did appear — a service count
+  of 44 against 45 — and was chased to `user@1000.service` starting and stopping
+  between runs, confirmed by watching the count move in both directions on an
+  otherwise idle machine. The audit reflected the system correctly; it was the
+  system that changed.
 
 ### Documentation pass carried over from v0.15.0
 
