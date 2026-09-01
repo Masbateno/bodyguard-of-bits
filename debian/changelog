@@ -46,6 +46,11 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     nothing, and Redis's `port 0` (TCP disabled) as 0/tcp. Six further config
     formats were unknown to the reader. 20 services across seven format
     families are now covered by tests; none needed installing.
+  * PostgreSQL, WireGuard and Syncthing declared no config at all, so their
+    registry default port was asserted without looking. Wired up, with
+    wildcard paths, CamelCase ListenPort and <address> XML support. MySQL's
+    [client] section no longer answers for the listening port, and a repeated
+    port key now takes the last value as redis and mysql do.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

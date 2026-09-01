@@ -325,6 +325,39 @@ first that is actually a port.
 Twenty services across seven format families now read correctly, each pinned by
 a test carrying its upstream config shape.
 
+### Seven services that declared no config, and the shapes the others hide
+
+The presence-only half of the registry came next. Three of the seven do ship a
+port in a standard system file and were declared ``config_key: "fixed"``, so
+BOB asserted the registry default without ever looking: PostgreSQL on 5432 and
+WireGuard on 51820 whatever the operator had set, both critical or high risk.
+Each needed something the reader lacked — a wildcard, since PostgreSQL versions
+its directory and WireGuard keeps one file per interface; the CamelCase
+``ListenPort``, which the dotted rule cannot reach for want of a separator; and
+Syncthing's XML, which keeps the port behind an ``<address>`` rather than a
+``*Port*`` element.
+
+Sweeping the twenty already-covered services for less obvious shapes found two
+more, and they are opposites. `[client]` in a MySQL/MariaDB file carries the
+port clients connect *to*, never the one the server listens on, and it is
+written above `[mysqld]` in the shipped files — so a first-match reader
+answered with it. And a repeated `port` key was read as its first occurrence
+when redis, mysql and the YAML readers all apply the *last*: changing a port by
+appending a line is the same operator habit that drove the v0.15.0 umask and
+login.defs findings, and it was being read as no change at all.
+
+Both follow from one distinction rather than from per-service knowledge.
+`listen` and `listener` are *additive* — a server may declare several and they
+all apply, so the first is as representative as any. A `port` key *overrides*,
+so the last wins. nginx keeps answering 80 for a config that also listens on
+443; redis now answers 6380 for a file whose second line raised it.
+
+Five other candidate gaps in that sweep turned out to be badly written probes:
+nginx configs compressed onto one line, where no whitespace precedes the
+keyword. Real configs are indented, and re-testing with them showed the reader
+was right — the fifth harness error of this cycle, and the reason each is now
+checked before being reported.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -417,7 +450,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7461**.
+**Tests** 7288 → **7477**.
 
 ---
 

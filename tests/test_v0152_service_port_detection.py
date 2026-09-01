@@ -140,3 +140,138 @@ class TestNoFalsePositives:
         )
         monkeypatch.setattr("bob.checks.services._is_safe_config_path", lambda p: True)
         assert _auto_detect_port(probe) is None
+
+
+def _probe(registry, service_id, filename, content, tmp_path, monkeypatch,
+           pattern=None):
+    """Run the real reader against one config file placed in a temp tree."""
+    import dataclasses
+
+    from bob.registry import Detection
+    service = next(s for s in registry._services if s.id == service_id)
+    target = tmp_path / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    declared = str(tmp_path / pattern) if pattern else str(target)
+    probe = dataclasses.replace(
+        service, detection=Detection(binary=(), snap=(), config_files=(declared,))
+    )
+    monkeypatch.setattr("bob.checks.services._is_safe_config_path", lambda p: True)
+    detected = _auto_detect_port(probe)
+    return detected.split("/")[0] if detected else None
+
+
+class TestServicesThatDeclaredNoConfigAtAll:
+    """Three of the seven presence-only services do ship a port in a config.
+
+    They were declared ``config_key: "fixed"``, so BOB asserted the registry
+    default without ever looking — PostgreSQL on 5432 and WireGuard on 51820
+    whatever the operator had set. Both are critical or high risk, and both
+    keep their port in a standard system file.
+    """
+
+    def test_postgresql_versioned_path(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "postgresql", "postgresql/16/main/postgresql.conf",
+                      "port = 5433\t# (change requires restart)\n",
+                      tmp_path, monkeypatch,
+                      pattern="postgresql/*/main/postgresql.conf") == "5433"
+
+    def test_wireguard_camelcase_directive(self, registry, tmp_path, monkeypatch):
+        """`ListenPort` has no separator, so the dotted rule cannot reach it."""
+        assert _probe(registry, "wireguard", "wireguard/wg0.conf",
+                      "[Interface]\nAddress = 10.0.0.1/24\nListenPort = 51821\n",
+                      tmp_path, monkeypatch, pattern="wireguard/*.conf") == "51821"
+
+    def test_syncthing_address_element(self, registry, tmp_path, monkeypatch):
+        """Syncthing's XML keeps the port behind an <address>, not a *Port* tag."""
+        assert _probe(registry, "syncthing", "syncthing/config.xml",
+                      '<configuration>\n <gui>\n'
+                      '  <address>0.0.0.0:8385</address>\n </gui>\n</configuration>\n',
+                      tmp_path, monkeypatch) == "8385"
+
+    def test_a_glob_that_matches_nothing_is_not_an_error(self, registry, tmp_path,
+                                                        monkeypatch):
+        import dataclasses
+
+        from bob.registry import Detection
+        service = next(s for s in registry._services if s.id == "postgresql")
+        probe = dataclasses.replace(
+            service,
+            detection=Detection(binary=(), snap=(),
+                                config_files=(str(tmp_path / "nothing/*/here.conf"),)),
+        )
+        assert _auto_detect_port(probe) is None
+
+
+class TestAdditiveVersusOverridingDirectives:
+    """Which repeat wins depends on what the directive means.
+
+    `listen`/`listener` are additive — a server may declare several and they all
+    apply, so the first is as representative as any. A `port` key overrides:
+    redis, mysql and the YAML readers apply the last one, and changing a port by
+    appending a line is the same operator habit that drove the v0.15.0 umask and
+    login.defs findings.
+    """
+
+    def test_a_repeated_port_key_takes_the_last(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "redis", "redis.conf", "port 6379\nport 6380\n",
+                      tmp_path, monkeypatch) == "6380"
+
+    def test_repeated_listen_directives_take_the_first(self, registry, tmp_path,
+                                                       monkeypatch):
+        assert _probe(registry, "nginx", "nginx.conf",
+                      "http {\n server {\n  listen 80;\n }\n"
+                      " server {\n  listen 443 ssl;\n }\n}\n",
+                      tmp_path, monkeypatch) == "80"
+
+    def test_a_yaml_key_repeated_takes_the_last(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "elasticsearch", "elasticsearch.yml",
+                      "http.port: 9201\ntransport.port: 9301\n",
+                      tmp_path, monkeypatch) == "9301"
+
+    def test_a_single_occurrence_is_unaffected(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "redis", "redis.conf", "port 6381\n",
+                      tmp_path, monkeypatch) == "6381"
+
+
+class TestTheClientSectionIsNotTheListeningPort:
+    """`[client]` carries the port clients connect *to*, never the listener.
+
+    It is written above `[mysqld]` in the shipped MySQL/MariaDB files, so a
+    first-match reader answered with it.
+    """
+
+    def test_the_server_section_wins(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "mysql", "my.cnf",
+                      "[client]\nport = 3306\n[mysqld]\nport = 3307\n",
+                      tmp_path, monkeypatch) == "3307"
+
+    def test_a_file_without_a_client_section_is_unaffected(self, registry, tmp_path,
+                                                           monkeypatch):
+        assert _probe(registry, "mysql", "my.cnf", "[mysqld]\nport = 3307\n",
+                      tmp_path, monkeypatch) == "3307"
+
+
+class TestOtherRealConfigShapes:
+    @pytest.mark.parametrize("content,expected", [
+        ("http {\n server {\n  listen 8080 default_server;\n }\n}\n", "8080"),
+        ("http {\n server {\n  listen *:8081;\n }\n}\n",              "8081"),
+        ("http {\n server {\n  listen [::]:8443 ssl http2;\n }\n}\n", "8443"),
+    ])
+    def test_nginx_listen_forms(self, content, expected, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "nginx", "nginx.conf", content,
+                      tmp_path, monkeypatch) == expected
+
+    def test_a_unix_socket_is_not_a_port(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "nginx", "nginx.conf",
+                      "http {\n server {\n  listen unix:/run/nginx.sock;\n }\n}\n",
+                      tmp_path, monkeypatch) is None
+
+    def test_an_inline_comment_after_the_value(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "mysql", "my.cnf", "port = 3308 # application port\n",
+                      tmp_path, monkeypatch) == "3308"
+
+    def test_a_commented_directive_above_the_real_one(self, registry, tmp_path,
+                                                      monkeypatch):
+        assert _probe(registry, "mysql", "my.cnf", "# port = 9999\nport\t=\t3308\n",
+                      tmp_path, monkeypatch) == "3308"

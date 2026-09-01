@@ -115,6 +115,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   external connection on a sensitive port.
 - Service port detection: `listen 127.0.0.1:8080` was audited as port 127.
   Twenty services across seven config formats now read correctly.
+- PostgreSQL, WireGuard and Syncthing no longer report their default port
+  without reading their config; MySQL's [client] section no longer answers.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

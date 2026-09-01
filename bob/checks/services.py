@@ -19,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+import glob as _glob
 import json
 import logging
 import re
@@ -531,7 +532,7 @@ def _auto_detect_port(service: Service) -> str | None:
     Returns:
         Port string like "8080/tcp", or None if detection fails.
     """
-    for config_file in service.detection.config_files:
+    for config_file in _expand_config_paths(service.detection.config_files):
         path = Path(config_file)
         if not path_exists(path) or not _is_safe_config_path(path):
             continue
@@ -558,6 +559,11 @@ def _auto_detect_port(service: Service) -> str | None:
         if path.suffix == ".xml":
             xml_match = re.search(r"<(\w*Port\w*)>\s*(\d+)\s*</\1>", content,
                                   re.IGNORECASE)
+            if xml_match is None:
+                # Syncthing puts the listener in <address>0.0.0.0:8384</address>,
+                # so the port is behind an address here too.
+                xml_match = re.search(r"<(address)>\s*(\S+?)\s*</\1>", content,
+                                      re.IGNORECASE)
             if xml_match:
                 number = _port_from_directive(xml_match.group(2))
                 if number:
@@ -577,36 +583,60 @@ def _auto_detect_port(service: Service) -> str | None:
             continue
 
         # Strip comment lines before searching to avoid matching
-        # commented-out directives like "# port = 2121"
+        # commented-out directives like "# port = 2121", and drop any
+        # ``[client]`` section: in the MySQL/MariaDB family it carries the port
+        # clients *connect* to, never the one the server listens on, and it is
+        # written above ``[mysqld]`` in the shipped files.
         content_clean = re.sub(r"^\s*#.*$", "", content, flags=re.MULTILINE)
+        content_clean = re.sub(r"^\s*\[client\][^\[]*", "", content_clean,
+                               flags=re.MULTILINE | re.IGNORECASE)
 
         # Generic patterns — specific services may need custom parsing.
+        #
         # The value is captured whole and parsed by `_port_from_directive`,
         # because a directive's argument is very often an *address* and not a
         # bare number: `listen 127.0.0.1:8080;` is the ordinary way to bind
         # nginx to one interface.
-        # Every match, not just the first: a directive whose argument is not a
-        # port is common and must not end the search. vsftpd.conf opens with
-        # `listen=YES` and carries `listen_port=2121` three lines down — taking
-        # only the first match and giving up on it loses the real port.
+        #
+        # Every match is walked, not just the first: a directive whose argument
+        # is not a port is common and must not end the search — vsftpd.conf
+        # opens with `listen=YES` and carries `listen_port=2121` three lines
+        # below.
+        #
+        # Which match wins depends on the directive's own nature, and the two
+        # families differ. `listen`/`listener` are *additive*: a server may
+        # declare several and they all apply, so the first is as representative
+        # as any. A `port` key is *overriding*: redis, mysql and the YAML
+        # readers all apply the last one, and an operator changing a port by
+        # appending a line — the same habit that drove the v0.15.0 umask and
+        # login.defs findings — would otherwise be read as not having changed
+        # it at all.
+        first_listen: "str | None" = None
+        last_port:    "str | None" = None
         for match in re.finditer(
             # An optional dotted prefix covers the properties/YAML style used
             # by Elasticsearch (`http.port: 9200`) and its neighbours. The
             # leading `(?:^|\s)` still means `passport` cannot match, since the
-            # prefix must end in a dot.
-            # `-p 11211` is memcached's flag-file style.
-            # `(?:[\w.]+[._])?port` covers the whole family in one rule:
-            # `port`, `listen_port`, `http.port`, `server_port`, `HTTP_PORT`,
-            # `JENKINS_PORT`, `ROCKET_PORT`. The separator is required, so
-            # `passport` still cannot match. `listener` is mosquitto's.
-            r"(?:^|\s)(?:-p\s+(\d+)|(?:[\w.]+[._])?(?:port|listen|listener)"
+            # prefix must end in a separator.
+            # `-p 11211` is memcached's flag-file style, `ListenPort` WireGuard's.
+            r"(?:^|\s)(?:-p\s+(\d+)|(?:[\w.]+[._])?"
+            r"(listenport|port|listen|listener)"
             r"(?:\s*[=:]\s*|\s+)(\S+))",
             content_clean,
             re.IGNORECASE | re.MULTILINE,
         ):
-            port_num = _port_from_directive(match.group(1) or match.group(2) or "")
-            if port_num is None:
+            flag_port, keyword, value = match.groups()
+            number = _port_from_directive(flag_port or value or "")
+            if number is None:
                 continue
+            if keyword and keyword.lower() in ("listen", "listener"):
+                if first_listen is None:
+                    first_listen = number
+            else:
+                last_port = number
+
+        port_num = last_port if last_port is not None else first_listen
+        if port_num is not None:
             # Determine proto from registry default
             proto = "tcp"
             if service.ports:
@@ -614,6 +644,25 @@ def _auto_detect_port(service: Service) -> str | None:
             return f"{port_num}/{proto}"
 
     return None
+
+def _expand_config_paths(patterns: "tuple[str, ...]") -> "list[str]":
+    """Resolve any wildcard in a service's declared config paths.
+
+    PostgreSQL versions its directory (`/etc/postgresql/16/main/`) and
+    WireGuard keeps one file per interface, so a literal list cannot name
+    either. Sorted for a deterministic answer when several files match.
+    """
+    resolved: list[str] = []
+    for pattern in patterns:
+        if "*" in pattern or "?" in pattern:
+            try:
+                resolved.extend(sorted(_glob.glob(pattern)))
+            except OSError:
+                continue
+        else:
+            resolved.append(pattern)
+    return resolved
+
 
 def _port_from_directive(value: str) -> "str | None":
     """Extract the listening port from a config directive's argument.

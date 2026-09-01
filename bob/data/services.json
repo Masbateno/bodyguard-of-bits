@@ -182,7 +182,14 @@
       "5432/tcp"
     ],
     "risk": "critical",
-    "config_key": "fixed"
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/etc/postgresql/*/main/postgresql.conf"
+      ]
+    }
   },
   {
     "id": "transmission",
@@ -300,13 +307,15 @@
       "51820/udp"
     ],
     "risk": "high",
-    "config_key": "fixed",
+    "config_key": "auto",
     "detection": {
       "binary": [
         "/usr/bin/wg"
       ],
       "snap": [],
-      "config_files": []
+      "config_files": [
+        "/etc/wireguard/*.conf"
+      ]
     }
   },
   {
@@ -483,7 +492,15 @@
       "22000/tcp"
     ],
     "risk": "medium",
-    "config_key": "fixed"
+    "config_key": "auto",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": [
+        "/var/lib/syncthing/config.xml",
+        "/etc/syncthing/config.xml"
+      ]
+    }
   },
   {
     "id": "telnet",
@@ -742,85 +759,146 @@
   {
     "id": "tailscale",
     "label": "Tailscale VPN",
-    "packages": ["tailscale"],
-    "services": ["tailscaled"],
-    "ports": ["41641/udp"],
+    "packages": [
+      "tailscale"
+    ],
+    "services": [
+      "tailscaled"
+    ],
+    "ports": [
+      "41641/udp"
+    ],
     "risk": "low",
     "config_key": "auto",
     "detection": {
-      "binary": ["/usr/bin/tailscale", "/usr/sbin/tailscaled"],
+      "binary": [
+        "/usr/bin/tailscale",
+        "/usr/sbin/tailscaled"
+      ],
       "snap": [],
-      "config_files": ["/etc/default/tailscaled"]
+      "config_files": [
+        "/etc/default/tailscaled"
+      ]
     }
   },
   {
     "id": "caddy",
     "label": "Caddy Web Server",
-    "packages": ["caddy"],
-    "services": ["caddy"],
-    "ports": ["80/tcp", "443/tcp"],
+    "packages": [
+      "caddy"
+    ],
+    "services": [
+      "caddy"
+    ],
+    "ports": [
+      "80/tcp",
+      "443/tcp"
+    ],
     "risk": "medium",
     "config_key": "ask",
     "detection": {
-      "binary": ["/usr/bin/caddy"],
+      "binary": [
+        "/usr/bin/caddy"
+      ],
       "snap": [],
-      "config_files": ["/etc/caddy/Caddyfile"]
+      "config_files": [
+        "/etc/caddy/Caddyfile"
+      ]
     }
   },
   {
     "id": "adguard_home",
     "label": "AdGuard Home (DNS sinkhole)",
     "packages": [],
-    "services": ["AdGuardHome"],
-    "ports": ["53/udp", "53/tcp", "3000/tcp"],
+    "services": [
+      "AdGuardHome"
+    ],
+    "ports": [
+      "53/udp",
+      "53/tcp",
+      "3000/tcp"
+    ],
     "risk": "medium",
     "config_key": "ask",
     "detection": {
-      "binary": ["/opt/AdGuardHome/AdGuardHome", "/usr/local/bin/AdGuardHome"],
+      "binary": [
+        "/opt/AdGuardHome/AdGuardHome",
+        "/usr/local/bin/AdGuardHome"
+      ],
       "snap": [],
-      "config_files": ["/opt/AdGuardHome/AdGuardHome.yaml"]
+      "config_files": [
+        "/opt/AdGuardHome/AdGuardHome.yaml"
+      ]
     }
   },
   {
     "id": "vaultwarden",
     "label": "Vaultwarden Password Manager",
     "packages": [],
-    "services": ["vaultwarden"],
-    "ports": ["8000/tcp", "3012/tcp"],
+    "services": [
+      "vaultwarden"
+    ],
+    "ports": [
+      "8000/tcp",
+      "3012/tcp"
+    ],
     "risk": "high",
     "config_key": "ask",
     "detection": {
-      "binary": ["/usr/bin/vaultwarden", "/usr/local/bin/vaultwarden"],
+      "binary": [
+        "/usr/bin/vaultwarden",
+        "/usr/local/bin/vaultwarden"
+      ],
       "snap": [],
-      "config_files": ["/etc/vaultwarden.env"]
+      "config_files": [
+        "/etc/vaultwarden.env"
+      ]
     }
   },
   {
     "id": "ollama",
     "label": "Ollama (local LLM)",
     "packages": [],
-    "services": ["ollama"],
-    "ports": ["11434/tcp"],
+    "services": [
+      "ollama"
+    ],
+    "ports": [
+      "11434/tcp"
+    ],
     "risk": "medium",
     "config_key": "ask",
     "detection": {
-      "binary": ["/usr/local/bin/ollama", "/usr/bin/ollama"],
+      "binary": [
+        "/usr/local/bin/ollama",
+        "/usr/bin/ollama"
+      ],
       "snap": [],
-      "config_files": ["/etc/systemd/system/ollama.service"]
+      "config_files": [
+        "/etc/systemd/system/ollama.service"
+      ]
     }
   },
   {
     "id": "authelia",
     "label": "Authelia (SSO/auth proxy)",
     "packages": [],
-    "services": ["authelia"],
-    "ports": ["9091/tcp"],
+    "services": [
+      "authelia"
+    ],
+    "ports": [
+      "9091/tcp"
+    ],
     "risk": "high",
     "config_key": "ask",
     "detection": {
-      "binary": ["/usr/bin/authelia", "/usr/local/bin/authelia"],
+      "binary": [
+        "/usr/bin/authelia",
+        "/usr/local/bin/authelia"
+      ],
       "snap": [],
-      "config_files": ["/etc/authelia/configuration.yml"]
+      "config_files": [
+        "/etc/authelia/configuration.yml"
+      ]
     }
   }
 ]

@@ -342,6 +342,41 @@ port.
 Vingt services couvrant sept familles de format sont désormais lus
 correctement, chacun figé par un test portant sa forme de configuration amont.
 
+### Sept services sans configuration déclarée, et les formes que cachent les autres
+
+La moitié « détection de présence seule » du registre a suivi. Trois des sept
+portent bel et bien un port dans un fichier système standard tout en étant
+déclarés ``config_key: "fixed"`` : BOB affirmait donc le défaut du registre sans
+jamais regarder — PostgreSQL sur 5432 et WireGuard sur 51820 quoi qu'ait réglé
+l'opérateur, tous deux en risque critique ou élevé. Chacun demandait ce qui
+manquait au lecteur : un joker, PostgreSQL versionnant son répertoire et
+WireGuard gardant un fichier par interface ; le ``ListenPort`` en CamelCase, que
+la règle pointée ne peut atteindre faute de séparateur ; et le XML de Syncthing,
+qui range le port derrière un ``<address>`` plutôt qu'un élément ``*Port*``.
+
+Le balayage des vingt services déjà couverts pour des formes moins évidentes en
+a sorti deux autres, opposées l'une à l'autre. `[client]`, dans un fichier
+MySQL/MariaDB, porte le port auquel les clients *se connectent*, jamais celui
+d'écoute, et il est écrit au-dessus de `[mysqld]` dans les fichiers livrés : un
+lecteur qui prend la première correspondance répondait donc avec lui. Et une clé
+`port` répétée était lue à sa première occurrence alors que redis, mysql et les
+lecteurs YAML appliquent tous la *dernière* : changer un port en ajoutant une
+ligne est l'habitude d'opérateur qui a motivé les trouvailles umask et
+login.defs de v0.15.0, et elle était lue comme aucun changement.
+
+Les deux découlent d'une distinction unique plutôt que d'une connaissance par
+service. `listen` et `listener` sont *additifs* — un serveur peut en déclarer
+plusieurs, tous s'appliquent, donc le premier vaut les autres. Une clé `port`
+*surcharge*, donc la dernière gagne. nginx répond toujours 80 pour une
+configuration qui écoute aussi sur 443 ; redis répond désormais 6380 pour un
+fichier dont la seconde ligne l'a relevé.
+
+Cinq autres écarts apparents de ce balayage se sont révélés être des sondes mal
+écrites : des configurations nginx compressées sur une seule ligne, où aucun
+espace ne précède le mot-clé. Les vraies sont indentées, et le test refait a
+montré que le lecteur avait raison — cinquième erreur de banc de ce cycle, et la
+raison pour laquelle chacune est désormais vérifiée avant d'être rapportée.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -441,7 +476,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7461**.
+**Tests** 7288 → **7477**.
 
 ---
 
