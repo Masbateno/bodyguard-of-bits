@@ -121,6 +121,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   "ask"): nginx on 8443 was audited as 80 and 443. Now read, all listeners.
 - nginx include directories are declared; a symlinked sites-enabled entry is
   followed while its target stays inside the service config tree.
+- RHEL-family config paths added: /etc/httpd, /etc/my.cnf.d, /etc/vsftpd and
+  /etc/sysconfig/memcached were never read, so four services used defaults.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

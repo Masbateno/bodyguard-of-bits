@@ -60,6 +60,10 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     conf.d/*.conf or sites-enabled/*, the latter symlinks into sites-available.
     The include directories are now declared, and a scoped policy follows a
     symlink only while its target stays inside the service's config tree.
+  * Config paths named Debian alone while BOB is field-tested on five
+    distributions: /etc/apache2, /etc/mysql and /etc/memcached.conf do not
+    exist on Fedora, and /etc/vsftpd.conf is /etc/vsftpd/vsftpd.conf. Four
+    services fell through to the registry default across the RHEL family.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

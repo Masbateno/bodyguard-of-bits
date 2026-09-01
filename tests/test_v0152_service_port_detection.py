@@ -477,3 +477,53 @@ class TestIncludeDirectoriesAndTheirSymlinks:
             ),
         )
         assert _resolve_ports(probe) == ["8443/tcp"]
+
+
+class TestConfigPathsCoverMoreThanOneDistribution:
+    """BOB claims five distributions; several config paths named only one.
+
+    Measured in Fedora containers with the real packages installed, not
+    recalled: `/etc/apache2`, `/etc/mysql` and `/etc/memcached.conf` do not
+    exist there, and `/etc/vsftpd.conf` is `/etc/vsftpd/vsftpd.conf`. Every one
+    of those services therefore fell through to the registry default on the
+    whole RHEL family — the same silence as a service whose config is never
+    opened, one distribution wide.
+
+    These assert the registry declares both families. The behaviour they
+    protect was verified end to end against real Fedora and Debian installs
+    with their ports edited; that cannot run in a unit test, so the paths are
+    pinned here instead.
+    """
+
+    @pytest.mark.parametrize("service_id,debian,rhel", [
+        ("apache",    "/etc/apache2/ports.conf",             "/etc/httpd/conf/httpd.conf"),
+        ("ftp",       "/etc/vsftpd.conf",                    "/etc/vsftpd/vsftpd.conf"),
+        ("memcached", "/etc/memcached.conf",                 "/etc/sysconfig/memcached"),
+        ("mysql",     "/etc/mysql/mysql.conf.d/mysqld.cnf",  "/etc/my.cnf"),
+    ])
+    def test_both_families_are_declared(self, service_id, debian, rhel, registry):
+        declared = next(s for s in registry._services if s.id == service_id
+                        ).detection.config_files
+        assert debian in declared, f"{service_id}: Debian path dropped"
+        assert rhel in declared, f"{service_id}: RHEL path missing"
+
+    def test_the_debian_path_is_still_tried_first(self, registry):
+        """Order matters: the project's reference distribution leads."""
+        declared = next(s for s in registry._services if s.id == "apache"
+                        ).detection.config_files
+        assert declared[0] == "/etc/apache2/ports.conf"
+
+    @pytest.mark.parametrize("service_id,expected_glob", [
+        ("mysql", "/etc/my.cnf.d/*.cnf"),
+        ("nginx", "/etc/nginx/conf.d/*.conf"),
+    ])
+    def test_include_directories_are_globbed(self, service_id, expected_glob, registry):
+        declared = next(s for s in registry._services if s.id == service_id
+                        ).detection.config_files
+        assert expected_glob in declared
+
+    def test_the_rhel_flag_file_shape_reads(self, registry, tmp_path, monkeypatch):
+        """`/etc/sysconfig/memcached` holds `PORT="11211"`, not `-p 11211`."""
+        assert _probe(registry, "memcached", "memcached",
+                      'PORT="11212"\nUSER="memcached"\n',
+                      tmp_path, monkeypatch) == "11212"

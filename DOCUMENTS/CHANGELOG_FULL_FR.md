@@ -442,6 +442,31 @@ Vérifié contre un vrai `nginx-light` Debian : avec `sites-available/default`
 passé à `listen 8443`, BOB résout `8443/tcp` et `80/tcp` — le second venant de
 la ligne IPv6 laissée intacte — là où il répondait 80 et 443 sans rien ouvrir.
 
+### Cinq distributions annoncées, les chemins d'une seule
+
+Les chemins corrigés jusqu'ici étaient tous ceux de Debian. BOB est éprouvé sur
+cinq distributions : cela valait donc d'être mesuré plutôt que supposé, et la
+mesure a été prise dans des conteneurs Fedora avec les vrais paquets installés.
+
+`/etc/apache2` n'y existe pas — httpd garde son `Listen` dans
+`/etc/httpd/conf/httpd.conf`. `/etc/mysql` n'existe pas — MariaDB utilise
+`/etc/my.cnf` et `/etc/my.cnf.d/*.cnf`. `/etc/memcached.conf` n'existe pas — le
+port vit dans `/etc/sysconfig/memcached` sous la forme `PORT="11211"`. Et
+`/etc/vsftpd.conf` est `/etc/vsftpd/vsftpd.conf`. Chacun de ces services
+retombait donc sur le défaut du registre sur toute la famille RHEL : le même
+silence qu'une configuration jamais ouverte, à l'échelle d'une distribution.
+
+Les deux familles sont désormais déclarées, Debian d'abord puisqu'elle est la
+référence du projet. Vérifié de bout en bout sur des installations réelles de
+chacune : sur Fedora avec `Listen 8081`, `PORT="11212"`, `listen_port=2121` et
+un fichier d'appoint `my.cnf.d` sur 3307, BOB lit les quatre ; sur Debian les
+mêmes quatre se lisent toujours, apache rendant 8081 et 443 puisque
+`ports.conf` déclare les deux.
+
+Cinq services sur deux familles. Trente-trois déclarent un chemin de
+configuration, et les autres n'ont été confrontés qu'à Debian — l'angle est
+ouvert, pas clos.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -541,7 +566,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7500**.
+**Tests** 7288 → **7508**.
 
 ---
 

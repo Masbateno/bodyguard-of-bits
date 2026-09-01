@@ -90,6 +90,7 @@
       "snap": [],
       "config_files": [
         "/etc/vsftpd.conf",
+        "/etc/vsftpd/vsftpd.conf",
         "/etc/proftpd/proftpd.conf"
       ]
     }
@@ -115,7 +116,9 @@
       ],
       "snap": [],
       "config_files": [
-        "/etc/apache2/ports.conf"
+        "/etc/apache2/ports.conf",
+        "/etc/httpd/conf/httpd.conf",
+        "/etc/httpd/conf.d/*.conf"
       ]
     }
   },
@@ -167,7 +170,9 @@
       "snap": [],
       "config_files": [
         "/etc/mysql/mysql.conf.d/mysqld.cnf",
-        "/etc/mysql/mariadb.conf.d/50-server.cnf"
+        "/etc/mysql/mariadb.conf.d/50-server.cnf",
+        "/etc/my.cnf.d/*.cnf",
+        "/etc/my.cnf"
       ]
     }
   },
@@ -338,7 +343,8 @@
       "binary": [],
       "snap": [],
       "config_files": [
-        "/etc/redis/redis.conf"
+        "/etc/redis/redis.conf",
+        "/etc/redis.conf"
       ]
     }
   },
@@ -628,7 +634,8 @@
       ],
       "snap": [],
       "config_files": [
-        "/etc/memcached.conf"
+        "/etc/memcached.conf",
+        "/etc/sysconfig/memcached"
       ]
     }
   },

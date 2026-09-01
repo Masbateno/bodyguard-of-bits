@@ -421,6 +421,30 @@ edited to `listen 8443`, BOB resolves `8443/tcp` and `80/tcp` — the second fro
 the IPv6 line left untouched — where it previously answered 80 and 443 without
 opening anything.
 
+### Five distributions claimed, one distribution's paths
+
+The config paths fixed so far were all Debian's. BOB is field-tested on five
+distributions, so that was worth measuring rather than assuming, and the
+measurement was taken in Fedora containers with the real packages installed.
+
+`/etc/apache2` does not exist there — httpd keeps `Listen` in
+`/etc/httpd/conf/httpd.conf`. `/etc/mysql` does not exist — MariaDB uses
+`/etc/my.cnf` and `/etc/my.cnf.d/*.cnf`. `/etc/memcached.conf` does not exist —
+the port lives in `/etc/sysconfig/memcached` as `PORT="11211"`. And
+`/etc/vsftpd.conf` is `/etc/vsftpd/vsftpd.conf`. Each of those services
+therefore fell through to the registry default across the entire RHEL family:
+the same silence as a config that is never opened, one distribution wide.
+
+Both families are now declared, Debian first since it is the project's
+reference. Verified end to end on real installs of each: on Fedora with
+`Listen 8081`, `PORT="11212"`, `listen_port=2121` and a `my.cnf.d` drop-in on
+3307, BOB reads all four; on Debian the same four still read, apache returning
+8081 and 443 because `ports.conf` declares both.
+
+This was five services across two families. Thirty-three declare a config path,
+and the rest have not been checked against anything but Debian — the angle is
+opened, not closed.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -513,7 +537,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7500**.
+**Tests** 7288 → **7508**.
 
 ---
 
