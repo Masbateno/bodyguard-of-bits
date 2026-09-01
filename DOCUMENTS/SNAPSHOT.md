@@ -193,7 +193,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 180 test files, ~5286 functions, 7672 collected (v0.15.3)
+├── tests/                     ← 181 test files, ~5300 functions, 7693 collected (v0.15.3)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -792,7 +792,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 180 test files, ~5286 functions, **7672 collected** (v0.15.3) | `pytest --collect-only -q` |
+| Tests | 181 test files, ~5300 functions, **7693 collected** (v0.15.3) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

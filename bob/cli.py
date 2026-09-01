@@ -795,121 +795,150 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
 # Help
 # ---------------------------------------------------------------------------
 
-def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for future i18n
-    """Print the CLI help message, grouped by category."""
+def print_help(t, version: str) -> None:
+    """Print the CLI help message, grouped by category.
+
+    v0.15.3: every human-readable string routes through ``t``. The signature
+    carried ``# noqa: ARG001 — t reserved for future i18n`` since v0.1.0 while
+    the body printed English literals, so ``bob --help --french`` returned
+    byte-identical English on the one screen that advertises --french.
+
+    Flags stay untranslated — they are CLI syntax, not prose — which also
+    keeps the two columns aligned identically across locales.
+    """
 
     # v0.14.0 F: the section headers used to hardcode the bold escape, so
     # `bob --no-color --help` still emitted ANSI and `bob --help > file`
     # wrote escape codes into it. Route through the output module so --help
     # obeys the same rule as the rest of the tool (--no-color / NO_COLOR /
     # FORCE_COLOR / TTY detection).
-    def section(title: str) -> None:
+    def section(key: str) -> None:
         from bob import output as _o
         bold, reset = (_o._c.bold, _o._c.reset) if not _o._no_color else ("", "")
-        print(f"\n{bold}{title}{reset}")
+        print(f"\n{bold}{t('help.section.' + key)}{reset}")
 
-    def opt(flags: str, desc: str, col: int = 28) -> None:
-        print(f"  {flags:<{col}}  {desc}")
+    def opt(flags: str, key: str, col: int = 28) -> None:
+        print(f"  {flags:<{col}}  {t(key)}")
 
-    print(f"BOB v{version} — Linux hardening auditor")
+    def ex(cmd: str, key: str, col: int = 30) -> None:
+        print(f"  {cmd:<{col}}  {t('help.example.' + key)}")
+
+    print(f"BOB v{version} — {t('help.tagline')}")
     print()
-    print("Usage: sudo bob [OPTIONS]")
-    print("       bob --explain KEY   (standalone, no sudo required)")
+    # The label is translated, so the continuation line is padded from its
+    # rendered length rather than a hardcoded seven spaces.
+    _usage = t("help.usage_label")
+    print(f"{_usage} sudo bob [OPTIONS]")
+    print(f"{' ' * len(_usage)} bob --explain KEY   ({t('help.usage_standalone')})")
 
-    section("AUDIT — what to check and how")
-    opt("-p, --profile=NAME",    "Audit profile: server (default), desktop, workstation, container")
+    section("audit")
+    opt("-p, --profile=NAME",    "help.opt.profile")
     # v0.14.1: the persistence was real since v0.12.1 but documented nowhere the
     # user looks — a one-off ``-p container`` silently became their permanent
     # default. Stating it here is the whole fix; the behaviour is deliberate.
-    opt("",                      "  (a valid name is SAVED as your default for later runs)")
-    opt("-l N, --log-days=N",    "Analyse last N days of UFW logs (default: 7)")
-    opt("-D, --diff[=PATH]",     "Show only changes since last audit baseline; pass a file path to compare against an arbitrary baseline (cross-machine)")
-    opt("    --watch[=N]",       "Re-run audit every N seconds (default: 60) — Ctrl+C to quit")
-    opt("-o, --offline",         "Skip external IP lookup (no HTTP calls)")
-    opt("    --target=N",        "Score target (1–10): show gap or success in summary")
-    opt("    --check=LIST",      "Run only these checks (comma-separated); --check=list to show all names")
-    opt("    --skip=LIST",       "Skip these checks (comma-separated; mutually exclusive with --check)")
-    opt("    --output-dir=PATH", "Save detailed report to PATH (overrides saved config)")
+    opt("",                      "help.opt.profile_saved")
+    opt("-l N, --log-days=N",    "help.opt.log_days")
+    opt("-D, --diff[=PATH]",     "help.opt.diff")
+    opt("",                      "help.opt.diff_path")
+    opt("    --watch[=N]",       "help.opt.watch")
+    opt("-o, --offline",         "help.opt.offline")
+    opt("    --target=N",        "help.opt.target")
+    opt("    --check=LIST",      "help.opt.check")
+    opt("",                      "help.opt.check_list")
+    opt("    --skip=LIST",       "help.opt.skip")
+    opt("    --output-dir=PATH", "help.opt.output_dir")
 
-    section("OUTPUT — how to present results")
-    opt("-v, --verbose",          "Show detailed port exposure for each service")
-    opt("-d, --detailed",         "Save full audit report to a log file")
-    opt("-q, --quiet",            "Suppress all output — use exit code to detect issues")
-    opt("-n, --no-color",         "Disable colour output (alias --no-colour)")
-    opt("    NO_COLOR / FORCE_COLOR", "Env vars: force colour off / on (colour is")
-    opt("",                       "auto-detected — off when output is not a terminal)")
-    opt("    --format=FORMAT",    "Output format: json | json-full | csv | markdown | html")
-    opt("    --output=FORMAT",    "Alias of --format (not to be confused with --output-dir)")
-    opt("-j / -J",                "Shorthands: --format=json / --format=json-full")
-    opt("    --json / --json-full", "Long-form aliases of -j / -J")
-    opt("    --html",             "Long-form alias of --format=html")
-    opt("    --min-level=LEVEL",  "Only show findings at or above: warn  |  alert")
+    section("output")
+    opt("-v, --verbose",          "help.opt.verbose")
+    opt("-d, --detailed",         "help.opt.detailed")
+    opt("-q, --quiet",            "help.opt.quiet")
+    opt("-n, --no-color",         "help.opt.no_color")
+    opt("    NO_COLOR / FORCE_COLOR", "help.opt.env_color")
+    opt("",                       "help.opt.env_color_2")
+    opt("    --format=FORMAT",    "help.opt.format")
+    opt("    --output=FORMAT",    "help.opt.output_alias")
+    opt("-j / -J",                "help.opt.shorthands")
+    opt("    --json / --json-full", "help.opt.long_aliases")
+    opt("    --html",             "help.opt.html")
+    opt("    --min-level=LEVEL",  "help.opt.min_level")
 
-    section("FIXES — apply remediation suggestions")
-    opt("-f, --fix",             "Preview available fixes (dry run — nothing is executed)")
-    opt("    --apply",           "Execute fixes interactively (requires --fix)")
-    opt("-y, --yes",             "Auto-confirm all fixes with audit trail (requires --fix --apply)")
+    section("fixes")
+    opt("-f, --fix",             "help.opt.fix")
+    opt("    --apply",           "help.opt.apply")
+    opt("-y, --yes",             "help.opt.yes")
 
-    section("INTEGRATIONS — external reporting")
-    opt("-w, --webhook=URL",     "POST audit result as JSON to URL after audit")
-    opt("    --webhook-format=F","Webhook format: auto (default), generic, or slack")
-    opt("    --test-webhook",    "POST a minimal smoke payload to the configured webhook and exit (no audit)")
+    section("integrations")
+    opt("-w, --webhook=URL",     "help.opt.webhook")
+    opt("    --webhook-format=F","help.opt.webhook_format")
+    opt("    --test-webhook",    "help.opt.test_webhook")
 
-    section("CONFIGURATION — language and settings")
-    opt("    --lang=CODE",       "Set interface language: en, fr (default: detected from $LANG, fallback en)")
-    opt("    --french",          "Shortcut for --lang=fr (overrides detection)")
-    opt("    --english",         "Shortcut for --lang=en (overrides detection)")
-    opt("-r, --reconfigure",     "Delete the saved configuration (~/.config/bob/config.conf) and exit")
+    section("configuration")
+    opt("    --lang=CODE",       "help.opt.lang")
+    opt("    --french",          "help.opt.french")
+    opt("    --english",         "help.opt.english")
+    opt("-r, --reconfigure",     "help.opt.reconfigure")
 
-    section("MAINTENANCE — cron jobs and logs")
-    opt("-c, --install-cron",    "Install an automated audit cron job (schedule wizard)")
-    opt("-C, --manage-cron",     "List, edit or delete installed cron jobs")
-    opt("-m, --manage-logs",     "List and delete saved audit log files")
-    opt("-B, --breakdown",       "Run audit silently and print full score computation path")
-    opt("    --reset-baseline",  "Delete the stored audit baseline and exit")
-    opt("    --ignore=KEY",      "Add a finding key to the ignore list (~/.config/bob/ignore.yml) and exit")
-    opt("    --unignore=KEY",    "Remove a finding key from the ignore list and exit")
-    opt("    --show-ignored",    "Display suppressed findings in grey alongside normal output")
+    section("maintenance")
+    opt("-c, --install-cron",    "help.opt.install_cron")
+    opt("-C, --manage-cron",     "help.opt.manage_cron")
+    opt("-m, --manage-logs",     "help.opt.manage_logs")
+    opt("-B, --breakdown",       "help.opt.breakdown")
+    opt("    --reset-baseline",  "help.opt.reset_baseline")
+    opt("    --ignore=KEY",      "help.opt.ignore")
+    opt("",                      "help.opt.ignore_file")
+    opt("    --unignore=KEY",    "help.opt.unignore")
+    opt("    --show-ignored",    "help.opt.show_ignored")
+    opt("    --history",         "help.opt.history")
 
-    opt("    --history",           "Display score history sparkline (last 10 audits) and exit")
+    section("standalone")
+    opt("-e, --explain [KEY]",   "help.opt.explain")
+    opt("    bob -e",            "help.opt.explain_interactive")
+    opt("    bob -e list",       "help.opt.explain_list")
+    opt("    bob -e ssh.password_auth", "help.opt.explain_key")
+    opt("-V, --version",         "help.opt.version")
+    opt("-h, --help",            "help.opt.help")
 
-    section("STANDALONE — no sudo required")
-    opt("-e, --explain [KEY]",   "Interactive explain picker, or explain a specific key")
-    opt("",                      "  bob -e                      (interactive — ↑↓ navigate, Enter view, q quit)")
-    opt("",                      "  bob -e list                 (list all keys)")
-    opt("",                      "  bob -e ssh.password_auth    (explain a key)")
-    opt("-V, --version",         "Show version and exit")
-    opt("-h, --help",            "Show this help message")
-
-    section("SETUP — requires sudo")
-    opt("    --install-completion", "Install bash tab-completion to /etc/bash_completion.d/")
+    section("setup")
+    opt("    --install-completion", "help.opt.install_completion")
+    # v0.15.3: the example used to interpolate Path(sys.argv[0]).resolve(),
+    # which was wrong in both directions. From a source checkout it printed
+    # "sudo .../bob/__main__.py --install-completion" — a mode-644 file with no
+    # shebang, so the advertised command simply fails. Under pipx, .resolve()
+    # dereferenced the stable ~/.local/bin/bob entry point into the venv's
+    # internal real path, which changes on every reinstall. Print the command
+    # the reader can actually paste, for each of the three ways BOB is run.
+    import shutil as _shutil
     import sys as _sys
     from pathlib import Path as _Path
-    _self = str(_Path(_sys.argv[0]).resolve())
-    opt("",                      f"  sudo {_self} --install-completion")
 
-    section("EXAMPLES")
-    print("  sudo bob                        Standard audit")
-    print("  sudo bob -f                     Preview available fixes (dry run)")
-    print("  sudo bob -f --apply             Apply fixes interactively")
-    print("  sudo bob -f --apply -y          Auto-apply all fixes")
-    print("  sudo bob -v -d                  Verbose + save full report")
-    print("  sudo bob --french -d            French output + save report")
-    print("  sudo bob -p desktop             Desktop profile")
-    print("  sudo bob -l 14                  Analyse 14 days of UFW logs")
-    print("  sudo bob -D                     Show what changed since last audit")
-    print("  sudo bob --watch                Re-run every 60s and show only changes")
-    print("  sudo bob --watch=30             Re-run every 30s")
-    print("  sudo bob --format=json | jq '.score'  Extract score as JSON")
-    print("  sudo bob -w https://hooks.slack.com/...  Send to Slack")
-    print("  bob -e ssh.password_auth        Explain a finding (no sudo)")
+    _argv0 = _Path(_sys.argv[0])
+    if _argv0.name == "__main__.py":          # python3 -m bob, from a checkout
+        _cmd = f"{_Path(_sys.executable).name} -m bob"
+    elif _shutil.which(_argv0.name):          # entry point on PATH
+        _cmd = _argv0.name
+    else:                                     # installed, but not on PATH
+        _cmd = str(_argv0)
+    print(f"  {'':<28}    sudo {_cmd} --install-completion")
 
-    section("EXIT CODES  (stable public API — see DOCUMENTS/README_TECH.md)")
-    print("  0   No issues detected")
-    print("  1   Warnings present")
-    print("  2   Alerts present — action required")
-    print("  3   Technical error")
-    print("  4   --target N specified and score < N")
+    section("examples")
+    ex("sudo bob",                      "standard")
+    ex("sudo bob -f",                   "preview")
+    ex("sudo bob -f --apply",           "apply")
+    ex("sudo bob -f --apply -y",        "auto")
+    ex("sudo bob -v -d",                "verbose")
+    ex("sudo bob --french -d",          "french")
+    ex("sudo bob -p desktop",           "desktop")
+    ex("sudo bob -l 14",                "logs")
+    ex("sudo bob -D",                   "diff")
+    ex("sudo bob --watch",              "watch")
+    ex("sudo bob --watch=30",           "watch30")
+    ex("sudo bob --format=json | jq '.score'", "json")
+    ex("sudo bob -w https://hooks.slack.com/...", "slack")
+    ex("bob -e ssh.password_auth",      "explain")
+
+    section("exit_codes")
+    for _code in range(5):
+        print(f"  {_code}   {t(f'help.exit.{_code}')}")
 
     print()
     print("Documentation: https://github.com/Masbateno/bodyguard-of-bits")

@@ -31,17 +31,33 @@ class TestProfileHelpMatchesDisk:
     """Every shipped profile .conf must be advertised in the --help profile
     line and the --profile error message (DOC-C)."""
 
-    def test_help_profile_line_lists_every_on_disk_profile(self):
-        src = (_REPO / "bob" / "cli.py").read_text(encoding="utf-8")
-        # The help line: opt("-p, --profile=NAME", "Audit profile: ...")
+    @pytest.mark.parametrize("lang", ["en", "fr"])
+    def test_help_profile_line_lists_every_on_disk_profile(self, lang):
+        """v0.15.3: reads the *rendered* help rather than a literal in cli.py.
+
+        The descriptions moved into the locale files when --help was
+        translated, so scraping the source no longer finds them — and checking
+        each locale is stricter anyway: a translation that dropped a profile
+        name would now be caught too.
+        """
+        import contextlib
+        import io
+
+        from bob import i18n
+        from bob.cli import print_help
+
+        i18n.init(lang=lang)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_help(i18n.t, "0.0.0")
         line = next(
-            (l for l in src.splitlines() if "Audit profile:" in l), None
+            (l for l in buf.getvalue().splitlines() if "--profile=NAME" in l), None
         )
-        assert line is not None, "could not find the --profile help line in cli.py"
+        assert line is not None, f"could not find the --profile help line ({lang})"
         for name in _on_disk_profiles():
             assert name in line, (
                 f"profile {name!r} exists on disk but is missing from the "
-                f"--help profile line: {line.strip()}"
+                f"--help profile line ({lang}): {line.strip()}"
             )
 
     def test_profile_error_message_lists_every_on_disk_profile(self):

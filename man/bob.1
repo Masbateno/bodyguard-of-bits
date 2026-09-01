@@ -75,8 +75,10 @@ Implies neither
 nor
 .BR \-\-json .
 .TP
-.BR \-\-no\-color
+.BR \-n ", " \-\-no\-color ", " \-\-no\-colour
 Disable ANSI escape sequences in terminal output.
+.B \-\-no\-colour
+is an accepted spelling of the same flag.
 .
 .SS Output formats
 .TP
@@ -97,7 +99,7 @@ but includes per-finding, per-service, per-port detail (large payload).
 Long\-form alias of
 .BR \-\-format=html .
 .TP
-.B \-\-format=\fIFMT\fR
+.BR \-\-format=\fIFMT\fR ", " \-\-output=\fIFMT\fR
 Where
 .I FMT
 is one of
@@ -155,7 +157,7 @@ and
 .B \-\-manage\-logs
 asks for a log directory again.
 .TP
-.B \-\-profile=\fINAME\fR
+.B \-p, \-\-profile=\fINAME\fR
 Apply an audit profile that adjusts severity overrides per finding key.
 Built-in profiles:
 .BR server " (default), "
@@ -169,7 +171,7 @@ take precedence. See
 .
 .SS Comparison and history
 .TP
-.B \-\-diff [\fIPATH\fR]
+.B \-D, \-\-diff [\fIPATH\fR]
 Show only the delta vs a baseline (new findings, resolved findings, score
 change). With no argument, loads the local auto-managed baseline at
 .IR ~/.config/bob/last_baseline.json .
@@ -274,7 +276,7 @@ is
 .
 .SS Periodic audits
 .TP
-.B \-\-install\-cron
+.BR \-c ", " \-\-install\-cron
 Run an interactive wizard to install a cron job that audits the system on
 a schedule and emails the report.
 .TP
@@ -318,7 +320,7 @@ Print all available section names (use as the value of \fB\-\-check\fR; there is
 .
 .SS Misc
 .TP
-.B \-\-version
+.BR \-V ", " \-\-version
 Print BOB version and exit.
 .TP
 .BR \-h ", " \-\-help
@@ -328,7 +330,7 @@ Print help.
 Install bash completion to
 .IR /etc/bash_completion.d/bob .
 .TP
-.B \-\-manage\-logs
+.BR \-m ", " \-\-manage\-logs
 Manage stored audit reports (list, view, delete) in
 .IR ~/.local/share/bob/logs/ .
 .TP
