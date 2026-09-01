@@ -707,3 +707,61 @@ class TestBatchFourLocaleKeys:
                 assert part in node, f"{locale}.json is missing {dotted}"
                 node = node[part]
             assert isinstance(node, str) and node.strip()
+
+
+# ---------------------------------------------------------------------------
+# The same principle in the output direction: a peripheral failure must not
+# destroy the primary work.
+# ---------------------------------------------------------------------------
+
+class TestReportOpenFailureDoesNotLoseTheAudit:
+    """The report is opened before any check runs.
+
+    Letting that OSError propagate cost the entire audit — a read-only or full
+    log directory produced "Fatal error: Read-only file system" and nothing
+    else, no findings at all. AuditReport already degrades to "report writing
+    disabled" when a write fails *after* a successful open and lets the run
+    finish; the same failure one step earlier deserves the same answer.
+    """
+
+    def _init(self, opener, tmp_path):
+        from unittest.mock import patch
+
+        from bob import runner
+        from bob.cli import AuditConfig
+        from bob.config import UserConfig
+
+        config = AuditConfig()
+        config.detailed = True
+        config.quiet = True
+        with (
+            patch("bob.manage_logs.get_or_prompt_log_dir", return_value=tmp_path),
+            patch.object(runner.AuditReport, "open", side_effect=opener),
+        ):
+            return runner.init_report(config, UserConfig(), lambda k, **kw: k, "0.15.2")
+
+    def test_an_unopenable_report_degrades_to_a_null_one(self, tmp_path):
+        def refuse(**kwargs):
+            raise OSError(30, "Read-only file system")
+        report = self._init(refuse, tmp_path)
+        assert report.enabled is False
+        # And it still satisfies the interface every caller uses unguarded.
+        report.write_section("anything")
+        report.write_finding("INFO", "anything")
+        report.close()
+
+    def test_a_working_directory_still_yields_a_real_report(self, tmp_path):
+        from bob.report import AuditReport
+        sentinel = AuditReport.null()
+        report = self._init(lambda **kwargs: sentinel, tmp_path)
+        assert report is sentinel
+
+    def test_the_message_exists_in_both_locales(self):
+        import json
+        from pathlib import Path
+        for locale in ("en", "fr"):
+            data = json.loads(
+                (Path("bob/locales") / f"{locale}.json").read_text(encoding="utf-8")
+            )
+            text = data["audit"]["report_unavailable"]
+            assert "{path}" in text and "{error}" in text

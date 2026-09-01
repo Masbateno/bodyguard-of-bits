@@ -275,7 +275,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, .log, JSON detail messages, webhook payloads, explain entries) is fully localised — 2059 keys × 2 locales as of v0.8.x.
+All output (terminal, .log, JSON detail messages, webhook payloads, explain entries) is fully localised — 2060 keys × 2 locales as of v0.8.x.
 
 ---
 

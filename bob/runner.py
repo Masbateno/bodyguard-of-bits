@@ -351,7 +351,21 @@ def init_report(config: AuditConfig, user_config: UserConfig, t, version: str) -
     if config.detailed:
         from bob.manage_logs import get_or_prompt_log_dir
         log_dir = get_or_prompt_log_dir(user_config, config, t)
-        report  = AuditReport.open(directory=log_dir, version=version)
+        try:
+            report = AuditReport.open(directory=log_dir, version=version)
+        except OSError as exc:
+            # The report is opened before any check runs, so letting this
+            # propagate cost the whole audit — a read-only or full log
+            # directory produced "Fatal error: Read-only file system" and
+            # nothing else. AuditReport already degrades to "report writing
+            # disabled" when a write fails mid-run and lets the audit finish;
+            # a failure one step earlier deserves the same answer, not a
+            # worse one. The findings do not depend on the file.
+            logger.warning("Report could not be opened in %s: %s", log_dir, exc)
+            output.print_warn(t("audit.report_unavailable", path=log_dir, error=exc))
+            if not config.quiet:
+                print()
+            return AuditReport.null()
         output.print_ok(t("audit.report_saved", path=report.path))
         if not config.quiet:
             print()

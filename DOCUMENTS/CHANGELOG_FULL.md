@@ -166,6 +166,28 @@ genuinely runs on its compiled-in defaults, so reading them is right, while an
 unreadable one means those defaults describe nothing about this host. Probing
 the open tells absent from off-limits from readable.
 
+### The same principle in the output direction
+
+Everything above concerns BOB reading. It also writes, and one of those writes
+could destroy the work it was meant to record.
+
+`bob -d` against a read-only or full log directory printed
+`Fatal error: [Errno 30] Read-only file system` and stopped. No findings, no
+report, nothing — because the report file is opened before any check runs, and
+the OSError propagated to the top-level handler.
+
+What makes it a defect rather than a judgement call is that the same module
+already answers this correctly one step later: when a write fails *after* a
+successful open, `AuditReport` prints "Report writing disabled (…): No space
+left on device", disables itself, and lets the audit finish — 129 findings
+still rendered. The degradation existed; it simply did not cover the open. A
+failure one step earlier was getting a strictly worse answer than the same
+failure one step later. The findings do not depend on the file, so an
+unopenable report now degrades to the null report with a warning naming the
+directory and the reason.
+
+Present on the v0.15.1 tag, like the `exists()` trap.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -242,6 +264,8 @@ discriminated nothing, and `"" in "=+-@"` — which is `True` in Python, flaggin
   checks migrated, with a test forbidding a return to the bare call.
 - `log_rotation.logrotate_dir_unreadable` and `LogRotationSnapshot.logrotate_dir_listed`.
 - The sshd_config probe separates absent / unreadable / readable.
+- `audit.report_unavailable`: an unopenable report degrades to the null report
+  instead of aborting the audit.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — five new finding/display keys, both locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -255,7 +279,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7370**.
+**Tests** 7288 → **7373**.
 
 ---
 

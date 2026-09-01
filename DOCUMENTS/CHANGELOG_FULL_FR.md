@@ -173,6 +173,30 @@ sshd tourne réellement sur ses défauts compilés, donc les lire est juste, alo
 qu'une config illisible signifie que ces défauts ne décrivent rien de cette
 machine. Sonder l'ouverture distingue absent, interdit et lisible.
 
+### Le même principe, côté écriture
+
+Tout ce qui précède concerne la lecture. BOB écrit aussi, et l'une de ces
+écritures pouvait détruire le travail qu'elle était censée consigner.
+
+`bob -d` contre un répertoire de logs en lecture seule ou plein affichait
+`Fatal error: [Errno 30] Read-only file system` puis s'arrêtait. Aucun finding,
+aucun rapport, rien — parce que le fichier de rapport est ouvert avant que le
+moindre check ne tourne, et que l'`OSError` remontait jusqu'au gestionnaire
+fatal.
+
+Ce qui en fait un défaut plutôt qu'un choix, c'est que le même module répond
+déjà correctement une étape plus loin : quand une écriture échoue *après* une
+ouverture réussie, `AuditReport` affiche « Report writing disabled (…): No
+space left on device », se désactive, et laisse l'audit aller au bout — 129
+findings tout de même rendus. La dégradation existait ; elle ne couvrait
+simplement pas l'ouverture. Une défaillance une étape plus tôt recevait donc
+une réponse strictement pire que la même défaillance une étape plus tard. Les
+findings ne dépendent pas du fichier : un rapport impossible à ouvrir dégrade
+désormais vers le rapport nul, avec un avertissement nommant le répertoire et
+la raison.
+
+Présent sur le tag v0.15.1, comme le piège `exists()`.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -255,6 +279,8 @@ signalait toute cellule CSV vide comme une formule.
   migrés, avec un test interdisant tout retour à l'appel nu.
 - `log_rotation.logrotate_dir_unreadable` et `LogRotationSnapshot.logrotate_dir_listed`.
 - La sonde sshd_config sépare absent / illisible / lisible.
+- `audit.report_unavailable` : un rapport impossible à ouvrir dégrade vers le
+  rapport nul au lieu d'interrompre l'audit.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — cinq nouvelles clés, dans les deux locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -269,7 +295,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7370**.
+**Tests** 7288 → **7373**.
 
 ---
 

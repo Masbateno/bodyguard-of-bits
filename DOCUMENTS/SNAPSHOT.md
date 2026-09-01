@@ -29,7 +29,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 7370 unit tests · 19 doc files · 5+ distros field-tested │
+│                 7373 unit tests · 19 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -193,7 +193,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 168 test files, ~5122 functions, 7370 collected (v0.15.2)
+├── tests/                     ← 168 test files, ~5125 functions, 7373 collected (v0.15.2)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -695,7 +695,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 
 - **Audit-only by default** (no auto-fix without explicit `--fix --apply`). Foundational security stance.
 - **Zero runtime deps outside stdlib**. Major asset for distro packaging; preserve at all costs.
-- **Snapshot + check_xxx separation**. Enables ~7370 tests with no mocks.
+- **Snapshot + check_xxx separation**. Enables ~7373 tests with no mocks.
 - **Equal-domain weighting** in global score. All active domains contribute equally — intentional, retained through v0.10.x. The "main architectural question for v0.3.0" was answered: keep equal weighting.
 - **JSON schema_version dispatch** (v0.7.0 T2). `DEFAULT_SCHEMA_VERSION="3"` since v0.12.0 F9; the `"1"` legacy path and `--json-v1` were retired in v0.9.0 F-3, `"2"` in v0.12.0 (any non-`"3"` value now raises `ValueError`). Breaking changes = `"4"` + major bump.
 - **EXPLAIN_KEYS frozen** with alias map for renames. 169 keys / 45 prefixes as of v0.10.1 (v0.7.0 baseline was 117 / 30; v0.8.0 drift batch backfilled 51 missing WARN/ALERT findings → 168 / 45; v0.10.1 D-4 Rank 1 added `ssh.x11.forwarding.client` → 169 and registered the first live `EXPLAIN_KEY_ALIASES` entry since v0.9.0 D-3 emptied it — see `tests/test_explain_coverage.py` whitelist for the closed-gap ledger).
@@ -792,7 +792,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 168 test files, ~5122 functions, **7370 collected** (v0.15.2) | `pytest --collect-only -q` |
+| Tests | 168 test files, ~5125 functions, **7373 collected** (v0.15.2) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

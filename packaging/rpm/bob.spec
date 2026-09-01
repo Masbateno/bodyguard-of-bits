@@ -106,6 +106,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   now raise, cron tracks unread files, journald storage is no longer inferred.
 - Path.exists() re-raises EACCES: an unreadable /etc/ssh lost the whole audit.
   New path_exists() across all check call sites.
+- An unwritable log directory no longer aborts the audit: the report degrades
+  to a warning, the findings are still rendered.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

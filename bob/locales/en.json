@@ -854,6 +854,7 @@
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 exists but conf/all/disable_ipv6 could not be read, so BOB cannot say whether the IPv6 stack is active. It does not assume either way. The findings below are computed as if IPv6 were enabled, which is the cautious reading. Check with: sysctl net.ipv6.conf.all.disable_ipv6"
   },
   "audit": {
+    "report_unavailable": "Detailed report could not be written to {path} ({error}) \u2014 the audit below is complete, only the file is missing",
     "section_unavailable": "Section not evaluated ({section}) — an internal error prevented this check from running",
     "starting": "Starting audit",
     "audit_profile": "Audit profile: {profile}",
