@@ -776,6 +776,14 @@
       "removed": "Clé d'ignore retirée : {requested}",
       "not_present": "Clé absente de la liste d'ignore : {requested}"
     },
+    "reconfigure": {
+        "nothing": "Aucune configuration enregistrée à réinitialiser.",
+        "about_to": "Ceci supprimera la configuration enregistrée : {path}",
+        "confirm": "Supprimer ? [y/N]",
+        "aborted": "Annulé — rien n'a été modifié.",
+        "done": "Configuration supprimée : {path}",
+        "failed": "Impossible de supprimer la configuration : {error}"
+    },
     "baseline": {
       "deleted": "Baseline supprimée : {path}",
       "delete_error": "Erreur : impossible de supprimer la baseline : {error}",

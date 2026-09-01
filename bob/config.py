@@ -263,6 +263,27 @@ class UserConfig:
         self._save()
         logger.debug("Config cleared")
 
+    def reset(self) -> None:
+        """
+        Remove all stored configuration and delete the file from disk.
+
+        Distinct from :meth:`clear`, which persists an *empty* file and so
+        keeps :meth:`exists` answering True — the "Configuration found" hint
+        would keep pointing at ``--reconfigure`` after a reset had already
+        run, and the option would look broken. A reset leaves nothing behind.
+
+        Raises:
+            OSError: If the file exists but cannot be removed. A reset that
+                silently fails is worse than one that reports — the caller
+                tells the user rather than claiming success.
+        """
+        self._data.clear()
+        try:
+            self._path.unlink()
+        except FileNotFoundError:
+            pass
+        logger.debug("Config reset: %s", self._path)
+
     def all_keys(self) -> list[str]:
         """Return a sorted list of all stored keys."""
         return sorted(self._data.keys())

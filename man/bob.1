@@ -66,10 +66,7 @@ bruteforce detection windows.
 .B \-\-output\-dir=\fIPATH\fR
 Override the detailed report save directory for this run. Does not persist
 to
-.IR ~/.config/bob/config.conf
-(use
-.B \-\-reconfigure
-to change the default permanently).
+.IR ~/.config/bob/config.conf .
 .TP
 .BR \-q ", " \-\-quiet
 Suppress all terminal output. Use the exit code to detect issues.
@@ -147,8 +144,16 @@ Shorthand for
 Overrides the locale detection. Added in v0.12.1 for symmetry with
 .BR \-\-french .
 .TP
-.B \-\-reconfigure
-Re-run the first-launch configuration wizard (custom service ports, log dir).
+.BR \-r ", " \-\-reconfigure
+Delete the saved configuration
+.RI ( ~/.config/bob/config.conf )
+and exit. Always asks for confirmation; answering anything but
+.B y
+leaves the file untouched. Later runs fall back to their defaults: the audit profile returns to
+.BR server ,
+and
+.B \-\-manage\-logs
+asks for a log directory again.
 .TP
 .B \-\-profile=\fINAME\fR
 Apply an audit profile that adjusts severity overrides per finding key.

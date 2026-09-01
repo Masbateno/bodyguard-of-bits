@@ -859,7 +859,7 @@ def print_help(t, version: str) -> None:  # noqa: ARG001 — t reserved for futu
     opt("    --lang=CODE",       "Set interface language: en, fr (default: detected from $LANG, fallback en)")
     opt("    --french",          "Shortcut for --lang=fr (overrides detection)")
     opt("    --english",         "Shortcut for --lang=en (overrides detection)")
-    opt("-r, --reconfigure",     "Reset saved port configuration and re-ask")
+    opt("-r, --reconfigure",     "Delete the saved configuration (~/.config/bob/config.conf) and exit")
 
     section("MAINTENANCE — cron jobs and logs")
     opt("-c, --install-cron",    "Install an automated audit cron job (schedule wizard)")

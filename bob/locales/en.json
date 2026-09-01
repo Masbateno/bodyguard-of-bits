@@ -776,6 +776,14 @@
       "removed": "Ignored key removed: {requested}",
       "not_present": "Key not present in the ignore list: {requested}"
     },
+    "reconfigure": {
+        "nothing": "No saved configuration to reset.",
+        "about_to": "This will delete the saved configuration: {path}",
+        "confirm": "Delete it? [y/N]",
+        "aborted": "Cancelled — nothing was changed.",
+        "done": "Configuration deleted: {path}",
+        "failed": "Could not delete the configuration: {error}"
+    },
     "baseline": {
       "deleted": "Baseline deleted: {path}",
       "delete_error": "Error: could not delete baseline: {error}",
