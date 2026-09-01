@@ -183,6 +183,9 @@ bob/
 │   │                       #   split_ss_address() — grammaire unique de la
 │   │                       #   colonne d'adresse `ss`, partagée par ports et
 │   │                       #   network_context (v0.15.2),
+│   │                       #   package_installed() — dpkg-query, rpm, pacman
+│   │                       #   ou apk ; dpkg seul lisait tout service comme
+│   │                       #   absent sur 4 distros sur 5 (v0.15.2),
 │   │                       #   join_continuations(), strip_unit_glyph(),
 │   │                       #   pipes_into_shell() — une seule copie par règle
 │   ├── _ufw.py             # Grammaire `ufw status numbered`, partagée par ports,

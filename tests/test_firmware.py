@@ -238,44 +238,30 @@ class TestDetectCpuVendor:
 # ---------------------------------------------------------------------------
 
 class TestDpkgInstalled:
-    def test_installed_package(self):
-        out = "ii  intel-microcode  3.20230808.1  amd64  Processor microcode firmware for Intel CPUs\n"
-        with patch("bob.checks.firmware._run", return_value=out):
-            assert _dpkg_installed("intel-microcode")
+    """`_dpkg_installed` keeps its name and delegates to the shared query.
 
-    def test_installed_tab_separated(self):
-        out = "ii\tintel-microcode\t3.20230808.1\tamd64\tProcessor microcode\n"
-        with patch("bob.checks.firmware._run", return_value=out):
-            assert _dpkg_installed("intel-microcode")
+    It used to parse `dpkg -l` columns itself, which answered False for every
+    microcode package outside Debian — the package is `intel-microcode` there
+    and `microcode_ctl` on Fedora, and neither was ever found by a dpkg-only
+    call on an rpm system. The parsing now lives in
+    `bob.checks._run.package_installed`, which asks every package manager
+    present; these pin the delegation and its two answers.
+    """
 
-    def test_installed_arch_qualified(self):
-        """dpkg may output 'intel-microcode:amd64' — package name still matches."""
-        out = "ii  intel-microcode:amd64  3.20230808.1  amd64  Processor microcode\n"
-        with patch("bob.checks.firmware._run", return_value=out):
-            assert _dpkg_installed("intel-microcode")
+    def test_a_package_the_manager_reports_is_installed(self):
+        with patch("bob.checks.firmware.package_installed", return_value="rpm"):
+            assert _dpkg_installed("microcode_ctl")
 
-    def test_not_installed_package(self):
-        out = "dpkg-query: no packages found matching intel-microcode\n"
-        with patch("bob.checks.firmware._run", return_value=out):
+    def test_a_package_no_manager_reports_is_not(self):
+        with patch("bob.checks.firmware.package_installed", return_value=None):
             assert not _dpkg_installed("intel-microcode")
 
-    def test_partially_installed(self):
-        out = "rc  intel-microcode  3.20200609.2  amd64  ...\n"
-        with patch("bob.checks.firmware._run", return_value=out):
-            assert not _dpkg_installed("intel-microcode")
+    def test_the_name_is_passed_through_unchanged(self):
+        with patch("bob.checks.firmware.package_installed",
+                   return_value=None) as query:
+            _dpkg_installed("amd64-microcode")
+        query.assert_called_once_with("amd64-microcode")
 
-    def test_empty_output(self):
-        with patch("bob.checks.firmware._run", return_value=""):
-            assert not _dpkg_installed("intel-microcode")
-
-    def test_none_output(self):
-        with patch("bob.checks.firmware._run", return_value=None):
-            assert not _dpkg_installed("intel-microcode")
-
-
-# ---------------------------------------------------------------------------
-# TestParseFwupdUpdates
-# ---------------------------------------------------------------------------
 
 class TestParseFwupdUpdates:
     SAMPLE_OUTPUT = """\

@@ -467,6 +467,41 @@ Cinq services sur deux familles. Trente-trois déclarent un chemin de
 configuration, et les autres n'ont été confrontés qu'à Debian — l'angle est
 ouvert, pas clos.
 
+### Tous les services lus comme absents sur quatre distributions sur cinq
+
+Le travail sur les chemins inter-distributions a soulevé une question que les
+chemins eux-mêmes ne pouvaient pas résoudre : comment BOB décide-t-il qu'un
+service est installé ? Par `dpkg-query`, et rien d'autre.
+
+`dpkg-query` n'existe ni sur la famille RHEL, ni sur Arch, ni sur openSUSE, ni
+sur Alpine. `_run` renvoie une chaîne vide pour un binaire absent, donc la
+vérification répondait False ; le repli snap ne trouvait rien ; et la plupart
+des services ne déclarent aucun chemin de binaire. Tous les services du
+registre étaient donc lus comme NON INSTALLÉS sur quatre des cinq distributions
+que BOB revendique — sans erreur ni plantage. L'audit tournait, affichait sa
+section services, et rapportait chaque entrée absente.
+
+Mesuré, non déduit : un conteneur Fedora avec httpd, vsftpd, memcached et
+mariadb-server installés et confirmés par `rpm -q` — BOB n'en voyait aucun.
+
+La requête parcourt désormais les gestionnaires présents : `dpkg-query -W`,
+`rpm -q`, `pacman -Q`, `apk info -e`, chacun une interface de script plutôt
+qu'un affichage, chacun sauté si son outil est absent — le coût sur une machine
+donnée est donc d'un `_command_exists` par famille. Les noms de paquets
+diffèrent aussi — `apache2` chez Debian devient `httpd` chez Fedora et `apache`
+chez Arch — les listes du registre ont donc reçu leurs équivalents.
+
+Quatre checks posaient cette question avec un appel dpkg privé chacun :
+services, firmware, ddns et updates. `package_installed()` est la réponse
+unique, et un garde échoue si un module réinterroge dpkg directement — il a
+trouvé le quatrième appelant pendant qu'on l'écrivait. C'est la troisième règle
+unifiée dans cette version après la grammaire UFW et la colonne d'adresse `ss`,
+et la raison est la même à chaque fois : une règle gardée en plusieurs copies
+est une règle qui finira par se contredire.
+
+Vérifié de bout en bout sur des installations réelles : Debian via
+`dpkg-query`, Fedora via `rpm`, Arch via `pacman`, Alpine via `apk`.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -566,7 +601,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7508**.
+**Tests** 7288 → **7524**.
 
 ---
 

@@ -3,7 +3,8 @@
     "id": "ssh",
     "label": "SSH Server",
     "packages": [
-      "openssh-server"
+      "openssh-server",
+      "openssh"
     ],
     "services": [
       "ssh"
@@ -99,7 +100,9 @@
     "id": "apache",
     "label": "Apache Web Server",
     "packages": [
-      "apache2"
+      "apache2",
+      "httpd",
+      "apache"
     ],
     "services": [
       "apache2"
@@ -154,7 +157,9 @@
     "label": "MySQL / MariaDB",
     "packages": [
       "mysql-server",
-      "mariadb-server"
+      "mariadb-server",
+      "mariadb",
+      "mysql"
     ],
     "services": [
       "mysql",
@@ -180,7 +185,8 @@
     "id": "postgresql",
     "label": "PostgreSQL",
     "packages": [
-      "postgresql"
+      "postgresql",
+      "postgresql-server"
     ],
     "services": [
       "postgresql"
@@ -202,7 +208,8 @@
     "id": "transmission",
     "label": "Transmission (web UI)",
     "packages": [
-      "transmission-daemon"
+      "transmission-daemon",
+      "transmission-cli"
     ],
     "services": [
       "transmission-daemon"
@@ -283,7 +290,8 @@
     "id": "cockpit",
     "label": "Cockpit (web admin)",
     "packages": [
-      "cockpit"
+      "cockpit",
+      "cockpit-ws"
     ],
     "services": [
       "cockpit"
@@ -305,7 +313,8 @@
     "id": "wireguard",
     "label": "WireGuard VPN",
     "packages": [
-      "wireguard"
+      "wireguard",
+      "wireguard-tools"
     ],
     "services": [
       "wg-quick@"
@@ -329,7 +338,8 @@
     "id": "redis",
     "label": "Redis",
     "packages": [
-      "redis-server"
+      "redis-server",
+      "redis"
     ],
     "services": [
       "redis"
@@ -516,7 +526,8 @@
     "label": "Telnet Server",
     "packages": [
       "telnetd",
-      "inetutils-telnetd"
+      "inetutils-telnetd",
+      "telnet-server"
     ],
     "services": [
       "inetutils-inetd",
@@ -672,7 +683,8 @@
     "id": "nfs",
     "label": "NFS Server",
     "packages": [
-      "nfs-kernel-server"
+      "nfs-kernel-server",
+      "nfs-utils"
     ],
     "services": [
       "nfs-kernel-server"

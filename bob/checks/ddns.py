@@ -25,7 +25,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import _identity_t, _is_safe_config_path, _run, is_unit_active, path_exists
+from bob.checks._run import (
+    _identity_t,
+    _is_safe_config_path,
+    is_unit_active,
+    package_installed,
+    path_exists,
+)
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -297,11 +303,10 @@ def _config_present(path: Path) -> bool:
 
 
 def _is_installed(client_def: DdnsClientDef) -> bool:
-    """Return True if the DDNS client is installed via dpkg or config file."""
-    # dpkg check
+    """Return True if the DDNS client is installed, or its config file exists."""
+    # Package check — every package manager BOB knows, not dpkg alone.
     for pkg in client_def.packages:
-        output = _run("dpkg", "-l", pkg)
-        if re.search(r"^ii\s+" + re.escape(pkg), output, re.MULTILINE):
+        if package_installed(pkg):
             return True
 
     # Config file check (for script-based clients like DuckDNS)

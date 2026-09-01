@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active, path_exists
+from bob.checks._run import package_installed, _command_exists, _identity_t, _run, is_unit_active, path_exists
 from bob.scoring import CheckResult
 
 # Age threshold (in seconds) above which the APT cache is considered stale.
@@ -218,8 +218,11 @@ def _check_unattended() -> tuple[bool, bool]:
     enabled   — configured to actually run (apt periodic config or systemd timer)
     """
     # Step 1 — package installed?
-    dpkg_out = _run("dpkg-query", "-W", "-f=${Status}", "unattended-upgrades")
-    if not dpkg_out or "install ok installed" not in dpkg_out:
+    # `unattended-upgrades` is a Debian concept, so this answers False on an
+    # rpm host either way — but the query goes through the shared helper so no
+    # module keeps a private package check. Two defects in this release came
+    # from one rule living in several copies.
+    if package_installed("unattended-upgrades") is None:
         return False, False
 
     # Step 2 — configured to run upgrades automatically?

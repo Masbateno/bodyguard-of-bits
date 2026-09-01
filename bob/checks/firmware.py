@@ -32,6 +32,7 @@ from bob.checks._run import (
     _command_exists,
     _identity_t,
     _run,
+    package_installed,
 )
 from bob.scoring import CheckResult
 
@@ -224,13 +225,13 @@ def _detect_cpu_vendor() -> str:
         return "unknown"
 
 def _dpkg_installed(package: str) -> bool:
-    """Return True if the package is installed according to dpkg (exact name match)."""
-    out = _run("dpkg", "-l", package) or ""
-    for line in out.splitlines():
-        cols = line.split()
-        if len(cols) >= 2 and cols[0] == "ii" and cols[1].split(":")[0] == package:
-            return True
-    return False
+    """Return True if *package* is installed, on any supported distribution.
+
+    Named for dpkg because that is all it used to ask. A microcode package is
+    called `intel-microcode` on Debian and `microcode_ctl` on Fedora, and the
+    dpkg-only query answered False for every one of them outside Debian.
+    """
+    return package_installed(package) is not None
 
 _TREE_ITEM_RE = re.compile(r"^[├└]─\s*")
 # v0.11.1 F3: a real fwupd device name always starts with an alphanumeric.

@@ -28,7 +28,13 @@ from enum import Enum
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _identity_t, _run, path_exists
+from bob.checks._run import (
+    TranslationFunc,
+    _identity_t,
+    _run,
+    package_installed,
+    path_exists,
+)
 from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
 from bob.sysinfo import _is_private_or_loopback_ipv4, _is_private_or_loopback_ipv6
@@ -111,7 +117,9 @@ class ServiceSnapshot:
     Args:
         service:     Service definition from the registry.
         installed:   True if the service was detected on this system.
-        install_via: How the service was detected: "dpkg", "snap", "binary", or "".
+        install_via: How the service was detected: the package manager that
+                     answered ("dpkg-query", "rpm", "pacman", "apk"), or
+                     "snap", "binary", or "" when nothing found it.
         state:       Systemd service state.
         ports:       Resolved port list (may differ from registry defaults if auto-detected).
         exposures:   Mapping of port string to Exposure enum value.
@@ -422,20 +430,28 @@ def _check_port_exposure(
 
 def _detect_installation(service: Service) -> tuple[bool, str]:
     """
-    Check if a service is installed via dpkg, snap, or binary.
-
-    Uses dpkg-query (scripting API) rather than dpkg -l (display only)
-    for reliable status parsing.
+    Check if a service is installed via a package manager, snap, or binary.
 
     Returns:
         Tuple of (installed: bool, method: str).
-        Method is one of: "dpkg", "snap", "binary", or "".
+        Method is the querying tool ("dpkg-query", "rpm", "pacman", "apk"),
+        or "snap", "binary", or "" when nothing found it.
     """
-    # dpkg-query check — stable scripting interface, locale-independent
+    # Package-manager check. `dpkg-query` alone meant every service read as
+    # NOT INSTALLED on any distribution that does not ship dpkg — the whole
+    # RHEL family, Arch, openSUSE and Alpine — with no error and no crash:
+    # the audit ran, printed a services section, and reported every entry
+    # absent. Measured on a Fedora container with httpd, vsftpd, memcached and
+    # mariadb-server genuinely installed and confirmed by `rpm -q`: BOB saw
+    # none of them.
+    #
+    # Each query is a scripting interface, not display output, and each is
+    # skipped when its tool is absent so the cost on any one host is one
+    # `_command_exists` per family.
     for pkg in service.packages:
-        output = _run("dpkg-query", "-W", "-f=${Status}", pkg)
-        if "install ok installed" in output:
-            return True, "dpkg"
+        tool = package_installed(pkg)
+        if tool:
+            return True, tool
 
     # snap check
     for snap_pkg in service.detection.snap:

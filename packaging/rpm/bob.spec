@@ -123,6 +123,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   followed while its target stays inside the service config tree.
 - RHEL-family config paths added: /etc/httpd, /etc/my.cnf.d, /etc/vsftpd and
   /etc/sysconfig/memcached were never read, so four services used defaults.
+- Service detection asked dpkg-query alone: every service read as NOT
+  INSTALLED on rpm, Arch and Alpine hosts. rpm/pacman/apk now queried.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

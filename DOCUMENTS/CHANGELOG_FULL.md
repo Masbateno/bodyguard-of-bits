@@ -445,6 +445,40 @@ This was five services across two families. Thirty-three declare a config path,
 and the rest have not been checked against anything but Debian — the angle is
 opened, not closed.
 
+### Every service read as absent on four distributions out of five
+
+The cross-distribution path work raised a question the paths themselves could
+not answer: how does BOB decide a service is installed at all? Through
+`dpkg-query`, and nothing else.
+
+`dpkg-query` does not exist on the RHEL family, on Arch, on openSUSE or on
+Alpine. `_run` returns an empty string for a binary that is not there, so the
+check answered False; the snap fallback found nothing; and most services
+declare no binary path. Every service in the registry therefore read as NOT
+INSTALLED on four of the five distributions BOB claims to support — with no
+error and no crash. The audit ran, printed its services section, and reported
+every entry absent.
+
+Measured, not inferred: a Fedora container with httpd, vsftpd, memcached and
+mariadb-server installed and confirmed by `rpm -q` — BOB saw none of them.
+
+The query now walks the package managers present: `dpkg-query -W`, `rpm -q`,
+`pacman -Q`, `apk info -e`, each a scripting interface rather than display
+output, each skipped when its tool is absent so the cost on any one host is a
+single `_command_exists` per family. Package names differ too — `apache2` on
+Debian is `httpd` on Fedora and `apache` on Arch — so the registry's package
+lists gained their equivalents.
+
+Four checks asked this question with a private dpkg call each: services,
+firmware, ddns and updates. `package_installed()` is the single answer, and a
+guard fails if a module asks dpkg directly again — it found the fourth caller
+while being written. That is the third rule unified in this release after the
+UFW grammar and the `ss` address column, and the reason is the same each time:
+a rule kept in several copies is a rule that will disagree with itself.
+
+Verified end to end on real installs: Debian via `dpkg-query`, Fedora via
+`rpm`, Arch via `pacman`, Alpine via `apk`.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -537,7 +571,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7508**.
+**Tests** 7288 → **7524**.
 
 ---
 

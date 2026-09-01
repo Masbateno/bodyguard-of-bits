@@ -305,6 +305,53 @@ def split_ss_address(raw: str) -> "tuple[str | None, str | None, str]":
     return None, None, ""
 
 
+# Substituted with the package name. Deliberately not a ``str.format`` field:
+# dpkg's own argument is ``-f=${Status}``, and formatting it would read
+# ``{Status}`` as a placeholder and raise.
+_PKG = "%PKG%"
+
+# Package managers BOB knows how to interrogate, in the order they are tried.
+#
+# ``marker`` is the substring proving the package is installed; ``None`` means
+# any output at all does (rpm, pacman and apk print the package on success and
+# nothing on stdout when it is missing). Every entry is a scripting interface:
+# `dpkg-query -W`, `rpm -q`, `pacman -Q` and `apk info -e` are all stable and
+# locale-independent, unlike their display counterparts.
+_PACKAGE_QUERIES: "tuple[tuple[str, tuple[str, ...], str | None], ...]" = (
+    ("dpkg-query", ("-W", "-f=${Status}", _PKG), "install ok installed"),
+    ("rpm",        ("-q", _PKG),                    None),   # RHEL, Fedora, openSUSE
+    ("pacman",     ("-Q", _PKG),                    None),   # Arch
+    ("apk",        ("info", "-e", _PKG),            None),   # Alpine
+)
+
+
+def package_installed(name: str) -> "str | None":
+    """Name of the package manager that reports *name* installed, else None.
+
+    ``dpkg-query`` alone meant every service read as NOT INSTALLED on any
+    distribution without dpkg — the whole RHEL family, Arch, openSUSE and
+    Alpine — with no error and no crash: the audit ran, printed a services
+    section, and reported every entry absent. Measured on a Fedora container
+    with httpd, vsftpd, memcached and mariadb-server installed and confirmed by
+    ``rpm -q``: BOB saw none of them.
+
+    Three checks asked this question with a private dpkg call each. One answer
+    now, for the same reason the UFW rule grammar and the ``ss`` address column
+    were unified — a rule kept in several copies is a rule that will disagree
+    with itself.
+    """
+    for tool, args, marker in _PACKAGE_QUERIES:
+        if not _command_exists(tool):
+            continue
+        output = _run(tool, *(a.replace(_PKG, name) for a in args))
+        if marker is None:
+            if output.strip():
+                return tool
+        elif marker in output:
+            return tool
+    return None
+
+
 def path_exists(path: "Path") -> bool:
     """Whether *path* exists, without raising when the answer is off-limits.
 
