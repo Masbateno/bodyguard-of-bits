@@ -104,6 +104,15 @@ class ContainerSecuritySnapshot:
             if snap.cap_bnd & (1 << bit)
         ]
         snap.seccomp = _parse_int(status.get("Seccomp", ""), default=-1)
+        # Collected but deliberately not turned into a finding yet. The nine
+        # findings this check emits are INFO-only by the v0.13.0 design, and a
+        # tenth for `no-new-privileges` would be a new key for a signal whose
+        # absence is the norm unless the operator opted in — small gain against
+        # a non-zero cost. It belongs with the wider "declared but never
+        # consumed" question (`config_key: "ask"` and the named config keys),
+        # which is queued for a design pass rather than piecemeal decisions.
+        # Kept, not removed: the value costs one dict lookup on a string
+        # already read, and discarding it would only mean re-deriving it later.
         snap.no_new_privs = status.get("NoNewPrivs", "0").strip() == "1"
         snap.is_root = _effective_uid_zero(status.get("Uid", ""))
         snap.userns = _has_user_namespace()
