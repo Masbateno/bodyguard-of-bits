@@ -104,7 +104,10 @@ class Detection:
     Extended detection hints for services not installable via dpkg alone.
 
     Args:
-        binary:       Absolute paths to check for binary installations.
+        binary:       Bare command names, resolved via $PATH, or absolute
+                      paths. The JSON schema is the reference for this
+                      field; the two disagreed until v0.15.3, and the
+                      code honoured neither.
         snap:         Snap package names to check via 'snap list'.
         config_files: Config file paths used to auto-detect the service port.
     """

@@ -9,6 +9,12 @@ bodyguard-of-bits (0.15.3-1) UNRELEASED; urgency=low
     bob/checks/ only. A ~/.config/bob that cannot be traversed made
     UserConfig._load raise before any check ran: exit 3, no report. Eight
     audit-path sites migrated; bob/_atomic.py deliberately exempt.
+  * The registry's binary field was documented as absolute paths, specified as
+    bare names via $PATH or absolute paths, and implemented as neither: a bare
+    name resolved against the working directory, so BOB run from a directory
+    holding a file called mongod reported MongoDB as installed. Two declared
+    config files were directories; openvpn's port is now read from its server
+    configs.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 01 Sep 2026 14:28:06 +0200
 

@@ -56,6 +56,39 @@ decision rather than an oversight — a test fails if one is left without one.
 The migration was not mechanical, which is why each site was read first: at
 `_atomic` the safe answer is the opposite of the one the other eight needed.
 
+### A verdict that depended on where you were standing
+
+The fifteen services installed by their own installer rather than a
+distribution repository — gitea, authelia, vaultwarden, ollama and the rest —
+had never had their declared paths confronted with a real installation. Two
+defects came out, and neither needed a container to find.
+
+**The registry's `binary` field was declared two ways and implemented a
+third.** `bob/registry.py` called it "absolute paths"; the JSON schema calls it
+"bare command names (resolved via $PATH) or absolute paths", and the registry
+uses both — `mongod` and `jenkins` are bare. The code honoured neither:
+`Path(x).is_file()` resolves a bare name against the *working directory*.
+
+So running BOB from a directory that happened to hold a file called `mongod`
+reported MongoDB — a critical-risk service — as installed, and the entire
+exposure analysis for port 27017 followed on a host that had none. Run from
+anywhere else, the same host said nothing. Measured both ways in a temporary
+directory. The schema is now the implemented contract, and the docstring says
+what the schema does.
+
+**Two declared config files were directories.** `/etc/openvpn` and
+`/usr/share/jenkins`. Reading one raises IsADirectoryError, which the caller
+swallows, so the entry was inert — and openvpn's port was never read from the
+server configs that live one level down. `/etc/openvpn/{,server/,client/}*.conf`
+now reads them: a config on 1195 resolves to 1195, verified. The jenkins
+directory is dropped; the file beside it was already right.
+
+What was verified rather than assumed: Jenkins still ships `/etc/default/jenkins`
+with `HTTP_PORT=8080` — read from the current package straight off the upstream
+repository — and BOB resolves it. Ollama was checked against its real
+installation on the development host: unit at the declared path, binary at the
+declared path, port 11434 resolved and genuinely listening.
+
 ### A test that did not bite
 
 The first draft of the new tests rebuilt the detection logic locally instead of
@@ -63,7 +96,7 @@ driving `from_system`. Reinjecting the defect into samba.py killed nothing —
 they were asserting their own copy. Rewritten to write an smb.conf and let the
 real parser read it, the same mutation now kills three of them.
 
-**Tests** 7560 → **7590**.
+**Tests** 7560 → **7600**.
 
 ---
 

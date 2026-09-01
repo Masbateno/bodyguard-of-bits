@@ -731,8 +731,7 @@
       ],
       "snap": [],
       "config_files": [
-        "/etc/default/jenkins",
-        "/usr/share/jenkins"
+        "/etc/default/jenkins"
       ]
     }
   },
@@ -756,7 +755,9 @@
       ],
       "snap": [],
       "config_files": [
-        "/etc/openvpn"
+        "/etc/openvpn/*.conf",
+        "/etc/openvpn/server/*.conf",
+        "/etc/openvpn/client/*.conf"
       ]
     }
   },

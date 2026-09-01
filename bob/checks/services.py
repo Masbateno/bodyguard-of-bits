@@ -30,6 +30,7 @@ from pathlib import Path
 from bob.checks import _ufw
 from bob.checks._run import (
     TranslationFunc,
+    _command_exists,
     _identity_t,
     _run,
     package_installed,
@@ -459,9 +460,20 @@ def _detect_installation(service: Service) -> tuple[bool, str]:
         if snap_pkg in output and "error" not in output.lower():
             return True, "snap"
 
-    # binary check
-    for binary_path in service.detection.binary:
-        if Path(binary_path).is_file():
+    # Binary check. The schema declares this field as "bare command names
+    # (resolved via $PATH) or absolute paths", and the registry uses both —
+    # `mongod` and `jenkins` are bare. `Path(x).is_file()` honoured neither:
+    # it resolved a bare name against the *working directory*, so running BOB
+    # from a directory that happened to hold a file called `mongod` reported
+    # MongoDB — a critical-risk service — as installed, and the whole exposure
+    # analysis for port 27017 followed on a host that had none. Run from
+    # anywhere else the same host said nothing. A verdict must not depend on
+    # where the operator stood when they typed the command.
+    for binary_ref in service.detection.binary:
+        if binary_ref.startswith("/"):
+            if Path(binary_ref).is_file():
+                return True, "binary"
+        elif _command_exists(binary_ref):
             return True, "binary"
 
     return False, ""

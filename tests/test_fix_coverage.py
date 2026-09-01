@@ -125,8 +125,8 @@ _HELPER_DISPATCH_SITES: dict[tuple[str, int], tuple[str, ...]] = {
     # NOTE: these are line numbers, so any edit above them in services.py
     # shifts them. v0.15.0 moved them twice: 368/374 -> 378/384 when
     # _classify_exposure was rewritten onto the shared UFW parser.
-    ("bob/checks/services.py", 387): ("services.exposed.<id>",),
-    ("bob/checks/services.py", 393): ("services.exposed.<id>",),
+    ("bob/checks/services.py", 388): ("services.exposed.<id>",),
+    ("bob/checks/services.py", 394): ("services.exposed.<id>",),
 }
 
 

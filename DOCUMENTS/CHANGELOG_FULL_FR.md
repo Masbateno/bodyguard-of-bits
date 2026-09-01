@@ -58,6 +58,41 @@ La migration n'était pas mécanique, ce qui est la raison pour laquelle chaque
 site a été lu d'abord : chez `_atomic`, la réponse sûre est l'inverse de celle
 qu'il fallait aux huit autres.
 
+### Un verdict qui dépendait de l'endroit où l'on se tenait
+
+Les quinze services installés par leur propre installeur plutôt que par un
+dépôt de distribution — gitea, authelia, vaultwarden, ollama et les autres —
+n'avaient jamais vu leurs chemins déclarés confrontés à une installation
+réelle. Deux défauts en sont sortis, dont aucun n'a demandé de conteneur.
+
+**Le champ `binary` du registre était déclaré de deux façons et implémenté
+d'une troisième.** `bob/registry.py` parlait de « chemins absolus » ; le schéma
+JSON dit « noms de commande nus (résolus via $PATH) ou chemins absolus », et le
+registre emploie les deux — `mongod` et `jenkins` sont nus. Le code n'honorait
+ni l'un ni l'autre : `Path(x).is_file()` résout un nom nu contre le *répertoire
+courant*.
+
+Lancer BOB depuis un répertoire contenant par hasard un fichier nommé `mongod`
+rapportait donc MongoDB — service classé critique — comme installé, et toute
+l'analyse d'exposition du port 27017 suivait sur une machine qui n'en avait
+pas. Lancé d'ailleurs, la même machine ne disait rien. Mesuré dans les deux
+sens depuis un répertoire temporaire. Le schéma est désormais le contrat
+implémenté, et la docstring dit ce que fait le schéma.
+
+**Deux fichiers de configuration déclarés étaient des répertoires.**
+`/etc/openvpn` et `/usr/share/jenkins`. En lire un lève IsADirectoryError, que
+l'appelant avale : l'entrée était donc inerte, et le port d'openvpn n'était
+jamais lu depuis les configurations serveur qui vivent un niveau plus bas.
+`/etc/openvpn/{,server/,client/}*.conf` les lit désormais : une configuration
+sur 1195 résout bien 1195, vérifié. Le répertoire jenkins est retiré ; le
+fichier à côté était déjà juste.
+
+Ce qui a été vérifié plutôt que supposé : Jenkins livre toujours
+`/etc/default/jenkins` avec `HTTP_PORT=8080` — lu depuis le paquet actuel, tiré
+directement du dépôt amont — et BOB le résout. Ollama a été confronté à son
+installation réelle sur la machine de développement : unité au chemin déclaré,
+binaire au chemin déclaré, port 11434 résolu et réellement en écoute.
+
 ### Un test qui ne mordait pas
 
 Le premier jet des nouveaux tests reconstruisait la logique de détection
@@ -65,7 +100,7 @@ localement au lieu de piloter `from_system`. Réinjecter le défaut dans samba.p
 ne tuait rien — ils validaient leur propre copie. Réécrits pour écrire un
 smb.conf et laisser le vrai parseur le lire, la même mutation en tue trois.
 
-**Tests** 7560 → **7590**.
+**Tests** 7560 → **7600**.
 
 ---
 
