@@ -113,6 +113,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   --ignore drops the deduction with the finding, profile downgrades too).
 - One `ss` address grammar: an IPv6 loopback peer is no longer reported as an
   external connection on a sensitive port.
+- Service port detection: `listen 127.0.0.1:8080` was audited as port 127.
+  Twenty services across seven config formats now read correctly.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

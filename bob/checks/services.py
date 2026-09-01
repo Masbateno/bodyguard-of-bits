@@ -554,20 +554,59 @@ def _auto_detect_port(service: Service) -> str | None:
                 pass
             continue  # Don't fall through to regex on JSON files
 
+        # XML config (Jellyfin network.xml uses <PublicPort>8096</PublicPort>)
+        if path.suffix == ".xml":
+            xml_match = re.search(r"<(\w*Port\w*)>\s*(\d+)\s*</\1>", content,
+                                  re.IGNORECASE)
+            if xml_match:
+                number = _port_from_directive(xml_match.group(2))
+                if number:
+                    proto = service.ports[0].split("/")[-1] if service.ports else "tcp"
+                    return f"{number}/{proto}"
+            continue  # an XML file has no directives the regex below understands
+
+        # Caddyfile: the site address opens the block and carries no keyword —
+        # `:8443 {`, `example.com:8443 {`, `https://example.com {`.
+        if path.name.lower() == "caddyfile":
+            caddy_match = re.search(r"^\s*\S*:(\d+)\s*\{", content, re.MULTILINE)
+            if caddy_match:
+                number = _port_from_directive(caddy_match.group(1))
+                if number:
+                    proto = service.ports[0].split("/")[-1] if service.ports else "tcp"
+                    return f"{number}/{proto}"
+            continue
+
         # Strip comment lines before searching to avoid matching
         # commented-out directives like "# port = 2121"
         content_clean = re.sub(r"^\s*#.*$", "", content, flags=re.MULTILINE)
 
-        # Generic patterns — specific services may need custom parsing
-        # Port = 8080 / port=8080 / listen 8080 / HTTP_PORT = 3000
-        # listen_port=21 (vsftpd)
-        match = re.search(
-            r"(?:^|\s)(?:listen_port|port|listen|HTTP_PORT|http_port)(?:\s*[=:]\s*|\s+)(\d+)",
+        # Generic patterns — specific services may need custom parsing.
+        # The value is captured whole and parsed by `_port_from_directive`,
+        # because a directive's argument is very often an *address* and not a
+        # bare number: `listen 127.0.0.1:8080;` is the ordinary way to bind
+        # nginx to one interface.
+        # Every match, not just the first: a directive whose argument is not a
+        # port is common and must not end the search. vsftpd.conf opens with
+        # `listen=YES` and carries `listen_port=2121` three lines down — taking
+        # only the first match and giving up on it loses the real port.
+        for match in re.finditer(
+            # An optional dotted prefix covers the properties/YAML style used
+            # by Elasticsearch (`http.port: 9200`) and its neighbours. The
+            # leading `(?:^|\s)` still means `passport` cannot match, since the
+            # prefix must end in a dot.
+            # `-p 11211` is memcached's flag-file style.
+            # `(?:[\w.]+[._])?port` covers the whole family in one rule:
+            # `port`, `listen_port`, `http.port`, `server_port`, `HTTP_PORT`,
+            # `JENKINS_PORT`, `ROCKET_PORT`. The separator is required, so
+            # `passport` still cannot match. `listener` is mosquitto's.
+            r"(?:^|\s)(?:-p\s+(\d+)|(?:[\w.]+[._])?(?:port|listen|listener)"
+            r"(?:\s*[=:]\s*|\s+)(\S+))",
             content_clean,
             re.IGNORECASE | re.MULTILINE,
-        )
-        if match:
-            port_num = match.group(1)
+        ):
+            port_num = _port_from_directive(match.group(1) or match.group(2) or "")
+            if port_num is None:
+                continue
             # Determine proto from registry default
             proto = "tcp"
             if service.ports:
@@ -575,6 +614,41 @@ def _auto_detect_port(service: Service) -> str | None:
             return f"{port_num}/{proto}"
 
     return None
+
+def _port_from_directive(value: str) -> "str | None":
+    """Extract the listening port from a config directive's argument.
+
+    The argument is frequently an address rather than a bare number, and the
+    previous reader took the first digits it met:
+
+        listen 127.0.0.1:8080;     -> port 127
+        listen 192.168.1.10:8443;  -> port 192
+        listen [::]:443 ssl;       -> no match at all, silent fallback to the
+                                      registry default
+
+    which is the v0.15.0 UFW defect in another module — an address read where
+    a port was expected — and it hits the commonest production form, binding a
+    service to one interface. Everything after the last colon is the port; the
+    brackets of an IPv6 literal never contain one.
+
+    ``port 0`` is not a port. Redis and others use it to mean "do not listen on
+    TCP at all", which is a *hardened* configuration, and reporting `0/tcp`
+    invented a socket that cannot exist. Returns None so the caller keeps
+    looking rather than asserting a nonsense port.
+    """
+    token = value.strip().rstrip(";,").strip("\"'")
+    if not token:
+        return None
+    # Trailing directive words (`ssl`, `http2`, `default_server`) are already
+    # excluded: the regex captures one whitespace-free token.
+    candidate = token.rsplit(":", 1)[-1] if ":" in token else token
+    if not candidate.isdigit():
+        return None
+    number = int(candidate)
+    if not 1 <= number <= 65535:
+        return None
+    return str(number)
+
 
 def _classify_exposure(
     port: str,

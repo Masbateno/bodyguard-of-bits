@@ -292,6 +292,56 @@ l'arbre, ce qui signalait un voisin honnête : `docker.py` parse des mappings de
 ports `[::]:8080->80/tcp`, un format différent qui a légitimement sa propre
 grammaire.
 
+### Vingt services qu'aucune machine n'a installés
+
+Seuls 8 des 38 services du registre existent sur la machine de développement :
+les lecteurs de configuration des 30 autres n'avaient jamais tourné. Il n'est
+pas nécessaire de les installer : `_auto_detect_port` lit des *fichiers*, donc
+une copie de `/etc` montée en namespace exerce tout le chemin — ce qui répond
+aussi à « installe-les et regarde », puisque 23 démons réseau sur un poste de
+travail ouvrent de vrais ports et dégradent la posture de la machine qu'un
+outil de durcissement est censé protéger.
+
+Les trois premiers sondés ont produit deux défauts, de forme familière. Le
+lecteur prenait les premiers chiffres suivant un mot-clé, or l'argument d'une
+directive est très souvent une adresse :
+
+| Directive nginx | Port audité par BOB |
+|---|---|
+| `listen 8080;` | 8080 |
+| `listen 127.0.0.1:8080;` | **127** |
+| `listen 192.168.1.10:8443 ssl;` | **192** |
+| `listen [::]:443 ssl;` | **aucun** — repli silencieux sur le défaut du registre |
+
+`listen <adresse>:<port>` est la forme de production ordinaire. C'est le défaut
+UFW de v0.15.0 — `80/tcp ALLOW IN 192.168.1.22` couvrant les ports 1, 22, 168 et
+192 — dans un troisième module, après la colonne d'adresse `ss` plus tôt dans
+cette version. Une adresse lue là où on attendait un port, trois fois dans un
+seul cycle.
+
+Redis a fourni l'autre moitié du motif : `port 0` signifie « ne pas écouter en
+TCP du tout », un réglage *durci*, et BOB annonçait `0/tcp` — un socket qui ne
+peut pas exister. Plus l'opérateur est soigneux, plus la lecture est fausse :
+la signature même sur laquelle v0.15.0 s'était ouverte.
+
+Le balayage des services restants a ensuite révélé six formats que le lecteur
+ignorait : le `http.port` pointé d'Elasticsearch, le `-p 11212` de memcached, le
+`listener` de mosquitto, l'élément XML `<PublicPort>` de Jellyfin, l'adresse de
+site sans mot-clé de Caddy, et le style `<NOM>_PORT` des fichiers
+d'environnement de Jenkins, Vaultwarden et Home Assistant. Quatre se réduisent
+à une règle — `(?:[\w.]+[._])?port` — dont le séparateur obligatoire empêche
+`passport` de matcher ; XML et Caddyfile ont chacun une branche.
+
+Une régression a été introduite et rattrapée par le balayage lui-même. Capturer
+l'argument entier plutôt que des chiffres nus faisait matcher `listen=YES` en
+tête de `vsftpd.conf`, et le lecteur abandonnait le fichier au lieu de
+poursuivre jusqu'à `listen_port=2121` trois lignes plus bas. Il parcourt
+désormais toutes les correspondances et garde la première qui est vraiment un
+port.
+
+Vingt services couvrant sept familles de format sont désormais lus
+correctement, chacun figé par un test portant sa forme de configuration amont.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -391,7 +441,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7420**.
+**Tests** 7288 → **7461**.
 
 ---
 

@@ -41,6 +41,11 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     and network_context with different behaviour, so every IPv6 peer failed
     the private-address test and a local PostgreSQL connection over [::1] was
     flagged as a remote exposure with a deduction. One grammar now, guarded.
+  * Service port detection read an address where a port was expected:
+    `listen 127.0.0.1:8080;` was audited as port 127, `listen [::]:443` as
+    nothing, and Redis's `port 0` (TCP disabled) as 0/tcp. Six further config
+    formats were unknown to the reader. 20 services across seven format
+    families are now covered by tests; none needed installing.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

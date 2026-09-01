@@ -278,6 +278,53 @@ regexes tree-wide, which flagged an honest neighbour: `docker.py` parses
 `[::]:8080->80/tcp` port mappings, a different format that legitimately has its
 own grammar.
 
+### Twenty services no machine has installed
+
+Only 8 of the registry's 38 services exist on the development host, so the
+config readers for the other 30 had never run. They do not need installing:
+`_auto_detect_port` reads *files*, so a `/etc` copy bind-mounted in a namespace
+exercises the whole path — which is also the right answer to "install them and
+look", since 23 network daemons on a workstation open real ports and degrade
+the posture of the machine a hardening tool is meant to protect.
+
+The first three probed produced two defects, and the shape was familiar. The
+reader took the first digits after a directive keyword, and a directive's
+argument is very often an address:
+
+| nginx directive | port BOB audited |
+|---|---|
+| `listen 8080;` | 8080 |
+| `listen 127.0.0.1:8080;` | **127** |
+| `listen 192.168.1.10:8443 ssl;` | **192** |
+| `listen [::]:443 ssl;` | **none** — silent fallback to the registry default |
+
+`listen <address>:<port>` is the ordinary production form. This is the v0.15.0
+UFW defect — `80/tcp ALLOW IN 192.168.1.22` covering ports 1, 22, 168 and 192 —
+in a third module, after the `ss` address column earlier in this release. An
+address read where a port was expected, three times in one cycle.
+
+Redis contributed the other half of the pattern: `port 0` means "do not listen
+on TCP at all", a *hardened* setting, and BOB reported `0/tcp` — a socket that
+cannot exist. The more careful the operator, the worse the reading, which is
+the signature v0.15.0 opened on.
+
+Sweeping the remaining services then found six more formats the reader did not
+know: Elasticsearch's dotted `http.port`, memcached's `-p 11212`, mosquitto's
+`listener`, Jellyfin's `<PublicPort>` XML element, Caddy's keyword-less site
+address, and the `<NAME>_PORT` environment-file style of Jenkins, Vaultwarden
+and Home Assistant. Four collapse into one rule — `(?:[\w.]+[._])?port` — whose
+required separator keeps `passport` from matching; XML and Caddyfile get a
+branch each.
+
+One regression was introduced and caught by the sweep itself. Capturing the
+whole argument instead of bare digits made `listen=YES` in `vsftpd.conf` match
+first, and the reader gave up on the file rather than continuing to
+`listen_port=2121` three lines below. It now walks every match and keeps the
+first that is actually a port.
+
+Twenty services across seven format families now read correctly, each pinned by
+a test carrying its upstream config shape.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -370,7 +417,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7420**.
+**Tests** 7288 → **7461**.
 
 ---
 
