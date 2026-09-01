@@ -565,6 +565,29 @@ days left. The file-count and file-size caps that keep the scan from walking a
 large tree are unchanged, and directories are no longer handed to `read_text`
 now that the glob can match them.
 
+### The release the tests refused
+
+The push was rejected by BOB's own gate, and PyPI never saw the version. One
+test failed on the runner and had passed seventeen consecutive local runs.
+
+`test_the_parse_matches_ss_line_for_line` is the v0.15.0 differential check
+that reads live `ss` output and verifies each parsed connection against its
+column. It rebuilds `address:port` and compares — and the address grammar
+unified earlier in this release strips the brackets from an IPv6 literal, which
+is exactly what let `[::1]` be recognised as loopback. The naive reconstruction
+no longer matched.
+
+The interesting part is why it took a push to surface. Whether that test
+exercises the IPv6 branch at all depends on the machine happening to hold an
+IPv6 connection while the suite runs. The CI runner had one; the development
+host did not. A test that reads the live system covers what the live system
+happens to contain, which is not a property anyone chooses.
+
+The reconstruction is now bracket-aware, and the IPv6 column form has
+deterministic cover that runs everywhere — mutation-tested with the bytecode
+cache cleared: putting the brackets back kills five tests, two of them the new
+ones.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -657,7 +680,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7557**.
+**Tests** 7288 → **7560**.
 
 ---
 

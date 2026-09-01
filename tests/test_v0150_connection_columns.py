@@ -85,6 +85,48 @@ class TestWithoutAProcessColumn:
         assert c[0].process == ""
 
 
+def _as_ss_column(addr: str, port: int) -> str:
+    """Rebuild the `address:port` form `ss` prints.
+
+    v0.15.2 strips the brackets from an IPv6 literal: keeping them made every
+    IPv6 peer fail `_is_private_or_loopback`, `[::1]` included, so a local
+    PostgreSQL connection over loopback was reported as an external exposure.
+    Comparing a parsed address against the raw column therefore has to put the
+    brackets back.
+    """
+    return f"[{addr}]:{port}" if ":" in addr else f"{addr}:{port}"
+
+
+class TestTheIPv6ColumnForm:
+    """Deterministic cover for the shape the live test only meets by luck.
+
+    `ss` brackets an IPv6 literal. Whether the live check below exercises that
+    at all depends on the machine happening to hold an IPv6 connection while
+    the suite runs — it did on CI and not on the development host, which is how
+    a change to the address grammar passed seventeen local runs and failed on
+    push.
+    """
+
+    def test_a_mapped_ipv4_address_keeps_its_column_alignment(self):
+        body = ("0 0 [::ffff:10.1.0.153]:53284 [::ffff:93.184.216.34]:443\n")
+        parsed = _parse_connections(body)
+        assert len(parsed) == 1
+        conn = parsed[0]
+        assert conn.local_port == 53284
+        assert conn.remote_port == 443
+        assert _as_ss_column(conn.local_addr, conn.local_port) == "[::ffff:10.1.0.153]:53284"
+        assert _as_ss_column(conn.remote_addr, conn.remote_port) == "[::ffff:93.184.216.34]:443"
+
+    def test_the_brackets_are_not_part_of_the_address(self):
+        parsed = _parse_connections("0 0 [::1]:52344 [::1]:5432\n")
+        assert parsed[0].remote_addr == "::1"
+
+    def test_an_ipv4_column_is_unchanged(self):
+        parsed = _parse_connections("0 0 10.0.0.1:1234 93.184.216.34:443\n")
+        conn = parsed[0]
+        assert _as_ss_column(conn.local_addr, conn.local_port) == "10.0.0.1:1234"
+
+
 class TestAgainstTheLiveCommand:
     @pytest.mark.skipif(
         subprocess.run(["which", "ss"], capture_output=True).returncode != 0,
@@ -99,8 +141,8 @@ class TestAgainstTheLiveCommand:
             f"ss printed {len(rows)} connections, the parser produced {len(parsed)}"
         for conn, line in zip(parsed, rows):
             cols = line.split()
-            assert f"{conn.local_addr}:{conn.local_port}" == cols[2]
-            assert f"{conn.remote_addr}:{conn.remote_port}" == cols[3]
+            assert _as_ss_column(conn.local_addr, conn.local_port) == cols[2]
+            assert _as_ss_column(conn.remote_addr, conn.remote_port) == cols[3]
 
 
 class TestTheSensitivePortFindingCanFire:

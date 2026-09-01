@@ -593,6 +593,29 @@ taille de fichiers qui empêchent le balayage de parcourir un grand arbre sont
 inchangés, et les répertoires ne sont plus passés à `read_text` maintenant que
 le glob peut les apparier.
 
+### La publication que les tests ont refusée
+
+Le push a été rejeté par le garde de BOB lui-même, et PyPI n'a jamais vu la
+version. Un test a échoué sur le runner après dix-sept passages verts en local.
+
+`test_the_parse_matches_ss_line_for_line` est le contrôle différentiel de
+v0.15.0 : il lit la sortie live de `ss` et vérifie chaque connexion analysée
+contre sa colonne. Il reconstruit `adresse:port` et compare — or la grammaire
+d'adresse unifiée plus tôt dans cette version retire les crochets d'un littéral
+IPv6, ce qui est précisément ce qui permet à `[::1]` d'être reconnu comme
+loopback. La reconstruction naïve ne correspondait plus.
+
+Le point intéressant est pourquoi il a fallu un push pour le voir. Que ce test
+exerce ou non la branche IPv6 dépend de la présence d'une connexion IPv6 sur la
+machine au moment où la suite tourne. Le runner CI en avait une, la machine de
+développement non. Un test qui lit le système vivant couvre ce que le système
+vivant contient par hasard, ce qui n'est pas une propriété qu'on choisit.
+
+La reconstruction tient compte des crochets, et la forme de colonne IPv6 a
+désormais une couverture déterministe qui tourne partout — testée par mutation,
+cache de bytecode vidé : remettre les crochets tue cinq tests, dont les deux
+nouveaux.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -692,7 +715,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7557**.
+**Tests** 7288 → **7560**.
 
 ---
 
