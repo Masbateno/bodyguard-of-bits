@@ -108,6 +108,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   New path_exists() across all check call sites.
 - An unwritable log directory no longer aborts the audit: the report degrades
   to a warning, the findings are still rendered.
+- A non-UTF-8 config.conf no longer aborts the audit; it loads as empty.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

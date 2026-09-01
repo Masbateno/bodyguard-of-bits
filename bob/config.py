@@ -141,7 +141,9 @@ class EmailStore:
                     addr = line.strip()
                     if addr and addr not in self._emails:
                         self._emails.append(addr)
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
+            # Same reasoning as UserConfig._load: a corrupt file must not be
+            # worse than an absent one.
             logger.warning("Could not read emails file %s: %s", self._path, exc)
 
     def _save(self) -> None:
@@ -401,8 +403,17 @@ class UserConfig:
                     value = value.strip()
                     if key:
                         self._data[key] = value
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
+            # A file that is not valid UTF-8 is the extreme case of the
+            # "malformed lines" this loader already promises to ignore, and it
+            # was the one case it did not: UnicodeDecodeError is a ValueError,
+            # so it slipped past `except OSError` and reached the top-level
+            # handler as "Fatal error: 'utf-8' codec can't decode byte 0xfa" —
+            # no audit, no findings, and no mention of which file was at fault.
+            # A corrupt config is treated like an absent one, which is what the
+            # rest of this method already does for every other kind of damage.
             logger.warning("Could not read config file %s: %s", self._path, exc)
+            self._data.clear()
 
     def _save(self) -> None:
         """

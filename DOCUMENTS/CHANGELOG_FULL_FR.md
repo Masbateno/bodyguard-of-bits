@@ -197,6 +197,31 @@ la raison.
 
 Présent sur le tag v0.15.1, comme le piège `exists()`.
 
+### Les fichiers d'état que BOB relit
+
+Cinq fichiers sont écrits par BOB puis relus au run suivant — `config.conf`,
+`history.jsonl`, `ignore.yml`, `recurrence.json` et la baseline de comparaison
+— et tous les cinq sont des fichiers ordinaires qu'un opérateur ou une écriture
+interrompue peut corrompre. Chacun a reçu du binaire, un document tronqué, une
+forme JSON fausse, trois mille niveaux d'imbrication et une ligne unique d'un
+demi-mégaoctet : vingt combinaisons, dont dix-neuf dégradent proprement, audit
+complet, aucune trace.
+
+`config.conf` contenant des octets non-UTF-8 était la vingtième. Il
+interrompait tout sur `Fatal error: 'utf-8' codec can't decode byte 0xfa in
+position 0` — aucun audit, aucun finding, et sans même nommer le fichier
+fautif. `UserConfig._load` documente pourtant qu'il « ignore silencieusement
+les fichiers absents et les lignes malformées », et un fichier qui n'est pas de
+l'UTF-8 valide est le cas extrême d'une ligne malformée ; c'était simplement le
+seul type de dégât que le garde manquait, parce que `UnicodeDecodeError` est un
+`ValueError` et que la clause nommait `OSError`. Une config corrompue est
+désormais traitée comme une config absente, et les réglages à moitié lus avant
+l'octet fautif sont jetés plutôt que conservés. `EmailStore` portait la même
+lacune, atteinte seulement par `--email`, et est corrigé avec lui.
+
+Les fichiers de plugin sous `services.d/` ont été vérifiés dans la même passe
+et dégradent déjà d'eux-mêmes.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -281,6 +306,7 @@ signalait toute cellule CSV vide comme une formule.
 - La sonde sshd_config sépare absent / illisible / lisible.
 - `audit.report_unavailable` : un rapport impossible à ouvrir dégrade vers le
   rapport nul au lieu d'interrompre l'audit.
+- `UserConfig._load` et `EmailStore._load` attrapent `UnicodeDecodeError`.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — cinq nouvelles clés, dans les deux locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -295,7 +321,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7373**.
+**Tests** 7288 → **7377**.
 
 ---
 

@@ -765,3 +765,43 @@ class TestReportOpenFailureDoesNotLoseTheAudit:
             )
             text = data["audit"]["report_unavailable"]
             assert "{path}" in text and "{error}" in text
+
+
+class TestCorruptConfigIsNotWorseThanAbsent:
+    """`UnicodeDecodeError` is a ValueError, so it slipped past `except OSError`.
+
+    `UserConfig._load` documents that it "silently ignores missing files and
+    malformed lines", and a file that is not valid UTF-8 is the extreme case of
+    a malformed one. It was the single case that was not ignored: the exception
+    reached the top-level handler as "Fatal error: 'utf-8' codec can't decode
+    byte 0xfa", losing the whole audit and not even naming the file. Of the
+    five state files BOB reads back, config.conf was the only one that did not
+    degrade.
+    """
+
+    def test_non_utf8_config_loads_as_empty(self, tmp_path):
+        from bob.config import UserConfig
+        target = tmp_path / "config.conf"
+        target.write_bytes(b"\xfa\xfb\xfc\x00binary junk\n")
+        config = UserConfig.load(path=target)
+        assert config.get("anything") is None
+
+    def test_a_valid_config_still_loads(self, tmp_path):
+        from bob.config import UserConfig
+        target = tmp_path / "config.conf"
+        target.write_text("ssh_port=2222\n", encoding="utf-8")
+        assert UserConfig.load(path=target).get("ssh_port") == "2222"
+
+    def test_partial_corruption_does_not_keep_half_a_config(self, tmp_path):
+        """An entry read before the bad byte must not survive as settings."""
+        from bob.config import UserConfig
+        target = tmp_path / "config.conf"
+        target.write_bytes(b"ssh_port=2222\nlang=" + b"\xfa\xfb" + b"\n")
+        config = UserConfig.load(path=target)
+        assert config.get("ssh_port") is None
+
+    def test_emails_file_degrades_too(self, tmp_path):
+        from bob.config import EmailStore
+        target = tmp_path / "emails"
+        target.write_bytes(b"\xfa\xfb\xfc\n")
+        assert EmailStore.load(path=target).all() == []

@@ -188,6 +188,29 @@ directory and the reason.
 
 Present on the v0.15.1 tag, like the `exists()` trap.
 
+### The state files BOB reads back
+
+Five files are written by BOB and read again on the next run — `config.conf`,
+`history.jsonl`, `ignore.yml`, `recurrence.json` and the comparison baseline —
+and all five are ordinary files an operator or a failed write can corrupt.
+Each was fed binary junk, a truncated document, the wrong JSON shape, three
+thousand levels of nesting and a half-megabyte single line: twenty
+combinations, of which nineteen degraded cleanly, full audit, no traceback.
+
+`config.conf` holding non-UTF-8 bytes was the twentieth. It aborted with
+`Fatal error: 'utf-8' codec can't decode byte 0xfa in position 0` — no audit,
+no findings, and no mention of which file was at fault. `UserConfig._load`
+already documents that it "silently ignores missing files and malformed
+lines", and a file that is not valid UTF-8 is the extreme case of a malformed
+one; it was simply the only kind of damage the guard missed, because
+`UnicodeDecodeError` is a `ValueError` and the except clause named `OSError`.
+A corrupt config is now treated like an absent one, and the half-parsed
+settings read before the bad byte are discarded rather than kept. `EmailStore`
+carried the same gap, reached only by `--email`, and is fixed with it.
+
+Plugin files under `services.d/` were checked in the same pass and already
+degrade on their own.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -266,6 +289,7 @@ discriminated nothing, and `"" in "=+-@"` — which is `True` in Python, flaggin
 - The sshd_config probe separates absent / unreadable / readable.
 - `audit.report_unavailable`: an unopenable report degrades to the null report
   instead of aborting the audit.
+- `UserConfig._load` and `EmailStore._load` catch `UnicodeDecodeError`.
 - `ports.unreadable`, `ipv6.listeners_unknown`, `network_context.connections_unknown`,
   `exposure.open_ports_unknown`, `systemd_timers.unreadable` — five new finding/display keys, both locales.
 - `PortsSnapshot.ports_readable`, `IPv6Snapshot.listeners_readable`,
@@ -279,7 +303,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7373**.
+**Tests** 7288 → **7377**.
 
 ---
 
