@@ -93,6 +93,30 @@ directement du dépôt amont — et BOB le résout. Ollama a été confronté à
 installation réelle sur la machine de développement : unité au chemin déclaré,
 binaire au chemin déclaré, port 11434 résolu et réellement en écoute.
 
+### stderr était capturé puis jeté
+
+`subprocess.run(capture_output=True)` remplit `proc.stderr` ; `run_result` le
+jetait. Le garder ne coûte rien — la donnée était déjà là — et cela tranche un
+cas mesuré où stdout et le code de retour ont tous deux l'air ordinaire.
+
+`auditctl -l` signale un sous-système d'audit désactivé sur stderr tout en
+sortant en 0 avec un stdout vide. C'est indiscernable d'un système d'audit
+joignable ne portant aucune règle, et c'est ainsi que BOB le nommait :
+`auditd.rules_unreadable`, « les règles n'ont pas pu être listées ». L'énoncé
+honnête est que l'opérateur a coupé l'audit — un réglage, pas une lacune de ce
+que BOB a pu voir. Les deux ont désormais des findings distincts, et seul le
+second est une lacune.
+
+Les autres refus restent inchangés : leur stdout les trahit déjà. iptables,
+nft, aa-status et fail2ban-client impriment tous leur explication sur stderr
+*et* laissent une signature sur stdout ou le code de retour que les versions
+précédentes lisaient déjà.
+
+stderr reste du texte de sous-processus non fiable. Il est confronté à un
+marqueur connu, jamais rendu : un test fait passer un chemin par le canal
+stderr et échoue s'il atteint le message, le détail ou la clé d'un finding, et
+un autre vérifie que le snapshot conserve un drapeau et non le texte.
+
 ### Un test qui ne mordait pas
 
 Le premier jet des nouveaux tests reconstruisait la logique de détection
@@ -100,7 +124,7 @@ localement au lieu de piloter `from_system`. Réinjecter le défaut dans samba.p
 ne tuait rien — ils validaient leur propre copie. Réécrits pour écrire un
 smb.conf et laisser le vrai parseur le lire, la même mutation en tue trois.
 
-**Tests** 7560 → **7600**.
+**Tests** 7560 → **7615**.
 
 ---
 

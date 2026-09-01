@@ -89,6 +89,29 @@ repository — and BOB resolves it. Ollama was checked against its real
 installation on the development host: unit at the declared path, binary at the
 declared path, port 11434 resolved and genuinely listening.
 
+### stderr was captured and thrown away
+
+`subprocess.run(capture_output=True)` fills `proc.stderr`; `run_result` dropped
+it. Keeping it costs nothing — the data was already there — and it settles one
+measured case where stdout and the exit status both look ordinary.
+
+`auditctl -l` reports a switched-off audit subsystem on stderr while exiting 0
+with an empty stdout. That is indistinguishable from a reachable audit system
+holding no rules, which is what BOB was calling it: `auditd.rules_unreadable`,
+"the rules could not be listed". The honest statement is that the operator
+turned auditing off — a setting, not a gap in what BOB could see. The two now
+have separate findings, and only the second is a gap.
+
+The other refusals stay as they were, because their stdout already gives them
+away: iptables, nft, aa-status and fail2ban-client all print their explanation
+on stderr *and* leave a signature on stdout or the exit status that earlier
+releases already read.
+
+stderr stays untrusted subprocess text. It is matched against a known marker
+and never rendered: a test feeds a path through the stderr channel and fails if
+it reaches any finding's message, detail or key, and another asserts the
+snapshot keeps a flag rather than the text.
+
 ### A test that did not bite
 
 The first draft of the new tests rebuilt the detection logic locally instead of
@@ -96,7 +119,7 @@ driving `from_system`. Reinjecting the defect into samba.py killed nothing —
 they were asserting their own copy. Rewritten to write an smb.conf and let the
 real parser read it, the same mutation now kills three of them.
 
-**Tests** 7560 → **7600**.
+**Tests** 7560 → **7615**.
 
 ---
 

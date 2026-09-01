@@ -15,6 +15,10 @@ bodyguard-of-bits (0.15.3-1) UNRELEASED; urgency=low
     holding a file called mongod reported MongoDB as installed. Two declared
     config files were directories; openvpn's port is now read from its server
     configs.
+  * stderr was captured by subprocess.run and dropped by run_result. auditctl
+    reports a switched-off audit subsystem there while exiting 0 with an empty
+    stdout, so "rules unreadable" was reported where "auditing is off" was the
+    truth. stderr is matched against a known marker, never rendered.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 01 Sep 2026 14:28:06 +0200
 

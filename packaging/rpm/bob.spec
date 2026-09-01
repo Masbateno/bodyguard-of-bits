@@ -102,6 +102,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   unreadable ~/.config/bob ended the audit before any check ran.
 - A bare binary name in the registry resolved against the working directory,
   so BOB run beside a file called mongod reported MongoDB as installed.
+- auditctl reports a disabled audit subsystem on stderr while exiting 0: BOB
+  said "rules unreadable" where "auditing is switched off" was the truth.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.2-1
 - A command that could not run no longer reads as "nothing found": new

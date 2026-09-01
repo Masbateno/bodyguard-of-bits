@@ -2812,6 +2812,8 @@
     "exposed_restart_postfix": "Puis redémarrer Postfix : sudo systemctl restart postfix"
   },
   "auditd": {
+    "subsystem_disabled": "Le sous-syst\u00e8me d'audit du noyau est d\u00e9sactiv\u00e9",
+    "subsystem_disabled_detail": "`auditctl -l` signale le syst\u00e8me d'audit comme d\u00e9sactiv\u00e9 : auditd tourne, mais le noyau n'enregistre rien. C'est un r\u00e9glage, pas une lacune de l'audit — BOB le lit comme \u00e9teint et non comme des r\u00e8gles qu'il n'aurait pas pu lister. R\u00e9activer avec : sudo auditctl -e 1",
     "not_installed": "Linux Audit Framework (auditd) n'est pas installé",
     "not_installed_detail": "auditd enregistre les appels système et les accès aux fichiers dans un journal infalsifiable. Sans lui, les tentatives d'escalade de privilèges, les accès aux fichiers de credentials et les abus de sudo ne sont pas tracés. Installez auditd et configurez des règles de surveillance sur les fichiers sensibles.",
     "service_inactive": "auditd est installé mais le service ne fonctionne pas",

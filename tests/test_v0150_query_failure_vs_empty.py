@@ -76,10 +76,19 @@ class TestAuditd:
         ("-w /etc/passwd -p wa -k identity\n", True),
     ])
     def test_the_readability_signal(self, output, expected, monkeypatch):
+        """v0.15.3 moved the rules query to `run_result`, to read stderr.
+
+        The seam moved with it: `auditctl` reports a switched-off subsystem
+        there while exiting 0 with an empty stdout, and that is a different
+        answer from a refused query.
+        """
         import bob.checks.auditd as m
+        from bob.checks._run import CommandResult
         monkeypatch.setattr(m, "_command_exists", lambda n: True)
         monkeypatch.setattr(m, "unit_active_state", lambda n: "active")
-        monkeypatch.setattr(m, "_run", lambda *a, **k: output)
+        monkeypatch.setattr(m, "_run", lambda *a, **k: "")
+        monkeypatch.setattr(m, "run_result",
+                            lambda *a, **k: CommandResult(output, True, ""))
         assert AuditdSnapshot.from_system().rules_readable is expected
 
 

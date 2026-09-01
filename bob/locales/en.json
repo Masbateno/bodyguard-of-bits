@@ -2812,6 +2812,8 @@
     "exposed_restart_postfix": "Then restart Postfix: sudo systemctl restart postfix"
   },
   "auditd": {
+    "subsystem_disabled": "The kernel audit subsystem is switched off",
+    "subsystem_disabled_detail": "`auditctl -l` reports the audit system as disabled, so auditd is running but the kernel is recording nothing. This is a setting, not a gap in the audit: BOB reads it as switched off rather than as rules it could not list. Re-enable with: sudo auditctl -e 1",
     "not_installed": "Linux Audit Framework (auditd) is not installed",
     "not_installed_detail": "auditd records system calls and file access events to a tamper-evident log. Without it, privilege escalation attempts, credential file access, and sudo abuse go completely unlogged. Install auditd and configure watch rules on sensitive files.",
     "service_inactive": "auditd is installed but the service is not running",

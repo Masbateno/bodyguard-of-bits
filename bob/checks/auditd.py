@@ -24,7 +24,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Set
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, unit_active_state
+from bob.checks._run import (
+    TranslationFunc,
+    _command_exists,
+    _identity_t,
+    _run,
+    run_result,
+    unit_active_state,
+)
 from bob.scoring import CheckResult
 
 # Files we consider essential to watch
@@ -33,6 +40,11 @@ _SENSITIVE_FILES = frozenset({
     "/etc/shadow",
     "/etc/sudoers",
 })
+
+
+# auditctl's own wording for a subsystem that is switched off. Matched rather
+# than rendered: stderr is untrusted subprocess text like any other.
+_AUDIT_DISABLED_RE = re.compile(r"audit system is disabled", re.IGNORECASE)
 
 
 @dataclass
@@ -46,6 +58,9 @@ class AuditdSnapshot:
         watched_files:    Set of file paths covered by -w watch rules.
         rule_count:       Total number of audit rules loaded.
         rules_readable:   False when `auditctl -l` could not be queried.
+        audit_disabled:   True when auditctl says the subsystem is switched
+                          off. Distinct from unreadable: the operator's own
+                          choice, not a gap in what BOB could see.
     """
     installed:      bool        = False
     service_active: bool        = False
@@ -54,6 +69,7 @@ class AuditdSnapshot:
     # False when `auditctl -l` produced nothing at all, which means the
     # query failed rather than that the rule set is empty.
     rules_readable: bool        = True
+    audit_disabled: bool        = False
 
     @classmethod
     def from_system(cls) -> "AuditdSnapshot":
@@ -87,8 +103,15 @@ class AuditdSnapshot:
         # stdout while auditd is running. `_run` discards the exit code, so
         # before v0.15.0 that was indistinguishable from a configured-but-empty
         # rule set and cost the host a point for rules BOB never saw.
-        rules_out = _run("auditctl", "-l") or ""
-        snap.rules_readable = bool(rules_out.strip())
+        # `auditctl` reports a switched-off audit subsystem on stderr while
+        # exiting 0 with an empty stdout, so stdout and the exit status both
+        # look like a reachable system holding no rules. Only stderr separates
+        # "the operator turned auditing off" from "BOB was refused" — a real
+        # distinction, and the first one is not a gap in the audit at all.
+        rules = run_result("auditctl", "-l")
+        rules_out = rules.stdout or ""
+        snap.audit_disabled = _AUDIT_DISABLED_RE.search(rules.stderr or "") is not None
+        snap.rules_readable = bool(rules_out.strip()) or snap.audit_disabled
         snap.watched_files = _parse_watched_files(rules_out)
         snap.rule_count = _count_rules(rules_out)
 
@@ -174,7 +197,13 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
         )
         return result
 
-    if not snapshot.rules_readable:
+    if snapshot.audit_disabled:
+        result.info(
+            message=_t("auditd.subsystem_disabled"),
+            detail=_t("auditd.subsystem_disabled_detail"),
+            key="auditd.subsystem_disabled",
+        )
+    elif not snapshot.rules_readable:
         # The query failed; the rule set is unknown, not empty. Reporting it as
         # empty cost a point for rules that were never read — and the
         # sensitive-file coverage below is derived from the same empty output,

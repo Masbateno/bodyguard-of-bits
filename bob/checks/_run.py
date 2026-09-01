@@ -74,10 +74,19 @@ class CommandResult(NamedTuple):
     decide what that means: for ``ss`` a failure means the socket list is
     simply unknown, while ``dpkg-query -W`` exits non-zero to *tell* the
     caller the package is not installed. Only the caller knows which.
+
+    ``stderr`` was already being captured and thrown away. It matters where a
+    tool explains itself there while stdout and the exit status both look
+    ordinary: ``auditctl -l`` prints "The audit system is disabled" on stderr,
+    exits 0 and leaves stdout empty, which is indistinguishable from a
+    reachable audit system holding no rules. It is untrusted text like any
+    other subprocess output — match it against a known marker, never render it
+    into a report.
     """
 
     stdout: str
     ok:     bool
+    stderr: str = ""
 
 
 def run_result(
@@ -99,7 +108,7 @@ def run_result(
             list(args), capture_output=True, text=True, timeout=timeout,
             env=env if env is not None else _C_LOCALE_ENV,
         )
-        return CommandResult(proc.stdout, proc.returncode == 0)
+        return CommandResult(proc.stdout, proc.returncode == 0, proc.stderr)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         logger.debug("Command %r failed: %s (stderr=%r)", args, exc,
                      getattr(exc, "stderr", None))
