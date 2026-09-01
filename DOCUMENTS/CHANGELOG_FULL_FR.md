@@ -377,6 +377,42 @@ espace ne précède le mot-clé. Les vraies sont indentées, et le test refait a
 montré que le lecteur avait raison — cinquième erreur de banc de ce cycle, et la
 raison pour laquelle chacune est désormais vérifiée avant d'être rapportée.
 
+### La configuration que BOB déclarait sans jamais l'ouvrir
+
+Bien parser un fichier ne sert à rien si l'audit n'appelle jamais le parseur.
+
+`_resolve_ports` n'agissait que sur `config_key == "auto"`. Huit services
+portent un chemin de configuration sous `config_key: "ask"` — une stratégie que
+le registre documente comme « demander à l'opérateur et enregistrer », qu'aucun
+code de l'arbre n'implémente — leur fichier était donc déclaré et jamais
+ouvert. nginx, apache, caddy, authelia, vaultwarden, homeassistant,
+adguard_home et ollama étaient tous audités sur le défaut du registre : un
+nginx écoutant sur 8443 était vérifié comme 80 et 443, les règles UFW étaient
+cherchées pour deux ports qu'il n'utilise pas, et le port réellement exposé
+n'était jamais examiné. Le lecteur savait parfaitement parser ces fichiers — le
+balayage précédent l'avait prouvé en appelant le parseur directement, ce qui est
+précisément la raison pour laquelle le câblage manquant est resté invisible.
+
+Le dispatch lit désormais dès qu'un chemin de configuration est déclaré, quel
+que soit le nom de la stratégie. Deux des onze services `ask` ne déclarent aucun
+fichier et gardent le défaut du registre, ce qui est correct pour eux.
+
+Ce câblage exigeait que le lecteur réponde avec **tous** les ports, non un seul.
+`listen` est additif : un nginx servant 80 et 443 déclare les deux, et rendre le
+premier aurait fait sortir 443 de l'audit — échanger un mauvais port contre un
+port manquant. Les clés `port` surchargeantes rendent toujours une seule valeur,
+la dernière.
+
+Quatre formes de plus ont été trouvées dans la même passe. `;` ouvre un
+commentaire dans la famille INI et seul `#` était retiré : un `; port=9999`
+commenté dans un xrdp.ini ou un app.ini de gitea était donc lu comme le port
+vivant — la règle UFW commentée et le `NOPASSWD: ALL # temporary` de v0.15.0,
+polarité inversée, BOB auditant un port que l'opérateur avait coupé. Le retrait
+est ancré en début de ligne, car en nginx `;` termine une instruction et
+`listen 8080;` doit survivre. Un port JSON écrit comme chaîne, un port XML porté
+par un attribut plutôt qu'un élément, et une valeur YAML derrière un tag `!!int`
+explicite étaient tous invisibles ; les trois se lisent désormais.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -476,7 +512,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7477**.
+**Tests** 7288 → **7494**.
 
 ---
 

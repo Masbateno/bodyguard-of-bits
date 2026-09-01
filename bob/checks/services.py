@@ -518,19 +518,29 @@ def _resolve_ports(service: Service) -> list[str]:
     Returns:
         List of port strings in "number/proto" format.
     """
-    if service.config_key == "auto":
-        detected = _auto_detect_port(service)
+    # Read whenever the registry declares a config file, not only when the
+    # strategy is spelled "auto". Eight services carried a config path under
+    # ``config_key: "ask"`` — a strategy documented as "prompt the operator"
+    # that no code implements — so their file was declared and never opened,
+    # and an nginx on 8443 was audited as 80 and 443 while the port actually
+    # exposed went unexamined.
+    if service.config_key == "auto" or service.detection.config_files:
+        detected = _auto_detect_ports(service)
         if detected:
-            return [detected]
+            return detected
 
     return list(service.ports)
 
-def _auto_detect_port(service: Service) -> str | None:
-    """
-    Attempt to detect the actual port from the service configuration file.
+def _auto_detect_ports(service: Service) -> "list[str]":
+    """Detect the ports a service actually listens on, from its own config.
 
-    Returns:
-        Port string like "8080/tcp", or None if detection fails.
+    Returns every port the config declares, because `listen` is additive: an
+    nginx serving 80 and 443 declares both, and answering with one of them
+    would drop the other out of the audit entirely. An overriding `port` key
+    yields a single value — the last one.
+
+    Returns an empty list when nothing could be read or understood, which the
+    caller reads as "fall back to the registry defaults".
     """
     for config_file in _expand_config_paths(service.detection.config_files):
         path = Path(config_file)
@@ -546,11 +556,22 @@ def _auto_detect_port(service: Service) -> str | None:
             try:
                 data = json.loads(content)
                 for key in ("rpc-port", "port"):
-                    if key in data and isinstance(data[key], int):
-                        proto = "tcp"
-                        if service.ports:
-                            proto = service.ports[0].split("/")[-1]
-                        return f"{data[key]}/{proto}"
+                    if key not in data:
+                        continue
+                    # A hand-edited file quotes what the daemon writes as an
+                    # int; both mean the same port.
+                    raw_value = data[key]
+                    if isinstance(raw_value, bool) or not isinstance(
+                        raw_value, (int, str)
+                    ):
+                        continue
+                    number = _port_from_directive(str(raw_value))
+                    if number is None:
+                        continue
+                    proto = "tcp"
+                    if service.ports:
+                        proto = service.ports[0].split("/")[-1]
+                    return [f"{number}/{proto}"]
             except (ValueError, KeyError):
                 pass
             continue  # Don't fall through to regex on JSON files
@@ -560,6 +581,12 @@ def _auto_detect_port(service: Service) -> str | None:
             xml_match = re.search(r"<(\w*Port\w*)>\s*(\d+)\s*</\1>", content,
                                   re.IGNORECASE)
             if xml_match is None:
+                # …or an attribute: <gui port="8385"/>.
+                attr = re.search(r'\b(\w*port)\s*=\s*"(\d+)"', content,
+                                 re.IGNORECASE)
+                if attr:
+                    xml_match = attr
+            if xml_match is None:
                 # Syncthing puts the listener in <address>0.0.0.0:8384</address>,
                 # so the port is behind an address here too.
                 xml_match = re.search(r"<(address)>\s*(\S+?)\s*</\1>", content,
@@ -568,7 +595,7 @@ def _auto_detect_port(service: Service) -> str | None:
                 number = _port_from_directive(xml_match.group(2))
                 if number:
                     proto = service.ports[0].split("/")[-1] if service.ports else "tcp"
-                    return f"{number}/{proto}"
+                    return [f"{number}/{proto}"]
             continue  # an XML file has no directives the regex below understands
 
         # Caddyfile: the site address opens the block and carries no keyword —
@@ -579,7 +606,7 @@ def _auto_detect_port(service: Service) -> str | None:
                 number = _port_from_directive(caddy_match.group(1))
                 if number:
                     proto = service.ports[0].split("/")[-1] if service.ports else "tcp"
-                    return f"{number}/{proto}"
+                    return [f"{number}/{proto}"]
             continue
 
         # Strip comment lines before searching to avoid matching
@@ -587,7 +614,12 @@ def _auto_detect_port(service: Service) -> str | None:
         # ``[client]`` section: in the MySQL/MariaDB family it carries the port
         # clients *connect* to, never the one the server listens on, and it is
         # written above ``[mysqld]`` in the shipped files.
-        content_clean = re.sub(r"^\s*#.*$", "", content, flags=re.MULTILINE)
+        # `;` opens a comment in the INI family (xrdp.ini, gitea app.ini,
+        # cockpit.conf). Only at the start of a line: in nginx `;` terminates a
+        # statement, and stripping from any `;` would erase `listen 8080;`.
+        # Without this a commented-out `; port=9999` was read as the live port,
+        # the same shape as the commented UFW and sudoers directives of v0.15.0.
+        content_clean = re.sub(r"^\s*[#;].*$", "", content, flags=re.MULTILINE)
         content_clean = re.sub(r"^\s*\[client\][^\[]*", "", content_clean,
                                flags=re.MULTILINE | re.IGNORECASE)
 
@@ -611,8 +643,8 @@ def _auto_detect_port(service: Service) -> str | None:
         # appending a line — the same habit that drove the v0.15.0 umask and
         # login.defs findings — would otherwise be read as not having changed
         # it at all.
-        first_listen: "str | None" = None
-        last_port:    "str | None" = None
+        listens:   "list[str]"   = []
+        last_port: "str | None"  = None
         for match in re.finditer(
             # An optional dotted prefix covers the properties/YAML style used
             # by Elasticsearch (`http.port: 9200`) and its neighbours. The
@@ -621,7 +653,9 @@ def _auto_detect_port(service: Service) -> str | None:
             # `-p 11211` is memcached's flag-file style, `ListenPort` WireGuard's.
             r"(?:^|\s)(?:-p\s+(\d+)|(?:[\w.]+[._])?"
             r"(listenport|port|listen|listener)"
-            r"(?:\s*[=:]\s*|\s+)(\S+))",
+            # An explicit YAML type tag (`port: !!int 9200`) sits between the
+            # separator and the value.
+            r"(?:\s*[=:]\s*|\s+)(?:!!\w+\s+)?(\S+))",
             content_clean,
             re.IGNORECASE | re.MULTILINE,
         ):
@@ -630,20 +664,26 @@ def _auto_detect_port(service: Service) -> str | None:
             if number is None:
                 continue
             if keyword and keyword.lower() in ("listen", "listener"):
-                if first_listen is None:
-                    first_listen = number
+                if number not in listens:
+                    listens.append(number)
             else:
                 last_port = number
 
-        port_num = last_port if last_port is not None else first_listen
-        if port_num is not None:
+        numbers = listens or ([last_port] if last_port is not None else [])
+        if numbers:
             # Determine proto from registry default
             proto = "tcp"
             if service.ports:
                 proto = service.ports[0].split("/")[-1]
-            return f"{port_num}/{proto}"
+            return [f"{n}/{proto}" for n in numbers]
 
-    return None
+    return []
+
+
+def _auto_detect_port(service: Service) -> "str | None":
+    """First detected port, or None. Kept for callers wanting one answer."""
+    detected = _auto_detect_ports(service)
+    return detected[0] if detected else None
 
 def _expand_config_paths(patterns: "tuple[str, ...]") -> "list[str]":
     """Resolve any wildcard in a service's declared config paths.

@@ -51,6 +51,11 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     wildcard paths, CamelCase ListenPort and <address> XML support. MySQL's
     [client] section no longer answers for the listening port, and a repeated
     port key now takes the last value as redis and mysql do.
+  * Eight services declared a config path under config_key "ask", a strategy
+    no code implements, so their file was never opened and they were audited
+    on the registry default. The dispatch now reads whenever a path is
+    declared, and returns every listener. INI ';' comments were read as live
+    ports; JSON string, XML attribute and YAML !!int forms were invisible.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

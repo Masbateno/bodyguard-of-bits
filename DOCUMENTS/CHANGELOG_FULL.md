@@ -358,6 +358,40 @@ keyword. Real configs are indented, and re-testing with them showed the reader
 was right — the fifth harness error of this cycle, and the reason each is now
 checked before being reported.
 
+### The config BOB declared and never opened
+
+Parsing a file correctly is worthless if the audit never calls the parser.
+
+`_resolve_ports` acted on `config_key == "auto"` alone. Eight services carry a
+config path under `config_key: "ask"` — a strategy the registry documents as
+"prompt the operator and save to config", which no code in the tree implements —
+so their file was declared and never opened. nginx, apache, caddy, authelia,
+vaultwarden, homeassistant, adguard_home and ollama were every one audited on
+the registry default: an nginx listening on 8443 was checked as 80 and 443,
+UFW rules were looked up for two ports it does not use, and the port actually
+exposed was never examined at all. The reader could parse those files perfectly
+— the earlier sweep proved it by calling the parser directly, which is exactly
+how the wiring stayed invisible.
+
+The dispatch now reads whenever a config path is declared, whatever the
+strategy is called. Two of the eleven `ask` services declare no file and keep
+the registry default, which for them is correct.
+
+Wiring it required the reader to answer with *every* port rather than one.
+`listen` is additive: an nginx serving 80 and 443 declares both, and returning
+the first would have dropped 443 out of the audit — trading a wrong port for a
+missing one. Overriding `port` keys still yield a single value, the last.
+
+Four more format shapes were found in the same pass. `;` opens a comment in the
+INI family and only `#` was being stripped, so a commented-out `; port=9999` in
+an xrdp.ini or a gitea app.ini was read as the live port — the commented UFW
+rule and `NOPASSWD: ALL # temporary` of v0.15.0 with the polarity reversed,
+BOB auditing a port the operator had switched off. Stripping is anchored to the
+start of a line, because in nginx `;` terminates a statement and `listen 8080;`
+must survive. A JSON port written as a string, an XML port carried as an
+attribute rather than an element, and a YAML value behind an explicit `!!int`
+tag were all invisible; all three now read.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -450,7 +484,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7477**.
+**Tests** 7288 → **7494**.
 
 ---
 

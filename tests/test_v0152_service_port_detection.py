@@ -275,3 +275,119 @@ class TestOtherRealConfigShapes:
                                                       monkeypatch):
         assert _probe(registry, "mysql", "my.cnf", "# port = 9999\nport\t=\t3308\n",
                       tmp_path, monkeypatch) == "3308"
+
+
+class TestTheAuditPathActuallyReadsTheConfig:
+    """Parsing correctly is worthless if the audit never calls the parser.
+
+    `_resolve_ports` acted on `config_key == "auto"` alone. Eight services
+    carried a config path under `config_key: "ask"` — a strategy documented as
+    "prompt the operator and save to config" that no code in the tree
+    implements — so their file was declared and never opened. nginx, apache,
+    caddy, authelia, vaultwarden, homeassistant, adguard_home and ollama were
+    all audited on their registry default: an nginx on 8443 was checked as 80
+    and 443, and the port actually exposed was never examined at all.
+    """
+
+    def _resolve(self, registry, service_id, filename, content, tmp_path, monkeypatch):
+        import dataclasses
+
+        from bob.checks.services import _resolve_ports
+        from bob.registry import Detection
+        service = next(s for s in registry._services if s.id == service_id)
+        target = tmp_path / filename
+        target.write_text(content, encoding="utf-8")
+        probe = dataclasses.replace(
+            service, detection=Detection(binary=(), snap=(), config_files=(str(target),))
+        )
+        monkeypatch.setattr("bob.checks.services._is_safe_config_path", lambda p: True)
+        return _resolve_ports(probe)
+
+    @pytest.mark.parametrize("service_id,filename,content,expected", [
+        ("nginx",       "nginx.conf",         "http {\n server {\n  listen 8443 ssl;\n }\n}\n", ["8443/tcp"]),
+        ("caddy",       "Caddyfile",          ":8443 {\n root * /srv\n}\n",                     ["8443/tcp"]),
+        ("authelia",    "configuration.yml",  "server:\n  port: 9092\n",                        ["9092/tcp"]),
+        ("vaultwarden", "vaultwarden.env",    "ROCKET_PORT=8001\n",                             ["8001/tcp"]),
+    ])
+    def test_a_declared_config_is_read_whatever_the_strategy_is_called(
+        self, service_id, filename, content, expected, registry, tmp_path, monkeypatch
+    ):
+        assert self._resolve(registry, service_id, filename, content,
+                             tmp_path, monkeypatch) == expected
+
+    def test_every_listener_survives_the_audit(self, registry, tmp_path, monkeypatch):
+        """`listen` is additive — answering with one port drops the others.
+
+        This is why the wiring could not simply return the first match: an
+        nginx serving both 80 and 443 would have lost 443 from the audit.
+        """
+        assert self._resolve(
+            registry, "nginx", "nginx.conf",
+            "http {\n server {\n  listen 80;\n }\n server {\n  listen 443 ssl;\n }\n}\n",
+            tmp_path, monkeypatch,
+        ) == ["80/tcp", "443/tcp"]
+
+    def test_an_overriding_key_still_yields_one_port(self, registry, tmp_path,
+                                                     monkeypatch):
+        assert self._resolve(registry, "redis", "redis.conf",
+                             "port 6379\nport 6380\n",
+                             tmp_path, monkeypatch) == ["6380/tcp"]
+
+    def test_an_unreadable_config_falls_back_to_the_registry(self, registry, tmp_path,
+                                                             monkeypatch):
+        import dataclasses
+
+        from bob.checks.services import _resolve_ports
+        from bob.registry import Detection
+        service = next(s for s in registry._services if s.id == "nginx")
+        probe = dataclasses.replace(
+            service,
+            detection=Detection(binary=(), snap=(),
+                                config_files=(str(tmp_path / "absent.conf"),)),
+        )
+        assert _resolve_ports(probe) == list(service.ports)
+
+
+class TestCommentedDirectivesInIniFiles:
+    """`;` opens a comment in the INI family, and only `#` was stripped.
+
+    A commented-out `; port=9999` was read as the live port — the shape of the
+    commented UFW rule and the `NOPASSWD: ALL # temporary` of v0.15.0, with the
+    polarity reversed: here BOB audits a port the operator switched off.
+    """
+
+    def test_a_semicolon_comment_is_not_a_port(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "rdp", "xrdp.ini", "[Globals]\n; port=9999\n",
+                      tmp_path, monkeypatch) is None
+
+    def test_the_live_value_below_a_commented_one_wins(self, registry, tmp_path,
+                                                       monkeypatch):
+        assert _probe(registry, "rdp", "xrdp.ini",
+                      "[Globals]\n; port=9999\nport=3390\n",
+                      tmp_path, monkeypatch) == "3390"
+
+    def test_nginx_statement_terminators_are_untouched(self, registry, tmp_path,
+                                                       monkeypatch):
+        """`;` ends a statement in nginx — stripping from any `;` would erase it."""
+        assert _probe(registry, "nginx", "nginx.conf",
+                      "http {\n server {\n  listen 8080;\n }\n}\n",
+                      tmp_path, monkeypatch) == "8080"
+
+
+class TestRemainingFormatShapes:
+    @pytest.mark.parametrize("service_id,filename,content,expected", [
+        ("transmission", "settings.json", '{\n "rpc-port": "9092"\n}\n', "9092"),
+        ("transmission", "settings.json", '{\n "rpc-port": 9093\n}\n',   "9093"),
+        ("jellyfin",     "network.xml",   '<n>\n <gui port="8385"/>\n</n>\n', "8385"),
+        ("authelia",     "configuration.yml", "server:\n  port: !!int 9092\n", "9092"),
+        ("elasticsearch", "elasticsearch.yml", "http.port: 9201\r\n",     "9201"),
+        ("mongodb",      "mongod.conf",   "net:\n  port: 27018\n  ssl:\n    port: 27019\n", "27019"),
+    ])
+    def test_shape(self, service_id, filename, content, expected, registry,
+                   tmp_path, monkeypatch):
+        assert _probe(registry, service_id, filename, content,
+                      tmp_path, monkeypatch) == expected
+
+    def test_a_json_boolean_is_not_a_port(self, registry, tmp_path, monkeypatch):
+        assert _probe(registry, "transmission", "settings.json",
+                      '{\n "rpc-port": true\n}\n', tmp_path, monkeypatch) is None

@@ -117,6 +117,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   Twenty services across seven config formats now read correctly.
 - PostgreSQL, WireGuard and Syncthing no longer report their default port
   without reading their config; MySQL's [client] section no longer answers.
+- Eight services declared a config file the audit never opened (config_key
+  "ask"): nginx on 8443 was audited as 80 and 443. Now read, all listeners.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.
