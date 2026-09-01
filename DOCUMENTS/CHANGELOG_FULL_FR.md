@@ -222,6 +222,39 @@ lacune, atteinte seulement par `--email`, et est corrigé avec lui.
 Les fichiers de plugin sous `services.d/` ont été vérifiés dans la même passe
 et dégradent déjà d'eux-mêmes.
 
+### La couche scoring, balayée et figée
+
+Le nombre que lit l'opérateur est le dernier endroit où une affirmation peut
+dépasser ses preuves. Elle a été vérifiée comme un jeu de propriétés sur des
+ensembles de findings générés plutôt que sur des exemples choisis — la leçon
+de l'échantillonnage vaut aussi pour l'arithmétique — et elle tient.
+
+Le breakdown rend exactement compte du score brut, cap compris : `finalize`
+ajoute le cap comme déduction synthétique précisément pour que les raisons
+listées restent un compte complet. Le score affiché tient la promesse v0.12.0
+selon laquelle 10/10 est réservé à un audit sans rien à corriger, et ne
+dégrade jamais un audit sans déduction. Faire taire une clé par `--ignore`
+retire son finding **et** sa déduction, restitue exactement ses points et ne
+perturbe aucune autre clé — le mode de défaillance aurait été un opérateur
+masquant un finding tout en continuant à le payer. Les surcharges de profil
+honorent leur contrat dans les deux sens : `info` et `skip` retirent la
+déduction avec le finding, `alert` la conserve.
+
+Quatre mille scénarios générés par propriété, couvrant toute la plage 0–10,
+caps et clamps à zéro bien représentés. Rien n'a été corrigé ici parce que
+rien n'était cassé ; les invariants sont désormais des tests, donc un refactor
+futur ne peut plus casser silencieusement l'arithmétique derrière le chiffre
+affiché. Les générateurs portent leur propre contrôle de mordant — un test
+échoue si les scénarios cessent de couvrir caps, clamps et plage de score, pour
+qu'ils ne dégénèrent pas en assertions sur rien.
+
+Une nuance d'étiquetage a été trouvée et délibérément laissée. Le champ
+`deductions` d'un domaine inclut le delta du cap : un domaine pare-feu plafonné
+à 3/10 rapporte donc « −7 pt » là où 6 points viennent d'une déduction et 1 du
+plafond. Le score est juste, le cap est annoncé deux lignes plus haut sur le
+même écran, et renommer le champ casserait le schéma JSON v3 pour les
+consommateurs : gain faible contre risque non nul.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -321,7 +354,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7377**.
+**Tests** 7288 → **7394**.
 
 ---
 

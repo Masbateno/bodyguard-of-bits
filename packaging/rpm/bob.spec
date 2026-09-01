@@ -109,6 +109,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - An unwritable log directory no longer aborts the audit: the report degrades
   to a warning, the findings are still rendered.
 - A non-UTF-8 config.conf no longer aborts the audit; it loads as empty.
+- Scoring invariants pinned as property tests (breakdown explains the score,
+  --ignore drops the deduction with the finding, profile downgrades too).
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

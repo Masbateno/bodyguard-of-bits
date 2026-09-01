@@ -211,6 +211,38 @@ carried the same gap, reached only by `--email`, and is fixed with it.
 Plugin files under `services.d/` were checked in the same pass and already
 degrade on their own.
 
+### The scoring layer, swept and pinned
+
+The number the operator reads is the last place a claim can outrun its
+evidence. It was checked as a set of properties over generated finding sets
+rather than as worked examples — the sampling lesson of this cycle applies to
+arithmetic too — and it holds.
+
+The breakdown accounts for the raw score exactly, cap included: `finalize`
+appends the cap as a synthetic deduction precisely so the listed reasons stay
+a complete account. The displayed score keeps the v0.12.0 promise that 10/10 is
+reserved for an audit with nothing to fix, and never marks down an audit that
+deducted nothing. Silencing a key through `--ignore` removes its finding *and*
+its deduction, restores exactly its points and disturbs no other key — the
+failure mode would have been an operator hiding a finding while quietly still
+paying for it. Profile overrides honour their own contract in both directions:
+`info` and `skip` drop the deduction with the finding, `alert` keeps it.
+
+Four thousand generated scenarios per property, covering the full 0–10 range
+with caps and zero-floor clamps well represented. Nothing was fixed here
+because nothing was broken; the invariants are now tests, so a future refactor
+cannot quietly break the arithmetic behind the headline number. The generators
+carry their own bite check — a test fails if the scenarios stop covering caps,
+clamps and the score range, so these cannot decay into assertions about
+nothing.
+
+One labelling nuance was found and deliberately left alone. A domain's
+`deductions` field includes the cap delta, so a firewall domain capped to 3/10
+reports "−7 pt" where 6 points came from a deduction and 1 from the ceiling.
+The score is correct, the cap is disclosed two lines above it on the same
+screen, and renaming the field would break the v3 JSON schema for consumers:
+low gain against non-zero risk.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -303,7 +335,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7377**.
+**Tests** 7288 → **7394**.
 
 ---
 
