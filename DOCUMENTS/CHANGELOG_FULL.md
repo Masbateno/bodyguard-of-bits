@@ -28,6 +28,34 @@ what this host speaks *to* a server, not what it accepts as one. Every other
 parameter the check reads was put to `testparm` in the same pass and is
 recognised under the name BOB uses, share-level synonyms included.
 
+### The same trap, one directory over
+
+v0.15.2 established that `Path.exists()` re-raises EACCES — it swallows only
+ENOENT, ENOTDIR, EBADF and ELOOP — and that one such raise from an unguarded
+collection cost the entire audit. The guard it shipped covered `bob/checks/`
+and stopped there.
+
+`bob/config.py` was outside it. A `~/.config/bob` that cannot be traversed made
+`UserConfig._load` raise before a single check ran: exit 3, no report, no
+findings, a bare `[Errno 13] Permission denied` on stderr. BOB runs as root,
+but root is squashed on an NFS home and confined under SELinux, which makes
+this an ordinary corporate setup rather than an exotic one.
+
+Eight call sites on the audit path — in config, ignore, history and the entry
+point — now go through `path_exists`, and the guard covers those modules
+instead of one package. `bob/_atomic.py` is deliberately left alone and the
+reason is asserted rather than asserted-to: `read_text_capped` must raise
+FileNotFoundError for a missing file and PermissionError for an unreadable one,
+because `load_baseline` branches on the difference and v0.9.2 shipped distinct
+localised messages for the two. Collapsing them would undo that release.
+
+The four modules reached only by `--install-completion`, `--install-cron` and
+the log TUI are exempt with their reason recorded, so an exemption reads as a
+decision rather than an oversight — a test fails if one is left without one.
+
+The migration was not mechanical, which is why each site was read first: at
+`_atomic` the safe answer is the opposite of the one the other eight needed.
+
 ### A test that did not bite
 
 The first draft of the new tests rebuilt the detection logic locally instead of
@@ -35,7 +63,7 @@ driving `from_system`. Reinjecting the defect into samba.py killed nothing —
 they were asserting their own copy. Rewritten to write an smb.conf and let the
 real parser read it, the same mutation now kills three of them.
 
-**Tests** 7560 → **7575**.
+**Tests** 7560 → **7590**.
 
 ---
 

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from bob._atomic import atomic_write, read_text_capped
 from bob.sysinfo import chown_to_sudo_user, get_user_home
+from bob.checks._run import path_exists
 
 _log = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ def load_ignore_keys(path: Path | None = None) -> frozenset[str]:
     """
     if path is None:
         path = _ignore_file_path()
-    if not path.exists():
+    if not path_exists(path):
         return frozenset()
     keys: set[str] = set()
     try:
@@ -118,7 +119,7 @@ def add_ignore_key(key: str, path: Path | None = None) -> bool:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         chown_to_sudo_user(path.parent)
-        if path.exists():
+        if path_exists(path):
             content = read_text_capped(path)
             if "ignore:" in content:
                 content = content.rstrip("\n") + f"\n  - key: {key}\n"
@@ -165,7 +166,7 @@ def remove_ignore_key(key: str, path: Path | None = None) -> bool:
         return False
     if path is None:
         path = _ignore_file_path()
-    if not path.exists():
+    if not path_exists(path):
         return False
     if key not in load_ignore_keys(path):
         return False

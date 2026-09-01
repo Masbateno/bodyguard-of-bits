@@ -16,7 +16,7 @@ import os
 from datetime import datetime, timezone
 
 from bob._atomic import atomic_write, read_text_capped
-from bob.checks._run import TranslationFunc
+from bob.checks._run import TranslationFunc, path_exists
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
 _log = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def save_score(
         if level_score_only is not None:
             entry_dict["level_score_only"] = level_score_only
         entry = json.dumps(entry_dict)
-        existed = _HISTORY_FILE.exists()
+        existed = path_exists(_HISTORY_FILE)
         # I-5 (v0.6.1): explicit mode=0o600 on creation. Python's default
         # `Path.open("a")` uses the process umask (typically 0o644 → world-
         # readable history file). Score timestamps are privacy-sensitive on
@@ -108,7 +108,7 @@ def _rotate_if_needed() -> None:
 
 def load_history(max_entries: int = 50) -> list[dict]:
     """Load the last *max_entries* history entries."""
-    if not _HISTORY_FILE.exists():
+    if not path_exists(_HISTORY_FILE):
         return []
     entries: list[dict] = []
     try:

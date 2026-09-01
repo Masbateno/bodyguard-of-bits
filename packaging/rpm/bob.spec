@@ -95,6 +95,12 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Tue Sep 01 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.3-1
+- samba read `min protocol` only; a current smb.conf uses `server min
+  protocol`, so an explicitly enabled SMB1 was reported as disabled.
+- The Path.exists() EACCES trap was fenced inside bob/checks/ only: an
+  unreadable ~/.config/bob ended the audit before any check ran.
+
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.2-1
 - A command that could not run no longer reads as "nothing found": new
   run_result() reports stdout and exit status separately.

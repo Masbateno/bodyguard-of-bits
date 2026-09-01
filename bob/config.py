@@ -53,6 +53,7 @@ _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 # ``bob._i18n_safe.make_fallback_t`` (single source of truth across the 4
 # modules that grew this pattern — config/webhook/markdown_output/html_output).
 from bob._i18n_safe import make_fallback_t
+from bob.checks._run import path_exists
 
 _FALLBACK_LABELS = {
     "config.error.invalid_email":           "Invalid email address: {email}",
@@ -133,7 +134,7 @@ class EmailStore:
             logger.warning("Could not create config directory %s: %s", self._path.parent, exc)
 
     def _load(self) -> None:
-        if not self._path.exists():
+        if not path_exists(self._path):
             return
         try:
             with self._path.open(encoding="utf-8") as fh:
@@ -267,8 +268,14 @@ class UserConfig:
         return sorted(self._data.keys())
 
     def exists(self) -> bool:
-        """Return True if the config file exists on disk."""
-        return self._path.exists()
+        """Return True if a usable config file exists on disk.
+
+        A path that cannot be reached answers False rather than raising: BOB
+        runs as root, but root is squashed on an NFS home and confined under
+        SELinux, and `Path.exists()` re-raises EACCES. One such raise from here
+        cost the entire audit — no report, no findings, exit 3.
+        """
+        return path_exists(self._path)
 
     # ------------------------------------------------------------------
     # Profile helpers
@@ -381,7 +388,7 @@ class UserConfig:
         Silently ignores missing files and malformed lines.
         Lines starting with # are treated as comments and skipped.
         """
-        if not self._path.exists():
+        if not path_exists(self._path):
             logger.debug("Config file not found at %s — starting empty", self._path)
             return
 

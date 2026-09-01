@@ -5,6 +5,10 @@ bodyguard-of-bits (0.15.3-1) UNRELEASED; urgency=low
     uses the long one — and a host that had explicitly enabled SMB1, the
     EternalBlue vector BOB raises as an ALERT, was reported as having it
     disabled. Verified against testparm, samba's own parser.
+  * The Path.exists() EACCES trap fixed in v0.15.2 was fenced off inside
+    bob/checks/ only. A ~/.config/bob that cannot be traversed made
+    UserConfig._load raise before any check ran: exit 3, no report. Eight
+    audit-path sites migrated; bob/_atomic.py deliberately exempt.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 01 Sep 2026 14:28:06 +0200
 

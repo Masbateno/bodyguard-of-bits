@@ -29,6 +29,35 @@ non ce qu'elle accepte en tant que tel. Tous les autres paramètres lus par le
 check ont été soumis à `testparm` dans la même passe et sont reconnus sous le
 nom qu'emploie BOB, synonymes de partage compris.
 
+### Le même piège, un répertoire plus loin
+
+v0.15.2 avait établi que `Path.exists()` relève EACCES — il n'avale que ENOENT,
+ENOTDIR, EBADF et ELOOP — et qu'une seule levée depuis une collecte non gardée
+coûtait l'audit entier. Le garde livré couvrait `bob/checks/` et s'arrêtait là.
+
+`bob/config.py` était en dehors. Un `~/.config/bob` non traversable faisait
+lever `UserConfig._load` avant le moindre check : code 3, aucun rapport, aucun
+finding, un `[Errno 13] Permission denied` brut sur stderr. BOB tourne en root,
+mais root est écrasé sur un home NFS et confiné sous SELinux — c'est donc une
+installation d'entreprise ordinaire, pas un cas exotique.
+
+Huit sites du chemin d'audit — dans config, ignore, history et le point
+d'entrée — passent désormais par `path_exists`, et le garde couvre ces modules
+plutôt qu'un seul paquet. `bob/_atomic.py` est délibérément laissé de côté, et
+la raison y est vérifiée plutôt qu'affirmée : `read_text_capped` doit lever
+FileNotFoundError pour un fichier absent et PermissionError pour un fichier
+illisible, parce que `load_baseline` distingue les deux et que v0.9.2 a livré
+deux messages localisés distincts. Les confondre déferait cette version.
+
+Les quatre modules atteints seulement par `--install-completion`,
+`--install-cron` et la TUI de journaux sont dispensés avec leur raison
+consignée, pour qu'une dispense se lise comme une décision et non comme un
+oubli — un test échoue si l'une reste sans motif.
+
+La migration n'était pas mécanique, ce qui est la raison pour laquelle chaque
+site a été lu d'abord : chez `_atomic`, la réponse sûre est l'inverse de celle
+qu'il fallait aux huit autres.
+
 ### Un test qui ne mordait pas
 
 Le premier jet des nouveaux tests reconstruisait la logique de détection
@@ -36,7 +65,7 @@ localement au lieu de piloter `from_system`. Réinjecter le défaut dans samba.p
 ne tuait rien — ils validaient leur propre copie. Réécrits pour écrire un
 smb.conf et laisser le vrai parseur le lire, la même mutation en tue trois.
 
-**Tests** 7560 → **7575**.
+**Tests** 7560 → **7590**.
 
 ---
 

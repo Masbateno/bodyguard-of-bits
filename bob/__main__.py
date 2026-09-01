@@ -70,6 +70,7 @@ def require_root() -> None:
 # the same gating logic without importing __main__. Local alias kept so
 # call sites read naturally + don't need to be retouched.
 from bob._i18n_safe import t_or_hardcoded as _t_or_hardcoded
+from bob.checks._run import path_exists
 
 
 def _run(argv=None) -> int:
@@ -272,7 +273,7 @@ def _run(argv=None) -> int:
         require_root()
         # I-3 (v0.7.4): --reset-baseline output now honours --lang.
         i18n.init(lang=config.lang)
-        if BASELINE_PATH.exists():
+        if path_exists(BASELINE_PATH):
             try:
                 BASELINE_PATH.unlink()
                 print(i18n.t("cli.baseline.deleted", path=BASELINE_PATH))
