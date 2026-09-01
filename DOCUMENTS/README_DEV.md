@@ -180,6 +180,9 @@ bob/
 │   │                       #   when systemd was never asked (v0.15.2),
 │   │                       #   path_exists() — Path.exists() re-raises EACCES;
 │   │                       #   one bare call lost a whole audit (v0.15.2),
+│   │                       #   split_ss_address() — one grammar for the `ss`
+│   │                       #   address column, shared by ports and
+│   │                       #   network_context (v0.15.2),
 │   │                       #   join_continuations(), strip_unit_glyph(),
 │   │                       #   pipes_into_shell() — one copy of each rule
 │   ├── _ufw.py             # `ufw status numbered` grammar, shared by ports,

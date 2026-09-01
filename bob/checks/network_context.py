@@ -24,7 +24,13 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _identity_t, _run, run_result
+from bob.checks._run import (
+    TranslationFunc,
+    _identity_t,
+    _run,
+    run_result,
+    split_ss_address,
+)
 from bob.scoring import CheckResult
 
 
@@ -305,14 +311,18 @@ def _parse_connections(ss_output: str) -> list[ConnectionInfo]:
 
 
 def _split_addr_port(raw: str) -> tuple[str, int]:
-    """Split "addr:port" into (addr, port). Returns ("", 0) on failure."""
-    try:
-        idx  = raw.rfind(":")
-        if idx < 0:
-            return "", 0
-        return raw[:idx], int(raw[idx + 1:])
-    except (ValueError, IndexError):
+    """Split an ``ss`` peer column into (addr, port), or ("", 0).
+
+    Delegates to the shared grammar. The private copy this replaces used
+    ``rfind(":")`` and left the brackets on an IPv6 address, so every IPv6
+    peer failed ``_is_private_or_loopback`` — ``[::1]`` included — and a
+    local database connection over IPv6 loopback was flagged as an
+    established connection to an external IP, with a deduction.
+    """
+    addr, port, _iface = split_ss_address(raw)
+    if addr is None or port is None:
         return "", 0
+    return addr, int(port)
 
 
 def _extract_process(raw: str) -> str:

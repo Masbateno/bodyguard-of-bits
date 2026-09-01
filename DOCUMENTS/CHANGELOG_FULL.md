@@ -243,6 +243,41 @@ The score is correct, the cap is disclosed two lines above it on the same
 screen, and renaming the field would break the v3 JSON schema for consumers:
 low gain against non-zero risk.
 
+### Two copies of one rule, again
+
+Re-running the campaign's earlier angles would mostly re-confirm their own
+fixes — v0.15.1 said so and was right, and every find since has come from an
+angle never used before. But one *pattern* has produced the largest defects of
+this cycle: a class closed on the leaves it happened to visit rather than at
+its root. That is worth asking about directly, and it is mechanically
+detectable — look for one rule living in more than one private copy.
+
+Three helper names are duplicated across check modules. One of them mattered.
+`_split_addr_port` exists in `ports` and in `network_context`, same name,
+different behaviour: `ports` learned about IPv6 brackets and `%scope` in
+v0.15.0, `network_context` kept an `rfind(":")` that left the brackets glued
+to the address. So every IPv6 peer failed `_is_private_or_loopback` — `[::1]`
+included — and an ordinary local PostgreSQL connection over IPv6 loopback was
+reported as
+
+> an established connection to an external IP on a sensitive port
+
+with a two-point deduction, the message naming `[::1]` as the external
+address. `[fc00::1]` (unique local) and `[fe80::1]` (link-local) read as
+external too.
+
+This is the UFW rule grammar of v0.15.1 repeating, one release later and one
+module over: two copies of one rule, one of them fixed. `split_ss_address()`
+is now the single grammar, both callers delegate, and a guard fails if a module
+that runs `ss` takes the address column apart on its own again. The guard was
+mutation-tested with the bytecode cache cleared — reinjecting the old
+`rfind(":")` kills five tests, the structural one among them.
+
+The guard is scoped to `ss` readers rather than matching bracketed-IPv6
+regexes tree-wide, which flagged an honest neighbour: `docker.py` parses
+`[::]:8080->80/tcp` port mappings, a different format that legitimately has its
+own grammar.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -335,7 +370,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7394**.
+**Tests** 7288 → **7420**.
 
 ---
 

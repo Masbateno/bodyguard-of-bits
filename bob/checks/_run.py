@@ -264,6 +264,47 @@ def unit_active_state(name: str, timeout: int = _CMD_TIMEOUT) -> "str | None":
     return state if state in _UNIT_STATES else None
 
 
+def split_ss_address(raw: str) -> "tuple[str | None, str | None, str]":
+    """Split an ``ss`` address column into (address, port, iface).
+
+    One grammar for the two checks that read ``ss`` output. They had a private
+    copy each, under the same name and with different behaviour: ``ports``
+    learned about IPv6 brackets and ``%scope`` in v0.15.0, ``network_context``
+    kept an ``rfind(":")`` that left the brackets glued to the address. Every
+    IPv6 peer therefore failed the private-address test — ``[::1]`` included —
+    so an ordinary local PostgreSQL connection over IPv6 loopback was reported
+    as "an established connection to an external IP on a sensitive port", with
+    a two-point deduction. The same shape as the UFW rule grammar unified in
+    v0.15.1: two copies of one rule, one of them fixed.
+
+    ``iface`` is non-empty when the address carries a scope
+    (``0.0.0.0%virbr0:67`` → ``("0.0.0.0", "67", "virbr0")``). Returns
+    ``(None, None, "")`` when the column is not an address at all.
+
+    Handles ``0.0.0.0:22``, ``0.0.0.0%virbr0:67``, ``127.0.0.53%lo:53``,
+    ``[::]:22``, ``[::1]:631``, ``[fe80::1%eth0]:22`` and ``*:port``.
+    """
+    ipv6_match = re.match(r"^\[([^\]]+)\]:(\d+)$", raw)
+    if ipv6_match:
+        addr = ipv6_match.group(1)
+        iface = ""
+        if "%" in addr:
+            addr, _, iface = addr.partition("%")
+        return addr, ipv6_match.group(2), iface
+
+    # Wildcard notation: *:port (some ss versions)
+    wild_match = re.match(r"^\*:(\d+)$", raw)
+    if wild_match:
+        return "*", wild_match.group(1), ""
+
+    # IPv4 with optional %iface: addr%iface:port or addr:port
+    ipv4_match = re.match(r"^([^:%]+)(?:%([^:]+))?:(\d+)$", raw)
+    if ipv4_match:
+        return ipv4_match.group(1), ipv4_match.group(3), ipv4_match.group(2) or ""
+
+    return None, None, ""
+
+
 def path_exists(path: "Path") -> bool:
     """Whether *path* exists, without raising when the answer is off-limits.
 

@@ -255,6 +255,43 @@ plafond. Le score est juste, le cap est annoncé deux lignes plus haut sur le
 même écran, et renommer le champ casserait le schéma JSON v3 pour les
 consommateurs : gain faible contre risque non nul.
 
+### Deux copies d'une même règle, encore
+
+Rejouer les angles antérieurs de la campagne ne ferait, pour l'essentiel, que
+reconfirmer leurs propres correctifs — v0.15.1 le disait et avait raison, et
+toutes les trouvailles depuis viennent d'angles jamais utilisés. Mais un
+*motif* a produit les plus gros défauts de ce cycle : une classe fermée sur les
+feuilles visitées plutôt qu'à sa racine. Cela vaut d'être interrogé
+directement, et c'est détectable mécaniquement — chercher une règle qui vit en
+plusieurs copies privées.
+
+Trois noms d'assistants sont dupliqués entre modules de check. L'un comptait.
+`_split_addr_port` existe dans `ports` et dans `network_context`, même nom,
+comportement différent : `ports` a appris les crochets IPv6 et `%scope` en
+v0.15.0, `network_context` gardait un `rfind(":")` qui laissait les crochets
+collés à l'adresse. Toute adresse IPv6 échouait donc à
+`_is_private_or_loopback` — `[::1]` compris — et une connexion PostgreSQL
+locale ordinaire en IPv6 loopback était rapportée comme
+
+> une connexion établie vers une IP externe sur un port sensible
+
+avec une déduction de deux points, le message nommant `[::1]` comme adresse
+externe. `[fc00::1]` (ULA) et `[fe80::1]` (link-local) passaient aussi pour
+externes.
+
+C'est la grammaire de règles UFW de v0.15.1 qui se répète, une version plus
+tard et un module plus loin : deux copies d'une règle, l'une corrigée.
+`split_ss_address()` est désormais la grammaire unique, les deux appelants y
+délèguent, et un garde échoue si un module qui exécute `ss` redécoupe la
+colonne d'adresse lui-même. Le garde a été testé par mutation avec le cache de
+bytecode vidé — réinjecter l'ancien `rfind(":")` tue cinq tests, dont le garde
+structurel.
+
+Le garde vise les lecteurs de `ss` plutôt que toute regex IPv6 à crochets de
+l'arbre, ce qui signalait un voisin honnête : `docker.py` parse des mappings de
+ports `[::]:8080->80/tcp`, un format différent qui a légitimement sa propre
+grammaire.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -354,7 +391,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7394**.
+**Tests** 7288 → **7420**.
 
 ---
 

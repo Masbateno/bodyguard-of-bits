@@ -111,6 +111,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - A non-UTF-8 config.conf no longer aborts the audit; it loads as empty.
 - Scoring invariants pinned as property tests (breakdown explains the score,
   --ignore drops the deduction with the finding, profile downgrades too).
+- One `ss` address grammar: an IPv6 loopback peer is no longer reported as an
+  external connection on a sensitive port.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.

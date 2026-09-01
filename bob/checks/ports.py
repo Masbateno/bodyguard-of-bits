@@ -25,7 +25,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _identity_t, _run, run_result
+from bob.checks._run import (
+    TranslationFunc,
+    _identity_t,
+    _run,
+    run_result,
+    split_ss_address,
+)
 from bob.scoring import CheckResult
 
 # Ports above this threshold are considered ephemeral (kernel-assigned)
@@ -505,45 +511,11 @@ def _parse_ss_output(output: str) -> list[ListeningPort]:
     return ports
 
 
-def _split_addr_port(local_addr: str) -> tuple[str | None, str | None, str]:
+def _split_addr_port(local_addr: str) -> "tuple[str | None, str | None, str]":
+    """Thin alias over the shared ``ss`` address grammar.
+
+    Kept as a module-level name because tests monkeypatch it here.
     """
-    Split a local address string into (address, port, iface).
-
-    iface is non-empty when the address is scoped to a specific interface
-    (e.g. "0.0.0.0%virbr0:67" → ("0.0.0.0", "67", "virbr0")).
-
-    Handles:
-      - "0.0.0.0:22"
-      - "0.0.0.0%virbr0:67"
-      - "127.0.0.53%lo:53"
-      - "[::]:22"
-      - "[::1]:631"
-      - "192.168.1.255:137"
-    """
-    # IPv6 bracket notation: [addr]:port, with an optional %scope inside the
-    # brackets. The scope was previously left glued to the address and `iface`
-    # returned empty — so the IPv4 branch honoured this docstring and the IPv6
-    # branch quietly did not, and a JSON consumer read "fe80::1%eth0" as the
-    # address. No verdict moved (a scoped address never matched
-    # `_ALL_INTERFACES` anyway), which is why it survived.
-    ipv6_match = re.match(r"^\[([^\]]+)\]:(\d+)$", local_addr)
-    if ipv6_match:
-        addr = ipv6_match.group(1)
-        iface = ""
-        if "%" in addr:
-            addr, _, iface = addr.partition("%")
-        return addr, ipv6_match.group(2), iface
-
-    # Wildcard notation: *:port (some ss versions)
-    wild_match = re.match(r"^\*:(\d+)$", local_addr)
-    if wild_match:
-        return "*", wild_match.group(1), ""
-
-    # IPv4 with optional %iface: addr%iface:port or addr:port
-    ipv4_match = re.match(r"^([^:%]+)(?:%([^:]+))?:(\d+)$", local_addr)
-    if ipv4_match:
-        return ipv4_match.group(1), ipv4_match.group(3), ipv4_match.group(2) or ""
-
-    return None, None, ""
+    return split_ss_address(local_addr)
 
 

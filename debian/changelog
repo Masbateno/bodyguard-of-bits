@@ -37,6 +37,10 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     reserved for a flawless audit, --ignore removes a finding and its
     deduction together, and profile downgrades drop the points. Pinned as
     tests with a bite check.
+  * One rule in two private copies, again: _split_addr_port existed in ports
+    and network_context with different behaviour, so every IPv6 peer failed
+    the private-address test and a local PostgreSQL connection over [::1] was
+    flagged as a remote exposure with a deduction. One grammar now, guarded.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 
