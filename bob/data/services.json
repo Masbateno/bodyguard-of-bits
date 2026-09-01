@@ -92,7 +92,8 @@
       "config_files": [
         "/etc/vsftpd.conf",
         "/etc/vsftpd/vsftpd.conf",
-        "/etc/proftpd/proftpd.conf"
+        "/etc/proftpd/proftpd.conf",
+        "/etc/proftpd.conf"
       ]
     }
   },
@@ -120,6 +121,7 @@
       "snap": [],
       "config_files": [
         "/etc/apache2/ports.conf",
+        "/etc/apache2/httpd.conf",
         "/etc/httpd/conf/httpd.conf",
         "/etc/httpd/conf.d/*.conf"
       ]
@@ -200,7 +202,9 @@
       "binary": [],
       "snap": [],
       "config_files": [
-        "/etc/postgresql/*/main/postgresql.conf"
+        "/etc/postgresql/*/main/postgresql.conf",
+        "/var/lib/pgsql/data/postgresql.conf",
+        "/var/lib/postgres/data/postgresql.conf"
       ]
     }
   },
@@ -339,7 +343,8 @@
     "label": "Redis",
     "packages": [
       "redis-server",
-      "redis"
+      "redis",
+      "valkey"
     ],
     "services": [
       "redis"
@@ -354,7 +359,8 @@
       "snap": [],
       "config_files": [
         "/etc/redis/redis.conf",
-        "/etc/redis.conf"
+        "/etc/redis.conf",
+        "/etc/valkey/valkey.conf"
       ]
     }
   },

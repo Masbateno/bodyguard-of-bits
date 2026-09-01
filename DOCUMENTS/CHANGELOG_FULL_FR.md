@@ -502,6 +502,39 @@ est une règle qui finira par se contredire.
 Vérifié de bout en bout sur des installations réelles : Debian via
 `dpkg-query`, Fedora via `rpm`, Arch via `pacman`, Alpine via `apk`.
 
+### Les vingt-trois services empaquetés, mesurés sur quatre distributions
+
+Quinze des trente-huit services s'installent par leur propre installeur, un
+conteneur ou un binaire déposé — gitea, authelia, vaultwarden, ollama, jellyfin
+et les autres — il n'y a donc pas de variance de distribution à mesurer pour
+eux. Les vingt-trois autres viennent des dépôts, et chacun a été installé dans
+des conteneurs Debian, Fedora, Arch et Alpine en demandant au gestionnaire de
+paquets lui-même ce qu'il avait livré.
+
+Quatre écarts en sont sortis, dont aucun n'était trouvable en lisant le code.
+
+**Redis, c'est Valkey désormais.** `dnf install redis` et `pacman -S redis`
+réussissent tous deux et laissent tous deux `/etc` vide ; la configuration qui
+existe est `/etc/valkey/valkey.conf`. Sans le nom de paquet et sans le chemin,
+redis est lu comme absent sur Fedora et Arch, et comme écoutant sur son port
+par défaut sur Alpine, où c'est `/etc/redis.conf` qui sert.
+
+**PostgreSQL garde sa configuration hors de `/etc` sur les hôtes rpm.**
+`initdb` écrit `postgresql.conf` dans le répertoire de données —
+`/var/lib/pgsql/data` sur RHEL, `/var/lib/postgres/data` sur Arch — et rien
+n'existe sous `/etc/postgresql` là-bas. Le seul chemin Debian signifiait donc
+que le port d'un service classé critique n'y était jamais lu.
+
+**proftpd** est `/etc/proftpd.conf` sur Fedora et `/etc/proftpd/proftpd.conf`
+partout ailleurs. **Apache** est `ports.conf` chez Debian, `httpd.conf` chez
+Alpine, et `/etc/httpd/conf/httpd.conf` chez Fedora et Arch.
+
+Vérifié de bout en bout avec les ports modifiés : redis sur 6399 lu sur les
+trois familles non-Debian, apache sur 8081 lu sur Fedora et Alpine. Un échec
+apparent n'en était pas un — le proftpd.conf de Fedora ne livre aucune
+directive `Port`, donc retomber sur 21 est la bonne réponse, et ajouter la
+directive a suffi pour que BOB la lise.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -601,7 +634,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7524**.
+**Tests** 7288 → **7544**.
 
 ---
 

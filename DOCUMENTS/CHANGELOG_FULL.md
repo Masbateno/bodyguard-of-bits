@@ -479,6 +479,39 @@ a rule kept in several copies is a rule that will disagree with itself.
 Verified end to end on real installs: Debian via `dpkg-query`, Fedora via
 `rpm`, Arch via `pacman`, Alpine via `apk`.
 
+### The twenty-three packaged services, measured on four distributions
+
+Fifteen of the thirty-eight services are installed by their own installer,
+a container or a binary drop — gitea, authelia, vaultwarden, ollama, jellyfin
+and the rest — so there is no distribution variance to measure for them. The
+other twenty-three come from distribution repositories, and each was installed
+in Debian, Fedora, Arch and Alpine containers with the package manager itself
+asked what it had shipped.
+
+Four gaps came out of it, none of which reading the code could have found.
+
+**Redis is Valkey now.** `dnf install redis` and `pacman -S redis` both
+succeed and both leave `/etc` empty; the configuration that exists is
+`/etc/valkey/valkey.conf`. Without the package name and the path, redis reads
+as absent on Fedora and Arch, and as listening on its default port on Alpine
+where `/etc/redis.conf` is used instead.
+
+**PostgreSQL keeps its config outside `/etc` on rpm hosts.** `initdb` writes
+`postgresql.conf` into the data directory — `/var/lib/pgsql/data` on RHEL,
+`/var/lib/postgres/data` on Arch — and nothing under `/etc/postgresql` exists
+there at all. The Debian path alone meant the port of a critical-risk service
+was never read on either.
+
+**proftpd** is `/etc/proftpd.conf` on Fedora and `/etc/proftpd/proftpd.conf`
+everywhere else. **Apache** is `ports.conf` on Debian, `httpd.conf` on Alpine,
+and `/etc/httpd/conf/httpd.conf` on Fedora and Arch.
+
+Verified end to end with the ports edited: redis on 6399 read on all three
+non-Debian families, apache on 8081 read on Fedora and Alpine. One apparent
+failure was not one — Fedora's proftpd.conf ships no `Port` directive at all,
+so falling back to 21 is the correct answer, and adding the directive made BOB
+read it.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -571,7 +604,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7524**.
+**Tests** 7288 → **7544**.
 
 ---
 

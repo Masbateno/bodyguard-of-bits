@@ -69,6 +69,10 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     Alpine — no error, the services section simply reported everything absent.
     rpm, pacman and apk are now queried too, package-name equivalents added,
     and the four private dpkg calls share one helper.
+  * The 23 distribution-packaged services were measured on Debian, Fedora,
+    Arch and Alpine by installing each and asking the package manager what it
+    shipped. Redis is Valkey on Fedora and Arch; PostgreSQL keeps its config
+    in the data directory on rpm hosts; proftpd and Apache differ per family.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 
