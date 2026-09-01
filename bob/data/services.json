@@ -121,6 +121,7 @@
       "snap": [],
       "config_files": [
         "/etc/apache2/ports.conf",
+        "/etc/apache2/listen.conf",
         "/etc/apache2/httpd.conf",
         "/etc/httpd/conf/httpd.conf",
         "/etc/httpd/conf.d/*.conf"
@@ -360,7 +361,8 @@
       "config_files": [
         "/etc/redis/redis.conf",
         "/etc/redis.conf",
-        "/etc/valkey/valkey.conf"
+        "/etc/valkey/valkey.conf",
+        "/etc/redis/*.conf"
       ]
     }
   },

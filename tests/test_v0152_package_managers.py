@@ -209,3 +209,68 @@ class TestConfigPathsMeasuredPerDistribution:
         declared = next(s for s in registry._services
                         if s.id == "postgresql").detection.config_files
         assert any(p.startswith("/var/lib/") for p in declared)
+
+
+class TestOpenSUSEMixesTheConventions:
+    """The fifth family, and the one that borrows from both others.
+
+    openSUSE is rpm-based but names its package `apache2` like Debian, keeps
+    its config under `/etc/apache2/` like Debian, and puts `Listen` in a file
+    neither of the others has: `listen.conf`. Its redis ships only templates,
+    leaving the administrator to copy one into `/etc/redis/<instance>.conf`,
+    so no fixed filename can name it.
+
+    Measured in a Tumbleweed container; verified end to end with `Listen 8081`,
+    `listen_port=2121` and a `my.cnf.d` drop-in on 3307, all four read and all
+    four detected through `rpm`.
+    """
+
+    @pytest.fixture(scope="class")
+    def registry(self):
+        from bob.registry import ServiceRegistry
+        return ServiceRegistry.load()
+
+    def test_the_opensuse_listen_file_is_declared(self, registry):
+        declared = next(s for s in registry._services
+                        if s.id == "apache").detection.config_files
+        assert "/etc/apache2/listen.conf" in declared
+
+    def test_apache_now_names_four_layouts(self, registry):
+        """Debian, openSUSE, Alpine, and the Fedora/Arch httpd tree."""
+        declared = next(s for s in registry._services
+                        if s.id == "apache").detection.config_files
+        for path in ("/etc/apache2/ports.conf", "/etc/apache2/listen.conf",
+                     "/etc/apache2/httpd.conf", "/etc/httpd/conf/httpd.conf"):
+            assert path in declared
+
+    def test_a_glob_catches_the_instance_config(self, registry):
+        """openSUSE ships redis.default.conf.template and nothing else."""
+        declared = next(s for s in registry._services
+                        if s.id == "redis").detection.config_files
+        assert "/etc/redis/*.conf" in declared
+
+    def test_the_glob_does_not_reach_the_includes_directory(self, tmp_path,
+                                                            monkeypatch):
+        """`/etc/redis/*.conf` must not pick up `includes/*.defaults.conf`.
+
+        Those are shipped defaults, not the running configuration; matching
+        them would answer with a port the instance may well override.
+        """
+        import dataclasses
+
+        from bob.checks.services import _resolve_ports
+        from bob.registry import Detection, ServiceRegistry
+        root = tmp_path / "redis"
+        (root / "includes").mkdir(parents=True)
+        (root / "includes" / "redis.defaults.conf").write_text("port 6379\n")
+        (root / "instance.conf").write_text("port 6399\n")
+        service = next(s for s in ServiceRegistry.load()._services
+                       if s.id == "redis")
+        probe = dataclasses.replace(
+            service,
+            detection=Detection(binary=(), snap=(),
+                                config_files=(str(root / "*.conf"),)),
+        )
+        monkeypatch.setattr("bob.checks.services._is_safe_service_config",
+                            lambda path, declared: True)
+        assert _resolve_ports(probe) == ["6399/tcp"]

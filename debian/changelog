@@ -73,6 +73,9 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     Arch and Alpine by installing each and asking the package manager what it
     shipped. Redis is Valkey on Fedora and Arch; PostgreSQL keeps its config
     in the data directory on rpm hosts; proftpd and Apache differ per family.
+  * openSUSE completes the five: rpm-based but Debian-named, it keeps Listen
+    in /etc/apache2/listen.conf, a file none of the other four has, and ships
+    redis as a template copied to an unpredictable instance name.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

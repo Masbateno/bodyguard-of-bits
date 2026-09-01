@@ -535,6 +535,31 @@ apparent n'en était pas un — le proftpd.conf de Fedora ne livre aucune
 directive `Port`, donc retomber sur 21 est la bonne réponse, et ajouter la
 directive a suffi pour que BOB la lise.
 
+### openSUSE, la famille qui emprunte aux deux autres
+
+La cinquième distribution revendiquée par BOB, et celle où aucune hypothèse ne
+survit. Elle est à base rpm, donc `rpm -q` trouve ses paquets — mais elle nomme
+son serveur web `apache2` comme Debian, garde la configuration sous
+`/etc/apache2/` comme Debian, et place `Listen` dans un fichier qu'aucune des
+quatre autres ne possède : `listen.conf`. Tous les chemins apache ajoutés
+jusqu'ici le manquaient : le port était lu depuis rien.
+
+Son redis ne livre que `redis.default.conf.template`, laissant l'administrateur
+en copier un vers `/etc/redis/<instance>.conf` — un nom qu'aucun chemin fixe ne
+peut prédire. Un glob y répond, borné à un niveau de répertoire pour que les
+`includes/*.defaults.conf` livrés ne soient pas pris pour la configuration
+active.
+
+Vérifié de bout en bout sur Tumbleweed avec `Listen 8081`, `listen_port=2121`
+et un fichier d'appoint `my.cnf.d` sur 3307 : tous lus, tous détectés via
+`rpm`. Debian revérifié ensuite, les deux ajouts touchant des chemins qu'elle
+apparie aussi.
+
+Apache à lui seul nomme désormais quatre dispositions — le `ports.conf` de
+Debian, le `listen.conf` d'openSUSE, le `httpd.conf` d'Alpine et l'arbre
+`httpd` de Fedora/Arch — ce qui est la forme même du problème : cinq
+distributions, et le port d'un service vit ailleurs sur presque chacune.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -634,7 +659,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7544**.
+**Tests** 7288 → **7548**.
 
 ---
 
