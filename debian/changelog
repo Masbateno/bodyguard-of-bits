@@ -56,6 +56,10 @@ bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
     on the registry default. The dispatch now reads whenever a path is
     declared, and returns every listener. INI ';' comments were read as live
     ports; JSON string, XML attribute and YAML !!int forms were invisible.
+  * nginx.conf carries no listen directive on a stock install: they live in
+    conf.d/*.conf or sites-enabled/*, the latter symlinks into sites-available.
+    The include directories are now declared, and a scoped policy follows a
+    symlink only while its target stays inside the service's config tree.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 31 Aug 2026 20:29:32 +0200
 

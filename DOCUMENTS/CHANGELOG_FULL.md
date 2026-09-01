@@ -392,6 +392,35 @@ must survive. A JSON port written as a string, an XML port carried as an
 attribute rather than an element, and a YAML value behind an explicit `!!int`
 tag were all invisible; all three now read.
 
+### nginx.conf carries no `listen` on any stock install
+
+The remaining `config_key: "fixed"` services turned out to be already covered:
+nine of the eleven declare a config file, which the previous fix now reads
+whatever the strategy is called, and the two that declare none — avahi and
+plex — have a port that genuinely is not configurable.
+
+The gap was in the *paths* instead. Measured on both layouts rather than
+recalled: the upstream nginx image keeps its server blocks in
+`/etc/nginx/conf.d/*.conf`, and the Debian package keeps them in
+`/etc/nginx/sites-enabled/*` — where `nginx.conf` itself declares zero `listen`
+directives in the first case and only commented ones in the second. The
+registry declared `nginx.conf` alone, so the file that decides the listening
+port was never among those BOB opened.
+
+`sites-enabled` entries are symlinks into `sites-available`: enabling a site
+*is* the symlink. `_is_safe_config_path` refuses every symlink, which is right
+for `/etc/cron.d` and `/etc/sudoers.d` where any link is suspect, and wrong
+here — nginx follows the link, and so must an auditor reading what nginx reads.
+A scoped policy now follows a link while its target stays inside the same
+service config tree, so `sites-enabled/evil -> /etc/shadow` is still refused
+and the SECURITY.md trust boundary holds: nothing outside the service's own
+directory can be drawn into a report by a planted link.
+
+Verified against a real Debian `nginx-light`: with `sites-available/default`
+edited to `listen 8443`, BOB resolves `8443/tcp` and `80/tcp` — the second from
+the IPv6 line left untouched — where it previously answered 80 and 443 without
+opening anything.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -484,7 +513,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7494**.
+**Tests** 7288 → **7500**.
 
 ---
 

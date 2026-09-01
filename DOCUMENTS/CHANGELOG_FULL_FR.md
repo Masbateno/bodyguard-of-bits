@@ -413,6 +413,35 @@ est ancré en début de ligne, car en nginx `;` termine une instruction et
 par un attribut plutôt qu'un élément, et une valeur YAML derrière un tag `!!int`
 explicite étaient tous invisibles ; les trois se lisent désormais.
 
+### `nginx.conf` ne porte aucun `listen` sur une installation standard
+
+Les services encore en `config_key: "fixed"` se sont révélés déjà couverts :
+neuf des onze déclarent un fichier de configuration, que le correctif précédent
+lit désormais quelle que soit la stratégie, et les deux qui n'en déclarent aucun
+— avahi et plex — ont un port réellement non configurable.
+
+La lacune était dans les *chemins*. Mesurée sur les deux dispositions plutôt que
+tirée de mémoire : l'image nginx amont range ses blocs serveur dans
+`/etc/nginx/conf.d/*.conf`, et le paquet Debian dans `/etc/nginx/sites-enabled/*`
+— `nginx.conf` lui-même ne déclarant aucun `listen` dans le premier cas et
+seulement des lignes commentées dans le second. Le registre ne déclarait que
+`nginx.conf` : le fichier qui décide du port d'écoute n'était donc jamais parmi
+ceux que BOB ouvrait.
+
+Les entrées de `sites-enabled` sont des liens symboliques vers
+`sites-available` : activer un site *est* le lien. `_is_safe_config_path` refuse
+tout lien, ce qui est juste pour `/etc/cron.d` et `/etc/sudoers.d` où tout lien
+est suspect, et faux ici — nginx suit le lien, et un auditeur qui lit ce que
+nginx lit doit le suivre aussi. Une politique bornée le suit désormais tant que
+sa cible reste dans le même répertoire de configuration du service :
+`sites-enabled/evil -> /etc/shadow` est toujours refusé et la frontière de
+confiance de SECURITY.md tient — rien hors du répertoire propre au service ne
+peut être attiré dans un rapport par un lien planté.
+
+Vérifié contre un vrai `nginx-light` Debian : avec `sites-available/default`
+passé à `listen 8443`, BOB résout `8443/tcp` et `80/tcp` — le second venant de
+la ligne IPv6 laissée intacte — là où il répondait 80 et 443 sans rien ouvrir.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -512,7 +541,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7494**.
+**Tests** 7288 → **7500**.
 
 ---
 

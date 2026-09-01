@@ -28,7 +28,7 @@ from enum import Enum
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, _run, path_exists
+from bob.checks._run import TranslationFunc, _identity_t, _run, path_exists
 from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
 from bob.sysinfo import _is_private_or_loopback_ipv4, _is_private_or_loopback_ipv6
@@ -531,6 +531,33 @@ def _resolve_ports(service: Service) -> list[str]:
 
     return list(service.ports)
 
+def _is_safe_service_config(path: Path, declared: str) -> bool:
+    """Whether a service config file is safe to read.
+
+    Stricter than a plain existence check and looser than
+    ``_is_safe_config_path``, which refuses every symlink. A config tree
+    legitimately links into itself: nginx enables a site by symlinking
+    ``sites-enabled/default`` to ``sites-available/default``, and following
+    that link is exactly what nginx does — refusing it left the `listen`
+    directives unread on every Debian install, since ``nginx.conf`` carries
+    none of them.
+
+    The link is followed only while it stays inside the same service config
+    directory, so ``sites-enabled/evil -> /etc/shadow`` is still refused and
+    the trust boundary in SECURITY.md holds: nothing outside the service's own
+    tree can be drawn into an audit report through a planted link.
+    """
+    if not path.is_absolute():
+        return False
+    if not path.is_symlink():
+        return True
+    root = Path(declared.split("*", 1)[0]).parent
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+
+
 def _auto_detect_ports(service: Service) -> "list[str]":
     """Detect the ports a service actually listens on, from its own config.
 
@@ -542,9 +569,9 @@ def _auto_detect_ports(service: Service) -> "list[str]":
     Returns an empty list when nothing could be read or understood, which the
     caller reads as "fall back to the registry defaults".
     """
-    for config_file in _expand_config_paths(service.detection.config_files):
+    for declared, config_file in _expand_config_paths(service.detection.config_files):
         path = Path(config_file)
-        if not path_exists(path) or not _is_safe_config_path(path):
+        if not path_exists(path) or not _is_safe_service_config(path, declared):
             continue
         try:
             content = path.read_text(encoding="utf-8", errors="ignore")
@@ -685,22 +712,22 @@ def _auto_detect_port(service: Service) -> "str | None":
     detected = _auto_detect_ports(service)
     return detected[0] if detected else None
 
-def _expand_config_paths(patterns: "tuple[str, ...]") -> "list[str]":
+def _expand_config_paths(patterns: "tuple[str, ...]") -> "list[tuple[str, str]]":
     """Resolve any wildcard in a service's declared config paths.
 
     PostgreSQL versions its directory (`/etc/postgresql/16/main/`) and
     WireGuard keeps one file per interface, so a literal list cannot name
     either. Sorted for a deterministic answer when several files match.
     """
-    resolved: list[str] = []
+    resolved: "list[tuple[str, str]]" = []
     for pattern in patterns:
         if "*" in pattern or "?" in pattern:
             try:
-                resolved.extend(sorted(_glob.glob(pattern)))
+                resolved.extend((pattern, hit) for hit in sorted(_glob.glob(pattern)))
             except OSError:
                 continue
         else:
-            resolved.append(pattern)
+            resolved.append((pattern, pattern))
     return resolved
 
 

@@ -111,7 +111,8 @@ class TestEveryConfigFormatIsRead:
                                 snap=service.detection.snap,
                                 config_files=redirected),
         )
-        monkeypatch.setattr("bob.checks.services._is_safe_config_path", lambda p: True)
+        monkeypatch.setattr("bob.checks.services._is_safe_service_config",
+                        lambda path, declared: True)
 
         detected = _auto_detect_port(probe)
         assert detected is not None, f"{service_id}: no port found in its own config"
@@ -138,7 +139,8 @@ class TestNoFalsePositives:
         probe = dataclasses.replace(
             service, detection=Detection(binary=(), snap=(), config_files=(str(target),))
         )
-        monkeypatch.setattr("bob.checks.services._is_safe_config_path", lambda p: True)
+        monkeypatch.setattr("bob.checks.services._is_safe_service_config",
+                        lambda path, declared: True)
         assert _auto_detect_port(probe) is None
 
 
@@ -156,7 +158,8 @@ def _probe(registry, service_id, filename, content, tmp_path, monkeypatch,
     probe = dataclasses.replace(
         service, detection=Detection(binary=(), snap=(), config_files=(declared,))
     )
-    monkeypatch.setattr("bob.checks.services._is_safe_config_path", lambda p: True)
+    monkeypatch.setattr("bob.checks.services._is_safe_service_config",
+                        lambda path, declared: True)
     detected = _auto_detect_port(probe)
     return detected.split("/")[0] if detected else None
 
@@ -300,7 +303,8 @@ class TestTheAuditPathActuallyReadsTheConfig:
         probe = dataclasses.replace(
             service, detection=Detection(binary=(), snap=(), config_files=(str(target),))
         )
-        monkeypatch.setattr("bob.checks.services._is_safe_config_path", lambda p: True)
+        monkeypatch.setattr("bob.checks.services._is_safe_service_config",
+                        lambda path, declared: True)
         return _resolve_ports(probe)
 
     @pytest.mark.parametrize("service_id,filename,content,expected", [
@@ -391,3 +395,85 @@ class TestRemainingFormatShapes:
     def test_a_json_boolean_is_not_a_port(self, registry, tmp_path, monkeypatch):
         assert _probe(registry, "transmission", "settings.json",
                       '{\n "rpc-port": true\n}\n', tmp_path, monkeypatch) is None
+
+
+class TestIncludeDirectoriesAndTheirSymlinks:
+    """`nginx.conf` carries no `listen` on any stock install.
+
+    Measured on both layouts: the upstream image keeps the server blocks in
+    `/etc/nginx/conf.d/*.conf` as regular files, and the Debian package keeps
+    them in `/etc/nginx/sites-enabled/*` as symlinks into `sites-available`.
+    The registry declared only `nginx.conf`, so the directives that decide the
+    listening port were never in a file BOB looked at.
+    """
+
+    def test_the_registry_declares_the_include_directories(self):
+        registry = ServiceRegistry.load()
+        service = next(s for s in registry._services if s.id == "nginx")
+        declared = service.detection.config_files
+        assert any("conf.d" in path for path in declared)
+        assert any("sites-enabled" in path for path in declared)
+
+    def test_a_symlink_inside_the_service_tree_is_followed(self, tmp_path):
+        """Enabling a site *is* a symlink; nginx follows it and so must BOB."""
+        from bob.checks.services import _is_safe_service_config
+        root = tmp_path / "nginx"
+        (root / "sites-available").mkdir(parents=True)
+        (root / "sites-enabled").mkdir()
+        real = root / "sites-available" / "default"
+        real.write_text("server { listen 8443; }\n")
+        link = root / "sites-enabled" / "default"
+        link.symlink_to(real)
+        assert _is_safe_service_config(link, str(root / "sites-enabled" / "*"))
+
+    def test_a_symlink_escaping_the_tree_is_refused(self, tmp_path):
+        """`sites-enabled/evil -> /etc/shadow` must not be drawn into a report."""
+        from bob.checks.services import _is_safe_service_config
+        root = tmp_path / "nginx"
+        (root / "sites-enabled").mkdir(parents=True)
+        outside = tmp_path / "secrets"
+        outside.write_text("root:!:20000::::::\n")
+        link = root / "sites-enabled" / "evil"
+        link.symlink_to(outside)
+        assert not _is_safe_service_config(link, str(root / "sites-enabled" / "*"))
+
+    def test_a_regular_file_needs_no_exception(self, tmp_path):
+        from bob.checks.services import _is_safe_service_config
+        target = tmp_path / "nginx.conf"
+        target.write_text("")
+        assert _is_safe_service_config(target, str(target))
+
+    def test_a_relative_path_is_refused(self, tmp_path):
+        from bob.checks.services import _is_safe_service_config
+        from pathlib import Path
+        assert not _is_safe_service_config(Path("nginx.conf"), "nginx.conf")
+
+    def test_listen_directives_are_found_through_the_include(self, tmp_path,
+                                                             monkeypatch):
+        """End to end on the Debian shape: nginx.conf empty, site symlinked."""
+        import dataclasses
+
+        from bob.checks.services import _resolve_ports
+        from bob.registry import Detection
+        registry = ServiceRegistry.load()
+        service = next(s for s in registry._services if s.id == "nginx")
+
+        root = tmp_path / "nginx"
+        (root / "sites-available").mkdir(parents=True)
+        (root / "sites-enabled").mkdir()
+        (root / "nginx.conf").write_text(
+            "http {\n include /etc/nginx/sites-enabled/*;\n}\n"
+        )
+        real = root / "sites-available" / "default"
+        real.write_text("server {\n listen 8443 default_server;\n}\n")
+        (root / "sites-enabled" / "default").symlink_to(real)
+
+        probe = dataclasses.replace(
+            service,
+            detection=Detection(
+                binary=(), snap=(),
+                config_files=(str(root / "nginx.conf"),
+                              str(root / "sites-enabled" / "*")),
+            ),
+        )
+        assert _resolve_ports(probe) == ["8443/tcp"]
