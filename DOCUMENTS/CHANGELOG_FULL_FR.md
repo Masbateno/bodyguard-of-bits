@@ -201,7 +201,54 @@ localement au lieu de piloter `from_system`. Réinjecter le défaut dans samba.p
 ne tuait rien — ils validaient leur propre copie. Réécrits pour écrire un
 smb.conf et laisser le vrai parseur le lire, la même mutation en tue trois.
 
-**Tests** 7560 → **7643**.
+`-r/--reconfigure` était le seul des 43 champs que remplit `parse_args` que
+rien ne lit. Livré en v0.1.0, annoncé dans `--help` et deux fois dans le
+manuel, il s'accompagnait du conseil « Pour la réinitialiser : bob
+--reconfigure » affiché à chaque audit trouvant une config. L'assistant que
+promettait son libellé n'a jamais existé : aucune clé `<service>_port` n'est
+écrite ni lue, le profil et le webhook persistent depuis leurs drapeaux CLI, et
+`log_dir` est demandé par `--manage-logs`. Le contrat restauré est
+réinitialiser-et-sortir. `UserConfig.reset()` plutôt que le `clear()` existant,
+qui persiste un fichier vide et laisserait `exists()` répondre True — le
+conseil aurait continué de pointer vers une réinitialisation déjà faite. La
+confirmation est systématique : le parseur réserve `-y` à `--fix --apply`, donc
+un garde autour de l'invite aurait été du code inatteignable, précisément le
+défaut contre lequel ce commit protège.
+
+`--help` rendait un anglais identique à l'octet sous `--french`, `--lang=fr` et
+`LANG=fr_FR`, sur le seul écran qui annonce `--french`. La couture existait
+depuis la v0.1.0 : `print_help(t, version)` recevait `t` derrière une note
+« réservé pour une future i18n » et imprimait des littéraux. 83 clés par locale
+désormais, les drapeaux restant non traduits parce qu'ils sont de la syntaxe
+CLI et non de la prose, ce qui garde les deux colonnes alignées à l'identique
+d'une langue à l'autre. Sept lignes dépassaient 100 caractères, dont une de
+cinquante ; la reformulation nécessaire à la traduction les a toutes fermées,
+et le plafond informel est devenu un contrat imposé. L'exemple
+`--install-completion` interpolait `Path(sys.argv[0]).resolve()`, faux dans les
+deux sens : depuis les sources il affichait un fichier en 644 sans shebang, et
+sous pipx `.resolve()` déréférençait le point d'entrée stable vers le chemin
+interne du venv. Huit formes courtes et deux alias manquaient au manuel.
+
+Un balayage des clés de locale que rien ne référence — une surface nommée comme
+non balayée depuis plusieurs versions et jamais réellement balayée — a trouvé
+trois orphelines sous `plugin.sandbox`, traduites dans les deux langues et
+appelées par personne. Elles étaient orphelines parce que les conditions
+qu'elles nomment étaient rapportées en anglais en dur : le worker mettait une
+phrase rendue dans la file et `SandboxRejected` portait un texte anglais, tous
+deux injectés tels quels dans le `{error}` d'un gabarit traduit. Un francophone
+lisait « Le plugin 'x.py' rejeté : Plugin 'x.py' missing required run_check
+function » — à moitié anglais, avec le nom du plugin en double. Le worker
+envoie désormais une clé et des paramètres primitifs, le parent rend ;
+`SandboxRejected` porte sa propre clé et ses paramètres. Même classe que la
+passe F8/F8b de la v0.11.2, sur une surface qu'elle n'avait pas couverte.
+
+Quatre gardes, toutes mutation-testées : aucun champ affecté par `parse_args`
+ne peut rester sans lecteur, aucune clé de locale sans référence, aucune option
+annoncée dans `--help` absente du manuel, aucune ligne d'aide rendue au-delà de
+100 caractères — mesurée en caractères, les tirets cadratins et les flèches
+étant multi-octets et le comptage en octets gonflant le chiffre.
+
+**Tests** 7560 → **7707**.
 
 ---
 

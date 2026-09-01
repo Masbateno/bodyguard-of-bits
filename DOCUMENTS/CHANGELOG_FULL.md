@@ -187,7 +187,52 @@ driving `from_system`. Reinjecting the defect into samba.py killed nothing —
 they were asserting their own copy. Rewritten to write an smb.conf and let the
 real parser read it, the same mutation now kills three of them.
 
-**Tests** 7560 → **7643**.
+`-r/--reconfigure` was the only one of the 43 fields `parse_args` populates
+that nothing reads. It shipped in v0.1.0, was advertised in `--help` and twice
+in the man page, and BOB printed "To reset it: bob --reconfigure" on every run
+that found a saved config. The wizard its wording promised — "reset saved port
+configuration and re-ask" — never existed: no `<service>_port` key is written
+or read, the profile and webhook persist from their CLI flags, and `log_dir` is
+asked by `--manage-logs`. The restored contract is reset-and-exit.
+`UserConfig.reset()` rather than the existing `clear()`, which persists an
+empty file and would leave `exists()` answering True — the hint would have kept
+pointing at a reset that had already run. The confirmation is unconditional:
+the parser scopes `-y` to `--fix --apply`, so a guard around the prompt would
+itself have been unreachable code, the exact defect this commit guards against.
+
+`--help` returned byte-identical English under `--french`, `--lang=fr` and
+`LANG=fr_FR`, on the one screen that advertises `--french`. The seam had been
+in place since v0.1.0: `print_help(t, version)` took `t` behind a "reserved for
+future i18n" note and printed literals. 83 keys per locale now, flags left
+untranslated because they are CLI syntax rather than prose, which also keeps
+both columns aligned identically across locales. Seven lines ran past 100
+characters, one of them by fifty; rewording for the translation closed all
+seven, so the informal ceiling became an enforced contract. The
+`--install-completion` example interpolated `Path(sys.argv[0]).resolve()`,
+wrong in both directions: from a checkout it printed a mode-644 file with no
+shebang, and under pipx `.resolve()` dereferenced the stable entry point into
+the venv's internal path. Eight short forms and two aliases were absent from
+the man page.
+
+A sweep of locale keys that no code references — a surface named as unswept for
+several releases and never actually swept — found three orphans under
+`plugin.sandbox`, translated in both locales and called by nobody. They were
+orphans because the conditions they name were reported with hardcoded English
+instead: the worker put a rendered sentence on the queue and `SandboxRejected`
+carried English text, both interpolated verbatim into the `{error}` slot of a
+translated wrapper. A French user read "Le plugin 'x.py' rejeté : Plugin
+'x.py' missing required run_check function" — half English, with the plugin
+name twice. The worker now ships a key plus primitive params and the parent
+renders; `SandboxRejected` carries its own key and params. Same class as the
+v0.11.2 F8/F8b pass, on a surface that pass had not covered.
+
+Four guards, all mutation-tested: no field `parse_args` assigns may lack a
+reader, no locale key may lack a reference, no option advertised in `--help`
+may be absent from the man page, and no rendered help line may exceed 100
+characters — measured in characters, since em dashes and arrows are multi-byte
+and byte-counting inflates the figure.
+
+**Tests** 7560 → **7707**.
 
 ---
 

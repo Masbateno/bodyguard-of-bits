@@ -1171,7 +1171,10 @@
       "runner_error": "Plugin {plugin} runner error: {error}",
       "missing_run_check": "Plugin {plugin} missing run_check",
       "bad_return": "Plugin {plugin} returned {actual_type}, not CheckResult",
-      "crashed": "Plugin {plugin} crashed: {error}"
+      "crashed": "Plugin {plugin} crashed: {error}",
+      "serialize_failed": "Plugin {plugin} returned a result that could not be serialized: {error}",
+      "unreadable": "Plugin {plugin} could not be read: {error}",
+      "syntax_error": "Plugin {plugin} has a syntax error: {error}"
     }
   },
   "explain": {

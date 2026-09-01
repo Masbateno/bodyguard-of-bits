@@ -183,13 +183,16 @@ class PluginCheck:
             return runner.run(self.path, t=t)
         except SandboxRejected as exc:
             r = CheckResult()
+            # v0.15.3: render the specific reason when the exception carries
+            # one. The generic wrapper stays for any raise that does not.
+            _key = getattr(exc, "locale_key", "") or "plugin.sandbox.rejected"
+            if _key == "plugin.sandbox.rejected":
+                _params = {"plugin": repr(self.path.name), "error": str(exc)}
+            else:
+                _params = dict(getattr(exc, "params", None) or {})
             r.warn(
-                message=_warn_msg(
-                    t, "plugin.sandbox.rejected",
-                    f"Plugin {self.path.name!r} rejected: {exc}",
-                    plugin=repr(self.path.name), error=exc,
-                ),
-                key="plugin.sandbox.rejected",
+                message=_warn_msg(t, _key, str(exc), **_params),
+                key=_key,
                 nature="structural",
             )
             return r

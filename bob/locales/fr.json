@@ -1171,7 +1171,10 @@
       "runner_error": "Erreur d'exécuteur du plugin {plugin} : {error}",
       "missing_run_check": "Le plugin {plugin} n'a pas de fonction run_check",
       "bad_return": "Le plugin {plugin} a renvoyé {actual_type} au lieu d'un CheckResult",
-      "crashed": "Le plugin {plugin} a planté : {error}"
+      "crashed": "Le plugin {plugin} a planté : {error}",
+      "serialize_failed": "Le plugin {plugin} a renvoyé un résultat non sérialisable : {error}",
+      "unreadable": "Le plugin {plugin} n'a pas pu être lu : {error}",
+      "syntax_error": "Le plugin {plugin} contient une erreur de syntaxe : {error}"
     }
   },
   "explain": {

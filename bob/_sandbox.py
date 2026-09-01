@@ -255,7 +255,21 @@ _OPEN_READ_DENY_SUBSTRINGS: tuple[str, ...] = (
 class SandboxRejected(Exception):
     """Plugin failed static validation — missing ``run_check``, syntax
     error, or unreadable source. Distinct from runtime errors (which the
-    runner catches and turns into a WARN CheckResult)."""
+    runner catches and turns into a WARN CheckResult).
+
+    v0.15.3: carries ``locale_key`` and ``params`` so the caller can render a
+    translated message. Previously the English text of this exception was
+    interpolated verbatim into the ``{error}`` slot of the translated
+    ``plugin.sandbox.rejected`` wrapper, so a French user read
+    "Le plugin 'x.py' rejeté : Plugin 'x.py' missing required run_check
+    function" — half English, with the plugin name twice. ``str(exc)`` is
+    unchanged and stays the English fallback.
+    """
+
+    def __init__(self, message: str, *, locale_key: str = "", **params: Any) -> None:
+        super().__init__(message)
+        self.locale_key = locale_key
+        self.params = params
 
 
 def has_run_check(source: str) -> bool:
@@ -624,6 +638,45 @@ def _deserialize_check_result(data: dict) -> CheckResult:
     return r
 
 
+# v0.15.3: the worker used to put a rendered English sentence on the queue,
+# which the parent interpolated verbatim into the {error} slot of the
+# translated ``plugin.sandbox.error`` wrapper. A French user read
+# "Plugin 'foo.py' erreur : Plugin missing run_check" — half translated —
+# while plugin.sandbox.missing_run_check, bad_return and crashed sat in both
+# locale files, fully translated and never called.
+#
+# The worker now ships a key plus primitive params and lets the parent render.
+# Only strings cross the process boundary, the same constraint as the C-2
+# sanitized result payload, so this adds no new deserialization surface.
+#
+# The English fallbacks are duplicated from en.json because ``_sandbox_msg``
+# needs them when ``t`` is None or the key is unknown — the drift is caught by
+# TestWorkerFallbacksMatchLocale rather than left to trust.
+_WORKER_FALLBACKS = {
+    "plugin.sandbox.rejected": "Plugin {plugin} rejected: {error}",
+    "plugin.sandbox.missing_run_check": "Plugin {plugin} missing run_check",
+    "plugin.sandbox.bad_return": "Plugin {plugin} returned {actual_type}, not CheckResult",
+    "plugin.sandbox.serialize_failed": "Plugin {plugin} returned a result that could not be serialized: {error}",
+    "plugin.sandbox.crashed": "Plugin {plugin} crashed: {error}",
+}
+
+
+def _worker_error(plugin_path: str, key: str, **params: Any) -> tuple:
+    """Build a structured, localisable error for the parent to render.
+
+    Pure string operations on ``plugin_path``: the worker runs after
+    ``_strip_os_dangerous_attrs``, so it must not lean on ``os.path``.
+    """
+    name = repr(plugin_path.rsplit("/", 1)[-1])
+    fmt = {"plugin": name, **params}
+    template = _WORKER_FALLBACKS.get(key, "Plugin {plugin} error")
+    try:
+        fallback = template.format(**fmt)
+    except (KeyError, IndexError):  # pragma: no cover — template/params drift
+        fallback = template
+    return ("error", {"key": key, "fallback": fallback, "params": fmt})
+
+
 def _worker_main(plugin_path: str, result_queue) -> None:
     """Worker process entry point.
 
@@ -652,7 +705,8 @@ def _worker_main(plugin_path: str, result_queue) -> None:
         except ImportError:
             code = compile(source, plugin_path, "exec")
         except SyntaxError as exc:
-            result_queue.put(("error", f"RestrictedPython rejected source: {exc}"))
+            result_queue.put(_worker_error(
+                plugin_path, "plugin.sandbox.rejected", error=str(exc)))
             return
 
         # Execute plugin module body in restricted namespace.
@@ -666,32 +720,33 @@ def _worker_main(plugin_path: str, result_queue) -> None:
 
         run_check = namespace.get("run_check")
         if not callable(run_check):
-            result_queue.put(("error", "Plugin missing run_check"))
+            result_queue.put(_worker_error(
+                plugin_path, "plugin.sandbox.missing_run_check"))
             return
 
         result = run_check(None)
         if not isinstance(result, CheckResult):
-            result_queue.put((
-                "error",
-                f"run_check returned {type(result).__name__}, not CheckResult",
-            ))
+            result_queue.put(_worker_error(
+                plugin_path, "plugin.sandbox.bad_return",
+                actual_type=type(result).__name__))
             return
 
         # C-2 mitigation: ship a sanitized dict, not the pickled CheckResult.
         try:
             payload = _serialize_check_result(result)
         except Exception as exc:  # noqa: BLE001 — pathological plugin output
-            result_queue.put((
-                "error",
-                f"failed to serialize plugin result: {type(exc).__name__}: {exc}",
-            ))
+            result_queue.put(_worker_error(
+                plugin_path, "plugin.sandbox.serialize_failed",
+                error=f"{type(exc).__name__}: {exc}"))
             return
 
         result_queue.put(("ok", payload))
 
     except Exception as exc:  # noqa: BLE001
         # Any uncaught exception is forwarded so the parent can wrap it.
-        result_queue.put(("error", f"{type(exc).__name__}: {exc}"))
+        result_queue.put(_worker_error(
+            plugin_path, "plugin.sandbox.crashed",
+            error=f"{type(exc).__name__}: {exc}"))
 
 
 # ---------------------------------------------------------------------------
@@ -731,12 +786,20 @@ class SandboxRunner:
         except OSError as exc:
             # from exc: which OSError (EACCES? ENOENT?) is exactly what a plugin
             # author needs to see under BOB_DEBUG.
-            raise SandboxRejected(f"Cannot read plugin {plugin_path!r}: {exc}") from exc
+            raise SandboxRejected(
+                f"Cannot read plugin {plugin_path!r}: {exc}",
+                locale_key="plugin.sandbox.unreadable",
+                plugin=repr(plugin_path.name), error=str(exc),
+            ) from exc
 
         try:
             compile(source, str(plugin_path), "exec")
         except SyntaxError as exc:
-            raise SandboxRejected(f"Plugin syntax error: {exc}") from exc
+            raise SandboxRejected(
+                f"Plugin {plugin_path.name!r} syntax error: {exc}",
+                locale_key="plugin.sandbox.syntax_error",
+                plugin=repr(plugin_path.name), error=str(exc),
+            ) from exc
 
         # AST-based presence check — accepts ``def run_check`` AND
         # ``run_check = ...`` (I-3). Shared with plugin_checks._load_one
@@ -744,7 +807,9 @@ class SandboxRunner:
         # gates agree.
         if not has_run_check(source):
             raise SandboxRejected(
-                f"Plugin {plugin_path.name!r} missing required run_check function"
+                f"Plugin {plugin_path.name!r} missing run_check",
+                locale_key="plugin.sandbox.missing_run_check",
+                plugin=repr(plugin_path.name),
             )
 
         # v0.9.0 TD-1: the BOB_SANDBOX_LEGACY=1 bypass is removed. Plugins
@@ -835,16 +900,26 @@ class SandboxRunner:
 
             # status == "error"
             r = CheckResult()
-            r.warn(
-                message=_sandbox_msg(
-                    t, "plugin.sandbox.error",
+            if isinstance(payload, dict) and payload.get("key"):
+                # Structured worker error: render the specific message.
+                _key = str(payload["key"])
+                _params = payload.get("params")
+                if not isinstance(_params, dict):
+                    _params = {"plugin": repr(plugin_path.name)}
+                _message = _sandbox_msg(
+                    t, _key, str(payload.get("fallback") or _key), **_params
+                )
+            else:
+                # Unstructured payload (an older worker, or a raw string):
+                # keep the generic wrapper rather than losing the detail.
+                _key = "plugin.sandbox.error"
+                _message = _sandbox_msg(
+                    t, _key,
                     f"Plugin {plugin_path.name!r} error: {payload}",
                     plugin=repr(plugin_path.name),
                     error=payload,
-                ),
-                key="plugin.sandbox.error",
-                nature="structural",
-            )
+                )
+            r.warn(message=_message, key=_key, nature="structural")
             return r
         finally:
             # I-2: explicitly close the queue and join its feeder thread
