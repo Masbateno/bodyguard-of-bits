@@ -153,6 +153,33 @@ That last guard is the point of the exercise. A description that says "ask
 prompts the operator" is how eight services came to carry a config path that
 was never opened.
 
+### Two options the manual never mentioned
+
+The `config_key` pass had just shown what a declaration drifting from its
+implementation costs, so the same question went to the surface an operator
+actually reads. Every long option the parser accepts, against the manual page.
+
+Two had drifted out: `--test-webhook`, added in v0.8.2, and `--html`, whose
+sibling long-form alias `--json-full` is documented immediately beside it. Both
+appear in `--help`, so they were reachable — but the manual is the reference,
+and v0.13.4 already had to repair five undiscoverable options once.
+
+Two more are absent on purpose and now say why in the guard rather than in
+anyone's memory: `--no-colour` is the British spelling of a canonical form the
+manual documents, and `--json-v1` was retired in v0.9.0 — the parser keeps it
+only to answer with the retirement message, so documenting it would advertise
+an option that refuses to work.
+
+A test now ties the parser to the manual, and a stale exemption fails it too.
+
+Two false alarms were caught before they were reported. The manual appears to
+document a `--list-checks` flag; it does not — the sentence reads "there is no
+separate `--list-checks` flag", and a regex found the words inside the warning
+that exists to prevent exactly that confusion. And a first draft of the troff
+check counted `\fI` against `\fR` and failed on a page groff renders without
+a single warning, because troff closes a font with `\fB` or `\fP` too.
+Counting escapes measured the counter. The check now asks groff.
+
 ### A test that did not bite
 
 The first draft of the new tests rebuilt the detection logic locally instead of
@@ -160,7 +187,7 @@ driving `from_system`. Reinjecting the defect into samba.py killed nothing —
 they were asserting their own copy. Rewritten to write an smb.conf and let the
 real parser read it, the same mutation now kills three of them.
 
-**Tests** 7560 → **7633**.
+**Tests** 7560 → **7643**.
 
 ---
 

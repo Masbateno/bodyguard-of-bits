@@ -24,6 +24,9 @@ bodyguard-of-bits (0.15.3-1) UNRELEASED; urgency=low
     whatever the strategy is called. "ask" never had an implementation and no
     service uses the named-key form. The declarations now describe the code;
     retiring the field is queued as a registry contract change.
+  * --test-webhook and --html were accepted by the parser and absent from the
+    manual page. A guard now ties the two, with recorded reasons for the two
+    options deliberately left out (--no-colour, --json-v1).
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 01 Sep 2026 14:28:06 +0200
 

@@ -106,6 +106,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   said "rules unreadable" where "auditing is switched off" was the truth.
 - config_key no longer selects behaviour; its documentation said otherwise,
   which is how eight services carried a config path that was never opened.
+- --test-webhook and --html were missing from the manual page; a guard now
+  ties every parser option to it.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.2-1
 - A command that could not run no longer reads as "nothing found": new

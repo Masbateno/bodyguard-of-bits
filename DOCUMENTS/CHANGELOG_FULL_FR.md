@@ -162,6 +162,38 @@ Ce dernier garde est tout l'objet de l'exercice. Une description affirmant
 qu'« ask interroge l'opérateur » est précisément ce qui a permis à huit
 services de porter un chemin de configuration jamais ouvert.
 
+### Deux options que le manuel ne mentionnait pas
+
+La passe sur `config_key` venait de montrer ce que coûte une déclaration qui
+dérive de son implémentation : la même question est allée à la surface que
+l'opérateur lit réellement. Chaque option longue acceptée par le parseur,
+confrontée à la page de manuel.
+
+Deux avaient dérivé : `--test-webhook`, ajoutée en v0.8.2, et `--html`, dont
+l'alias longue forme jumeau `--json-full` est documenté juste à côté. Toutes
+deux figurent dans `--help`, elles restaient donc atteignables — mais le manuel
+est la référence, et v0.13.4 avait déjà dû réparer cinq options
+indécouvrables.
+
+Deux autres sont absentes à dessein et disent désormais pourquoi dans le garde
+plutôt que dans la mémoire de quelqu'un : `--no-colour` est l'orthographe
+britannique d'une forme canonique que le manuel documente, et `--json-v1` a été
+retirée en v0.9.0 — le parseur ne la garde que pour répondre par le message de
+retrait, la documenter reviendrait donc à annoncer une option qui refuse de
+fonctionner.
+
+Un test lie désormais le parseur au manuel, et une dispense périmée le fait
+échouer aussi.
+
+Deux fausses alertes ont été arrêtées avant d'être rapportées. Le manuel semble
+documenter une option `--list-checks` ; il n'en fait rien — la phrase dit « il
+n'existe pas de drapeau `--list-checks` distinct », et une regex a trouvé les
+mots à l'intérieur de l'avertissement qui existe précisément pour éviter cette
+confusion. Et un premier jet du contrôle troff comptait les `\fI` contre les
+`\fR` et échouait sur une page que groff rend sans le moindre avertissement,
+troff fermant aussi une police par `\fB` ou `\fP`. Compter les échappements
+mesurait le compteur. Le contrôle interroge groff désormais.
+
 ### Un test qui ne mordait pas
 
 Le premier jet des nouveaux tests reconstruisait la logique de détection
@@ -169,7 +201,7 @@ localement au lieu de piloter `from_system`. Réinjecter le défaut dans samba.p
 ne tuait rien — ils validaient leur propre copie. Réécrits pour écrire un
 smb.conf et laisser le vrai parseur le lire, la même mutation en tue trois.
 
-**Tests** 7560 → **7633**.
+**Tests** 7560 → **7643**.
 
 ---
 

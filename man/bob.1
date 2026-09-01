@@ -96,6 +96,10 @@ Like
 .BR \-\-json ,
 but includes per-finding, per-service, per-port detail (large payload).
 .TP
+.B \-\-html
+Long\-form alias of
+.BR \-\-format=html .
+.TP
 .B \-\-format=\fIFMT\fR
 Where
 .I FMT
@@ -248,6 +252,13 @@ POST the audit summary as JSON to
 after the audit. Skipped if
 .B \-\-offline
 is given.
+.TP
+.B \-\-test\-webhook
+POST a minimal smoke payload to the configured webhook and exit, without
+running an audit. Honours
+.BR \-\-offline ,
+which suppresses the POST. Useful for confirming a webhook URL and format
+before relying on them.
 .TP
 .B \-\-webhook-format=\fIFMT\fR
 .I FMT
