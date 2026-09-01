@@ -112,6 +112,47 @@ and never rendered: a test feeds a path through the stderr channel and fails if
 it reaches any finding's message, detail or key, and another asserts the
 snapshot keeps a flag rather than the text.
 
+### The design pass: `config_key` decides nothing
+
+The last backlog item was to formalise what `"ask"` and the named config keys
+were supposed to mean. Measuring first turned the question into a different,
+simpler one.
+
+`config_key` is declared four ways and read once:
+
+| | schema | validator | docstring | `_resolve_ports` | services |
+|---|---|---|---|---|---|
+| `auto` | ✓ | ✓ | auto-detect | reads the config | 16 |
+| `ask` | ✓ | ✓ | *prompt the operator and save* | registry default | 11 |
+| `fixed` | ✓ | ✓ | use ports as-is | registry default | 11 |
+| named key | ✓ | ✓ | *read from user config* | registry default | **0** |
+
+Two of those descriptions have never had an implementation. The schema knew:
+its own text announces that "schema v2 will split this into a typed
+`port_resolution` object" — a v2 that has not come.
+
+But since v0.15.2 the reader opens a config whenever `detection.config_files`
+names one, whatever the strategy is called. Mapping every service against what
+actually happens gives one line: **33 services read their config because they
+declare a path, 5 fall back because they do not, and the strategy name changes
+nothing in either group.** The field is decorative, and `config_key` is read in
+exactly one place, where it sits in an `or` that `config_files` subsumes.
+
+That reframes the item. `"ask"` is not a strategy awaiting implementation; the
+whole field stopped selecting behaviour. So there is nothing to design — only
+something to stop claiming.
+
+The three declarations now describe what the code does, including that the
+field is decorative and that retiring it is a registry contract change, queued
+rather than done: it costs nothing to keep and consumers read services.json.
+The invariant is pinned by tests rather than left to prose — every form is
+asserted to behave identically, and a guard fails if a second reader of
+`config_key` appears, which is what would make it load-bearing again.
+
+That last guard is the point of the exercise. A description that says "ask
+prompts the operator" is how eight services came to carry a config path that
+was never opened.
+
 ### A test that did not bite
 
 The first draft of the new tests rebuilt the detection logic locally instead of
@@ -119,7 +160,7 @@ driving `from_system`. Reinjecting the defect into samba.py killed nothing —
 they were asserting their own copy. Rewritten to write an smb.conf and let the
 real parser read it, the same mutation now kills three of them.
 
-**Tests** 7560 → **7615**.
+**Tests** 7560 → **7633**.
 
 ---
 

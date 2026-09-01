@@ -5,8 +5,15 @@
   "description": "Schema for a single service entry inside services.json or a *.json file dropped into ~/.config/bob/services.d/.\n\nSCOPE: This schema validates the structural and syntactic shape of a service entry. It does NOT enforce all runtime constraints. The following invariants are validated by bob.registry.Service.from_dict() at load time and CANNOT be expressed in pure JSON Schema:\n  * cross-service uniqueness of `id` across all loaded services (a single document can pass schema validation but fail at runtime when its IDs clash with another file)\n  * `config_key` must not be a Python reserved keyword (the regex permits any valid identifier; the keyword check is runtime-only)\n\nA document that validates against this schema is structurally well-formed; whether it loads successfully into BOB also depends on the runtime checks above. Schema major version: 1 (additive changes only within v1; breaking changes bump to v2 and gate via the optional `schema_version` field on plugin file wrappers — see plugin-file.schema.json).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "label", "packages", "services", "ports", "risk", "config_key"],
-
+  "required": [
+    "id",
+    "label",
+    "packages",
+    "services",
+    "ports",
+    "risk",
+    "config_key"
+  ],
   "$defs": {
     "Identifier": {
       "description": "Lowercase identifier used for service IDs and similar slug-like fields.",
@@ -52,7 +59,6 @@
       "maxLength": 512
     }
   },
-
   "properties": {
     "id": {
       "description": "Identifier for the service (e.g. 'ssh', 'nginx'). Cross-service uniqueness is enforced at runtime, not by this schema.",
@@ -67,28 +73,39 @@
     "packages": {
       "description": "Package names looked up via the host package manager. Empty array is allowed for binary-only / snap-only services.",
       "type": "array",
-      "items": { "$ref": "#/$defs/PackageName" },
+      "items": {
+        "$ref": "#/$defs/PackageName"
+      },
       "maxItems": 32
     },
     "services": {
       "description": "systemd units checked for active/enabled state.",
       "type": "array",
-      "items": { "$ref": "#/$defs/SystemdUnit" },
+      "items": {
+        "$ref": "#/$defs/SystemdUnit"
+      },
       "maxItems": 32
     },
     "ports": {
       "description": "Default ports in 'number/proto' format. Required when config_key='fixed'. Range strictly 1–65535.",
       "type": "array",
-      "items": { "$ref": "#/$defs/PortProto" },
+      "items": {
+        "$ref": "#/$defs/PortProto"
+      },
       "maxItems": 32
     },
     "risk": {
       "description": "Risk classification — drives default scoring weight when the service is exposed.",
       "type": "string",
-      "enum": ["low", "medium", "high", "critical"]
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
     },
     "config_key": {
-      "description": "Port resolution strategy. Current encoding mixes an enum ('fixed', 'ask', 'auto') with a free-form identifier (e.g. 'ssh_port', read from the user config file). Schema v2 will split this into a typed `port_resolution` object.",
+      "description": "Historical port-resolution strategy, kept for compatibility. It no longer selects behaviour: since v0.15.2 a service's config is read whenever detection.config_files names one, whatever this field says. 'ask' never had an implementation, and no service uses the free-form identifier form. Retiring the field is a contract change and is queued, not done.",
       "$ref": "#/$defs/PythonIdentifier"
     },
     "detection": {
@@ -100,7 +117,9 @@
         "binary": {
           "description": "Bare command names (resolved via $PATH) or absolute paths.",
           "type": "array",
-          "items": { "$ref": "#/$defs/BinaryRef" },
+          "items": {
+            "$ref": "#/$defs/BinaryRef"
+          },
           "maxItems": 16
         },
         "snap": {
@@ -116,29 +135,60 @@
         "config_files": {
           "description": "Absolute config file paths used to auto-detect the service port (when config_key='auto').",
           "type": "array",
-          "items": { "$ref": "#/$defs/AbsolutePath" },
+          "items": {
+            "$ref": "#/$defs/AbsolutePath"
+          },
           "maxItems": 16
         }
       }
     }
   },
-
   "allOf": [
     {
       "title": "config_key='fixed' requires at least one port",
-      "if":   { "properties": { "config_key": { "const": "fixed" } }, "required": ["config_key"] },
-      "then": { "properties": { "ports": { "minItems": 1 } } }
+      "if": {
+        "properties": {
+          "config_key": {
+            "const": "fixed"
+          }
+        },
+        "required": [
+          "config_key"
+        ]
+      },
+      "then": {
+        "properties": {
+          "ports": {
+            "minItems": 1
+          }
+        }
+      }
     },
     {
       "title": "config_key='auto' requires detection.config_files (else nothing to parse)",
-      "if":   { "properties": { "config_key": { "const": "auto" } }, "required": ["config_key"] },
+      "if": {
+        "properties": {
+          "config_key": {
+            "const": "auto"
+          }
+        },
+        "required": [
+          "config_key"
+        ]
+      },
       "then": {
-        "required": ["detection"],
+        "required": [
+          "detection"
+        ],
         "properties": {
           "detection": {
-            "required": ["config_files"],
+            "required": [
+              "config_files"
+            ],
             "properties": {
-              "config_files": { "minItems": 1 }
+              "config_files": {
+                "minItems": 1
+              }
             }
           }
         }
@@ -147,15 +197,53 @@
     {
       "title": "Service must be detectable: at least one of packages, services, or detection.{binary|snap}",
       "anyOf": [
-        { "properties": { "packages": { "minItems": 1 } }, "required": ["packages"] },
-        { "properties": { "services": { "minItems": 1 } }, "required": ["services"] },
         {
-          "required": ["detection"],
+          "properties": {
+            "packages": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "packages"
+          ]
+        },
+        {
+          "properties": {
+            "services": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "services"
+          ]
+        },
+        {
+          "required": [
+            "detection"
+          ],
           "properties": {
             "detection": {
               "anyOf": [
-                { "properties": { "binary": { "minItems": 1 } }, "required": ["binary"] },
-                { "properties": { "snap":   { "minItems": 1 } }, "required": ["snap"]   }
+                {
+                  "properties": {
+                    "binary": {
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "binary"
+                  ]
+                },
+                {
+                  "properties": {
+                    "snap": {
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "snap"
+                  ]
+                }
               ]
             }
           }

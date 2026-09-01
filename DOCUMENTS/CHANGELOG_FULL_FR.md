@@ -117,6 +117,51 @@ marqueur connu, jamais rendu : un test fait passer un chemin par le canal
 stderr et échoue s'il atteint le message, le détail ou la clé d'un finding, et
 un autre vérifie que le snapshot conserve un drapeau et non le texte.
 
+### La passe de conception : `config_key` ne décide rien
+
+Le dernier item du backlog était de formaliser ce que `"ask"` et les clés
+nommées étaient censées vouloir dire. Mesurer d'abord a transformé la question
+en une autre, plus simple.
+
+`config_key` est déclaré de quatre façons et lu une fois :
+
+| | schéma | validateur | docstring | `_resolve_ports` | services |
+|---|---|---|---|---|---|
+| `auto` | ✓ | ✓ | auto-détecte | lit la config | 16 |
+| `ask` | ✓ | ✓ | *demander à l'opérateur et enregistrer* | défaut registre | 11 |
+| `fixed` | ✓ | ✓ | ports tels quels | défaut registre | 11 |
+| clé nommée | ✓ | ✓ | *lire la config utilisateur* | défaut registre | **0** |
+
+Deux de ces descriptions n'ont jamais eu d'implémentation. Le schéma le savait :
+son propre texte annonce qu'« une schema v2 scindera ceci en un objet
+`port_resolution` typé » — une v2 qui n'est pas venue.
+
+Or depuis v0.15.2, le lecteur ouvre une configuration dès que
+`detection.config_files` en nomme une, quel que soit le nom de la stratégie.
+Confronter chaque service à ce qui se passe réellement tient en une ligne :
+**33 services lisent leur config parce qu'ils déclarent un chemin, 5 retombent
+sur le défaut parce qu'ils n'en déclarent pas, et le nom de la stratégie ne
+change rien dans aucun des deux groupes.** Le champ est décoratif, et
+`config_key` n'est lu qu'à un seul endroit, dans un `or` que `config_files`
+absorbe.
+
+Cela recadre l'item. `"ask"` n'est pas une stratégie en attente
+d'implémentation ; c'est le champ entier qui a cessé de sélectionner un
+comportement. Il n'y a donc rien à concevoir — seulement quelque chose à cesser
+d'affirmer.
+
+Les trois déclarations décrivent désormais ce que fait le code, y compris que
+le champ est décoratif et que le retirer serait un changement de contrat du
+registre, mis en file plutôt que fait : il ne coûte rien à garder et des
+consommateurs lisent services.json. L'invariant est verrouillé par des tests
+plutôt que laissé à la prose — chaque forme est vérifiée comme se comportant à
+l'identique, et un garde échoue si un second lecteur de `config_key` apparaît,
+ce qui le rendrait de nouveau porteur.
+
+Ce dernier garde est tout l'objet de l'exercice. Une description affirmant
+qu'« ask interroge l'opérateur » est précisément ce qui a permis à huit
+services de porter un chemin de configuration jamais ouvert.
+
 ### Un test qui ne mordait pas
 
 Le premier jet des nouveaux tests reconstruisait la logique de détection
@@ -124,7 +169,7 @@ localement au lieu de piloter `from_system`. Réinjecter le défaut dans samba.p
 ne tuait rien — ils validaient leur propre copie. Réécrits pour écrire un
 smb.conf et laisser le vrai parseur le lire, la même mutation en tue trois.
 
-**Tests** 7560 → **7615**.
+**Tests** 7560 → **7633**.
 
 ---
 

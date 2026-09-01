@@ -139,11 +139,30 @@ class Service:
         services:   systemd service names to check for state.
         ports:      Default ports in "number/proto" format (e.g. "22/tcp").
         risk:       Risk classification: "low" | "medium" | "high" | "critical".
-        config_key: Port resolution strategy:
-                    - Named key (e.g. "ssh_port"): read from user config file.
-                    - "ask":   prompt user and save to config.
-                    - "auto":  auto-detect from service config file.
-                    - "fixed": use ports as-is, no detection needed.
+        config_key: Historical port-resolution strategy. **It no longer
+                    selects anything.** Since v0.15.2 the reader opens a
+                    service's config whenever ``detection.config_files``
+                    names one, whatever this field says, because eight
+                    services carried a path under ``"ask"`` — a strategy
+                    documented as prompting the operator that no code has
+                    ever implemented — and their file was never read.
+
+                    What the four documented forms actually do today:
+                      - "auto":  read the config. Same as any service that
+                                 declares a config path.
+                      - "ask":   no prompt exists. Reads the config if one is
+                                 declared, registry defaults otherwise.
+                      - "fixed": identical to "ask" — the name promises no
+                                 detection, but a declared path is still read.
+                      - Named key (e.g. "ssh_port"): validated as an
+                                 identifier and accepted, read by nothing. No
+                                 service uses it.
+
+                    So the behaviour is decided by ``config_files``, and this
+                    field is decorative. Retiring it is a registry contract
+                    change and is queued rather than done here; the invariant
+                    is pinned by a test so this description cannot drift back
+                    into a promise.
         detection:  Extended detection hints (snap, binary, config_files).
     """
     id:         str

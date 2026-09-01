@@ -19,6 +19,11 @@ bodyguard-of-bits (0.15.3-1) UNRELEASED; urgency=low
     reports a switched-off audit subsystem there while exiting 0 with an empty
     stdout, so "rules unreadable" was reported where "auditing is off" was the
     truth. stderr is matched against a known marker, never rendered.
+  * config_key is declared four ways, read once, and since v0.15.2 decides
+    nothing: a service's config is read when detection.config_files names one,
+    whatever the strategy is called. "ask" never had an implementation and no
+    service uses the named-key form. The declarations now describe the code;
+    retiring the field is queued as a registry contract change.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 01 Sep 2026 14:28:06 +0200
 
