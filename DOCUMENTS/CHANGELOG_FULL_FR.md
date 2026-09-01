@@ -6,6 +6,40 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.15.3] — 2026-09-01
+
+**Le backlog laissé par v0.15.2, en commençant par ce que les checks de service lisent au-delà d'un port.**
+
+### `server min protocol` est le nom qu'emploie un smb.conf actuel
+
+Samba a renommé `min protocol` en `server min protocol` et gardé la forme
+courte comme synonyme déprécié : une configuration écrite aujourd'hui utilise
+donc la longue. BOB ne lisait que la courte.
+
+Une machine ayant explicitement activé SMB1 — le vecteur EternalBlue et
+WannaCry, que BOB lui-même lève en ALERTE avec une déduction de deux points —
+était donc rapportée comme l'ayant désactivé. La signature de cette campagne une
+fois de plus : plus la configuration est à jour, plus la détection la rate.
+
+Mesuré contre `testparm`, le parseur de samba lui-même, sur une installation
+réelle. Sept configurations, quatre activant SMB1 et trois non, et les sept
+s'accordent désormais avec lui. La famille `client min protocol` reste
+délibérément ignorée : elle régit ce que cette machine parle *vers* un serveur,
+non ce qu'elle accepte en tant que tel. Tous les autres paramètres lus par le
+check ont été soumis à `testparm` dans la même passe et sont reconnus sous le
+nom qu'emploie BOB, synonymes de partage compris.
+
+### Un test qui ne mordait pas
+
+Le premier jet des nouveaux tests reconstruisait la logique de détection
+localement au lieu de piloter `from_system`. Réinjecter le défaut dans samba.py
+ne tuait rien — ils validaient leur propre copie. Réécrits pour écrire un
+smb.conf et laisser le vrai parseur le lire, la même mutation en tue trois.
+
+**Tests** 7560 → **7575**.
+
+---
+
 ## [v0.15.2] — 2026-08-31
 
 **Un test de résistance des deux versions précédentes, et la classe de défauts qu'elles visaient trouvée encore ouverte à sa racine.**

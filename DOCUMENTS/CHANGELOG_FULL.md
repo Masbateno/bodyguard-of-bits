@@ -6,6 +6,39 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.15.3] — 2026-09-01
+
+**The backlog v0.15.2 left, starting with what the service checks read beyond a port.**
+
+### `server min protocol` is the name a current smb.conf uses
+
+Samba renamed `min protocol` to `server min protocol` and kept the short form
+as a deprecated synonym, so a configuration written today uses the long one.
+BOB read only the short one.
+
+A host that had explicitly enabled SMB1 — the EternalBlue and WannaCry vector,
+which BOB itself raises as an ALERT with a two-point deduction — was therefore
+reported as having it disabled. The signature of this campaign once more: the
+more current the configuration, the likelier the miss.
+
+Measured against `testparm`, samba's own parser, on a real install. Seven
+configurations, four enabling SMB1 and three not, and all seven now agree with
+it. The `client min protocol` family is deliberately still ignored: it governs
+what this host speaks *to* a server, not what it accepts as one. Every other
+parameter the check reads was put to `testparm` in the same pass and is
+recognised under the name BOB uses, share-level synonyms included.
+
+### A test that did not bite
+
+The first draft of the new tests rebuilt the detection logic locally instead of
+driving `from_system`. Reinjecting the defect into samba.py killed nothing —
+they were asserting their own copy. Rewritten to write an smb.conf and let the
+real parser read it, the same mutation now kills three of them.
+
+**Tests** 7560 → **7575**.
+
+---
+
 ## [v0.15.2] — 2026-08-31
 
 **A stress test of the two previous releases, and the defect class they attacked found still open at its root.**

@@ -1,3 +1,13 @@
+bodyguard-of-bits (0.15.3-1) UNRELEASED; urgency=low
+
+  * samba read `min protocol` only. Samba renamed it to `server min protocol`
+    and kept the short form as a deprecated synonym, so a current smb.conf
+    uses the long one — and a host that had explicitly enabled SMB1, the
+    EternalBlue vector BOB raises as an ALERT, was reported as having it
+    disabled. Verified against testparm, samba's own parser.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 01 Sep 2026 14:28:06 +0200
+
 bodyguard-of-bits (0.15.2-1) UNRELEASED; urgency=low
 
   * A local stress test of the v0.15.0/v0.15.1 fixes found the "unreadable is

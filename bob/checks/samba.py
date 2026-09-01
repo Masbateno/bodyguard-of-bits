@@ -105,9 +105,17 @@ class SambaSnapshot:
         # --- [global] settings ---
         glb = conf.get("global", {})
 
-        # SMB protocol version
-        min_proto = _section_get(glb, "min protocol").lower()
-        max_proto = _section_get(glb, "max protocol").lower()
+        # SMB protocol version.
+        #
+        # `server min protocol` is the current name and `min protocol` the
+        # deprecated synonym; a modern smb.conf writes the former. Reading only
+        # the short form answered "SMB1 disabled" for a host that had
+        # explicitly enabled it — verified against `testparm`, which resolves
+        # both spellings to the same effective protocol. The `client`-side
+        # parameters are deliberately not consulted: they govern what this host
+        # will speak *to* a server, not what it accepts as one.
+        min_proto = _section_get(glb, "server min protocol", "min protocol").lower()
+        max_proto = _section_get(glb, "server max protocol", "max protocol").lower()
         # SMB1 if max_protocol is an SMB1 value, or if min_protocol is SMB1
         # and max_protocol is not set (defaults to NT1 on many systems)
         if max_proto in _SMB1_PROTOCOLS:
@@ -337,9 +345,20 @@ def _read_smb_conf(path: Path) -> dict[str, dict[str, str]]:
 
     return result
 
-def _section_get(opts: dict[str, str], key: str) -> str:
-    """Return opts[key] (lowercased key, stripped), or '' if absent."""
-    return opts.get(key.strip().lower(), "").strip()
+def _section_get(opts: dict[str, str], *keys: str) -> str:
+    """Return the first present option among *keys*, or ''.
+
+    Several parameters carry more than one spelling. Samba renamed
+    ``min protocol`` to ``server min protocol`` and kept the short form as a
+    deprecated synonym, so a current smb.conf uses the long one — and reading
+    only the short one meant a host explicitly configured to accept SMB1 was
+    reported as having it disabled. The order given is the order tried.
+    """
+    for key in keys:
+        value = opts.get(key.strip().lower(), "").strip()
+        if value:
+            return value
+    return ""
 
 def _is_yes(opts: dict[str, str], key: str) -> bool:
     """Return True if opts[key] is a truthy Samba value (yes/true/1)."""
