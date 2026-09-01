@@ -534,6 +534,37 @@ Apache alone now names four layouts — Debian's `ports.conf`, openSUSE's
 is the shape of the whole problem: five distributions, and a service's port
 lives somewhere different on nearly every one.
 
+### What BOB reads in those files beyond the port
+
+The paths are right now; the question left was what each check does with them.
+Two do more than find a port: `ssh` parses sshd_config for its hardening
+verdicts, and `ssl_certs` walks the web server configs to learn which
+certificates are actually served.
+
+**SSH was already correct**, and measured rather than assumed. Fedora and Arch
+ship drop-ins in `/etc/ssh/sshd_config.d/`, included from the top of
+sshd_config, and OpenSSH takes the first value it meets — so a drop-in
+overrides the main file. Checked against `sshd -T` after generating host keys,
+in both directions: with `PermitRootLogin no` in the main file and `yes` in a
+drop-in the oracle says yes and BOB says yes; reversed, both say no.
+
+**`ssl_certs` was not.** A certificate BOB never finds is a certificate that
+never expires, and it was missing them two ways, both silently — no error, no
+finding, just an empty list.
+
+Debian's stock nginx site is `sites-enabled/default`, with no extension, and
+the scan globbed `**/*.conf`: the one file that declares the certificate was
+never opened. On the commonest nginx install of the commonest distribution, an
+expiring certificate went unreported. And only `/etc/apache2` was scanned, so
+Fedora and Arch — which keep their vhosts under `/etc/httpd` — went unexamined
+entirely.
+
+Measured with a real certificate five days from expiry, declared the ordinary
+way for each server: both found nothing before, both now report it with four
+days left. The file-count and file-size caps that keep the scan from walking a
+large tree are unchanged, and directories are no longer handed to `read_text`
+now that the glob can match them.
+
 ### Two angles measured and found clean
 
 **Readable but corrupted content** — the file counterpart of the garbage-output
@@ -626,7 +657,7 @@ Additive. Five new finding keys can now appear; no existing key changed meaning,
 finding is INFO with no deduction, because an absence of knowledge is not a misconfiguration. Consumers matching on
 `ports.*` should expect `ports.unreadable` to be the only key in that section when `ss` is unavailable.
 
-**Tests** 7288 → **7548**.
+**Tests** 7288 → **7557**.
 
 ---
 

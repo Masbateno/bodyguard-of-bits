@@ -98,11 +98,21 @@ class SslCertsSnapshot:
                     _add_path(cert, paths)
 
         # --- nginx ---
-        for conf_dir in (Path("/etc/nginx/sites-enabled"), Path("/etc/nginx")):
-            _collect_from_configs(conf_dir, _NGINX_SSL_RE, paths)
+        # `sites-enabled` entries carry no extension on Debian — the stock site
+        # is called `default` — so a `*.conf` scan never opened the one file
+        # that declares the certificate on the commonest nginx install there.
+        _collect_from_configs(Path("/etc/nginx/sites-enabled"), _NGINX_SSL_RE,
+                              paths, any_filename=True)
+        _collect_from_configs(Path("/etc/nginx"), _NGINX_SSL_RE, paths)
 
-        # --- apache2 ---
-        for conf_dir in (Path("/etc/apache2/sites-enabled"), Path("/etc/apache2")):
+        # --- apache ---
+        # Three trees: Debian and openSUSE under /etc/apache2, Fedora and Arch
+        # under /etc/httpd. Scanning only the first meant a certificate
+        # declared in an httpd vhost was never found, and its expiry never
+        # reported, on the whole RHEL family.
+        _collect_from_configs(Path("/etc/apache2/sites-enabled"), _APACHE_SSL_RE,
+                              paths, any_filename=True)
+        for conf_dir in (Path("/etc/apache2"), Path("/etc/httpd")):
             _collect_from_configs(conf_dir, _APACHE_SSL_RE, paths)
 
         # --- postfix ---
@@ -259,18 +269,27 @@ def _add_path(path: Path, seen: set[str]) -> None:
     except OSError:
         pass
 
-def _collect_from_configs(conf_dir: Path, pattern: re.Pattern, paths: set[str]) -> None:
-    """Scan .conf files in conf_dir for cert path matches (capped at _MAX_CONF_FILES)."""
+def _collect_from_configs(conf_dir: Path, pattern: re.Pattern, paths: set[str],
+                          *, any_filename: bool = False) -> None:
+    """Scan config files in conf_dir for cert path matches.
+
+    Capped at _MAX_CONF_FILES. ``any_filename`` drops the ``.conf`` requirement
+    for directories whose entries are named after the site rather than by
+    extension — Debian's ``sites-enabled/default`` is the ordinary case, and a
+    ``*.conf`` scan skipped it entirely.
+    """
     if not conf_dir.is_dir():
         return
     scanned = 0
-    for conf in conf_dir.glob("**/*.conf"):
+    for conf in conf_dir.glob("**/*" if any_filename else "**/*.conf"):
         if scanned >= _MAX_CONF_FILES:
             break
-        scanned += 1
         try:
+            if not conf.is_file():
+                continue
             if conf.stat().st_size > _MAX_CONF_SIZE:
                 continue
+            scanned += 1
             content = conf.read_text(encoding="utf-8", errors="ignore")
             for m in pattern.finditer(content):
                 _add_path(Path(m.group(1).strip().strip("'\"")), paths)

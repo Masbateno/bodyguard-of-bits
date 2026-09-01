@@ -560,6 +560,39 @@ Debian, le `listen.conf` d'openSUSE, le `httpd.conf` d'Alpine et l'arbre
 `httpd` de Fedora/Arch — ce qui est la forme même du problème : cinq
 distributions, et le port d'un service vit ailleurs sur presque chacune.
 
+### Ce que BOB lit dans ces fichiers au-delà du port
+
+Les chemins sont désormais justes ; restait ce que chaque check en fait. Deux
+font davantage que trouver un port : `ssh` analyse sshd_config pour ses
+verdicts de durcissement, et `ssl_certs` parcourt les configurations des
+serveurs web pour savoir quels certificats sont réellement servis.
+
+**SSH était déjà correct**, et mesuré plutôt que supposé. Fedora et Arch
+livrent des fragments dans `/etc/ssh/sshd_config.d/`, inclus depuis le haut de
+sshd_config, et OpenSSH retient la première valeur rencontrée — un fragment
+l'emporte donc sur le fichier principal. Confronté à `sshd -T` après génération
+des clés d'hôte, dans les deux sens : avec `PermitRootLogin no` dans le fichier
+principal et `yes` dans un fragment, l'oracle dit oui et BOB dit oui ; à
+l'inverse, les deux disent non.
+
+**`ssl_certs` ne l'était pas.** Un certificat que BOB ne trouve jamais est un
+certificat qui n'expire jamais, et il en manquait de deux façons, toutes deux
+silencieuses — aucune erreur, aucun finding, une liste vide.
+
+Le site nginx standard de Debian est `sites-enabled/default`, sans extension,
+et le balayage cherchait `**/*.conf` : le seul fichier qui déclare le
+certificat n'était jamais ouvert. Sur l'installation nginx la plus courante de
+la distribution la plus courante, un certificat expirant n'était pas signalé.
+Et seul `/etc/apache2` était parcouru : Fedora et Arch, qui gardent leurs
+vhosts sous `/etc/httpd`, n'étaient pas examinés du tout.
+
+Mesuré avec un vrai certificat à cinq jours de l'expiration, déclaré de la
+façon ordinaire pour chaque serveur : les deux ne trouvaient rien, les deux le
+rapportent désormais avec quatre jours restants. Les plafonds de nombre et de
+taille de fichiers qui empêchent le balayage de parcourir un grand arbre sont
+inchangés, et les répertoires ne sont plus passés à `read_text` maintenant que
+le glob peut les apparier.
+
 ### Deux angles mesurés et trouvés propres
 
 **Contenu lisible mais corrompu** — le pendant fichier de l'angle « sortie
@@ -659,7 +692,7 @@ ne change — chaque nouveau finding est INFO sans déduction, car une absence d
 configuration. Les consommateurs qui filtrent sur `ports.*` doivent s'attendre à ce que `ports.unreadable` soit la
 seule clé de cette section quand `ss` est indisponible.
 
-**Tests** 7288 → **7548**.
+**Tests** 7288 → **7557**.
 
 ---
 

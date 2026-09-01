@@ -129,6 +129,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   its data directory on rpm hosts: neither port was ever read there.
 - openSUSE keeps Apache's Listen in /etc/apache2/listen.conf, which no other
   family has; all five distributions are now covered.
+- Certificate expiry: /etc/httpd vhosts were never scanned, and Debian's
+  extensionless nginx site file was skipped by a *.conf-only glob.
 
 * Mon Aug 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.1-1
 - A second hunt, testing whether v0.15.0 made BOB resilient. New angles only.
