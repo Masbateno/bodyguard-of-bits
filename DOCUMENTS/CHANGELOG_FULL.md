@@ -232,7 +232,39 @@ may be absent from the man page, and no rendered help line may exceed 100
 characters — measured in characters, since em dashes and arrows are multi-byte
 and byte-counting inflates the figure.
 
-**Tests** 7560 → **7707**.
+Syslog timestamps carry no year. `_parse_timestamp` builds the date with the
+current year and rolls back one year when the result lands more than five
+minutes in the future. The `datetime(current_year, ...)` construction was
+guarded against ValueError; the `ts.replace(year=ts.year - 1)` that followed
+sat outside that guard, and Feb 29 exists in a leap year but not in the one
+before it. One such line raised out of `_parse_log`, and the runner's
+section-level barrier degraded the whole UFW log analysis — blocked-attempt
+statistics, top source IPs, bruteforce detection windows — from a single line.
+
+Nothing that worked before changed. A Feb 29 line of the current leap year,
+read on or after that day, still parses to Feb 29 of that year, whether the
+audit runs the same afternoon or in June. Only the future-dated case is
+skipped, and it costs no finding: the rollback steps back exactly one year, so
+it already assumes logs at most a year old, and a Feb 29 line still looking
+future-dated in a leap year comes from an earlier leap year or a clock behind
+— dates `cutoff_dt` filters out immediately afterwards. Skipping also matches
+what the same line already got when the current year was not a leap year.
+
+Swept rather than sampled: this is the only `replace(year=)` in the tree. Of
+the two other `datetime(...)` constructions built from parsed values, clamav
+catches ValueError on the spot and ssl_certs is covered by its function-level
+handler. A guard now fails on any `replace(year=/month=/day=)` that is not
+inside a try handling ValueError.
+
+The angle that opened this one closed clean and is recorded so it is not
+re-audited: BOB parses the output of system commands, so an inherited locale
+could make that output unrecognisable. `run_result` forces `LC_ALL=C`, and of
+the 17 direct `subprocess` calls outside `_run.py`, 15 pass `_C_LOCALE_ENV`
+explicitly; the remaining two — sending mail and executing a fix — read only
+the return code. `systemctl` column truncation under `COLUMNS` was measured
+and does not occur through a pipe.
+
+**Tests** 7560 → **7717**.
 
 ---
 

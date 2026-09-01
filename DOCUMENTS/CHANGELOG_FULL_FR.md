@@ -248,7 +248,42 @@ annoncée dans `--help` absente du manuel, aucune ligne d'aide rendue au-delà d
 100 caractères — mesurée en caractères, les tirets cadratins et les flèches
 étant multi-octets et le comptage en octets gonflant le chiffre.
 
-**Tests** 7560 → **7707**.
+Les horodatages syslog n'ont pas d'année. `_parse_timestamp` construit la date
+avec l'année courante et recule d'un an lorsque le résultat dépasse l'horloge
+de plus de cinq minutes. La construction `datetime(current_year, ...)` était
+gardée contre ValueError ; le `ts.replace(year=ts.year - 1)` qui suit était
+hors de ce garde, et le 29 février existe dans une année bissextile mais pas
+dans la précédente. Une seule ligne de ce type faisait lever `_parse_log`, et
+la barrière de section du runner dégradait toute l'analyse des journaux UFW —
+statistiques de blocages, top des IP sources, fenêtres de détection de force
+brute — à cause d'une ligne.
+
+Rien de ce qui fonctionnait n'a changé. Une ligne du 29 février de l'année
+bissextile courante, lue ce jour-là ou après, s'analyse toujours au 29 février
+de cette année, que l'audit tourne l'après-midi même ou en juin. Seul le cas
+futur-daté est écarté, et il ne coûte aucun constat : le repli ne recule que
+d'un an, il suppose donc des journaux d'au plus un an, et une ligne du 29
+février encore future dans une bissextile vient d'une bissextile antérieure ou
+d'une horloge en retard — des dates que `cutoff_dt` filtre juste après.
+Écarter rejoint aussi ce que la même ligne obtenait déjà lorsque l'année
+courante n'était pas bissextile.
+
+Balayé, pas échantillonné : c'est le seul `replace(year=)` de l'arbre. Des deux
+autres constructions `datetime(...)` issues de valeurs analysées, clamav
+capture ValueError sur place et ssl_certs est couvert par le gestionnaire de sa
+fonction. Un garde échoue désormais sur tout `replace(year=/month=/day=)` qui
+n'est pas dans un try traitant ValueError.
+
+L'angle qui a mené à celui-ci est ressorti propre, et il est consigné pour ne
+pas être ré-audité : BOB analyse la sortie de commandes système, une locale
+héritée pourrait donc la rendre méconnaissable. `run_result` force `LC_ALL=C`,
+et sur les 17 appels directs à `subprocess` hors de `_run.py`, 15 passent
+explicitement `_C_LOCALE_ENV` ; les deux autres — envoi du courriel et
+exécution d'un correctif — ne lisent que le code retour. La troncature des
+colonnes de `systemctl` selon `COLUMNS` a été mesurée : elle ne se produit pas
+à travers un tube.
+
+**Tests** 7560 → **7717**.
 
 ---
 

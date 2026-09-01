@@ -716,7 +716,25 @@ def _parse_timestamp(
         # filter — silent data loss.
         ref = now if now is not None else datetime.now()
         if ts > ref + timedelta(minutes=5):
-            ts = ts.replace(year=ts.year - 1)
+            try:
+                ts = ts.replace(year=ts.year - 1)
+            except ValueError:
+                # v0.15.3: Feb 29 rolled back into a non-leap year. This sat
+                # outside the guard above, so ONE such line raised out of
+                # _parse_log and the runner's section barrier degraded the
+                # whole UFW log analysis — blocked-attempt statistics, top
+                # source IPs, bruteforce windows — from a single line.
+                #
+                # Dropping the line costs nothing that would have been
+                # reported. The rollback only ever steps back one year, so it
+                # already assumes logs at most a year old; a Feb 29 line that
+                # still looks future-dated in a leap year comes from an
+                # earlier leap year (4+ years of unrotated logs) or a clock
+                # behind, and any date that far back is filtered by cutoff_dt
+                # immediately after. It also matches what the same line
+                # already gets when the current year is not a leap year: the
+                # datetime() guard above returns None.
+                return None
         return ts
 
     return None
