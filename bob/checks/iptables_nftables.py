@@ -117,7 +117,21 @@ def _nft_policy(ruleset: str, hook: str) -> str:
 
 
 def _nft_has_loopback(ruleset: str) -> bool:
-    return bool(re.search(r'iif\s+"?lo"?\s+accept', ruleset, re.IGNORECASE))
+    """True if the ruleset accepts traffic arriving on the loopback interface.
+
+    v0.15.4: matched ``iif`` only. nft has two spellings — ``iif`` matches the
+    interface by index, ``iifname`` by name — and it preserves whichever the
+    operator wrote instead of normalising to one. ``iifname "lo" accept`` is
+    the form most guides and distributions ship, and BOB read it as *no
+    loopback rule at all*, then deducted for the omission. A false deduction on
+    a correctly configured host is worse than a missed one: the operator is
+    told to add a rule that is already there.
+
+    Verified against real `nft list ruleset` output: `meta iifname "lo"` and
+    `iifname { "lo" }` are both normalised by nft to `iifname "lo"`, so those
+    two need no pattern of their own.
+    """
+    return bool(re.search(r'\biif(?:name)?\s+"?lo"?\s+accept', ruleset, re.IGNORECASE))
 
 
 def _nft_has_conntrack(ruleset: str) -> bool:
