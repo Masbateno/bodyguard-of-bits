@@ -364,7 +364,6 @@ Tout se passe dans `bob/data/services.json`. Aucune modification de code Python 
   "services": ["mon-service"],
   "ports": ["1234/tcp"],
   "risk": "medium",
-  "config_key": "fixed",
   "detection": {
     "binary": [],
     "snap": [],
@@ -383,7 +382,6 @@ Tout se passe dans `bob/data/services.json`. Aucune modification de code Python 
 | `services` | array | Noms de services systemd |
 | `ports` | array | Ports par défaut — format `"numéro/proto"` |
 | `risk` | string | `"critical"`, `"high"`, `"medium"`, `"low"` |
-| `config_key` | string | `"fixed"` ou `"auto"` |
 | `detection` | object | Méthodes de détection alternatives |
 
 ### Niveaux de risque
@@ -409,10 +407,9 @@ Pour les services sans paquet dpkg standard :
 
 ### Port auto-détecté depuis la config
 
-Si le service peut écouter sur un port configurable, utiliser `"config_key": "auto"` et fournir le fichier de configuration :
+Si le service peut écouter sur un port configurable, nommer son fichier de configuration — BOB l'analyse dès qu'il est déclaré :
 
 ```json
-"config_key": "auto",
 "detection": {
   "config_files": ["/etc/mon-service/mon-service.conf"]
 }

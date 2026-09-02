@@ -128,7 +128,7 @@ class TestTheThreeCallersShareIt:
         from bob.registry import Detection, Service
 
         service = Service(id="x", label="X", packages=("httpd",), services=(),
-                          ports=("80/tcp",), risk="low", config_key="fixed",
+                          ports=("80/tcp",), risk="low",
                           detection=Detection(binary=(), snap=(), config_files=()))
         with patch("bob.checks.services.package_installed", return_value="rpm"):
             assert _detect_installation(service) == (True, "rpm")

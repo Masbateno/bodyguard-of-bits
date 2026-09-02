@@ -1029,7 +1029,7 @@ Plugin services formal JSON Schema (Draft 2020-12), extended after two post-revi
 |---|---:|---|
 | `TestSchemasAreWellFormed` | 4 | Schemas pass Draft 2020-12 self-validation; `services-list` rejects empty array (pass #2: `minItems: 1`) |
 | `TestBundledServicesMatchSchema` | 3 | Bundled `services.json` validates entry-by-entry; unique IDs (`Counter` O(n)) |
-| `TestValidPluginSamples` | 3 | Sample valid plugins (minimal fixed, with detection, user config_key) |
+| `TestValidPluginSamples` | 3 | Sample valid plugins (minimal, with detection, legacy config_key tolerated) |
 | `TestInvalidPluginSamples` | 10 | Rejection cases: missing field, bad risk, bad port, port 0/65536, unknown field, fixed without ports, ID with spaces, empty binary string. Pass #2: 5 of these now assert via `e.absolute_path` (stable across jsonschema versions) instead of message-substring matching. |
 | `TestSchemaPythonParity` | 2 | Schema-valid ↔ Python-valid alignment |
 | `TestBusinessConstraints` (new pass #1) | 7 | `auto` requires `config_files`, undetectable service rejected, empty `detection: {}` rejected |

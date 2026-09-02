@@ -46,7 +46,7 @@ guard that reimplements the logic it watches stops testing that logic the moment
 either side drifts. Reinjecting the old em-dash cut fails it on all twelve
 documented versions at once.
 
-**Tests** 7743 → **7752**.
+**Tests** 7743 → **7748**.
 
 ---
 

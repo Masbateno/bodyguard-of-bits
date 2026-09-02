@@ -24,7 +24,6 @@ def make_service_dict(**overrides) -> dict:
         "services": ["test-svc"],
         "ports": ["1234/tcp"],
         "risk": "medium",
-        "config_key": "fixed",
         "detection": {"binary": [], "snap": [], "config_files": []},
     }
     base.update(overrides)
@@ -77,7 +76,6 @@ class TestService:
         assert s.packages == ("test-pkg",)
         assert s.ports == ("1234/tcp",)
         assert s.risk == "medium"
-        assert s.config_key == "fixed"
 
     def test_missing_required_field_raises(self):
         data = make_service_dict()
@@ -88,10 +86,6 @@ class TestService:
     def test_invalid_risk_raises(self):
         with pytest.raises(ValueError, match="invalid risk"):
             Service.from_dict(make_service_dict(risk="extreme"))
-
-    def test_empty_config_key_raises(self):
-        with pytest.raises(ValueError, match="config_key"):
-            Service.from_dict(make_service_dict(config_key=""))
 
     def test_valid_risks_accepted(self):
         for risk in ("low", "medium", "high", "critical"):
@@ -117,7 +111,8 @@ class TestService:
         assert s.main_port == "22/tcp"
 
     def test_main_port_empty(self):
-        s = Service.from_dict(make_service_dict(ports=[], config_key="auto"))
+        s = Service.from_dict(make_service_dict(
+            ports=[], detection={"binary": [], "snap": [], "config_files": ["/etc/x.conf"]}))
         assert s.main_port == ""
 
     def test_immutable(self):
@@ -182,7 +177,7 @@ class TestServiceRegistryAccess:
     @pytest.fixture
     def registry(self, tmp_path):
         entries = [
-            make_service_dict(id="ssh",   risk="critical", config_key="ssh_port"),
+            make_service_dict(id="ssh",   risk="critical"),
             make_service_dict(id="nginx", risk="medium"),
             make_service_dict(id="redis", risk="critical"),
             make_service_dict(id="cups",  risk="low"),

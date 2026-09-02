@@ -1040,7 +1040,7 @@ JSON Schema formel pour les plugins services (Draft 2020-12), étendu après deu
 |---|---:|---|
 | `TestSchemasAreWellFormed` | 4 | Les schémas passent l'auto-validation Draft 2020-12 ; `services-list` rejette les tableaux vides (passe #2 : `minItems: 1`) |
 | `TestBundledServicesMatchSchema` | 3 | `services.json` bundled valide entrée par entrée ; IDs uniques (`Counter` O(n)) |
-| `TestValidPluginSamples` | 3 | Plugins valides échantillons (minimal fixed, avec detection, user config_key) |
+| `TestValidPluginSamples` | 3 | Plugins valides échantillons (minimal, avec detection, config_key hérité toléré) |
 | `TestInvalidPluginSamples` | 10 | Cas de rejet : champ manquant, mauvais risk, mauvais port, port 0/65536, champ inconnu, fixed sans ports, ID avec espaces, string binary vide. Passe #2 : 5 d'entre eux assert désormais via `e.absolute_path` (stable entre versions de jsonschema) au lieu du matching de substring de message. |
 | `TestSchemaPythonParity` | 2 | Alignement Schema-valid ↔ Python-valid |
 | `TestBusinessConstraints` (nouveau passe #1) | 7 | `auto` requiert `config_files`, service indétectable rejeté, `detection: {}` vide rejeté |

@@ -13,7 +13,6 @@
       "22/tcp"
     ],
     "risk": "critical",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -37,7 +36,6 @@
       "5900/tcp"
     ],
     "risk": "critical",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/bin/x11vnc",
@@ -61,7 +59,6 @@
       "139/tcp"
     ],
     "risk": "critical",
-    "config_key": "fixed",
     "detection": {
       "binary": [],
       "snap": [],
@@ -85,7 +82,6 @@
       "21/tcp"
     ],
     "risk": "critical",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -113,7 +109,6 @@
       "443/tcp"
     ],
     "risk": "medium",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/sbin/apache2"
@@ -142,7 +137,6 @@
       "443/tcp"
     ],
     "risk": "medium",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/sbin/nginx"
@@ -172,7 +166,6 @@
       "3306/tcp"
     ],
     "risk": "critical",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -198,7 +191,6 @@
       "5432/tcp"
     ],
     "risk": "critical",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -223,7 +215,6 @@
       "9091/tcp"
     ],
     "risk": "medium",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -245,7 +236,6 @@
       "8080/tcp"
     ],
     "risk": "medium",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/bin/qbittorrent-nox"
@@ -266,8 +256,7 @@
     "ports": [
       "5353/udp"
     ],
-    "risk": "low",
-    "config_key": "fixed"
+    "risk": "low"
   },
   {
     "id": "cups",
@@ -282,7 +271,6 @@
       "631/tcp"
     ],
     "risk": "low",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -305,7 +293,6 @@
       "9090/tcp"
     ],
     "risk": "high",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -328,7 +315,6 @@
       "51820/udp"
     ],
     "risk": "high",
-    "config_key": "auto",
     "detection": {
       "binary": [
         "/usr/bin/wg"
@@ -354,7 +340,6 @@
       "6379/tcp"
     ],
     "risk": "critical",
-    "config_key": "fixed",
     "detection": {
       "binary": [],
       "snap": [],
@@ -379,7 +364,6 @@
       "8096/tcp"
     ],
     "risk": "medium",
-    "config_key": "fixed",
     "detection": {
       "binary": [],
       "snap": [],
@@ -400,8 +384,7 @@
     "ports": [
       "32400/tcp"
     ],
-    "risk": "medium",
-    "config_key": "fixed"
+    "risk": "medium"
   },
   {
     "id": "homeassistant",
@@ -418,7 +401,6 @@
       "8123/tcp"
     ],
     "risk": "high",
-    "config_key": "ask",
     "detection": {
       "binary": [],
       "snap": [],
@@ -443,7 +425,6 @@
       "443/tcp"
     ],
     "risk": "high",
-    "config_key": "ask",
     "detection": {
       "binary": [],
       "snap": [
@@ -467,7 +448,6 @@
       "3000/tcp"
     ],
     "risk": "medium",
-    "config_key": "auto",
     "detection": {
       "binary": [
         "/usr/local/bin/gitea",
@@ -495,7 +475,6 @@
       "8883/tcp"
     ],
     "risk": "high",
-    "config_key": "fixed",
     "detection": {
       "binary": [],
       "snap": [],
@@ -519,7 +498,6 @@
       "22000/tcp"
     ],
     "risk": "medium",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -545,7 +523,6 @@
       "23/tcp"
     ],
     "risk": "critical",
-    "config_key": "fixed",
     "detection": {
       "binary": [
         "in.telnetd",
@@ -570,7 +547,6 @@
       "3389/tcp"
     ],
     "risk": "critical",
-    "config_key": "fixed",
     "detection": {
       "binary": [
         "/usr/sbin/xrdp"
@@ -598,7 +574,6 @@
       "27017/tcp"
     ],
     "risk": "critical",
-    "config_key": "fixed",
     "detection": {
       "binary": [
         "mongod"
@@ -623,7 +598,6 @@
       "9200/tcp"
     ],
     "risk": "critical",
-    "config_key": "fixed",
     "detection": {
       "binary": [],
       "snap": [],
@@ -646,7 +620,6 @@
       "11211/udp"
     ],
     "risk": "critical",
-    "config_key": "fixed",
     "detection": {
       "binary": [
         "memcached"
@@ -674,7 +647,6 @@
       "25/tcp"
     ],
     "risk": "high",
-    "config_key": "auto",
     "detection": {
       "binary": [
         "postfix",
@@ -702,7 +674,6 @@
       "2049/udp"
     ],
     "risk": "high",
-    "config_key": "auto",
     "detection": {
       "binary": [],
       "snap": [],
@@ -724,7 +695,6 @@
       "8080/tcp"
     ],
     "risk": "high",
-    "config_key": "auto",
     "detection": {
       "binary": [
         "jenkins"
@@ -748,7 +718,6 @@
       "1194/udp"
     ],
     "risk": "medium",
-    "config_key": "auto",
     "detection": {
       "binary": [
         "openvpn"
@@ -776,7 +745,6 @@
       "3128/tcp"
     ],
     "risk": "medium",
-    "config_key": "auto",
     "detection": {
       "binary": [
         "squid"
@@ -800,7 +768,6 @@
       "41641/udp"
     ],
     "risk": "low",
-    "config_key": "auto",
     "detection": {
       "binary": [
         "/usr/bin/tailscale",
@@ -826,7 +793,6 @@
       "443/tcp"
     ],
     "risk": "medium",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/bin/caddy"
@@ -850,7 +816,6 @@
       "3000/tcp"
     ],
     "risk": "medium",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/opt/AdGuardHome/AdGuardHome",
@@ -874,7 +839,6 @@
       "3012/tcp"
     ],
     "risk": "high",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/bin/vaultwarden",
@@ -897,7 +861,6 @@
       "11434/tcp"
     ],
     "risk": "medium",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/local/bin/ollama",
@@ -920,7 +883,6 @@
       "9091/tcp"
     ],
     "risk": "high",
-    "config_key": "ask",
     "detection": {
       "binary": [
         "/usr/bin/authelia",

@@ -22,7 +22,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import keyword
 import logging
 import re
 from dataclasses import dataclass
@@ -50,8 +49,6 @@ _PLUGIN_DIR = get_user_home() / ".config" / "bob" / "services.d"
 # Valid values for the risk field
 VALID_RISKS = frozenset({"low", "medium", "high", "critical"})
 
-# Valid values for the config_key field
-VALID_CONFIG_KEYS = frozenset({"fixed", "auto", "ask"})
 
 # Port format: "number/proto" e.g. "22/tcp", "5353/udp"
 _PORT_RE = re.compile(r"^\d{1,5}/(tcp|udp)$")
@@ -139,30 +136,6 @@ class Service:
         services:   systemd service names to check for state.
         ports:      Default ports in "number/proto" format (e.g. "22/tcp").
         risk:       Risk classification: "low" | "medium" | "high" | "critical".
-        config_key: Historical port-resolution strategy. **It no longer
-                    selects anything.** Since v0.15.2 the reader opens a
-                    service's config whenever ``detection.config_files``
-                    names one, whatever this field says, because eight
-                    services carried a path under ``"ask"`` — a strategy
-                    documented as prompting the operator that no code has
-                    ever implemented — and their file was never read.
-
-                    What the four documented forms actually do today:
-                      - "auto":  read the config. Same as any service that
-                                 declares a config path.
-                      - "ask":   no prompt exists. Reads the config if one is
-                                 declared, registry defaults otherwise.
-                      - "fixed": identical to "ask" — the name promises no
-                                 detection, but a declared path is still read.
-                      - Named key (e.g. "ssh_port"): validated as an
-                                 identifier and accepted, read by nothing. No
-                                 service uses it.
-
-                    So the behaviour is decided by ``config_files``, and this
-                    field is decorative. Retiring it is a registry contract
-                    change and is queued rather than done here; the invariant
-                    is pinned by a test so this description cannot drift back
-                    into a promise.
         detection:  Extended detection hints (snap, binary, config_files).
     """
     id:         str
@@ -171,7 +144,6 @@ class Service:
     services:   tuple[str, ...]
     ports:      tuple[str, ...]
     risk:       str
-    config_key: str
     detection:  Detection
 
     @property
@@ -201,7 +173,7 @@ class Service:
         Raises:
             ValueError: If required fields are missing or have invalid values.
         """
-        required = ("id", "label", "packages", "services", "ports", "risk", "config_key")
+        required = ("id", "label", "packages", "services", "ports", "risk")
         for required_field in required:
             if required_field not in data:
                 raise ValueError(f"Service entry missing required field: {required_field!r}")
@@ -211,17 +183,6 @@ class Service:
             raise ValueError(
                 f"Service {data['id']!r}: invalid risk {risk!r}. "
                 f"Must be one of: {sorted(VALID_RISKS)}"
-            )
-
-        config_key = data["config_key"]
-        # config_key is either a reserved keyword or a valid identifier (e.g. "ssh_port")
-        # Python keywords (class, eval, …) are rejected to prevent misuse if key is ever eval'd
-        if config_key not in VALID_CONFIG_KEYS and (
-            not config_key.isidentifier() or keyword.iskeyword(config_key)
-        ):
-            raise ValueError(
-                f"Service {data['id']!r}: invalid config_key {config_key!r}. "
-                f"Must be one of {sorted(VALID_CONFIG_KEYS)} or a valid identifier."
             )
 
         ports = tuple(data["ports"])
@@ -237,9 +198,18 @@ class Service:
                     f"Service {data['id']!r}: port number {port_num} out of range (1–65535)."
                 )
 
-        if config_key == "fixed" and not ports:
+        detection = Detection.from_dict(data.get("detection", {}))
+
+        # v0.15.4: was "config_key 'fixed' requires at least one port" — the only
+        # rule that field ever enforced. Restated without it, and deliberately
+        # NOT as "every service needs a port": a service may legitimately
+        # declare none and let its ports be parsed out of its own config, which
+        # is what the old "auto" form meant. What is unusable is declaring
+        # neither — BOB then has no way to ever learn the service's ports.
+        if not ports and not detection.config_files:
             raise ValueError(
-                f"Service {data['id']!r}: config_key 'fixed' requires at least one port."
+                f"Service {data['id']!r}: declares no port and no config file to "
+                f"read one from — its ports could never be determined."
             )
 
         return cls(
@@ -249,8 +219,7 @@ class Service:
             services=tuple(data["services"]),
             ports=ports,
             risk=risk,
-            config_key=config_key,
-            detection=Detection.from_dict(data.get("detection", {})),
+            detection=detection,
         )
 
 # ---------------------------------------------------------------------------

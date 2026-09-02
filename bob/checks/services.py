@@ -548,11 +548,10 @@ def _resolve_ports(service: Service) -> list[str]:
     """
     # Read whenever the registry declares a config file, not only when the
     # strategy is spelled "auto". Eight services carried a config path under
-    # ``config_key: "ask"`` — a strategy documented as "prompt the operator"
-    # that no code implements — so their file was declared and never opened,
-    # and an nginx on 8443 was audited as 80 and 443 while the port actually
-    # exposed went unexamined.
-    if service.config_key == "auto" or service.detection.config_files:
+    # v0.15.4: the config is read whenever a path is declared. This used to
+    # also test config_key == "auto"; no service ever carried "auto" without
+    # a declared path, so the term never changed the outcome.
+    if service.detection.config_files:
         detected = _auto_detect_ports(service)
         if detected:
             return detected

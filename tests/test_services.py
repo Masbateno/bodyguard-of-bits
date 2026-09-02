@@ -35,7 +35,6 @@ def make_service(
     services=("ssh",),
     ports=("22/tcp",),
     risk="critical",
-    config_key="fixed",
     detection=None,
 ) -> Service:
     if detection is None:
@@ -43,7 +42,7 @@ def make_service(
     return Service(
         id=id, label=label, packages=tuple(packages),
         services=tuple(services), ports=tuple(ports),
-        risk=risk, config_key=config_key, detection=detection,
+        risk=risk, detection=detection,
     )
 
 
@@ -660,9 +659,8 @@ class TestAutoDetectPort:
     """
 
     def _make_service_with_config(self, config_path, proto="tcp"):
-        """Build a Service with config_key='auto' pointing to a temp file."""
+        """Build a Service whose detection points at a temp config file."""
         return make_service(
-            config_key="auto",
             ports=(f"21/{proto}",),
             detection=Detection(
                 binary=(),

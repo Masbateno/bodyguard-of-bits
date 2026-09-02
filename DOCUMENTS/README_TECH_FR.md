@@ -534,7 +534,6 @@ Les définitions de services sont validées contre `bob/data/schemas/service.sch
   "services":   ["myservice"],
   "ports":      ["8080/tcp"],
   "risk":       "medium",
-  "config_key": "fixed",
   "detection": {
     "binary":       ["/usr/local/bin/myapp"],
     "snap":         ["myapp-snap"],
@@ -543,12 +542,12 @@ Les définitions de services sont validées contre `bob/data/schemas/service.sch
 }
 ```
 
-**Champs obligatoires :** `id`, `label`, `packages`, `services`, `ports`, `risk`, `config_key`. **Optionnel :** `detection`. `risk` ∈ `{"low", "medium", "high", "critical"}`. `config_key` vaut `"fixed"`, `"ask"`, `"auto"`, ou un identifier Python. **Plage de port 1–65535** (stricte).
+**Champs obligatoires :** `id`, `label`, `packages`, `services`, `ports`, `risk`. **Optionnel :** `detection`. `risk` ∈ `{"low", "medium", "high", "critical"}`. `config_key` vaut `"fixed"`, `"ask"`, `"auto"`, ou un identifier Python. **Plage de port 1–65535** (stricte).
 
 **Contraintes métier appliquées par le schéma :**
 
-- `config_key="fixed"` requiert au moins un port.
-- `config_key="auto"` requiert `detection.config_files` non-vide (l'auto-resolver a besoin de fichiers à parser).
+- Un service doit déclarer au moins un port **ou** une entrée `detection.config_files` d'où les lire. N'en déclarer aucun est refusé : ses ports ne pourraient jamais être déterminés.
+- `config_key` est retiré en v0.15.4. Il reste accepté pour que les `~/.config/bob/services.d/*.json` existants continuent de valider, mais il est ignoré.
 - Un service doit être détectable : au moins un parmi `packages`, `services`, ou `detection.{binary|snap}` doit être non-vide.
 - Un bloc `detection: {}` vide est rejeté (n'apporte aucun signal).
 
@@ -559,7 +558,7 @@ Les définitions de services sont validées contre `bob/data/schemas/service.sch
 
 Voir `bob/data/schemas/plugin-file.schema.json` pour le méta-schéma du wrapper. Valider en externe avec n'importe quel outil JSON Schema 2020-12 (e.g. `check-jsonschema`, `ajv`).
 
-**Scope du schéma.** Le schéma valide la structure et la forme syntaxique. Il **n'applique pas** : l'unicité cross-service de `id` (check runtime) et l'exclusion des reserved keywords Python pour `config_key` (check runtime). Un document conforme au schéma peut quand même être rejeté au chargement si ces invariants runtime sont violés — la source de vérité canonique reste `bob.registry.Service.from_dict()`.
+**Scope du schéma.** Le schéma valide la structure et la forme syntaxique. Il **n'applique pas** : l'unicité cross-service de `id` (check runtime) et l'obligation qu'un service déclare soit un port, soit un fichier de configuration d'où le lire (check runtime). Un document conforme au schéma peut quand même être rejeté au chargement si ces invariants runtime sont violés — la source de vérité canonique reste `bob.registry.Service.from_dict()`.
 
 ---
 

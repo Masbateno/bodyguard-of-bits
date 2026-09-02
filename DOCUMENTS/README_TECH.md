@@ -534,7 +534,6 @@ Service definitions are validated against `bob/data/schemas/service.schema.json`
   "services":   ["myservice"],
   "ports":      ["8080/tcp"],
   "risk":       "medium",
-  "config_key": "fixed",
   "detection": {
     "binary":       ["/usr/local/bin/myapp"],
     "snap":         ["myapp-snap"],
@@ -543,12 +542,12 @@ Service definitions are validated against `bob/data/schemas/service.schema.json`
 }
 ```
 
-**Required fields:** `id`, `label`, `packages`, `services`, `ports`, `risk`, `config_key`. **Optional:** `detection`. `risk` ∈ `{"low", "medium", "high", "critical"}`. `config_key` is `"fixed"`, `"ask"`, `"auto"`, or a Python identifier. **Port range 1–65535** (strict).
+**Required fields:** `id`, `label`, `packages`, `services`, `ports`, `risk`. **Optional:** `detection`. `risk` ∈ `{"low", "medium", "high", "critical"}`. `config_key` is `"fixed"`, `"ask"`, `"auto"`, or a Python identifier. **Port range 1–65535** (strict).
 
 **Business constraints enforced by the schema:**
 
-- `config_key="fixed"` requires at least one port.
-- `config_key="auto"` requires non-empty `detection.config_files` (the auto-resolver needs files to parse).
+- A service must declare at least one port **or** a `detection.config_files` entry to parse ports from. Declaring neither is refused: its ports could never be determined.
+- `config_key` was retired in v0.15.4. It is still accepted so existing `~/.config/bob/services.d/*.json` keep validating, but it is ignored.
 - A service must be detectable: at least one of `packages`, `services`, or `detection.{binary|snap}` must be non-empty.
 - An empty `detection: {}` block is rejected (it adds no signal).
 
@@ -559,7 +558,7 @@ Service definitions are validated against `bob/data/schemas/service.schema.json`
 
 See `bob/data/schemas/plugin-file.schema.json` for the wrapper meta-schema. Validate externally with any JSON Schema 2020-12 tool (e.g. `check-jsonschema`, `ajv`).
 
-**Schema scope.** The schema validates structure and syntactic shape. It does **not** enforce: cross-service uniqueness of `id` (runtime check) and Python reserved-keyword exclusion for `config_key` (runtime check). A document that validates against the schema may still be rejected at load time if those runtime invariants are violated — the canonical source of truth remains `bob.registry.Service.from_dict()`.
+**Schema scope.** The schema validates structure and syntactic shape. It does **not** enforce: cross-service uniqueness of `id` (runtime check) and the requirement that a service declare either a port or a config file to read one from (runtime check). A document that validates against the schema may still be rejected at load time if those runtime invariants are violated — the canonical source of truth remains `bob.registry.Service.from_dict()`.
 
 ---
 

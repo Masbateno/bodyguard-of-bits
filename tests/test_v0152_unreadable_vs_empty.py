@@ -162,7 +162,6 @@ class TestServicesListeningSetUnknown:
         service = Service(
             id="ssh", label="SSH Server", packages=("openssh-server",),
             services=("ssh",), ports=("22/tcp",), risk="high",
-            config_key="fixed",
             detection=Detection(binary=(), snap=(), config_files=()),
         )
         with (

@@ -11,8 +11,7 @@
     "packages",
     "services",
     "ports",
-    "risk",
-    "config_key"
+    "risk"
   ],
   "$defs": {
     "Identifier": {
@@ -105,7 +104,7 @@
       ]
     },
     "config_key": {
-      "description": "Historical port-resolution strategy, kept for compatibility. It no longer selects behaviour: since v0.15.2 a service's config is read whenever detection.config_files names one, whatever this field says. 'ask' never had an implementation, and no service uses the free-form identifier form. Retiring the field is a contract change and is queued, not done.",
+      "description": "Removed in v0.15.4 and ignored. It never selected behaviour: a service's config is read whenever detection.config_files names one. Still accepted so existing ~/.config/bob/services.d/*.json keep loading under additionalProperties:false, but it does nothing and new files should omit it.",
       "$ref": "#/$defs/PythonIdentifier"
     },
     "detection": {

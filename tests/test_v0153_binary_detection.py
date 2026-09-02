@@ -25,7 +25,7 @@ from bob.registry import Detection, Service
 
 def _service(*binaries: str) -> Service:
     return Service(id="probe", label="Probe", packages=(), services=(),
-                   ports=("1/tcp",), risk="low", config_key="fixed",
+                   ports=("1/tcp",), risk="low",
                    detection=Detection(binary=binaries, snap=(), config_files=()))
 
 
