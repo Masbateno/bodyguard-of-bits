@@ -820,7 +820,11 @@ def print_help(t, version: str) -> None:
     def opt(flags: str, key: str, col: int = 28) -> None:
         print(f"  {flags:<{col}}  {t(key)}")
 
-    def ex(cmd: str, key: str, col: int = 30) -> None:
+    def ex(cmd: str, key: str, col: int = 39) -> None:
+        # col fits the longest example command ("sudo bob -w https://…", 39
+        # chars) so every description starts in the same column. At col=30 the
+        # two long commands overflowed and pushed their text 6 and 13 columns
+        # right of the rest.
         print(f"  {cmd:<{col}}  {t('help.example.' + key)}")
 
     print(f"BOB v{version} — {t('help.tagline')}")

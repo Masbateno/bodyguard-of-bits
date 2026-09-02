@@ -172,8 +172,3 @@ def is_rule_line(line: str) -> bool:
     """True if *line* is a numbered rule row rather than a header or blank."""
     return _NUMBERED_RE.match(line) is not None
 
-
-def strip_rule_index(line: str) -> str:
-    """Return *line* without its ``[ N]`` prefix."""
-    m = _NUMBERED_RE.match(line)
-    return m.group(1).strip() if m else line.strip()

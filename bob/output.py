@@ -306,11 +306,6 @@ def print_service_header(label: str) -> None:
     _p(f"\n  {_c.bold}▶ {label}{_c.reset}")
 
 
-def print_port_detail(message: str) -> None:
-    """Print an indented port detail line (↳ prefix)."""
-    _p(f"    {_c.dim}↳ {message}{_c.reset}")
-
-
 def print_recommendation(
     lines: str | list[str],
     cmd_lines: str | list[str] | None = None,

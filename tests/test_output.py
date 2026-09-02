@@ -21,7 +21,6 @@ from bob.output import (
     print_info,
     print_section,
     print_service_header,
-    print_port_detail,
     print_recommendation,
     print_dim,
     print_risk_context,
@@ -143,16 +142,6 @@ class TestServiceHeader:
     def test_contains_arrow(self):
         out = capture(print_service_header, "Redis")
         assert "▶" in out
-
-
-class TestPortDetail:
-    def test_contains_message(self):
-        out = capture(print_port_detail, "22/tcp: exposure = open_world")
-        assert "22/tcp" in out
-
-    def test_contains_arrow(self):
-        out = capture(print_port_detail, "22/tcp")
-        assert "↳" in out
 
 
 class TestRecommendation:
