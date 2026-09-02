@@ -8,6 +8,15 @@ All notable changes to this project are documented here.
 
 ## [v0.15.4] — 2026-09-02
 
+> **Versioning note — read before upgrading.** This is a patch number, but
+> v0.15.4 contains BREAKING scoring changes: runtime signals that were
+> INFO-only in v0.13.x become deductions, so **your score will change on a
+> host whose configuration has not changed**. Every previous BREAKING bundle
+> took a minor bump (v0.9.0, v0.11.0, v0.12.0, v0.14.0, v0.15.0). The
+> exception is deliberate: the backlog had been holding the project back and
+> the decision was to empty it in one pass rather than keep deferring the
+> teeth. Pin to `==0.15.3` if you need the previous scoring for a while.
+
 **The GitHub release title was truncated mid-phrase on every release.**
 
 `publish.yml` built the release name as `vX.Y.Z — <headline>`, taking the
