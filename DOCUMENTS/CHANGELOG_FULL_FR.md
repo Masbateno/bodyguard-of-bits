@@ -6,6 +6,43 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.15.4] — 02-09-2026
+
+**Le titre des releases GitHub était tronqué en plein milieu, à chaque publication.**
+
+`publish.yml` composait le nom de la release `vX.Y.Z — <titre>` en prenant la
+cellule du tableau de CHANGELOG.md correspondant à la version et en coupant au
+premier ` — `. Or la cellule s'ouvre sur un gras qui contient lui-même des
+tirets cadratins :
+
+    **First v0.15.3 work — the backlog v0.15.2 left.** Samba renamed ...
+
+si bien que la coupe tombait à l'intérieur du gras et laissait ses `**`
+orphelins. Toutes les releases depuis au moins la v0.14.0 jusqu'à la v0.15.3 ont
+été publiées sous la forme, littéralement, `v0.15.3 — **First v0.15.3 work`. Le
+titre prend désormais l'intervalle entre la première paire de `**`, avec repli
+sur la première phrase pour une ligne sans gras.
+
+La coupe de longueur a disparu avec. `cut -c` compte des **octets** dans GNU
+coreutils : un titre contenant des tirets cadratins était donc tronqué plus court
+que prévu et pouvait scinder un caractère multi-octet — le même piège
+octets/caractères déjà rencontré sur la largeur de l'aide en v0.15.3, et attrapé
+ici par le nouveau test plutôt qu'à la lecture du code. Le plafond est reporté
+sur CHANGELOG.md, imposé sur la seule ligne la plus récente : c'est celle que la
+prochaine release transformera en titre, et la seule qu'il vaille encore la peine
+d'éditer. Trois lignes plus anciennes atteignent 130 à 167 caractères ; leurs
+releases sont publiées et réécrire leurs entrées n'apporterait rien.
+
+Le garde exécute le bloc shell du workflow lui-même, extrait du YAML et lancé
+sous `bash`, au lieu de réimplémenter l'extraction en Python — un garde qui
+réimplémente la logique qu'il surveille cesse de la tester dès que l'un des deux
+dérive. Réinjecter l'ancienne coupe au tiret cadratin le fait échouer sur les
+douze versions documentées d'un coup.
+
+**Tests** 7743 → **7749**.
+
+---
+
 ## [v0.15.3] — 02-09-2026
 
 **Le backlog laissé par v0.15.2, en commençant par ce que les checks de service lisent au-delà d'un port.**

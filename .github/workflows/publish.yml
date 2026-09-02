@@ -142,13 +142,30 @@ jobs:
             fi
           fi
 
-          # --- Title: "vX.Y.Z — <headline>" where <headline> is the text in the
-          #            CHANGELOG.md table row before the first " — " separator.
+          # --- Title: "vX.Y.Z — <headline>", where <headline> is the BOLD LEAD
+          #            of the CHANGELOG.md table row: "**<lead>.** <body...>".
+          #
+          # v0.15.3: this used to cut at the first " — " instead. The lead
+          # itself contains em dashes ("**First v0.15.3 work — the backlog
+          # v0.15.2 left.** Samba..."), so every release since at least v0.14.0
+          # was titled mid-phrase and carried a stray "**":
+          #     v0.15.3 — **First v0.15.3 work
+          # Take the span between the first pair of "**" instead; fall back to
+          # the first sentence when a row has no bold lead.
           HEADLINE=$(awk -F'|' -v ver="$VERSION" '
             $2 ~ "\\[" ver "\\]" { print $4; exit }
           ' CHANGELOG.md)
-          # Trim whitespace and cut at first " — "
-          HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/ — .*$//')
+          HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+          case "$HEADLINE" in
+            '**'*) HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^\*\*//; s/\*\*.*$//') ;;
+            *)     HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/\. .*$//') ;;
+          esac
+          # No length cut: `cut -c` counts BYTES in GNU coreutils, so a lead
+          # containing em dashes was truncated shorter than intended and could
+          # split a multibyte character outright. The bold lead is the headline
+          # by convention; its length is enforced on CHANGELOG.md — where a
+          # human can shorten it — rather than mutilated here.
+          HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/[[:space:]]+$//; s/\.$//')
 
           if [ -z "$HEADLINE" ]; then
             if [ "$IS_PRERELEASE" = "true" ]; then

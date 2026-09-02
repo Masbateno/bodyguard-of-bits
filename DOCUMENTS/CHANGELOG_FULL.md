@@ -6,6 +6,41 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.15.4] — 2026-09-02
+
+**The GitHub release title was truncated mid-phrase on every release.**
+
+`publish.yml` built the release name as `vX.Y.Z — <headline>`, taking the
+CHANGELOG.md table cell for the version and cutting at the first ` — `. The
+cell opens with a bold lead that contains em dashes of its own:
+
+    **First v0.15.3 work — the backlog v0.15.2 left.** Samba renamed ...
+
+so the cut landed inside the bold span and left its opening `**` unbalanced.
+Every release from at least v0.14.0 to v0.15.3 shipped as, literally,
+`v0.15.3 — **First v0.15.3 work`. The title now takes the span between the
+first pair of `**`, falling back to the first sentence for a row with no bold
+lead.
+
+The length cut went with it. `cut -c` counts **bytes** in GNU coreutils, so a
+lead containing em dashes was truncated shorter than intended and could split a
+multibyte character outright — the same byte-versus-character trap the v0.15.3
+help-width work had already met, and it was caught here by the new test rather
+than by reading the code. The cap now lives on CHANGELOG.md, enforced on the
+newest row only: that is the one the next release turns into a title, and the
+only one still worth editing. Three older rows run to 130-167 characters; their
+releases are published and rewriting their entries would buy nothing.
+
+The guard runs the workflow's own shell block, extracted from the YAML and
+executed under `bash`, rather than reimplementing the extraction in Python — a
+guard that reimplements the logic it watches stops testing that logic the moment
+either side drifts. Reinjecting the old em-dash cut fails it on all twelve
+documented versions at once.
+
+**Tests** 7743 → **7749**.
+
+---
+
 ## [v0.15.3] — 2026-09-02
 
 **The backlog v0.15.2 left, starting with what the service checks read beyond a port.**

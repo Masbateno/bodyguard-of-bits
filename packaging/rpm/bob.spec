@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.15.3
+Version:        0.15.4
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Wed Sep 02 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.4-1
+- The GitHub release title was truncated mid-phrase on every release since at
+  least v0.14.0: the changelog headline was cut at the first em dash, which the
+  headline itself contains, leaving its opening ** unbalanced.
+- The length cut used `cut -c`, byte-based in GNU coreutils, so a headline with
+  em dashes was truncated short and could split a multibyte character.
+
 * Tue Sep 01 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.3-1
 - samba read `min protocol` only; a current smb.conf uses `server min
   protocol`, so an explicitly enabled SMB1 was reported as disabled.

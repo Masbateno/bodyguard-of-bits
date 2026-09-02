@@ -1,3 +1,16 @@
+bodyguard-of-bits (0.15.4-1) UNRELEASED; urgency=low
+
+  * The GitHub release title was truncated mid-phrase on every release since at
+    least v0.14.0: publish.yml cut the changelog headline at the first em dash,
+    but the headline itself contains one, so the cut landed inside the bold span
+    and left its opening ** unbalanced.
+  * The accompanying length cut used `cut -c`, which counts bytes in GNU
+    coreutils — a headline with em dashes was truncated shorter than intended and
+    could split a multibyte character. Removed; the cap is enforced on the
+    changelog instead.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 02 Sep 2026 17:51:46 +0200
+
 bodyguard-of-bits (0.15.3-1) UNRELEASED; urgency=low
 
   * samba read `min protocol` only. Samba renamed it to `server min protocol`
