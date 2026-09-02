@@ -723,6 +723,7 @@
     "swap_stats": "Swap: {used_mb} MB used / {total_mb} MB total ({pct}% in use)",
     "swappiness_ok": "swappiness={value} — well tuned for this system",
     "swappiness_ssd_wear": "Swap on SSD with swappiness={value} — unnecessary SSD wear",
+    "swappiness_unknown": "vm.swappiness could not be read — swap tuning was not assessed",
     "swappiness_ssd_detail": "High swappiness on an SSD causes premature wear. Recommended: vm.swappiness={recommended}",
     "swappiness_unjustified": "Swap in use ({swap_pct}%) while {ram_pct}% of RAM is still free — swappiness={value} is too aggressive",
     "swappiness_unjustified_detail": "The kernel is swapping out pages despite available RAM. Lowering swappiness reduces unnecessary I/O. Recommended: vm.swappiness={recommended}",

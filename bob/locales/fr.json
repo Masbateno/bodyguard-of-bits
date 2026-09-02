@@ -723,6 +723,7 @@
     "swap_stats": "Swap : {used_mb} Mo utilisés / {total_mb} Mo au total ({pct}% utilisé)",
     "swappiness_ok": "swappiness={value} — bien réglé pour ce système",
     "swappiness_ssd_wear": "Swap sur SSD avec swappiness={value} — usure SSD inutile",
+    "swappiness_unknown": "vm.swappiness n'a pas pu être lu — le réglage du swap n'a pas été évalué",
     "swappiness_ssd_detail": "Une swappiness élevée sur SSD provoque une usure prématurée. Valeur recommandée : vm.swappiness={recommended}",
     "swappiness_unjustified": "Swap actif ({swap_pct}%) alors que {ram_pct}% de la RAM est encore disponible — swappiness={value} trop agressive",
     "swappiness_unjustified_detail": "Le noyau écrit en swap malgré de la RAM disponible. Réduire la swappiness diminue les I/O inutiles. Recommandé : vm.swappiness={recommended}",

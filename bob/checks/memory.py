@@ -57,7 +57,8 @@ class MemorySnapshot:
         mem_available_kb: Available RAM in kB (MemAvailable).
         swap_total_kb:    Total swap space in kB (SwapTotal).
         swap_free_kb:     Free swap space in kB (SwapFree).
-        swappiness:       Current vm.swappiness value (0–200).
+        swappiness:       Current vm.swappiness value (0–200), or None when
+                          /proc/sys/vm/swappiness could not be read.
         swap_on_ssd:      True if any active swap device resides on an SSD.
         swap_devices:     List of active swap device/file paths.
     """
@@ -65,7 +66,7 @@ class MemorySnapshot:
     mem_available_kb: int       = 0
     swap_total_kb:    int       = 0
     swap_free_kb:     int       = 0
-    swappiness:       int       = 60
+    swappiness:       "int | None" = None
     swap_on_ssd:      bool      = False
     swap_devices:     list[str] = field(default_factory=list)
 
@@ -157,8 +158,19 @@ def check_memory(
         key="memory.swap_stats",
     )
 
+    # --- Value never read: say so rather than fall silent -------------------
+    if snapshot.swappiness is None:
+        result.info(
+            message=_t("memory.swappiness_unknown"),
+            key="memory.swappiness_unknown",
+        )
+
     # --- SSD wear: swap on SSD + high swappiness ---
-    if snapshot.swap_on_ssd and snapshot.swappiness > _SSD_SWAPPINESS_THRESHOLD:
+    if (
+        snapshot.swap_on_ssd
+        and snapshot.swappiness is not None
+        and snapshot.swappiness > _SSD_SWAPPINESS_THRESHOLD
+    ):
         result.warn_with_deduction(
             key="memory.swappiness_ssd_wear",
             message=_t("memory.swappiness_ssd_wear", value=snapshot.swappiness),
@@ -208,7 +220,7 @@ def check_memory(
         )
 
     # --- Suboptimal swappiness (default 60 on a server with RAM to spare) ---
-    elif snapshot.swappiness > recommended_swappiness:
+    elif snapshot.swappiness is not None and snapshot.swappiness > recommended_swappiness:
         result.info(
             message=_t(
                 "memory.swappiness_suboptimal",
@@ -265,13 +277,21 @@ def _read_meminfo() -> tuple[int, int, int, int]:
         fields["SwapFree"],
     )
 
-def _read_swappiness() -> int:
-    """Read vm.swappiness from /proc/sys/vm/swappiness. Returns 60 on error."""
+def _read_swappiness() -> "int | None":
+    """Read vm.swappiness from /proc/sys/vm/swappiness, or None when unread.
+
+    v0.15.5: this returned 60 on error, and the check compared that invented
+    number against the SSD threshold of 30. An unreadable file therefore
+    produced ``memory.swappiness_ssd_wear`` — a WARN with a point — reporting a
+    value BOB had never measured. On the host where this was found the real
+    value is 10, well under the threshold. A default that is indistinguishable
+    from a measurement is a way of inventing one.
+    """
     try:
         val = Path("/proc/sys/vm/swappiness").read_text(encoding="ascii", errors="ignore").strip()
         return int(val)
     except (OSError, ValueError):
-        return 60
+        return None
 
 def _read_swap_devices() -> list[str]:
     """

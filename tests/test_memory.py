@@ -69,9 +69,13 @@ class TestSnapshotDefaults:
         s = MemorySnapshot()
         assert s.mem_total_kb == 0
 
-    def test_swappiness_default_60(self):
+    def test_swappiness_default_is_unknown_not_sixty(self):
+        """v0.15.5: the default used to be 60, which the SSD-wear branch then
+        compared against a threshold of 30 — so an unreadable
+        /proc/sys/vm/swappiness produced a WARN and a deduction for a value BOB
+        never measured. Unknown is now unknown."""
         s = MemorySnapshot()
-        assert s.swappiness == 60
+        assert s.swappiness is None
 
     def test_swap_on_ssd_default_false(self):
         s = MemorySnapshot()
