@@ -26,6 +26,7 @@ it is now reported as ambiguous with both readings named.
 from __future__ import annotations
 
 import datetime
+import types
 
 import pytest
 
@@ -33,11 +34,33 @@ import bob.checks.user_accounts as ua
 from bob.checks.user_accounts import UserAccountsSnapshot, check_user_accounts
 
 _EPOCH = datetime.date(1970, 1, 1)
-_TODAY = (datetime.date.today() - _EPOCH).days
+
+# The clock is pinned rather than read.
+#
+# A first version computed _TODAY at import and let the check call
+# datetime.date.today() at run time. Those are two different reads of a moving
+# value, and the suite crossed midnight between them: "expiring tomorrow"
+# became "expiring today", which is expired, and the test failed on a tree
+# where nothing was wrong. A boundary test whose boundary moves is measuring
+# the wall clock, not the code.
+_PINNED = datetime.date(2026, 6, 15)
+_TODAY = (_PINNED - _EPOCH).days
+
+
+class _FixedDate(datetime.date):
+    """A date whose notion of "today" does not depend on when the suite runs."""
+
+    @classmethod
+    def today(cls) -> "datetime.date":
+        return _PINNED
 
 
 @pytest.fixture
 def shadow(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        ua, "datetime",
+        types.SimpleNamespace(date=_FixedDate, timedelta=datetime.timedelta),
+    )
     """Build /etc/passwd + /etc/shadow with one user at a given expiry field."""
     def _build(expire_field: str, uid: int = 1001, shell: str = "/bin/bash"):
         passwd = tmp_path / "passwd"
