@@ -652,6 +652,28 @@ def _auto_detect_ports(service: Service) -> "list[str]":
                     return [f"{number}/{proto}"]
             continue  # an XML file has no directives the regex below understands
 
+        # systemd unit: ollama's documented way to move its port is an
+        # Environment= line carrying a host:port pair, with no `port` keyword
+        # for the regex below to find — `Environment="OLLAMA_HOST=0.0.0.0:11434"`.
+        #
+        # Deliberately narrow: only a variable named after the unit itself
+        # (<UNIT>_HOST) counts. A generic `*_HOST=host:port` rule would read
+        # `DATABASE_HOST=db:5432` as a port this service listens on, when it is
+        # the address of something it connects *to* — a false listening port is
+        # worse than a missed one, because the operator cannot tell it is wrong.
+        if path.suffix == ".service":
+            unit = re.escape(path.stem.upper().replace("-", "_"))
+            unit_env = re.compile(
+                rf'^\s*Environment=\s*"?{unit}_HOST\s*=\s*([^"\s]+)',
+                re.MULTILINE | re.IGNORECASE,
+            )
+            for env_match in unit_env.finditer(content):
+                number = _port_from_directive(env_match.group(1))
+                if number:
+                    proto = service.ports[0].split("/")[-1] if service.ports else "tcp"
+                    return [f"{number}/{proto}"]
+            continue  # a unit file has no directives the regex below understands
+
         # Caddyfile: the site address opens the block and carries no keyword —
         # `:8443 {`, `example.com:8443 {`, `https://example.com {`.
         if path.name.lower() == "caddyfile":
