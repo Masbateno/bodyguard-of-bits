@@ -118,9 +118,9 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `systemd_timers.py` | Sécurité timers systemd : pipe-to-shell dans ExecStart, scripts world-writable, timers root utilisateur |
 | `firmware.py` | Firmware & microcode : mises à jour fwupdmgr en attente, paquet microcode CPU via dpkg |
 | `systemd_hardening.py` | **v0.13.0** — score d'exposition `systemd-analyze security` des services *en cours d'exécution* ; INFO-only, aucune déduction (la plupart des units sont livrées non durcies par défaut) |
-| `container_security.py` | **v0.13.0** — posture du conteneur lue depuis `/proc` (CapBnd, mode seccomp, uid_map, rootfs inscriptible) ; section entièrement supprimée hors conteneur via `skip_if` ; INFO-only |
-| `socket_units.py` | **v0.13.1** — units `.socket` systemd orphelines / en échec, à l'intersection systemd × sockets en écoute ; un `Triggers=` vide n'est jamais signalé, un service backing simplement inactif est sain ; INFO-only |
-| `cloud_context.py` | **v0.13.1** — exposition cloud côté hôte (IMDS joignable on-link, user-data lisible par tous) ; détection conservatrice (provider DMI, ou cloud-init + route IMDS on-link) ; supprimée hors cloud, aucune API cloud ; INFO-only |
+| `container_security.py` | **v0.13.0** — posture du conteneur lue depuis `/proc` (CapBnd, mode seccomp, uid_map, rootfs inscriptible) ; section entièrement supprimée hors conteneur via `skip_if` ; **v0.15.4** privileged (−3) / CAP_SYS_ADMIN (−2) / seccomp désactivé (−1) déduisent comme choix opérateur, le reste reste INFO |
+| `socket_units.py` | **v0.13.1** — units `.socket` systemd orphelines / en échec, à l'intersection systemd × sockets en écoute ; un `Triggers=` vide n'est jamais signalé, un service backing simplement inactif est sain ; **v0.15.4** une orpheline liée à une adresse non-loopback déduit (−1), le loopback seul reste INFO |
+| `cloud_context.py` | **v0.13.1** — exposition cloud côté hôte (IMDS joignable on-link, user-data lisible par tous) ; détection conservatrice (provider DMI, ou cloud-init + route IMDS on-link) ; supprimée hors cloud, aucune API cloud ; **v0.15.4** le user-data lisible par tous déduit (−2) ; l'accessibilité IMDS reste INFO — l'application d'IMDSv2 ne se lit pas depuis l'hôte |
 
 ---
 

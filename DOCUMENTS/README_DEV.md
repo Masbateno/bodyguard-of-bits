@@ -118,9 +118,9 @@ This separation allows the entire business logic to be tested by instantiating s
 | `systemd_timers.py` | Systemd timer security: pipe-to-shell in ExecStart, world-writable scripts, user-created root timers |
 | `firmware.py` | Firmware & microcode: fwupdmgr pending updates, CPU microcode package via dpkg |
 | `systemd_hardening.py` | **v0.13.0** — `systemd-analyze security` exposure score of *running* services; INFO-only, no deduction (most units ship unhardened by default) |
-| `container_security.py` | **v0.13.0** — container self-posture read from `/proc` (CapBnd, seccomp mode, uid_map, rootfs writability); whole section suppressed off-container via `skip_if`; INFO-only |
-| `socket_units.py` | **v0.13.1** — orphan / failed systemd `.socket` units at the systemd × listening-sockets intersection; an empty `Triggers=` is never flagged, a merely inactive backing service is healthy; INFO-only |
-| `cloud_context.py` | **v0.13.1** — host-side cloud exposure (IMDS reachable on-link, world-readable user-data); conservative detection (DMI provider, or cloud-init + on-link IMDS route); suppressed off-cloud, no cloud API; INFO-only |
+| `container_security.py` | **v0.13.0** — container self-posture read from `/proc` (CapBnd, seccomp mode, uid_map, rootfs writability); whole section suppressed off-container via `skip_if`; **v0.15.4** privileged (−3) / CAP_SYS_ADMIN (−2) / seccomp-off (−1) deduct as operator choices, the rest stays INFO |
+| `socket_units.py` | **v0.13.1** — orphan / failed systemd `.socket` units at the systemd × listening-sockets intersection; an empty `Triggers=` is never flagged, a merely inactive backing service is healthy; **v0.15.4** an orphan bound to a non-loopback address deducts (−1), loopback-only stays INFO |
+| `cloud_context.py` | **v0.13.1** — host-side cloud exposure (IMDS reachable on-link, world-readable user-data); conservative detection (DMI provider, or cloud-init + on-link IMDS route); suppressed off-cloud, no cloud API; **v0.15.4** world-readable user-data deducts (−2); IMDS reachability stays INFO — IMDSv2 enforcement cannot be read host-side |
 
 ---
 
