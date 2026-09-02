@@ -222,7 +222,7 @@ sudo bob -n > audit.txt
 # Analyse logs over 14 days instead of 7
 sudo bob --log-days=14
 
-# Reconfigure custom ports
+# Delete the saved configuration (asks first)
 sudo bob -r
 
 # Quiet mode — no output, use exit code to detect issues
@@ -261,9 +261,11 @@ sudo bob -v -d --fix
 
 ---
 
-## Custom port configuration
+## Saved configuration
 
-When a service is detected on a non-standard port (e.g. SSH on port 2222), the script offers to save the port once. The answer is saved to `~/.config/bob/config.conf` and reused on subsequent audits. To reconfigure:
+`~/.config/bob/config.conf` (mode `0600`) holds the audit profile, the webhook URL and format, the SUID whitelist and the log directories chosen through `--manage-logs`. Nothing else is persisted: **service ports are not saved and never were** — BOB reads each service's own configuration files at audit time (`sshd_config`, `nginx.conf`, `smb.conf`, …) and falls back to the well-known port when no directive is found. Earlier revisions of this page described a prompt that offered to remember a non-standard port; no such prompt exists in the code.
+
+To delete the saved configuration and start from defaults (asks for confirmation):
 
 ```bash
 sudo bob --reconfigure
@@ -474,7 +476,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `-q`, `--quiet`         | Suppress all output — use exit code to detect issues               |
 | `-f`, `--fix`           | Propose and apply corrections interactively                        |
 | `-y`, `--yes`           | Apply all corrections without confirmation (use with `-f`)         |
-| `-r`, `--reconfigure`   | Reconfigure all custom ports                                       |
+| `-r`, `--reconfigure`   | Delete the saved configuration and exit (asks first)               |
 | `-n`, `--no-color`      | Force ANSI colour off (colour is auto-detected from the TTY)       |
 | `--format=FORMAT`       | Unified output flag: `json \| json-full \| csv \| markdown \| html` |
 | `--json`                | Export summary as JSON (alias for `--format=json`)                |
@@ -505,7 +507,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `/etc/bash_completion.d/bob`       | Bash completion (created by `--install-completion`)                  |
 | `/usr/local/bin/bob-nightly`       | Nightly wrapper script (created by `--install-cron`)                 |
 | `/etc/cron.d/bob-{name}`           | Named system cron entry (created by `--install-cron`)                |
-| `~/.config/bob/config.conf`        | User configuration (custom ports, log directory; permissions 600)    |
+| `~/.config/bob/config.conf`        | User configuration (profile, webhook, log directory; permissions 600)|
 | `~/.config/bob/services.d/*.json`  | User plugin directory — custom service definitions (see note below)  |
 | `bob_YYYYMMDD_HHMMSS.log`          | Detailed report (created with `-d`, in the configured directory)     |
 

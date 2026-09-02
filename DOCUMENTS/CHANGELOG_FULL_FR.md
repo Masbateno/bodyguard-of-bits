@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.15.3] — 2026-09-01
+## [v0.15.3] — 02-09-2026
 
 **Le backlog laissé par v0.15.2, en commençant par ce que les checks de service lisent au-delà d'un port.**
 
@@ -242,7 +242,7 @@ envoie désormais une clé et des paramètres primitifs, le parent rend ;
 `SandboxRejected` porte sa propre clé et ses paramètres. Même classe que la
 passe F8/F8b de la v0.11.2, sur une surface qu'elle n'avait pas couverte.
 
-Quatre gardes, toutes mutation-testées : aucun champ affecté par `parse_args`
+Quatre gardes, tous mutation-testés : aucun champ affecté par `parse_args`
 ne peut rester sans lecteur, aucune clé de locale sans référence, aucune option
 annoncée dans `--help` absente du manuel, aucune ligne d'aide rendue au-delà de
 100 caractères — mesurée en caractères, les tirets cadratins et les flèches
@@ -313,11 +313,50 @@ que son appelant analyse ; `--diff` y était accidentellement inoffensif tant
 qu'il était muet, `--breakdown` ne l'était pas, et `bob -j --breakdown | jq`
 recevait une table de score accolée à son JSON.
 
-**Tests** 7560 → **7725**.
+Avant le tag, la documentation a été confrontée au code.
+
+`man/bob.conf.5` portait une sous-section `.SS Custom service ports` invitant le
+lecteur à écrire `ssh_port = 2222` ou `samba_ports = 445/tcp, 139/tcp` dans
+`config.conf`. Aucun code n'a jamais lu de clé de port par service — les seules
+clés lues sont `log_dir` et `log_dirs_extra` — si bien qu'un lecteur y déclarant
+un port SSH non standard aurait cru le faire auditer. La même fonctionnalité
+imaginaire figurait dans la section « Configuration des ports personnalisés » de
+README_TECH (« le script propose de sauvegarder le port »), dans les deux
+tableaux d'options, dans un exemple shell, dans deux tableaux d'inventaire de
+fichiers, dans SNAPSHOT, et dans le docstring du module `bob/config.py`, qui
+s'ouvrait en présentant la mémorisation des ports comme sa raison d'être. Dix
+emplacements dans les deux langues, décrivant désormais ce que le fichier
+contient vraiment : profil d'audit, URL et format du webhook, liste blanche
+SUID, répertoires de journaux.
+
+C'est le pendant documentaire du constat sur `config_key` déjà présent dans
+cette version. La stratégie `"ask"`, la forme à clé nommée, la section du manuel
+et le libellé de `--reconfigure` étaient quatre visages d'une fonctionnalité
+jamais construite.
+
+Les formats de date des changelogs étaient mélangés. Les champs structurels — la
+colonne date du tableau des versions et les en-têtes `## [vX] — date` — sont en
+ISO côté anglais et en JJ-MM-AAAA côté français, une convention par langue sur
+soixante-dix releases. v0.15.2 et v0.15.3 avaient été écrites en ISO côté
+français, dans le tableau comme dans les en-têtes. Corrigé, et tenu par un garde
+qui vérifie le format par langue, que chaque date est un jour réel du calendrier,
+qu'aucune entrée n'est datée dans le futur, et — le contrôle le plus utile — que
+les deux langues datent la même version du même jour. Les dates en prose sont
+volontairement laissées telles quelles : les deux formes y coexistent des deux
+côtés, et certaines sont des citations de sortie machine à préserver mot pour
+mot.
+
+Pages de manuel passées à la date de release. Une relecture des chaînes
+françaises ajoutées dans cette version a corrigé un anglicisme, un article
+manquant qui contredisait la ligne voisine, un mot répété deux fois dans la même
+phrase, une abréviation inutile et un accord de genre contraire à la convention
+du fichier.
+
+**Tests** 7560 → **7743**.
 
 ---
 
-## [v0.15.2] — 2026-08-31
+## [v0.15.2] — 31-08-2026
 
 **Un test de résistance des deux versions précédentes, et la classe de défauts qu'elles visaient trouvée encore ouverte à sa racine.**
 

@@ -1,5 +1,5 @@
 .\" Manpage for ~/.config/bob/config.conf
-.TH BOB.CONF 5 "2026-09-01" "BOB 0.15.3" "File Formats"
+.TH BOB.CONF 5 "2026-09-02" "BOB 0.15.3" "File Formats"
 .SH NAME
 bob.conf \- BOB user configuration file
 .
@@ -30,32 +30,30 @@ and resolves the path against the invoking user's home, not
 The file is owned by that user with mode
 .BR 0600 .
 .PP
-The file is created by the first-launch wizard
+The file is created the first time
+.B bob
+persists a setting — a
+.B \-\-profile
+or
+.B \-\-webhook
+passed on the command line, or a log directory chosen in
+.BR \-\-manage\-logs .
 .RB ( \-\-reconfigure
-re-runs it). It is safe to edit by hand.
+deletes it.) It is safe to edit by hand.
 .
 .SH KEYS
-.SS Custom service ports
-For any service in
+.SS Service ports \(em not configured here
+Service ports are
+.B not
+read from this file, and never were. At audit time
 .B bob
-'s registry whose
-.B config_key
-declares a user-config key (e.g.
-.IR ssh_port " for SSH), add a line:"
+parses each service's own configuration
+.RI ( sshd_config ", " nginx.conf ", " smb.conf ", etc.)"
+and falls back to the well-known port when no directive is found.
 .PP
-.RS
-.EX
-ssh_port = 2222
-.EE
-.RE
-.PP
-Multi-port services use comma-separated values:
-.PP
-.RS
-.EX
-samba_ports = 445/tcp, 139/tcp
-.EE
-.RE
+Earlier revisions of this page documented
+.IR ssh_port " and " samba_ports
+keys here. No code has ever read them: writing one has no effect.
 .SS Log directory
 .TP
 .B log_dir = \fIPATH\fR

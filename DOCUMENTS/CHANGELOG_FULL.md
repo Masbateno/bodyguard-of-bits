@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.15.3] — 2026-09-01
+## [v0.15.3] — 2026-09-02
 
 **The backlog v0.15.2 left, starting with what the service checks read beyond a port.**
 
@@ -292,7 +292,43 @@ its caller parses; `--diff` was accidentally safe there while it was mute,
 `--breakdown` was not, and `bob -j --breakdown | jq` had been receiving a score
 table appended to its JSON.
 
-**Tests** 7560 → **7725**.
+Before the tag, the documentation was confronted with the code.
+
+`man/bob.conf.5` carried a `.SS Custom service ports` subsection telling the
+reader to write `ssh_port = 2222` or `samba_ports = 445/tcp, 139/tcp` into
+`config.conf`. No code has ever read a per-service port key — the only keys any
+code reads are `log_dir` and `log_dirs_extra` — so a reader who declared a
+non-standard SSH port there would have believed BOB was auditing that port. The
+same invented feature appeared in README_TECH's "Custom port configuration"
+section ("the script offers to save the port once"), in both options tables, in
+a shell example, in two file-inventory tables, in SNAPSHOT, and in the
+`bob/config.py` module docstring, which opened by calling port memory the
+module's primary purpose. Ten places across both languages, all now describing
+what the file actually holds: audit profile, webhook URL and format, SUID
+whitelist, log directories.
+
+This is the documentation half of the `config_key` finding already in this
+release. The `"ask"` strategy, the named-key form, the man page section and the
+`--reconfigure` wording were four faces of one feature that was never built.
+
+Changelog date formats were mixed. The structural fields — the version table's
+date column and the `## [vX] — date` headings — are ISO on the English side and
+DD-MM-YYYY on the French one, one convention per language across seventy
+releases. v0.15.2 and v0.15.3 had been written ISO on the French side, in both
+the table and the headings. Corrected, and pinned by a guard that checks the
+format per language, that every date is a real calendar day, that no entry is
+dated in the future, and — the check that matters most — that both languages
+date the same version on the same day. Prose dates are deliberately left alone:
+both forms appear in running text on both sides, and some are quoted machine
+output that must stay verbatim.
+
+Man pages bumped to the release date. A French proofreading pass on the strings
+added this release fixed an anglicism, a missing article that contradicted the
+neighbouring line, a word repeated twice in one sentence, an unnecessary
+abbreviation, and a gender agreement that ran against the file's own
+convention.
+
+**Tests** 7560 → **7743**.
 
 ---
 

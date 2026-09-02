@@ -1,14 +1,24 @@
 """
 User configuration module for BOB.
 
-Manages persistent key=value settings stored between runs, primarily
-used to remember port numbers for services that require manual input.
+Manages persistent key=value settings stored between runs: the audit
+profile, the webhook URL and format, the SUID whitelist, and the log
+directories chosen through ``--manage-logs``.
+
+v0.15.3: this docstring used to say the module was "primarily used to
+remember port numbers for services that require manual input", and gave
+``ssh_port`` / ``nginx_web_server_port`` as its examples. Nothing has ever
+written or read a per-service port key — ports are parsed from each
+service's own configuration at audit time. The wording, the man page
+section that documented ``ssh_port = 2222`` as a supported key, and the
+``config_key: "ask"`` strategy behind it were all describing a feature that
+was never built.
 
 Configuration file location: ~/.config/bob/config.conf
 
 File format (plain key=value, one per line):
-    nginx_web_server_port=8080
-    ssh_port=2222
+    profile=desktop
+    log_dir=/var/log/bob
 
 No section headers, no comments written by the application.
 The file is human-readable and human-editable.
@@ -17,10 +27,11 @@ Usage:
     from bob.config import UserConfig
 
     config = UserConfig.load()
-    port = config.get("nginx_web_server_port")   # "8080" or None
-    config.set("nginx_web_server_port", "8080")  # persists immediately
-    config.delete("nginx_web_server_port")
-    config.clear()
+    profile = config.get("profile")       # "desktop" or None
+    config.set("profile", "desktop")      # persists immediately
+    config.delete("profile")
+    config.clear()                        # empties, keeps the file
+    config.reset()                        # empties AND removes the file
 """
 
 from __future__ import annotations

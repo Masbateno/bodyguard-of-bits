@@ -222,7 +222,7 @@ sudo bob -n > audit.txt
 # Analyser les logs sur 14 jours au lieu de 7
 sudo bob --log-days=14
 
-# Reconfigurer les ports personnalisés
+# Supprimer la configuration enregistrée (avec confirmation)
 sudo bob -r
 
 # Mode silencieux — aucune sortie, utilisez le code de retour
@@ -261,9 +261,11 @@ sudo bob --french -v -d -f
 
 ---
 
-## Configuration des ports personnalisés
+## Configuration enregistrée
 
-Quand un service est détecté sur un port non standard (ex. SSH sur 2222), le script propose de sauvegarder le port. La réponse est sauvegardée dans `~/.config/bob/config.conf` et réutilisée lors des audits suivants. Pour reconfigurer :
+`~/.config/bob/config.conf` (mode `0600`) contient le profil d'audit, l'URL et le format du webhook, la liste blanche SUID et les répertoires de journaux choisis via `--manage-logs`. Rien d'autre n'est persisté : **les ports des services ne sont pas enregistrés et ne l'ont jamais été** — BOB lit à chaque audit les fichiers de configuration des services eux-mêmes (`sshd_config`, `nginx.conf`, `smb.conf`, …) et retombe sur le port usuel quand aucune directive n'est trouvée. Des versions antérieures de cette page décrivaient une invite proposant de mémoriser un port non standard ; cette invite n'existe pas dans le code.
+
+Pour supprimer la configuration enregistrée et repartir des valeurs par défaut (avec confirmation) :
 
 ```bash
 sudo bob -r
@@ -474,7 +476,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `-q`, `--quiet`         | Supprimer toute sortie — utiliser le code de retour                |
 | `-f`, `--fix`           | Proposer et appliquer les corrections interactivement              |
 | `-y`, `--yes`           | Appliquer toutes les corrections sans confirmation (avec `-f`)     |
-| `-r`, `--reconfigure`   | Reconfigurer tous les ports personnalisés                          |
+| `-r`, `--reconfigure`   | Supprimer la configuration enregistrée puis sortir (avec confirm.) |
 | `-n`, `--no-color`      | Forcer la couleur à off (elle est auto-détectée depuis le TTY)     |
 | `--format=FORMAT`       | Flag unifié : `json \| json-full \| csv \| markdown \| html`      |
 | `--json`                | Exporter le résumé en JSON (alias `--format=json`)                 |
@@ -505,7 +507,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `/etc/bash_completion.d/bob`       | Autocomplétion bash (créée par `--install-completion`)                   |
 | `/usr/local/bin/bob-nightly`       | Script wrapper nocturne (créé par `--install-cron`)                      |
 | `/etc/cron.d/bob-{nom}`            | Entrée cron nommée (créée par `--install-cron`)                          |
-| `~/.config/bob/config.conf`        | Configuration utilisateur (ports personnalisés, répertoire logs ; 600)   |
+| `~/.config/bob/config.conf`        | Configuration utilisateur (profil, webhook, répertoire logs ; 600)       |
 | `~/.config/bob/services.d/*.json`  | Répertoire de plugins — définitions de services personnalisés (voir note) |
 | `bob_YYYYMMDD_HHMMSS.log`          | Rapport détaillé (créé avec `-d`, dans le répertoire configuré)          |
 

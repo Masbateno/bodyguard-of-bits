@@ -275,7 +275,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, .log, JSON detail messages, webhook payloads, explain entries) is fully localised — 2154 keys × 2 locales as of v0.8.x.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is fully localised — 2154 keys × 2 locales as of v0.15.3. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 ---
 

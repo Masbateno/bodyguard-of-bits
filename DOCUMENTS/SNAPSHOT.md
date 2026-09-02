@@ -29,7 +29,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 7725 unit tests · 19 doc files · 5+ distros field-tested │
+│                 7743 unit tests · 19 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -193,7 +193,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 184 test files, ~5323 functions, 7725 collected (v0.15.3)
+├── tests/                     ← 185 test files, ~5329 functions, 7743 collected (v0.15.3)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -601,7 +601,7 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 | `--output-dir=PATH` | Audit | Override log dir for this run (non-persistent) |
 | `--profile=NAME`, `-p NAME` | Audit | Apply profile (`server`/`desktop`/`workstation`/`container` + user). **A valid name is persisted** as the operator's default for later runs (v0.12.1); an invalid one warns and leaves the saved profile untouched |
 | `--quiet`, `-q` | Output | Suppress all output, use exit code |
-| `--reconfigure`, `-r` | Setup | Re-run first-launch config wizard |
+| `--reconfigure`, `-r` | Setup | Delete the saved configuration and exit (confirms first) |
 | `--english` | Config | Force English output (symmetric counterpart of `--french`; overrides `$LANG` detection) |
 | `--reset-baseline` | Comparison | Wipe `last_baseline.json` |
 | `--test-webhook` | Integrations | POST a minimal smoke payload to the configured webhook and exit — no audit runs |
@@ -626,7 +626,7 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 
 | Path | Mode | Purpose | Lifecycle |
 |---|---|---|---|
-| `~/.config/bob/config.conf` | `0600` | User config (custom ports, log dir, suid_whitelist, email book, webhook defaults) | Created on first run; reconfigure with `--reconfigure` |
+| `~/.config/bob/config.conf` | `0600` | User config (profile, log dir, suid_whitelist, email book, webhook defaults) | Created on first run; reconfigure with `--reconfigure` |
 | `~/.config/bob/services.d/*.json` | r | User plugin services (extends `services.json`) | Created manually by user |
 | `~/.config/bob/checks.d/*.py` | r | User plugin checks (Python files) | Created manually; **executed inside the `SandboxRunner` spawn child** (v0.7.0 T3) — see frozen contract #10. The parent never `exec`s plugin source. Since v0.14.1 the loader also rejects non-regular files and bounds the read. |
 | `~/.config/bob/profiles/*.conf` | r | User audit profiles | Created manually |
@@ -695,7 +695,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 
 - **Audit-only by default** (no auto-fix without explicit `--fix --apply`). Foundational security stance.
 - **Zero runtime deps outside stdlib**. Major asset for distro packaging; preserve at all costs.
-- **Snapshot + check_xxx separation**. Enables ~7725 tests with no mocks.
+- **Snapshot + check_xxx separation**. Enables ~7743 tests with no mocks.
 - **Equal-domain weighting** in global score. All active domains contribute equally — intentional, retained through v0.10.x. The "main architectural question for v0.3.0" was answered: keep equal weighting.
 - **JSON schema_version dispatch** (v0.7.0 T2). `DEFAULT_SCHEMA_VERSION="3"` since v0.12.0 F9; the `"1"` legacy path and `--json-v1` were retired in v0.9.0 F-3, `"2"` in v0.12.0 (any non-`"3"` value now raises `ValueError`). Breaking changes = `"4"` + major bump.
 - **EXPLAIN_KEYS frozen** with alias map for renames. 169 keys / 45 prefixes as of v0.10.1 (v0.7.0 baseline was 117 / 30; v0.8.0 drift batch backfilled 51 missing WARN/ALERT findings → 168 / 45; v0.10.1 D-4 Rank 1 added `ssh.x11.forwarding.client` → 169 and registered the first live `EXPLAIN_KEY_ALIASES` entry since v0.9.0 D-3 emptied it — see `tests/test_explain_coverage.py` whitelist for the closed-gap ledger).
@@ -792,7 +792,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 184 test files, ~5323 functions, **7725 collected** (v0.15.3) | `pytest --collect-only -q` |
+| Tests | 185 test files, ~5329 functions, **7743 collected** (v0.15.3) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

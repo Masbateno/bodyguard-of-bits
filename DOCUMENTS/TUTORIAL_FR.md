@@ -277,7 +277,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, .log, messages detail JSON, payloads webhook, entries explain) est totalement localisée — 2154 clés × 2 locales en v0.8.x.
+Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est totalement localisée — 2154 clés × 2 locales en v0.15.3. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 ---
 
