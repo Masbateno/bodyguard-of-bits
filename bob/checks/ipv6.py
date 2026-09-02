@@ -40,7 +40,8 @@ class IPv6Snapshot:
         kernel_ipv6_enabled: True if the kernel IPv6 stack is active
         kernel_ipv6_readable: False when the stack state could not be read
                              (i.e. /proc/sys/net/ipv6/conf/all/disable_ipv6 == 0).
-        ufw_ipv6_enabled:    True if UFW is configured to manage IPv6 rules
+        ufw_ipv6_enabled:    True if UFW is configured to manage IPv6 rules,
+                             None if /etc/default/ufw could not be read
                              (IPV6=yes or absent in /etc/default/ufw).
         listeners_readable:  False when `ss` could not be run, so an empty
                              listener list means "not looked at" rather than
@@ -60,7 +61,7 @@ class IPv6Snapshot:
     # _read_kernel_ipv6.
     kernel_ipv6_readable: bool      = True
     listeners_readable:  bool       = True
-    ufw_ipv6_enabled:    bool       = True
+    ufw_ipv6_enabled:    "bool | None" = True
     ipv6_listeners:      list[str]  = field(default_factory=list)
     ufw_v6_covered:      list[str]  = field(default_factory=list)
     has_global_ipv6:     bool       = False
@@ -127,13 +128,24 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             key="ipv6.kernel_state_unknown",
         )
 
-    if not snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled:
+    # Unknown heads the chain rather than sitting beside it. Falling through
+    # reached the final `else`, which states that kernel and UFW agree — one
+    # more assertion, where the honest answer is to abstain. The per-port gap
+    # check goes with it: coverage cannot be judged against a policy that was
+    # never read.
+    if snapshot.ufw_ipv6_enabled is None:
+        result.info(
+            message=_t("ipv6.ufw_config_unreadable"),
+            key="ipv6.ufw_config_unreadable",
+        )
+
+    elif not snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled:
         # UFW will generate (v6) rules that the kernel ignores — confusing but not a
         # security gap (there is no IPv6 stack to exploit).
         result.info(message=_t("ipv6.ufw_enabled_kernel_disabled"),
                     key="ipv6.ufw_enabled_kernel_disabled")
 
-    elif snapshot.kernel_ipv6_enabled and not snapshot.ufw_ipv6_enabled:
+    elif snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled is False:
         if snapshot.ipv6_listeners:
             listeners_str = ", ".join(snapshot.ipv6_listeners)
             if snapshot.has_global_ipv6:
@@ -203,7 +215,11 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                         port_deductions += 1
                     found_issue = True
 
-    if not found_issue and not (
+    # The closing OK is a positive claim — "all listeners are covered" — and it
+    # sits outside the branch chain, so heading that chain with the unknown case
+    # was not enough: an unreadable policy still produced a clean bill of
+    # coverage against rules that were never read.
+    if snapshot.ufw_ipv6_enabled is not None and not found_issue and not (
         not snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled
     ):
         if snapshot.ipv6_listeners:
@@ -278,17 +294,26 @@ def _read_kernel_ipv6() -> "tuple[bool, bool]":
         return True, False
 
 
-def _read_ufw_ipv6() -> bool:
+def _read_ufw_ipv6() -> "bool | None":
     """
-    Return True if UFW is configured to manage IPv6.
-    Defaults to True if /etc/default/ufw is absent or IPV6= is not set.
+    Return True if UFW is configured to manage IPv6, None if that is unknown.
+
+    An **absent** file answers True: that is ufw's own default, so absence is a
+    real state and reading it as "IPv6 managed" is a measurement. An
+    **unreadable** one is not that state — it is no answer at all, and the two
+    were conflated. On a host whose file says IPV6=no, losing the read invented
+    True and every uncovered port became `ipv6.port_no_v6_rule`, a warning with
+    a deduction for missing rules under a firewall the operator had
+    deliberately told not to manage IPv6.
     """
     try:
         content = Path("/etc/default/ufw").read_text(encoding="utf-8", errors="ignore")
-        if re.search(r"^IPV6\s*=\s*no\b", content, re.MULTILINE | re.IGNORECASE):
-            return False
+    except FileNotFoundError:
+        return True
     except OSError:
-        pass
+        return None
+    if re.search(r"^IPV6\s*=\s*no\b", content, re.MULTILINE | re.IGNORECASE):
+        return False
     return True
 
 

@@ -944,6 +944,7 @@
     "cmd_comment_enable": "mettre IPV6=yes, puis : sudo ufw reload",
     "both_disabled": "IPv6 désactivé dans le noyau et dans UFW — cohérent",
     "ufw_enabled_kernel_disabled": "UFW a IPv6 activé mais le noyau a IPv6 désactivé — les règles (v6) d'UFW n'ont aucun effet",
+    "ufw_config_unreadable": "/etc/default/ufw n'a pas pu être lu — la gestion d'IPv6 par UFW n'a pas été établie",
     "listeners_unknown": "Les services IPv6 en \u00e9coute n'ont pas pu \u00eatre d\u00e9termin\u00e9s",
     "listeners_unknown_detail": "`ss -tulnp` n'a pas pu \u00eatre ex\u00e9cut\u00e9 : BOB ne peut pas dire si un service \u00e9coute en IPv6. Un r\u00e9sultat vide est signal\u00e9 comme inconnu plut\u00f4t que comme \u00ab rien en \u00e9coute \u00bb, qui serait une affirmation sur la machine que BOB n'a jamais v\u00e9rifi\u00e9e. V\u00e9rifier avec : ss -tulnp",
     "ufw_disabled_no_listeners": "UFW IPv6 désactivé et aucun service IPv6 détecté — pas de risque immédiat",

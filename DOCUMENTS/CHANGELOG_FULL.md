@@ -108,7 +108,43 @@ check read the clock at run time. Two reads of a moving value. The clock is now
 pinned on both sides, which was verified by moving the pin and watching the
 production verdict follow it.
 
-**Tests** 7958 → **7988**.
+**An unreadable /etc/default/ufw was read as "UFW manages IPv6".**
+
+The same instrument, the same class, one more file. On this host that file says
+`IPV6=no`. Losing the read invented `True`, and every uncovered IPv6 listener
+became `ipv6.port_no_v6_rule` — a warning with a deduction for rules missing
+from a firewall the operator had deliberately told not to manage IPv6.
+
+The distinction being missed is not absent-versus-present, it is **absent
+versus unreadable**. An absent file is a real state: ufw's own default is IPv6
+on, so answering True there is a measurement. An unreadable one is no answer at
+all. `_read_kernel_ipv6`, in the same module, already draws that line and says
+so in a comment; the ufw branch never received it. Two modules read the file —
+`ipv6` and `firewall` — and both had the conflation; both now answer None.
+
+Wiring None took three passes, and each one is a test. `not None` is True, so
+the branch reading "kernel has IPv6, UFW does not" fired on an unknown and cost
+two points; it now tests `is False`. Falling through the chain reached the final
+`else`, which states that kernel and UFW agree — one more assertion where the
+honest answer is to abstain; the unknown case now heads the chain. And the
+closing OK sits *outside* that chain, so the audit still printed "all listeners
+are covered" against a ruleset whose policy had never been read. A negative
+finding is not the only thing that can be false: a clean bill of health drawn
+from an unread file is worse, because nobody goes looking for it.
+
+The polarity twins are tests — a policy that was read and does manage IPv6
+still reports its gaps, and still certifies coverage when there are none.
+
+**Also swept, and not defects.** Masking `/etc/sudoers` and
+`/var/lib/clamav/daily.cld` produced new verdicts, and both are artefacts of
+the bench rather than findings: `mount --bind` *replaces* the file, so the
+permission bits and the mtime BOB reads are the mask's own. Verified by
+comparing `/etc/shadow`'s mtime with the real database's. An unmasked control
+run inside the same namespace was checked against the baseline first — same
+score, same ten deductions — because a harness that shifts the result on its
+own makes every row after it meaningless.
+
+**Tests** 7958 → **8001**.
 
 ---
 

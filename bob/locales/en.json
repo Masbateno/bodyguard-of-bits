@@ -944,6 +944,7 @@
     "cmd_comment_enable": "set IPV6=yes, then: sudo ufw reload",
     "both_disabled": "IPv6 disabled both in kernel and UFW — consistent",
     "ufw_enabled_kernel_disabled": "UFW has IPv6 enabled but kernel IPv6 is disabled — UFW (v6) rules have no effect",
+    "ufw_config_unreadable": "/etc/default/ufw could not be read — whether UFW manages IPv6 was not established",
     "listeners_unknown": "IPv6 listening services could not be determined",
     "listeners_unknown_detail": "`ss -tulnp` could not be run, so BOB cannot say whether any service is listening on IPv6. An empty result is reported as unknown rather than as \"nothing listening\", which would be a claim about the host BOB never verified. Check with: ss -tulnp",
     "ufw_disabled_no_listeners": "UFW IPv6 disabled and no IPv6 listeners detected — no immediate risk",

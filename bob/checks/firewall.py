@@ -55,7 +55,8 @@ class FirewallStatus:
                           One of: "deny", "allow", "reject", "unknown".
         ufw_output:       Full output of `ufw status verbose` for the report.
         numbered_output:  Full output of `ufw status numbered` (rules list).
-        ipv6_ufw_enabled: True if IPV6=yes (or absent) in /etc/default/ufw.
+        ipv6_ufw_enabled: True if IPV6=yes (or the file is absent) in
+                          /etc/default/ufw, None if it could not be read.
                           Used to suppress false-positive IPv6 coverage warnings.
     """
     installed:        bool
@@ -63,7 +64,7 @@ class FirewallStatus:
     incoming_policy:  str
     ufw_output:       str
     numbered_output:  str
-    ipv6_ufw_enabled: bool = True
+    ipv6_ufw_enabled: "bool | None" = True
     logging_level:    str  = "unknown"
 
     @classmethod
@@ -373,7 +374,8 @@ def _check_ipv6_coverage(
     Warn if IPv4 rules exist but no IPv6 rules are present.
 
     Suppressed when IPv6 is disabled in /etc/default/ufw to avoid
-    false positives on systems that intentionally run IPv4-only.
+    false positives on systems that intentionally run IPv4-only, and when that
+    file could not be read at all.
     """
     _bodies = [_strip_comment(ln) for ln in lines]
     ipv4_count = sum(1 for ln in _bodies if "(v6)" not in ln)
@@ -388,7 +390,9 @@ def _check_ipv6_coverage(
                 cmd="sudo sed -i 's/^IPV6=no/IPV6=yes/' /etc/default/ufw && sudo ufw reload",
                 nature="improvement",
             )
-        # else: IPv6 is disabled in /etc/default/ufw — no warning
+        # else: IPv6 is disabled in /etc/default/ufw, or the file could not
+        # be read — either way there is nothing established to warn about. The
+        # unreadable case is reported once, by the ipv6 section that owns it.
     elif ipv4_count > 0:
         result.ok(message=t("firewall_rules.ipv6_ok"), key="firewall_rules.ipv6_ok")
 
@@ -479,17 +483,21 @@ def _read_logging_level(ufw_output: str, ufw_conf: Path = Path("/etc/ufw/ufw.con
     return "unknown"
 
 
-def _read_ipv6_config() -> bool:
+def _read_ipv6_config() -> "bool | None":
     """
     Read /etc/default/ufw to determine if IPv6 is enabled.
 
-    Returns False only when IPV6=no is explicitly set.
-    Defaults to True (enabled) if the file is absent or unreadable.
+    Returns False only when IPV6=no is explicitly set, True when the file is
+    absent (ufw's own default), and None when it exists but could not be read.
+    The last case used to answer True as well; see `ipv6._read_ufw_ipv6`, which
+    reads the same file and paid for the conflation with a false deduction.
     """
     try:
         content = Path("/etc/default/ufw").read_text(encoding="utf-8", errors="ignore")
-        if re.search(r"^IPV6\s*=\s*no\b", content, re.MULTILINE | re.IGNORECASE):
-            return False
+    except FileNotFoundError:
+        return True
     except OSError:
-        pass
+        return None
+    if re.search(r"^IPV6\s*=\s*no\b", content, re.MULTILINE | re.IGNORECASE):
+        return False
     return True

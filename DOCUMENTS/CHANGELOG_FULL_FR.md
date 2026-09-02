@@ -119,7 +119,47 @@ d'une valeur mouvante. L'horloge est maintenant figée des deux côtés, ce qui 
 été vérifié en déplaçant le point fixe et en regardant le verdict de production
 le suivre.
 
-**Tests** 7958 → **7988**.
+**Un `/etc/default/ufw` illisible était lu comme « UFW gère IPv6 ».**
+
+Le même instrument, la même classe, un fichier de plus. Sur cet hôte, ce
+fichier porte `IPV6=no`. Perdre la lecture inventait `True`, et chaque listener
+IPv6 non couvert devenait `ipv6.port_no_v6_rule` — un avertissement avec
+déduction pour des règles manquantes à un pare-feu à qui l'opérateur avait
+délibérément dit de ne pas gérer IPv6.
+
+La distinction manquée n'est pas absent/présent, c'est **absent/illisible**. Un
+fichier absent est un état réel : le défaut propre d'ufw est IPv6 activé, donc
+répondre True est une mesure. Un fichier illisible n'est pas cet état, c'est
+une absence de réponse. `_read_kernel_ipv6`, dans le même module, trace déjà
+cette ligne et le dit en commentaire ; la branche ufw ne l'avait jamais reçue.
+Deux modules lisent ce fichier — `ipv6` et `firewall` — tous deux avaient la
+confusion, tous deux répondent désormais None.
+
+Câbler None a demandé trois passes, et chacune est un test. `not None` vaut
+True : la branche « le noyau a IPv6, UFW non » se déclenchait sur un inconnu et
+coûtait deux points ; elle teste maintenant `is False`. Tomber au bout de la
+chaîne atteignait le `else` final, qui affirme que noyau et UFW sont d'accord —
+une affirmation de plus, là où la réponse honnête est de s'abstenir ; l'inconnu
+prend désormais la tête de chaîne. Et l'OK de clôture se trouve *hors* de cette
+chaîne : l'audit imprimait encore « tous les listeners sont couverts » face à
+un jeu de règles dont la politique n'avait jamais été lue. Un constat négatif
+n'est pas la seule chose qui puisse être fausse : un satisfecit tiré d'un
+fichier non lu est pire, car personne ne va le vérifier.
+
+Les jumeaux de polarité sont des tests — une politique lue qui gère bien IPv6
+rapporte toujours ses trous, et certifie toujours la couverture quand il n'y en
+a pas.
+
+**Également balayés, et ce ne sont pas des défauts.** Masquer `/etc/sudoers` et
+`/var/lib/clamav/daily.cld` produit de nouveaux verdicts, et les deux sont des
+artefacts du banc, pas des trouvailles : `mount --bind` *remplace* le fichier,
+donc les droits et la mtime que BOB lit sont ceux du masque. Vérifié en
+comparant la mtime de `/etc/shadow` à celle de la vraie base. Un run de
+contrôle sans masque, dans le même espace de noms, a d'abord été confronté à la
+référence — même score, mêmes dix déductions — car un banc qui déplace le
+résultat de lui-même rend toutes les lignes suivantes inutiles.
+
+**Tests** 7958 → **8001**.
 
 ---
 
