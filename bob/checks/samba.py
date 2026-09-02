@@ -162,15 +162,24 @@ class SambaSnapshot:
             is_guest = _is_yes(opts, "guest ok") or _is_yes(opts, "public")
             if not is_guest:
                 continue
-            # writable = yes  OR  write ok = yes  OR  read only = no
+            # v0.15.4: ``writeable`` was missing from this set. samba accepts
+            # both spellings — testparm resolves ``writeable = yes`` to
+            # ``read only = No``, exactly like ``writable`` — so a world-writable
+            # guest share written with the "e" was reported as read-only:
+            # samba.guest_readonly (WARN, 1 point) instead of
+            # samba.guest_writable (ALERT, 2 points).
             writable = (
                 _is_yes(opts, "writable")
+                or _is_yes(opts, "writeable")
                 or _is_yes(opts, "write ok")
                 or _section_get(opts, "read only").lower() in ("no", "false", "0")
             )
             share = GuestShare(
                 name=section_name,
-                path=_section_get(opts, "path"),
+                # ``directory`` is samba's synonym for ``path`` (testparm
+                # resolves it to ``path``); reading only the latter left the
+                # finding naming an empty directory.
+                path=_section_get(opts, "path", "directory"),
                 writable=writable,
             )
             snap.guest_shares.append(share)
