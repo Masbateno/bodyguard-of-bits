@@ -264,7 +264,35 @@ explicitly; the remaining two — sending mail and executing a fix — read only
 the return code. `systemctl` column truncation under `COLUMNS` was measured
 and does not occur through a pipe.
 
-**Tests** 7560 → **7717**.
+`bob --diff` printed nothing at all. Not a delta, not "no changes detected",
+not an error — zero bytes, on every invocation, since v0.3.0. The flag is
+advertised in `--help`, documented in the man page, listed in EXAMPLES as "Show
+what changed since last audit", and v0.9.0 shipped `--diff=PATH` cross-machine
+comparison as a headline feature of a BREAKING bundle.
+
+`_silent_mode` sets `config.quiet = True` so the audit itself stays mute while
+a post-audit view is displayed, and `display_delta` writes exclusively through
+`output.print_*`. The comment immediately above the branch states the contract
+— "stdout restored — display post-audit views with full output (no quiet
+filter)" — and only `--breakdown` implemented it. `_silent_mode` grew to cover
+`diff_mode` in v0.3.0, the same commit that introduced `--breakdown`: the new
+branch was given its `output.init(quiet=False)`, the pre-existing one was not.
+A feature silenced by a refactor performed for its sibling.
+
+Five test files touch the diff — `compute_delta`, `display_delta`, the
+`diff_mode` flag, the v0.9.0 baseline path — and not one drove `--diff` through
+`main()`, because the audit path calls `require_root()`. The components were
+covered; the wiring between them was not, and that is exactly what broke. The
+regression tests pin the mechanism rather than running a full audit, which
+would depend on the host — the failure mode this project already met once.
+
+Both post-audit views are now also excluded from the machine modes. A human
+view printed after the JSON / CSV / Markdown / HTML payload corrupts the stream
+its caller parses; `--diff` was accidentally safe there while it was mute,
+`--breakdown` was not, and `bob -j --breakdown | jq` had been receiving a score
+table appended to its JSON.
+
+**Tests** 7560 → **7725**.
 
 ---
 

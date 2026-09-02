@@ -283,7 +283,37 @@ exécution d'un correctif — ne lisent que le code retour. La troncature des
 colonnes de `systemctl` selon `COLUMNS` a été mesurée : elle ne se produit pas
 à travers un tube.
 
-**Tests** 7560 → **7717**.
+`bob --diff` n'affichait rien du tout. Ni delta, ni « aucun changement », ni
+erreur — zéro octet, à chaque invocation, depuis la v0.3.0. L'option est
+annoncée dans `--help`, documentée dans le manuel, listée dans les EXEMPLES
+comme « Ce qui a changé depuis le dernier audit », et la v0.9.0 avait livré la
+comparaison inter-machines `--diff=CHEMIN` comme fonctionnalité phare d'un
+bundle BREAKING.
+
+`_silent_mode` met `config.quiet = True` pour que l'audit lui-même reste muet
+pendant l'affichage d'une vue post-audit, et `display_delta` écrit exclusivement
+via `output.print_*`. Le commentaire juste au-dessus de la branche énonce le
+contrat — « stdout restored — display post-audit views with full output (no
+quiet filter) » — et seul `--breakdown` l'appliquait. `_silent_mode` a englobé
+`diff_mode` en v0.3.0, le commit même qui introduit `--breakdown` : la nouvelle
+branche a reçu son `output.init(quiet=False)`, l'ancienne non. Une
+fonctionnalité rendue muette par un refactor fait pour sa sœur.
+
+Cinq fichiers de tests touchent le diff — `compute_delta`, `display_delta`, le
+drapeau `diff_mode`, le chemin de référence v0.9.0 — et aucun ne pilotait
+`--diff` à travers `main()`, le chemin d'audit appelant `require_root()`. Les
+composants étaient couverts ; le câblage entre eux ne l'était pas, et c'est
+précisément lui qui a cédé. Les tests de non-régression figent le mécanisme
+plutôt que de lancer un audit complet, qui dépendrait de la machine — le mode
+d'échec que ce projet a déjà rencontré une fois.
+
+Les deux vues post-audit sont désormais exclues des modes machine. Une vue
+humaine imprimée après la charge JSON / CSV / Markdown / HTML corrompt le flux
+que son appelant analyse ; `--diff` y était accidentellement inoffensif tant
+qu'il était muet, `--breakdown` ne l'était pas, et `bob -j --breakdown | jq`
+recevait une table de score accolée à son JSON.
+
+**Tests** 7560 → **7725**.
 
 ---
 

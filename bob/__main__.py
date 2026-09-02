@@ -669,8 +669,19 @@ def _run(argv=None) -> int:
             print(build_html_output(engine, sys_info, t=t, lang=config.lang,
                                     profile=active_profile, config=config), end="")
 
-        # stdout restored — display post-audit views with full output (no quiet filter)
-        if config.diff_mode:
+        # stdout restored — display post-audit views with full output (no quiet
+        # filter). v0.15.3: this comment stated the contract since v0.9.0 but
+        # only --breakdown implemented it. _silent_mode forces config.quiet =
+        # True so the audit itself stays mute, and display_delta writes through
+        # output.print_*, so --diff printed nothing at all — not on a change,
+        # not on an unchanged system, never.
+        #
+        # Machine modes stay excluded: a human view printed after the JSON /
+        # CSV / Markdown / HTML payload corrupts the stream its caller parses.
+        # --diff was accidentally safe there while it was mute; --breakdown was
+        # not, and emitted its table straight into `bob -j | jq`.
+        if config.diff_mode and not _machine_mode:
+            output.init(no_color=config.no_color, quiet=False)
             if not prev_baseline:
                 print(t("compare.no_baseline_yet"))
             else:
@@ -698,7 +709,7 @@ def _run(argv=None) -> int:
                 _delta = compute_delta(prev_baseline, curr_baseline)
                 display_delta(_delta, t, output)
 
-        if config.breakdown_mode:
+        if config.breakdown_mode and not _machine_mode:
             output.init(no_color=config.no_color, quiet=False)
             from bob.breakdown import display_breakdown
             display_breakdown(engine, t, output)
