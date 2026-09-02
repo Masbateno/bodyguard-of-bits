@@ -219,22 +219,31 @@ def check_container_security(
 
     # Capabilities — the strongest isolation signal.
     if snapshot.privileged:
-        result.info(
+        # v0.15.4 "teeth": an operator choice, not an editor default —
+        # --privileged is typed by a human, the way PermitRootLogin=yes is.
+        # Field-tested against podman: the default container reports
+        # privileged=False with an empty capability set, so this fires only on
+        # the explicit flag.
+        result.warn_with_deduction(
             message=_t("container_security.privileged",
                        caps=", ".join(snapshot.dangerous_caps)),
             detail=_t("container_security.privileged_detail"),
             key="container_security.privileged",
+            points=3,
+            nature="improvement",
         )
     elif snapshot.cap_sys_admin:
         # CAP_SYS_ADMIN without the full set — a targeted grant (FUSE mounts,
         # for instance), not a privileged container. Still the single most
         # escape-prone capability, so it gets its own finding rather than
         # being folded into the generic dangerous-caps line.
-        result.info(
+        result.warn_with_deduction(
             message=_t("container_security.cap_sys_admin",
                        caps=", ".join(snapshot.dangerous_caps)),
             detail=_t("container_security.cap_sys_admin_detail"),
             key="container_security.cap_sys_admin",
+            points=2,
+            nature="improvement",
         )
     elif snapshot.dangerous_caps:
         result.info(
@@ -262,9 +271,15 @@ def check_container_security(
             key="container_security.seccomp_unknown",
         )
     elif snapshot.seccomp == 0:
-        result.info(
+        # seccomp == 0 means a filter was switched OFF. A kernel built without
+        # CONFIG_SECCOMP reports nothing at all, which is the -1 branch above
+        # and stays INFO: the operator did not choose that.
+        result.warn_with_deduction(
             message=_t("container_security.no_seccomp"),
+            detail=_t("container_security.no_seccomp_detail"),
             key="container_security.no_seccomp",
+            points=1,
+            nature="improvement",
         )
 
     # Root without a user namespace → container-root maps to host-root.

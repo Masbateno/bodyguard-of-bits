@@ -80,7 +80,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail
-- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 181 explainable keys across 46 prefixes; 70 keys show profile-specific sections; interactive TUI; no root required; `--explain list` shows all keys
+- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 184 explainable keys across 47 prefixes; 70 keys show profile-specific sections; interactive TUI; no root required; `--explain list` shows all keys
 - **Domain scores** — per-domain 0–10 sub-scores (SSH / Samba / Files & Access / Updates / Hardening / Disk Health / Firewall & Services); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
@@ -780,7 +780,7 @@ The `findings[*].key` and `deductions[*].key` are part of the `--explain` key se
 
 ### EXPLAIN_KEYS audit
 
-As of v0.11.x, the `--explain` key set contains **181 keys** across **46 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
+As of v0.11.x, the `--explain` key set contains **184 keys** across **47 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
 
 - **Pattern:** `<prefix>.<finding_id>` (single dot, snake_case)
 - **Exceptions:** `file_perms.<path>.<finding_id>` (path-segment middles) and `services.{exposure,state}.<finding_id>` (two-tier taxonomy), both resolved by `bob.explain.normalize_key`

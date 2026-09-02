@@ -22,15 +22,55 @@ class TestCheckLogic:
         assert r.findings == []
         assert not r.deductions
 
-    def test_info_only_never_deducts(self):
+    def test_only_operator_choices_deduct(self):
+        """v0.15.4 "teeth" replaced the INFO-only contract with a narrower one.
+
+        Three findings deduct — privileged, CAP_SYS_ADMIN, seccomp switched
+        off — because each is typed by a human on the command line, the way
+        PermitRootLogin=yes is. Everything else the section reports is a
+        runtime default the operator did not choose (podman leaves the root
+        filesystem writable out of the box; docker runs as root without a user
+        namespace), and defaults stay INFO with no deduction.
+
+        Field-tested with podman: a container started with no flags at all
+        scores zero, which is the property that matters most here.
+        """
         snap = ContainerSecuritySnapshot(
             in_container=True, runtime="docker", privileged=True,
             dangerous_caps=["CAP_SYS_ADMIN"], seccomp=0, is_root=True,
             userns=False, rootfs_writable=True,
         )
         r = check_container_security(snap)
+        deducting = {d.key for d in r.deductions} if hasattr(next(iter(r.deductions), None), "key") \
+            else {f.key for f in r.findings if f.level is not FindingLevel.INFO}
+        assert deducting == {
+            "container_security.privileged",
+            "container_security.no_seccomp",
+        }
+        # the defaults in the same snapshot stay INFO
+        levels = {f.key: f.level for f in r.findings}
+        assert levels["container_security.rootfs_writable"] is FindingLevel.INFO
+        assert levels["container_security.root_no_userns"] is FindingLevel.INFO
+
+    def test_a_default_container_costs_nothing(self):
+        """The rule the teeth rest on: editor defaults are not penalised."""
+        snap = ContainerSecuritySnapshot(
+            in_container=True, runtime="podman", privileged=False,
+            dangerous_caps=[], seccomp=2, is_root=True, userns=True,
+            rootfs_writable=True,
+        )
+        r = check_container_security(snap)
+        assert not r.deductions
         assert all(f.level is FindingLevel.INFO for f in r.findings)
-        assert not r.deductions                       # INFO-only contract
+
+    def test_cap_sys_admin_alone_deducts_less_than_privileged(self):
+        """A targeted grant is not a privileged container, and the ladder says so."""
+        def points(**kw):
+            snap = ContainerSecuritySnapshot(in_container=True, runtime="docker",
+                                             seccomp=2, **kw)
+            return sum(d.points for d in check_container_security(snap).deductions)
+        assert points(cap_sys_admin=True, dangerous_caps=["CAP_SYS_ADMIN"]) == 2
+        assert points(privileged=True, dangerous_caps=["CAP_SYS_ADMIN"]) == 3
 
     def test_privileged_surfaced(self):
         snap = ContainerSecuritySnapshot(in_container=True, runtime="docker",

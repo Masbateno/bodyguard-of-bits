@@ -1178,6 +1178,23 @@
     }
   },
   "explain": {
+    "container_security": {
+      "privileged": {
+        "title": "Container runs privileged — it holds the full capability set",
+        "why": "A privileged container keeps every Linux capability, sees the host's devices, and its root is the host's root in all but name. It is the shortest path from a compromised process inside the container to control of the machine that runs it. Nothing in the container's own configuration constrains it afterwards: seccomp is off as well, which is why this usually costs a second point.",
+        "how": "Re-launch without --privileged. If it was added to make one specific thing work, grant that one thing instead:\n  --device /dev/xxx        for device access\n  --cap-add CAP_NET_ADMIN  for one capability\n  --volume ...             for a host path\nThe container cannot be de-privileged while running; it has to be recreated."
+      },
+      "cap_sys_admin": {
+        "title": "CAP_SYS_ADMIN granted — the most escape-prone single capability",
+        "why": "CAP_SYS_ADMIN is the capability that carries mount, pivot_root, and a large share of the kernel surface that container escapes are written against. It is not a privileged container — the rest of the capability set is still dropped — but on its own it undoes much of what the isolation was for.",
+        "how": "Re-launch without --cap-add SYS_ADMIN. If it was added for FUSE or for mounting inside the container, prefer a bind mount performed on the host and passed in with --volume, which needs no capability at all."
+      },
+      "no_seccomp": {
+        "title": "Seccomp filter switched off for this container",
+        "why": "seccomp is the syscall filter the runtime installs by default; with it off, the container can issue every syscall the kernel offers. That is the surface most container escapes start from. The kernel reports nothing at all when it was built without CONFIG_SECCOMP — BOB reports that case separately and does not deduct for it, because the operator did not choose it.",
+        "how": "Re-launch without --security-opt seccomp=unconfined to restore the runtime's default profile, or supply your own:\n  --security-opt seccomp=/path/to/profile.json"
+      }
+    },
     "plugin": {
       "sandbox": {
         "timeout": {
@@ -3131,7 +3148,8 @@
     "privileged_detail": "A privileged container can largely act as root on the host — it is the most common container-escape path. Every capability the kernel knows is in the bounding set, and seccomp is usually disabled with it. Drop what you do not need: --cap-drop=ALL --cap-add=<only what the workload requires>, and avoid --privileged unless the workload genuinely manages the host.",
     "dangerous_caps": "Container holds elevated capabilities: {caps}",
     "caps_restricted": "Capability bounding set is restricted (no high-risk capabilities) — good",
-    "no_seccomp": "No seccomp filter is active — consider running with a seccomp profile (the runtime default is usually enough)",
+    "no_seccomp": "No seccomp filter is active — the syscall filter was switched off for this container",
+    "no_seccomp_detail": "A container without seccomp can issue every syscall the kernel offers, which is the surface most container escapes start from. Re-run without --security-opt seccomp=unconfined to restore the runtime's default profile, or pass your own with --security-opt seccomp=/path/to/profile.json.",
     "root_no_userns": "Container runs as root without a user namespace — root in the container maps to root on the host",
     "rootfs_writable": "Root filesystem is writable — consider a read-only rootfs (--read-only) with explicit writable volumes",
     "cap_sys_admin": "CAP_SYS_ADMIN granted — not a privileged container, but the most escape-prone capability ({caps})",

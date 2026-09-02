@@ -814,5 +814,20 @@
     "ref": "Best practice — Re-run with BOB_DEBUG=1 to obtain the underlying traceback before filing a report",
     "ref_fr": "Bonne pratique — Relancer avec BOB_DEBUG=1 pour obtenir la trace sous-jacente avant tout signalement",
     "code": null
+  },
+  "container_security.privileged": {
+    "ref": "Best practice — Never run a container with --privileged; grant the one device or capability it actually needs",
+    "ref_fr": "Bonne pratique — Ne jamais lancer un conteneur avec --privileged ; n'accorder que le périphérique ou la capacité réellement nécessaire",
+    "code": null
+  },
+  "container_security.cap_sys_admin": {
+    "ref": "Best practice — Avoid CAP_SYS_ADMIN; perform the mount on the host and pass it in with --volume",
+    "ref_fr": "Bonne pratique — Éviter CAP_SYS_ADMIN ; effectuer le montage sur l'hôte et le passer avec --volume",
+    "code": null
+  },
+  "container_security.no_seccomp": {
+    "ref": "Best practice — Keep the runtime's default seccomp profile, or supply a narrower one",
+    "ref_fr": "Bonne pratique — Conserver le profil seccomp par défaut du runtime, ou en fournir un plus étroit",
+    "code": null
   }
 }

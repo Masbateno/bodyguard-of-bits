@@ -329,6 +329,14 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     # reads as "you mistyped the key" when BOB itself had just emitted it.
     # Their audience is plugin authors, and "why did this happen, how do I fix
     # it" is exactly what they need.
+    # v0.15.4 "teeth": these three moved from INFO to WARN with a deduction,
+    # so they became keys a user meets in a report — and therefore keys that
+    # must be explainable. The rest of the container section stays INFO.
+    ("Container isolation", [
+        "container_security.privileged",
+        "container_security.cap_sys_admin",
+        "container_security.no_seccomp",
+    ]),
     ("Plugin checks — sandbox failures", [
         "plugin.sandbox.timeout",
         "plugin.sandbox.crashed",

@@ -62,6 +62,14 @@ _ACTIONABLE_METHODS = frozenset({
 # shell command. Each entry needs a one-line rationale (inline comment)
 # explaining WHY operating-system-level automation is inappropriate.
 _MANUAL_BY_DESIGN = frozenset({
+    # v0.15.4 "teeth": a container's isolation is fixed by the flags it was
+    # started with. No command run ON THE HOST removes --privileged from a
+    # container that is already running; the operator re-launches it without
+    # the flag, which the detail text spells out. A cmd= here would hand the
+    # reader something that cannot work.
+    "container_security.privileged",
+    "container_security.cap_sys_admin",
+    "container_security.no_seccomp",
     # Contextual / strategic decisions — not a single command:
     "ddns.found",                                # contextual: is DDNS intentional?
     "ddns.warn",                                 # depends on which exposed port + intent

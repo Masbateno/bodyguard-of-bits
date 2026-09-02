@@ -1178,6 +1178,23 @@
     }
   },
   "explain": {
+    "container_security": {
+      "privileged": {
+        "title": "Le conteneur est privilégié — il détient l'ensemble des capacités",
+        "why": "Un conteneur privilégié conserve toutes les capacités Linux, voit les périphériques de l'hôte, et son root est celui de l'hôte à peu de chose près. C'est le chemin le plus court entre un processus compromis dans le conteneur et le contrôle de la machine qui l'héberge. Plus rien dans sa configuration ne le contraint ensuite : seccomp est désactivé aussi, ce qui coûte généralement un second point.",
+        "how": "Relancez sans --privileged. Si le drapeau avait été ajouté pour faire fonctionner une chose précise, n'accordez que celle-là :\n  --device /dev/xxx        pour un périphérique\n  --cap-add CAP_NET_ADMIN  pour une capacité\n  --volume ...             pour un chemin de l'hôte\nUn conteneur ne peut pas être dé-privilégié en cours d'exécution : il faut le recréer."
+      },
+      "cap_sys_admin": {
+        "title": "CAP_SYS_ADMIN accordée — la capacité la plus propice à l'évasion",
+        "why": "CAP_SYS_ADMIN porte mount, pivot_root et une large part de la surface noyau contre laquelle sont écrites les évasions de conteneur. Ce n'est pas un conteneur privilégié — le reste des capacités est toujours retiré — mais à elle seule elle défait beaucoup de ce pour quoi l'isolation existait.",
+        "how": "Relancez sans --cap-add SYS_ADMIN. Si c'était pour FUSE ou pour monter depuis le conteneur, préférez un montage effectué sur l'hôte et passé avec --volume, qui ne demande aucune capacité."
+      },
+      "no_seccomp": {
+        "title": "Filtre seccomp désactivé pour ce conteneur",
+        "why": "seccomp est le filtre d'appels système que le runtime installe par défaut ; sans lui, le conteneur peut émettre tous les appels système du noyau. C'est la surface d'où partent la plupart des évasions de conteneur. Le noyau ne rapporte rien du tout lorsqu'il a été compilé sans CONFIG_SECCOMP — BOB traite ce cas à part et ne déduit rien, l'opérateur ne l'ayant pas choisi.",
+        "how": "Relancez sans --security-opt seccomp=unconfined pour rétablir le profil par défaut du runtime, ou fournissez le vôtre :\n  --security-opt seccomp=/chemin/profil.json"
+      }
+    },
     "plugin": {
       "sandbox": {
         "timeout": {
@@ -3131,7 +3148,8 @@
     "privileged_detail": "Un conteneur privilégié peut largement agir comme root sur l'hôte — c'est le chemin d'évasion le plus courant. Toutes les capabilities que le noyau connaît sont dans le bounding set, et seccomp est généralement désactivé avec. Droppez ce dont vous n'avez pas besoin : --cap-drop=ALL --cap-add=<uniquement ce que la charge exige>, et évitez --privileged sauf si la charge gère réellement l'hôte.",
     "dangerous_caps": "Le conteneur détient des capabilities élevées : {caps}",
     "caps_restricted": "Le jeu de capabilities est restreint (aucune capability à haut risque) — bien",
-    "no_seccomp": "Aucun filtre seccomp actif — envisagez un profil seccomp (le défaut du runtime suffit généralement)",
+    "no_seccomp": "Aucun filtre seccomp actif — le filtre d'appels système a été désactivé pour ce conteneur",
+    "no_seccomp_detail": "Un conteneur sans seccomp peut émettre tous les appels système du noyau, la surface d'où partent la plupart des évasions de conteneur. Relancez sans --security-opt seccomp=unconfined pour rétablir le profil par défaut du runtime, ou fournissez le vôtre avec --security-opt seccomp=/chemin/profil.json.",
     "root_no_userns": "Le conteneur s'exécute en root sans user namespace — le root du conteneur correspond au root de l'hôte",
     "rootfs_writable": "Le système de fichiers racine est accessible en écriture — envisagez un rootfs en lecture seule (--read-only) avec des volumes explicites",
     "cap_sys_admin": "CAP_SYS_ADMIN accordée — pas un conteneur privilégié, mais la capability la plus propice à l'évasion ({caps})",
