@@ -44,7 +44,7 @@ seule réponse — ils retombent sur un fichier de configuration, un paquet snap
 ou un binaire sur le PATH — si bien qu'un False y a plusieurs sources
 indépendantes. Le garde échoue aussi sur une exemption périmée.
 
-**Tests** 7958 → **7974**.
+**Tests** 7958 → **7981**.
 
 ---
 

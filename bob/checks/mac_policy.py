@@ -84,7 +84,16 @@ class MacPolicySnapshot:
         if _command_exists("aa-status"):
             snap.apparmor_installed = True
             aa_out = _run("aa-status") or ""
-            if aa_out and "module is loaded" in aa_out.lower():
+            if not aa_out:
+                # v0.15.5: aa-status is installed but answered nothing — no
+                # privilege, no daemon, a broken build. Leaving apparmor_active
+                # False here reported "AppArmor installed but not active" on a
+                # host where it is enforcing, and this is the *common* case: a
+                # BOB run without sudo takes exactly this path. The kernel is
+                # asked instead, as in the no-tool branch below.
+                snap.apparmor_active = _apparmor_live_in_kernel()
+                snap.apparmor_profiles_readable = False
+            elif "module is loaded" in aa_out.lower():
                 snap.apparmor_active    = True
                 # aa-status succeeds *partially* without the privilege to read
                 # the profile set: it prints "apparmor module is loaded." and
@@ -119,17 +128,7 @@ class MacPolicySnapshot:
             # reports "active, profiles could not be read" instead of inventing
             # a verdict about enforcement.
             snap.apparmor_installed = True
-            enabled = ""
-            try:
-                enabled = Path(
-                    "/sys/module/apparmor/parameters/enabled"
-                ).read_text(encoding="utf-8", errors="ignore").strip()
-            except OSError:
-                pass
-            snap.apparmor_active = (
-                enabled.upper().startswith("Y")
-                or path_exists(Path("/sys/kernel/security/apparmor/profiles"))
-            )
+            snap.apparmor_active = _apparmor_live_in_kernel()
             snap.apparmor_profiles_readable = False
 
         # --- SELinux --------------------------------------------------------
@@ -338,6 +337,26 @@ def check_mac_policy(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+def _apparmor_live_in_kernel() -> bool:
+    """True when the kernel says AppArmor is enabled, without asking aa-status.
+
+    ``parameters/enabled`` reads Y or N and is world-readable; securityfs only
+    mounts the apparmor directory while the LSM is live. Neither says anything
+    about the profile set — that is what aa-status is for — but either settles
+    whether the control is enforcing at all.
+    """
+    try:
+        enabled = Path(
+            "/sys/module/apparmor/parameters/enabled"
+        ).read_text(encoding="utf-8", errors="ignore").strip()
+    except OSError:
+        enabled = ""
+    return (
+        enabled.upper().startswith("Y")
+        or path_exists(Path("/sys/kernel/security/apparmor/profiles"))
+    )
+
 
 def _parse_aa_count(aa_output: str, mode: str) -> int:
     """

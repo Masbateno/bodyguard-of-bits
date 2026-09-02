@@ -333,6 +333,16 @@ _PACKAGE_QUERIES: "tuple[tuple[str, tuple[str, ...], str | None], ...]" = (
     ("apk",        ("info", "-e", _PKG),            None),   # Alpine
 )
 
+# A package each manager necessarily owns: the manager itself. Asking for it is
+# how BOB checks that the query layer answers at all — see
+# ``package_query_possible``.
+_PACKAGE_SENTINELS = {
+    "dpkg-query": "dpkg",
+    "rpm":        "rpm",
+    "pacman":     "pacman",
+    "apk":        "apk-tools",
+}
+
 
 def package_query_possible() -> bool:
     """True when at least one supported package manager is available to ask.
@@ -348,7 +358,38 @@ def package_query_possible() -> bool:
     "could not check" instead. Absence of evidence is not evidence of absence,
     and the report has to keep the difference.
     """
-    return any(_command_exists(tool) for tool, _, _ in _PACKAGE_QUERIES)
+    global _PACKAGE_QUERY_STATE
+    if _PACKAGE_QUERY_STATE is None:
+        _PACKAGE_QUERY_STATE = any(
+            _package_query_answers(tool, args, marker)
+            for tool, args, marker in _PACKAGE_QUERIES
+        )
+    return _PACKAGE_QUERY_STATE
+
+
+_PACKAGE_QUERY_STATE: "bool | None" = None
+
+
+def _package_query_answers(tool: str, args: "tuple[str, ...]", marker: "str | None") -> bool:
+    """True when *tool* is present AND its database answers a known-good query.
+
+    Presence is not enough, and dpkg proves why: with an unreadable database it
+    exits 1 with `no packages found matching <pkg>` — the *same* exit code and
+    the *same* message as a package that is genuinely not installed. The tool
+    itself erases the distinction, so it cannot be recovered from its output.
+
+    What can be established is whether the layer works at all: ask for a package
+    the manager necessarily owns — itself. A healthy dpkg answers `dpkg 1.22.6`
+    on stdout; a broken one answers nothing. BOB does not trust a negative until
+    it has shown it can produce a positive.
+    """
+    if not _command_exists(tool):
+        return False
+    sentinel = _PACKAGE_SENTINELS.get(tool)
+    if sentinel is None:          # unknown manager: fall back to presence
+        return True
+    output = _run(tool, *(a.replace(_PKG, sentinel) for a in args))
+    return bool(marker in output if marker else output.strip())
 
 
 def package_installed(name: str) -> "str | None":

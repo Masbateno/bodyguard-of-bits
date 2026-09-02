@@ -30,6 +30,14 @@ from bob.checks.firmware import FirmwareSnapshot, check_firmware
 MANAGERS = ("dpkg-query", "rpm", "pacman", "apk")
 
 
+@pytest.fixture(autouse=True)
+def reset_query_cache(monkeypatch):
+    """package_query_possible memoises its probe — one sentinel query per run,
+    not one per check. The cache has to be cleared between tests, or the first
+    to touch it decides for the rest."""
+    monkeypatch.setattr(run_mod, "_PACKAGE_QUERY_STATE", None)
+
+
 @pytest.fixture()
 def no_package_manager(monkeypatch):
     real = run_mod._command_exists
@@ -52,6 +60,44 @@ class TestTheHelperCanSayItCouldNotAsk:
         be asked."""
         assert run_mod.package_installed("intel-microcode") is None
         assert run_mod.package_installed("a-package-nobody-ships") is None
+
+
+class TestPresenceIsNotAnAnswer:
+    """The blind spot the first version of this fix had.
+
+    Masking the binary is not how a package query fails in practice — a broken
+    or unreadable database is, and dpkg then exits 1 with
+    `no packages found matching <pkg>`: the *same* exit code and the *same*
+    message as a package that genuinely is not installed. The tool erases the
+    distinction, so it cannot be recovered from its output.
+
+    What can be established is whether the layer answers at all. BOB asks each
+    manager for a package it necessarily owns — itself — and does not trust a
+    negative until it has produced a positive. Measured: `dpkg-query -W dpkg`
+    returns "dpkg 1.22.6" on a healthy host and nothing with `--admindir` set to
+    a path that does not exist.
+    """
+
+    def test_a_present_but_mute_manager_is_not_trusted(self, monkeypatch):
+        monkeypatch.setattr(run_mod, "_PACKAGE_QUERY_STATE", None)
+        monkeypatch.setattr(run_mod, "_run", lambda *a, **kw: "")
+        assert run_mod.package_query_possible() is False
+
+    def test_a_healthy_manager_is(self, monkeypatch):
+        monkeypatch.setattr(run_mod, "_PACKAGE_QUERY_STATE", None)
+        assert run_mod.package_query_possible() is True
+
+    def test_every_known_manager_has_a_sentinel(self):
+        """A manager without one falls back to mere presence — the very thing
+        this replaces. The list must not drift apart."""
+        tools = {tool for tool, _, _ in run_mod._PACKAGE_QUERIES}
+        assert tools == set(run_mod._PACKAGE_SENTINELS)
+
+    def test_the_sentinel_is_the_manager_itself(self):
+        """Any other choice is a package that may legitimately be absent, which
+        would turn a healthy host into an unknown one."""
+        for tool, sentinel in run_mod._PACKAGE_SENTINELS.items():
+            assert sentinel.startswith(tool.split("-")[0])
 
 
 class TestMicrocodeDoesNotInventAVerdict:

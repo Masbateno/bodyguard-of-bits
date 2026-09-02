@@ -40,7 +40,7 @@ consult the helper first. Three callers are exempt with their reason recorded:
 back to a config file, a snap package, or a binary on PATH — so a False there
 has several independent sources. The guard also fails on a stale exemption.
 
-**Tests** 7958 → **7974**.
+**Tests** 7958 → **7981**.
 
 ---
 

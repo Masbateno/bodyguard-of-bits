@@ -98,6 +98,41 @@ class TestTheKernelIsAskedWhenTheToolIsGone:
         assert snapshot.apparmor_active is False
 
 
+class TestTheToolCanBePresentAndMute:
+    """The commoner case, and the one the first fix missed.
+
+    Masking the binary is not how this fails in practice — running BOB without
+    sudo is. `aa-status` is then present, so `_command_exists` says yes and the
+    no-tool branch is never reached; the command simply answers nothing. The
+    first version of this fix covered only the absent tool, and the bench
+    caught it one step later by replacing the binary with a stub that refuses.
+    """
+
+    @pytest.fixture()
+    def mute_aa_status(self, monkeypatch):
+        monkeypatch.setattr(mac, "_run", lambda *a, **kw: "")
+
+    def test_a_refusing_tool_falls_back_to_the_kernel(self, mute_aa_status, monkeypatch):
+        fake_paths(monkeypatch, enabled="Y\n")
+        snapshot = MacPolicySnapshot.from_system()
+        assert snapshot.apparmor_installed is True
+        assert snapshot.apparmor_active is True
+        assert snapshot.apparmor_profiles_readable is False
+
+    def test_it_does_not_report_apparmor_off(self, mute_aa_status, monkeypatch):
+        fake_paths(monkeypatch, enabled="Y\n")
+        result = check_mac_policy(MacPolicySnapshot.from_system())
+        assert "mac_policy.apparmor_inactive" not in [f.key for f in result.findings]
+        assert not result.deductions
+
+    def test_a_refusing_tool_on_a_disabled_host_still_warns(self, mute_aa_status, monkeypatch):
+        """Polarity twin: the fallback must not forgive a genuinely off LSM."""
+        fake_paths(monkeypatch, enabled="N\n", securityfs=False)
+        result = check_mac_policy(MacPolicySnapshot.from_system())
+        assert "mac_policy.apparmor_inactive" in [f.key for f in result.findings]
+        assert result.deductions
+
+
 class TestTheFindingIsHonest:
     def test_an_enforcing_host_is_not_told_apparmor_is_off(self, no_aa_status, monkeypatch):
         fake_paths(monkeypatch, enabled="Y\n")
