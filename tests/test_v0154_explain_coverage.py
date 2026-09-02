@@ -36,14 +36,12 @@ ROOT = Path(__file__).resolve().parent.parent
 NEGATIVE = {"warn", "alert", "warn_with_deduction", "alert_with_deduction"}
 POSITIVE = {"ok", "info"}
 
-# Plugin-sandbox failures describe the tool failing to run someone's plugin,
-# not a posture of the audited host. They are deliberately outside the explain
-# corpus, which answers "why does this matter for my security, and how do I fix
-# it". `bob --explain plugin.sandbox.timeout` answers gracefully — a localised
-# "no explanation available" and exit 3 — rather than a crash or a bracketed
-# fallback, which is verified below. Keep this list SHORT: every entry is a key
-# a user can meet in a report and not be able to look up.
-EXEMPT_PREFIXES = ("plugin.sandbox.",)
+# No exemptions. The plugin-sandbox family was the last one — twelve keys a user
+# could meet in a report and not look up, answered with "no explanation
+# available — run 'bob --explain list'", which reads as "you mistyped" when BOB
+# itself had just emitted the key. They were written in v0.15.4 rather than
+# exempted here: a guard that ships with a hole is weaker than the work of
+# closing it.
 
 
 def locale_explain_keys() -> set[str]:
@@ -104,10 +102,7 @@ class TestTheThreeSetsAgree:
 class TestEveryNegativeFindingIsExplainable:
     def test_no_warn_or_alert_key_is_unexplainable(self):
         negative, _ = emitted_keys()
-        missing = sorted(
-            k for k in negative - set(EXPLAIN_KEYS)
-            if not k.startswith(EXEMPT_PREFIXES)
-        )
+        missing = sorted(negative - set(EXPLAIN_KEYS))
         assert not missing, (
             "emitted on a WARN/ALERT with no explain entry — a user meets the "
             f"key in their report and cannot look it up: {missing}"
@@ -119,10 +114,9 @@ class TestEveryNegativeFindingIsExplainable:
         assert len(negative) > 100
         assert len(positive) > 100
 
-    def test_the_exemption_is_still_needed(self):
-        """If the sandbox family ever gains explanations, drop the exemption
-        rather than leaving a stale hole in the guard."""
-        negative, _ = emitted_keys()
-        exempted = {k for k in negative if k.startswith(EXEMPT_PREFIXES)}
-        assert exempted, "nothing uses the exemption any more — remove it"
-        assert not (exempted & set(EXPLAIN_KEYS))
+    def test_the_sandbox_family_is_covered(self):
+        """The twelve keys that motivated this guard, checked by name."""
+        listed = set(EXPLAIN_KEYS)
+        sandbox = {k for k in locale_explain_keys() if k.startswith("plugin.sandbox.")}
+        assert len(sandbox) == 12
+        assert sandbox <= listed

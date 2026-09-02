@@ -1178,6 +1178,70 @@
     }
   },
   "explain": {
+    "plugin": {
+      "sandbox": {
+        "timeout": {
+          "title": "Plugin exceeded its CPU budget and was killed",
+          "why": "The sandbox caps each plugin at RLIMIT_CPU = 10 seconds and the runner kills the worker past its wall-clock timeout. Without that cap an infinite loop in one plugin would hang every audit, including the unattended cron run.",
+          "how": "1. Run the plugin standalone and time it.\n2. Look for unbounded loops, network calls without a timeout, or scans of large trees.\n3. Cache expensive reads, or split the work into narrower checks."
+        },
+        "no_result": {
+          "title": "Plugin exited without returning a result",
+          "why": "The worker process ended before putting a CheckResult on the queue. That usually means a hard exit — a call to sys.exit(), or MemoryError from the RLIMIT_AS = 256 MiB cap — rather than an exception, which would have been reported as a crash.",
+          "how": "1. Run the plugin standalone: python3 your_plugin.py\n2. Check for sys.exit() or os._exit() in the plugin or a library it imports.\n3. Watch its memory: the sandbox caps virtual memory at 256 MiB."
+        },
+        "bad_payload": {
+          "title": "Plugin result could not be read back",
+          "why": "The worker ships a sanitised dictionary rather than a pickled object, so a malicious plugin cannot execute code in the parent process. An unexpected payload type means the worker and the parent disagreed on that format.",
+          "how": "Return a bob.scoring.CheckResult from run_check(). If the plugin already does and this keeps happening, it is a BOB bug — please report it with the plugin attached."
+        },
+        "error": {
+          "title": "Plugin failed with an error the sandbox could not classify",
+          "why": "The worker reported a failure without a more specific reason. This is the catch-all: the more precise keys (crashed, timeout, missing_run_check) are used whenever the cause is known.",
+          "how": "Run the audit with BOB_DEBUG=1 to get the underlying traceback, then run the plugin standalone."
+        },
+        "rejected": {
+          "title": "Plugin refused before it was executed",
+          "why": "Static validation runs before any plugin code does: the source is read, compiled, and checked for a run_check function. A plugin rejected here never ran at all, so it cannot have affected the audit.",
+          "how": "The message names the reason. Check that the file is readable, is valid Python, and defines run_check at module level."
+        },
+        "runner_error": {
+          "title": "The sandbox runner itself failed",
+          "why": "The failure is in BOB's machinery — spawning the worker process, or reading its queue — not in the plugin. The audit continues without this plugin rather than aborting.",
+          "how": "Run with BOB_DEBUG=1 for the traceback. If it reproduces on a plugin that used to work, please report it."
+        },
+        "missing_run_check": {
+          "title": "Plugin defines no run_check function",
+          "why": "The plugin contract is a module-level run_check that returns a CheckResult. BOB checks for it with an AST scan before executing anything, so a plugin without it is refused rather than run.",
+          "how": "Define it at module level:\n\ndef run_check(t=None):\n    from bob.scoring import CheckResult\n    r = CheckResult()\n    r.info(message=\"...\", key=\"myplugin.something\")\n    return r"
+        },
+        "bad_return": {
+          "title": "run_check returned the wrong type",
+          "why": "run_check must return a bob.scoring.CheckResult. Returning anything else — a dict, a string, None — leaves BOB with nothing it can score or display.",
+          "how": "1. from bob.scoring import CheckResult\n2. Build one, add findings to it, and return it.\n3. Check every branch of run_check: an early return None is the usual cause."
+        },
+        "crashed": {
+          "title": "Plugin raised an uncaught exception",
+          "why": "The plugin raised and did not handle it. The sandbox contains the failure so the rest of the audit still runs and still scores — one broken plugin never costs you the report.",
+          "how": "1. The message carries the exception type and text.\n2. Run the plugin standalone to reproduce.\n3. BOB_DEBUG=1 gives the full traceback."
+        },
+        "serialize_failed": {
+          "title": "Plugin returned a result that could not be shipped back",
+          "why": "The worker converts the CheckResult into a sanitised dictionary of primitives before sending it to the parent process — a deliberate limit, so plugin data can never carry executable objects across. A finding holding something exotic breaks that conversion.",
+          "how": "Keep finding fields to plain strings and numbers. Objects, exceptions and custom classes in a message or detail are the usual cause."
+        },
+        "unreadable": {
+          "title": "Plugin file could not be read",
+          "why": "BOB found the file but could not open it — permissions, a broken symlink, or bytes that are not valid UTF-8.",
+          "how": "1. ls -l ~/.config/bob/checks.d/\n2. Make it readable by the invoking user: chmod 0644 the_plugin.py\n3. Save it as UTF-8."
+        },
+        "syntax_error": {
+          "title": "Plugin is not valid Python",
+          "why": "The file failed to compile, so nothing in it ran. The message carries the line number reported by the Python compiler.",
+          "how": "python3 -m py_compile ~/.config/bob/checks.d/your_plugin.py"
+        }
+      }
+    },
     "ui": {
       "list_header": "Available --explain keys:",
       "unknown_key": "No explanation available for: {requested}",

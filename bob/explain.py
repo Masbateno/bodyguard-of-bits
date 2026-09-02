@@ -323,6 +323,26 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("Risk", [
         "risk.escalated_posture",
     ]),
+    # v0.15.4: the sandbox family was the only group of WARN keys a user could
+    # meet in a report and not look up. `bob --explain plugin.sandbox.timeout`
+    # answered "no explanation available — run 'bob --explain list'", which
+    # reads as "you mistyped the key" when BOB itself had just emitted it.
+    # Their audience is plugin authors, and "why did this happen, how do I fix
+    # it" is exactly what they need.
+    ("Plugin checks — sandbox failures", [
+        "plugin.sandbox.timeout",
+        "plugin.sandbox.crashed",
+        "plugin.sandbox.no_result",
+        "plugin.sandbox.missing_run_check",
+        "plugin.sandbox.bad_return",
+        "plugin.sandbox.syntax_error",
+        "plugin.sandbox.unreadable",
+        "plugin.sandbox.rejected",
+        "plugin.sandbox.serialize_failed",
+        "plugin.sandbox.bad_payload",
+        "plugin.sandbox.runner_error",
+        "plugin.sandbox.error",
+    ]),
 ]
 
 # Flat list derived from groups — used externally and for key lookup

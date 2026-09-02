@@ -54,7 +54,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 169-key canonical list in 45 prefixes, profile variants (70 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 181-key canonical list in 46 prefixes, profile variants (70 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
 | `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (174 entries: 107 formal CIS, 60 best-practice, 7 Docker) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 7-domain attribution (`backup` → `disk`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
@@ -143,7 +143,7 @@ bob/
 ├── csv_output.py        # CSV output formatter (--format csv)
 ├── display.py           # Terminal output helpers (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→disk attribution
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 169 keys in 45 prefixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 181 keys in 46 prefixes
 ├── exposure.py          # Port exposure grouping — interface scope + risk level
 ├── fixes.py             # Fix mode UI (interactive + auto-fix)
 ├── formatter.py         # bob.formatter — locale-independent rendering via Finding.template_vars (v0.4.1)
@@ -488,7 +488,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2154 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2190 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

@@ -329,10 +329,17 @@ class TestRunExplainKnownKeys:
 
     @pytest.mark.parametrize("key", EXPLAIN_KEYS)
     def test_known_key_includes_cis_reference(self, key):
-        """Every explainable key must show its CIS reference in the output."""
+        """Every explainable key must show its reference in the output.
+
+        v0.15.4: the plugin.sandbox.* family carries "Best practice" entries
+        rather than a CIS control — CIS is a host-hardening benchmark and a
+        plugin runner timing out maps to none of its controls. They were given
+        real references instead of an exemption here, so this guard keeps
+        covering every key without a hole.
+        """
         t = _make_t()
         out = _capture_run_explain(key, t)
-        assert "CIS" in out, f"No CIS reference in explain output for {key!r}"
+        assert "CIS" in out, f"No reference in explain output for {key!r}"
 
     def test_ssh_password_auth_content(self):
         t = _make_t()

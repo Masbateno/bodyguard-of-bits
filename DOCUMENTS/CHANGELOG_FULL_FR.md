@@ -49,7 +49,7 @@ réimplémente la logique qu'il surveille cesse de la tester dès que l'un des d
 dérive. Réinjecter l'ancienne coupe au tiret cadratin le fait échouer sur les
 douze versions documentées d'un coup.
 
-**Tests** 7743 → **7754**.
+**Tests** 7743 → **7862**.
 
 ---
 

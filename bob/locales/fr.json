@@ -1178,6 +1178,70 @@
     }
   },
   "explain": {
+    "plugin": {
+      "sandbox": {
+        "timeout": {
+          "title": "Le plugin a dépassé son budget CPU et a été tué",
+          "why": "Le bac à sable plafonne chaque plugin à RLIMIT_CPU = 10 secondes, et le lanceur tue le worker au-delà de son délai d'horloge. Sans ce plafond, une boucle infinie dans un seul plugin figerait chaque audit, y compris l'exécution cron non surveillée.",
+          "how": "1. Lancez le plugin seul et chronométrez-le.\n2. Cherchez les boucles non bornées, les appels réseau sans délai, les parcours de grosses arborescences.\n3. Mettez en cache les lectures coûteuses, ou découpez le travail en contrôles plus étroits."
+        },
+        "no_result": {
+          "title": "Le plugin s'est terminé sans renvoyer de résultat",
+          "why": "Le processus worker s'est arrêté avant de déposer un CheckResult dans la file. Cela signale en général une sortie brutale — un sys.exit(), ou une MemoryError due au plafond RLIMIT_AS de 256 Mio — plutôt qu'une exception, qui aurait été rapportée comme un plantage.",
+          "how": "1. Lancez le plugin seul : python3 votre_plugin.py\n2. Cherchez un sys.exit() ou os._exit() dans le plugin ou une bibliothèque qu'il importe.\n3. Surveillez sa mémoire : le bac à sable plafonne la mémoire virtuelle à 256 Mio."
+        },
+        "bad_payload": {
+          "title": "Le résultat du plugin n'a pas pu être relu",
+          "why": "Le worker transmet un dictionnaire assaini plutôt qu'un objet sérialisé par pickle, afin qu'un plugin malveillant ne puisse pas exécuter de code dans le processus parent. Un type de charge inattendu signifie que le worker et le parent ont divergé sur ce format.",
+          "how": "Renvoyez un bob.scoring.CheckResult depuis run_check(). Si le plugin le fait déjà et que cela persiste, c'est un défaut de BOB : signalez-le avec le plugin en pièce jointe."
+        },
+        "error": {
+          "title": "Le plugin a échoué pour une raison que le bac à sable n'a pas su classer",
+          "why": "Le worker a signalé un échec sans motif plus précis. C'est le cas attrape-tout : les clés plus fines (crashed, timeout, missing_run_check) sont employées dès que la cause est connue.",
+          "how": "Relancez l'audit avec BOB_DEBUG=1 pour obtenir la trace sous-jacente, puis lancez le plugin seul."
+        },
+        "rejected": {
+          "title": "Le plugin a été refusé avant toute exécution",
+          "why": "La validation statique passe avant que le moindre code du plugin ne tourne : la source est lue, compilée, et l'on vérifie la présence d'une fonction run_check. Un plugin refusé ici n'a jamais tourné, il ne peut donc pas avoir faussé l'audit.",
+          "how": "Le message en nomme la raison. Vérifiez que le fichier est lisible, qu'il est du Python valide, et qu'il définit run_check au niveau du module."
+        },
+        "runner_error": {
+          "title": "Le lanceur du bac à sable a lui-même échoué",
+          "why": "La défaillance est dans la mécanique de BOB — création du processus worker, ou lecture de sa file — et non dans le plugin. L'audit se poursuit sans ce plugin au lieu d'être interrompu.",
+          "how": "Relancez avec BOB_DEBUG=1 pour la trace. Si cela se reproduit sur un plugin qui fonctionnait, signalez-le."
+        },
+        "missing_run_check": {
+          "title": "Le plugin ne définit aucune fonction run_check",
+          "why": "Le contrat d'un plugin est une fonction run_check au niveau du module, qui renvoie un CheckResult. BOB la cherche par analyse AST avant d'exécuter quoi que ce soit : un plugin qui n'en a pas est refusé, pas lancé.",
+          "how": "Définissez-la au niveau du module :\n\ndef run_check(t=None):\n    from bob.scoring import CheckResult\n    r = CheckResult()\n    r.info(message=\"...\", key=\"monplugin.quelquechose\")\n    return r"
+        },
+        "bad_return": {
+          "title": "run_check a renvoyé le mauvais type",
+          "why": "run_check doit renvoyer un bob.scoring.CheckResult. Renvoyer autre chose — un dictionnaire, une chaîne, None — ne laisse à BOB rien qu'il puisse noter ni afficher.",
+          "how": "1. from bob.scoring import CheckResult\n2. Construisez-en un, ajoutez-y les constats, renvoyez-le.\n3. Vérifiez chaque branche de run_check : un return None anticipé en est la cause habituelle."
+        },
+        "crashed": {
+          "title": "Le plugin a levé une exception non rattrapée",
+          "why": "Le plugin a levé sans traiter l'exception. Le bac à sable contient la défaillance, si bien que le reste de l'audit se déroule et se note quand même — un plugin cassé ne vous coûte jamais le rapport.",
+          "how": "1. Le message porte le type et le texte de l'exception.\n2. Lancez le plugin seul pour reproduire.\n3. BOB_DEBUG=1 donne la trace complète."
+        },
+        "serialize_failed": {
+          "title": "Le plugin a renvoyé un résultat impossible à rapatrier",
+          "why": "Le worker convertit le CheckResult en un dictionnaire assaini de primitives avant de l'envoyer au processus parent — une limite délibérée, pour que les données d'un plugin ne puissent jamais transporter d'objets exécutables. Un constat contenant quelque chose d'exotique casse cette conversion.",
+          "how": "Limitez les champs des constats à des chaînes et des nombres simples. Un objet, une exception ou une classe personnalisée dans un message ou un detail en est la cause habituelle."
+        },
+        "unreadable": {
+          "title": "Le fichier du plugin n'a pas pu être lu",
+          "why": "BOB a trouvé le fichier mais n'a pas pu l'ouvrir — droits, lien symbolique cassé, ou octets qui ne sont pas de l'UTF-8 valide.",
+          "how": "1. ls -l ~/.config/bob/checks.d/\n2. Rendez-le lisible par l'utilisateur appelant : chmod 0644 le_plugin.py\n3. Enregistrez-le en UTF-8."
+        },
+        "syntax_error": {
+          "title": "Le plugin n'est pas du Python valide",
+          "why": "Le fichier n'a pas compilé, donc rien de son contenu n'a tourné. Le message porte le numéro de ligne rapporté par le compilateur Python.",
+          "how": "python3 -m py_compile ~/.config/bob/checks.d/votre_plugin.py"
+        }
+      }
+    },
     "ui": {
       "list_header": "Clés --explain disponibles :",
       "unknown_key": "Aucune explication disponible pour : {requested}",

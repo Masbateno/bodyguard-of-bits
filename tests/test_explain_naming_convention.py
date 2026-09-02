@@ -65,6 +65,16 @@ _SSH_X11_FORWARDING_RE = re.compile(
 )
 
 
+# v0.15.4 exception: the plugin sandbox emits ``plugin.sandbox.<reason>``.
+# The ``sandbox`` segment is not decoration — it namespaces failures of the
+# plugin *runner* against any future ``plugin.<other>`` family, and the keys
+# were already emitted in this shape before they became explainable. Renaming
+# them would break ignore.yml entries and the wire-format JSON.
+_PLUGIN_SANDBOX_RE = re.compile(
+    r"^plugin\.sandbox\.[a-z][a-z0-9_]*$"
+)
+
+
 def _is_canonical(key: str) -> bool:
     """Single-dot, file_perms multi-segment, services category, or
     v0.10.1 ssh.x11.forwarding sub-check exception."""
@@ -73,6 +83,7 @@ def _is_canonical(key: str) -> bool:
         or _FILE_PERMS_MULTI_RE.match(key)
         or _SERVICES_MULTI_RE.match(key)
         or _SSH_X11_FORWARDING_RE.match(key)
+        or _PLUGIN_SANDBOX_RE.match(key)
     )
 
 
@@ -147,6 +158,7 @@ class TestExplainPrefixDiscipline:
     # widen by adding here without updating the EXPLAIN_KEYS audit in
     # DOCUMENTS/README_TECH.md.
     KNOWN_PREFIXES = frozenset({
+        "plugin",           # v0.15.4 — plugin.sandbox.* runner failures
         # v0.7.0 baseline (30)
         "ssh", "clamav", "samba", "file_perms", "updates", "hardening",
         "kernel_modules", "firewall_rules", "ipv6", "password_policy",
@@ -211,9 +223,11 @@ class TestExplainAuditInvariants:
 
     def test_total_keys_match_audit_count(self):
         """v0.7.0 baseline = 117. v0.8.0 drift batch backfilled 51 missing
-        WARN/ALERT findings → 168. Drifts beyond require a doc update in
-        DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
-        assert len(EXPLAIN_KEYS) == 169, (
+        WARN/ALERT findings → 168, then 169. v0.15.4 added the 12
+        plugin.sandbox.* entries → 181: they were the last WARN keys a user
+        could meet in a report and not look up. Drifts beyond require a doc
+        update in DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
+        assert len(EXPLAIN_KEYS) == 181, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."
@@ -226,7 +240,7 @@ class TestExplainAuditInvariants:
         backup, network_context) → 45. Further drift requires updating
         KNOWN_PREFIXES + the audit doc."""
         prefixes = {k.split(".", 1)[0] for k in EXPLAIN_KEYS}
-        assert len(prefixes) == 45, (
+        assert len(prefixes) == 46, (
             f"Prefix count drifted from v0.8.0 baseline 45 to "
             f"{len(prefixes)}. Update KNOWN_PREFIXES + audit doc."
         )

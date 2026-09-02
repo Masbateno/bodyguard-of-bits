@@ -754,5 +754,65 @@
     "ref": "Best practice — Audit snap-installed virtualisation tools (multipass, lxd) and their bridge interfaces",
     "ref_fr": "Bonne pratique — Auditer les outils de virtualisation installés via snap (multipass, lxd) et leurs interfaces bridge",
     "code": null
+  },
+  "plugin.sandbox.timeout": {
+    "ref": "Best practice — Keep a plugin's work under the 10 s CPU budget; cache expensive reads or split it into narrower checks",
+    "ref_fr": "Bonne pratique — Maintenir le travail d'un plugin sous le budget CPU de 10 s ; mettre en cache les lectures coûteuses ou le découper en contrôles plus étroits",
+    "code": null
+  },
+  "plugin.sandbox.crashed": {
+    "ref": "Best practice — Handle expected errors inside run_check and return a CheckResult rather than raising",
+    "ref_fr": "Bonne pratique — Traiter les erreurs attendues dans run_check et renvoyer un CheckResult plutôt que de lever",
+    "code": null
+  },
+  "plugin.sandbox.no_result": {
+    "ref": "Best practice — Never call sys.exit() from a plugin; return a CheckResult and stay under the 256 MiB memory cap",
+    "ref_fr": "Bonne pratique — Ne jamais appeler sys.exit() depuis un plugin ; renvoyer un CheckResult et rester sous le plafond mémoire de 256 Mio",
+    "code": null
+  },
+  "plugin.sandbox.missing_run_check": {
+    "ref": "Best practice — Expose a module-level run_check(t=None) returning a bob.scoring.CheckResult",
+    "ref_fr": "Bonne pratique — Exposer une fonction run_check(t=None) au niveau du module, renvoyant un bob.scoring.CheckResult",
+    "code": null
+  },
+  "plugin.sandbox.bad_return": {
+    "ref": "Best practice — Return a bob.scoring.CheckResult from every branch of run_check, including early exits",
+    "ref_fr": "Bonne pratique — Renvoyer un bob.scoring.CheckResult depuis chaque branche de run_check, y compris les sorties anticipées",
+    "code": null
+  },
+  "plugin.sandbox.syntax_error": {
+    "ref": "Best practice — Validate a plugin with 'python3 -m py_compile' before dropping it in checks.d/",
+    "ref_fr": "Bonne pratique — Valider un plugin avec « python3 -m py_compile » avant de le déposer dans checks.d/",
+    "code": null
+  },
+  "plugin.sandbox.unreadable": {
+    "ref": "Best practice — Keep plugins readable by the invoking user (chmod 0644) and saved as UTF-8",
+    "ref_fr": "Bonne pratique — Garder les plugins lisibles par l'utilisateur appelant (chmod 0644) et enregistrés en UTF-8",
+    "code": null
+  },
+  "plugin.sandbox.rejected": {
+    "ref": "Best practice — Keep plugin sources simple enough to pass static validation before execution",
+    "ref_fr": "Bonne pratique — Garder les sources de plugin assez simples pour passer la validation statique avant exécution",
+    "code": null
+  },
+  "plugin.sandbox.serialize_failed": {
+    "ref": "Best practice — Keep finding fields to plain strings and numbers so results cross the sandbox boundary",
+    "ref_fr": "Bonne pratique — Limiter les champs des constats à des chaînes et nombres simples, pour qu'ils franchissent la frontière du bac à sable",
+    "code": null
+  },
+  "plugin.sandbox.bad_payload": {
+    "ref": "Best practice — Return an unmodified bob.scoring.CheckResult; do not construct the transport payload yourself",
+    "ref_fr": "Bonne pratique — Renvoyer un bob.scoring.CheckResult non modifié ; ne pas construire soi-même la charge de transport",
+    "code": null
+  },
+  "plugin.sandbox.runner_error": {
+    "ref": "Best practice — Report a reproducible sandbox runner failure with BOB_DEBUG=1 output attached",
+    "ref_fr": "Bonne pratique — Signaler une défaillance reproductible du lanceur avec la sortie BOB_DEBUG=1 jointe",
+    "code": null
+  },
+  "plugin.sandbox.error": {
+    "ref": "Best practice — Re-run with BOB_DEBUG=1 to obtain the underlying traceback before filing a report",
+    "ref_fr": "Bonne pratique — Relancer avec BOB_DEBUG=1 pour obtenir la trace sous-jacente avant tout signalement",
+    "code": null
   }
 }
