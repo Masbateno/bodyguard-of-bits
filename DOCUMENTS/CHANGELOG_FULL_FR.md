@@ -44,7 +44,82 @@ seule réponse — ils retombent sur un fichier de configuration, un paquet snap
 ou un binaire sur le PATH — si bien qu'un False y a plusieurs sources
 indépendantes. Le garde échoue aussi sur une exemption périmée.
 
-**Tests** 7958 → **7981**.
+**Un outil présent, mais qui ne répond rien.**
+
+Masquer un binaire n'est pas la façon dont un outil échoue d'ordinaire. Lancer
+BOB sans sudo, si. L'outil est alors *présent* : `_command_exists` répond oui,
+toutes les branches « pas d'outil » sont sautées, et la commande ne renvoie
+simplement rien. Chaque binaire a été remplacé par un bouchon qui refuse,
+vingt-neuf fois, et cela a montré que les deux correctifs ci-dessus étaient à
+moitié faits — `aa-status` déclarant à nouveau AppArmor inactif, par une
+branche que le premier correctif n'atteignait pas, et `dpkg-query` ressuscitant
+`firmware.microcode_missing`.
+
+Le cas des paquets est le plus net. Base illisible, dpkg sort en 1 avec
+`no packages found matching <pkg>` — **le même** code de sortie et le même
+message qu'un paquet réellement absent. La distinction est irrécupérable depuis
+la sortie, donc elle n'est pas tentée. Ce qui est établissable, c'est si la
+couche répond : BOB demande maintenant à chaque gestionnaire un paquet qu'il
+possède nécessairement — dpkg pour `dpkg`, rpm pour `rpm`, pacman pour
+`pacman`, apk pour `apk-tools` — et n'accorde aucune confiance à un négatif
+tant que la couche n'a pas produit un positif. La sonde tourne une fois par
+audit et est mémoïsée, ce qui a introduit une dépendance à l'ordre des tests
+qu'un fixture efface désormais.
+
+**AppArmor était déclaré inactif parce que son outil manquait.**
+
+Retirer `aa-status` seul faisait rapporter `mac_policy.apparmor_inactive` —
+WARN, un point — sur un hôte dont le module AppArmor est chargé et activé. Le
+snapshot posait `apparmor_active = False` dans la branche commentée « module
+chargé mais aa-status indisponible », transformant un outil manquant en un
+contrôle qui n'applique rien : on demande à l'opérateur d'activer ce qui tourne
+déjà.
+
+Le noyau répond sans l'outil. `/sys/module/apparmor/parameters/enabled` vaut
+`Y` et est lisible par tous, et securityfs ne monte le répertoire apparmor que
+tant que le LSM est vivant. Le check rapporte maintenant « actif, profils
+illisibles » — le constat INFO qui existait déjà pour la variante « privilèges
+partiels » du même défaut — dans les **deux** branches, celle sans outil et
+celle où l'outil est muet.
+
+Deux gardes ont attrapé des erreurs en chemin. La garde v0.15.2 sur
+`.exists()` nu a rejeté le premier jet, un `Path.exists()` nu relançant
+`EACCES`. Et les tests ont été réécrits après une première version qui
+patchait `_run._command_exists` alors que `mac_policy` en détient sa propre
+référence : cette version annonçait le correctif fonctionnel sans jamais
+l'exercer.
+
+**Une valeur jamais lue n'est pas une mesure.**
+
+L'instrument a ensuite été tourné vers les fichiers plutôt que les binaires :
+des chemins existants ont été masqués un à un pour que leur lecture lève
+`PermissionError`, et l'audit a été relu à la recherche des verdicts qui
+survivaient. `/proc/sys/vm/swappiness` produisait `memory.swappiness_ssd_wear`
+— un WARN avec déduction — contre un seuil de 30, sur un hôte dont la valeur
+réelle est 10. Le lecteur renvoyait un `60` codé en dur quand il ne pouvait pas
+lire, et sa propre docstring le disait. Un helper qui répond un nombre
+plausible alors qu'il a échoué est indiscernable d'un helper qui a mesuré, et
+60 est le défaut du noyau : la valeur inventée était la plus susceptible d'être
+crue.
+
+Le lecteur répond désormais `None`, le champ du snapshot est optionnel, et les
+trois comparaisons qui le consommaient sont gardées — la troisième n'a été
+trouvée que parce que le nouveau test a planté dessus. Plutôt que de se taire,
+le check énonce ce qu'il n'a pas pu lire. Une garde de forme rejette tout
+littéral numérique renvoyé depuis un `except` dans un lecteur ; une première
+version examinait toutes les fonctions, a signalé quatre `return 1`
+d'installateurs cron qui sont des codes de sortie et non des mesures, et a été
+resserrée — une garde qui produit du bruit finit désactivée.
+
+**Un test de frontière dont la frontière bougeait.** La suite a franchi minuit
+pendant ces travaux et `test_an_account_expiring_tomorrow_is_not_reported` a
+échoué sur un arbre où rien n'était cassé : le test calculait « aujourd'hui » à
+l'import tandis que le check lisait l'horloge à l'exécution. Deux lectures
+d'une valeur mouvante. L'horloge est maintenant figée des deux côtés, ce qui a
+été vérifié en déplaçant le point fixe et en regardant le verdict de production
+le suivre.
+
+**Tests** 7958 → **7988**.
 
 ---
 

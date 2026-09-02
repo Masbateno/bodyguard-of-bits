@@ -40,7 +40,75 @@ consult the helper first. Three callers are exempt with their reason recorded:
 back to a config file, a snap package, or a binary on PATH — so a False there
 has several independent sources. The guard also fails on a stale exemption.
 
-**Tests** 7958 → **7981**.
+**A tool that is present but answers nothing.**
+
+Masking a binary is not how a tool usually fails. Running BOB without sudo is,
+and the tool is then *present*: `_command_exists` says yes, every no-tool
+branch is skipped, and the command simply returns nothing. Each binary was
+replaced by a stub that refuses, twenty-nine times, and it caught both of the
+fixes above being half-done — `aa-status` reporting AppArmor inactive again
+through a branch the first fix never reached, and `dpkg-query` reviving
+`firmware.microcode_missing`.
+
+The package case is the sharper one. With an unreadable database, dpkg exits 1
+with `no packages found matching <pkg>` — the **same** exit code and the same
+message as a package that genuinely is not installed. The distinction cannot be
+recovered from the output, so it is not attempted. What can be established is
+whether the layer answers at all: BOB now asks each manager for a package it
+necessarily owns — dpkg for `dpkg`, rpm for `rpm`, pacman for `pacman`, apk for
+`apk-tools` — and does not trust a negative until the layer has produced a
+positive. The probe runs once per audit and is memoised, which introduced a
+test-order dependency that a fixture now clears.
+
+**AppArmor was reported inactive because its tool was missing.**
+
+Removing `aa-status` alone made BOB report `mac_policy.apparmor_inactive` —
+WARN, one point — on a host whose AppArmor module is loaded and enabled. The
+snapshot set `apparmor_active = False` in the branch commented "module loaded
+but aa-status not available", turning a missing tool into a control that is not
+enforcing: the operator is told to enable something already running.
+
+The kernel answers without the tool. `/sys/module/apparmor/parameters/enabled`
+reads `Y` and is world-readable, and securityfs only mounts the apparmor
+directory while the LSM is live. The check now reports "active, profiles could
+not be read" — the INFO finding that already existed for the partial-privilege
+variant of this same defect — in **both** the no-tool branch and the
+present-but-mute one.
+
+Two guards caught mistakes on the way. The v0.15.2 bare-`.exists()` guard
+rejected the first draft, because a bare `Path.exists()` re-raises `EACCES`.
+And the tests were rewritten after a first version patched
+`_run._command_exists` while `mac_policy` holds its own reference to it: that
+version reported the fix working without ever exercising it.
+
+**A value that was never read is not a measurement.**
+
+The instrument was then turned on files rather than binaries: existing paths
+were masked one at a time so that reading them raises `PermissionError`, and
+the audit was read for verdicts that survived. `/proc/sys/vm/swappiness`
+produced `memory.swappiness_ssd_wear` — a WARN with a deduction — against a
+threshold of 30, on a host whose real value is 10. The reader returned a
+hardcoded `60` when it could not read, and its own docstring said so. A helper
+that answers a plausible number when it failed is indistinguishable from one
+that measured it, and 60 is the kernel default, so the invented value was the
+one most likely to be believed.
+
+The reader now answers `None`, the snapshot field is optional, and the three
+comparisons that consumed it are guarded — the third was found only because the
+new test crashed on it. Rather than fall silent, the check states what it could
+not read. A shape guard rejects a numeric literal returned from an `except` in
+any reader; a first version checked every function, flagged four `return 1`
+statements in cron installers that are exit codes rather than measurements, and
+was narrowed — a guard that reports noise gets switched off.
+
+**A boundary test whose boundary moved.** The suite crossed midnight during
+this work and `test_an_account_expiring_tomorrow_is_not_reported` failed on a
+tree where nothing was wrong: the test computed "today" at import while the
+check read the clock at run time. Two reads of a moving value. The clock is now
+pinned on both sides, which was verified by moving the pin and watching the
+production verdict follow it.
+
+**Tests** 7958 → **7988**.
 
 ---
 
