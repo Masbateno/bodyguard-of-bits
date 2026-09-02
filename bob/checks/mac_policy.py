@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, path_exists
 from bob.scoring import CheckResult
 
 # Regex: "   N profiles are in enforce mode."
@@ -103,9 +103,34 @@ class MacPolicySnapshot:
                 snap.apparmor_enforcing = _parse_aa_count(aa_out, "enforce")
                 snap.apparmor_complain  = _parse_aa_count(aa_out, "complain")
         elif Path("/sys/module/apparmor").is_dir():
-            # Module loaded but aa-status not available (partial install)
+            # Module loaded but aa-status not available (partial install).
+            #
+            # v0.15.5: this used to assert apparmor_active = False, which turned
+            # "the tool that answers is missing" into "AppArmor is not
+            # enforcing" — a WARN with a point, measured on this very host with
+            # the module loaded and profiles in enforce mode. Same class as the
+            # partial-privilege case above, whose comment is two paragraphs up:
+            # a false statement with a point attached.
+            #
+            # The kernel answers without the tool. ``parameters/enabled`` reads
+            # Y/N and is world-readable; securityfs only mounts the apparmor
+            # directory when the LSM is live. Either is evidence; neither tells
+            # us about the profile set, so that stays unreadable and the check
+            # reports "active, profiles could not be read" instead of inventing
+            # a verdict about enforcement.
             snap.apparmor_installed = True
-            snap.apparmor_active    = False
+            enabled = ""
+            try:
+                enabled = Path(
+                    "/sys/module/apparmor/parameters/enabled"
+                ).read_text(encoding="utf-8", errors="ignore").strip()
+            except OSError:
+                pass
+            snap.apparmor_active = (
+                enabled.upper().startswith("Y")
+                or path_exists(Path("/sys/kernel/security/apparmor/profiles"))
+            )
+            snap.apparmor_profiles_readable = False
 
         # --- SELinux --------------------------------------------------------
         if _command_exists("getenforce"):
