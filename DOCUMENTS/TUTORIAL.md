@@ -275,7 +275,9 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is fully localised — 2154 keys × 2 locales as of v0.15.3. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2154 keys × 2 locales as of v0.15.3 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+
+Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the 60 uncoded ones *are* translated), and the **38 service labels** — 27 of which carry descriptive English prose, such as `Samba (Windows file sharing)` or `Apache Web Server` — treated as product names. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 
 ---
 
