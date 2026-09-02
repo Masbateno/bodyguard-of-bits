@@ -46,6 +46,283 @@ guard that reimplements the logic it watches stops testing that logic the moment
 either side drifts. Reinjecting the old em-dash cut fails it on all twelve
 documented versions at once.
 
+### Backlog item 5 — every public function must have a caller
+
+Third instance of the campaign's highest-yield pattern, "declared but never
+consumed", after a parsed field with no reader and locale keys with no
+reference. Two orphans, both born without a caller: `strip_rule_index` in
+`checks/_ufw.py`, never called and never even exercised by a test, and
+`print_port_detail` in `output.py`, unused since v0.1.0 and kept alive only by
+its own test, which went with it. Both removed rather than allowlisted — a
+guard that ships with exemptions is weakened on day one.
+
+Writing a sweep that does not lie took three attempts, and both mistakes are
+pinned as tests rather than left as lore. An aliased import
+(`from bob._tty import read_line as _rl`) hides the real name unless both the
+name and the alias are counted. And a `FunctionDef` produces no `ast.Name`
+node, so the definition never appears in the reference counts: the threshold is
+`>= 1`, not `> 1`. Getting that wrong flagged every function called exactly once
+and inflated the candidate list from 2 to 17. Calls from generated code count
+too — `cron/_io.py` writes a helper script that imports
+`send_audit_log_as_html_email`, which no AST walk over `bob/` can see.
+
+The two sibling surfaces came back clean and are recorded as such: all 11
+`services.json` fields are read by code, and all 25 JSON root keys appear in
+README_TECH or SNAPSHOT.
+
+### Backlog item 1 — `config_key` retired from the service registry
+
+The field declared a port-resolution strategy in four forms — `"fixed"`,
+`"auto"`, `"ask"`, or a free-form identifier naming a user-config key such as
+`ssh_port`. None of it was ever wired: `"ask"` had no implementation, no service
+used the identifier form, and since v0.15.2 a service's configuration is read
+whenever `detection.config_files` names one, whatever the field said. v0.15.3
+pinned it as decorative and queued its removal as a contract change.
+
+Removal is behaviour-preserving, and the fact that makes it so is asserted
+against the real registry rather than stated in prose: no bundled service ever
+carried `"auto"` without also declaring a config path, so dropping that term
+from the reader's condition never flips it.
+
+The field stays **accepted** by the JSON schema. `additionalProperties` is
+false, so deleting it from `properties` would reject the
+`~/.config/bob/services.d/*.json` files users have already written — a
+documented plugin contract. It is out of `required`, tolerated, and ignored;
+both directions are tested.
+
+One correction the existing tests caught before it shipped: the lone rule
+`config_key` enforced was "fixed requires at least one port". Restating that as
+"every service requires a port" is *stricter* than what it replaced — it would
+reject a service that legitimately declares none and parses its ports out of
+its own config, which is exactly what the old `"auto"` form meant.
+`test_registry`'s own portless case failed, and the invariant became "a port
+**or** a config file to read one from". Declaring neither is refused: those
+ports could never be determined.
+
+Six documents described the field as required and told authors to use
+`"config_key": "auto"` for a configurable port. All corrected, including a
+"schema scope" paragraph in both languages that documented a runtime
+reserved-keyword check which no longer exists.
+
+### Backlog item 6 — the sweep for hardcoded English, and what it cleared
+
+The v0.11.2 F8/F8b localisation pass believed itself complete; v0.15.3 proved it
+had not covered the plugin sandbox, so the question was whether anything else
+had been missed.
+
+A static sweep for English prose literals reached 350 outside docstrings — too
+many to triage and mostly legitimate (English fallbacks, developer-facing
+exception text). Volume alone showed the instrument was wrong: it measures a
+proxy, and it would not even have caught the v0.15.3 defect, whose string went
+through a queue rather than a display sink.
+
+The bilingual differential that found `--help` was applied to a full audit
+instead: 886 lines EN against 910 FR, 144 identical, 44 of them prose. That
+measures the thing itself — user-visible text that does not change language.
+
+Triage leaves three deliberate categories and no defect: shell commands in
+remediation lines (a command is not prose); CIS references carrying a numbered
+code (the v0.11.2 decision, where the 60 uncoded references are translated and
+the coded ones are not); and the 38 service labels, 27 of which carry English
+prose. The labels are the one finding, and they stay English by decision. They
+also key the `service_risk.*` entries and go into the audit baseline:
+translating them at the source would rename 114 locale entries and make
+`--diff` report phantom changes on a locale switch — the defect this release
+just fixed. The tutorial claimed "all output is fully localised" and named no
+exception; the claim itself now carries the one a reader actually meets on
+screen.
+
+### Backlog item 7 — every negative finding is explainable, with no exemptions
+
+The blind spot the v0.15.3 orphan-locale guard had to allowlist: `explain.*`
+keys are built at runtime, so a literal-reference sweep cannot see them and
+nothing verified the corpus lined up with what BOB emits.
+
+Measuring it took two corrections, both pinned as tests. The first pass reported
+5 listed keys with no locale entry and 3 locale entries outside `EXPLAIN_KEYS`;
+all eight were artefacts, because explain entries nest three levels
+(`services.exposure.open_local`) and the sweep flattened two, mistaking a middle
+node for a leaf. Descending to the first node that carries string values, the
+two sets match exactly. The second: of 395 emitted keys, 267 are OK/INFO with
+nothing to explain, so only the 139 WARN/ALERT keys are held to the contract —
+and 135 were covered.
+
+The 4 gaps were all `plugin.sandbox.*`, and the twelve entries of that family
+were **written** rather than exempted. The argument is not "is a plugin failure
+a security posture" — it is that BOB emits these keys into the user's own
+report, and `bob --explain plugin.sandbox.timeout` answered "no explanation
+available — run 'bob --explain list'", which for a key the tool had just
+produced reads as "you mistyped it". They carry **Best practice** references,
+the category the project already uses for the 60 findings no CIS control
+covers, so both CIS guards keep covering every key without a hole.
+
+Four surfaces were resynchronised behind them: the bash completion's hardcoded
+key list, the naming-convention exception set (a fourth named pattern, since
+`plugin.sandbox` is three segments by design and renaming it would break
+`ignore.yml` entries), the key and prefix counters across six documents, and
+`cis_refs.json`'s `code: null` convention, which the first twelve entries
+omitted.
+
+### Backlog item 2 — a test that runs a system binary must be skippable
+
+The rule comes from a real failure: a differential test read live `ss` output,
+passed seventeen times locally, and failed on the CI runner, which happened to
+hold an IPv6-mapped connection the dev host did not.
+
+The sweep found three tests invoking a system binary and **no defect**. All
+three are already correct, and their two shapes are the legitimate answers.
+`ss` and `openssl` are differential — they check BOB's parsing against the tool
+that owns the format — and both carry a skipif *and* deterministic twins, so
+the logic stays covered when the binary is absent: in the same file for `ss`,
+and in `test_ssl_certs.py::TestSslCertsThresholds` for the expiry boundary.
+`man --warnings` has no twin on purpose; its own docstring rejects one, an
+earlier draft having counted `\fI` against `\fR` and failed on a page groff
+renders cleanly.
+
+Worth recording: `test_v0150_ssl_expiry_boundary.py` holds a single class,
+`TestAgainstOpenssl`, and reads at first as a live differential with no twin.
+The twin exists, in another file. Reading one file was not enough to judge it.
+
+The guard enforces the mechanical half only — every `subprocess` call in
+`tests/` naming a binary that is not our own interpreter or shell must sit
+under a skipif. Whether a deterministic twin is warranted is a judgement no
+test can make, so the guard does not pretend to.
+
+### Backlog item 3, samba half — two spellings samba accepts and the check did not read
+
+v0.15.2 verified that `/etc/samba/smb.conf` is the same path on five
+distribution families. What the check reads inside it had never been confronted
+with samba's own parser.
+
+`testparm` resolves `writeable = yes` to `read only = No`, identically to
+`writable = yes`. BOB read `writable`, `write ok` and `read only`, but not the
+spelling with the "e". A world-writable anonymous share written that way was
+reported as `samba.guest_readonly` — WARN, 1 point — instead of
+`samba.guest_writable` — ALERT, 2 points. The severity of an anonymous writable
+share, halved, on a word samba treats as the same. `directory` is samba's
+synonym for `path` in the same way; reading only the latter left the finding
+naming an empty directory.
+
+Both were confirmed by asking testparm what a spelling resolves to, not by
+reading documentation, and the differential is kept as a test — under a skipif,
+as the guard added earlier in this release requires. It asserts the premise the
+BOB-side tests rest on, so if a future samba stops treating these as synonyms
+the tests say so instead of silently testing nothing. The tests write a real
+`smb.conf` and drive `SambaSnapshot.from_system()`: that is the v0.15.3 lesson,
+where an earlier draft asserted against its own copy of the parsing and
+reinjecting the defect killed none of them.
+
+### Backlog item 3, second half — do the declared config formats parse?
+
+The fifteen own-installer services could not be installed to check what BOB
+reads from them: they are absent from the distribution repositories, and
+installing them would change the posture of the host the audit uses as its
+reference.
+
+What is checkable without them is the question that decides whether declaring a
+config file buys anything — does the parser understand the format that service
+actually writes? Eleven formats, one snippet each, taken from the syntax the
+projects document: INI, shell env, four YAML dialects, JSON, XML, Caddyfile,
+systemd unit. Ten worked, including transmission's JSON with its hyphenated
+`rpc-port`, which had been predicted to fail. Testing beat reasoning again.
+
+The eleventh did not. ollama's documented way to move its port is
+`Environment="OLLAMA_HOST=0.0.0.0:11434"` in a systemd unit — a host:port pair
+with no `port` keyword for the generic regex to key on, so the declared config
+file was read and understood as containing nothing. The new branch is
+deliberately narrow: only an `Environment=` variable named after the unit itself
+(`<UNIT>_HOST`) counts. A generic `*_HOST=host:port` rule would read
+`DATABASE_HOST=db:5432` as a port this service listens on, when it is the
+address of something it connects *to*. A false listening port is worse than a
+missed one — a missed port falls back to the registry default, while a false one
+is reported as fact and the operator has no way to tell it is wrong. That twin
+is a test, not a comment.
+
+### Backlog item 4, first tooth — container isolation now costs points
+
+The prerequisite the backlog called BLOCKING — a real container runtime — was
+lifted by podman, and the detector was confronted with four real containers
+before anything was scored. A default container reports `privileged=False`, an
+empty capability set and an active seccomp filter; `--privileged` reports six
+dangerous capabilities and `seccomp=0`; `--cap-add SYS_ADMIN` is correctly told
+apart from a privileged container; and `--security-opt seccomp=unconfined`
+turns the filter off with no capability change. Scoring on top of that is
+evidence, not guesswork.
+
+Three findings become WARN with a deduction — privileged 3, CAP_SYS_ADMIN 2,
+seccomp switched off 1 — on the rule the backlog set: an operator choice is
+penalised, an editor default is not. `--privileged` is typed by a human, the way
+`PermitRootLogin=yes` is. A container started with no flags at all still scores
+zero, and that is a test.
+
+What deliberately stays INFO: the writable root filesystem and
+root-without-a-user-namespace, because podman and docker leave both that way out
+of the box — the field test shows `rootfs_writable=True` on the default
+container. And a kernel built without `CONFIG_SECCOMP` reports nothing rather
+than zero; that case keeps its own INFO finding, because the operator did not
+choose it.
+
+Promotion pulled the whole contract behind it, which is the part that makes
+this more than a number change. Each key needed an explain entry in both
+locales with a Best practice reference, a `nature`, and either a `cmd=` or a
+documented reason for having none. The reason: a container's isolation is
+decided by the flags it was started with, and no command run on the host
+removes `--privileged` from a container already running.
+
+### Backlog item 4, second tooth — nftables parity
+
+The firewall domain was scored from the iptables path; the nft path read the
+same four signals with less reach, so an nftables host could fail a check an
+equivalent iptables host passed.
+
+The gap was the loopback rule, and the direction matters: it produced a **false**
+deduction, not a missing one. nft has two spellings — `iif` matches the
+interface by index, `iifname` by name — and it preserves whichever the operator
+wrote rather than normalising to one. That was established by loading rulesets
+into a network namespace and reading back what `nft list ruleset` actually
+prints, not from documentation.
+
+BOB matched `iif` only. `iifname "lo" accept` is the form most guides and
+distributions ship, so a correctly hardened nftables host was told it had no
+loopback rule and lost a point for a rule it had. A false deduction is worse
+than a missed finding: the operator is sent to add something that is already
+there, and the score claims the machine is weaker than it is.
+
+`meta iifname "lo"` and `iifname { "lo" }` need no pattern of their own — nft
+normalises both to `iifname "lo"`, which was checked rather than assumed. The
+fixture is verbatim nft output, and the polarity twins are tested: another
+interface, the *output* interface, and a rule that matches `lo` and drops.
+
+### Backlog item 4, third tooth — two cloud signals promoted, one retired
+
+The backlog called a real cloud instance a BLOCKING prerequisite. It was aiming
+at the wrong obstacle. BOB never opens a socket to the metadata endpoint — the
+module says so — and reads `ip route get 169.254.169.254`, a file mode, and
+`/sys`. That is all host-local state, so a network namespace reproduces a cloud
+instance faithfully. Both polarities were loaded and read back through BOB's own
+function: an on-link route (the signal), a route via the gateway (the false
+positive the heuristic must reject), and no route at all. The whole section was
+then run under simulation with a stand-in DMI directory and reported "Amazon
+EC2" with IMDS reachable, exactly as it would on EC2.
+
+`cloud_context.userdata_world_readable` now costs 2 points: the file carries
+passwords, tokens and SSH keys, cloud-init writes it 0600, so any other mode is
+an operator choice. The explain entry says to rotate what it exposed, because
+the mode does not say who read it. `socket_units.orphan_exposed` costs 1:
+systemd answers on the port and then fails the connection, which is exposure
+without a function. The same breakage on 127.0.0.1 is untidy, not exposed, and
+stays INFO — that twin is a test.
+
+Dropped, not deferred: IMDS-on-link without enforced IMDSv2. Whether IMDSv2 is
+enforced is a property of the instance's metadata options, and this module's own
+docstring records that it "can only be confirmed off the host". No bench, local
+or cloud, changes that while BOB refuses to query the endpoint, and deducting on
+reachability alone would penalise every cloud instance for existing. The
+backlog's prerequisite would not have unblocked it. `userdata_present` alone
+remains INFO: having a user-data file is normal; reading it as a stranger is
+not.
+
+
 **Tests** 7743 → **7958**.
 
 ---

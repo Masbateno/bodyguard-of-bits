@@ -49,6 +49,297 @@ réimplémente la logique qu'il surveille cesse de la tester dès que l'un des d
 dérive. Réinjecter l'ancienne coupe au tiret cadratin le fait échouer sur les
 douze versions documentées d'un coup.
 
+### Item 5 du backlog — toute fonction publique doit avoir un appelant
+
+Troisième occurrence du motif le plus rentable de la campagne, « déclaré mais
+jamais consommé », après un champ analysé sans lecteur et des clés de locale
+sans référence. Deux orphelines, toutes deux nées sans appelant :
+`strip_rule_index` dans `checks/_ufw.py`, jamais appelée et pas même exercée
+par un test, et `print_port_detail` dans `output.py`, inutilisée depuis la
+v0.1.0 et maintenue en vie par son seul test, parti avec elle. Retirées plutôt
+que mises en liste blanche — un garde qui naît avec des exemptions est affaibli
+dès le premier jour.
+
+Écrire une sonde qui ne ment pas a demandé trois tentatives, et les deux
+erreurs sont figées en tests plutôt que laissées en folklore. Un import aliasé
+(`from bob._tty import read_line as _rl`) masque le vrai nom si l'on ne compte
+pas les deux. Et un `FunctionDef` ne produit aucun nœud `ast.Name`, donc la
+définition n'apparaît jamais dans le décompte : le seuil est `>= 1`, pas `> 1`.
+S'y tromper signalait toute fonction appelée exactement une fois et gonflait la
+liste de 2 à 17. Les appels depuis du code généré comptent aussi — `cron/_io.py`
+écrit un script auxiliaire qui importe `send_audit_log_as_html_email`, ce
+qu'aucun parcours AST de `bob/` ne peut voir.
+
+Les deux surfaces sœurs sont ressorties propres et c'est consigné : les 11
+champs de `services.json` sont tous lus par du code, et les 25 clés racine du
+JSON figurent toutes dans README_TECH ou SNAPSHOT.
+
+### Item 1 du backlog — `config_key` retiré du registre des services
+
+Le champ déclarait une stratégie de résolution des ports sous quatre formes —
+`"fixed"`, `"auto"`, `"ask"`, ou un identifiant libre nommant une clé de config
+utilisateur comme `ssh_port`. Rien n'a jamais été câblé : `"ask"` n'avait pas
+d'implémentation, aucun service n'utilisait la forme à identifiant, et depuis la
+v0.15.2 la configuration d'un service est lue dès que `detection.config_files`
+en nomme une, quoi que dise le champ. La v0.15.3 l'avait épinglé comme décoratif
+et mis son retrait en file comme changement de contrat.
+
+Le retrait est préservant, et le fait qui le rend tel est vérifié contre le vrai
+registre plutôt qu'affirmé en prose : aucun service livré n'a jamais porté
+`"auto"` sans déclarer aussi un chemin de configuration, donc retirer ce terme
+de la condition du lecteur ne change jamais son verdict.
+
+Le champ reste **accepté** par le schéma JSON. `additionalProperties` vaut
+false, si bien que le supprimer des `properties` rejetterait les
+`~/.config/bob/services.d/*.json` déjà écrits par des utilisateurs — un contrat
+de plugin documenté. Il sort de `required`, il est toléré et ignoré ; les deux
+sens sont testés.
+
+Une correction que les tests existants ont attrapée avant qu'elle passe :
+l'unique règle qu'imposait `config_key` était « fixed exige au moins un port ».
+La reformuler en « tout service exige un port » est *plus strict* que ce qu'elle
+remplaçait — cela rejetterait un service qui n'en déclare légitimement aucun et
+lit ses ports dans sa propre configuration, exactement ce que signifiait
+l'ancienne forme `"auto"`. Le cas sans port de `test_registry` a échoué, et
+l'invariant est devenu « un port **ou** un fichier de configuration d'où le
+lire ». N'en déclarer aucun est refusé : ces ports ne pourraient jamais être
+déterminés.
+
+Six documents décrivaient le champ comme obligatoire et conseillaient
+`"config_key": "auto"` pour un port configurable. Tous corrigés, y compris un
+paragraphe « scope du schéma » qui documentait dans les deux langues un contrôle
+d'exécution sur les mots-clés réservés, contrôle qui n'existe plus.
+
+### Item 6 du backlog — le balayage des chaînes anglaises en dur, et ce qu'il innocente
+
+La passe de localisation F8/F8b de la v0.11.2 se croyait complète ; la v0.15.3 a
+prouvé qu'elle ne couvrait pas le bac à sable des plugins, d'où la question de
+savoir si autre chose avait été manqué.
+
+Un balayage statique de la prose anglaise a rendu 350 littéraux hors docstrings
+— trop pour un tri, et légitimes pour la plupart (replis anglais, textes
+d'exception destinés au développeur). Le volume seul montrait que l'instrument
+était faux : il mesure un indice, et il n'aurait même pas attrapé le défaut de
+la v0.15.3, dont la chaîne passait par une file et non par un puits d'affichage.
+
+Le différentiel bilingue qui avait trouvé `--help` a donc été appliqué à un
+audit complet : 886 lignes EN contre 910 FR, 144 identiques, dont 44 en prose.
+Celui-là mesure la chose elle-même — du texte visible qui ne change pas de
+langue.
+
+Le tri laisse trois catégories délibérées et aucun défaut : les commandes shell
+des lignes de remédiation (une commande n'est pas de la prose) ; les références
+CIS portant un code numéroté (décision v0.11.2, où les 60 non codées sont
+traduites et les codées ne le sont pas) ; et les 38 libellés de services, dont
+27 portent de la prose anglaise. Les libellés sont le seul constat, et ils
+restent anglais par décision. Ils servent aussi de clé aux entrées
+`service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la
+source renommerait 114 entrées de locale et ferait apparaître des changements
+fantômes dans `--diff` au changement de langue — le défaut que cette version
+vient justement de corriger. Le tutoriel annonçait « toute la sortie est
+localisée » sans nommer une seule exception ; la promesse porte désormais celle
+que le lecteur rencontre réellement à l'écran.
+
+### Item 7 du backlog — tout constat négatif est explicable, sans aucune exemption
+
+C'était l'angle mort que la garde anti-orphelines de la v0.15.3 avait dû mettre
+en liste blanche : les clés `explain.*` sont construites à l'exécution, donc un
+balayage par référence littérale ne peut pas les voir et rien ne vérifiait que
+le corpus correspondait à ce que BOB émet.
+
+La mesure a demandé deux corrections, toutes deux figées en tests. Le premier
+passage annonçait 5 clés listées sans entrée de locale et 3 entrées hors
+`EXPLAIN_KEYS` ; les huit étaient des artefacts, les entrées explain
+s'imbriquant sur trois niveaux (`services.exposure.open_local`) là où la sonde
+n'en aplatissait que deux, prenant un nœud intermédiaire pour une feuille. En
+descendant jusqu'au premier nœud porteur de chaînes, les deux ensembles
+coïncident exactement. La seconde : sur 395 clés émises, 267 sont OK/INFO et
+n'ont rien à expliquer, si bien que seules les 139 clés WARN/ALERT sont tenues
+au contrat — et 135 étaient couvertes.
+
+Les 4 manquantes étaient toutes `plugin.sandbox.*`, et les douze entrées de
+cette famille ont été **écrites** plutôt qu'exemptées. L'argument n'est pas « un
+échec de plugin est-il une posture de sécurité » — c'est que BOB émet ces clés
+dans le rapport de l'utilisateur, et que `bob --explain plugin.sandbox.timeout`
+répondait « aucune explication disponible — lancez `bob --explain list` », ce
+qui, pour une clé que l'outil venait de produire, se lit « vous vous êtes trompé
+de clé ». Elles portent des références **Bonne pratique**, la catégorie que le
+projet emploie déjà pour les 60 constats qu'aucun contrôle CIS ne couvre, si
+bien que les deux gardes CIS continuent de couvrir toutes les clés sans trou.
+
+Quatre surfaces ont été resynchronisées derrière : la liste de clés en dur de la
+complétion bash, le jeu d'exceptions de la convention de nommage (un quatrième
+motif nommé, `plugin.sandbox` ayant trois segments par construction et son
+renommage casserait les entrées `ignore.yml`), les compteurs de clés et de
+préfixes dans six documents, et la convention `code: null` de `cis_refs.json`,
+que les douze premières entrées avaient omise.
+
+### Item 2 du backlog — un test qui lance un binaire système doit être sautable
+
+La règle vient d'un échec réel : un test différentiel lisait la sortie vivante
+de `ss`, il est passé dix-sept fois en local et a échoué sur le runner CI, qui
+portait une connexion IPv6 mappée absente de la machine de développement.
+
+Le balayage a trouvé trois tests lançant un binaire système et **aucun défaut**.
+Tous trois sont déjà corrects, et leurs deux formes sont les réponses
+légitimes. `ss` et `openssl` sont différentiels — ils confrontent l'analyse de
+BOB à l'outil qui possède le format — et portent tous deux un skipif *et* des
+jumeaux déterministes, si bien que la logique reste couverte quand le binaire
+manque : dans le même fichier pour `ss`, et dans
+`test_ssl_certs.py::TestSslCertsThresholds` pour la frontière d'expiration.
+`man --warnings` n'a délibérément pas de jumeau ; son propre docstring en écarte
+l'idée, un brouillon antérieur ayant compté les `\fI` contre les `\fR` et
+échoué sur une page que groff rend sans un avertissement.
+
+À consigner : `test_v0150_ssl_expiry_boundary.py` ne contient qu'une classe,
+`TestAgainstOpenssl`, et se lit d'abord comme un différentiel sans jumeau. Le
+jumeau existe, dans un autre fichier. Lire un seul fichier ne suffisait pas à
+juger.
+
+Le garde n'impose que la moitié mécanique — tout appel `subprocess` dans
+`tests/` nommant un binaire qui n'est ni notre interpréteur ni notre shell doit
+être sous un skipif. Savoir si un jumeau déterministe se justifie est un
+jugement qu'aucun test ne peut porter, et le garde ne prétend pas le faire.
+
+### Item 3 du backlog, volet samba — deux graphies que samba accepte et que le check ne lisait pas
+
+La v0.15.2 avait vérifié que `/etc/samba/smb.conf` est le même chemin sur cinq
+familles de distributions. Ce que le check lit dedans n'avait jamais été
+confronté à l'analyseur de samba lui-même.
+
+`testparm` résout `writeable = yes` en `read only = No`, exactement comme
+`writable = yes`. BOB lisait `writable`, `write ok` et `read only`, mais pas la
+graphie avec le « e ». Un partage anonyme inscriptible par tous écrit ainsi
+était rapporté `samba.guest_readonly` — avertissement, 1 point — au lieu de
+`samba.guest_writable` — alerte, 2 points. La gravité d'un partage anonyme en
+écriture, divisée par deux, sur un mot que samba tient pour identique.
+`directory` est de la même façon le synonyme de `path` chez samba ; ne lire que
+le second laissait le constat désigner un répertoire vide.
+
+Les deux ont été confirmés en demandant à testparm ce à quoi une graphie se
+résout, non en lisant la documentation, et le différentiel est conservé comme
+test — sous un skipif, comme l'exige le garde ajouté plus tôt dans cette
+version. Il vérifie la prémisse sur laquelle reposent les tests côté BOB : si un
+samba futur cessait de traiter ces graphies comme synonymes, les tests le
+diraient au lieu de ne plus rien mesurer en silence. Les tests écrivent un vrai
+`smb.conf` et pilotent `SambaSnapshot.from_system()` : c'est la leçon de la
+v0.15.3, où un brouillon antérieur s'assurait contre sa propre copie de
+l'analyse et où réinjecter le défaut n'en tuait aucun.
+
+### Item 3 du backlog, seconde moitié — les formats déclarés sont-ils analysables ?
+
+Les quinze services à installeur propre n'ont pas pu être installés pour
+vérifier ce que BOB y lit : ils sont absents des dépôts de distribution, et les
+installer modifierait la posture de la machine qui sert de référence à l'audit.
+
+Ce qui reste vérifiable sans eux est la question qui décide si déclarer un
+fichier de configuration sert à quelque chose — l'analyseur comprend-il le
+format que ce service écrit réellement ? Onze formats, un extrait chacun, tiré
+de la syntaxe que les projets documentent : INI, variables shell, quatre
+dialectes YAML, JSON, XML, Caddyfile, unité systemd. Dix fonctionnaient, y
+compris le JSON de transmission avec son `rpc-port` à trait d'union, dont
+l'échec avait été prédit. Le test a de nouveau battu le raisonnement.
+
+Le onzième, non. La façon documentée de changer le port d'ollama est
+`Environment="OLLAMA_HOST=0.0.0.0:11434"` dans une unité systemd — un couple
+hôte:port sans le mot `port` sur lequel la regex générique s'appuie, si bien que
+le fichier déclaré était lu et compris comme ne contenant rien. La nouvelle
+branche est volontairement étroite : seule une variable `Environment=` portant
+le nom de l'unité elle-même (`<UNIT>_HOST`) compte. Une règle générique
+`*_HOST=hôte:port` prendrait `DATABASE_HOST=db:5432` pour un port d'écoute de ce
+service, alors que c'est l'adresse de ce à quoi il *se connecte*. Un faux port
+d'écoute est pire qu'un port manqué — le port manqué retombe sur le défaut du
+registre, tandis que le faux est rapporté comme un fait et l'opérateur n'a aucun
+moyen de voir qu'il est faux. Ce jumeau est un test, pas un commentaire.
+
+### Item 4 du backlog, première dent — l'isolation des conteneurs coûte des points
+
+Le pré-requis que le backlog déclarait BLOQUANT — un vrai runtime de conteneurs
+— a été levé par podman, et le détecteur a été confronté à quatre conteneurs
+réels avant que quoi que ce soit ne soit noté. Un conteneur par défaut rapporte
+`privileged=False`, un jeu de capacités vide et un filtre seccomp actif ;
+`--privileged` rapporte six capacités dangereuses et `seccomp=0` ; `--cap-add
+SYS_ADMIN` est correctement distingué d'un conteneur privilégié ; et
+`--security-opt seccomp=unconfined` désactive le filtre sans toucher aux
+capacités. Noter par-dessus cela, c'est de la preuve, pas de la conjecture.
+
+Trois constats deviennent WARN avec déduction — privileged 3, CAP_SYS_ADMIN 2,
+seccomp désactivé 1 — selon la règle fixée par le backlog : un choix opérateur
+est pénalisé, un défaut éditeur ne l'est pas. `--privileged` est tapé par un
+humain, comme `PermitRootLogin=yes`. Un conteneur lancé sans aucun drapeau ne
+perd toujours rien, et c'est un test.
+
+Ce qui reste délibérément INFO : le système de fichiers racine inscriptible et
+le root sans espace de noms utilisateur, parce que podman et docker les laissent
+ainsi par défaut — le field-test montre `rootfs_writable=True` sur le conteneur
+par défaut. Et un noyau compilé sans `CONFIG_SECCOMP` ne rapporte rien plutôt
+que zéro ; ce cas garde son constat INFO, l'opérateur ne l'ayant pas choisi.
+
+La promotion a tiré tout le contrat derrière elle, et c'est ce qui en fait plus
+qu'un changement de chiffre. Chaque clé réclamait une entrée explain dans les
+deux langues avec une référence Bonne pratique, une `nature`, et soit un `cmd=`
+soit un motif documenté de ne pas en avoir. Le motif : l'isolation d'un
+conteneur est décidée par les drapeaux de son lancement, et aucune commande sur
+l'hôte ne retire `--privileged` à un conteneur déjà en cours.
+
+### Item 4 du backlog, deuxième dent — parité nftables
+
+Le domaine pare-feu était noté depuis le chemin iptables ; le chemin nft lisait
+les mêmes quatre signaux avec moins de portée, si bien qu'un hôte nftables
+pouvait échouer à un contrôle que son équivalent iptables passait.
+
+L'écart portait sur la règle loopback, et le sens compte : il produisait une
+déduction **fausse**, pas une déduction manquante. nft possède deux graphies —
+`iif` désigne l'interface par son index, `iifname` par son nom — et il conserve
+celle que l'opérateur a écrite au lieu de normaliser. Cela a été établi en
+chargeant des jeux de règles dans un espace de noms réseau et en relisant ce que
+`nft list ruleset` imprime réellement, non dans la documentation.
+
+BOB ne reconnaissait que `iif`. Or `iifname "lo" accept` est la forme que
+diffusent la plupart des guides et des distributions : un hôte nftables
+correctement durci s'entendait donc dire qu'il n'avait pas de règle loopback et
+perdait un point pour une règle qu'il avait. Une déduction fausse est pire qu'un
+constat manqué : l'opérateur est envoyé ajouter ce qui existe déjà, et la note
+prétend la machine plus faible qu'elle n'est.
+
+`meta iifname "lo"` et `iifname { "lo" }` n'appellent aucun motif propre — nft
+les normalise tous deux en `iifname "lo"`, ce qui a été vérifié et non supposé.
+Le jeu d'essai est une sortie nft mot pour mot, et les jumeaux de polarité sont
+testés : une autre interface, l'interface de *sortie*, et une règle qui vise
+`lo` mais rejette.
+
+### Item 4 du backlog, troisième dent — deux signaux cloud promus, un retiré
+
+Le backlog déclarait une instance cloud réelle comme pré-requis BLOQUANT. Il
+visait le mauvais obstacle. BOB n'ouvre jamais de socket vers le point de
+métadonnées — le module le dit — et lit `ip route get 169.254.169.254`, un mode
+de fichier et `/sys`. Tout cela est de l'état local, si bien qu'un espace de
+noms réseau reproduit fidèlement une instance cloud. Les deux polarités ont été
+chargées puis relues par la propre fonction de BOB : une route on-link (le
+signal), une route par la passerelle (le faux positif que l'heuristique doit
+rejeter), et aucune route du tout. La section entière a ensuite tourné sous
+simulation avec un répertoire DMI de substitution et a rapporté « Amazon EC2 »
+avec l'IMDS accessible, exactement comme sur EC2.
+
+`cloud_context.userdata_world_readable` coûte désormais 2 points : le fichier
+transporte mots de passe, jetons et clés SSH, cloud-init l'écrit en 0600, et
+tout autre mode est un choix opérateur. L'entrée explain dit de renouveler ce
+qu'il a exposé, puisque le mode ne dit pas qui l'a lu.
+`socket_units.orphan_exposed` en coûte 1 : systemd répond sur le port puis fait
+échouer la connexion, soit de l'exposition sans fonction. La même panne sur
+127.0.0.1 est un défaut de rangement, pas une exposition, et reste INFO — ce
+jumeau est un test.
+
+Retiré, non reporté : l'IMDS on-link sans IMDSv2 appliqué. Savoir si IMDSv2 est
+imposé est une propriété des *metadata options* de l'instance, et le docstring
+de ce module consigne lui-même que cela « ne peut être confirmé que hors de
+l'hôte ». Aucun banc, local ou cloud, n'y change quoi que ce soit tant que BOB
+refuse d'interroger le point de métadonnées, et déduire sur la seule
+accessibilité pénaliserait toute instance cloud pour son existence. Le
+pré-requis du backlog ne l'aurait pas débloqué. `userdata_present` seul demeure
+INFO : avoir un fichier user-data est normal, le lire en étranger ne l'est pas.
+
+
 **Tests** 7743 → **7958**.
 
 ---
