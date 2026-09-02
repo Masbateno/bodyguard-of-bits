@@ -6,6 +6,44 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.15.5] — 2026-09-02
+
+**"Not installed" and "nothing could ask" were the same answer.**
+
+Found with a new instrument. The audit was run in a namespace with every
+external tool stripped from PATH — a blind audit, which should say "I could not
+look" almost everywhere. It reported **12 deductions and zero degraded
+sections**: it announced a successful audit of a machine it could not see.
+
+Most of those survive honestly, and the distinction is the finding. `backup`,
+`log_rotation`, `mac_policy` and `ntp` detect by the absence of the tool
+*itself* — with no `borg`, `restic`, `logrotate`, `aa-status` or `chronyc` on
+PATH, "no backup tool found" is a true statement about the host. `ssh.*` reads
+a file. Those are evidence, not assumption.
+
+One was not. `package_installed()` answers None in two situations a caller
+cannot tell apart: the package is genuinely absent, or **no package manager
+exists to ask**. `firmware` turned that into
+"{vendor} CPU detected but no microcode package installed" — a WARN with a
+point deducted, on Gentoo, NixOS, Void, Slackware, or any minimal image. BOB
+stated a negative it never established.
+
+`package_query_possible()` lets a check say so. The microcode finding degrades
+to INFO, costs nothing, and names the reason: no package manager was available
+to check. The polarity twin is a test — a genuinely missing package on a host
+with dpkg still warns and still deducts one point, because a check that
+answered "unknown" to everything would pass the first test and audit nothing.
+
+A guard requires every module that turns a package query into a statement to
+consult the helper first. Three callers are exempt with their reason recorded:
+`services`, `ddns` and `updates` do not rest on that answer alone — they fall
+back to a config file, a snap package, or a binary on PATH — so a False there
+has several independent sources. The guard also fails on a stale exemption.
+
+**Tests** 7958 → **7968**.
+
+---
+
 ## [v0.15.4] — 2026-09-02
 
 > **Versioning note — read before upgrading.** This is a patch number, but

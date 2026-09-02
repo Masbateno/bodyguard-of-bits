@@ -334,6 +334,23 @@ _PACKAGE_QUERIES: "tuple[tuple[str, tuple[str, ...], str | None], ...]" = (
 )
 
 
+def package_query_possible() -> bool:
+    """True when at least one supported package manager is available to ask.
+
+    ``package_installed`` answers None in two situations a caller cannot tell
+    apart: the package is genuinely absent, or **no package manager exists to
+    ask**. Collapsing the second into the first makes BOB state a negative it
+    never verified — "no microcode package installed" on a host where nothing
+    could be queried. Gentoo, NixOS, Void, Slackware and minimal images all land
+    there, and so does any distribution BOB has not met yet.
+
+    A check that turns a None into an assertion must call this first and say
+    "could not check" instead. Absence of evidence is not evidence of absence,
+    and the report has to keep the difference.
+    """
+    return any(_command_exists(tool) for tool, _, _ in _PACKAGE_QUERIES)
+
+
 def package_installed(name: str) -> "str | None":
     """Name of the package manager that reports *name* installed, else None.
 

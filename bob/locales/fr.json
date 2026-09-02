@@ -3133,7 +3133,9 @@
     "microcode_missing_detail": "Les mises à jour de microcode CPU corrigent des vulnérabilités matérielles (Spectre, Meltdown, etc.). Installez le paquet approprié pour maintenir le microcode à jour.",
     "microcode_missing_reason": "Paquet microcode {vendor} non installé",
     "microcode_ok": "Paquet microcode CPU installé : {package}",
-    "microcode_na": "Le processeur n'est ni Intel ni AMD — aucun paquet microcode requis"
+    "microcode_na": "Le processeur n'est ni Intel ni AMD — aucun paquet microcode requis",
+    "microcode_unknown": "CPU {vendor} détecté, mais aucun gestionnaire de paquets n'était disponible pour vérifier la présence d'un paquet microcode",
+    "microcode_unknown_detail": "BOB interroge dpkg, rpm, pacman et apk. Aucun n'est présent sur cette machine : savoir si un paquet microcode est installé n'a pas pu être établi — ce n'est pas rapporté comme manquant. Vérifiez à la main avec l'outil de paquets de votre distribution."
   },
   "systemd_timers": {
     "no_systemctl": "systemctl introuvable — impossible d'auditer les timers systemd",

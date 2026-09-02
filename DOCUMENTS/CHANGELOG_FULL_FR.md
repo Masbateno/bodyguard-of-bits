@@ -6,6 +6,48 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.15.5] — 02-09-2026
+
+**« Non installé » et « rien n'a pu être interrogé » étaient la même réponse.**
+
+Trouvé avec un instrument neuf. L'audit a été lancé dans un espace de noms où
+tous les outils externes sont retirés du PATH — un audit aveugle, qui devrait
+dire « je n'ai pas pu regarder » presque partout. Il a rapporté **12 déductions
+et zéro section dégradée** : il annonçait un audit réussi d'une machine qu'il ne
+pouvait pas voir.
+
+La plupart survivent honnêtement, et c'est la distinction qui fait le constat.
+`backup`, `log_rotation`, `mac_policy` et `ntp` détectent par l'absence de
+l'outil *lui-même* — sans `borg`, `restic`, `logrotate`, `aa-status` ni
+`chronyc` sur le PATH, « aucun outil de sauvegarde trouvé » est une affirmation
+vraie sur la machine. `ssh.*` lit un fichier. Ce sont des preuves, pas des
+suppositions.
+
+Un seul ne l'était pas. `package_installed()` rend None dans deux situations
+qu'un appelant ne peut pas distinguer : le paquet est réellement absent, ou
+**aucun gestionnaire de paquets n'existe pour l'interroger**. `firmware` en
+tirait « CPU {vendor} détecté mais aucun paquet microcode installé » — un
+WARN avec un point déduit, sur Gentoo, NixOS, Void, Slackware ou toute image
+minimale. BOB affirmait un négatif qu'il n'avait jamais établi.
+
+`package_query_possible()` lui permet de le dire. Le constat microcode dégrade
+en INFO, ne coûte rien, et nomme la raison : aucun gestionnaire de paquets
+n'était disponible pour vérifier. Le jumeau de polarité est un test — un paquet
+réellement absent sur une machine dotée de dpkg avertit toujours et déduit
+toujours un point, car un contrôle qui répondrait « inconnu » à tout passerait
+le premier test sans rien auditer.
+
+Un garde impose à tout module qui transforme une requête de paquets en
+affirmation de consulter d'abord le helper. Trois appelants sont exemptés avec
+leur motif consigné : `services`, `ddns` et `updates` ne reposent pas sur cette
+seule réponse — ils retombent sur un fichier de configuration, un paquet snap
+ou un binaire sur le PATH — si bien qu'un False y a plusieurs sources
+indépendantes. Le garde échoue aussi sur une exemption périmée.
+
+**Tests** 7958 → **7968**.
+
+---
+
 ## [v0.15.4] — 02-09-2026
 
 > **Note de versionnage — à lire avant de mettre à jour.** Le numéro est celui

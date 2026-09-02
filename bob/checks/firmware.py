@@ -33,6 +33,7 @@ from bob.checks._run import (
     _identity_t,
     _run,
     package_installed,
+    package_query_possible,
 )
 from bob.scoring import CheckResult
 
@@ -63,12 +64,15 @@ class FirmwareSnapshot:
         microcode_installed:     True if the CPU-appropriate microcode package is installed.
         microcode_package:       Name of the microcode package found (or "").
         microcode_not_applicable: True if CPU vendor is not Intel or AMD (no package needed).
+        package_query_possible:  False when no supported package manager exists,
+                                 so "not installed" could not be established.
     """
     fwupd_available:          bool       = False
     fwupd_pending_updates:    list[str]  = field(default_factory=list)
     fwupd_error:              str        = ""
     cpu_vendor:               str        = ""
     microcode_installed:      bool       = False
+    package_query_possible:   bool       = True
     microcode_package:        str        = ""
     microcode_not_applicable: bool       = False
 
@@ -76,6 +80,9 @@ class FirmwareSnapshot:
     def from_system(cls) -> "FirmwareSnapshot":
         """Collect firmware state from the live system."""
         snap = cls()
+        # Recorded at collection time so the analysis can tell "no microcode
+        # package" from "nothing could be asked".
+        snap.package_query_possible = package_query_possible()
 
         # --- CPU vendor detection -------------------------------------------
         snap.cpu_vendor = _detect_cpu_vendor()
@@ -190,6 +197,17 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
             result.info(
                 message=_t("firmware.microcode_na"),
                 key="firmware.microcode_na",
+            )
+        elif not snapshot.package_query_possible:
+            # v0.15.5: no dpkg/rpm/pacman/apk on this host, so "no microcode
+            # package" was never established — only "nothing could be asked".
+            # Asserting the negative here (WARN, −1) invented a verdict on
+            # Gentoo, NixOS, Void, Slackware and any minimal image.
+            result.info(
+                message=_t("firmware.microcode_unknown",
+                           vendor=snapshot.cpu_vendor.upper()),
+                detail=_t("firmware.microcode_unknown_detail"),
+                key="firmware.microcode_unknown",
             )
         else:
             pkg = "intel-microcode" if snapshot.cpu_vendor == "intel" else "amd64-microcode"

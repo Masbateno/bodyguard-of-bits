@@ -3133,7 +3133,9 @@
     "microcode_missing_detail": "CPU microcode updates patch hardware-level vulnerabilities (Spectre, Meltdown, etc.). Install the appropriate package to keep microcode up to date.",
     "microcode_missing_reason": "{vendor} CPU microcode package not installed",
     "microcode_ok": "CPU microcode package installed: {package}",
-    "microcode_na": "CPU vendor is not Intel or AMD — no microcode package required"
+    "microcode_na": "CPU vendor is not Intel or AMD — no microcode package required",
+    "microcode_unknown": "{vendor} CPU detected, but no package manager was available to check for a microcode package",
+    "microcode_unknown_detail": "BOB asks dpkg, rpm, pacman and apk. None of them is present on this host, so whether a microcode package is installed could not be established — it is not being reported as missing. Check by hand with your distribution's package tool."
   },
   "systemd_timers": {
     "no_systemctl": "systemctl not found — cannot audit systemd timers",

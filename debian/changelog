@@ -1,3 +1,14 @@
+bodyguard-of-bits (0.15.5-1) UNRELEASED; urgency=low
+
+  * "not installed" and "nothing could ask" were the same answer. On a host
+    with no dpkg/rpm/pacman/apk, package_installed() returned None and firmware
+    stated "CPU detected but no microcode package installed" — a WARN with a
+    point deducted for a negative it never established.
+  * package_query_possible() lets a check say it could not look; the microcode
+    finding degrades to INFO with no deduction and names the reason.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 02 Sep 2026 23:06:10 +0200
+
 bodyguard-of-bits (0.15.4-1) UNRELEASED; urgency=low
 
   * The GitHub release title was truncated mid-phrase on every release since at
