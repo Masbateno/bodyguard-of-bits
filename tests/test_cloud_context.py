@@ -49,12 +49,36 @@ class TestCheckLogic:
                                  userdata_world_read=False))
         assert any(f.key == "cloud_context.userdata_present" for f in priv.findings)
 
-    def test_never_deducts(self):
-        r = check_cloud_context(
+    def test_only_world_readable_user_data_deducts(self):
+        """v0.15.4 "teeth" replaced the INFO-only contract with a narrower one.
+
+        Detection, the provider name and IMDS reachability stay INFO: they
+        describe where the machine runs, not a choice its operator made. Only
+        the user-data file mode is an operator choice — cloud-init writes 0600
+        — and only it deducts.
+
+        IMDS-on-link deliberately does NOT deduct, and no bench would change
+        that. Whether IMDSv2 is enforced is a property of the instance's
+        metadata options; this module's own docstring records that it "can only
+        be confirmed off the host", and BOB never opens a socket to the
+        metadata endpoint. Deducting on reachability alone would penalise every
+        cloud instance for existing.
+        """
+        exposed = check_cloud_context(
             CloudContextSnapshot(is_cloud=True, provider="Amazon EC2",
                                  imds_onlink=True,
                                  userdata_path="/x", userdata_world_read=True))
-        assert not r.deductions
+        assert {d.key for d in exposed.deductions} == {
+            "cloud_context.userdata_world_readable"}
+        assert sum(d.points for d in exposed.deductions) == 2
+
+    def test_a_correctly_permissioned_instance_costs_nothing(self):
+        """Polarity twin: same cloud, same IMDS, user-data at 0600."""
+        tidy = check_cloud_context(
+            CloudContextSnapshot(is_cloud=True, provider="Amazon EC2",
+                                 imds_onlink=True,
+                                 userdata_path="/x", userdata_world_read=False))
+        assert not tidy.deductions
 
 
 class TestProviderDetection:

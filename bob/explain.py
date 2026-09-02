@@ -332,6 +332,10 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     # v0.15.4 "teeth": these three moved from INFO to WARN with a deduction,
     # so they became keys a user meets in a report — and therefore keys that
     # must be explainable. The rest of the container section stays INFO.
+    ("Cloud and socket exposure", [
+        "cloud_context.userdata_world_readable",
+        "socket_units.orphan_exposed",
+    ]),
     ("Container isolation", [
         "container_security.privileged",
         "container_security.cap_sys_admin",

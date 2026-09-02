@@ -158,6 +158,8 @@ class TestExplainPrefixDiscipline:
     # widen by adding here without updating the EXPLAIN_KEYS audit in
     # DOCUMENTS/README_TECH.md.
     KNOWN_PREFIXES = frozenset({
+        "cloud_context",       # v0.15.4 "teeth" — world-readable user-data
+        "socket_units",        # v0.15.4 "teeth" — orphan socket on a network address
         "container_security",  # v0.15.4 "teeth" — privileged / CAP_SYS_ADMIN / seccomp
         "plugin",           # v0.15.4 — plugin.sandbox.* runner failures
         # v0.7.0 baseline (30)
@@ -229,7 +231,7 @@ class TestExplainAuditInvariants:
         teeth promoted from INFO to WARN → 184: they were the last WARN keys a user
         could meet in a report and not look up. Drifts beyond require a doc
         update in DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
-        assert len(EXPLAIN_KEYS) == 184, (
+        assert len(EXPLAIN_KEYS) == 186, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."
@@ -242,7 +244,7 @@ class TestExplainAuditInvariants:
         backup, network_context) → 45. Further drift requires updating
         KNOWN_PREFIXES + the audit doc."""
         prefixes = {k.split(".", 1)[0] for k in EXPLAIN_KEYS}
-        assert len(prefixes) == 47, (
+        assert len(prefixes) == 49, (
             f"Prefix count drifted from v0.8.0 baseline 45 to "
             f"{len(prefixes)}. Update KNOWN_PREFIXES + audit doc."
         )

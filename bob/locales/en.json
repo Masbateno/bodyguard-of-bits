@@ -1178,6 +1178,20 @@
     }
   },
   "explain": {
+    "cloud_context": {
+      "userdata_world_readable": {
+        "title": "Cloud-init user-data is readable by every local account",
+        "why": "user-data is what the instance was created with, and it routinely carries passwords, API tokens, SSH keys and bootstrap scripts. cloud-init writes it 0600 for that reason. Group- or world-readable means any local account — including one obtained through an unrelated compromise — can read the credentials the machine was born with.",
+        "how": "sudo chmod 600 /var/lib/cloud/instance/user-data.txt\n\nThen rotate anything the file exposed: it has been readable for as long as the mode has been wrong, and you cannot know who read it."
+      }
+    },
+    "socket_units": {
+      "orphan_exposed": {
+        "title": "Socket unit holds a network port open with nothing behind it",
+        "why": "A systemd socket unit listens on a non-loopback address and hands the connection to a service that is broken or missing. The port answers — enough to appear in any scan and to mislead whoever finds it — and then the connection dies. It is exposure without a function: all of the attack surface, none of the service.",
+        "how": "Find which one and decide:\n  systemctl list-units --type=socket --state=active\n  systemctl status <name>.socket\nThen either repair the service it triggers, or retire the socket:\n  sudo systemctl disable --now <name>.socket"
+      }
+    },
     "container_security": {
       "privileged": {
         "title": "Container runs privileged — it holds the full capability set",
@@ -3158,6 +3172,8 @@
     "seccomp_unknown_detail": "/proc/self/status did not report a Seccomp line. The kernel emits it only when built with CONFIG_SECCOMP, so its absence usually means the kernel has no seccomp support at all — the container's syscalls are unfiltered. BOB does not claim seccomp is active or inactive here, only that it could not read the answer. Check with: grep Seccomp /proc/self/status"
   },
   "socket_units": {
+     "orphan_exposed": "{count} socket unit(s) hold a non-loopback port open while the service behind them is broken",
+     "orphan_exposed_detail": "systemd accepts the connection on that port and then fails to hand it to anything. The port answers, which is enough to appear in a scan and to mislead whoever finds it. Disable the socket unit, or repair the service it triggers.",
     "no_tool": "systemctl not available — socket-unit analysis skipped",
     "clean": "All {total} systemd socket unit(s) have a healthy backing service — none orphaned or failed",
     "summary": "{orphans} orphaned + {failed} failed systemd socket unit(s) ({exposed} listening on a non-loopback address)",
@@ -3166,6 +3182,7 @@
     "failed": "Failed socket {name} (listen {addr}{net}) — unit is in failed state (trigger: {trigger})"
   },
   "cloud_context": {
+     "userdata_world_readable_detail": "cloud-init user-data routinely carries passwords, API tokens and SSH keys, and it is written 0600 by default. Group- or world-readable means every local account can read whatever was passed at instance creation.",
     "detected": "Detected {provider} cloud instance — auditing host-side cloud exposure",
     "detected_generic": "Cloud instance detected (cloud-init present) — auditing host-side cloud exposure",
     "imds_reachable": "Instance metadata service ({addr}) is reachable on-link",

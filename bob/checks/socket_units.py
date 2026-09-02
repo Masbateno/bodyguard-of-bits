@@ -34,6 +34,7 @@ Split into:
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
@@ -221,6 +222,22 @@ def check_socket_units(
         detail=_t("socket_units.summary_detail"),
         key="socket_units.summary",
     )
+
+    # v0.15.4 "teeth": a socket unit holding a non-loopback port open while the
+    # service behind it is broken is an operator-visible state, not an editor
+    # default — systemd accepts the connection and then fails it. The count
+    # stays in the INFO summary above; the exposed subset gets its own finding
+    # so it can be explained, ignored and deducted for on its own terms.
+    if exposed:
+        first = next(s for s in flagged if s.is_network_listener)
+        result.warn_with_deduction(
+            message=_t("socket_units.orphan_exposed", count=exposed),
+            detail=_t("socket_units.orphan_exposed_detail"),
+            key="socket_units.orphan_exposed",
+            points=1,
+            nature="improvement",
+            cmd=f"sudo systemctl disable --now {shlex.quote(first.name)}",
+        )
 
     for su in flagged[:_TOP_N]:
         reason = "orphan" if su.is_orphan else "failed"

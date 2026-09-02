@@ -829,5 +829,15 @@
     "ref": "Best practice — Keep the runtime's default seccomp profile, or supply a narrower one",
     "ref_fr": "Bonne pratique — Conserver le profil seccomp par défaut du runtime, ou en fournir un plus étroit",
     "code": null
+  },
+  "socket_units.orphan_exposed": {
+    "ref": "Best practice — Retire a socket unit whose service is broken; an answering port with nothing behind it is surface without function",
+    "ref_fr": "Bonne pratique — Retirer une unité socket dont le service est cassé ; un port qui répond sans rien derrière est de la surface sans fonction",
+    "code": null
+  },
+  "cloud_context.userdata_world_readable": {
+    "ref": "Best practice — Keep cloud-init user-data at 0600 and rotate any credential it exposed",
+    "ref_fr": "Bonne pratique — Garder le user-data cloud-init en 0600 et renouveler tout identifiant qu'il a exposé",
+    "code": null
   }
 }

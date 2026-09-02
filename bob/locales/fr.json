@@ -1178,6 +1178,20 @@
     }
   },
   "explain": {
+    "cloud_context": {
+      "userdata_world_readable": {
+        "title": "Le user-data cloud-init est lisible par tout compte local",
+        "why": "Le user-data est ce avec quoi l'instance a été créée, et il transporte couramment des mots de passe, des jetons d'API, des clés SSH et des scripts d'amorçage. C'est pour cela que cloud-init l'écrit en 0600. Lisible par le groupe ou par tous signifie que n'importe quel compte local — y compris obtenu par une compromission sans rapport — peut lire les identifiants avec lesquels la machine est née.",
+        "how": "sudo chmod 600 /var/lib/cloud/instance/user-data.txt\n\nPuis renouvelez tout ce que le fichier exposait : il a été lisible aussi longtemps que le mode a été faux, et vous ne pouvez pas savoir qui l'a lu."
+      }
+    },
+    "socket_units": {
+      "orphan_exposed": {
+        "title": "Une unité socket maintient un port réseau ouvert sans rien derrière",
+        "why": "Une unité socket systemd écoute sur une adresse non-loopback et transmet la connexion à un service cassé ou absent. Le port répond — assez pour figurer dans n'importe quel balayage et tromper qui l'y trouve — puis la connexion meurt. C'est de l'exposition sans fonction : toute la surface d'attaque, aucun service.",
+        "how": "Identifiez laquelle, puis tranchez :\n  systemctl list-units --type=socket --state=active\n  systemctl status <nom>.socket\nEnsuite, réparez le service déclenché, ou retirez la socket :\n  sudo systemctl disable --now <nom>.socket"
+      }
+    },
     "container_security": {
       "privileged": {
         "title": "Le conteneur est privilégié — il détient l'ensemble des capacités",
@@ -3158,6 +3172,8 @@
     "seccomp_unknown_detail": "/proc/self/status n'a pas fourni de ligne Seccomp. Le noyau ne l'émet que s'il est compilé avec CONFIG_SECCOMP : son absence signifie généralement que le noyau ne prend pas seccomp en charge du tout — les appels système du conteneur ne sont pas filtrés. BOB n'affirme ici ni que seccomp est actif ni qu'il ne l'est pas, seulement qu'il n'a pas pu lire la réponse. Vérifier avec : grep Seccomp /proc/self/status"
   },
   "socket_units": {
+     "orphan_exposed": "{count} unité(s) socket maintiennent un port non-loopback ouvert alors que le service derrière est cassé",
+     "orphan_exposed_detail": "systemd accepte la connexion sur ce port puis ne parvient à la transmettre à rien. Le port répond, ce qui suffit à le faire apparaître dans un balayage et à tromper qui l'y trouve. Désactivez l'unité socket, ou réparez le service qu'elle déclenche.",
     "no_tool": "systemctl indisponible — analyse des unités socket ignorée",
     "clean": "Les {total} unité(s) socket systemd ont un service backing sain — aucune orpheline ni en échec",
     "summary": "{orphans} unité(s) socket orpheline(s) + {failed} en échec ({exposed} en écoute sur une adresse non-loopback)",
@@ -3166,6 +3182,7 @@
     "failed": "Socket en échec {name} (écoute {addr}{net}) — l'unité est en état failed (trigger : {trigger})"
   },
   "cloud_context": {
+     "userdata_world_readable_detail": "Le user-data de cloud-init transporte couramment des mots de passe, des jetons d'API et des clés SSH, et cloud-init l'écrit en 0600. Lisible par le groupe ou par tous signifie que tout compte local peut lire ce qui a été passé à la création de l'instance.",
     "detected": "Instance cloud {provider} détectée — audit de l'exposition cloud côté hôte",
     "detected_generic": "Instance cloud détectée (cloud-init présent) — audit de l'exposition cloud côté hôte",
     "imds_reachable": "Le service de métadonnées d'instance ({addr}) est joignable en lien direct (on-link)",

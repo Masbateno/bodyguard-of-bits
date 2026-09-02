@@ -40,6 +40,7 @@ Split into:
 
 from __future__ import annotations
 
+import shlex
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -219,8 +220,24 @@ def check_cloud_context(
         )
 
     if snapshot.userdata_path:
-        key = ("cloud_context.userdata_world_readable"
-               if snapshot.userdata_world_read else "cloud_context.userdata_present")
-        result.info(message=_t(key, path=snapshot.userdata_path), key=key)
+        if snapshot.userdata_world_read:
+            # v0.15.4 "teeth": cloud-init user-data routinely carries passwords,
+            # API tokens and SSH keys, and every local user can read this file.
+            # The mode is an operator choice — cloud-init writes 0600.
+            # ``userdata_present`` alone stays INFO and never deducts: having a
+            # user-data file is normal, reading it as a stranger is not.
+            result.warn_with_deduction(
+                message=_t("cloud_context.userdata_world_readable",
+                           path=snapshot.userdata_path),
+                detail=_t("cloud_context.userdata_world_readable_detail"),
+                key="cloud_context.userdata_world_readable",
+                points=2,
+                nature="improvement",
+                cmd=f"sudo chmod 600 {shlex.quote(snapshot.userdata_path)}",
+            )
+        else:
+            result.info(message=_t("cloud_context.userdata_present",
+                                   path=snapshot.userdata_path),
+                        key="cloud_context.userdata_present")
 
     return result

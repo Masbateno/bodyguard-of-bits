@@ -67,7 +67,12 @@ class TestCheckLogic:
         summary = next(f for f in r.findings if f.key == "socket_units.summary")
         assert summary.level is FindingLevel.INFO
         assert any(f.key == "socket_units.orphan" for f in r.findings)
-        assert not r.deductions            # INFO-only by design in v0.13.1
+        # v0.15.4 "teeth": the summary itself stays INFO — it counts everything,
+        # including breakage that is not exposed. The deduction rides on the
+        # separate orphan_exposed finding, and only for the network-facing
+        # subset, which this fixture has (0.0.0.0:9000).
+        assert sum(d.points for d in r.deductions) == 1
+        assert {d.key for d in r.deductions} == {"socket_units.orphan_exposed"}
 
     def test_masked_trigger_is_orphan(self):
         s = _sock("x.socket", trigger="x.service", trigger_load="masked")
@@ -82,7 +87,31 @@ class TestCheckLogic:
         ])
         r = check_socket_units(snap)
         assert any(f.key == "socket_units.orphan" for f in r.findings)
-        assert not r.deductions
+        # v0.15.4 "teeth": this socket listens on 0.0.0.0, so it now costs a
+        # point. The INFO-only contract of v0.13.1 was replaced by a narrower
+        # one — see test_only_the_exposed_subset_deducts below.
+        assert sum(d.points for d in r.deductions) == 1
+
+    def test_only_the_exposed_subset_deducts(self):
+        """An orphan bound to loopback stays INFO; the network one costs a point.
+
+        The rule the teeth rest on: a port that answers from the network with
+        nothing behind it is exposure without a function. The same breakage on
+        127.0.0.1 is a tidiness problem, not an exposure, and is not scored.
+        """
+        loopback = _snap([
+            _sock("local.socket", listens=["127.0.0.1:9000"], trigger="local.service",
+                  trigger_load="loaded", trigger_active="failed"),
+        ])
+        assert not check_socket_units(loopback).deductions
+
+        network = _snap([
+            _sock("net.socket", listens=["0.0.0.0:9000"], trigger="net.service",
+                  trigger_load="loaded", trigger_active="failed"),
+        ])
+        result = check_socket_units(network)
+        assert sum(d.points for d in result.deductions) == 1
+        assert any(f.key == "socket_units.orphan_exposed" for f in result.findings)
 
     def test_inactive_service_is_not_orphan(self):
         # A socket-activated service rests in 'inactive' until first connection;
