@@ -2755,6 +2755,21 @@
           "how": "Install on the host system:\n   sudo apt install iptables ufw\n   sudo ufw enable"
         }
       },
+      "nft_no_input_filter": {
+        "title": "nftables installed but its ruleset filters nothing inbound",
+        "why": "nft answered, so this is a measurement rather than a guess: the backend is installed and running, and the ruleset it returned defines no input hook. Nothing filters traffic arriving at this machine — every listening port is reachable from anywhere the network allows. This is the same exposure as having no firewall backend at all, but it has a different cause and a different fix: the backend does not need installing, the rules do.",
+        "how": "1. Look at what is actually loaded:\n   sudo nft list ruleset\n2. If UFW is installed, let it write the rules:\n   sudo ufw enable\n3. Otherwise load a ruleset with an input hook and a default drop policy:\n   sudo nft -f /etc/nftables.conf\n   sudo systemctl enable --now nftables\n4. Verify an input hook now exists:\n   sudo nft list ruleset | grep 'hook input'",
+        "server": {
+          "why": "A server whose nftables ruleset has no input chain is fully exposed at the kernel level: every service that binds a socket is reachable. The backend being present makes this easy to miss — tooling that only checks whether nftables is installed reports the machine as protected."
+        },
+        "desktop": {
+          "why": "Even behind NAT, an empty ruleset leaves the machine open to everything on the same network — a shared Wi-Fi, a hotel LAN, a compromised peer device. Enabling UFW is the shortest path."
+        },
+        "container": {
+          "why": "Containers usually inherit filtering from the host, and a container's own network namespace legitimately starts with an empty ruleset. Check the host before acting here.",
+          "how": "On the host:\n   sudo ufw enable  # or load an nftables ruleset with an input hook"
+        }
+      },
       "input_accept": {
         "title": "Default INPUT policy is ACCEPT (every unfiltered packet is allowed in)",
         "why": "The INPUT chain policy is the firewall's final fallback when no explicit rule matches an incoming packet. When set to ACCEPT, every port that has no specific DROP/REJECT rule is open to the network — the default is permissive. The secure pattern is policy=DROP combined with explicit ACCEPT rules for permitted services, so anything not whitelisted is automatically blocked.",
@@ -3372,6 +3387,7 @@
   },
   "firewall_iptables": {
     "no_backend": "No firewall detected (iptables/nftables absent or inactive)",
+    "nft_no_input_filter": "nftables is installed and answered, but its ruleset filters no inbound traffic",
     "ufw_inactive_context": "UFW is installed but inactive — auditing the underlying {backend} layer",
     "backend_detected": "Active backend: {backend}",
     "input_accept": "Default INPUT policy: ACCEPT — all incoming traffic is allowed",

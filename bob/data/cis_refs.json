@@ -214,6 +214,10 @@
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (INPUT chain ACCEPT)",
     "code": "CIS:3.5.1.1"
   },
+  "firewall_iptables.nft_no_input_filter": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (backend present, ruleset filters no inbound traffic)",
+    "code": "CIS:3.5"
+  },
   "firewall_iptables.no_backend": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (no active firewall layer detected)",
     "code": "CIS:3.5"

@@ -229,9 +229,12 @@ class TestExplainAuditInvariants:
         WARN/ALERT findings → 168, then 169. v0.15.4 added the 12
         plugin.sandbox.* entries → 181, then the 3 container_security keys the
         teeth promoted from INFO to WARN → 184: they were the last WARN keys a user
-        could meet in a report and not look up. Drifts beyond require a doc
-        update in DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
-        assert len(EXPLAIN_KEYS) == 186, (
+        could meet in a report and not look up. v0.15.4 added two more with the
+        cloud and socket teeth → 186, and v0.15.5 one with
+        firewall_iptables.nft_no_input_filter → 187, which splits "no firewall
+        backend" from "a backend that filters nothing". Drifts beyond require a
+        doc update in DOCUMENTS/README_TECH.md → EXPLAIN_KEYS audit."""
+        assert len(EXPLAIN_KEYS) == 187, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

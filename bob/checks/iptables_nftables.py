@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from bob.checks._run import _command_exists, _identity_t, _run
+from bob.checks._run import _command_exists, _identity_t, _run, run_result
 from bob.scoring import CheckResult
 
 
@@ -32,6 +32,7 @@ class IptablesNftSnapshot:
         forward_policy:    Default FORWARD chain policy (same values).
         has_loopback_rule: True if an explicit loopback ACCEPT rule exists.
         has_conntrack_rule: True if an ESTABLISHED/RELATED ACCEPT rule exists.
+        nft_no_input_filter: True when nft answered and defines no input hook.
         raw_output:        Raw command output, used only for the report.
     """
     backend:            str
@@ -43,13 +44,28 @@ class IptablesNftSnapshot:
     # True when a backend binary exists but every query came back empty,
     # i.e. the ruleset could not be read rather than being absent.
     query_failed:       bool = False
+    # True when nft answered cleanly and its ruleset filters no inbound
+    # traffic. A measurement, not an absence: the backend is installed.
+    nft_no_input_filter: bool = False
 
     @classmethod
     def from_system(cls) -> "IptablesNftSnapshot":
         """Collect live state. Never raises."""
         # --- try nftables first ---
-        if _command_exists("nft"):
-            raw = _run("nft", "list", "ruleset")
+        #
+        # The exit code is the discriminator here, and deliberately so — the
+        # opposite of the choice `unit_active_state` documents for systemctl.
+        # `systemctl is-active` exits non-zero to *report* an inactive unit,
+        # which is an answer; nft exits non-zero only when it could not answer.
+        # Established against nft itself: refused prints "Operation not
+        # permitted (you must be root)" and exits 1 with empty stdout, while a
+        # genuinely empty ruleset exits 0, also with empty stdout. stdout alone
+        # cannot tell them apart. The exit code can.
+        nft_present  = _command_exists("nft")
+        nft_answered = False
+        if nft_present:
+            nft_res = run_result("nft", "list", "ruleset")
+            nft_answered, raw = nft_res.ok, nft_res.stdout
             if raw and "hook input" in raw:
                 return cls(
                     backend="nftables",
@@ -89,10 +105,27 @@ class IptablesNftSnapshot:
         # nothing for a genuinely empty ruleset, so nft alone cannot tell the
         # two apart; iptables can, and is present on effectively every host
         # BOB targets, including as the nft-based compatibility wrapper.
-        query_failed = _command_exists("iptables")
+        # nft present and refusing is the same "unknown" as iptables present
+        # and refusing. Without this, a host running nftables with no iptables
+        # binary — increasingly ordinary — was told it had no firewall backend
+        # at all and to install iptables, for three points, the largest single
+        # deduction in the check.
+        # nft answering settles it: the query did not fail, whatever iptables
+        # did or did not print. Only when nothing answered is the state unknown
+        # — and nft refusing counts, which is the gap this closes. A host
+        # running nftables with no iptables binary, increasingly ordinary, was
+        # told it had no firewall backend at all and to install iptables, for
+        # three points, the largest single deduction in the check.
+        query_failed = (not nft_answered) and (
+            _command_exists("iptables") or nft_present
+        )
+        # nft answered, and nothing in what it returned filters inbound
+        # traffic. The backend exists; it is the ruleset that is empty.
+        nft_no_input_filter = nft_present and nft_answered
         return cls(
             backend="none",
             query_failed=query_failed,
+            nft_no_input_filter=nft_no_input_filter,
             input_policy="unknown",
             forward_policy="unknown",
             has_loopback_rule=False,
@@ -193,6 +226,20 @@ def check_iptables_nftables(
             key="firewall_iptables.ruleset_unreadable",
         )
         return result
+    if snapshot.nft_no_input_filter:
+        # Same weight as no_backend — nothing is filtering inbound traffic
+        # either way — but the statement and the remedy are the host's own.
+        # Telling an nftables machine to install iptables was false advice on
+        # top of a true finding.
+        result.warn_with_deduction(
+            key="firewall_iptables.nft_no_input_filter",
+            message=_t("firewall_iptables.nft_no_input_filter"),
+            points=3,
+            nature="action",
+            cmd="sudo ufw enable" if ufw_installed else "sudo nft -f /etc/nftables.conf",
+        )
+        return result
+
     if snapshot.backend == "none":
         result.warn_with_deduction(
             key="firewall_iptables.no_backend",

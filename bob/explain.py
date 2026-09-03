@@ -130,6 +130,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("iptables / nftables", [
         "firewall_iptables.no_backend",
+        "firewall_iptables.nft_no_input_filter",
         "firewall_iptables.input_accept",
         "firewall_iptables.forward_accept",
         "firewall_iptables.no_loopback",

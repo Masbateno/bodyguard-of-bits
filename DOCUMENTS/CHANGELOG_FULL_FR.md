@@ -159,7 +159,58 @@ contrôle sans masque, dans le même espace de noms, a d'abord été confronté 
 référence — même score, mêmes dix déductions — car un banc qui déplace le
 résultat de lui-même rend toutes les lignes suivantes inutiles.
 
-**Tests** 7958 → **8009**.
+**La liste « diagnostiqué, pas corrigé », points A et B.**
+
+Deux de ses entrées étaient le même défaut que tout ce qui précède, atteint par
+un autre chemin. La troisième — le score qui *monte* quand un check ne peut pas
+lire son entrée — n'est pas un bug de check et attend la v0.16.0.
+
+**A. Un systemctl muet était lu comme « le service est arrêté ».**
+`unit_active_state` rend déjà un tri-état, et sa docstring existe précisément
+parce que `is_unit_active` collapsait « inactif » et « systemd n'a jamais
+répondu » dans un même False. Le **repli** en dessous avait exactement le même
+collapse, un cran plus bas : `_run("auditctl", "-s") or ""`. Quand ni systemd ni
+auditd ne peuvent répondre — lancer BOB sans sudo, où le binaire est présent,
+donc toutes les branches « pas d'outil » sont sautées — la chaîne vide donnait
+False, et BOB avertissait qu'un auditd en marche était arrêté : une déduction,
+plus l'ordre de démarrer un service déjà démarré. fail2ban portait une copie du
+même code. Un `auditctl -s` qui fonctionne imprime toujours son bloc d'état, et
+`fail2ban-client ping` imprime toujours « pong » ; une sortie vide est le signal
+honnête. Les deux répondent désormais None et rapportent `state_unknown`, INFO,
+sans déduction. Le `if not snap.service_active: return snap` de `from_system`
+est délibérément laissé tel quel — None qui court-circuite le chargement des
+règles est le seul endroit où `not None` est le comportement voulu, et l'une des
+deux mutations écrites pour ce correctif s'est révélée inerte à cause de lui.
+
+**B. nftables installé et refusant était lu comme « aucun backend pare-feu ».**
+`query_failed` existait déjà, ajouté pour ce problème exact côté iptables, mais
+il ne consultait qu'un binaire : `_command_exists("iptables")`. Un hôte sous
+nftables sans binaire iptables — de plus en plus ordinaire — voyait nft refuser,
+`query_failed` rester False, et l'audit rapporter
+`firewall_iptables.no_backend` : trois points, la plus grosse déduction du
+check, plus « sudo apt install iptables » sur une machine dont le backend est
+installé et fonctionne.
+
+Le discriminant a été établi contre nft lui-même, pas supposé : sans privilège,
+`nft list ruleset` sort en **1** avec stdout vide et « Operation not permitted »
+sur stderr ; face à un jeu de règles réellement vide dans un espace de noms
+réseau, il sort en **0**, stdout vide aussi. Le commentaire du module disait que
+stdout ne peut pas les distinguer et s'arrêtait là. Le code de sortie, si. C'est
+délibérément l'inverse du choix que `unit_active_state` documente pour
+systemctl, qui sort en non-zéro pour *rapporter* une unité inactive : là le code
+de sortie n'est pas une réponse, ici c'est la seule.
+
+Séparer les deux états en a révélé un troisième, caché dans le premier. nft qui
+répond avec un jeu de règles sans hook d'entrée est une **mesure** : le backend
+est là et rien ne filtre le trafic entrant. Cela conserve ses trois points —
+l'exposition est identique — sous une clé neuve,
+`firewall_iptables.nft_no_input_filter`, dont le correctif nomme le backend que
+l'hôte possède réellement au lieu de dire à une machine nftables d'installer
+iptables. Un conseil faux par-dessus un constat vrai reste un conseil faux. La
+clé a tiré le contrat habituel : une entrée explain dans les deux locales, une
+référence CIS, la complétion bash, trois gardes de test et sept documents.
+
+**Tests** 7958 → **8025**.
 
 ---
 

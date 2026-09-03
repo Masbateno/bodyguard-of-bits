@@ -2755,6 +2755,21 @@
           "how": "Installer sur le système hôte :\n   sudo apt install iptables ufw\n   sudo ufw enable"
         }
       },
+      "nft_no_input_filter": {
+        "title": "nftables installé mais son jeu de règles ne filtre rien en entrée",
+        "why": "nft a répondu : c'est donc une mesure, pas une supposition. Le backend est installé et fonctionne, et le jeu de règles qu'il a renvoyé ne définit aucun hook d'entrée. Rien ne filtre le trafic arrivant sur cette machine — chaque port en écoute est joignable depuis partout où le réseau le permet. L'exposition est la même que sans aucun backend, mais la cause et le correctif diffèrent : ce n'est pas le backend qu'il faut installer, ce sont les règles.",
+        "how": "1. Regarder ce qui est réellement chargé :\n   sudo nft list ruleset\n2. Si UFW est installé, le laisser écrire les règles :\n   sudo ufw enable\n3. Sinon, charger un jeu de règles avec un hook d'entrée et une politique par défaut drop :\n   sudo nft -f /etc/nftables.conf\n   sudo systemctl enable --now nftables\n4. Vérifier qu'un hook d'entrée existe désormais :\n   sudo nft list ruleset | grep 'hook input'",
+        "server": {
+          "why": "Un serveur dont le jeu de règles nftables n'a pas de chaîne d'entrée est entièrement exposé au niveau noyau : chaque service qui ouvre une socket est joignable. La présence du backend rend le défaut facile à manquer — un outillage qui vérifie seulement que nftables est installé déclare la machine protégée."
+        },
+        "desktop": {
+          "why": "Même derrière du NAT, un jeu de règles vide laisse la machine ouverte à tout ce qui partage le réseau — un Wi-Fi public, un LAN d'hôtel, un appareil voisin compromis. Activer UFW est le chemin le plus court."
+        },
+        "container": {
+          "why": "Les conteneurs héritent en général du filtrage de l'hôte, et l'espace réseau propre d'un conteneur démarre légitimement avec un jeu de règles vide. Vérifier l'hôte avant d'agir ici.",
+          "how": "Sur l'hôte :\n   sudo ufw enable  # ou charger un jeu de règles nftables avec un hook d'entrée"
+        }
+      },
       "input_accept": {
         "title": "Politique par défaut INPUT = ACCEPT (chaque paquet non filtré entre)",
         "why": "La politique de la chaîne INPUT est le dernier filet de sécurité du pare-feu quand aucune règle explicite ne matche un paquet entrant. Quand elle est à ACCEPT, tout port n'ayant pas de règle DROP/REJECT spécifique est ouvert au réseau — le défaut est permissif. Le pattern sûr est policy=DROP combiné à des règles ACCEPT explicites pour les services autorisés, de sorte que tout ce qui n'est pas en whitelist est bloqué automatiquement.",
@@ -3372,6 +3387,7 @@
   },
   "firewall_iptables": {
     "no_backend": "Aucun pare-feu détecté (iptables/nftables absent ou inactif)",
+    "nft_no_input_filter": "nftables est installé et a répondu, mais son jeu de règles ne filtre aucun trafic entrant",
     "ufw_inactive_context": "UFW est installé mais inactif — audit de la couche {backend} sous-jacente",
     "backend_detected": "Backend actif : {backend}",
     "input_accept": "Politique INPUT par défaut : ACCEPT — tout le trafic entrant est autorisé",
