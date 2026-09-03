@@ -252,7 +252,65 @@ integrity monitor installed (AIDE / Tripwire)". Its deductions require the tool
 to be present. It is the model here, not a second defect, and an earlier
 estimate that put it in scope was wrong.
 
-**Tests** 7958 → **8041**.
+**"Bruteforce attempts", from packets the firewall had already dropped.**
+
+The angle closed. A UFW BLOCK is a packet that was discarded: it never reached
+a service, so no credential was ever offered. "Brute force" means repeated
+credential guessing, and that conclusion is out of reach of this evidence by
+construction. The check emitted `Bruteforce attempts from {ip} on {port}`, WARN,
+−1 point, and its explain entry called it "a brute-force signature". The sibling
+that reads *real* failed logins from auth.log reports a count and suggests
+fail2ban: the module with the weaker evidence was making the stronger claim.
+
+**Reproduced on the bench first**, with a crafted `/var/log/ufw.log` bind-mounted
+over the real one — three scenarios, 67 lines: a LAN NAS making *two* TCP
+attempts to 445, each retransmitted by the kernel; an IoT device doing SSDP
+discovery on 1900/udp; and a sustained external scan of 22/tcp. BOB reported
+**three deductions, three points**, calling all three brute force. Two of them
+cannot be an authentication attack at all. `local_dominance` — the exception
+hand-carved into this module for exactly this kind of false positive — did not
+fire: the local sources were 27 of 67 blocks, under its 70% threshold.
+
+**The threshold counted packets, and a packet is not an attempt.** With
+`tcp_syn_retries` at its default of 6, one blocked connect emits SYNs at roughly
+0, 1, 3, 7, 15 and 31 seconds. Two ordinary attempts therefore produced twelve
+lines in a minute and crossed a threshold of ten. The discriminator was already
+in every log line and had never been read: a retransmission reuses its source
+port, a new attempt does not, so distinct SPT values in the window are the
+attempts. The NAS drops from twelve to two and stops firing; the scan keeps its
+forty. Where a line carries no SPT — an older UFW, an ICMP rule — the packet
+count is used, because answering "no attempts" on a missing field is the
+substitution the rest of this release spent itself removing.
+
+**Local and UDP sources cannot be authentication attacks.** A private address is
+a device on the operator's own network; UDP has no handshake, and the ports that
+dominate these logs — 1900 SSDP, 5353 mDNS, 137 NetBIOS — have no credential to
+guess. Both are now reported without a deduction, and `_is_private_ip` already
+existed in this module, called from two other places but never from the
+detection.
+
+**Reclassifying nearly made BOB fall silent, which would have been worse than
+the false positive.** `display.py` rendered WARN findings only, so moving these
+to INFO removed them from the screen altogether — caught because the fix was
+re-run on the bench rather than trusted. Withdrawing a deduction is not a
+licence to stop mentioning what was measured. The render loop now prints both
+levels, and "Suspicious activity" follows the chargeable hits instead of every
+hit, so a NAS remounting a share no longer heads the section with that word.
+
+One guard had to be written twice. The first asserted that the three key names
+appeared in `display.py`, and deleting the branch that prints INFO left it
+green. A guard that does not bite is worse than none, because it reports
+confidence it has not earned; it now renders the section for real and reads what
+comes out.
+
+The messages state the measurement: "40 blocked connection attempt(s) from
+203.0.113.7 to 22/tcp within a minute". On the bench the same log went from
+three deductions to one. **The key `logs.brute_found` was deliberately left
+alone** — renaming it would break baselines, `ignore.yml` and `--explain` on a
+patch release. What BOB *says* is fixed; the identifier still carries the old
+word, and belongs in a planned bundle with the rest of v0.16.0.
+
+**Tests** 7958 → **8055**.
 
 ---
 

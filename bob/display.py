@@ -239,16 +239,41 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
 
     if not quiet:
         # Verdict line — one clear sentence before the details
-        if log_report.brute_hits:
+        from bob.scoring import FindingLevel
+
+        # "Suspicious activity" follows the chargeable hits, not every hit. It
+        # used to fire on any repeated block at all, so a NAS remounting a
+        # share put the word "suspicious" at the head of the section.
+        _charged = any(
+            f.key == "logs.brute_found" and f.level == FindingLevel.WARN
+            for f in logs_result.findings
+        )
+        if _charged:
             print_warn(t("logs.verdict_warn", total=total, days=log_report.log_days))
         else:
             print_ok(t("logs.verdict_ok", total=total, days=log_report.log_days))
 
-        # Bruteforce findings
-        from bob.scoring import FindingLevel
+        # Repeated-block findings.
+        #
+        # INFO is printed here too, and it has to be: v0.15.5 moved local and
+        # UDP sources out of the deduction, and this loop rendered WARN only —
+        # so reclassifying them would have made BOB stop mentioning traffic it
+        # had measured. Withdrawing a deduction is not a licence to fall silent.
+        # The other keys this section emits (top IPs, top ports, service hits,
+        # local dominance) are rendered explicitly below and would double up,
+        # so only the repeated-block family is taken from the findings list.
+        _REPEAT_KEYS = {
+            "logs.brute_found",
+            "logs.blocked_repeat_local",
+            "logs.blocked_repeat_udp",
+        }
         for finding in logs_result.findings:
+            if finding.key not in _REPEAT_KEYS:
+                continue
             if finding.level == FindingLevel.WARN:
                 print_warn(finding.message)
+            else:
+                print_info(finding.message)
 
         # Top IP
         if log_report.top_ips:

@@ -273,7 +273,71 @@ déductions exigent que l'outil soit présent. C'est le modèle ici, pas un seco
 défaut, et une estimation antérieure qui le mettait dans le périmètre était
 fausse.
 
-**Tests** 7958 → **8041**.
+**« Bruteforce attempts », depuis des paquets que le pare-feu avait déjà jetés.**
+
+L'angle refermé. Un UFW BLOCK est un paquet rejeté : il n'a jamais atteint de
+service, aucun identifiant n'a donc été présenté. « Force brute » désigne une
+devinette répétée d'identifiants, et cette conclusion est hors de portée de
+cette preuve par construction. Le check émettait `Bruteforce attempts from {ip}
+on {port}`, WARN, −1 point, et son entrée explain parlait d'« une signature de
+force brute ». Le module frère, qui lit de *vrais* échecs d'authentification
+dans auth.log, rapporte un décompte et suggère fail2ban : celui qui avait la
+preuve la plus faible faisait l'affirmation la plus forte.
+
+**Reproduit sur le banc d'abord**, avec un `/var/log/ufw.log` fabriqué et monté
+par-dessus le vrai — trois scénarios, 67 lignes : un NAS du LAN faisant *deux*
+tentatives TCP vers 445, chacune retransmise par le noyau ; un objet connecté
+faisant de la découverte SSDP sur 1900/udp ; et un balayage externe soutenu de
+22/tcp. BOB rapportait **trois déductions, trois points**, qualifiant les trois
+de force brute. Deux d'entre elles ne peuvent pas être une attaque
+d'authentification. `local_dominance` — l'exception taillée à la main dans ce
+module pour exactement ce genre de faux positif — ne se déclenchait pas : les
+sources locales pesaient 27 blocages sur 67, sous son seuil de 70 %.
+
+**Le seuil comptait des paquets, et un paquet n'est pas une tentative.** Avec
+`tcp_syn_retries` à sa valeur par défaut de 6, un connect bloqué émet des SYN à
+environ 0, 1, 3, 7, 15 et 31 secondes. Deux tentatives ordinaires produisaient
+donc douze lignes en une minute et franchissaient un seuil de dix. Le
+discriminant était déjà dans chaque ligne de log et n'avait jamais été lu : une
+retransmission réutilise son port source, une nouvelle tentative non — le nombre
+de valeurs SPT distinctes dans la fenêtre est donc le nombre de tentatives. Le
+NAS passe de douze à deux et cesse de se déclencher ; le balayage garde ses
+quarante. Quand une ligne ne porte pas de SPT — un UFW ancien, une règle ICMP —
+le compte de paquets est utilisé, car répondre « aucune tentative » sur un champ
+manquant est la substitution que le reste de cette version a passé son temps à
+retirer.
+
+**Les sources locales et UDP ne peuvent pas être des attaques
+d'authentification.** Une adresse privée est un appareil du réseau de
+l'opérateur ; UDP n'a pas de poignée de main, et les ports qui dominent ces logs
+— 1900 SSDP, 5353 mDNS, 137 NetBIOS — n'ont aucun identifiant à deviner. Les
+deux sont désormais rapportés sans déduction, et `_is_private_ip` existait déjà
+dans ce module, appelé depuis deux autres endroits mais jamais depuis la
+détection.
+
+**La reclassification a failli faire taire BOB, ce qui aurait été pire que le
+faux positif.** `display.py` ne rendait que les findings WARN, donc les passer
+en INFO les retirait purement de l'écran — repéré parce que le correctif a été
+rejoué sur le banc plutôt que cru sur parole. Retirer une déduction n'autorise
+pas à cesser de mentionner ce qui a été mesuré. La boucle de rendu imprime
+maintenant les deux niveaux, et « Suspicious activity » suit les constats
+chargeables plutôt que tous les constats : un NAS qui remonte un partage ne met
+plus ce mot en tête de section.
+
+Une garde a dû être écrite deux fois. La première vérifiait que les trois noms
+de clés apparaissaient dans `display.py`, et supprimer la branche qui imprime
+l'INFO la laissait verte. Une garde qui ne mord pas est pire que pas de garde,
+car elle annonce une confiance qu'elle n'a pas gagnée ; elle rend désormais la
+section pour de vrai et lit ce qui en sort.
+
+Les messages énoncent la mesure : « 40 blocked connection attempt(s) from
+203.0.113.7 to 22/tcp within a minute ». Sur le banc, le même log passe de trois
+déductions à une. **La clé `logs.brute_found` a été délibérément laissée telle
+quelle** — la renommer casserait les baselines, `ignore.yml` et `--explain` sur
+une version de correctif. Ce que BOB *dit* est corrigé ; l'identifiant porte
+encore l'ancien mot, et relève d'un lot planifié avec le reste de la v0.16.0.
+
+**Tests** 7958 → **8055**.
 
 ---
 

@@ -117,11 +117,16 @@ class LogEntry:
         src_ip:    Source IP address.
         dst_port:  Destination port number.
         proto:     Protocol string ("TCP" or "UDP").
+        src_port:  Source port, or None when the log line carries no SPT.
+                   A TCP retransmission reuses its source port, so counting
+                   distinct values separates real connection attempts from one
+                   client the kernel is retrying.
     """
     timestamp: datetime
     src_ip:    str
     dst_port:  int
     proto:     str
+    src_port:  "int | None" = None
 
     @property
     def port_proto(self) -> str:
@@ -129,11 +134,17 @@ class LogEntry:
 
 @dataclass
 class BruteforceHit:
-    """A detected bruteforce pattern."""
+    """Repeated blocked traffic from one source to one port.
+
+    ``count`` is the packet count, kept for the report. ``attempts`` is the
+    number of distinct connection attempts, which is what the threshold is
+    tested against — see ``_detect_bruteforce``.
+    """
     src_ip:    str
     dst_port:  int
     proto:     str
     count:     int
+    attempts:  int = 0
 
     @property
     def port_proto(self) -> str:
@@ -307,15 +318,46 @@ def check_logs(
         svc_hits=svc_hits,
     )
 
-    # Findings — bruteforce gets a WARN
+    # Findings — repeated blocked traffic, classified by what the evidence
+    # can actually carry.
+    #
+    # A UFW BLOCK is a packet the firewall dropped: it never reached a service,
+    # so no credential was ever offered. "Brute force" means repeated credential
+    # guessing, and that conclusion is out of reach of this data by
+    # construction. Two of the three cases below cannot be an authentication
+    # attack at all, and both were reproduced on the bench as deductions:
+    #
+    #   * a private source is a device on the operator's own network — a NAS
+    #     remounting a share, a phone, a printer;
+    #   * UDP has no handshake and the ports that dominate these logs (1900
+    #     SSDP, 5353 mDNS, 137 NetBIOS) have no credential to guess.
+    #
+    # Both are reported, neither is charged. What stays chargeable is repeated
+    # blocked TCP connection attempts from a public address, and even that is
+    # now stated as the measurement rather than named as an attack.
     for hit in brute_hits:
-        result.warn_with_deduction(
-            key="logs.brute_found",
-            message=_t("logs.brute_found", ip=hit.src_ip, port=hit.port_proto),
-            reason=_t("deduction.brute_force", ip=hit.src_ip, port=hit.port_proto),
-            points=1,
-            nature="action",
-        )
+        if _is_private_ip(hit.src_ip):
+            result.info(
+                message=_t("logs.blocked_repeat_local", ip=hit.src_ip,
+                           port=hit.port_proto, attempts=hit.attempts),
+                key="logs.blocked_repeat_local",
+            )
+        elif hit.proto != "TCP":
+            result.info(
+                message=_t("logs.blocked_repeat_udp", ip=hit.src_ip,
+                           port=hit.port_proto, attempts=hit.attempts),
+                key="logs.blocked_repeat_udp",
+            )
+        else:
+            result.warn_with_deduction(
+                key="logs.brute_found",
+                message=_t("logs.brute_found", ip=hit.src_ip,
+                           port=hit.port_proto, attempts=hit.attempts),
+                reason=_t("deduction.brute_force", ip=hit.src_ip,
+                          port=hit.port_proto, attempts=hit.attempts),
+                points=1,
+                nature="action",
+            )
 
     # Service hits on high/critical ports get an INFO
     for port_proto, count in svc_hits.items():
@@ -360,32 +402,69 @@ def _detect_bruteforce(
     window_s: int,
 ) -> list[BruteforceHit]:
     """
-    Detect bruteforce patterns: >threshold attempts from the same IP
-    on the same port within any window_s second window.
+    Detect repeated blocked traffic: more than ``threshold`` distinct connection
+    attempts from the same IP to the same port within any window_s window.
+
+    **The threshold counts attempts, not packets.** It used to count packets,
+    and a packet is not an attempt: with ``tcp_syn_retries`` at its default of
+    6, one blocked TCP connect emits SYNs at roughly 0, 1, 3, 7, 15 and 31
+    seconds, all from the same source port. Two ordinary attempts from a NAS
+    remounting a share therefore produced twelve log lines in one minute and
+    crossed a threshold of ten — reproduced on the bench, where a LAN device on
+    445/tcp was reported as a brute-force attack worth a deducted point.
+
+    A retransmission reuses its source port and a new attempt does not, so the
+    number of distinct SPT values in the window is the number of attempts. When
+    the log carries no SPT — an older UFW, or a rule logging ICMP — the packet
+    count is used instead: answering "no attempts" because a field is missing
+    would be the very substitution this release spent itself removing.
 
     Returns:
         List of BruteforceHit, sorted by count descending.
     """
-    # Group timestamps by (src_ip, dst_port, proto)
-    groups: dict[tuple, list[datetime]] = defaultdict(list)
+    # Group by (src_ip, dst_port, proto), keeping timestamps and source ports
+    groups: dict[tuple, list[tuple[datetime, "int | None"]]] = defaultdict(list)
     for entry in entries:
         key = (entry.src_ip, entry.dst_port, entry.proto)
-        groups[key].append(entry.timestamp)
+        groups[key].append((entry.timestamp, entry.src_port))
 
     hits: list[BruteforceHit] = []
-    for (src_ip, dst_port, proto), timestamps in groups.items():
-        timestamps_sorted = sorted(timestamps)
+    for (src_ip, dst_port, proto), events in groups.items():
+        events_sorted = sorted(events, key=lambda e: e[0])
+        timestamps_sorted = [ts for ts, _ in events_sorted]
         # Sliding window check
         max_in_window = _max_in_window(timestamps_sorted, window_s)
-        if max_in_window > threshold:
+        attempts = _max_attempts_in_window(events_sorted, window_s)
+        if attempts > threshold:
             hits.append(BruteforceHit(
                 src_ip=src_ip,
                 dst_port=dst_port,
                 proto=proto,
                 count=max_in_window,
+                attempts=attempts,
             ))
 
     return sorted(hits, key=lambda h: h.count, reverse=True)
+
+def _max_attempts_in_window(
+    events: list[tuple[datetime, "int | None"]], window_s: int
+) -> int:
+    """Largest number of distinct connection attempts in any window_s window.
+
+    Distinct source ports, so the kernel retrying one connection counts once.
+    Falls back to the packet count for a window whose lines carry no SPT.
+    """
+    if not events:
+        return 0
+    best, left = 0, 0
+    for right in range(len(events)):
+        while (events[right][0] - events[left][0]).total_seconds() > window_s:
+            left += 1
+        window = events[left:right + 1]
+        ports = {p for _, p in window if p is not None}
+        best = max(best, len(ports) if ports else len(window))
+    return best
+
 
 def _max_in_window(timestamps: list[datetime], window_s: int) -> int:
     """Return the maximum number of timestamps within any window_s second window."""
@@ -644,6 +723,7 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
         src_ip   = _extract_field(line, "SRC")
         dpt      = _extract_field(line, "DPT")
         proto    = _extract_field(line, "PROTO")
+        spt      = _extract_field(line, "SPT")
 
         if not src_ip or not dpt or not proto:
             continue
@@ -661,11 +741,17 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
         # UFW change) emitting lowercase would split a single bruteforce
         # campaign into two sub-groups under the threshold, silencing the
         # detection. Single source of truth: parse-time normalisation.
+        try:
+            src_port = int(spt) if spt else None
+        except ValueError:
+            src_port = None
+
         entries.append(LogEntry(
             timestamp=ts,
             src_ip=src_ip,
             dst_port=port_num,
             proto=proto.upper(),
+            src_port=src_port,
         ))
 
     return entries

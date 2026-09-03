@@ -221,9 +221,11 @@
     "verdict_warn": "Activité suspecte — {total} tentative(s) bloquée(s) sur {days} jour(s)",
     "top_ips": "Top IPs sources",
     "top_ports": "Top ports ciblés",
-    "brute_title": "Bruteforce détecté",
-    "brute_none": "Aucun bruteforce détecté sur la période",
-    "brute_found": "Tentatives de bruteforce depuis {ip} sur {port}",
+    "brute_title": "Tentatives de connexion bloquées répétées",
+    "brute_none": "Aucune tentative de connexion bloquée répétée sur la période analysée",
+    "brute_found": "{attempts} tentative(s) de connexion bloquée(s) depuis {ip} vers {port} en moins d'une minute",
+    "blocked_repeat_local": "{attempts} tentative(s) de connexion bloquée(s) depuis {ip}, un appareil du réseau local, vers {port}",
+    "blocked_repeat_udp": "{attempts} paquet(s) UDP bloqué(s) depuis {ip} vers {port} — UDP n'a ni poignée de main ni identifiant à deviner",
     "svc_hits": "Tentatives sur services installés",
     "svc_hits_none": "Aucune tentative sur les ports des services installés",
     "svc_hits_detail": "{count} tentative(s) sur {port}",
@@ -969,7 +971,7 @@
     "docker_bypass": "Contournement Docker : {container} {port}",
     "netbios_no_rule": "Port NetBIOS {port} sans règle UFW",
     "port_no_rule": "Port {port} sur 0.0.0.0 sans règle UFW",
-    "brute_force": "Bruteforce {ip} sur {port}",
+    "brute_force": "{attempts} tentatives de connexion bloquées depuis {ip} sur {port}",
     "service_open_world": "{label} {port} exposé sur internet"
   },
   "ignored": {
@@ -1604,8 +1606,8 @@
     },
     "logs": {
       "brute_found": {
-        "title": "Les logs UFW montrent des signes d'une tentative bruteforce active",
-        "why": "L'analyseur de logs UFW de BOB a détecté une ou plusieurs IPs source frappant un port unique avec une fréquence élevée — une signature bruteforce. Que la source soit automatisée (scanner botnet) ou ciblée (un acteur s'intéressant spécifiquement à cet hôte) ne change pas l'action : la tentative bruteforce indique que le service est exposé à des clients en lesquels vous ne pouvez pas avoir confiance, et le rate limiting ou la restriction géographique est en retard. Le finding se déclenche habituellement sur SSH mais peut aussi remonter sur SMTP, IMAP, panels d'admin web et tout autre service authentifié.",
+        "title": "Tentatives de connexion bloquées répétées depuis une même source",
+        "why": "UFW a journalisé plus de dix tentatives de connexion distinctes depuis une même adresse publique vers un même port en moins d'une minute, et les a toutes rejetées. C'est ce qui a été mesuré, et cela mérite d'être su : quelque chose sonde un port de cet hôte avec insistance. Ce que cela n'établit **pas**, c'est une attaque par force brute. Un UFW BLOCK est un paquet que le pare-feu a jeté — il n'a jamais atteint de service, aucun identifiant n'a donc été présenté, et une devinette répétée d'identifiants ne se lit pas dans des paquets rejetés. Ce constat disait pourtant « Bruteforce attempts », et il comptait des paquets plutôt que des tentatives, si bien qu'un seul client que le noyau réessayait pouvait franchir le seuil à lui seul. Il compte désormais les ports source distincts, ce qui sépare une retransmission d'une nouvelle tentative, et le trafic venu du réseau local ou passant par UDP est rapporté sans déduction, ni l'un ni l'autre ne pouvant être une attaque d'authentification.",
         "how": "Réponse en couches :\n1. Installer fail2ban si absent et activer la jail pour le service ciblé (sshd est le plus courant) :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # vérifier que la jail pertinente a enabled=true\n2. Restreindre le service aux IPs connues au niveau pare-feu :\n   sudo ufw allow from <ip-de-confiance> to any port 22\n   sudo ufw delete allow 22   # si une règle plus large existait\n3. Pour SSH spécifiquement, désactiver l'authentification par mot de passe (forcer pubkey uniquement) :\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh",
         "server": {
           "why": "Sur un serveur public, les tentatives bruteforce sont constantes. fail2ban + SSH key-only est la base. Sans l'un ou l'autre, la compromission de compte est une question de temps."
