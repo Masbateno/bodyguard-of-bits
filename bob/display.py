@@ -610,6 +610,28 @@ def _summary_breakdown_lines(engine, t, inner: int) -> list[tuple[str, str]]:
     return lines
 
 
+def _summary_scope_note(config, degraded_sections, t) -> str:
+    """One line saying what the run actually covered, or "" when it covered all.
+
+    The report listed every section it ran and said nothing about the ones it
+    did not: a section filtered out by ``--check`` / ``--skip`` and a section
+    whose check raised were both simply absent, and indistinguishable from a
+    section that ran clean. Reading an archived report, there was no way to
+    tell "this host has no Samba findings" from "Samba was never audited".
+
+    Degraded and filtered are named separately because they are different
+    facts: one is the operator's choice, the other is BOB failing.
+    """
+    parts: list[str] = []
+    if degraded_sections:
+        parts.append(t("scoring.scope_degraded", count=len(degraded_sections),
+                       sections=", ".join(sorted(degraded_sections))))
+    filtered = getattr(config, "check_only", None) or getattr(config, "skip_checks", None)
+    if filtered:
+        parts.append(t("scoring.scope_filtered"))
+    return " · ".join(parts)
+
+
 def print_audit_summary(engine, network_context, public_ip, config, t,
                          report, snapshots, profile_name: str = "server",
                          prev_score: "int | None" = None,
@@ -708,6 +730,7 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             "context": t("report.field_context"),
             "profile": t("report.field_profile"),
             "visibility": t("scoring.visibility_label"),
+            "scope": t("scoring.scope_label"),
             "visibility_value": t(
                 "scoring.visibility_value",
                 count=len({section_of(k) for k in engine.unverified}),
@@ -717,6 +740,7 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
         score_is_upper_bound=engine.score_is_upper_bound,
         unverified_count=len({section_of(k) for k in engine.unverified}),
         profile_name=profile_name.capitalize() if profile_name else "",
+        scope_note=_summary_scope_note(config, degraded_sections, t),
     )
 
 

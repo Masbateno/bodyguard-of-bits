@@ -138,7 +138,21 @@ yields descendants regardless, so every name inside the branch also counted as
 outside it and the guard cancelled itself out. It stayed green when the
 offending line was put back — the exact failure it exists to prevent.
 
-**Tests** 8089 → **8134**.
+**A section absent from the report had three possible meanings.** Filtered out
+by `--check` / `--skip`, degraded because its check raised, or run clean with
+nothing to say — all three looked identical in an archived file. Reading a
+report six months later, there was no way to tell "this host has no Samba
+findings" from "Samba was never audited". The summary now carries a **Scope**
+line naming both facts, separately, because they are different: one is the
+operator's choice, the other is BOB failing.
+
+`degraded_sections` reached `print_audit_summary` as a parameter and was read
+nowhere — the "declared but never consumed" shape this project has already
+fixed twice, this time introduced and caught inside the same session. A test
+now asserts the parameter appears in the function body, not only in its
+signature.
+
+**Tests** 8089 → **8140**.
 
 ---
 

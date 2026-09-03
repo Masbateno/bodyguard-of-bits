@@ -125,3 +125,54 @@ class TestNothingWriteSummaryNeedsIsDefinedOnlyWhenLoud:
             f"read by report.write_summary() — `bob -q -d` would raise "
             f"UnboundLocalError and the report would lose its summary silently"
         )
+
+
+class TestTheReportSaysWhatTheRunCovered:
+    """A section absent from the report had three possible meanings.
+
+    Filtered out by --check / --skip, degraded because its check raised, or run
+    clean with nothing to report — all three looked identical in an archived
+    file. Degraded and filtered are named separately because they are different
+    facts: one is the operator's choice, the other is BOB failing.
+    """
+
+    def _note(self, *, degraded=(), check_only=frozenset(), skip=frozenset()):
+        from types import SimpleNamespace
+
+        from bob.display import _summary_scope_note
+
+        config = SimpleNamespace(check_only=check_only, skip_checks=skip)
+        return _summary_scope_note(config, degraded, lambda k, **kw: f"{k}:{kw}")
+
+    def test_a_full_clean_run_says_nothing(self):
+        """The polarity twin — no line at all when the run covered everything."""
+        assert self._note() == ""
+
+    def test_a_degraded_section_is_named(self):
+        note = self._note(degraded=("samba",))
+        assert "scope_degraded" in note and "samba" in note
+
+    def test_a_filtered_run_is_named(self):
+        assert "scope_filtered" in self._note(check_only=frozenset({"ssh"}))
+
+    def test_skip_counts_as_filtering_too(self):
+        assert "scope_filtered" in self._note(skip=frozenset({"samba"}))
+
+    def test_both_facts_appear_together(self):
+        note = self._note(degraded=("samba",), check_only=frozenset({"ssh"}))
+        assert "scope_degraded" in note and "scope_filtered" in note
+
+    def test_the_parameter_is_actually_consumed(self):
+        """
+        `degraded_sections` was accepted by print_audit_summary and read
+        nowhere — the "declared but never consumed" shape this project has
+        already fixed twice.
+        """
+        import inspect
+
+        from bob.display import print_audit_summary
+
+        source = inspect.getsource(print_audit_summary)
+        assert "degraded_sections" in source.split(")", 1)[1], (
+            "the parameter is declared but never used in the body"
+        )

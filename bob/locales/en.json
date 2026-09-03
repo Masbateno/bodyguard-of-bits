@@ -265,6 +265,9 @@
     "risk_at_best": "{level} at best",
     "visibility_label": "Visibility",
     "visibility_value": "{count} section(s) not fully read — the score is a ceiling",
+    "scope_degraded": "{count} section(s) failed and were degraded: {sections}",
+    "scope_filtered": "the run was narrowed by --check / --skip",
+    "scope_label": "Scope",
     "network_context": "Network context",
     "profile_label": "Audit profile",
     "level": {

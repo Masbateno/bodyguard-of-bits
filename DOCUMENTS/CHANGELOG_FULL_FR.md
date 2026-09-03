@@ -148,7 +148,21 @@ comptait aussi comme extérieur et la garde s'annulait elle-même. Elle restait
 verte quand on remettait la ligne fautive — exactement l'échec qu'elle existe
 pour empêcher.
 
-**Tests** 8089 → **8134**.
+**Une section absente du rapport avait trois sens possibles.** Écartée par
+`--check` / `--skip`, dégradée parce que son check a levé, ou passée sans rien
+à signaler — les trois se ressemblaient dans un fichier archivé. En relisant un
+rapport six mois plus tard, rien ne distinguait « cet hôte n'a aucun constat
+Samba » de « Samba n'a jamais été audité ». La synthèse porte désormais une
+ligne **Périmètre** nommant les deux faits, séparément, car ils diffèrent :
+l'un est un choix de l'opérateur, l'autre est un échec de BOB.
+
+`degraded_sections` arrivait dans `print_audit_summary` comme paramètre et
+n'était lu nulle part — la forme « déclaré mais jamais consommé » que ce projet
+a déjà corrigée deux fois, introduite et attrapée cette fois dans la même
+session. Un test vérifie désormais que le paramètre figure dans le corps de la
+fonction, pas seulement dans sa signature.
+
+**Tests** 8089 → **8140**.
 
 ---
 

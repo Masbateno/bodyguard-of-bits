@@ -265,6 +265,9 @@
     "risk_at_best": "{level} au mieux",
     "visibility_label": "Visibilité",
     "visibility_value": "{count} section(s) non entièrement lue(s) — le score est un plafond",
+    "scope_degraded": "{count} section(s) en échec, dégradée(s) : {sections}",
+    "scope_filtered": "le périmètre a été restreint par --check / --skip",
+    "scope_label": "Périmètre",
     "network_context": "Contexte réseau",
     "profile_label": "Profil d'audit",
     "level": {

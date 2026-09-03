@@ -84,6 +84,7 @@ class Report(Protocol):
         score_is_upper_bound: bool = False,
         unverified_count: int = 0,
         profile_name: str = "",
+        scope_note: str = "",
     ) -> None: ...
     def write_risk_context_section(
         self,
@@ -334,6 +335,7 @@ class AuditReport:
         score_is_upper_bound: bool = False,
         unverified_count: int = 0,
         profile_name: str = "",
+        scope_note: str = "",
     ) -> None:
         """
         Write the audit summary block.
@@ -395,6 +397,8 @@ class AuditReport:
             _used.append(labels.get("profile", "Profile"))
         if score_is_upper_bound:
             _used.append(labels.get("visibility", "Visible"))
+        if scope_note:
+            _used.append(labels.get("scope", "Scope"))
         # Floored at the historical 8 so a summary without the long labels
         # renders byte-identically to every version before this one.
         _w = max(8, max(len(x) for x in _used))
@@ -418,6 +422,8 @@ class AuditReport:
         self._writeln(f"{ctx_lbl:<{_w}}: {context_str}")
         if profile_name:
             self._writeln(f"{labels.get('profile', 'Profile'):<{_w}}: {profile_name}")
+        if scope_note:
+            self._writeln(f"{labels.get('scope', 'Scope'):<{_w}}: {scope_note}")
         if score_is_upper_bound:
             self._writeln(
                 f"{labels.get('visibility', 'Visible'):<{_w}}: "
