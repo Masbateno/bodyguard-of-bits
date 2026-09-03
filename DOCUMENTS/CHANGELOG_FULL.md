@@ -144,7 +144,7 @@ run inside the same namespace was checked against the baseline first — same
 score, same ten deductions — because a harness that shifts the result on its
 own makes every row after it meaningless.
 
-**Tests** 7958 → **8001**.
+**Tests** 7958 → **8009**.
 
 ---
 

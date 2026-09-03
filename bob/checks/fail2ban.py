@@ -32,13 +32,14 @@ class Fail2banSnapshot:
 
     Args:
         installed:       True if fail2ban-client is present.
-        service_active:  True if the fail2ban service is running.
+        service_active:  True if the fail2ban service is running, None when
+                         neither systemd nor fail2ban-client could be asked.
         active_jails:    List of active jail names reported by fail2ban-client.
         ssh_jail:        Name of the SSH jail if one is active, else "".
         status_readable: False when fail2ban-client could not be queried.
     """
     installed:      bool        = False
-    service_active: bool        = False
+    service_active: "bool | None" = False
     active_jails:   list[str]   = field(default_factory=list)
     ssh_jail:       str         = ""
     # False when `fail2ban-client status` returned no jail list at all.
@@ -62,9 +63,14 @@ class Fail2banSnapshot:
         if state is not None:
             snap.service_active = state == "active"
         else:
-            # Fallback: try fail2ban-client ping (exit 0 when running)
-            ping = _run("fail2ban-client", "ping") or ""
-            snap.service_active = "pong" in ping.lower()
+            # Fallback: try fail2ban-client ping (prints "pong" when running).
+            #
+            # Same collapse as auditd, same cause: `or ""` made "the client
+            # answered nothing" indistinguishable from "the client said it is
+            # down". With neither systemd nor fail2ban-client able to answer,
+            # BOB warned that a running fail2ban was stopped.
+            ping = _run("fail2ban-client", "ping")
+            snap.service_active = ("pong" in ping.lower()) if ping else None
 
         if not snap.service_active:
             return snap
@@ -138,7 +144,14 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
         )
         return result
 
-    if not snapshot.service_active:
+    if snapshot.service_active is None:
+        result.info(
+            message=_t("fail2ban.state_unknown"),
+            key="fail2ban.state_unknown",
+        )
+        return result
+
+    if snapshot.service_active is False:
         result.warn_with_deduction(
             key="fail2ban.service_inactive",
             message=_t("fail2ban.service_inactive"),

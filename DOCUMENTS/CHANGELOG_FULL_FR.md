@@ -159,7 +159,7 @@ contrôle sans masque, dans le même espace de noms, a d'abord été confronté 
 référence — même score, mêmes dix déductions — car un banc qui déplace le
 résultat de lui-même rend toutes les lignes suivantes inutiles.
 
-**Tests** 7958 → **8001**.
+**Tests** 7958 → **8009**.
 
 ---
 

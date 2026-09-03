@@ -54,7 +54,8 @@ class AuditdSnapshot:
 
     Args:
         installed:        True if auditctl is present on the system.
-        service_active:   True if the auditd service is running.
+        service_active:   True if the auditd service is running, None when
+                          neither systemd nor auditctl could be asked.
         watched_files:    Set of file paths covered by -w watch rules.
         rule_count:       Total number of audit rules loaded.
         rules_readable:   False when `auditctl -l` could not be queried.
@@ -63,7 +64,7 @@ class AuditdSnapshot:
                           choice, not a gap in what BOB could see.
     """
     installed:      bool        = False
-    service_active: bool        = False
+    service_active: "bool | None" = False
     watched_files:  Set[str]    = field(default_factory=set)
     rule_count:     int         = 0
     # False when `auditctl -l` produced nothing at all, which means the
@@ -88,9 +89,18 @@ class AuditdSnapshot:
         if state is not None:
             snap.service_active = state == "active"
         else:
-            # Fallback: auditctl -s shows "enabled 1" when auditd is running
-            status = _run("auditctl", "-s") or ""
-            snap.service_active = "enabled 1" in status
+            # Fallback: auditctl -s shows "enabled 1" when auditd is running.
+            #
+            # The fallback had the very collapse unit_active_state was written
+            # to avoid, one level down: `or ""` turned "auditctl answered
+            # nothing" into an absent "enabled 1", so a host where neither
+            # systemd nor auditd could be asked — running without sudo is the
+            # ordinary case — was reported as auditd stopped, a warning with a
+            # deduction and an order to start a service already running. A
+            # working `auditctl -s` always prints its status block; empty
+            # output is the honest signal that no answer was obtained.
+            status = _run("auditctl", "-s")
+            snap.service_active = ("enabled 1" in status) if status else None
 
         if not snap.service_active:
             return snap
@@ -185,7 +195,14 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
         )
         return result
 
-    if not snapshot.service_active:
+    if snapshot.service_active is None:
+        result.info(
+            message=_t("auditd.state_unknown"),
+            key="auditd.state_unknown",
+        )
+        return result
+
+    if snapshot.service_active is False:
         result.warn_with_deduction(
             key="auditd.service_inactive",
             message=_t("auditd.service_inactive"),
