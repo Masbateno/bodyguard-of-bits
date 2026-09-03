@@ -223,7 +223,7 @@
     "top_ports": "Top targeted ports",
     "brute_title": "Repeated blocked connection attempts",
     "brute_none": "No repeated blocked connection attempts in the analysed period",
-    "brute_found": "{attempts} blocked connection attempt(s) from {ip} to {port} within a minute",
+    "blocked_repeat_public": "{attempts} blocked connection attempt(s) from {ip} to {port} within a minute",
     "blocked_repeat_local": "{attempts} blocked connection attempt(s) from {ip}, a device on the local network, to {port}",
     "blocked_repeat_udp": "{attempts} blocked UDP packet(s) from {ip} to {port} — UDP has no handshake and no credential to guess",
     "svc_hits": "Attempts on installed service ports",
@@ -977,7 +977,7 @@
     "docker_bypass": "Docker bypass: {container} {port}",
     "netbios_no_rule": "NetBIOS port {port} without UFW rule",
     "port_no_rule": "Port {port} on 0.0.0.0 without UFW rule",
-    "brute_force": "{attempts} blocked connection attempts from {ip} on {port}",
+    "blocked_repeat_public": "{attempts} blocked connection attempts from {ip} on {port}",
     "service_open_world": "{label} {port} open world"
   },
   "ignored": {
@@ -1614,7 +1614,7 @@
       }
     },
     "logs": {
-      "brute_found": {
+      "blocked_repeat_public": {
         "title": "Repeated blocked connection attempts from one source",
         "why": "UFW logged more than ten separate connection attempts from one public address to one port within a minute, and dropped every one of them. That is what was measured, and it is worth knowing: something is probing a port on this host persistently. What it does *not* establish is a brute-force attack. A UFW BLOCK is a packet the firewall discarded — it never reached a service, so no credential was ever offered, and repeated credential guessing cannot be read from dropped packets. This finding used to say \"Bruteforce attempts\" anyway, and it counted packets rather than attempts, so one client the kernel was retrying could cross the threshold on its own. It now counts distinct source ports, which separates a retransmission from a new attempt, and traffic from the local network or over UDP is reported without a deduction because neither can be an authentication attack.",
         "how": "Layered response:\n1. Install fail2ban if not present and enable the jail for the targeted service (sshd is the most common):\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # ensure the relevant jail has enabled=true\n2. Restrict the service to known IPs at the firewall layer:\n   sudo ufw allow from <trusted-ip> to any port 22\n   sudo ufw delete allow 22   # if a broader rule existed\n3. For SSH specifically, disable password auth (force pubkey only):\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh",

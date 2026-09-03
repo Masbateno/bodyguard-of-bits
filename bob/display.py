@@ -245,7 +245,7 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
         # used to fire on any repeated block at all, so a NAS remounting a
         # share put the word "suspicious" at the head of the section.
         _charged = any(
-            f.key == "logs.brute_found" and f.level == FindingLevel.WARN
+            f.key == "logs.blocked_repeat_public" and f.level == FindingLevel.WARN
             for f in logs_result.findings
         )
         if _charged:
@@ -263,7 +263,7 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
         # local dominance) are rendered explicitly below and would double up,
         # so only the repeated-block family is taken from the findings list.
         _REPEAT_KEYS = {
-            "logs.brute_found",
+            "logs.blocked_repeat_public",
             "logs.blocked_repeat_local",
             "logs.blocked_repeat_udp",
         }

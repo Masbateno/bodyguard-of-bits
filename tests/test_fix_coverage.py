@@ -75,7 +75,7 @@ _MANUAL_BY_DESIGN = frozenset({
     "ddns.warn",                                 # depends on which exposed port + intent
     "network_context.sensitive_remote",          # strategic: VPN, jump host, redesign
     "virt.snap_network",                         # audit-then-decide; snap remove vs keep
-    "logs.brute_found",                          # trigger to install fail2ban (separate finding)
+    "logs.blocked_repeat_public",                # trigger to install fail2ban (separate finding)
 
     # UEFI / firmware level — needs reboot + manual UEFI navigation:
     "secure_boot.disabled",                      # UEFI setting, no runtime command

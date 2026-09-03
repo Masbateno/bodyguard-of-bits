@@ -360,7 +360,7 @@
     "ref": "CIS Ubuntu 22.04 L1 — 4.3 — Ensure logrotate is configured to rotate system logs",
     "code": "CIS:4.3"
   },
-  "logs.brute_found": {
+  "logs.blocked_repeat_public": {
     "ref": "Best practice — Brute-force activity detected; deploy fail2ban + key-only authentication",
     "ref_fr": "Bonne pratique — Activité de force brute détectée ; déployer fail2ban + authentification par clé uniquement",
     "code": null

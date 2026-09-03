@@ -313,10 +313,17 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
         # canonical form at load time so the comparison is clean. Keys
         # already using canonical names (or keys with no rename
         # mapping) pass through unchanged.
+        from bob._v0160_renames import remap_finding_key as remap_v0160
         from bob._v090_renames import remap_finding_key
         raw_keys = raw.get("finding_keys")
         if isinstance(raw_keys, list):
-            finding_keys = [remap_finding_key(str(k)) for k in raw_keys]
+            # Two migrations compose: v0.9.0 remapped section prefixes, v0.16.0
+            # renames one whole key. Prefix first, then key — a baseline old
+            # enough to carry `logs.brute_found` under a legacy prefix needs
+            # both, in that order.
+            finding_keys = [
+                remap_v0160(remap_finding_key(str(k))) for k in raw_keys
+            ]
         else:
             finding_keys = None
 

@@ -40,6 +40,11 @@ Withdrawing a deduction is not a licence to stop mentioning what was measured,
 and the render loop now prints both levels.
 """
 
+# v0.16.0 renamed the key to `logs.blocked_repeat_public`, joining the two
+# siblings this fix created. v0.15.5 shipped the message change alone because a
+# rename breaks baselines, ignore.yml and --explain, and those belong in a
+# planned bundle. See bob/_v0160_renames.py.
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -120,16 +125,16 @@ class TestOnlyWhatCanBeAnAttackIsCharged:
 
     def test_a_public_tcp_source_still_deducts(self):
         result = self._check("203.0.113.7", 22, "TCP")
-        assert "logs.brute_found" in _deducted(result)
+        assert "logs.blocked_repeat_public" in _deducted(result)
 
     def test_a_local_source_is_reported_but_not_charged(self):
         result = self._check("192.168.1.77", 445, "TCP")
-        assert "logs.brute_found" not in _deducted(result)
+        assert "logs.blocked_repeat_public" not in _deducted(result)
         assert "logs.blocked_repeat_local" in _keys(result)
 
     def test_udp_is_reported_but_not_charged(self):
         result = self._check("203.0.113.7", 1900, "UDP")
-        assert "logs.brute_found" not in _deducted(result)
+        assert "logs.blocked_repeat_public" not in _deducted(result)
         assert "logs.blocked_repeat_udp" in _keys(result)
 
     def test_the_message_states_the_measurement(self, ):
@@ -176,7 +181,7 @@ class TestReclassifyingDidNotSilenceTheSection:
 
     def test_a_charged_hit_is_still_printed(self, capsys):
         out = self._render(capsys, "203.0.113.7", 22, "TCP")
-        assert "logs.brute_found" in out
+        assert "logs.blocked_repeat_public" in out
 
     def test_the_verdict_follows_the_charged_hits(self, capsys):
         """A NAS remounting a share used to head the section with "suspicious"."""

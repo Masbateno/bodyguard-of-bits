@@ -88,6 +88,39 @@ class TestQualifyMarksWhatTheBlockProduced:
         assert r.findings[0].qualified_by == ("q",)
 
 
+class TestASilencedQualifierLeavesNoDanglingLink:
+    """v0.16.0 — the residue v0.15.5 recorded and did not fix.
+
+    Ignoring the qualification left every qualified finding still pointing at
+    it, while the qualifier itself was gone from `findings` — and JSON emits
+    only that list, so a consumer following the reference resolved nothing.
+    Ignoring a key means "do not tell me about this", so the link goes with it.
+    """
+
+    def _engine(self, ignore):
+        from bob.scoring import ScoreEngine
+
+        engine = ScoreEngine()
+        engine.ignore_keys = frozenset(ignore)
+        engine.apply(_drifted_result())
+        return engine
+
+    def test_the_link_goes_with_the_silenced_qualifier(self):
+        engine = self._engine({"ssh.config_newer_than_service"})
+        by_key = {f.key: f.qualified_by for f in engine.findings}
+        assert by_key["ssh.permit_root_login"] == ()
+
+    def test_the_qualified_finding_itself_is_untouched(self):
+        """It was not ignored — only the caveat was."""
+        engine = self._engine({"ssh.config_newer_than_service"})
+        assert "ssh.permit_root_login" in {f.key for f in engine.findings}
+
+    def test_nothing_is_stripped_when_nothing_is_ignored(self):
+        engine = self._engine(set())
+        by_key = {f.key: f.qualified_by for f in engine.findings}
+        assert by_key["ssh.permit_root_login"] == ("ssh.config_newer_than_service",)
+
+
 class TestTheCompositionLayerCarriesIt:
 
     def test_a_correlated_alert_names_the_qualification(self):

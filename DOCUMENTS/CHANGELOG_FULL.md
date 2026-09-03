@@ -51,7 +51,41 @@ both directions: no entry may name a key BOB never emits, and no newly added
 *what the findings describe*, a file rather than the running service, but the
 deductions were computed and are present.
 
-**Tests** 8089 → **8101**.
+**`logs.brute_found` named an attack; the key is renamed and the old one keeps
+working.** v0.15.5 fixed everything the operator *sees* — the message states
+the measurement, local and UDP sources are reported without a deduction — and
+deliberately left the key alone, because renaming it breaks baselines,
+`ignore.yml` and `--explain`. Those belong in a planned bundle rather than a
+patch, and this is that bundle. The new name joins the two siblings the same
+fix created, so the family reads as one: `blocked_repeat_local`,
+`blocked_repeat_udp`, and now **`blocked_repeat_public`** for the chargeable
+case — a public address, over TCP, making more than ten distinct connection
+attempts in a minute.
+
+Three surfaces keep the old name working, and each fails differently when
+forgotten, which is why each has its own test rather than one asserting "the
+rename happened". A baseline that is not remapped reports the same physical
+issue as both *resolved* and *new* on the first audit after the upgrade — field
+-reproduced in v0.9.1 for the D-1 section renames. An `ignore.yml` that is not
+consulted silently stops working, and a finding the operator had waived comes
+back. A missing `--explain` alias turns a script piping a key out of an older
+report into exit 3. The two baseline migrations compose in order: v0.9.0
+remapped section prefixes, v0.16.0 renames a whole key, and a baseline old
+enough to carry `logs.brute_found` under a legacy prefix needs both.
+
+`auth_log.brute_force` is deliberately untouched, and that is a test: it is a
+different key, in a different module, reading real failed logins from auth.log
+— the one whose evidence does support the word.
+
+**A qualification pointing at a silenced finding.** The residue v0.15.5
+recorded and did not fix: ignoring `ssh.config_newer_than_service` left every
+finding it qualified still pointing at it, while the qualifier itself was gone
+from `findings` — and JSON emits only that list, so a consumer following the
+reference resolved nothing. Ignoring a key means "do not tell me about this",
+so the link goes with it. The qualified findings themselves are untouched; they
+were not the ones ignored.
+
+**Tests** 8089 → **8117**.
 
 ---
 
@@ -527,7 +561,7 @@ function name simply stops matching, leaving either a real dispatch site
 unregistered or an obsolete exemption in place. A second guard now checks that
 every registry entry names a file that exists and a function defined in it.
 
-**Tests** 7958 → **8101**.
+**Tests** 7958 → **8117**.
 
 ---
 

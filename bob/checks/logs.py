@@ -350,10 +350,10 @@ def check_logs(
             )
         else:
             result.warn_with_deduction(
-                key="logs.brute_found",
-                message=_t("logs.brute_found", ip=hit.src_ip,
+                key="logs.blocked_repeat_public",
+                message=_t("logs.blocked_repeat_public", ip=hit.src_ip,
                            port=hit.port_proto, attempts=hit.attempts),
-                reason=_t("deduction.brute_force", ip=hit.src_ip,
+                reason=_t("deduction.blocked_repeat_public", ip=hit.src_ip,
                           port=hit.port_proto, attempts=hit.attempts),
                 points=1,
                 nature="action",

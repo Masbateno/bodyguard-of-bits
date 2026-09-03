@@ -506,6 +506,7 @@ class ScoreEngine:
         # ``ssh.x11.forwarding.{server,client}`` findings). The legacy
         # path uses fnmatch globs from SUBCHECK_RENAMES_V100 — see
         # ``bob/_v100_subcheck_renames.py`` for the migration table.
+        from bob._v0160_renames import legacy_ignore_matches
         from bob._v100_subcheck_renames import any_legacy_ignore_matches
 
         def _is_ignored(key: str | None) -> bool:
@@ -513,7 +514,11 @@ class ScoreEngine:
                 return False
             if key in ignored_keys:
                 return True
-            return any_legacy_ignore_matches(key, ignored_keys)
+            if any_legacy_ignore_matches(key, ignored_keys):
+                return True
+            # v0.16.0 key rename — an operator who waived logs.brute_found
+            # must not see it come back under its new name.
+            return legacy_ignore_matches(key, ignored_keys)
 
         for deduction in result.deductions:
             if not _is_ignored(deduction.key):
@@ -530,6 +535,20 @@ class ScoreEngine:
                 # silently bound the score with no visible reason.
                 if finding.key in VISIBILITY_KEYS and finding.key not in self.unverified:
                     self.unverified.append(finding.key)
+        # A qualification pointing at a finding the operator silenced is a
+        # reference to something no consumer can resolve: the qualifier is not
+        # in `findings`, and JSON emits only that list. Ignoring a key means
+        # "do not tell me about this", so the link goes with it rather than
+        # dangling. The qualified findings themselves are untouched — they were
+        # not ignored.
+        if self.ignored_findings:
+            silenced = {f.key for f in self.ignored_findings if f.key}
+            for finding in kept:
+                if finding.qualified_by:
+                    finding.qualified_by = tuple(
+                        q for q in finding.qualified_by if q not in silenced
+                    )
+
         # v0.14.1: drop ignored findings from the CheckResult too.
         # ``display_result()`` renders the raw result, not ``engine.findings``,
         # so an ignored finding was still printed to the terminal in full: a

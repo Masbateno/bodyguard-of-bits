@@ -55,7 +55,43 @@ rester dehors. Deux clés en sont **délibérément** absentes —
 constats décrivent*, un fichier plutôt que le service en cours, mais les
 déductions ont bien été calculées.
 
-**Tests** 8089 → **8101**.
+**`logs.brute_found` nommait une attaque ; la clé est renommée et l'ancienne
+continue de fonctionner.** La v0.15.5 a corrigé tout ce que l'opérateur *voit*
+— le message énonce la mesure, les sources locales et UDP sont rapportées sans
+déduction — et a délibérément laissé la clé, parce que la renommer casse les
+baselines, `ignore.yml` et `--explain`. Cela relève d'un lot planifié plutôt
+que d'un correctif, et c'est ce lot. Le nouveau nom rejoint les deux frères
+créés par le même correctif, si bien que la famille se lit d'un bloc :
+`blocked_repeat_local`, `blocked_repeat_udp`, et désormais
+**`blocked_repeat_public`** pour le cas facturable — une adresse publique, en
+TCP, faisant plus de dix tentatives de connexion distinctes en une minute.
+
+Trois surfaces maintiennent l'ancien nom, et chacune échoue différemment si on
+l'oublie — d'où un test par surface plutôt qu'un seul affirmant « le renommage
+a eu lieu ». Une baseline non remappée rapporte le même problème physique
+comme *résolu* et *nouveau* au premier audit après mise à jour — reproduit sur
+le terrain en v0.9.1 pour les renommages de sections D-1. Un `ignore.yml` non
+consulté cesse silencieusement de fonctionner, et un constat que l'opérateur
+avait écarté revient. Un alias `--explain` manquant transforme en exit 3 un
+script qui recopie une clé issue d'un rapport plus ancien. Les deux migrations
+de baseline se composent dans l'ordre : la v0.9.0 remappait des préfixes de
+section, la v0.16.0 renomme une clé entière, et une baseline assez ancienne
+pour porter `logs.brute_found` sous un préfixe hérité a besoin des deux.
+
+`auth_log.brute_force` est délibérément intact, et c'est un test : c'est une
+autre clé, dans un autre module, qui lit de vrais échecs d'authentification
+dans auth.log — celle dont la preuve soutient bel et bien le mot.
+
+**Une qualification pointant vers un constat mis en silence.** Le résidu que la
+v0.15.5 avait consigné sans le corriger : ignorer
+`ssh.config_newer_than_service` laissait chaque constat qu'elle qualifiait
+pointer vers elle, alors qu'elle avait disparu de `findings` — et le JSON
+n'émet que cette liste, si bien qu'un consommateur suivant la référence ne
+résolvait rien. Ignorer une clé signifie « ne me parle pas de ça » : le lien
+part avec. Les constats qualifiés ne sont pas touchés ; ce n'est pas eux qu'on
+a ignorés.
+
+**Tests** 8089 → **8117**.
 
 ---
 
@@ -573,7 +609,7 @@ vrai site non enregistré, soit une exemption obsolète en place. Une seconde
 garde vérifie maintenant que chaque entrée du registre nomme un fichier
 existant et une fonction qui y est définie.
 
-**Tests** 7958 → **8101**.
+**Tests** 7958 → **8117**.
 
 ---
 

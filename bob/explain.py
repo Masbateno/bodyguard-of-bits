@@ -198,7 +198,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "log_rotation.logrotate_missing",
     ]),
     ("UFW log analysis", [
-        "logs.brute_found",
+        "logs.blocked_repeat_public",
     ]),
     ("SMTP", [
         "smtp.exposed",
@@ -386,6 +386,12 @@ EXPLAIN_KEY_ALIASES: dict[str, str] = {
     # split halves, see bob/_v100_subcheck_renames.py::SUBCHECK_RENAMES_V100
     # (the fnmatch glob ``ssh.x11.forwarding.*`` covers both sub-keys).
     "ssh.x11_forwarding": "ssh.x11.forwarding.server",
+
+    # v0.16.0: logs.brute_found named an authentication attack from packets the
+    # firewall had already dropped. Renamed to join its two siblings
+    # (blocked_repeat_local / _udp) from the same v0.15.5 fix. A script piping a
+    # key out of an older report would otherwise get exit 3.
+    "logs.brute_found": "logs.blocked_repeat_public",
 
     # v0.9.0 D-3: cleared on retrait. The only entry that lived here from
     # v0.5.5 through v0.8.x (``services_health.service_inactive`` →

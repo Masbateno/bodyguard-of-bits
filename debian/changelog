@@ -15,6 +15,15 @@ bodyguard-of-bits (0.16.0-1) UNRELEASED; urgency=low
   * --diff no longer reports a finding as resolved when its section was not
     re-evaluated, and does not call a rising score an improvement when the run
     read less than the previous one.
+  * logs.brute_found named an authentication attack from packets the firewall
+    had already dropped. Renamed to logs.blocked_repeat_public, joining the two
+    siblings created by the v0.15.5 fix. The old name keeps working on all three
+    surfaces that would otherwise break: baselines are remapped at load,
+    ignore.yml entries still match, and --explain resolves through an alias.
+    auth_log.brute_force is a different key and is untouched.
+  * A qualification pointing at a finding the operator silenced is stripped
+    rather than left dangling: the qualifier is no longer in `findings`, which
+    is the only list JSON emits.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 03 Sep 2026 20:30:00 +0200
 
