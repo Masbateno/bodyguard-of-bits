@@ -152,7 +152,24 @@ fixed twice, this time introduced and caught inside the same session. A test
 now asserts the parameter appears in the function body, not only in its
 signature.
 
-**Tests** 8089 → **8140**.
+**`python3 bob` answered with a bare traceback.** Running the package
+*directory* as a script puts `<repo>/bob` at the head of `sys.path` and leaves
+its parent — where the package lives — off it entirely, so the first import
+fails with `ModuleNotFoundError: No module named 'bob'` and nothing about what
+to run instead. It bit twice in ten minutes, once masked by a stale
+editable-install `.pth` that made the form work without sudo and fail under it:
+the same command behaving differently by privilege, for a reason unrelated to
+privilege.
+
+The form stays unsupported; only the message changed. BOB names what happened
+and the two forms that work. Two constraints shaped it and both are tested: the
+string is hardcoded English, because `bob.i18n` is precisely what cannot be
+imported at that point — v0.9.1 shipped a bracketed-fallback key on a path with
+the same constraint and needed a hotfix — and only a missing `bob` is caught,
+because a missing third-party dependency raises ImportError too and swallowing
+it would replace one unhelpful traceback with a wrong explanation.
+
+**Tests** 8089 → **8144**.
 
 ---
 

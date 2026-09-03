@@ -162,7 +162,25 @@ a déjà corrigée deux fois, introduite et attrapée cette fois dans la même
 session. Un test vérifie désormais que le paramètre figure dans le corps de la
 fonction, pas seulement dans sa signature.
 
-**Tests** 8089 → **8140**.
+**`python3 bob` répondait par une trace nue.** Exécuter le *répertoire* du
+paquet comme script met `<dépôt>/bob` en tête de `sys.path` et en exclut son
+parent — là où vit le paquet — si bien que le premier import échoue sur
+`ModuleNotFoundError: No module named 'bob'`, sans rien dire de ce qu'il faut
+lancer. Le cas s'est présenté deux fois en dix minutes, masqué une fois par un
+`.pth` d'installation éditable périmé qui faisait marcher la forme sans sudo et
+échouer avec : la même commande se comportant différemment selon le privilège,
+pour une raison étrangère au privilège.
+
+La forme reste non supportée ; seul le message change. BOB nomme ce qui s'est
+passé et les deux formes qui fonctionnent. Deux contraintes l'ont façonné et
+sont testées : la chaîne est en anglais codé en dur, car `bob.i18n` est
+justement ce qui ne peut pas être importé à cet endroit — la v0.9.1 avait livré
+une clé en repli crocheté sur un chemin soumis à la même contrainte et avait dû
+être corrigée en urgence — et seul un `bob` manquant est intercepté, une
+dépendance tierce absente levant aussi `ImportError` : l'avaler remplacerait une
+trace inutile par une explication fausse.
+
+**Tests** 8089 → **8144**.
 
 ---
 

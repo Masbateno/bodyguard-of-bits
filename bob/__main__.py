@@ -20,7 +20,39 @@ from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
-from bob import __version__ as VERSION
+# `python3 bob` executes the package *directory*, which puts <repo>/bob at the
+# head of sys.path and leaves its parent — where the package actually lives —
+# off it entirely. The import below then fails with a bare traceback that says
+# nothing about what to run instead.
+#
+# The message is a hardcoded English string, not an i18n key: i18n lives in
+# `bob.i18n`, which is exactly what cannot be imported here. v0.9.1 shipped a
+# bracketed-fallback key on a path with the same constraint and had to be
+# hotfixed; the eighteen other CLIError raises use inline strings for the same
+# reason.
+#
+# Only "no module named bob" is caught. A missing third-party dependency raises
+# ImportError too, and swallowing that would replace one unhelpful traceback
+# with a wrong explanation.
+try:
+    from bob import __version__ as VERSION
+except ModuleNotFoundError as _exc:                        # pragma: no cover
+    if _exc.name != "bob":
+        raise
+    _prog = Path(sys.argv[0]).name if sys.argv else "bob"
+    print(
+        f"✖ BOB could not import its own package.\n"
+        f"\n"
+        f"  '{_prog}' was run as a directory, which leaves the package's parent\n"
+        f"  directory off sys.path. Use one of the supported forms instead:\n"
+        f"\n"
+        f"      sudo bob [OPTIONS]                  # the installed command\n"
+        f"      sudo python3 -m bob [OPTIONS]       # from the repository root\n",
+        file=sys.stderr,
+    )
+    # `from None`: the traceback is what made this unhelpful in the first
+    # place, and the message above replaces it entirely.
+    raise SystemExit(3) from None
 from bob import i18n, output
 from bob.cli import AuditConfig, CLIError, parse_args, print_help  # noqa: F401
 from bob._tty import safe_input
