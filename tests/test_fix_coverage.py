@@ -123,7 +123,7 @@ _HELPER_DISPATCH_SITES: dict[tuple[str, int], tuple[str, ...]] = {
     # (ssh.weak_ciphers / ssh.weak_macs / ssh.weak_kex). All three are
     # whitelisted above because the right fix depends on whether the
     # operator has a custom Ciphers/MACs/KexAlgorithms line.
-    ("bob/checks/ssh/_subchecks.py", 288): (
+    ("bob/checks/ssh/_subchecks.py", 305): (
         "ssh.weak_ciphers", "ssh.weak_macs", "ssh.weak_kex",
     ),
     # bob/checks/services.py::_check_port_exposure — emits

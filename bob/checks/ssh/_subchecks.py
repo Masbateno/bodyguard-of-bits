@@ -159,6 +159,23 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
         )
         return
 
+    # Everything below describes the file. sshd loads it at start and on
+    # reload, so an edit that was never applied makes these findings a
+    # statement of intent rather than of behaviour — and the dangerous
+    # direction is the quiet one: a file hardened but not applied produces a
+    # clean section on a daemon still running the old settings, where there is
+    # no finding for a caveat to hang off. Hence a note about the section, not
+    # a note on a finding.
+    if snapshot.sshd_config_drifted:
+        result.info(
+            message=_t("ssh.config_newer_than_service",
+                       path=snapshot.sshd_config_drift_path,
+                       changed=snapshot.sshd_config_changed_at,
+                       applied=snapshot.sshd_config_applied_at),
+            detail=_t("ssh.config_newer_than_service_detail"),
+            key="ssh.config_newer_than_service",
+        )
+
     # PermitRootLogin
     prl = cfg.get("permitrootlogin", "prohibit-password").lower()
     if prl == "yes":

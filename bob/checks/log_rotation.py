@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active, path_exists  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 
@@ -55,6 +56,8 @@ class LogRotationSnapshot:
         logrotate_dir_listed:     False when that directory would not list, so
                                   a count of zero means "not read", not "none".
         journald_active:          True if systemd-journald is running.
+        journald_conf_drifted:    True when the config file post-dates the
+                                  moment systemd last applied it.
         journald_storage:         Raw value of Storage= (or '' if unset).
         journald_conf_readable:   False when journald.conf exists but would not
                                   open. Storage then reads as '' — the same as
@@ -73,6 +76,14 @@ class LogRotationSnapshot:
     logrotate_rule_count:     int   = 0
     logrotate_dir_listed:     bool  = True
     journald_active:          bool  = False
+    # True when journald.conf (or a drop-in) is newer than the moment systemd
+    # last applied the unit's configuration. journald reads its configuration
+    # at start and needs a restart to pick up a change, so an unapplied edit
+    # leaves the findings below describing the file rather than the running
+    # journal. None when it could not be established.
+    journald_conf_drifted:    "bool | None" = None
+    journald_conf_changed_at: str = ""
+    journald_conf_applied_at: str = ""
     journald_storage:         str   = ""
     journald_conf_readable:   bool  = True
     journald_max_use:         str   = ""
@@ -88,6 +99,9 @@ class LogRotationSnapshot:
         logrotate_rule_count, logrotate_dir_listed = _count_logrotate_rules()
 
         journald_active   = _service_active("systemd-journald")
+        drifted, changed_at, applied_at = (
+            _journald_conf_drift() if journald_active else (None, "", "")
+        )
         storage, max_use, keep_free, journald_readable = _read_journald_conf()
         journal_persistent = Path("/var/log/journal").is_dir()
 
@@ -98,6 +112,9 @@ class LogRotationSnapshot:
             logrotate_rule_count=logrotate_rule_count,
             logrotate_dir_listed=logrotate_dir_listed,
             journald_active=journald_active,
+            journald_conf_drifted=drifted,
+            journald_conf_changed_at=changed_at,
+            journald_conf_applied_at=applied_at,
             journald_storage=storage,
             journald_conf_readable=journald_readable,
             journald_max_use=max_use,
@@ -169,6 +186,14 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
     # ------------------------------------------------------------------ #
     # 2. journald — persistence                                            #
     # ------------------------------------------------------------------ #
+    if snapshot.journald_conf_drifted:
+        result.info(
+            message=_t("log_rotation.journald_conf_newer_than_service",
+                       changed=snapshot.journald_conf_changed_at,
+                       applied=snapshot.journald_conf_applied_at),
+            key="log_rotation.journald_conf_newer_than_service",
+        )
+
     if snapshot.journald_active:
         storage = snapshot.journald_storage.strip().lower()
         # "auto" is the default: persistent if /var/log/journal exists
@@ -284,6 +309,39 @@ def _count_logrotate_rules() -> "tuple[int, bool]":
 def _service_active(name: str) -> bool:
     """Return True if the systemd unit is in the 'active' state."""
     return is_unit_active(name, timeout=5)
+
+
+def _journald_conf_drift() -> "tuple[bool | None, str, str]":
+    """Whether journald.conf or a drop-in post-dates the applied configuration.
+
+    Silent on every unknown — no systemctl answer, no readable mtime — so the
+    caller says nothing rather than claiming the running journal matches its
+    file.
+    """
+    applied = unit_config_applied_at("systemd-journald")
+    if applied is None:
+        return None, "", ""
+
+    candidates = [_JOURNALD_CONF]
+    try:
+        candidates += sorted(_JOURNALD_CONF_D.glob("*.conf"))
+    except OSError:
+        pass
+
+    newest = 0.0
+    for conf in candidates:
+        try:
+            newest = max(newest, conf.stat().st_mtime)
+        except OSError:
+            continue
+    if not newest:
+        return None, "", ""
+
+    return (
+        newest > applied,
+        datetime.fromtimestamp(newest).strftime("%Y-%m-%d %H:%M"),
+        datetime.fromtimestamp(applied).strftime("%Y-%m-%d %H:%M"),
+    )
 
 
 def _read_journald_conf() -> tuple[str, str, str]:

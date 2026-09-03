@@ -981,6 +981,8 @@
   },
   "ssh": {
     "config_unreadable": "sshd_config existe mais n'a pas pu \u00eatre lu",
+    "config_newer_than_service": "{path} a été modifié à {changed}, après que sshd a appliqué sa configuration pour la dernière fois à {applied} — les constats SSH ci-dessous décrivent le fichier, pas le service en cours",
+    "config_newer_than_service_detail": "sshd lit sa configuration à son démarrage et à chaque rechargement. Une modification non appliquée est une intention, pas un comportement, et cela vaut dans les deux sens : une directive qui semble encore fautive ici peut déjà être corrigée, et — le cas qui compte — un fichier que tu viens de durcir ne protège pas le démon qui répond encore sur le port. Applique-le puis relance : sudo systemctl reload ssh",
     "config_unreadable_detail": "Chaque directive retomberait sur la valeur par d\u00e9faut compil\u00e9e d'OpenSSH plut\u00f4t que sur le r\u00e9glage de cette machine : une config contenant `PermitRootLogin yes` serait donc rapport\u00e9e comme restreinte. BOB n'analyse aucune directive. V\u00e9rifier avec : sudo sshd -T",
     "not_installed": "Le serveur SSH (sshd) n'est pas installé",
     "not_installed_detail": "Si l'accès SSH est nécessaire : {cmd}",
@@ -3228,6 +3230,7 @@
     "logrotate_dir_unreadable": "/etc/logrotate.d n'a pas pu \u00eatre list\u00e9",
     "logrotate_dir_unreadable_detail": "Le r\u00e9pertoire de r\u00e8gles ne s'ouvre pas : BOB ne peut pas dire si les journaux sont tourn\u00e9s. Un r\u00e9pertoire qui ne se liste pas compte z\u00e9ro r\u00e8gle, exactement comme un r\u00e9pertoire vide \u2014 signal\u00e9 comme inconnu plut\u00f4t que comme \u00ab aucune r\u00e8gle configur\u00e9e \u00bb. V\u00e9rifier avec : sudo ls /etc/logrotate.d/",
     "journald_conf_unreadable": "Le stockage journald n'a pas pu \u00eatre d\u00e9termin\u00e9",
+    "journald_conf_newer_than_service": "journald.conf a été modifié à {changed}, après que systemd-journald a appliqué sa configuration pour la dernière fois à {applied} — les constats journald ci-dessous décrivent le fichier, pas le journal en cours",
     "journald_conf_unreadable_detail": "/etc/systemd/journald.conf existe mais ne s'ouvre pas : Storage= est donc lu comme non d\u00e9fini. Non d\u00e9fini signifie le d\u00e9faut \u00ab auto \u00bb de journald, persistant si /var/log/journal existe \u2014 mais une config posant Storage=volatile serait indiscernable ici, et ses journaux sont perdus au red\u00e9marrage. V\u00e9rifier avec : sudo grep -i storage /etc/systemd/journald.conf",
     "logrotate_missing": "logrotate non installé — les fichiers journaux grossiront indéfiniment",
     "logrotate_missing_detail": "Sans logrotate, les fichiers dans /var/log/ ne sont jamais tournés ni compressés. L'épuisement du disque par des logs non maîtrisés est une cause fréquente d'interruption de service.",

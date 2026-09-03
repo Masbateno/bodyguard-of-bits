@@ -337,7 +337,69 @@ quelle** — la renommer casserait les baselines, `ignore.yml` et `--explain` su
 une version de correctif. Ce que BOB *dit* est corrigé ; l'identifiant porte
 encore l'ancien mot, et relève d'un lot planifié avec le reste de la v0.16.0.
 
-**Tests** 7958 → **8055**.
+**BOB audite le fichier, l'attaquant rencontre le processus.**
+
+Un troisième axe, et une question différente des deux précédentes. Celles-ci
+demandaient si la preuve soutenait le verdict. Celle-ci demande de quoi le
+verdict *parle*. Les constats SSH sont au présent de l'indicatif — « Root login
+via SSH **is** permitted », « Password authentication **is** enabled » — et ils
+sont lus dans `/etc/ssh/sshd_config`, que sshd charge à son démarrage et à
+chaque rechargement. Une modification jamais appliquée fait de chacun d'eux
+l'énoncé d'une intention. Vingt-quatre points de l'outil reposent sur ce
+fichier, trois de plus sur journald.conf.
+
+Les deux sens sont faux et ils ne sont pas également dangereux. Un fichier
+montrant encore une directive fautive sur un démon déjà corrigé produit un
+constat simplement périmé. Un fichier **tout juste durci** sur un démon qui
+tourne encore avec les anciens réglages produit une section propre — et il n'y
+a alors aucun constat auquel accrocher une réserve, raison pour laquelle la
+note porte sur la section et non sur un résultat. C'est à nouveau le problème
+de `backup` : un rapport favorable tiré d'un fichier, que personne ne va
+vérifier.
+
+**La sémantique de rechargement a été établie contre systemd plutôt que
+supposée**, parce que tout l'angle en dépend, et sur une unité utilisateur
+jetable plutôt que sur le sshd de cet hôte. Après `systemctl reload`, PID
+principal inchangé :
+
+    ExecMainStartTimestamp   15:10:06 → 15:10:06   inchangé
+    ActiveEnterTimestamp     15:10:06 → 15:10:06   inchangé
+    StateChangeTimestamp     15:10:06 → 15:10:18   a bougé
+
+Seul `StateChangeTimestamp` suit un rechargement, et `CanReload=yes` sur cette
+unité : recharger est donc le cas nominal, pas un cas limite. Comparer à l'une
+des deux autres aurait signalé tout administrateur ayant édité un fichier puis
+l'ayant correctement appliqué — une garde qui se déclenche sur les gens qui
+font bien finit désactivée, ce qui est exactement le défaut que cette version
+vient de retirer de l'analyseur de logs. Le nom de la propriété est désormais
+figé par un test qui lit les arguments passés à systemctl, car la première
+série de mutations n'a rien trouvé quand la propriété a été échangée : les
+tests simulaient la commande en bloc et ne voyaient jamais laquelle était
+demandée.
+
+BOB compare maintenant la mtime la plus récente parmi **tous** les fichiers que
+le parseur a réellement ouverts — drop-ins inclus via `Include`, pris dans
+l'ensemble `seen` du parseur lui-même — à cet horodatage, et le dit quand le
+fichier l'emporte. Cela ne coûte rien : les constats de directives sont
+inchangés, car le fichier dit bel et bien ce qu'il dit et prendra bel et bien
+effet au prochain rechargement. La note explique ce qu'ils décrivent, elle ne
+les retire pas. L'inconnu reste inconnu — pas de réponse de systemctl, pas de
+mtime lisible, et BOB se tait plutôt que d'affirmer que le service correspond à
+son fichier.
+
+**Deux modules ont été examinés puis exclus, sur leur propre documentation.**
+smbd(8) indique que la configuration « and any files that it includes, are
+automatically reloaded every three minutes, if they change » : smb.conf est
+donc effectivement vivant et la fenêtre de divergence est bornée à trois
+minutes — samba sort du périmètre malgré ses dix points sur ce fichier. PAM,
+`pwquality` et `login.defs` sont relus à chaque authentification, donc le
+fichier **est** l'état effectif. `sysctl` est lu par BOB dans `/proc/sys`,
+c'est-à-dire le runtime. Et huit modules interrogent déjà l'outil vivant —
+auditd via `auditctl`, fail2ban via `fail2ban-client`, le pare-feu via `ufw
+status`. Le motif était déjà correct dans la majeure partie de l'outil ;
+l'ensemble exposé est celui qui lit un fichier, et il est petit.
+
+**Tests** 7958 → **8069**.
 
 ---
 

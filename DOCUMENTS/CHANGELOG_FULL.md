@@ -310,7 +310,66 @@ alone** — renaming it would break baselines, `ignore.yml` and `--explain` on a
 patch release. What BOB *says* is fixed; the identifier still carries the old
 word, and belongs in a planned bundle with the rest of v0.16.0.
 
-**Tests** 7958 → **8055**.
+**BOB audits the file, an attacker meets the process.**
+
+A third axis, and a different question from the two before it. Those asked
+whether the evidence supported the verdict. This one asks what the verdict is
+*about*. The SSH findings are phrased in the present indicative — "Root login
+via SSH **is** permitted", "Password authentication **is** enabled" — and they
+are read from `/etc/ssh/sshd_config`, which sshd loads at start and on reload.
+An edit that was never applied turns every one of them into a statement of
+intent. Twenty-four of the tool's points ride on that file; three more ride on
+journald.conf.
+
+Both directions are wrong and they are not equally dangerous. A file still
+showing a bad directive on a daemon already fixed produces a finding that is
+merely stale. A file **just hardened** on a daemon still running the old
+settings produces a clean section — and there is no finding for a caveat to
+hang off, which is why the note is about the section rather than attached to a
+result. It is the `backup` problem again: a favourable report drawn from a
+file, that nobody goes looking to check.
+
+**The reload semantics were established against systemd rather than assumed**,
+because the whole angle turns on them, and on a disposable user unit rather
+than on this host's sshd. After `systemctl reload`, with the main PID
+unchanged:
+
+    ExecMainStartTimestamp   15:10:06 → 15:10:06   unchanged
+    ActiveEnterTimestamp     15:10:06 → 15:10:06   unchanged
+    StateChangeTimestamp     15:10:06 → 15:10:18   moved
+
+Only `StateChangeTimestamp` follows a reload, and `CanReload=yes` on this unit,
+so reloading is the ordinary case and not an edge. Comparing against either of
+the other two would have flagged every administrator who edited a file and
+applied it correctly — a guard that fires on people doing the right thing gets
+switched off, which is precisely the defect this release removed from the log
+analyser. The property name is now pinned by a test that reads the arguments
+handed to systemctl, because the first round of mutations found nothing when
+the property was swapped: the tests mocked the command wholesale and never saw
+which one it asked for.
+
+BOB now compares the newest mtime among **every** file the parser actually
+opened — Include'd drop-ins included, taken from the parser's own `seen` set —
+against that timestamp, and says so when the file wins. It costs nothing: the
+directive findings are unchanged, because the file really does say what it says
+and really will take effect on the next reload. The note explains what they
+describe; it does not withdraw them. Unknown stays unknown — no systemctl
+answer, no readable mtime, and BOB says nothing rather than claiming the
+service matches its file.
+
+**Two modules were examined and excluded, on their own documentation.** smbd(8)
+states that the configuration "and any files that it includes, are
+automatically reloaded every three minutes, if they change", so smb.conf is
+effectively live and the divergence window is bounded at three minutes — samba
+is out of scope despite carrying ten points on that file. PAM, pwquality and
+login.defs are read per authentication, so there the file *is* the effective
+state. `sysctl` is read by BOB from /proc/sys, which is the runtime. And eight
+modules already query the live tool — auditd through `auditctl`, fail2ban
+through `fail2ban-client`, firewall through `ufw status`. The pattern was
+already right across most of the tool; the file-reading set is the exposed one,
+and it is small.
+
+**Tests** 7958 → **8069**.
 
 ---
 

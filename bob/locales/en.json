@@ -981,6 +981,8 @@
   },
   "ssh": {
     "config_unreadable": "sshd_config exists but could not be read",
+    "config_newer_than_service": "{path} was modified at {changed}, after sshd last applied its configuration at {applied} — the SSH findings below describe the file, not the running service",
+    "config_newer_than_service_detail": "sshd reads its configuration when it starts and when it is reloaded. An edit that has not been applied is an intention, not a behaviour, and this cuts both ways: a directive that still looks wrong here may already be fixed, and — the case that matters — a file you have just hardened does not protect the daemon still answering on the port. Apply it and re-run: sudo systemctl reload ssh",
     "config_unreadable_detail": "Every directive below would fall back to OpenSSH's compiled-in default rather than to this host's setting, so a config holding `PermitRootLogin yes` would be reported as restricted. BOB analyses no directive at all instead. Check with: sudo sshd -T",
     "not_installed": "SSH server (sshd) is not installed",
     "not_installed_detail": "If SSH access is needed: {cmd}",
@@ -3228,6 +3230,7 @@
     "logrotate_dir_unreadable": "/etc/logrotate.d could not be listed",
     "logrotate_dir_unreadable_detail": "The rule directory would not open, so BOB cannot tell whether logs are rotated. A directory that will not list counts zero rules, exactly like an empty one \u2014 reported as unknown rather than as \"no rules configured\". Check with: sudo ls /etc/logrotate.d/",
     "journald_conf_unreadable": "journald storage could not be determined",
+    "journald_conf_newer_than_service": "journald.conf was modified at {changed}, after systemd-journald last applied its configuration at {applied} — the journald findings below describe the file, not the running journal",
     "journald_conf_unreadable_detail": "/etc/systemd/journald.conf exists but would not open, so Storage= reads as unset. Unset means journald's \"auto\" default, which is persistent when /var/log/journal exists — but a config setting Storage=volatile would look identical here, and its logs are lost on reboot. Check with: sudo grep -i storage /etc/systemd/journald.conf",
     "logrotate_missing": "logrotate not installed — log files will grow unbounded",
     "logrotate_missing_detail": "Without logrotate, log files in /var/log/ are never rotated or compressed. Disk exhaustion from runaway logs is a common cause of service outages.",

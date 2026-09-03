@@ -12,9 +12,16 @@ import os
 import pwd
 import stat
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _is_safe_user_path, unit_active_state, path_exists
+from bob.checks._run import (
+    _command_exists,
+    _is_safe_user_path,
+    path_exists,
+    unit_active_state,
+    unit_config_applied_at,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -35,6 +42,35 @@ _PUB_SUFFIX = ".pub"
 # ---------------------------------------------------------------------------
 # Sub-dataclasses
 # ---------------------------------------------------------------------------
+
+
+def _apply_config_drift(snap, seen: "set[str]", unit: str) -> None:
+    """Record whether a parsed config file post-dates the running unit's config.
+
+    Silent on every unknown: no systemctl answer, no readable mtime, no files.
+    `sshd_config_drifted` stays None, and the check says nothing rather than
+    claiming the running service matches its file.
+    """
+    applied = unit_config_applied_at(unit)
+    if applied is None:
+        return
+
+    newest_path, newest_mtime = "", 0.0
+    for candidate in seen:
+        try:
+            mtime = Path(candidate).stat().st_mtime
+        except OSError:
+            continue
+        if mtime > newest_mtime:
+            newest_path, newest_mtime = candidate, mtime
+    if not newest_path:
+        return
+
+    snap.sshd_config_drifted    = newest_mtime > applied
+    snap.sshd_config_drift_path = newest_path
+    snap.sshd_config_changed_at = datetime.fromtimestamp(newest_mtime).strftime("%Y-%m-%d %H:%M")
+    snap.sshd_config_applied_at = datetime.fromtimestamp(applied).strftime("%Y-%m-%d %H:%M")
+
 
 @dataclass
 class HostKeyInfo:
@@ -93,6 +129,14 @@ class SSHSnapshot:
     sshd_active_known:       bool = True
     sshd_config_readable:    bool = True
     sshd_config:             dict = field(default_factory=dict)
+    # True when a parsed config file is newer than the moment systemd last
+    # applied the unit's configuration: the directives below describe the file,
+    # not the sshd currently answering on the port. None when it could not be
+    # established (no systemctl, unit never reported, unreadable mtime).
+    sshd_config_drifted:     "bool | None" = None
+    sshd_config_drift_path:  str = ""
+    sshd_config_changed_at:  str = ""
+    sshd_config_applied_at:  str = ""
 
     host_keys:               list[HostKeyInfo] = field(default_factory=list)
 
@@ -128,6 +172,7 @@ class SSHSnapshot:
         snap.install_cmd = _parsers._detect_ssh_install_cmd()
 
         # --- sshd installation and status ---
+        _resolved_unit = ""
         snap.sshd_installed = (
             _command_exists("sshd")
             or path_exists(Path("/usr/sbin/sshd"))
@@ -143,6 +188,7 @@ class SSHSnapshot:
                 if state is None:
                     continue
                 snap.sshd_active_known = True
+                _resolved_unit = unit
                 if state == "active":
                     snap.sshd_active = True
                     break
@@ -178,6 +224,16 @@ class SSHSnapshot:
             config: dict[str, str] = {}
             _parsers._parse_config_file(_SSHD_CONFIG_PATH, config, seen)
             snap.sshd_config = config
+
+            # The findings below describe this file. sshd loads it at start and
+            # on reload, so an edit that was never applied leaves BOB reporting
+            # an intention as a behaviour — including in the direction that
+            # matters most, where a hardened file makes BOB report OK on a
+            # daemon still running the old settings. The newest of *every*
+            # parsed file counts, Include'd drop-ins included, which is why the
+            # parser's own `seen` set is used rather than the entry path.
+            if snap.sshd_active and _resolved_unit:
+                _apply_config_drift(snap, seen, _resolved_unit)
 
         # --- resolve the real user behind sudo ---
         sudo_user = os.environ.get("SUDO_USER", "")

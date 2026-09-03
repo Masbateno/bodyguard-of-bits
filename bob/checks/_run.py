@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, NamedTuple
 
@@ -253,6 +254,53 @@ def is_unit_active(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
     should use :func:`unit_active_state` instead.
     """
     return unit_active_state(name, timeout=timeout) == "active"
+
+
+_UNIX_TS_RE = re.compile(r"^@(\d+)$")
+_TEXT_TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+
+
+def unit_config_applied_at(name: str, timeout: int = _CMD_TIMEOUT) -> "float | None":
+    """Epoch seconds when systemd last (re)applied this unit's configuration.
+
+    ``StateChangeTimestamp``, and deliberately not ``ActiveEnterTimestamp`` or
+    ``ExecMainStartTimestamp``. Established against systemd on a disposable
+    user unit rather than assumed: after ``systemctl reload``, with the main
+    PID unchanged, only StateChangeTimestamp moved — the other two still
+    reported the original start. An administrator who edits a config file and
+    reloads correctly is the ordinary case, and comparing against a start
+    timestamp would report every one of them as drifted. A guard that fires on
+    people doing the right thing gets switched off.
+
+    ``--timestamp=unix`` needs systemd 248; older builds fall back to the
+    C-locale text form, parsed as naive local time — the same clock the file
+    mtimes are read on, so the comparison stays consistent.
+
+    Returns None when systemd could not answer, which the callers treat as
+    "unknown" rather than "no drift".
+    """
+    raw = run_result(
+        "systemctl", "show", name, "-p", "StateChangeTimestamp",
+        "--value", "--timestamp=unix", timeout=timeout,
+    ).stdout.strip()
+
+    unix = _UNIX_TS_RE.match(raw)
+    if unix:
+        return float(unix.group(1))
+
+    if not raw:
+        raw = run_result(
+            "systemctl", "show", name, "-p", "StateChangeTimestamp", "--value",
+            timeout=timeout,
+        ).stdout.strip()
+
+    text = _TEXT_TS_RE.search(raw)
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
+    except (ValueError, OSError):
+        return None
 
 
 def unit_active_state(name: str, timeout: int = _CMD_TIMEOUT) -> "str | None":
