@@ -8,7 +8,12 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ## [v0.15.5] — 03-09-2026
 
-**« Non installé » et « rien n'a pu être interrogé » étaient la même réponse.**
+**Cinq angles de chasse sur une seule question : ce que dit BOB est-il vérifiable ?**
+
+Non-breaking. Sur un hôte privilégié, l'audit est identique à la v0.15.4 ;
+sans privilège, un verdict change. Les angles sont pris dans l'ordre ci-dessous.
+
+## « Non installé » et « rien n'a pu être interrogé » étaient la même réponse
 
 Trouvé avec un instrument neuf. L'audit a été lancé dans un espace de noms où
 tous les outils externes sont retirés du PATH — un audit aveugle, qui devrait

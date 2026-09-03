@@ -8,7 +8,12 @@ All notable changes to this project are documented here.
 
 ## [v0.15.5] — 2026-09-03
 
-**"Not installed" and "nothing could ask" were the same answer.**
+**Five hunting angles on one question: is what BOB says verifiable?**
+
+Non-breaking. On a privileged host the audit is byte-identical to v0.15.4;
+unprivileged, one verdict changes. The angles are taken in order below.
+
+## "Not installed" and "nothing could ask" were the same answer
 
 Found with a new instrument. The audit was run in a namespace with every
 external tool stripped from PATH — a blind audit, which should say "I could not
