@@ -40,6 +40,42 @@
 > unblocked it. BREAKING on a patch number, deliberately — see the versioning note
 > at the top of the v0.15.4 changelog entry.
 
+> **v0.15.5 (this snapshot).** A single campaign, five angles, all on one
+> question: is what BOB says verifiable, and is it the reality? **(1) An absence
+> of answer collapsed into an assertion** — seven instances, found with a blind
+> audit run three ways: tool removed from PATH, tool present but stubbed to
+> refuse, then existing files masked so reading them raises `PermissionError`.
+> The sharpest was `package_installed()` answering None both for "absent" and
+> for "no package manager to ask", which `firmware` turned into a deducted
+> point. Fixed by a sentinel probe: each manager is asked for a package it
+> necessarily owns — itself — and a negative is not trusted until the layer has
+> produced a positive. **(2) Over-interpretation**, the mirror: `backup`
+> deduced about *configuration* from a name on PATH (artefacts sat behind the
+> binary gate, inverting the evidence hierarchy), and `logs` named a brute-force
+> attack from packets the firewall had already dropped, counting packets where
+> `tcp_syn_retries=6` produces six per attempt. The discriminator was already in
+> every log line and had never been read: a retransmission reuses its source
+> port. **(3) What the verdict is about** — the SSH findings are phrased as
+> behaviour but read from a file sshd loads at start and on reload;
+> `StateChangeTimestamp` is the only systemd property that follows a reload,
+> established on a disposable user unit rather than assumed. **(4) Aggregation**
+> — "All SUID binaries are known-safe" over a walk whose exit code was never
+> read. **(5) Composed verdicts** — a qualification lived as a sibling entry in
+> a flat list, so `correlation.py` built ALERTs from findings the same audit had
+> just qualified; `Finding.qualified_by` now carries it, and `json_output` and
+> `webhook` expose it additively.
+>
+> **Verified before release, not asserted.** A/B of `origin/main` against HEAD on
+> the same host: **under privilege, zero difference** — score, deductions,
+> findings and every level counter identical across 15 commits. Unprivileged,
+> exactly one change, `suid_audit.ok` → `ok_partial`, which is the fix working.
+> Bilingual read: no bracketed fallback, no unsubstituted placeholder. A v0.15.4
+> baseline reads under v0.15.5 with no migration shim. Two guards had to be
+> repaired mid-campaign because they reported confidence they had not earned —
+> one asserted key names appeared in a source file and stayed green when the
+> branch that printed them was deleted; the other counted `FAILED` and read an
+> ERROR as the guard holding.
+
 
 ---
 
@@ -48,7 +84,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 8085 unit tests · 19 doc files · 5+ distros field-tested │
+│                 8089 unit tests · 19 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -212,7 +248,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 203 test files, ~5480 functions, 8085 collected (v0.15.5)
+├── tests/                     ← 204 test files, ~5482 functions, 8089 collected (v0.15.5)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -714,7 +750,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 
 - **Audit-only by default** (no auto-fix without explicit `--fix --apply`). Foundational security stance.
 - **Zero runtime deps outside stdlib**. Major asset for distro packaging; preserve at all costs.
-- **Snapshot + check_xxx separation**. Enables ~8085 tests with no mocks.
+- **Snapshot + check_xxx separation**. Enables ~8089 tests with no mocks.
 - **Equal-domain weighting** in global score. All active domains contribute equally — intentional, retained through v0.10.x. The "main architectural question for v0.3.0" was answered: keep equal weighting.
 - **JSON schema_version dispatch** (v0.7.0 T2). `DEFAULT_SCHEMA_VERSION="3"` since v0.12.0 F9; the `"1"` legacy path and `--json-v1` were retired in v0.9.0 F-3, `"2"` in v0.12.0 (any non-`"3"` value now raises `ValueError`). Breaking changes = `"4"` + major bump.
 - **EXPLAIN_KEYS frozen** with alias map for renames. 187 keys / 49 prefixes as of v0.10.1 (v0.7.0 baseline was 117 / 30; v0.8.0 drift batch backfilled 51 missing WARN/ALERT findings → 168 / 45; v0.10.1 D-4 Rank 1 added `ssh.x11.forwarding.client` → 169 and registered the first live `EXPLAIN_KEY_ALIASES` entry since v0.9.0 D-3 emptied it — see `tests/test_explain_coverage.py` whitelist for the closed-gap ledger).
@@ -811,7 +847,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 203 test files, ~5480 functions, **8085 collected** (v0.15.5) | `pytest --collect-only -q` |
+| Tests | 204 test files, ~5482 functions, **8089 collected** (v0.15.5) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

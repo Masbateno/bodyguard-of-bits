@@ -9,7 +9,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.14.x         | ✅ current          |
+| 0.15.x         | ✅ current          |
+| 0.14.x         | ❌ end of life      |
 | 0.13.x         | ❌ end of life      |
 | 0.12.x         | ❌ end of life      |
 | 0.8.x – 0.11.x | ❌ end of life      |
@@ -17,7 +18,31 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.14.x+1`. A breaking change bumps the minor (`0.15.0`).
+Patches release as `0.15.x+1`. A breaking change bumps the minor (`0.16.0`).
+
+**v0.14.x is end-of-life as of 2026-08-31** (the day v0.15.0 ships, per the
+"latest minor line only" policy above). No security fixes will be backported.
+Users on v0.14.x must `pipx upgrade bodyguard-of-bits` to v0.15.x.
+
+The upgrade carries **behavioural** changes, and one of them broke the usual
+versioning discipline deliberately. v0.15.4 shipped scoring changes under a
+patch number — a documented exception, taken to empty a backlog that had been
+deferring them for several releases — so a host's score can move on that
+upgrade without any change to the host:
+
+* container isolation now costs points where it is an operator choice:
+  `--privileged` (−3), a lone `CAP_SYS_ADMIN` (−2), seccomp switched off (−1).
+  A container started with no flags still scores zero;
+* the nftables path reached parity with iptables. This mostly *removes* a false
+  deduction: a correctly hardened nftables host was losing a point for a
+  loopback rule it had, because only the `iif` spelling was matched and not
+  `iifname`;
+* world-readable cloud-init user-data (−2) and an orphan socket unit bound to a
+  non-loopback address (−1) were promoted from INFO.
+
+v0.15.x also states more, and asserts less, where BOB cannot see: a check that
+could not read its input now says so instead of substituting a default. That
+direction only ever *removes* deductions.
 
 **v0.13.x is end-of-life as of 2026-08-29** (the day v0.14.0 ships, per the
 "latest minor line only" policy above). No security fixes will be backported.

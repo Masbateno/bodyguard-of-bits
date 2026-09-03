@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.15.5] — 2026-09-02
+## [v0.15.5] — 2026-09-03
 
 **"Not installed" and "nothing could ask" were the same answer.**
 
@@ -473,7 +473,7 @@ function name simply stops matching, leaving either a real dispatch site
 unregistered or an obsolete exemption in place. A second guard now checks that
 every registry entry names a file that exists and a function defined in it.
 
-**Tests** 7958 → **8085**.
+**Tests** 7958 → **8089**.
 
 ---
 

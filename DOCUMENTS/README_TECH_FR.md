@@ -721,7 +721,7 @@ Pour un domaine actif, `reason` vaut `null`. Cela permet à un consommateur de *
 
 | Clé | Type | Description |
 |---|---|---|
-| `findings` | array | Tous les findings avec `{ key, level, message, nature, cmd, note, template_vars }` |
+| `findings` | array | Tous les findings avec `{ key, level, message, detail, nature, cmd, note, template_vars, qualified_by }`. `detail` est présent depuis la v0.8.1 et manquait à cette liste. **`qualified_by`** (nouveau en v0.15.5, additif) porte les clés des findings du même audit qui qualifient celui-ci — par exemple `ssh.config_newer_than_service`, qui indique que les constats SSH décrivent le fichier de configuration et non le service en cours. Un consommateur qui ne lit que `key` ne peut pas distinguer un constat qualifié d'un constat qui ne l'est pas ; normalement vide. |
 | `services` | array | Services réseau installés avec `{ name, installed, active, risk, ports }` |
 | `open_ports` | array | Ports en écoute sur `0.0.0.0` avec `{ port, address, process }` (filtré) |
 | `open_ports_all` | array | Tous les ports en écoute, y compris bound localhost (nouveau en v2) |

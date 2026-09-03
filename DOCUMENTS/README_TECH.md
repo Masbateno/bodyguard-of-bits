@@ -721,7 +721,7 @@ For an active domain, `reason` is `null`. This lets a consumer **reproduce the h
 
 | Key | Type | Description |
 |---|---|---|
-| `findings` | array | All findings with `{ key, level, message, nature, cmd, note, template_vars }` |
+| `findings` | array | All findings with `{ key, level, message, detail, nature, cmd, note, template_vars, qualified_by }`. `detail` has been present since v0.8.1 and was missing from this list. **`qualified_by`** (new in v0.15.5, additive) holds the keys of findings from the same audit that qualify this one — for instance `ssh.config_newer_than_service`, which says the SSH findings describe the config file rather than the running service. A consumer matching on `key` alone cannot tell a qualified finding from an unqualified one; it is normally empty. |
 | `services` | array | Installed network services with `{ name, installed, active, risk, ports }` |
 | `open_ports` | array | Listening ports on `0.0.0.0` with `{ port, address, process }` (filtered) |
 | `open_ports_all` | array | All listening ports, including localhost-bound (new in v2) |

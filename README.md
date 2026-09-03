@@ -115,7 +115,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.14.1  │  Linux hardening auditor                                     ║
+║  BOB v0.15.5  │  Linux hardening auditor                                     ║
 ║  System        : Linux Mint 22.3                                             ║
 ║  Kernel        : 6.17.0-23-generic                                           ║
 ║  UFW           : v0.36.2                                                     ║

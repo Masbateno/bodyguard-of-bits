@@ -8,7 +8,8 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.14.x         | ✅ courante         |
+| 0.15.x         | ✅ courante         |
+| 0.14.x         | ❌ fin de vie       |
 | 0.13.x         | ❌ fin de vie       |
 | 0.12.x         | ❌ fin de vie       |
 | 0.8.x – 0.11.x | ❌ fin de vie       |
@@ -16,7 +17,33 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.14.x+1`. Un breaking change bump le minor (`0.15.0`).
+Les correctifs sortent en `0.15.x+1`. Un breaking change bump le minor (`0.16.0`).
+
+**v0.14.x est en fin de vie depuis le 31-08-2026** (jour du ship de v0.15.0,
+selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun
+correctif de sécurité ne sera backporté. Les utilisateurs sur v0.14.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.15.x.
+
+La mise à jour comporte des changements **de comportement**, et l'un d'eux a
+délibérément entravé la discipline de versionnage. La v0.15.4 a livré des
+changements de score sous un numéro de correctif — exception documentée, prise
+pour vider un backlog qui les repoussait depuis plusieurs versions — si bien que
+le score d'un hôte peut bouger à cette mise à jour sans que l'hôte ait changé :
+
+* l'isolation des conteneurs coûte désormais des points là où elle relève d'un
+  choix de l'opérateur : `--privileged` (−3), un `CAP_SYS_ADMIN` isolé (−2),
+  seccomp désactivé (−1). Un conteneur lancé sans aucun drapeau reste à zéro ;
+* le chemin nftables atteint la parité avec iptables. Cela **retire** surtout
+  une fausse déduction : un hôte nftables correctement durci perdait un point
+  pour une règle de loopback qu'il possédait, seule l'écriture `iif` étant
+  reconnue et pas `iifname` ;
+* les données `user-data` cloud-init lisibles par tous (−2) et une unité socket
+  orpheline liée à une adresse non-loopback (−1) sont passées d'INFO à WARN.
+
+La v0.15.x énonce aussi davantage, et affirme moins, là où BOB ne peut pas
+voir : un check qui n'a pas pu lire son entrée le dit désormais au lieu de
+substituer un défaut. Cette direction ne fait jamais que **retirer** des
+déductions.
 
 **v0.13.x est en fin de vie depuis le 29-08-2026** (jour du ship de v0.14.0,
 selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun

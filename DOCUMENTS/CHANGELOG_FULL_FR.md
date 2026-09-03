@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.15.5] — 02-09-2026
+## [v0.15.5] — 03-09-2026
 
 **« Non installé » et « rien n'a pu être interrogé » étaient la même réponse.**
 
@@ -515,7 +515,7 @@ vrai site non enregistré, soit une exemption obsolète en place. Une seconde
 garde vérifie maintenant que chaque entrée du registre nomme un fichier
 existant et une fonction qui y est définie.
 
-**Tests** 7958 → **8085**.
+**Tests** 7958 → **8089**.
 
 ---
 
