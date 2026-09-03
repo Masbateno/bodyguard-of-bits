@@ -204,7 +204,12 @@ def build_markdown_output(
     lines.append("")
     lines.append(f"| {t('markdown_output.col_field')} | {t('markdown_output.col_value')} |")
     lines.append("|-------|-------|")
-    lines.append(f"| **{t('markdown_output.field_score')}** | {engine.score}/10 |")
+    # v0.16.0 — the score is a ceiling when a check could not read its input.
+    # Six sinks render it and only two were updated at first; the report an
+    # operator archives said 7/10 where the terminal said ≤ 7/10, about the
+    # same audit. A guard now covers all of them.
+    _sc = f"≤ {engine.score}" if engine.score_is_upper_bound else f"{engine.score}"
+    lines.append(f"| **{t('markdown_output.field_score')}** | {_sc}/10 |")
     lines.append(f"| **{t('markdown_output.field_risk_level')}** | {risk_emoji} {level_label} |")
     lines.append(f"| **{t('markdown_output.field_alerts')}** | {engine.alert_count} |")
     lines.append(f"| **{t('markdown_output.field_warnings')}** | {engine.warn_count} |")

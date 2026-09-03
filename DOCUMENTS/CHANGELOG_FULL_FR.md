@@ -91,7 +91,64 @@ résolvait rien. Ignorer une clé signifie « ne me parle pas de ça » : le lie
 part avec. Les constats qualifiés ne sont pas touchés ; ce n'est pas eux qu'on
 a ignorés.
 
-**Tests** 8089 → **8117**.
+**Une vérité, six rendus, et deux seulement mis à jour.**
+
+Le score est devenu un plafond au commit précédent. Le changement a atterri
+dans le terminal et la sortie JSON. Pas dans le rapport sur disque : l'artefact
+qu'un opérateur archive disait `Score : 7/10` là où l'écran disait `≤ 7/10` —
+du même audit, à la même seconde. Ni dans Markdown, HTML, CSV ou le webhook.
+Aucun de ces fichiers n'était fautif : le défaut est que six endroits rendent
+le même nombre indépendamment, si bien que « mettre à jour le rendu du score »
+est six modifications et que personne ne prévient quand on en a fait deux.
+
+Les six le portent désormais, chacun sous la forme que son consommateur
+accepte : `≤ 7/10` dans le rapport, le Markdown et le HTML ; une colonne
+additive `score_is_upper_bound` en CSV, parce qu'un tableur lit cette colonne
+comme un nombre et qu'un préfixe casserait toutes les formules existantes ; le
+même champ additif plus `unverified` dans la charge webhook. **La garde est le
+vrai correctif** — toute sortie neuve, ou tout nouveau consommateur de
+`engine.score`, doit s'y déclarer, et sept modules qui lisent le score pour
+autre chose que rendre un verdict sont exemptés nommément.
+
+Le rapport archivé gagne deux choses qu'il n'avait jamais eues. Il nomme
+désormais le **profil d'audit**, qui change les sévérités et le code de sortie
+— deux rapports pris sous des profils différents n'étaient pas comparables et
+rien dans le fichier ne disait lequel l'avait produit. Et la largeur de colonne
+de la synthèse est calculée sur les libellés réellement utilisés, avec un
+plancher à l'historique 8, « Visibility » faisant dix caractères et débordant
+d'une largeur codée en dur.
+
+**`--target` pouvait être satisfait par un plafond.** Trouvé par la garde, pas
+cherché : `bob/__main__.py` compare `engine.score` au seuil et n'était ni
+listé, ni exempté. `--target N` demande « le score vaut-il au moins N ? », et
+face à un plafond la réponse est *inconnue* — un audit lancé sans les
+privilèges nécessaires faisait donc passer un portail d'intégration continue au
+vert. Un portail échoue fermé : un score borné manque désormais la cible.
+
+**`bob -q -d` écrivait un rapport de 440 lignes sans bloc de synthèse.** Ni
+score, ni niveau de risque, ni compteurs. `-q` concerne stdout, `-d` est un
+fichier que l'opérateur a explicitement demandé ; les deux sont orthogonaux, et
+`display.py` énonce déjà la règle — « tous les `print_*` sont conditionnés par
+`config.quiet` ; les `report.write_*` tournent toujours pour que le .log reste
+complet ». La règle était respectée dans une fonction et défaite un cran
+au-dessus, l'appel entier qui écrit la synthèse se trouvant dans
+`if not config.quiet:`. Le garde-fou est maintenant là où cette phrase le met.
+
+Le corriger a introduit la forme du hotfix v0.8.3, et les tests l'ont attrapée :
+ré-indenter la région d'affichage a happé `_compute_posture_annotation`, dont
+`write_summary` consomme le résultat deux lignes plus loin — sous `-q`, le
+rapport reperdait sa synthèse, en silence, par `UnboundLocalError`. Une garde
+statique rejette désormais tout nom assigné uniquement dans une branche `quiet`
+et lu par cet appel.
+
+**Quatre gardes en deux versions ont dû être écrites deux fois**, celle-ci
+comprise : elle contournait la branche `quiet` par un `continue`, mais
+`ast.walk` livre les descendants quand même, donc chaque nom de la branche
+comptait aussi comme extérieur et la garde s'annulait elle-même. Elle restait
+verte quand on remettait la ligne fautive — exactement l'échec qu'elle existe
+pour empêcher.
+
+**Tests** 8089 → **8134**.
 
 ---
 
@@ -609,7 +666,7 @@ vrai site non enregistré, soit une exemption obsolète en place. Une seconde
 garde vérifie maintenant que chaque entrée du registre nomme un fichier
 existant et une fonction qui y est définie.
 
-**Tests** 7958 → **8117**.
+**Tests** 7958 → **8134**.
 
 ---
 

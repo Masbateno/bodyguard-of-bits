@@ -38,6 +38,11 @@ class FakeEngine:
     def __init__(self, score=10, findings=None, deductions=None):
         from bob.scoring import RiskLevel
         self.score     = score
+        # v0.16.0 — every sink that renders the score must know whether it is a
+        # measurement or a ceiling. A stub that omits it fails loudly here,
+        # which is the point: the attribute is not optional for a renderer.
+        self.score_is_upper_bound = False
+        self.unverified = []
         self.findings  = findings or []
         self.breakdown = deductions or []
         self.alert_count = sum(1 for f in self.findings if f.level.value == "alert")

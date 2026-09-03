@@ -182,6 +182,11 @@ def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         "host":      sys_info.hostname,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "score":     engine.score,
+        # Additive, like the JSON sink: a monitoring rule on `score` keeps
+        # working, and this says whether the number is a measurement or a
+        # ceiling.
+        "score_is_upper_bound": engine.score_is_upper_bound,
+        "unverified": sorted(engine.unverified),
         "max_score": 10,
         "risk":      engine.effective_level.value,
         "alerts":    engine.alert_count,

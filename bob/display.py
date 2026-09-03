@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from bob.cis_refs import get_cis_ref, get_cis_code
+from bob.visibility import section_of
 
 
 def _print_recurrence(prev_count: int) -> None:
@@ -500,7 +501,6 @@ def _summary_header_lines(engine, network_context, config, t,
         # the 78-column frame on an ordinary unprivileged run, where nine of
         # them are unreadable — and the list was redundant anyway, since each
         # of those sections prints its own "could not read" finding above.
-        from bob.visibility import section_of
         sections = {section_of(k) for k in engine.unverified}
         lines.append((
             t("scoring.visibility_label"),
@@ -613,8 +613,15 @@ def _summary_breakdown_lines(engine, t, inner: int) -> list[tuple[str, str]]:
 def print_audit_summary(engine, network_context, public_ip, config, t,
                          report, snapshots, profile_name: str = "server",
                          prev_score: "int | None" = None,
-                         fw_policy: str = "deny") -> None:
-    """Print the audit summary box and write to report."""
+                         fw_policy: str = "deny",
+                         degraded_sections: "tuple[str, ...] | list[str]" = ()) -> None:
+    """Write the audit summary to the report, and print it unless quiet.
+
+    v0.16.0: the terminal half is gated here rather than at the call site. It
+    used to be skipped wholesale under ``-q``, so ``bob -q -d`` produced a
+    report with no summary block — while this module's own rule says the
+    ``report.write_*`` calls always run so the .log file stays complete.
+    """
     from bob.output import print_summary_box, _TERM_WIDTH
 
     # _TERM_WIDTH - 2 = box inner width; - 2 again for the leading indent
@@ -625,45 +632,61 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
     lines.extend(_summary_findings_lines(engine, t, inner))
     lines.extend(_summary_breakdown_lines(engine, t, inner))
 
-    print_summary_box(lines)
-    print()
-
-    action_items      = [f for f in engine.findings if f.nature == "action"]
-    improvement_items = [f for f in engine.findings if f.nature == "improvement"]
-    if not action_items and not improvement_items:
-        print(f"  {t('summary.clean')}")
-    elif not action_items:
-        print(f"  {t('summary.warnings')}")
-    else:
-        print(f"  {t('summary.alerts')}")
-
-    implicit_svcs = [
-        snap.label for snap in snapshots
-        if snap.is_active
-        and snap.service.is_high_or_critical
-        and all(e.value == "no_rule" for e in snap.exposures.values())
-    ]
-    if implicit_svcs and fw_policy not in ("deny", "reject"):
+    # Everything below writes to the terminal. `-q` silences it; the
+    # report.write_summary() call that follows always runs, which is the
+    # rule this module states and `bob -q -d` used to break.
+    if not getattr(config, "quiet", False):
+        print_summary_box(lines)
         print()
-        print(f"  ℹ {t('summary.implicit_policy')}")
-        print(f"    {t('summary.implicit_svcs')} : {', '.join(implicit_svcs)}")
 
-    print()
-    print(f"  ℹ {t('summary.scope_line1')}")
-    print(f"  ℹ {t('summary.scope_line2')}")
-    # A1 (v0.8.0 drift batch): explicit framing of the verdict — BOB is a
-    # hardening auditor whose score is conditioned by the profile and
-    # network context shown above, not an autonomous threat-modeling
-    # engine. Pre-emptive against "BOB says all good = all good" reads.
-    print(f"  ℹ {t('summary.context_disclaimer')}")
+        action_items      = [f for f in engine.findings if f.nature == "action"]
+        improvement_items = [f for f in engine.findings if f.nature == "improvement"]
+        if not action_items and not improvement_items:
+            print(f"  {t('summary.clean')}")
+        elif not action_items:
+            print(f"  {t('summary.warnings')}")
+        else:
+            print(f"  {t('summary.alerts')}")
+
+        implicit_svcs = [
+            snap.label for snap in snapshots
+            if snap.is_active
+            and snap.service.is_high_or_critical
+            and all(e.value == "no_rule" for e in snap.exposures.values())
+        ]
+        if implicit_svcs and fw_policy not in ("deny", "reject"):
+            print()
+            print(f"  ℹ {t('summary.implicit_policy')}")
+            print(f"    {t('summary.implicit_svcs')} : {', '.join(implicit_svcs)}")
+
+        print()
+        print(f"  ℹ {t('summary.scope_line1')}")
+        print(f"  ℹ {t('summary.scope_line2')}")
+        # A1 (v0.8.0 drift batch): explicit framing of the verdict — BOB is a
+        # hardening auditor whose score is conditioned by the profile and
+        # network context shown above, not an autonomous threat-modeling
+        # engine. Pre-emptive against "BOB says all good = all good" reads.
+        print(f"  ℹ {t('summary.context_disclaimer')}")
 
     # M-3 (v0.7.0 Phase 2.1): propagate posture annotation to the on-disk
     # .txt report so it stays in sync with the terminal summary box.
     # M-10 (v0.7.2): single source of truth via _compute_posture_annotation.
+    #
+    # Outside the quiet gate: write_summary below consumes it, and leaving it
+    # inside made `bob -q -d` raise UnboundLocalError — the report then lost
+    # its summary block again, silently.
     _effective, _r_annotation = _compute_posture_annotation(engine, t)
+
     report.write_summary(
         score=engine.score,
-        risk_level=t(f"scoring.level.{_effective.value}"),
+        # The same qualified string the terminal shows. Passing the bare level
+        # left the archived report saying "HIGH" where the screen said "HIGH at
+        # best" — the two disagreeing about the same audit.
+        risk_level=(
+            t("scoring.risk_at_best", level=t(f"scoring.level.{_effective.value}"))
+            if engine.score_is_upper_bound
+            else t(f"scoring.level.{_effective.value}")
+        ),
         network_context=t(f"scoring.context.{network_context}"),
         public_ip=public_ip or "",
         ok_count=engine.ok_count,
@@ -683,8 +706,17 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             "score":   t("report.field_score"),
             "risk":    t("report.field_risk"),
             "context": t("report.field_context"),
+            "profile": t("report.field_profile"),
+            "visibility": t("scoring.visibility_label"),
+            "visibility_value": t(
+                "scoring.visibility_value",
+                count=len({section_of(k) for k in engine.unverified}),
+            ) if engine.unverified else "",
         },
         posture_annotation=_r_annotation,
+        score_is_upper_bound=engine.score_is_upper_bound,
+        unverified_count=len({section_of(k) for k in engine.unverified}),
+        profile_name=profile_name.capitalize() if profile_name else "",
     )
 
 

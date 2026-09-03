@@ -81,6 +81,9 @@ class Report(Protocol):
         breakdown: list,
         labels: dict[str, str],
         posture_annotation: str = "",
+        score_is_upper_bound: bool = False,
+        unverified_count: int = 0,
+        profile_name: str = "",
     ) -> None: ...
     def write_risk_context_section(
         self,
@@ -328,6 +331,9 @@ class AuditReport:
         breakdown: list,
         labels: dict[str, str],
         posture_annotation: str = "",
+        score_is_upper_bound: bool = False,
+        unverified_count: int = 0,
+        profile_name: str = "",
     ) -> None:
         """
         Write the audit summary block.
@@ -349,6 +355,21 @@ class AuditReport:
                                 Mirrors the terminal summary box behaviour so
                                 the on-disk .txt report and the screen stay in
                                 sync.
+            score_is_upper_bound: v0.16.0 — True when a check could not read
+                                its input, so the score is a ceiling. The
+                                terminal renders "≤ 7/10" and this block used
+                                to render "7/10" from the same audit: the
+                                report is the artefact an operator keeps, and
+                                it contradicted the screen.
+            unverified_count:   Number of sections not fully read.
+            profile_name:       The audit profile in force. It changes
+                                severities and the exit code, so two reports
+                                taken under different profiles are not
+                                comparable — and nothing in the file said which
+                                one produced it.
+
+        Defaults keep every pre-v0.16.0 caller working, including NullReport
+        and the mocks in the test suite.
         """
         context_str = network_context
         if public_ip:
@@ -362,6 +383,22 @@ class AuditReport:
         # Defaults match the v0.7.2 English output exactly so legacy
         # callers (tests / mocks that pre-date the i18n extraction)
         # produce the same .txt output as before.
+        # Column width from the longest label actually used, not a constant:
+        # "Visibility" is ten characters and overflowed the hardcoded 8, so the
+        # colon sat flush against it while every other row was aligned.
+        _used = [
+            labels.get("ok", "OK"), labels.get("warning", "Warning"),
+            labels.get("alert", "Alert"), labels.get("score", "Score"),
+            labels.get("risk", "Risk"), labels.get("context", "Context"),
+        ]
+        if profile_name:
+            _used.append(labels.get("profile", "Profile"))
+        if score_is_upper_bound:
+            _used.append(labels.get("visibility", "Visible"))
+        # Floored at the historical 8 so a summary without the long labels
+        # renders byte-identically to every version before this one.
+        _w = max(8, max(len(x) for x in _used))
+
         ok_lbl   = labels.get("ok",      "OK")
         warn_lbl = labels.get("warning", "Warning")
         alert_lbl = labels.get("alert",  "Alert")
@@ -372,12 +409,20 @@ class AuditReport:
         self._writeln("")
         self._writeln(_SEPARATOR)
         self._writeln(f"[{labels.get('summary', 'AUDIT SUMMARY')}]")
-        self._writeln(f"{ok_lbl:<8}: {ok_count}")
-        self._writeln(f"{warn_lbl:<8}: {warn_count}")
-        self._writeln(f"{alert_lbl:<8}: {alert_count}")
-        self._writeln(f"{score_lbl:<8}: {score}/10")
-        self._writeln(f"{risk_lbl:<8}: {risk_str}")
-        self._writeln(f"{ctx_lbl:<8}: {context_str}")
+        self._writeln(f"{ok_lbl:<{_w}}: {ok_count}")
+        self._writeln(f"{warn_lbl:<{_w}}: {warn_count}")
+        self._writeln(f"{alert_lbl:<{_w}}: {alert_count}")
+        score_str = f"≤ {score}/10" if score_is_upper_bound else f"{score}/10"
+        self._writeln(f"{score_lbl:<{_w}}: {score_str}")
+        self._writeln(f"{risk_lbl:<{_w}}: {risk_str}")
+        self._writeln(f"{ctx_lbl:<{_w}}: {context_str}")
+        if profile_name:
+            self._writeln(f"{labels.get('profile', 'Profile'):<{_w}}: {profile_name}")
+        if score_is_upper_bound:
+            self._writeln(
+                f"{labels.get('visibility', 'Visible'):<{_w}}: "
+                f"{labels.get('visibility_value', '')}"
+            )
         self._writeln("")
 
         if breakdown:

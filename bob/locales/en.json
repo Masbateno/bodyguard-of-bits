@@ -457,7 +457,8 @@
     "field_alert": "Alert",
     "field_score": "Score",
     "field_risk": "Risk",
-    "field_context": "Context"
+    "field_context": "Context",
+    "field_profile": "Profile"
   },
   "service_risk": {
     "local_exposure_note": "Intrinsic risk (see above) — actual exposure: LOW (SSH not reachable from the internet on this network)",

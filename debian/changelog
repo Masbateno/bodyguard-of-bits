@@ -24,6 +24,16 @@ bodyguard-of-bits (0.16.0-1) UNRELEASED; urgency=low
   * A qualification pointing at a finding the operator silenced is stripped
     rather than left dangling: the qualifier is no longer in `findings`, which
     is the only list JSON emits.
+  * Six sinks render the score and only two carried the ceiling: the archived
+    report said "Score : 7/10" where the terminal said "<= 7/10", about the same
+    audit. All six carry it now, plus a guard so a new sink must declare itself.
+  * That guard found --target could be satisfied by a ceiling, so an audit run
+    without the privileges it needs made a CI gate go green. A gate fails closed.
+  * The archived report now names the audit profile, which changes severities and
+    the exit code.
+  * bob -q -d wrote a 440-line report with no summary block: -q is about stdout,
+    -d is a file the operator asked for. The quiet gate moved inside the function
+    that writes it, where display.py's own rule already put it.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 03 Sep 2026 20:30:00 +0200
 

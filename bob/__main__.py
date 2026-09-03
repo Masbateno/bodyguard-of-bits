@@ -569,11 +569,23 @@ def _run(argv=None) -> int:
             curr_baseline = build_baseline(engine, ports_snapshot, snapshots)
             save_baseline(curr_baseline)
 
+            # v0.16.0 — always called, quiet handled inside.
+            #
+            # This sat inside `if not config.quiet:`, so `bob -q -d` wrote a
+            # 440-line report with no [AUDIT SUMMARY] block at all: no score,
+            # no risk level, no counts. The two flags are orthogonal — `-q` is
+            # about stdout, `-d` is a file the operator explicitly asked for —
+            # and display.py already states the rule this violated: "all print_*
+            # calls are gated by config.quiet so bob -q produces empty stdout;
+            # report.write_* calls always run so the .log file remains
+            # complete". The gate is now where that sentence says it is.
+            print_audit_summary(engine, network_context, public_ip, config, t, report, snapshots,
+                                profile_name=active_profile.name,
+                                prev_score=prev_baseline.score if prev_baseline else None,
+                                fw_policy=fw_policy,
+                                degraded_sections=degraded_sections)
+
             if not config.quiet:
-                print_audit_summary(engine, network_context, public_ip, config, t, report, snapshots,
-                                    profile_name=active_profile.name,
-                                    prev_score=prev_baseline.score if prev_baseline else None,
-                                    fw_policy=fw_policy)
                 from bob.domain_scores import render_domain_scores
                 _domain_scores = engine.domain_scores
                 # v0.12.1: pass engine + profile so ALL domains are shown,
@@ -626,7 +638,16 @@ def _run(argv=None) -> int:
                 level_score_only=engine.level.value,
             )
 
-            if config.target > 0 and engine.score < config.target:
+            # v0.16.0 — a bounded score cannot satisfy a target.
+            #
+            # `--target N` asks "is the score at least N?". When a check could
+            # not read its input the score is a ceiling, so the honest answer
+            # is "unknown", and a CI gate that reads unknown as pass is the
+            # exact failure this release is about: an audit run without the
+            # privileges it needs would go green. A gate fails closed.
+            if config.target > 0 and (
+                engine.score < config.target or engine.score_is_upper_bound
+            ):
                 _exit = EXIT_TARGET_MISSED
             elif engine.alert_count > 0:
                 _exit = EXIT_ALERTS

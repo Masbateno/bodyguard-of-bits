@@ -19,6 +19,7 @@ _HEADERS = [
     "host",
     "timestamp",
     "score",
+    "score_is_upper_bound",
     "risk",
     "alerts",
     "warnings",
@@ -85,6 +86,10 @@ def build_csv_output(
         "host":      sys_info.hostname,
         "timestamp": ts,
         "score":     engine.score,
+        # Additive column rather than "≤ 7" in the score cell: a spreadsheet
+        # consumes that column as a number, and prefixing it would break every
+        # existing formula. The flag says what the number is worth.
+        "score_is_upper_bound": int(engine.score_is_upper_bound),
         "risk":      engine.level.value,
         "alerts":    engine.alert_count,
         "warnings":  engine.warn_count,

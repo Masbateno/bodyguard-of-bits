@@ -85,7 +85,60 @@ reference resolved nothing. Ignoring a key means "do not tell me about this",
 so the link goes with it. The qualified findings themselves are untouched; they
 were not the ones ignored.
 
-**Tests** 8089 → **8117**.
+**One truth, six renderers, and only two of them updated.**
+
+The score became a ceiling in the commit above. The change landed in the
+terminal and the JSON sink. It did not land in the on-disk report, so the
+artefact an operator archives said `Score : 7/10` where the screen said
+`≤ 7/10` — about the same audit, at the same second. Nor in Markdown, HTML,
+CSV or the webhook. Nothing was wrong with any of those files: the defect is
+that six places render the same number independently, so "update the score
+rendering" is six edits and nobody is told when you have made two.
+
+All six carry it now, each in the shape its consumer can take: `≤ 7/10` in the
+report, Markdown and HTML; an additive `score_is_upper_bound` column in CSV,
+because a spreadsheet reads that column as a number and prefixing it would
+break every existing formula; the same additive field plus `unverified` in the
+webhook payload. **The guard is the actual fix** — a new sink, or any new
+consumer of `engine.score`, must declare itself, and seven modules that read
+the score for something other than rendering a verdict are exempt by name.
+
+The archived report gained two things it never had. It now names the **audit
+profile**, which changes severities and the exit code — two reports taken under
+different profiles were not comparable and nothing in the file said which one
+produced it. And the summary column width is computed from the labels actually
+used, floored at the historical 8, because "Visibility" is ten characters and
+overflowed a hardcoded width.
+
+**`--target` could be satisfied by a ceiling.** Found by the guard rather than
+looked for: `bob/__main__.py` compares `engine.score` against the target and
+was neither a listed sink nor exempt. `--target N` asks "is the score at least
+N?", and against a ceiling the answer is *unknown* — so an audit run without
+the privileges it needs made a CI gate go green. A gate fails closed: a bounded
+score now misses the target.
+
+**`bob -q -d` wrote a 440-line report with no summary block.** No score, no risk
+level, no counts. `-q` is about stdout and `-d` is a file the operator
+explicitly asked for; the two are orthogonal, and `display.py` already states
+the rule — "all `print_*` calls are gated by `config.quiet`; `report.write_*`
+calls always run so the .log file remains complete". The rule was honoured
+inside one function and defeated one level up, where the whole call that writes
+the summary sat inside `if not config.quiet:`. The gate is now where that
+sentence puts it.
+
+Fixing it introduced the v0.8.3 shape and the tests caught it: re-indenting the
+print region swallowed `_compute_posture_annotation`, whose result
+`write_summary` consumes two lines later, so under `-q` the report lost its
+summary again — silently, through an UnboundLocalError. A static guard now
+rejects any name assigned only inside a quiet branch and read by that call.
+
+**Four guards in two releases have now had to be written twice**, this one
+included: it walked past the quiet branch with a `continue`, but `ast.walk`
+yields descendants regardless, so every name inside the branch also counted as
+outside it and the guard cancelled itself out. It stayed green when the
+offending line was put back — the exact failure it exists to prevent.
+
+**Tests** 8089 → **8134**.
 
 ---
 
@@ -561,7 +614,7 @@ function name simply stops matching, leaving either a real dispatch site
 unregistered or an obsolete exemption in place. A second guard now checks that
 every registry entry names a file that exists and a function defined in it.
 
-**Tests** 7958 → **8117**.
+**Tests** 7958 → **8134**.
 
 ---
 

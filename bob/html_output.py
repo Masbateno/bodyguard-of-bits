@@ -161,7 +161,12 @@ def build_html_output(
     if t is None:
         t = _fallback_t
     ts         = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    score      = engine.score
+    # v0.16.0 — see markdown_output for why every sink carries this.
+    score      = f"≤ {engine.score}" if engine.score_is_upper_bound else engine.score
+    _bound_note = (
+        f" &nbsp; <em>{_h(t('scoring.visibility_label'))}</em>"
+        if engine.score_is_upper_bound else ""
+    )
     s_color    = _score_color(score)
     # I-1 (v0.7.0 Phase 2.1): use effective_level (posture-aware) for the
     # displayed risk, matching display/JSON/CSV/webhook contracts. Fallback
@@ -203,7 +208,8 @@ def build_html_output(
     a('<dl class="meta-grid">')
     a(f"<dt>{_h(t('html_output.field_score'))}</dt><dd>"
       f'<span class="score-circle" style="background:{_h(s_color)}">{score}</span>'
-      f" / 10 &nbsp; <strong>{_h(level_label)}</strong></dd>")
+      f" / 10 &nbsp; <strong>{_h(level_label)}</strong>"
+      f"{_bound_note}</dd>")
     a(f"<dt>{_h(t('html_output.field_alerts'))}</dt><dd>{engine.alert_count}</dd>")
     a(f"<dt>{_h(t('html_output.field_warnings'))}</dt><dd>{engine.warn_count}</dd>")
     a(f"<dt>{_h(t('html_output.field_host'))}</dt><dd><code>{_h(sys_info.hostname)}</code></dd>")
