@@ -117,6 +117,14 @@ class SuidSnapshot:
         unexpected_sgid:   SGID binaries whose basename is not in the whitelist.
         whitelisted_suid:  SUID binaries suppressed by the user's glob patterns.
         scan_skipped:      True if find timed out or failed entirely.
+        scan_partial:      True when find produced results but could not descend
+                           into every directory. Established against GNU find
+                           4.9.0: on an unreadable subtree it exits 1, names the
+                           directory on stderr, and still prints what it did
+                           reach. BOB read only stdout, so a partial walk was
+                           indistinguishable from a complete one — and the
+                           verdict it fed says "All SUID binaries are
+                           known-safe".
     """
     suid_paths:       list[str] = field(default_factory=list)
     sgid_paths:       list[str] = field(default_factory=list)
@@ -124,6 +132,7 @@ class SuidSnapshot:
     unexpected_sgid:  list[str] = field(default_factory=list)
     whitelisted_suid: list[str] = field(default_factory=list)
     scan_skipped:     bool      = False
+    scan_partial:     bool      = False
 
     @classmethod
     def from_system(cls, user_whitelist: list[str] | None = None) -> "SuidSnapshot":
@@ -138,6 +147,7 @@ class SuidSnapshot:
         suid_paths:  list[str] = []
         sgid_paths:  list[str] = []
         scan_skipped = False
+        scan_partial = False
 
         roots = [p for p in _SCAN_ROOTS if os.path.isdir(p)]
         if not roots:
@@ -168,6 +178,15 @@ class SuidSnapshot:
                         sgid_paths.append(path)
                 except OSError:
                     pass
+            # find exits non-zero when it could not descend somewhere, and
+            # keeps printing what it reached. Ignoring the code turned an
+            # incomplete walk into a clean bill of health; ignoring it with no
+            # output at all turned it into "0 SUID binaries", which is worse.
+            if proc.returncode != 0:
+                if suid_paths or sgid_paths:
+                    scan_partial = True
+                else:
+                    scan_skipped = True
         except (subprocess.TimeoutExpired, OSError):
             scan_skipped = True
 
@@ -198,6 +217,7 @@ class SuidSnapshot:
             unexpected_sgid=sorted(unexpected_sgid),
             whitelisted_suid=sorted(whitelisted_suid),
             scan_skipped=scan_skipped,
+            scan_partial=scan_partial,
         )
 
 
@@ -228,14 +248,28 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
 
     # --- Unexpected SUID ---
     if not snapshot.unexpected_suid:
-        result.ok(
-            message=_t(
-                "suid_audit.ok",
-                suid_count=len(snapshot.suid_paths),
-                sgid_count=len(snapshot.sgid_paths),
-            ),
-            key="suid_audit.ok",
-        )
+        # "All SUID binaries are known-safe" is a claim about a set. When find
+        # could not descend everywhere, BOB has not seen that set, and the
+        # honest verdict names what it did see instead of quantifying over what
+        # it did not.
+        if snapshot.scan_partial:
+            result.info(
+                message=_t(
+                    "suid_audit.ok_partial",
+                    suid_count=len(snapshot.suid_paths),
+                    sgid_count=len(snapshot.sgid_paths),
+                ),
+                key="suid_audit.ok_partial",
+            )
+        else:
+            result.ok(
+                message=_t(
+                    "suid_audit.ok",
+                    suid_count=len(snapshot.suid_paths),
+                    sgid_count=len(snapshot.sgid_paths),
+                ),
+                key="suid_audit.ok",
+            )
     else:
         paths_str = ", ".join(snapshot.unexpected_suid[:10])
         suffix = f" (+{len(snapshot.unexpected_suid) - 10} more)" if len(snapshot.unexpected_suid) > 10 else ""

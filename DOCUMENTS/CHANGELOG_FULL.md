@@ -369,7 +369,45 @@ through `fail2ban-client`, firewall through `ufw status`. The pattern was
 already right across most of the tool; the file-reading set is the exposed one,
 and it is small.
 
-**Tests** 7958 → **8069**.
+**"All SUID binaries are known-safe", over a walk find could not finish.**
+
+The aggregation axis, and the smaller of the two: a verdict that quantifies
+over a set BOB has not seen in full. `suid_audit` runs one `find` pass, reads
+its stdout, and answers `All SUID binaries are known-safe ({suid_count} SUID,
+{sgid_count} SGID)`. The return code was never examined.
+
+**Established against the tool BOB actually invokes**, after a first probe
+measured the wrong one: this host has `find` aliased to `bfs` in the
+interactive shell, while `subprocess.run(["find", ...])` takes no shell and
+resolves through PATH to `/usr/bin/find`, GNU findutils 4.9.0. Re-run against
+that binary over a tree with an unreadable subdirectory: it exits **1**, names
+the directory on stderr, and still prints everything it did reach. A partial
+walk and a complete one are therefore indistinguishable from stdout alone. The
+exit code is the portable signal — the stderr wording is not, as the two
+implementations already demonstrate.
+
+**The ordinary case is running BOB without sudo.** Unprivileged on this host
+the scan reaches 22 SUID and 13 SGID binaries and cannot enter every directory;
+before this change the audit answered "All SUID binaries are known-safe (22
+SUID, 13 SGID)" over exactly that walk. It now names what it saw instead of
+quantifying over what it did not. The empty variant is worse and is now
+separated out: a non-zero exit with no output at all used to produce "All SUID
+binaries are known-safe (0 SUID, 0 SGID)" — a clean bill of health for a scan
+that saw nothing — and is treated as a skipped scan.
+
+Partial cuts the positive claim and never the negative one: an unexpected SUID
+binary found on an incomplete walk is still found, and still warns. That is a
+test.
+
+Two guards had to be repaired before they meant anything. The stat stub in the
+new tests took a bare `(path)` while pathlib calls `os.stat` with
+`follow_symlinks=`, so two mutations made the suite **error** rather than fail
+— and a mutation count that greps for `FAILED` reads an error as "the guard
+held". Both the stub and the counting were fixed, and the two mutations then
+bit. It is the second time in this release that a guard reported confidence it
+had not earned; the first was in the log analyser, three commits earlier.
+
+**Tests** 7958 → **8075**.
 
 ---
 

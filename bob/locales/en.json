@@ -1122,6 +1122,7 @@
   "suid_audit": {
     "scan_skipped": "SUID/SGID scan timed out or failed — check skipped",
     "ok": "All SUID binaries are known-safe ({suid_count} SUID, {sgid_count} SGID)",
+    "ok_partial": "No unexpected SUID/SGID binaries among those scanned ({suid_count} SUID, {sgid_count} SGID) — some directories could not be read, so the scan is partial",
     "unexpected_suid": "{count} unexpected root-owned SUID binary/binaries: {paths}",
     "unexpected_suid_detail": "These binaries run as root regardless of who launches them. Verify each one is intentional, then either remove the SUID bit (chmod u-s) or add it to your local whitelist.",
     "unexpected_suid_reason": "{count} unexpected SUID binary/binaries found",

@@ -399,7 +399,50 @@ auditd via `auditctl`, fail2ban via `fail2ban-client`, le pare-feu via `ufw
 status`. Le motif était déjà correct dans la majeure partie de l'outil ;
 l'ensemble exposé est celui qui lit un fichier, et il est petit.
 
-**Tests** 7958 → **8069**.
+**« All SUID binaries are known-safe », sur une marche que find n'a pas pu finir.**
+
+L'axe de l'agrégation, le plus petit des deux : un verdict qui quantifie sur un
+ensemble que BOB n'a pas vu en entier. `suid_audit` lance une passe de `find`,
+lit sa sortie standard, et répond `All SUID binaries are known-safe
+({suid_count} SUID, {sgid_count} SGID)`. Le code de sortie n'était jamais
+examiné.
+
+**Établi contre l'outil que BOB lance réellement**, après qu'une première sonde
+a mesuré le mauvais : cet hôte a un alias `find` vers `bfs` dans le shell
+interactif, alors que `subprocess.run(["find", ...])` ne passe par aucun shell
+et résout via le PATH vers `/usr/bin/find`, GNU findutils 4.9.0. Rejouée contre
+ce binaire, sur une arborescence comportant un répertoire illisible : il sort
+en **1**, nomme le répertoire sur stderr, et imprime malgré tout tout ce qu'il
+a atteint. Une marche partielle et une marche complète sont donc
+indiscernables depuis la seule sortie standard. Le code de sortie est le signal
+portable — le texte de stderr ne l'est pas, comme les deux implémentations le
+montrent déjà.
+
+**Le cas ordinaire, c'est BOB lancé sans sudo.** Sans privilège sur cet hôte,
+le balayage atteint 22 binaires SUID et 13 SGID sans pouvoir entrer dans tous
+les répertoires ; avant ce changement, l'audit répondait « All SUID binaries
+are known-safe (22 SUID, 13 SGID) » sur exactement cette marche. Il nomme
+désormais ce qu'il a vu au lieu de quantifier sur ce qu'il n'a pas vu. La
+variante vide est pire et est maintenant séparée : un code de sortie non nul
+sans aucune sortie produisait « All SUID binaries are known-safe (0 SUID, 0
+SGID) » — un satisfecit pour un balayage qui n'a rien vu — et compte désormais
+comme un balayage sauté.
+
+Le partiel coupe l'affirmation positive et jamais la négative : un binaire SUID
+inattendu trouvé sur une marche incomplète reste trouvé, et avertit toujours.
+C'est un test.
+
+Deux gardes ont dû être réparées avant de vouloir dire quoi que ce soit. Le
+bouchon de `stat` des nouveaux tests prenait un simple `(path)` alors que
+pathlib appelle `os.stat` avec `follow_symlinks=`, si bien que deux mutations
+faisaient **erreurer** la suite au lieu de la faire échouer — et un décompte de
+mutations qui cherche `FAILED` lit une erreur comme « la garde a tenu ». Le
+bouchon et le décompte ont été corrigés, et les deux mutations ont alors mordu.
+C'est la deuxième fois dans cette version qu'une garde annonce une confiance
+qu'elle n'a pas gagnée ; la première était dans l'analyseur de logs, trois
+commits plus tôt.
+
+**Tests** 7958 → **8075**.
 
 ---
 

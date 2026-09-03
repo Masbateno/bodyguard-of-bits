@@ -1122,6 +1122,7 @@
   "suid_audit": {
     "scan_skipped": "Analyse SUID/SGID expirée ou échouée — vérification ignorée",
     "ok": "Tous les binaires SUID sont connus et sûrs ({suid_count} SUID, {sgid_count} SGID)",
+    "ok_partial": "Aucun binaire SUID/SGID inattendu parmi ceux examinés ({suid_count} SUID, {sgid_count} SGID) — certains répertoires n'ont pas pu être lus, le balayage est donc partiel",
     "unexpected_suid": "{count} binaire(s) SUID root inattendu(s) : {paths}",
     "unexpected_suid_detail": "Ces binaires s'exécutent en tant que root quel que soit leur lanceur. Vérifiez chacun d'eux, puis supprimez le bit SUID (chmod u-s) ou ajoutez-les à votre liste blanche locale.",
     "unexpected_suid_reason": "{count} binaire(s) SUID inattendu(s) détecté(s)",
