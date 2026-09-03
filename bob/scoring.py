@@ -155,6 +155,17 @@ class Finding:
     note:          str = ""
     key:           str = ""
     template_vars: dict = field(default_factory=dict)
+    # Keys of findings from this same audit that qualify this one — "the
+    # directives below describe the file, not the running service", say.
+    #
+    # A qualification used to live only as a sibling entry in a flat list, so
+    # nothing carried it to anything that consumes keys. correlation.py
+    # composes ALERTs out of finding keys and three of its six rules take
+    # ssh.permit_root_login or ssh.password_auth: an unapplied config file
+    # produced "Root login is enabled with no active brute-force protection",
+    # the tool's top severity, with no trace of the caveat the same audit had
+    # just printed. json_output and webhook emit the key alone as well.
+    qualified_by:  tuple = ()
 
     def __post_init__(self) -> None:
         """Strip ANSI escapes and control characters from operator-visible text.
@@ -293,6 +304,24 @@ class CheckResult:
                 template_vars=dict(template_vars) if template_vars else {},
             )
         )
+
+    def qualify(self, qualifier_key: str, since: int = 0) -> None:
+        """Mark findings emitted from index ``since`` onward as qualified.
+
+        ``since`` is a position rather than a key list on purpose: a list has
+        to be maintained beside the checks that emit, and drifts the first time
+        someone adds a directive. The caller records ``len(self.findings)``
+        before the block it owns and marks it afterwards, so the set is exactly
+        what that block produced.
+
+        The qualifier itself is never marked — a caveat qualified by itself
+        would recurse through every consumer that follows the link.
+        """
+        for finding in self.findings[since:]:
+            if finding.key == qualifier_key:
+                continue
+            if qualifier_key not in finding.qualified_by:
+                finding.qualified_by = tuple(finding.qualified_by) + (qualifier_key,)
 
     def ok(self, message: str, detail: str = "", key: str = "",
            template_vars: "dict | None" = None) -> None:

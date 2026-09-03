@@ -175,6 +175,10 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             detail=_t("ssh.config_newer_than_service_detail"),
             key="ssh.config_newer_than_service",
         )
+    # Everything emitted below is qualified by that note. Marked by position,
+    # so a directive added later is covered without anyone remembering to add
+    # it to a list.
+    _directives_from = len(result.findings)
 
     # PermitRootLogin
     prl = cfg.get("permitrootlogin", "prohibit-password").lower()
@@ -288,6 +292,9 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
 
     if not found_issue:
         result.ok(message=_t("ssh.config_ok"), key="ssh.config_ok")
+
+    if snapshot.sshd_config_drifted:
+        result.qualify("ssh.config_newer_than_service", since=_directives_from)
 
 def _check_weak_algo(
     cfg: dict, result: "CheckResult", _t,

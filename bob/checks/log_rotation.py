@@ -193,6 +193,7 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
                        applied=snapshot.journald_conf_applied_at),
             key="log_rotation.journald_conf_newer_than_service",
         )
+    _journald_from = len(result.findings)
 
     if snapshot.journald_active:
         storage = snapshot.journald_storage.strip().lower()
@@ -282,6 +283,10 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
                 detail=_t("log_rotation.remote_syslog_none_detail"),
                 key="log_rotation.remote_syslog_none",
             )
+
+    if snapshot.journald_conf_drifted:
+        result.qualify("log_rotation.journald_conf_newer_than_service",
+                       since=_journald_from)
 
     return result
 

@@ -407,7 +407,51 @@ held". Both the stub and the counting were fixed, and the two mutations then
 bit. It is the second time in this release that a guard reported confidence it
 had not earned; the first was in the log analyser, three commits earlier.
 
-**Tests** 7958 → **8075**.
+**A qualification that stayed behind while the finding it qualified travelled.**
+
+The fifth axis: composed verdicts. `correlation.py` builds findings out of other
+findings' keys — six rules, three of them ALERT, the tool's top severity. A
+qualification lived only as a sibling entry in a flat list, and `Finding` had no
+field linking one to another, so nothing carried it across. Demonstrated before
+the change, on a host whose sshd_config had been hardened but never reloaded:
+
+    ALERT  corr.root_no_protection
+           triggered_by : ['fail2ban.service_inactive', 'ssh.permit_root_login']
+           mentions the caveat : False
+
+The same audit had just printed "the findings describe the file, not the
+running service", and the composed ALERT stated the host's live posture anyway.
+**Three of the six rules consume `ssh.permit_root_login` or `ssh.password_auth`
+— precisely the keys that caveat qualifies — and all three are ALERT.**
+
+**Most of the layer was already sound, which is what kept the fix small.**
+`active` is filtered to WARN and ALERT, so an INFO qualification cannot feed a
+rule: every caveat in this release that *replaces* a verdict — backup, logs,
+suid_audit, ipv6, memory, firmware — needs nothing here. Only a qualification
+that leaves its finding charged has to travel, and this release introduced the
+only two, three commits earlier. The defect is the unfinished half of that
+work, not a regression: the ALERT fired on the file before, too. What was added
+was the knowledge of the caveat, without the wiring that carries it.
+`corr.password_auth_under_attack` was checked and is clean — it consumes
+`auth_log.brute_force`, which reads real failed logins, not the firewall-drop
+counter narrowed earlier in this release.
+
+`Finding.qualified_by` now records the keys, and `CheckResult.qualify(key,
+since=…)` marks what a block produced. The index rather than a key list is
+deliberate: a list has to be maintained beside the checks that emit and drifts
+the first time someone adds a directive. The qualifier is never marked as
+qualifying itself — a self-link would recurse through every consumer that
+follows it, and that is a test.
+
+**The other key consumers had the same blindness**, which is what decided the
+structural fix over patching the correlation alone: `json_output` and `webhook`
+emit `key` per finding and now emit `qualified_by` beside it, additively. The
+composed finding carries the qualifier's *message* rather than its key, because
+the caveat is already a sentence written for a human. `compare` is deliberately
+untouched: its `finding_keys` list is a baseline contract, and key identity is
+the right thing for it to compare.
+
+**Tests** 7958 → **8084**.
 
 ---
 

@@ -298,6 +298,10 @@ def _populate_v2_full_blocks(
             "level":         f.level.value,
             "message":       f.message,
             "nature":        f.nature,
+            # Additive. A consumer reading keys alone cannot tell a finding the
+            # audit qualified from one it did not — the same blindness that let
+            # a correlated ALERT compose an unapplied config file.
+            "qualified_by":  list(f.qualified_by),
             # T11 (v0.8.1): ``detail`` was already in CSV/MD/HTML/text but the
             # JSON sinks dropped it silently. Additive field — consumers
             # parsing JSON by field-name (the canonical access pattern) are

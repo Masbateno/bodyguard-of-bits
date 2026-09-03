@@ -442,7 +442,55 @@ C'est la deuxième fois dans cette version qu'une garde annonce une confiance
 qu'elle n'a pas gagnée ; la première était dans l'analyseur de logs, trois
 commits plus tôt.
 
-**Tests** 7958 → **8075**.
+**Une réserve restée en arrière pendant que le constat qu'elle qualifiait voyageait.**
+
+Le cinquième axe : les verdicts composés. `correlation.py` fabrique des constats
+à partir des clés d'autres constats — six règles, dont trois en ALERT, la
+sévérité maximale de l'outil. Une réserve n'existait que comme entrée frère dans
+une liste plate, et `Finding` n'avait aucun champ reliant l'une à l'autre : rien
+ne la transportait. Démontré avant modification, sur un hôte dont sshd_config
+avait été durci mais jamais rechargé :
+
+    ALERT  corr.root_no_protection
+           triggered_by : ['fail2ban.service_inactive', 'ssh.permit_root_login']
+           mentionne la réserve : False
+
+Le même audit venait d'imprimer « les constats décrivent le fichier, pas le
+service en cours », et l'ALERT composé énonçait quand même la posture vivante de
+la machine. **Trois des six règles consomment `ssh.permit_root_login` ou
+`ssh.password_auth` — exactement les clés que cette réserve qualifie — et les
+trois sont des ALERT.**
+
+**L'essentiel de la couche était déjà sain, ce qui a maintenu le correctif
+petit.** `active` est filtré sur WARN et ALERT : une réserve en INFO ne peut
+donc pas nourrir une règle, et toutes celles de cette version qui *remplacent*
+un verdict — backup, logs, suid_audit, ipv6, memory, firmware — n'ont besoin de
+rien ici. Seule une réserve qui laisse son constat chargé doit voyager, et cette
+version en a introduit les deux seules, trois commits plus tôt. Le défaut est la
+moitié inachevée de ce travail, pas une régression : l'ALERT se déclenchait déjà
+sur le fichier auparavant. Ce qui a été ajouté, c'est la connaissance de la
+réserve, sans le câblage qui la propage. `corr.password_auth_under_attack` a été
+vérifié et est propre — il consomme `auth_log.brute_force`, qui lit de vrais
+échecs d'authentification, et non le compteur de paquets rejetés resserré plus
+tôt dans cette version.
+
+`Finding.qualified_by` enregistre désormais les clés, et
+`CheckResult.qualify(clé, since=…)` marque ce qu'un bloc a produit. L'index
+plutôt qu'une liste de clés est délibéré : une liste doit être maintenue à côté
+des checks qui émettent et dérive dès qu'on ajoute une directive. Le qualifiant
+ne se qualifie jamais lui-même — un lien vers soi récurserait dans chaque
+consommateur qui le suit, et c'est un test.
+
+**Les autres consommateurs de clés avaient la même cécité**, ce qui a décidé du
+correctif structurel plutôt que d'un rustinage de la seule corrélation :
+`json_output` et `webhook` émettent `key` par constat et émettent maintenant
+`qualified_by` à côté, de façon additive. Le constat composé transporte le
+*message* du qualifiant plutôt que sa clé, parce que la réserve est déjà une
+phrase écrite pour un humain. `compare` est délibérément laissé intact : sa
+liste `finding_keys` est un contrat de baseline, et l'identité par clé est
+exactement ce qu'il doit comparer.
+
+**Tests** 7958 → **8084**.
 
 ---
 

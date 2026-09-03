@@ -196,6 +196,10 @@ def build_generic_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
                 "level":   f.level.name,
                 "key":     f.key,
                 "message": f.message,
+                # Additive, same reason as the JSON sink: a monitoring stack
+                # alerting on keys must be able to see that the audit qualified
+                # one of them.
+                "qualified_by": list(f.qualified_by),
                 # T27 (v0.8.1): close the format-parity pattern around
                 # ``Finding.detail`` + ``Finding.note``. v0.8.0 T9 closed
                 # Markdown + HTML; v0.8.1 T11 closed CSV + JSON v1/v2;

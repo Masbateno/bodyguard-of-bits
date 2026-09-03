@@ -43,6 +43,11 @@ class CorrelatedFinding:
     level: FindingLevel
     message: str
     triggered_by: list[str] = field(default_factory=list)
+    # Keys of the qualifications carried by the components this rule composed.
+    # A correlated ALERT states the host's live posture; when a component is
+    # only known from a file that was never applied, saying so is the whole
+    # point of the field.
+    qualified_by: list[str] = field(default_factory=list)
 
 
 _RULES: list[CorrelationRule] = [
@@ -116,6 +121,12 @@ def run_correlations(engine: "ScoreEngine", t) -> list[CorrelatedFinding]:
         f.key for f in engine.findings
         if f.key and f.level in (FindingLevel.ALERT, FindingLevel.WARN)
     }
+    # INFO never reaches `active`, so a qualification that *replaces* a verdict
+    # cannot feed a rule — which is why most of this release's caveats need
+    # nothing here. What does need carrying is a qualification that leaves its
+    # finding charged, and the note it carries is a sentence already written
+    # for a human, so the message travels rather than the key alone.
+    by_key = {f.key: f for f in engine.findings if f.key}
 
     results: list[CorrelatedFinding] = []
 
@@ -124,11 +135,27 @@ def run_correlations(engine: "ScoreEngine", t) -> list[CorrelatedFinding]:
             triggered = sorted(
                 (rule.all_of | (rule.any_of & active))
             )
+            qualifiers: list[str] = []
+            for component in triggered:
+                finding = by_key.get(component)
+                for qualifier in getattr(finding, "qualified_by", ()) or ():
+                    if qualifier not in qualifiers:
+                        qualifiers.append(qualifier)
+
+            message = t(rule.message_key)
+            notes = [
+                by_key[q].message for q in qualifiers
+                if q in by_key and by_key[q].message
+            ]
+            if notes:
+                message = f"{message} — {' ; '.join(notes)}"
+
             results.append(CorrelatedFinding(
                 key=rule.key,
                 level=rule.level,
-                message=t(rule.message_key),
+                message=message,
                 triggered_by=triggered,
+                qualified_by=qualifiers,
             ))
 
     return results
