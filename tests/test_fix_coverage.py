@@ -112,29 +112,37 @@ _MANUAL_BY_DESIGN = frozenset({
 })
 
 
-# Specific (file, lineno) call sites where ``key=`` is a variable
-# (helper-managed dispatch over multiple finding keys). Each entry
-# documents which canonical keys the site can emit. The underlying
-# helper must still pass a per-key cmd= via the call kwargs, OR every
-# emitted key must be in ``_MANUAL_BY_DESIGN``.
-_HELPER_DISPATCH_SITES: dict[tuple[str, int], tuple[str, ...]] = {
-    # bob/checks/ssh/_subchecks.py::_check_weak_algo — single call site
-    # emits one of three weak-algo keys depending on the t_key arg
+# Call sites where ``key=`` is a variable (helper-managed dispatch over
+# multiple finding keys), addressed by (file, enclosing function). Each entry
+# documents which canonical keys the site can emit. The underlying helper must
+# still pass a per-key cmd= via the call kwargs, OR every emitted key must be
+# in ``_MANUAL_BY_DESIGN``.
+#
+# v0.15.5: these used to be (file, line number), and every insertion anywhere
+# above a registered site failed this guard with no defect behind it. The old
+# NOTE recorded v0.15.0 moving them twice; v0.15.5 moved the ssh one twice more
+# in a single day. A guard that reports a defect when nothing is wrong is on
+# its way to being ignored, which is the same failure mode as one that reports
+# confidence it has not earned.
+#
+# A function may hold several dispatch sites — services.py has two — so the
+# value is the union of what any site in that function can emit. That is the
+# right granularity for the question being asked: are this site's possible keys
+# accounted for.
+_HELPER_DISPATCH_SITES: dict[tuple[str, str], tuple[str, ...]] = {
+    # Emits one of three weak-algo keys depending on the t_key arg
     # (ssh.weak_ciphers / ssh.weak_macs / ssh.weak_kex). All three are
     # whitelisted above because the right fix depends on whether the
     # operator has a custom Ciphers/MACs/KexAlgorithms line.
-    ("bob/checks/ssh/_subchecks.py", 312): (
+    ("bob/checks/ssh/_subchecks.py", "_check_weak_algo"): (
         "ssh.weak_ciphers", "ssh.weak_macs", "ssh.weak_kex",
     ),
-    # bob/checks/services.py::_check_port_exposure — emits
-    # services.exposed.<service.id> for high/critical services exposed
-    # to the world. The per-service remediation lives in the explain
-    # entries; the fix is service-specific.
-    # NOTE: these are line numbers, so any edit above them in services.py
-    # shifts them. v0.15.0 moved them twice: 368/374 -> 378/384 when
-    # _classify_exposure was rewritten onto the shared UFW parser.
-    ("bob/checks/services.py", 388): ("services.exposed.<id>",),
-    ("bob/checks/services.py", 394): ("services.exposed.<id>",),
+    # Emits services.exposed.<service.id> for high/critical services exposed
+    # to the world. The per-service remediation lives in the explain entries;
+    # the fix is service-specific.
+    ("bob/checks/services.py", "_check_port_exposure"): (
+        "services.exposed.<id>",
+    ),
 }
 
 
@@ -162,10 +170,31 @@ def _has_kwargs_unpack(node: ast.Call) -> bool:
     return any(kw.arg is None for kw in node.keywords)
 
 
-def _collect_actionable_call_sites() -> list[tuple[str, int, ast.Call]]:
-    """Return list of (file_path, lineno, ast.Call) for every actionable
-    method call in ``bob/checks/*.py``."""
-    sites: list[tuple[str, int, ast.Call]] = []
+def _enclosing_function(tree: ast.AST) -> dict[int, str]:
+    """Map each Call node to the name of the function that contains it.
+
+    ``ast.walk`` is breadth-first, so an outer function is visited before the
+    ones nested in it and the innermost assignment wins. A call at module level
+    gets no entry and is reported under "" — no dispatch site lives there, and
+    a bare module-level call should be visible rather than silently keyed.
+    """
+    owner: dict[int, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Call):
+                    owner[id(inner)] = node.name
+    return owner
+
+
+def _collect_actionable_call_sites() -> list[tuple[str, str, int, ast.Call]]:
+    """Return (file_path, function, lineno, ast.Call) for every actionable
+    method call in ``bob/checks/*.py``.
+
+    The function name addresses the site; the line number is carried only so a
+    failure can point at it.
+    """
+    sites: list[tuple[str, str, int, ast.Call]] = []
     for py in _CHECKS_DIR.rglob("*.py"):
         if "__pycache__" in py.parts:
             continue
@@ -173,6 +202,7 @@ def _collect_actionable_call_sites() -> list[tuple[str, int, ast.Call]]:
             tree = ast.parse(py.read_text(encoding="utf-8"))
         except SyntaxError:
             continue
+        owner = _enclosing_function(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -180,7 +210,12 @@ def _collect_actionable_call_sites() -> list[tuple[str, int, ast.Call]]:
                 continue
             if node.func.attr not in _ACTIONABLE_METHODS:
                 continue
-            sites.append((str(py.relative_to(_REPO_ROOT)), node.lineno, node))
+            sites.append((
+                str(py.relative_to(_REPO_ROOT)),
+                owner.get(id(node), ""),
+                node.lineno,
+                node,
+            ))
     return sites
 
 
@@ -197,7 +232,7 @@ def test_actionable_findings_have_cmd_or_are_whitelisted():
     """
     sites = _collect_actionable_call_sites()
     missing: list[str] = []
-    for file_path, lineno, node in sites:
+    for file_path, func_name, lineno, node in sites:
         if _has_cmd_kwarg(node):
             continue
         if _has_kwargs_unpack(node):
@@ -209,7 +244,7 @@ def test_actionable_findings_have_cmd_or_are_whitelisted():
             # Non-literal key. Accepted only if the site is registered
             # in _HELPER_DISPATCH_SITES and all keys it dispatches to
             # are whitelisted.
-            registered_keys = _HELPER_DISPATCH_SITES.get((file_path, lineno))
+            registered_keys = _HELPER_DISPATCH_SITES.get((file_path, func_name))
             if registered_keys is None:
                 missing.append(
                     f"  {file_path}:{lineno} — non-literal key= and not "
@@ -243,6 +278,38 @@ def test_actionable_findings_have_cmd_or_are_whitelisted():
     )
 
 
+def test_dispatch_registry_names_functions_that_exist():
+    """Every _HELPER_DISPATCH_SITES entry must name a live function.
+
+    The failure mode the (file, function) key introduces in place of the old
+    (file, line) one. A stale line number failed loudly on the next edit — the
+    problem being that it failed on edits with no defect behind them. A stale
+    *function name* fails quietly instead: the entry simply stops matching, and
+    either a real dispatch site goes unregistered or an obsolete exemption
+    lingers unnoticed. Cheap to check, so it is checked.
+    """
+    stale: list[str] = []
+    for (file_path, func_name) in _HELPER_DISPATCH_SITES:
+        source = _REPO_ROOT / file_path
+        if not source.is_file():
+            stale.append(f"  {file_path} — file no longer exists")
+            continue
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        names = {
+            node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        if func_name not in names:
+            stale.append(f"  {file_path}::{func_name} — no such function")
+
+    assert not stale, (
+        "\n_HELPER_DISPATCH_SITES entries pointing at nothing:\n"
+        + "\n".join(stale)
+        + "\n\nRemove the entry if the dispatch site is gone, or update the "
+          "function name if it was renamed."
+    )
+
+
 def test_whitelist_entries_are_actually_emitted_today():
     """Every entry in _MANUAL_BY_DESIGN must correspond to a key emitted
     by some actionable call (directly via literal key= OR via a helper
@@ -250,7 +317,7 @@ def test_whitelist_entries_are_actually_emitted_today():
     accumulate and silently mask new gaps.
     """
     sites = _collect_actionable_call_sites()
-    emitted_keys = {_extract_key_literal(n) for _, _, n in sites}
+    emitted_keys = {_extract_key_literal(n) for _, _, _, n in sites}
     emitted_keys.discard(None)
     # Helper-managed dispatch sites: enumerate every key they can emit.
     for registered_keys in _HELPER_DISPATCH_SITES.values():

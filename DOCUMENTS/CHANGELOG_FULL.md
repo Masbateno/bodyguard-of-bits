@@ -451,7 +451,29 @@ the caveat is already a sentence written for a human. `compare` is deliberately
 untouched: its `finding_keys` list is a baseline contract, and key identity is
 the right thing for it to compare.
 
-**Tests** 7958 → **8084**.
+**A guard that failed on edits with no defect behind them.**
+
+`test_fix_coverage` registers the call sites where `key=` is a variable, so a
+helper dispatching over several finding keys can be accounted for. The registry
+addressed them by `(file, line number)`, and every insertion anywhere above a
+registered site failed the suite with nothing wrong. Its own NOTE recorded
+v0.15.0 moving them twice; this release moved the ssh entry twice more in a
+single day, once per commit that added code above it.
+
+That is the same failure mode as a guard reporting confidence it has not
+earned, arriving from the other side: one cries wolf, the other sleeps, and
+both end up ignored. Sites are now addressed by `(file, enclosing function)`,
+which an edit above them cannot move — verified by inserting five lines into
+both registered files and watching the guard stay green. A function may hold
+several dispatch sites, so the value is the union of what any site in it can
+emit; that is the right granularity for the question the guard asks.
+
+The new key has a failure mode of its own, and it is the quiet kind: a stale
+function name simply stops matching, leaving either a real dispatch site
+unregistered or an obsolete exemption in place. A second guard now checks that
+every registry entry names a file that exists and a function defined in it.
+
+**Tests** 7958 → **8085**.
 
 ---
 

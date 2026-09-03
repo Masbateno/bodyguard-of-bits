@@ -490,7 +490,32 @@ phrase écrite pour un humain. `compare` est délibérément laissé intact : sa
 liste `finding_keys` est un contrat de baseline, et l'identité par clé est
 exactement ce qu'il doit comparer.
 
-**Tests** 7958 → **8084**.
+**Une garde qui échouait sur des modifications sans défaut derrière elles.**
+
+`test_fix_coverage` enregistre les sites d'appel où `key=` est une variable,
+afin qu'un helper qui répartit sur plusieurs clés de constat soit couvert. Le
+registre les adressait par `(fichier, numéro de ligne)`, et toute insertion
+au-dessus d'un site enregistré faisait échouer la suite sans qu'il y ait le
+moindre défaut. Sa propre note consignait deux déplacements en v0.15.0 ; cette
+version a déplacé l'entrée ssh deux fois de plus en une seule journée, une par
+commit ajoutant du code au-dessus.
+
+C'est le même mode de défaillance qu'une garde annonçant une confiance non
+gagnée, pris par l'autre bout : l'une crie au loup, l'autre dort, et les deux
+finissent ignorées. Les sites sont désormais adressés par `(fichier, fonction
+englobante)`, qu'une modification au-dessus ne peut pas déplacer — vérifié en
+insérant cinq lignes dans chacun des deux fichiers enregistrés et en constatant
+que la garde reste verte. Une fonction peut porter plusieurs sites, donc la
+valeur est l'union de ce que n'importe lequel d'entre eux peut émettre ; c'est
+la bonne granularité pour la question posée.
+
+La clé neuve a son propre mode de défaillance, et il est du genre silencieux :
+un nom de fonction périmé cesse simplement de correspondre, laissant soit un
+vrai site non enregistré, soit une exemption obsolète en place. Une seconde
+garde vérifie maintenant que chaque entrée du registre nomme un fichier
+existant et une fonction qui y est définie.
+
+**Tests** 7958 → **8085**.
 
 ---
 
