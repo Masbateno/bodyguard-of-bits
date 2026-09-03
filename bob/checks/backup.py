@@ -38,6 +38,7 @@ Usage:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -75,6 +76,57 @@ _TARSNAP_CONFIGS: tuple[Path, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Evidence that does not depend on a binary being on PATH
+# ---------------------------------------------------------------------------
+#
+# Every branch below used to sit behind `_command_exists`, so the artefacts were
+# only ever consulted once the binary had been found. That inverts the evidence
+# hierarchy: a configuration file is a *stronger* statement that backups are
+# configured than a name on PATH. Reproduced on the bench — this host carries
+# both /etc/timeshift/timeshift.json (a path this module already holds as a
+# constant) and /etc/cron.d/timeshift-hourly, and with the binary off PATH the
+# audit still reported "No backup solution installed or configured", −1 point.
+# A tool in /opt, installed via snap or flatpak, or a PATH without /usr/sbin
+# reaches the same place on a real host.
+_ARTEFACTS_WITHOUT_BINARY: tuple[tuple[str, tuple[Path, ...]], ...] = (
+    ("borgmatic", _BORGMATIC_CONFIGS),
+    ("borg",      (_BORG_KEYS_DIR,)),
+    ("timeshift", (_TIMESHIFT_CONFIG,)),
+    ("rclone",    _RCLONE_CONFIGS),
+    ("tarsnap",   _TARSNAP_CONFIGS),
+)
+
+# Backup tools named in a scheduled job. Deliberately a list of binary names
+# rather than a fuzzy match: bare `rsync` and "anything whose unit is called
+# *backup*" would both turn an ordinary mirror or a stale unit into "backups
+# are happening", and a false clean bill of health is the dangerous half of
+# this fix. Names outside the nine the module can install are the point —
+# rsnapshot, duplicity, snapper and btrbk are ordinary Debian packages.
+_SCHEDULED_TOOL_NAMES: frozenset[str] = frozenset({
+    "amanda", "backupninja", "bacula-fd", "borg", "borgmatic", "btrbk", "bup",
+    "deja-dup", "dirvish", "duplicacy", "duplicati", "duplicati-cli",
+    "duplicity", "kopia", "proxmox-backup-client", "rdiff-backup", "rclone",
+    "restic", "rsnapshot", "snapper", "tarsnap", "timeshift",
+    "urbackupclientctl", "veeamconfig",
+})
+
+_SCHEDULE_DIRS: tuple[Path, ...] = (
+    Path("/etc/cron.d"),
+    Path("/etc/cron.daily"),
+    Path("/etc/cron.hourly"),
+    Path("/etc/cron.weekly"),
+    Path("/etc/cron.monthly"),
+    Path("/etc/systemd/system"),
+)
+
+_SCHEDULE_FILES: tuple[Path, ...] = (
+    Path("/etc/crontab"),
+)
+
+_MAX_SCHEDULE_FILES = 400   # a directory that has run away is not evidence
+
+
+# ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
 
@@ -86,9 +138,17 @@ class BackupSnapshot:
     Args:
         active_tools:    Tools confirmed active: binary present + config/service found.
         installed_tools: Tools installed but without detectable configuration.
+        evidence_without_tool: Artefacts or scheduled jobs pointing at a backup
+                         tool that is not on PATH. Never upgrades the verdict to
+                         "backups are fine" — it only withdraws the claim that
+                         none is configured.
     """
     active_tools:    list[str] = field(default_factory=list)
     installed_tools: list[str] = field(default_factory=list)
+    # Evidence that backups happen, found without any known binary on PATH:
+    # a configuration artefact, or a scheduled job invoking a backup tool.
+    # Each entry is human-readable and names its own source.
+    evidence_without_tool: list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "BackupSnapshot":
@@ -166,7 +226,92 @@ class BackupSnapshot:
         snap.active_tools    = list(dict.fromkeys(snap.active_tools))
         snap.installed_tools = list(dict.fromkeys(snap.installed_tools))
 
+        # Only worth collecting when nothing was found the ordinary way: this
+        # evidence withdraws a claim, it never strengthens one.
+        if not snap.active_tools and not snap.installed_tools:
+            snap.evidence_without_tool = list(dict.fromkeys(
+                _artefact_evidence() + _scheduled_evidence()
+            ))
+
         return snap
+
+# ---------------------------------------------------------------------------
+# Evidence collectors
+# ---------------------------------------------------------------------------
+
+def _artefact_evidence() -> list[str]:
+    """Known configuration artefacts, read without the binary gate."""
+    found: list[str] = []
+    for tool, paths in _ARTEFACTS_WITHOUT_BINARY:
+        for path in paths:
+            try:
+                if path.is_dir():
+                    if any(path.iterdir()):
+                        found.append(f"{tool}: {path}")
+                        break
+                elif path.is_file():
+                    found.append(f"{tool}: {path}")
+                    break
+            except OSError:
+                # Unreadable is not absent — and it is not evidence either.
+                # Staying silent here is correct: the caller only ever weakens
+                # a verdict with what this returns.
+                continue
+    return found
+
+
+_WORD_RE_CACHE: "dict[str, re.Pattern[str]]" = {}
+
+
+def _names_a_backup_tool(line: str) -> "str | None":
+    """Return the backup tool a scheduled command invokes, if any.
+
+    Matched on word boundaries so ``duplicity`` does not fire on
+    ``duplicity-old.log.bak`` and ``borg`` does not fire on ``cyborg``.
+    Comment lines are skipped — a commented-out backup job is the opposite of
+    evidence that backups run.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    for name in _SCHEDULED_TOOL_NAMES:
+        pattern = _WORD_RE_CACHE.get(name)
+        if pattern is None:
+            pattern = re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])")
+            _WORD_RE_CACHE[name] = pattern
+        if pattern.search(stripped):
+            return name
+    return None
+
+
+def _scheduled_evidence() -> list[str]:
+    """Scheduled jobs whose command invokes a backup tool that is not on PATH.
+
+    The files are the ones the cron and systemd-timer sections already open in
+    the same audit run — this reads them for a different question rather than
+    asking the system anything new.
+    """
+    found: list[str] = []
+    candidates: list[Path] = list(_SCHEDULE_FILES)
+    for directory in _SCHEDULE_DIRS:
+        try:
+            entries = sorted(p for p in directory.iterdir() if p.is_file())
+        except OSError:
+            continue
+        candidates.extend(entries[:_MAX_SCHEDULE_FILES])
+
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            tool = _names_a_backup_tool(line)
+            if tool:
+                found.append(f"{tool}: {path}")
+                break
+    return found
+
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -223,6 +368,24 @@ def check_backup(
             message=_t("backup.installed_only", tools=tools_str),
             detail=_t("backup.installed_only_detail"),
             key="backup.installed_only",
+        )
+        return result
+
+    # --- No known tool, but the host says otherwise --------------------------
+    #
+    # B1: the deduction is the part that asserts, so the deduction is what goes
+    # when the evidence is ambiguous. This does not claim backups are fine — it
+    # withdraws the claim that none is configured, and names what it saw so the
+    # operator can settle it. Keeping the WARN and adding a second finding
+    # beside it was the alternative; it preserves a statement already known to
+    # be false and adds noise next to it.
+    evidence = snapshot.evidence_without_tool or []
+    if evidence:
+        result.info(
+            message=_t("backup.evidence_without_tool", count=len(evidence)),
+            detail=_t("backup.evidence_without_tool_detail",
+                      evidence="; ".join(sorted(evidence))),
+            key="backup.evidence_without_tool",
         )
         return result
 

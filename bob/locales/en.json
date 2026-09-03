@@ -3137,9 +3137,11 @@
     "also_installed": "Also installed (not confirmed active): {tools}",
     "installed_only": "Backup tool(s) found but not confirmed active: {tools}",
     "installed_only_detail": "The tool is installed but no configuration artefact was detected. Verify that backups are actually scheduled and running.",
-    "no_backup": "No backup solution found",
+    "no_backup": "No known backup solution detected",
+    "evidence_without_tool": "No backup tool is installed, but {count} sign(s) of backup activity were found — BOB cannot confirm backups are running",
+    "evidence_without_tool_detail": "None of the backup tools BOB can recognise is on PATH, yet the host carries evidence pointing at one: {evidence}. That is not a confirmation — the artefact may be stale, or the tool may have been removed — so no conclusion is drawn either way, and no point is deducted for a backup that may well exist. Check it yourself and, if the tool is gone, remove the leftover job or configuration.",
     "no_backup_detail": "No backup tool (borgmatic, borg, restic, timeshift, duplicati, bacula, rclone…) was detected. Regular backups are essential to recover from data loss, ransomware, or hardware failure.",
-    "no_backup_reason": "No backup solution installed or configured"
+    "no_backup_reason": "No known backup tool, and no sign that one runs"
   },
   "firmware": {
     "fwupd_missing": "fwupd not installed — firmware update status cannot be determined",

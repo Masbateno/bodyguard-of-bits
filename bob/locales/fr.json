@@ -3137,9 +3137,11 @@
     "also_installed": "Également installé (actif non confirmé) : {tools}",
     "installed_only": "Outil(s) de sauvegarde trouvé(s) mais actif non confirmé : {tools}",
     "installed_only_detail": "L'outil est installé mais aucun artefact de configuration n'a été détecté. Vérifiez que les sauvegardes sont bien planifiées et s'exécutent.",
-    "no_backup": "Aucune solution de sauvegarde trouvée",
+    "no_backup": "Aucune solution de sauvegarde connue détectée",
+    "evidence_without_tool": "Aucun outil de sauvegarde installé, mais {count} indice(s) d'activité de sauvegarde trouvé(s) — BOB ne peut pas confirmer que des sauvegardes tournent",
+    "evidence_without_tool_detail": "Aucun des outils de sauvegarde que BOB sait reconnaître n'est sur le PATH, pourtant l'hôte porte des traces qui en désignent un : {evidence}. Ce n'est pas une confirmation — l'artefact peut être périmé, ou l'outil avoir été retiré — donc aucune conclusion n'est tirée dans un sens ou dans l'autre, et aucun point n'est déduit pour une sauvegarde qui existe peut-être. Vérifie-le et, si l'outil a disparu, retire le job ou la configuration résiduelle.",
     "no_backup_detail": "Aucun outil de sauvegarde (borgmatic, borg, restic, timeshift, duplicati, bacula, rclone…) n'a été détecté. Des sauvegardes régulières sont essentielles pour récupérer après une perte de données, un ransomware ou une panne matérielle.",
-    "no_backup_reason": "Aucune solution de sauvegarde installée ou configurée"
+    "no_backup_reason": "Aucun outil de sauvegarde connu, et aucune trace qu'un tel outil tourne"
   },
   "firmware": {
     "fwupd_missing": "fwupd non installé — impossible de déterminer l'état des mises à jour firmware",

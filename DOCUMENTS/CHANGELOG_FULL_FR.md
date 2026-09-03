@@ -210,7 +210,70 @@ iptables. Un conseil faux par-dessus un constat vrai reste un conseil faux. La
 clé a tiré le contrat habituel : une entrée explain dans les deux locales, une
 référence CIS, la complétion bash, trois gardes de test et sept documents.
 
-**Tests** 7958 → **8025**.
+**« No backup solution installed or configured », depuis un nom sur le PATH.**
+
+Un autre angle, et le miroir de tout ce qui précède : les cas précédents
+n'avaient pas d'observation et en inventaient une ; celui-ci **a** une
+observation et en tire plus qu'elle ne porte. Chacune des neuf branches de
+sauvegarde s'ouvrait par `_command_exists`, si bien qu'une déduction portant sur
+le fait que des sauvegardes sont **configurées** reposait entièrement sur la
+présence d'un binaire sur le PATH.
+
+**Reproduit sur le banc avant toute modification.** Avec un PATH miroir privé
+des neuf binaires connus, l'audit rapportait `backup.no_backup`, −1 point.
+Ajouter une vraie sauvegarde — `/etc/cron.d/rsnapshot` sur deux planifications,
+plus un `nas-backup.timer` lançant duplicity vers un NAS — ne déplaçait pas le
+verdict. Interroger le snapshot cron dans le même espace de noms renvoyait
+`['/etc/cron.d/rsnapshot: 15 5 * * * root curl ... | sh']` : BOB ouvre ce
+fichier, parse ses lignes et en conserve le chemin source, dans le run même où
+il affirme qu'aucune sauvegarde n'est configurée. Une correction à cette
+observation, car elle est facile à surjouer — la section cron **agrège**
+(« 1 cron job(s) pipe… ») et ne nomme pas le fichier à l'écran. BOB lit la
+preuve ailleurs ; il ne l'affiche pas ailleurs. C'est ce qui rend le correctif
+possible, pas ce qui rend le rapport visiblement contradictoire.
+
+**Le cas le plus serré n'a besoin d'aucun outil inconnu.** Cet hôte porte
+`/etc/timeshift/timeshift.json` — un chemin que ce module détient déjà comme
+constante — et `/etc/cron.d/timeshift-hourly`. Binaire hors du PATH, l'artefact
+n'était jamais consulté, parce qu'il se trouve *derrière* la porte du binaire.
+Cela inverse la hiérarchie des preuves : un fichier de configuration affirme
+plus fortement que des sauvegardes sont configurées qu'un nom sur le PATH. Un
+outil dans `/opt`, installé par snap ou flatpak, ou un PATH sans `/usr/sbin`
+aboutit au même endroit sur une vraie machine, sans aucun banc.
+
+Les artefacts sont désormais lus hors de la porte, et les jobs planifiés sont
+balayés à la recherche d'un outil de sauvegarde nommé. Quand rien de connu n'est
+installé mais qu'une telle trace existe, la déduction est retirée et un INFO
+nomme ce qui a été vu. Le constat **n'affirme pas** que les sauvegardes vont
+bien : il retire l'affirmation qu'aucune n'est configurée. Garder le WARN et
+ajouter un second constat à côté était l'alternative ; elle conserve une
+affirmation déjà connue comme fausse et ajoute du bruit auprès d'elle.
+
+La moitié dangereuse est l'erreur inverse : un `/etc/rsnapshot.conf` périmé,
+laissé par un `apt remove`, ne doit pas se lire « des sauvegardes tournent ». Le
+balayage est donc une liste de noms de binaires, pas une correspondance floue —
+`rsync` seul en est délibérément exclu, étant aussi souvent un miroir qu'une
+sauvegarde, et « n'importe quelle unité nommée *backup* » n'a jamais été
+envisagé. Les commentaires sont ignorés, la correspondance se fait sur frontière
+de mot, et un artefact illisible n'est pas une preuve. Trois mutations
+confirment que chacun de ces points porte, y compris celle qui réintroduit
+`rsync`.
+
+Deux verdicts ont aussi cessé de surestimer leur propre portée : « No backup
+solution found » devient « No known backup solution detected », et la raison de
+la déduction « No backup solution installed or configured » — une affirmation
+sur la configuration, tirée d'une recherche dans le PATH — devient « No known
+backup tool, and no sign that one runs ».
+
+**`file_integrity` a été examiné puis laissé tel quel**, ce qui est l'autre
+moitié d'un cadrage honnête. Il partage la porte du binaire, mais son verdict
+« pas d'outil » est un INFO à zéro point dont le message nomme déjà sa propre
+portée — « No file integrity monitor installed (AIDE / Tripwire) ». Ses
+déductions exigent que l'outil soit présent. C'est le modèle ici, pas un second
+défaut, et une estimation antérieure qui le mettait dans le périmètre était
+fausse.
+
+**Tests** 7958 → **8041**.
 
 ---
 

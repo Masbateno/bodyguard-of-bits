@@ -193,7 +193,66 @@ advice on top of a true finding is still false advice. The key pulled the usual
 contract behind it: an explain entry in both locales, a CIS reference, the bash
 completion, three test guards and seven documents.
 
-**Tests** 7958 → **8025**.
+**"No backup solution installed or configured", from a name on PATH.**
+
+A different angle, and the mirror of everything above: the earlier cases had no
+observation and invented one, this one *has* an observation and claims more than
+it carries. Every one of the nine backup branches opened with
+`_command_exists`, so a deduction about whether backups are **configured**
+rested entirely on whether a binary was on PATH.
+
+**Reproduced on the bench before anything was changed.** With a mirrored PATH
+minus the nine known binaries, the audit reported `backup.no_backup`, −1 point.
+Adding a genuine backup — `/etc/cron.d/rsnapshot` on two schedules, plus a
+`nas-backup.timer` running duplicity to a NAS — did not move the verdict.
+Querying the cron snapshot in the same namespace returned
+`['/etc/cron.d/rsnapshot: 15 5 * * * root curl ... | sh']`: BOB opens that file,
+parses its lines and keeps the source path, in the same run where it states no
+backup is configured. One correction to that observation, since it is easy to
+overstate — the cron section *aggregates* ("1 cron job(s) pipe…") and does not
+name the file on screen. BOB reads the evidence elsewhere; it does not display
+it elsewhere. That is what makes the fix possible, not what makes the report
+visibly self-contradictory.
+
+**The tighter case needs no unknown tool at all.** This host carries
+`/etc/timeshift/timeshift.json` — a path this module already holds as a
+constant — and `/etc/cron.d/timeshift-hourly`. With the binary off PATH the
+artefact was never consulted, because it sits *behind* the binary gate. That
+inverts the evidence hierarchy: a configuration file is a stronger statement
+that backups are configured than a name on PATH. A tool in `/opt`, installed by
+snap or flatpak, or a PATH without `/usr/sbin` reaches the same place on a real
+host, with no bench involved.
+
+Artefacts are now read without the gate, and scheduled jobs are scanned for a
+backup tool by name. When nothing known is installed but such evidence exists,
+the deduction is withdrawn and an INFO names what was seen. The finding does
+**not** claim backups are fine — it withdraws the claim that none is
+configured. Keeping the WARN and adding a second finding beside it was the
+alternative; it preserves a statement already known to be false and adds noise
+next to it.
+
+The dangerous half is the opposite error: a stale `/etc/rsnapshot.conf` left by
+`apt remove` must not read as "backups are happening". So the scan is a list of
+binary names, not a fuzzy match — bare `rsync` is deliberately excluded, being
+a mirror as often as a backup, and "any unit called *backup*" was never
+considered. Comments are skipped, matching is on word boundaries, and an
+unreadable artefact is not evidence. Three mutations confirm each of those
+carries weight, including the one that adds `rsync` back.
+
+Two verdicts also stopped overstating their own reach: "No backup solution
+found" became "No known backup solution detected", and the deduction reason
+"No backup solution installed or configured" — an assertion about
+configuration, from a PATH lookup — became "No known backup tool, and no sign
+that one runs".
+
+**`file_integrity` was examined and left alone**, which is the other half of
+scoping this honestly. It shares the binary gate, but its no-tool verdict is an
+INFO worth zero points whose message already names its own reach — "No file
+integrity monitor installed (AIDE / Tripwire)". Its deductions require the tool
+to be present. It is the model here, not a second defect, and an earlier
+estimate that put it in scope was wrong.
+
+**Tests** 7958 → **8041**.
 
 ---
 
