@@ -36,6 +36,8 @@ class FakeEngine:
     def __init__(self, *findings: Finding):
         self.findings    = list(findings)
         self.score       = 7
+        self.score_is_upper_bound = False   # v0.16.0
+        self.unverified  = []
         self.level       = RiskLevel.MEDIUM
         self.breakdown   = []
         self.cap_info    = None

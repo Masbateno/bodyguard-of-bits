@@ -6,6 +6,59 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.16.0] — 03-09-2026
+
+**Le score montait quand BOB voyait moins.**
+
+Le score est une somme de déductions sur les checks qui ont tourné. Un check
+incapable de lire son entrée ne déduit rien — et ces déductions sont
+**inconnues, pas nulles**. Masquer `/etc/ssh/sshd_config` en retire quatre et
+fait passer le score de 7 à **8**, vers le haut, sur un hôte dont BOB voit
+moins. Reproduit avant et après toute la campagne v0.15.5, qui n'y a pas
+touché : chaque check concerné se comporte correctement isolément, et
+`ssh.config_unreadable` est émis honnêtement dans sa propre section. Le défaut
+est un cran au-dessus.
+
+`degraded_sections` reste vide du début à la fin, et c'est correct — ce champ
+est réservé par contrat à une section dont le check a *levé*. Un check qui
+s'abstient proprement ne laissait donc **aucune trace** dans la sortie machine,
+et une supervision ne pouvait pas distinguer un hôte propre d'un hôte que BOB
+avait à peine regardé. Sur cette machine, sans sudo, **huit** sections ne
+peuvent pas être entièrement lues.
+
+**Le nombre le dit désormais lui-même.** Une réserve imprimée à côté du score
+n'est pas assez directe : le nombre affiche toujours 8, et c'est le nombre
+qu'on lit. Il est donc rendu comme le plafond qu'il est — `≤ 8/10` — le niveau
+de risque qui en dérive se lit comme un meilleur cas et non comme un verdict,
+et une ligne de résumé indique combien de sections n'ont pas pu être
+entièrement lues. La flèche de tendance est retenue tant que le score est borné
+: « ↑ +1 » face à un plafond est la même fausse réassurance, un cran plus haut.
+
+Déduire pour illisibilité a été écarté. Cela punit l'opérateur pour les
+privilèges de BOB et invente un nombre là où il n'y en a pas — l'inverse du
+principe auquel la version précédente s'est entièrement consacrée.
+
+`score` reste un entier en JSON pour ne casser aucun consommateur ; deux champs
+additifs, `score_is_upper_bound` et `unverified`, disent ce qu'il vaut. La
+baseline porte aussi `unverified`, si bien que `--diff` ne rapporte plus un
+constat comme résolu quand sa section n'a pas été réévaluée, et ne qualifie pas
+d'amélioration un score qui monte alors que l'exécution a lu moins que la
+précédente. Une baseline écrite avant l'existence du champ se lit comme
+**inconnue**, jamais comme « tout était visible alors » — ce serait transformer
+un inconnu en affirmation, précisément le défaut que ce champ retire.
+
+Les 32 clés signifiant « je n'ai pas pu voir » vivent dans un ensemble
+explicite, gardé dans les deux sens : aucune entrée ne peut nommer une clé que
+BOB n'émet pas, et aucune clé neuve en `*_unreadable` / `*_unknown` ne peut en
+rester dehors. Deux clés en sont **délibérément** absentes —
+`ssh.config_newer_than_service` et son jumeau journald qualifient *ce que les
+constats décrivent*, un fichier plutôt que le service en cours, mais les
+déductions ont bien été calculées.
+
+**Tests** 8089 → **8101**.
+
+---
+
 ## [v0.15.5] — 03-09-2026
 
 **Cinq angles de chasse sur une seule question : ce que dit BOB est-il vérifiable ?**
@@ -520,7 +573,7 @@ vrai site non enregistré, soit une exemption obsolète en place. Une seconde
 garde vérifie maintenant que chaque entrée du registre nomme un fichier
 existant et une fonction qui y est définie.
 
-**Tests** 7958 → **8089**.
+**Tests** 7958 → **8101**.
 
 ---
 

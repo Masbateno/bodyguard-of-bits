@@ -6,6 +6,55 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.16.0] — 2026-09-03
+
+**The score went up when BOB could see less.**
+
+The score is a sum of deductions over the checks that ran. A check that cannot
+read its input makes no deductions — and those deductions are **unknown, not
+zero**. Masking `/etc/ssh/sshd_config` removes four and moves the score from 7
+to **8**, up, on a host BOB can see less of. Reproduced before and after the
+whole v0.15.5 campaign, which did not touch it: every check involved behaves
+correctly on its own, and `ssh.config_unreadable` is emitted honestly in its
+own section. The defect is one layer up.
+
+`degraded_sections` stays empty throughout, and correctly so — it is reserved
+by contract for a section whose check *raised*. A check that abstains cleanly
+therefore left **no trace at all** in the machine output, so a monitoring stack
+could not tell a clean host from one BOB had barely looked at. On this host,
+run without sudo, **eight** sections cannot be fully read.
+
+**The number itself now says it.** A caveat printed beside the score is not
+blunt enough: the number still reads 8, and the number is what gets read. So it
+renders as the ceiling it is — `≤ 8/10` — the risk level derived from it reads
+as a best case rather than a verdict, and a summary line names how many
+sections could not be fully read. The trend arrow is withheld while bounded:
+"↑ +1" against a ceiling is the same false reassurance one level up.
+
+Deducting for unreadability was rejected. That penalises the operator for BOB's
+own privileges and invents a number where there is none — the opposite of the
+principle the previous release spent itself on.
+
+`score` stays an integer in JSON so existing consumers keep working; two
+additive fields, `score_is_upper_bound` and `unverified`, say what it is worth.
+The baseline carries `unverified` too, so `--diff` no longer reports a finding
+as resolved when its section was not re-evaluated, and does not call a rising
+score an improvement when the run read less than the previous one. A baseline
+written before the field existed reads as **unknown**, never as "everything was
+visible then" — that would turn an unknown into a claim, which is the defect
+this field removes.
+
+The 32 keys that mean "could not see" live in one explicit set with a guard in
+both directions: no entry may name a key BOB never emits, and no newly added
+`*_unreadable` / `*_unknown` key may stay out of it. Two keys are deliberately
+**not** in it — `ssh.config_newer_than_service` and its journald twin qualify
+*what the findings describe*, a file rather than the running service, but the
+deductions were computed and are present.
+
+**Tests** 8089 → **8101**.
+
+---
+
 ## [v0.15.5] — 2026-09-03
 
 **Five hunting angles on one question: is what BOB says verifiable?**
@@ -478,7 +527,7 @@ function name simply stops matching, leaving either a real dispatch site
 unregistered or an obsolete exemption in place. A second guard now checks that
 every registry entry names a file that exists and a function defined in it.
 
-**Tests** 7958 → **8089**.
+**Tests** 7958 → **8101**.
 
 ---
 

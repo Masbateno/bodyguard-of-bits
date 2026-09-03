@@ -38,6 +38,8 @@ if TYPE_CHECKING:  # avoid circular imports at runtime
 
 from bob.sysinfo import chown_to_sudo_user, get_user_home
 
+from bob.visibility import section_of
+
 logger = logging.getLogger(__name__)
 
 _CONFIG_DIR    = get_user_home() / ".config" / "bob"
@@ -79,6 +81,11 @@ class AuditBaseline:
     finding_keys:    list[str] | None = None  # None = pre-v1.22 baseline (key absent)
     deduction_total: int | None = None        # None = pre-v0.2.3 baseline (field absent)
     hostname:        str | None = None        # v0.9.0 F-2 — None = pre-v0.9.0 baseline
+    # v0.16.0 — sections the audit could not fully read. None marks a baseline
+    # written before the field existed, which must not be read as "everything
+    # was visible then": that would turn an unknown into a claim, the defect
+    # this whole field exists to remove.
+    unverified:      list[str] | None = None
 
 
 @dataclass
@@ -100,6 +107,13 @@ class AuditDelta:
     stopped_services: list[str]   # became inactive
     new_finding_keys:      list[str] = field(default_factory=list)  # ALERT/WARN keys new since last audit
     resolved_finding_keys: list[str] = field(default_factory=list)  # ALERT/WARN keys resolved
+    # Keys that vanished only because their section could not be read this
+    # time. They are not resolved — they were not re-evaluated, and calling
+    # that an improvement is the score-goes-up-when-BOB-sees-less defect
+    # reappearing one layer up.
+    unreevaluated_finding_keys: list[str] = field(default_factory=list)
+    # True when this run could read less than the previous one.
+    visibility_dropped: bool = False
     deduction_delta:       int = 0                                   # change in total raw deduction points
 
     def is_empty(self) -> bool:
@@ -146,6 +160,8 @@ def build_baseline(
         if lp.is_all_interfaces and _is_stable_port(lp.port_proto)
     })
 
+    unverified = sorted(getattr(engine, "unverified", []) or [])
+
     active_services = sorted({
         snap.service.label
         for snap in snapshots
@@ -180,6 +196,7 @@ def build_baseline(
         finding_keys=finding_keys,
         deduction_total=deduction_total,
         hostname=_host or None,
+        unverified=unverified,
     )
 
 
@@ -353,15 +370,31 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
     if prev.finding_keys is not None:
         prev_keys = set(prev.finding_keys)
         curr_keys = set(curr.finding_keys or [])
-        new_finding_keys      = sorted(curr_keys - prev_keys)
-        resolved_finding_keys = sorted(prev_keys - curr_keys)
+        new_finding_keys = sorted(curr_keys - prev_keys)
+        vanished = prev_keys - curr_keys
+        # A key whose section could not be read this time was not re-evaluated.
+        blind = {section_of(k) for k in (curr.unverified or [])}
+        unreevaluated_finding_keys = sorted(
+            k for k in vanished if section_of(k) in blind
+        )
+        resolved_finding_keys = sorted(vanished - set(unreevaluated_finding_keys))
     else:
-        new_finding_keys      = []
-        resolved_finding_keys = []
+        new_finding_keys           = []
+        resolved_finding_keys      = []
+        unreevaluated_finding_keys = []
+
+    # None on the previous baseline means "written before the field existed",
+    # not "nothing was unverified" — so no drop is claimed either way.
+    visibility_dropped = (
+        prev.unverified is not None
+        and set(curr.unverified or []) > set(prev.unverified)
+    )
 
     return AuditDelta(
         prev_timestamp=prev.timestamp,
         score_delta=curr.score - prev.score,
+        unreevaluated_finding_keys=unreevaluated_finding_keys,
+        visibility_dropped=visibility_dropped,
         alert_delta=curr.alert_count - prev.alert_count,
         warn_delta=curr.warn_count - prev.warn_count,
         info_delta=curr.info_count - prev.info_count,
@@ -397,8 +430,20 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
     # --- Previous audit timestamp ---
     output_mod.print_dim(t("compare.previous_run", timestamp=delta.prev_timestamp))
 
+    # --- Visibility, before the score ---
+    #
+    # A rising score on a run that read less is not an improvement, and saying
+    # so afterwards is too late: the reader has already taken the green line.
+    if delta.visibility_dropped:
+        output_mod.print_warn(t("compare.visibility_dropped"))
+
     # --- Score ---
-    if delta.score_delta > 0:
+    if delta.score_delta > 0 and delta.visibility_dropped:
+        # Deliberately not print_ok: the delta is real but it is not a verdict
+        # about the host, because part of the host was not looked at this time.
+        output_mod.print_info(t("compare.score_up_but_blinder",
+                                delta=delta.score_delta))
+    elif delta.score_delta > 0:
         output_mod.print_ok(t("compare.score_improved",
                                delta=delta.score_delta))
     elif delta.score_delta < 0:
@@ -431,6 +476,7 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
         or delta.warn_delta != 0
         or delta.new_finding_keys
         or delta.resolved_finding_keys
+        or delta.unreevaluated_finding_keys
     )
     if delta.deduction_delta != 0 and not has_structural_explanation:
         if delta.deduction_delta > 0:
@@ -445,6 +491,11 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
         output_mod.print_warn(t("compare.key_appeared", finding=key))
     for key in delta.resolved_finding_keys:
         output_mod.print_ok(t("compare.key_resolved", finding=key))
+    # Not print_ok, and not "resolved": these vanished because their section
+    # could not be read this time. Reporting them as fixed is the same false
+    # reassurance as the score going up when BOB sees less.
+    for key in delta.unreevaluated_finding_keys:
+        output_mod.print_info(t("compare.key_unreevaluated", finding=key))
 
     # --- Ports ---
     for port in delta.new_ports:

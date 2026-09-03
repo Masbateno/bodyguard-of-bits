@@ -1,3 +1,23 @@
+bodyguard-of-bits (0.16.0-1) UNRELEASED; urgency=low
+
+  * The score went up when BOB could see less. It is a sum over the checks that
+    ran, and a check unable to read its input made deductions that are unknown,
+    not zero: masking /etc/ssh/sshd_config removed four deductions and moved the
+    score from 7 to 8. degraded_sections stayed empty throughout — by contract
+    it is reserved for a section whose check raised, so a clean abstention left
+    no trace in the machine output at all.
+  * The number is now rendered as the ceiling it is (<= 8/10), the risk level
+    derived from it reads as a best case, and a summary line names how many
+    sections could not be fully read. Deducting for unreadability was rejected:
+    that penalises the operator for BOB's own privileges.
+  * score stays an integer in JSON; two additive fields, score_is_upper_bound
+    and unverified, say what it is worth.
+  * --diff no longer reports a finding as resolved when its section was not
+    re-evaluated, and does not call a rising score an improvement when the run
+    read less than the previous one.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 03 Sep 2026 20:30:00 +0200
+
 bodyguard-of-bits (0.15.5-1) UNRELEASED; urgency=low
 
   * "not installed" and "nothing could ask" were the same answer. On a host

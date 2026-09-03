@@ -8,7 +8,8 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.15.x         | ✅ courante         |
+| 0.16.x         | ✅ courante         |
+| 0.15.x         | ❌ fin de vie       |
 | 0.14.x         | ❌ fin de vie       |
 | 0.13.x         | ❌ fin de vie       |
 | 0.12.x         | ❌ fin de vie       |
@@ -17,7 +18,23 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.15.x+1`. Un breaking change bump le minor (`0.16.0`).
+Les correctifs sortent en `0.16.x+1`. Un breaking change bump le minor (`0.17.0`).
+
+**v0.15.x est en fin de vie le jour où v0.16.0 sort**, selon la politique
+« ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de
+sécurité ne sera backporté. Les utilisateurs sur v0.15.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.16.x.
+
+La mise à jour change ce que le score **signifie** quand BOB ne peut pas lire
+une partie de l'hôte. Jusqu'en v0.16.0, le score était une somme sur les checks
+qui avaient tourné, et un check incapable de lire son entrée ne contribuait
+rien — masquer `/etc/ssh/sshd_config` faisait donc **monter** le score de 7 à
+8, sur un hôte dont BOB voyait moins. Le nombre est désormais rendu comme le
+plafond qu'il est (`≤ 8/10`), le niveau de risque qui en dérive se lit comme un
+meilleur cas, et une ligne de résumé indique combien de sections n'ont pas pu
+être entièrement lues. `score` reste un entier en JSON ; deux champs additifs,
+`score_is_upper_bound` et `unverified`, disent ce qu'il vaut. `--diff` ne
+rapporte plus un constat comme résolu quand sa section n'a pas été réévaluée.
 
 **v0.14.x est en fin de vie depuis le 31-08-2026** (jour du ship de v0.15.0,
 selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun

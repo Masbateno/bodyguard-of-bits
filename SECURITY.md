@@ -9,7 +9,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.15.x         | ✅ current          |
+| 0.16.x         | ✅ current          |
+| 0.15.x         | ❌ end of life      |
 | 0.14.x         | ❌ end of life      |
 | 0.13.x         | ❌ end of life      |
 | 0.12.x         | ❌ end of life      |
@@ -18,7 +19,22 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.15.x+1`. A breaking change bumps the minor (`0.16.0`).
+Patches release as `0.16.x+1`. A breaking change bumps the minor (`0.17.0`).
+
+**v0.15.x is end-of-life as of the day v0.16.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.15.x
+must `pipx upgrade bodyguard-of-bits` to v0.16.x.
+
+The upgrade changes what the score *means* when BOB cannot read part of the
+host. Until v0.16.0 the score was a sum over the checks that ran, and a check
+that could not read its input contributed nothing — so masking
+`/etc/ssh/sshd_config` moved the score from 7 to **8**, up, on a host BOB could
+see less of. The number is now rendered as the ceiling it is (`≤ 8/10`), the
+risk level derived from it reads as a best case, and a summary line names how
+many sections could not be fully read. `score` stays an integer in JSON; two
+additive fields, `score_is_upper_bound` and `unverified`, say what it is worth.
+`--diff` no longer reports a finding as resolved when its section was not
+re-evaluated.
 
 **v0.14.x is end-of-life as of 2026-08-31** (the day v0.15.0 ships, per the
 "latest minor line only" policy above). No security fixes will be backported.

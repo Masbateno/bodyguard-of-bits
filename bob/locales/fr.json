@@ -262,6 +262,9 @@
   "scoring": {
     "score_label": "Score de sécurité",
     "risk_label": "Niveau de risque",
+    "risk_at_best": "{level} au mieux",
+    "visibility_label": "Visibilité",
+    "visibility_value": "{count} section(s) non entièrement lue(s) — le score est un plafond",
     "network_context": "Contexte réseau",
     "profile_label": "Profil d'audit",
     "level": {
@@ -750,6 +753,9 @@
     "info_increased": "{delta} nouvelle(s) notice(s) informative(s) depuis le dernier audit",
     "key_appeared": "Nouveau finding : {finding}",
     "key_resolved": "Résolu : {finding}",
+    "visibility_dropped": "Cette exécution a pu lire moins de l'hôte que la précédente — la comparaison ci-dessous n'est pas à périmètre égal",
+    "score_up_but_blinder": "Score à +{delta}, mais cette exécution a lu moins de l'hôte — ce n'est pas une amélioration, c'est une mesure plus petite",
+    "key_unreevaluated": "Non réévalué (sa section n'a pas pu être lue) : {finding}",
     "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
     "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)",
     "no_baseline_yet": "Aucune baseline précédente trouvée — exécutez d'abord un audit complet pour établir une baseline.",

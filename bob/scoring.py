@@ -34,6 +34,8 @@ if TYPE_CHECKING:  # pragma: no cover — annotation only, avoids the
     from bob.profiles import AuditProfile
 from enum import Enum
 
+from bob.visibility import VISIBILITY_KEYS
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -452,6 +454,11 @@ class ScoreEngine:
         self.breakdown: list[Deduction] = []
         self.findings:  list[Finding]   = []
         self.ignored_findings: list[Finding] = []
+        # Findings meaning a check could not fully read its input. Collected
+        # here rather than derived at render time so every sink sees the same
+        # set, and so `score_is_upper_bound` cannot disagree with the list that
+        # explains it.
+        self.unverified: list[str] = []
         self.ignore_keys: frozenset[str] = frozenset()
         self._finalized: bool = False
         self._domain_scores: dict | None = None
@@ -518,6 +525,11 @@ class ScoreEngine:
             else:
                 self.findings.append(finding)
                 kept.append(finding)
+                # An ignored visibility finding does not count: the operator
+                # asked not to hear about it, and silencing the caveat must not
+                # silently bound the score with no visible reason.
+                if finding.key in VISIBILITY_KEYS and finding.key not in self.unverified:
+                    self.unverified.append(finding.key)
         # v0.14.1: drop ignored findings from the CheckResult too.
         # ``display_result()`` renders the raw result, not ``engine.findings``,
         # so an ignored finding was still printed to the terminal in full: a
@@ -622,6 +634,18 @@ class ScoreEngine:
     # ------------------------------------------------------------------
     # Read-only properties
     # ------------------------------------------------------------------
+
+    @property
+    def score_is_upper_bound(self) -> bool:
+        """True when a check could not read its input.
+
+        The score is then a **ceiling**: the deductions those checks did not
+        make are unknown, not zero. Masking /etc/ssh/sshd_config removes four
+        deductions and moves the score from 7 to 8 — up, on a host BOB can see
+        less of. Callers must render the number as bounded and must not derive
+        an unqualified risk level from it.
+        """
+        return bool(self.unverified)
 
     @property
     def score(self) -> int:

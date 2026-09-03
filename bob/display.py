@@ -463,8 +463,17 @@ def _summary_header_lines(engine, network_context, config, t,
     ctx_str   = t(f"scoring.context.{network_context}")
     icon = "✔" if level == RiskLevel.LOW else "✖"
 
-    score_str = f"{score}/10"
-    if prev_score is not None:
+    # v0.16.0 — a check that could not read its input did not make deductions
+    # that are unknown, not zero, so the number is a ceiling. It is rendered as
+    # one, because a caveat printed beside the score is not read by anyone who
+    # reads only the score: masking sshd_config moves it from 7 to 8, up, on a
+    # host BOB can see less of.
+    bounded = engine.score_is_upper_bound
+    score_str = f"≤ {score}/10" if bounded else f"{score}/10"
+
+    # The delta is withheld while bounded rather than shown against a ceiling.
+    # "↑ +1" on a run that saw less is the same false reassurance one level up.
+    if prev_score is not None and not bounded:
         delta = score - prev_score
         if delta > 0:
             score_str += f"  {_c.green}↑ +{delta}{_c.reset}"
@@ -472,12 +481,32 @@ def _summary_header_lines(engine, network_context, config, t,
             score_str += f"  {_c.yellow}↓ {delta}{_c.reset}"
 
     risk_value = f"{icon} {level_str}"
+    if bounded:
+        # The risk level is derived from the score, so a bounded score yields a
+        # best case, not a verdict.
+        risk_value = f"{icon} {t('scoring.risk_at_best', level=level_str)}"
     if posture_annotation:
         risk_value = f"{risk_value}  ({posture_annotation})"
 
     lines: list[tuple[str, str]] = [
         (t("scoring.score_label"),     score_str),
         (t("scoring.risk_label"),      risk_value),
+    ]
+    if bounded:
+        # Beside the score, not in a section further down: this is what makes
+        # the ceiling visible to someone who reads only the summary box.
+        #
+        # The count only. A first version listed the sections and overflowed
+        # the 78-column frame on an ordinary unprivileged run, where nine of
+        # them are unreadable — and the list was redundant anyway, since each
+        # of those sections prints its own "could not read" finding above.
+        from bob.visibility import section_of
+        sections = {section_of(k) for k in engine.unverified}
+        lines.append((
+            t("scoring.visibility_label"),
+            t("scoring.visibility_value", count=len(sections)),
+        ))
+    lines += [
         (t("scoring.network_context"), ctx_str),
         (t("scoring.profile_label"),   profile_name.capitalize()),
     ]

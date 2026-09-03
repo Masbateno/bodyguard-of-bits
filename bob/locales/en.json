@@ -262,6 +262,9 @@
   "scoring": {
     "score_label": "Security score",
     "risk_label": "Risk level",
+    "risk_at_best": "{level} at best",
+    "visibility_label": "Visibility",
+    "visibility_value": "{count} section(s) not fully read — the score is a ceiling",
     "network_context": "Network context",
     "profile_label": "Audit profile",
     "level": {
@@ -750,6 +753,9 @@
     "info_increased": "{delta} new info notice(s) since last audit",
     "key_appeared": "New finding: {finding}",
     "key_resolved": "Resolved: {finding}",
+    "visibility_dropped": "This run could read less of the host than the previous one — the comparison below is not like for like",
+    "score_up_but_blinder": "Score is +{delta}, but this run read less of the host — not an improvement, a smaller measurement",
+    "key_unreevaluated": "Not re-evaluated (its section could not be read): {finding}",
     "variable_deductions_increased": "Variable deductions +{delta} pt(s) (logs, network traffic)",
     "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)",
     "no_baseline_yet": "No previous baseline found — run a full audit first to establish a baseline.",

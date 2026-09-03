@@ -280,6 +280,12 @@ class TestScoreTrend:
 
         engine = MagicMock()
         engine.score = score
+        # Explicit: on a MagicMock every unset attribute is truthy, so the
+        # v0.16.0 upper-bound rendering switched itself on here and the score
+        # came out as "≤ 8/10". A stub that answers yes to questions it was
+        # never taught is not a stub, it is a second implementation.
+        engine.score_is_upper_bound = False
+        engine.unverified = []
         engine.findings = []
         engine._deductions = []
         engine.alert_count = 0

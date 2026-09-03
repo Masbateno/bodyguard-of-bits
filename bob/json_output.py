@@ -57,6 +57,8 @@ SCHEMA_V3_REQUIRED_KEYS = frozenset({
     "timestamp_utc",          # B-3 (renamed from "timestamp")
     "score",
     "score_max",
+    "score_is_upper_bound",
+    "unverified",
     "risk",
     "network_context",        # A-2 (always dict, never overwritten)
     "public_ip",
@@ -213,6 +215,13 @@ def _build_v3(
         "timestamp_utc":   datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "score":           engine.score,
         "score_max":       10,
+        # v0.16.0 — the score is a ceiling when a check could not read its
+        # input: the deductions it did not make are unknown, not zero. Masking
+        # sshd_config removes four deductions and moves the score from 7 to 8.
+        # `score` keeps its meaning as an integer so existing consumers are not
+        # broken; these two fields say what it is worth.
+        "score_is_upper_bound": engine.score_is_upper_bound,
+        "unverified":      sorted(engine.unverified),
         "risk":            engine.effective_level.value,
         "network_context": nc_block,
         "public_ip":       public_ip,
