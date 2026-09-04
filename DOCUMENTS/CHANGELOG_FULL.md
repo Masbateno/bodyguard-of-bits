@@ -120,7 +120,28 @@ real wizard **on a pty**, keystroke by keystroke, because only a terminal
 exercises the terminal path. Both were mutation-tested by replaying the v0.7.0
 regression verbatim.
 
-**Tests** 8152 → **8211**.
+**The cursor row looked like a second banner.** On every curses screen —
+`--explain`, `--manage-logs`, `--install-cron` and `--manage-cron` — the
+selected row and the top title bar were both drawn on `COLOR_CYAN`. Two lines
+apart, on a narrow terminal, the eye lost which line was selected.
+
+The selection is now orange: xterm-256 index 208 where the terminal advertises
+256 colours, falling back to `COLOR_YELLOW` on an 8-colour terminal — still
+plainly distinct from the cyan banner. A terminal with no colour keeps the
+`A_REVERSE` highlight each screen already used.
+
+The chart was written out three times, once per module, and the three copies
+agreed — which is why the defect was uniform rather than random, and why
+nothing kept them agreeing. It now lives once, in `bob/tui/_palette.py`, with
+named pairs (`SELECTION` / `ACCENT` / `NORMAL` / `NOTICE` / `BANNER`) and a
+single per-screen slot: pair 4 is red for a warning list and cyan for
+`--explain`'s detail heading, which is the only place the three screens ever
+legitimately differed. A guard rejects any `init_pair` call outside that
+module, and another asserts the selection background is never the banner
+background — checked at 8, 16, 88 and 256 colours. Verified on a real pty in
+all three screens.
+
+**Tests** 8152 → **8230**.
 
 ---
 

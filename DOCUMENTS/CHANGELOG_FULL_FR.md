@@ -127,7 +127,30 @@ pilote le vrai assistant **sur un pty**, touche après touche, parce que seul un
 terminal exerce le chemin terminal. Les deux ont été testées par mutation en
 rejouant la régression v0.7.0 à l'identique.
 
-**Tests** 8152 → **8211**.
+**La ligne du curseur ressemblait à un second bandeau.** Sur chaque écran
+curses — `--explain`, `--manage-logs`, `--install-cron` et `--manage-cron` — la
+ligne sélectionnée et le bandeau de titre étaient tous deux dessinés sur
+`COLOR_CYAN`. À deux lignes d'écart, sur un terminal étroit, l'œil perdait
+quelle ligne était sélectionnée.
+
+La sélection est désormais orange : index xterm-256 208 quand le terminal
+annonce 256 couleurs, avec repli sur `COLOR_YELLOW` sur un terminal 8 couleurs
+— toujours nettement distinct du bandeau cyan. Un terminal sans couleur
+conserve le `A_REVERSE` que chaque écran utilisait déjà.
+
+La charte était écrite trois fois, une par module, et les trois copies
+concordaient — c'est pourquoi le défaut était uniforme et non aléatoire, et
+c'est pourquoi rien ne les maintenait concordantes. Elle vit maintenant une
+seule fois, dans `bob/tui/_palette.py`, avec des paires nommées (`SELECTION` /
+`ACCENT` / `NORMAL` / `NOTICE` / `BANNER`) et un seul emplacement propre à
+chaque écran : la paire 4 est rouge pour une liste d'avertissements et cyan
+pour l'en-tête de détail d'`--explain`, le seul endroit où les trois écrans
+divergeaient légitimement. Une garde rejette tout appel à `init_pair` hors de
+ce module, une autre vérifie que le fond de la sélection n'est jamais celui du
+bandeau — contrôlé à 8, 16, 88 et 256 couleurs. Vérifié sur un vrai pty dans
+les trois écrans.
+
+**Tests** 8152 → **8230**.
 
 ---
 

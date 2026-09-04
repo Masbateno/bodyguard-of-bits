@@ -752,16 +752,12 @@ def _explain_scoring(key: str, t) -> None:
 def _init_colors():
     """Initialise curses colour pairs (call once per wrapper session)."""
     import curses
-    has_color = curses.has_colors()
-    if has_color:
-        curses.start_color()
-        curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_BLACK,  curses.COLOR_CYAN)    # selected row
-        curses.init_pair(2, curses.COLOR_YELLOW, -1)                   # group header
-        curses.init_pair(3, curses.COLOR_WHITE,  -1)                   # normal key row
-        curses.init_pair(4, curses.COLOR_CYAN,   -1)                   # detail heading
-        curses.init_pair(5, curses.COLOR_WHITE,  curses.COLOR_CYAN)   # top banner
-    return has_color
+
+    # v0.16.1: shared chart — see bob/tui/_palette.py. Pair 4 is the one
+    # screen-specific slot; here it is the detail-pane heading, not a warning.
+    from bob.tui._palette import init_palette
+
+    return init_palette(curses, notice=curses.COLOR_CYAN)
 
 
 def _detail_screen(stdscr, key: str, t) -> None:

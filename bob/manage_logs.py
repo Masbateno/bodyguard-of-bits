@@ -503,19 +503,13 @@ def _curses_input(stdscr, row: int, w: int, prompt: str, default: str = "") -> s
 def _init_colors_ml():
     """Initialise curses colour pairs for --manage-logs."""
     import curses
-    try:
-        if not curses.has_colors():
-            return False
-        curses.start_color()
-        curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_BLACK,  curses.COLOR_CYAN)   # cursor row
-        curses.init_pair(2, curses.COLOR_YELLOW, -1)                   # dir header
-        curses.init_pair(3, curses.COLOR_WHITE,  -1)                   # normal file
-        curses.init_pair(4, curses.COLOR_RED,    -1)                   # marked file
-        curses.init_pair(5, curses.COLOR_WHITE,  curses.COLOR_CYAN)   # top banner
-        return True
-    except curses.error:
-        return False
+
+    # v0.16.1: the five pairs live in bob/tui/_palette.py, so --manage-logs,
+    # --explain and the cron wizards cannot drift apart. Pair 4 is the one
+    # screen-specific slot; here it marks files staged for deletion.
+    from bob.tui._palette import init_palette
+
+    return init_palette(curses, notice=curses.COLOR_RED)
 
 
 def _is_finding_continuation(line: str) -> bool:

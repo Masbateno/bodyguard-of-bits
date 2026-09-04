@@ -160,13 +160,12 @@ def _curses_status_flash(stdscr, msg: str) -> None:
 def _init_colors_cron() -> None:
     """Initialize curses color pairs for --manage-cron TUI."""
     import curses
-    curses.start_color()
-    curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_BLACK,  curses.COLOR_CYAN)  # cursor row
-    curses.init_pair(2, curses.COLOR_YELLOW, -1)                  # interactive / input
-    curses.init_pair(3, curses.COLOR_WHITE,  -1)                  # normal row
-    curses.init_pair(4, curses.COLOR_RED,    -1)                  # warning / legacy
-    curses.init_pair(5, curses.COLOR_WHITE,  curses.COLOR_CYAN)  # top banner
+
+    # v0.16.1: shared chart — see bob/tui/_palette.py. Pair 4 is the one
+    # screen-specific slot; here it flags a legacy or warning row.
+    from ._palette import init_palette
+
+    init_palette(curses, notice=curses.COLOR_RED)
 
 
 # ---------------------------------------------------------------------------
