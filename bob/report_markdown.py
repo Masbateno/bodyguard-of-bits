@@ -280,7 +280,7 @@ class MarkdownReport:
 
         self._writeln("")
 
-    def write_next_steps(self, steps: list[str]) -> None:
+    def write_next_steps(self, steps: list[str], title: str = "NEXT STEPS") -> None:
         """Write the next steps block at the end of the report."""
         self._writeln("## Next Steps")
         self._writeln("")

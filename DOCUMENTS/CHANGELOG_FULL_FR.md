@@ -255,7 +255,34 @@ répertoire du script de `sys.path` — précisément ce qui est observé. Véri
 localement dans les deux conditions, avec une copie du paquet sur PYTHONPATH
 pour reproduire la CI.
 
-**Tests** 8089 → **8152**.
+**Le rapport d'un audit français s'ouvrait et se fermait en anglais.** Trouvé
+dans un vrai passage v0.16.0 sur la machine du mainteneur. Entre
+`[INFORMATIONS SYSTÈME]` et `[RÉSUMÉ DE L'AUDIT]`, deux lignes n'étaient pas
+traduites : `[INFO] Starting audit` et le `[NEXT STEPS]` de clôture.
+
+La première est plus tranchante qu'une traduction manquante. `bob/__main__.py`
+imprimait `t("audit.starting")` au terminal et écrivait le littéral
+`"Starting audit"` dans le rapport, huit lignes plus loin — le même événement,
+traduit à l'écran et anglais dans le fichier archivé. La clé existait et était
+traduite dans les deux locales ; le site d'appel du rapport ne l'utilisait
+simplement pas. La seconde était un titre dont les trois étapes numérotées
+étaient déjà traduites.
+
+Les deux relèvent de la classe que la v0.7.3 M-5 avait fermée pour six
+libellés, avec la même justification — « avant la v0.7.3 ils étaient en anglais
+codé en dur, si bien que le .log d'un audit français portait un contenu
+bilingue » — et les deux lui avaient échappé. Une garde rejette désormais tout
+littéral visible par l'opérateur écrit dans le rapport texte.
+
+`bob/report_markdown.py`, le rapport email cron, est délibérément exempté et le
+dit dans son propre source : `write_header` reçoit `labels` et les jette avec
+`_ = labels  # intentionally unused for now`. Anglais par décision, pas par
+oubli. La garde consigne l'exemption au lieu de la renverser, et échoue si
+cette justification disparaît — mais la décision n'est documentée nulle part
+pour l'opérateur, qui reçoit un rapport anglais depuis une installation
+française sans rien qui l'explique.
+
+**Tests** 8089 → **8156**.
 
 ---
 

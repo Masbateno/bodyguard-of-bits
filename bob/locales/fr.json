@@ -451,6 +451,7 @@
     }
   },
   "report": {
+    "next_steps_title": "PROCHAINES ÉTAPES",
     "next_1": "Traitez d'abord toutes les alertes.",
     "next_2": "Examinez les avertissements et évaluez leur impact.",
     "next_3": "Relancez l'audit après chaque modification pour vérifier.",

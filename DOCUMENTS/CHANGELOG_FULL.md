@@ -240,7 +240,32 @@ PYTHONPATH. Not `-I`, which since 3.11 implies `-P` and drops the script's
 directory from `sys.path` — the very thing under test. Verified locally in both
 conditions, with a copy of the package on PYTHONPATH to reproduce CI.
 
-**Tests** 8089 → **8152**.
+**A French audit's report opened and closed in English.** Found in a real
+v0.16.0 run on the maintainer's own machine. Between `[INFORMATIONS SYSTÈME]`
+and `[RÉSUMÉ DE L'AUDIT]`, two lines were not translated: `[INFO] Starting
+audit` and the closing `[NEXT STEPS]`.
+
+The first is sharper than a missing translation. `bob/__main__.py` printed
+`t("audit.starting")` to the terminal and wrote the literal `"Starting audit"`
+to the report, eight lines apart — the same event, translated on screen and
+English in the archived file. The key existed and was translated in both
+locales; the report call site simply did not use it. The second was a heading
+whose three numbered steps were already translated.
+
+Both are the class v0.7.3 M-5 closed for six field labels, with the same
+rationale — "pre-v0.7.3 they were hardcoded English so a French audit's .log
+carried mixed-language content" — and both were missed by it. A guard now
+rejects any operator-visible literal written to the text report.
+
+`bob/report_markdown.py`, the cron email report, is deliberately exempt and
+says so in its own source: `write_header` takes `labels` and discards them with
+`_ = labels  # intentionally unused for now`. English by decision, not by
+oversight. The guard records the exemption rather than overturning it, and
+fails if that rationale disappears — but the decision is undocumented for the
+operator, who gets an English report from a French installation with nothing
+saying why.
+
+**Tests** 8089 → **8156**.
 
 ---
 

@@ -91,7 +91,7 @@ class Report(Protocol):
         section_title: str,
         entries: list[dict],
     ) -> None: ...
-    def write_next_steps(self, steps: list[str]) -> None: ...
+    def write_next_steps(self, steps: list[str], title: str = "NEXT STEPS") -> None: ...
     def close(self) -> None: ...
 
 # ---------------------------------------------------------------------------
@@ -469,9 +469,12 @@ class AuditReport:
             self._writeln(f"  {entry['threat_label']}   : {entry['threat']}")
             self._writeln("")
 
-    def write_next_steps(self, steps: list[str]) -> None:
+    def write_next_steps(self, steps: list[str], title: str = "NEXT STEPS") -> None:
         """Write the next steps block at the end of the report."""
-        self._writeln("[NEXT STEPS]")
+        # The three steps below were translated; only their heading was not,
+        # so a French report closed on an English title. The default keeps
+        # the Protocol usable by a caller with no translator.
+        self._writeln(f"[{title}]")
         for i, step in enumerate(steps, start=1):
             self._writeln(f"{i}. {step}")
         self._writeln(_SEPARATOR)

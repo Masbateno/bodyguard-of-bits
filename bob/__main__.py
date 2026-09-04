@@ -520,7 +520,11 @@ def _run(argv=None) -> int:
                     output.print_info(t("audit.running_checks", checks=", ".join(_active)))
                 print()
 
-            report.write_finding("INFO", "Starting audit")
+            # Same translated string the terminal shows two lines above. It was
+            # a literal, so a French audit's .log opened in English while the
+            # screen said "Démarrage de l'audit" — the mixed-language content
+            # v0.7.3 M-5 fixed for six field labels and missed here.
+            report.write_finding("INFO", t("audit.starting"))
             network_context, public_ip = detect_network_context(offline=config.offline)
 
             result             = run_checks(config, t, engine, report, registry, network_context,
@@ -643,7 +647,10 @@ def _run(argv=None) -> int:
                 entries=build_risk_context_entries(snapshots, config.lang, t,
                                                    network_context=network_context),
             )
-            report.write_next_steps([t("report.next_1"), t("report.next_2"), t("report.next_3")])
+            report.write_next_steps(
+                [t("report.next_1"), t("report.next_2"), t("report.next_3")],
+                title=t("report.next_steps_title"),
+            )
             report.close()
 
             if engine.ignored_findings and not config.quiet:

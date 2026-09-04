@@ -451,6 +451,7 @@
     }
   },
   "report": {
+    "next_steps_title": "NEXT STEPS",
     "next_1": "Address all alerts first.",
     "next_2": "Review warnings and assess their impact.",
     "next_3": "Re-run the audit after each change to verify.",
