@@ -8,6 +8,15 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ## [v0.16.1] — 04-09-2026
 
+**Deux surfaces d'une même affirmation, et une seule était exercée.**
+
+Chaque défaut ci-dessous est une paire qui se contredisait alors que chaque
+moitié semblait correcte isolément : l'audit qu'on lance à la main et celui
+que lance le cron ; la ligne de synthèse et le code de sortie ; la table du
+README et le binaire ; un champ écrit sur disque et le champ relu ;
+l'assistant texte que pilotaient les tests et l'assistant curses qu'obtient
+un humain.
+
 **Un audit programmé exécutait un autre audit que celui choisi.**
 
 `--install-cron` générait un script dont la ligne d'audit était figée :
@@ -215,7 +224,7 @@ l'aveuglement retire un domaine entier, le score peut bouger dans les deux sens 
 ni `≤` ni `≥` n'est honnête. Nommer cet état est une décision de conception, pas
 un correctif ; c'est reporté plutôt que deviné.
 
-**Tests** 8152 → **8255**.
+**Tests** 8152 → **8282**.
 
 ---
 

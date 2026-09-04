@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 8255 unit tests · 19 doc files · 5+ distros field-tested │
+│                 8282 unit tests · 19 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -290,7 +290,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 215 test files, ~5601 functions, 8255 collected (v0.16.1)
+├── tests/                     ← 216 test files, ~5609 functions, 8282 collected (v0.16.1)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -627,7 +627,7 @@ Top-level always-present keys (v3): `schema_version`, `version`, `host`, `timest
 | `1` | `EXIT_WARNINGS` | Warnings present |
 | `2` | `EXIT_ALERTS` | Alerts present |
 | `3` | `EXIT_ERROR` | Technical error (CLI parsing, IO, internal) |
-| `4` | `EXIT_TARGET_MISSED` | `--target N` specified, score < N |
+| `4` | `EXIT_TARGET_MISSED` | `--target N` specified and score < N, **or `score_is_upper_bound`** (v0.16.0) — a gate fails closed rather than passing on a ceiling. The summary line was aligned with this in v0.16.1; before that it printed `✔ target reached` while the same run exited 4 |
 
 Codes only added, never removed/renamed within a major. Exposed in `bob.__main__`.
 
@@ -707,7 +707,7 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 | `--unignore=KEY` | Filters | Remove a key from `ignore.yml` (counterpart of `--ignore`) |
 | `--show-ignored` | Display | Show previously-ignored findings as dimmed lines during the audit (doesn't list `ignore.yml` entries — for that, read the file directly) |
 | `--skip=A,B,...` | Filters | Inverse of `--check` |
-| `--target=N` | Audit | Score gate; exit code 4 if score < N |
+| `--target=N` | Audit | Score gate; exit code 4 if score < N **or the score is a ceiling** |
 | `--verbose`, `-v` | Output | Show detailed port exposure per service |
 | `--version`, `-V` | Misc | Print version |
 | `--watch[=N]` | Comparison | Re-run every N seconds; the value is optional (default 60), minimum 10 |
@@ -891,7 +891,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 215 test files, ~5601 functions, **8255 collected** (v0.16.1) | `pytest --collect-only -q` |
+| Tests | 216 test files, ~5609 functions, **8282 collected** (v0.16.1) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

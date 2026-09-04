@@ -819,7 +819,7 @@
       "diff_path": "  =CHEMIN compare à la référence d'une autre machine",
       "watch": "Relance l'audit toutes les N s (défaut : 60) — Ctrl+C pour quitter",
       "offline": "Ignore la recherche d'IP externe (aucun appel HTTP)",
-      "target": "Score visé (1–10) : écart ou réussite dans le résumé",
+      "target": "Score visé (1–10) : écart, réussite ou plafond ; sortie 4 sinon",
       "check": "N'exécute que ces contrôles (séparés par des virgules)",
       "check_list": "  --check=list affiche tous les noms disponibles",
       "skip": "Ignore ces contrôles (liste ; exclusif avec --check)",

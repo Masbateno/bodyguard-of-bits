@@ -819,7 +819,7 @@
       "diff_path": "  =PATH compares against another machine's baseline (cross-machine)",
       "watch": "Re-run audit every N seconds (default: 60) — Ctrl+C to quit",
       "offline": "Skip external IP lookup (no HTTP calls)",
-      "target": "Score target (1–10): show gap or success in summary",
+      "target": "Score target (1–10): gap, success or ceiling; exit 4 if unmet",
       "check": "Run only these checks (comma-separated)",
       "check_list": "  --check=list shows every available name",
       "skip": "Skip these checks (comma-separated; mutually exclusive with --check)",

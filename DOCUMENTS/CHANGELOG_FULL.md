@@ -8,6 +8,14 @@ All notable changes to this project are documented here.
 
 ## [v0.16.1] — 2026-09-04
 
+**Two surfaces of the same claim, and only one was ever exercised.**
+
+Every defect below is a pair that disagreed while each half looked correct
+on its own: the audit you run by hand and the one your cron runs; the
+summary line and the exit code; the README table and the binary; a field
+written to disk and the field read back; the plain-text wizard the tests
+drove and the curses wizard a human gets.
+
 **A scheduled audit ran a different audit than the one you chose.**
 
 `--install-cron` generated a wrapper script whose audit line was fixed:
@@ -199,7 +207,7 @@ domain the score can move either way, so neither `≤` nor `≥` is honest. Nami
 that state is a design decision, not a patch, and it is deferred rather than
 guessed at.
 
-**Tests** 8152 → **8255**.
+**Tests** 8152 → **8282**.
 
 ---
 
