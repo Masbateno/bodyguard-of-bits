@@ -141,7 +141,65 @@ module, and another asserts the selection background is never the banner
 background — checked at 8, 16, 88 and 256 colours. Verified on a real pty in
 all three screens.
 
-**Tests** 8152 → **8230**.
+**v0.16.0 closed one half of its own class, and the other half was live.**
+
+v0.16.0 reasoned that a check unable to read its input makes no deductions, so
+the score can only be **too high** — hence the ceiling rendering, and hence a
+`--diff` guard written for the rising direction only. That holds for a check
+abstaining *inside* a domain. It does not hold for a whole domain: the global
+score is an average over **active** domains, and a domain whose input went
+unreadable leaves the average entirely, changing the denominator rather than the
+numerator.
+
+Masking `/etc/passwd` takes `file_perms` (10/10) out and the score from 7 down
+to **6** — deductions byte-identical at 12 points, nothing added to
+`unverified`, `degraded_sections` empty. Against a sighted baseline that read as
+`Score degraded by 1 point(s)`: a regression reported on a host where nothing
+had changed but BOB's own eyesight, and a nightly cron mails it.
+
+Three defects, one root, found by an exhaustive local sweep of every option and
+combination (~700 invocations).
+
+**`user_accounts.no_passwd` and `user_accounts.no_shadow` were outside
+`VISIBILITY_KEYS`.** The set was first enumerated by *name* — `*_unreadable` /
+`*_unknown` — and neither matches, though both are emitted under `if not
+snapshot.passwd_readable`. `no_passwd` even reads like "no password" when it
+means the file never opened. A third guard now sweeps by **position in the
+source** rather than by name: any key emitted inside an unreadability branch
+must be in the set or explicitly excluded. It walks the branch body only, never
+the `else` — reading the readable path in reports `firewall_drivers.no_issues`
+as a visibility limit, and a wall of false positives is how a real miss gets
+lost.
+
+**`load_baseline` never restored `unverified`.** `save_baseline` wrote it and
+the loader dropped it, so `prev.unverified` was always `None` on a real run and
+`visibility_dropped` could never be true. **The whole `--diff` visibility
+protection was dead outside the unit tests** — which build `AuditBaseline`
+objects in memory and never round-trip through the file. That is one line
+restored, and the guard now goes through disk. It is the declared-but-never-
+consumed shape v0.15.3 closed twice, in a field added the release before.
+
+**There was no branch for a score that falls on a blinder run.** A drop with
+reduced visibility is now stated as not attributable to the host, matching the
+wording v0.16.0 gave the rising direction. A genuine drop is still a warning —
+the guard must not swallow real regressions, and that is its own test.
+
+**`--target` said the opposite of its own exit code.** v0.16.0 made the gate
+fail closed on a bounded score (`score < target or score_is_upper_bound`) and
+never updated the summary, which still printed `✔ target reached` on `gap <= 0`
+alone. The same run told a human the target was met and a CI pipeline it was
+missed. On any host where one section cannot be read — most hosts, unprivileged
+— *every* `--target` exited 4, including `--target=1`. The line now says the
+score clears the bar but the bar is a ceiling, and a guard asserts the two
+surfaces are one claim by pinning the mirrored predicate to the real source.
+
+**Still open, deliberately.** The headline still renders `≤ 6/10` on that run,
+and 6 is not a ceiling — the sighted score is 7. When blindness removes a whole
+domain the score can move either way, so neither `≤` nor `≥` is honest. Naming
+that state is a design decision, not a patch, and it is deferred rather than
+guessed at.
+
+**Tests** 8152 → **8255**.
 
 ---
 

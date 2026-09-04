@@ -514,7 +514,17 @@ def _summary_header_lines(engine, network_context, config, t,
     target = getattr(config, "target", 0)
     if target:
         gap = target - score
-        if gap <= 0:
+        if gap <= 0 and bounded:
+            # v0.16.1 — the exit code has failed closed on a bounded score since
+            # v0.16.0 (`score < target or score_is_upper_bound`), and this line
+            # was never updated to match. It printed "✔ target reached" while
+            # the same run exited 4 (EXIT_TARGET_MISSED): two public surfaces of
+            # one audit saying the opposite, with a CI gate reading the code and
+            # a human reading the line. The number does clear the bar, but it is
+            # a ceiling, so whether the host clears it is unknown — which is
+            # exactly what the exit code says.
+            target_val = f"{_c.yellow}▲ {t('scoring.target_unverifiable', target=target)}{_c.reset}"
+        elif gap <= 0:
             target_val = f"{_c.green}✔ {t('scoring.target_reached', target=target)}{_c.reset}"
         else:
             target_val = f"{_c.yellow}▲ {t('scoring.target_gap', target=target, gap=gap)}{_c.reset}"

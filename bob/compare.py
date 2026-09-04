@@ -338,6 +338,15 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
             finding_keys=finding_keys,
             deduction_total=int(raw["deduction_total"]) if isinstance(raw.get("deduction_total"), int) else None,
             hostname=(str(raw["hostname"]) if isinstance(raw.get("hostname"), str) and raw["hostname"] else None),
+            # v0.16.1 — this line was missing since v0.16.0. ``save_baseline``
+            # wrote ``unverified`` and ``load_baseline`` dropped it, so
+            # ``prev.unverified`` was always None on a real run and
+            # ``visibility_dropped`` could never be True. The whole --diff
+            # visibility protection was therefore dead outside the unit tests,
+            # which build AuditBaseline objects in memory and never round-trip
+            # through the file. Absent stays None ("written before the field
+            # existed"); an empty list stays a legitimately clean run.
+            unverified=(list(raw["unverified"]) if isinstance(raw.get("unverified"), list) else None),
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         if strict:
@@ -453,6 +462,19 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
     elif delta.score_delta > 0:
         output_mod.print_ok(t("compare.score_improved",
                                delta=delta.score_delta))
+    elif delta.score_delta < 0 and delta.visibility_dropped:
+        # v0.16.1 — the symmetric case, and the one v0.16.0 did not foresee.
+        # It reasoned that a check unable to read makes no deductions, so the
+        # score can only be too high. That holds for a check abstaining inside
+        # a domain, but not for a whole domain: the global score is an average
+        # over *active* domains, and a domain whose input went unreadable
+        # leaves the average entirely, changing the denominator. Masking
+        # /etc/passwd takes `file_perms` (10/10) out and the score from 7 to 6
+        # with the deductions byte-identical — a drop no finding explains.
+        # Calling that a degradation blames the operator for BOB's own
+        # eyesight, and a nightly cron mails the false alarm.
+        output_mod.print_info(t("compare.score_down_but_blinder",
+                                delta=abs(delta.score_delta)))
     elif delta.score_delta < 0:
         output_mod.print_warn(t("compare.score_degraded",
                                  delta=abs(delta.score_delta)))

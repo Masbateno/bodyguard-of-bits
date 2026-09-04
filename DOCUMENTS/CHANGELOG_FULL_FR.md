@@ -150,7 +150,72 @@ ce module, une autre vérifie que le fond de la sélection n'est jamais celui du
 bandeau — contrôlé à 8, 16, 88 et 256 couleurs. Vérifié sur un vrai pty dans
 les trois écrans.
 
-**Tests** 8152 → **8230**.
+**La v0.16.0 n'avait fermé qu'une moitié de sa propre classe, et l'autre était
+vivante.**
+
+La v0.16.0 raisonnait ainsi : un check incapable de lire ne déduit rien, donc le
+score ne peut être que **trop haut** — d'où le rendu en plafond, et d'où une
+garde `--diff` écrite pour la seule direction montante. C'est vrai d'un check
+qui s'abstient *à l'intérieur* d'un domaine. Ça ne l'est pas d'un domaine
+entier : le score global est une moyenne sur les domaines **actifs**, et un
+domaine dont l'entrée est devenue illisible quitte la moyenne — ce qui change le
+dénominateur, pas le numérateur.
+
+Masquer `/etc/passwd` retire `file_perms` (10/10) et fait passer le score de 7 à
+**6** — déductions identiques au point près (12), rien ajouté à `unverified`,
+`degraded_sections` vide. Face à une baseline voyante, cela se lisait
+`Score dégradé de 1 point(s)` : une régression annoncée sur un hôte où rien
+n'avait changé sauf la vue de BOB — et le cron nocturne l'envoie par mail.
+
+Trois défauts, une racine, trouvés par un balayage local exhaustif de toutes les
+options et combinaisons (~700 invocations).
+
+**`user_accounts.no_passwd` et `user_accounts.no_shadow` étaient hors de
+`VISIBILITY_KEYS`.** L'ensemble avait été énuméré par *nom* — `*_unreadable` /
+`*_unknown` — et aucune des deux ne correspond, bien que toutes deux soient
+émises sous `if not snapshot.passwd_readable`. `no_passwd` se lit même comme
+« pas de mot de passe » alors qu'il signifie que le fichier ne s'est jamais
+ouvert. Une troisième garde balaie désormais par **position dans le source**
+plutôt que par nom : toute clé émise dans une branche d'illisibilité doit être
+dans l'ensemble ou explicitement exclue. Elle ne parcourt que le corps de la
+branche, jamais le `else` — lire le chemin lisible fait remonter
+`firewall_drivers.no_issues` comme une limite de visibilité, et c'est dans un mur
+de faux positifs qu'un vrai manque se perd.
+
+**`load_baseline` ne restaurait jamais `unverified`.** `save_baseline`
+l'écrivait, le chargeur le laissait tomber : `prev.unverified` valait donc
+toujours `None` sur une exécution réelle et `visibility_dropped` ne pouvait
+jamais être vrai. **Toute la protection de visibilité de `--diff` était morte
+hors des tests unitaires** — qui construisent les `AuditBaseline` en mémoire et
+ne passent jamais par le fichier. C'est une ligne rétablie, et la garde traverse
+désormais le disque. C'est la forme « déclaré mais jamais consommé » que la
+v0.15.3 a fermée deux fois, dans un champ ajouté la version d'avant.
+
+**Il n'existait aucune branche pour un score qui baisse sur une exécution plus
+aveugle.** Une baisse accompagnée d'une visibilité réduite est désormais
+annoncée comme non imputable à l'hôte, dans les termes que la v0.16.0 avait
+donnés à la direction montante. Une vraie baisse reste un avertissement — la
+garde ne doit pas avaler les régressions réelles, et c'est un test à part
+entière.
+
+**`--target` disait le contraire de son propre code de sortie.** La v0.16.0
+avait fait échouer fermé sur un score borné (`score < target or
+score_is_upper_bound`) sans jamais mettre à jour la synthèse, qui imprimait
+toujours `✔ objectif atteint` sur le seul `gap <= 0`. La même exécution disait
+à l'humain que l'objectif était tenu et à la chaîne d'intégration qu'il était
+manqué. Sur tout hôte dont une section n'est pas lisible — la plupart, sans
+privilège — **tous** les `--target` sortaient en 4, `--target=1` compris. La
+ligne dit maintenant que le score franchit la barre mais que la barre est un
+plafond, et une garde vérifie que les deux surfaces n'énoncent qu'une seule
+chose, en épinglant le prédicat recopié sur le source réel.
+
+**Reste ouvert, délibérément.** L'en-tête affiche encore `≤ 6/10` sur cette
+exécution, et 6 n'est pas un plafond — le score voyant est 7. Quand
+l'aveuglement retire un domaine entier, le score peut bouger dans les deux sens :
+ni `≤` ni `≥` n'est honnête. Nommer cet état est une décision de conception, pas
+un correctif ; c'est reporté plutôt que deviné.
+
+**Tests** 8152 → **8255**.
 
 ---
 

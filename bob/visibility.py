@@ -14,9 +14,17 @@ empty, because that field is reserved by contract for a section whose check
 output. An operator running BOB without sudo therefore reads a better score
 than one running it properly, and nothing in the report contradicts the number.
 
-The set is explicit rather than derived from the key name. Two guards keep it
-honest in both directions: nothing here may be a key BOB never emits, and no
-newly added ``*_unreadable`` / ``*_unknown`` key may stay out of it.
+The set is explicit rather than derived from the key name. Three guards keep it
+honest: nothing here may be a key BOB never emits; no newly added
+``*_unreadable`` / ``*_unknown`` key may stay out of it; and — added in v0.16.1
+— no key emitted *inside a check's own unreadability branch* may stay out of it
+either, whatever it is called.
+
+That third guard exists because the first enumeration swept by name, and the
+name is not the meaning. ``user_accounts.no_passwd`` and
+``user_accounts.no_shadow`` are emitted under ``if not snapshot.passwd_readable``
+and mean exactly what this module is about, but neither matches the convention,
+so both sat outside the set for a whole release.
 
 **Not in this set, deliberately:** ``ssh.config_newer_than_service`` and
 ``log_rotation.journald_conf_newer_than_service``. Those qualify *what the
@@ -63,6 +71,16 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "suid_audit.ok_partial",
     "systemd_timers.unreadable",
     "umask.sources_unreadable",
+    # v0.16.1 — neither name matches the ``*_unreadable`` / ``*_unknown``
+    # convention this set was first enumerated with, which is exactly why both
+    # were missed. ``no_passwd`` reads like "no password"; it means the file
+    # never opened. Masking /etc/passwd took the whole ``file_perms`` domain out
+    # of the score average and the score from 7 down to 6, with the deductions
+    # byte-identical and nothing in ``unverified`` — so ``--diff`` against a
+    # sighted baseline reported "Score degraded by 1 point(s)" on a host where
+    # nothing had changed but BOB's own eyesight.
+    "user_accounts.no_passwd",
+    "user_accounts.no_shadow",
 })
 
 # Keys that match the naming convention but do not reduce visibility. Kept

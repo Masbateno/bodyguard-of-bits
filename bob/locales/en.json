@@ -290,6 +290,7 @@
     "cap_note": "Score capped at {max} (firewall inactive)",
     "target_label": "Target",
     "target_reached": "{target}/10 — target reached",
+    "target_unverifiable": "{target}/10 — the score clears it, but it is a ceiling: not verifiable",
     "target_gap": "{target}/10 — +{gap} pt(s) needed"
   },
   "summary": {
@@ -781,6 +782,7 @@
     "key_resolved": "Resolved: {finding}",
     "visibility_dropped": "This run could read less of the host than the previous one — the comparison below is not like for like",
     "score_up_but_blinder": "Score is +{delta}, but this run read less of the host — not an improvement, a smaller measurement",
+    "score_down_but_blinder": "Score is -{delta}, but this run read less of the host — the drop is not attributable to the host",
     "key_unreevaluated": "Not re-evaluated (its section could not be read): {finding}",
     "variable_deductions_increased": "Variable deductions +{delta} pt(s) (logs, network traffic)",
     "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)",

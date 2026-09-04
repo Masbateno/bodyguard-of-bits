@@ -290,6 +290,7 @@
     "cap_note": "Score plafonné à {max} (pare-feu inactif)",
     "target_label": "Objectif",
     "target_reached": "{target}/10 — objectif atteint",
+    "target_unverifiable": "{target}/10 — le score le franchit, mais c'est un plafond : non vérifiable",
     "target_gap": "{target}/10 — +{gap} pt(s) à gagner"
   },
   "summary": {
@@ -781,6 +782,7 @@
     "key_resolved": "Résolu : {finding}",
     "visibility_dropped": "Cette exécution a pu lire moins de l'hôte que la précédente — la comparaison ci-dessous n'est pas à périmètre égal",
     "score_up_but_blinder": "Score à +{delta}, mais cette exécution a lu moins de l'hôte — ce n'est pas une amélioration, c'est une mesure plus petite",
+    "score_down_but_blinder": "Score à -{delta}, mais cette exécution a lu moins de l'hôte — la baisse n'est pas imputable à l'hôte",
     "key_unreevaluated": "Non réévalué (sa section n'a pas pu être lue) : {finding}",
     "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
     "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)",
