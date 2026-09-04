@@ -93,7 +93,34 @@ fails if that rationale disappears — but the decision is undocumented for the
 operator, who gets an English report from a French installation with nothing
 saying why.
 
-**Tests** 8152 → **8208**.
+**And the interactive wizard had been crashing since v0.7.0.** Found by the
+maintainer the first time it was run against the new screens:
+
+```
+Fatal error: '_WizardEntry' object has no attribute 'time_simple'
+```
+
+`_curses_schedule_wizard` reads `entry.time_simple` unconditionally. The field
+was added to `CronEntry` in v0.7.0 (M-1) and never added to `_WizardEntry`, the
+stand-in the install flow passes — so `sudo bob --install-cron` died the moment
+a schedule was picked, on **40 released versions**, for three months.
+
+Nothing caught it because `run_install_cron` dispatches on
+`sys.stdout.isatty()`: a pipe is not a TTY, so every test — and every
+verification run in this release, including the end-to-end sandbox installs
+that produced correct scripts — silently exercised the *plain-text* wizard. The
+path a human actually gets had no coverage at all. That is the same harness
+error twice in one release: a check that appears to test the thing while
+quietly testing something else.
+
+Two guards, because one would not have been enough. A static sweep asserts that
+every `entry.<field>` the wizard reads exists on both entry types, which
+generalises to the next field someone adds; and an end-to-end run drives the
+real wizard **on a pty**, keystroke by keystroke, because only a terminal
+exercises the terminal path. Both were mutation-tested by replaying the v0.7.0
+regression verbatim.
+
+**Tests** 8152 → **8211**.
 
 ---
 

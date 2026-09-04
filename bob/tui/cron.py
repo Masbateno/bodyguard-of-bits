@@ -50,10 +50,25 @@ from bob.cron import (
 
 
 class _WizardEntry(NamedTuple):
-    """Minimal entry context passed to the schedule wizard during installation."""
+    """Minimal entry context passed to the schedule wizard during installation.
+
+    ``time_simple`` mirrors the field ``CronEntry`` carries, because
+    ``_curses_schedule_wizard`` serves both and reads it unconditionally:
+
+        hour = entry.hour if entry and entry.time_simple else 3
+
+    It was added to ``CronEntry`` in v0.7.0 (M-1) and never added here, so
+    every interactive ``--install-cron`` died with an AttributeError the moment
+    a schedule was picked — for 40 released versions. The plain-text wizard was
+    unaffected, and the whole suite drove that path (a pipe is not a TTY, so
+    ``run_install_cron`` dispatches away from curses), which is exactly why the
+    crash survived so long. True is the honest value: a fresh install has no
+    parsed schedule, and the 3:00 default below IS a plain HH:MM.
+    """
     name: str
     hour: int = 3
     minute: int = 0
+    time_simple: bool = True
 
 
 def _draw(stdscr, row: int, col: int, text: str, attr: int = 0) -> None:

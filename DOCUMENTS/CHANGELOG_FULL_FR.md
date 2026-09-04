@@ -99,7 +99,35 @@ cette justification disparaît — mais la décision n'est documentée nulle par
 pour l'opérateur, qui reçoit un rapport anglais depuis une installation
 française sans rien qui l'explique.
 
-**Tests** 8152 → **8208**.
+**Et l'assistant interactif plantait depuis la v0.7.0.** Trouvé par le
+mainteneur au premier lancement contre les nouveaux écrans :
+
+```
+Fatal error: '_WizardEntry' object has no attribute 'time_simple'
+```
+
+`_curses_schedule_wizard` lit `entry.time_simple` sans condition. Le champ a
+été ajouté à `CronEntry` en v0.7.0 (M-1) et jamais à `_WizardEntry`, le
+substitut que passe le flux d'installation — `sudo bob --install-cron` mourait
+donc dès qu'une planification était choisie, sur **40 versions publiées**,
+pendant trois mois.
+
+Rien ne l'a attrapé parce que `run_install_cron` s'aiguille sur
+`sys.stdout.isatty()` : un tuyau n'est pas un terminal, si bien que chaque test
+— et chaque vérification de cette release, y compris les installations
+complètes en bac à sable qui ont produit des scripts corrects — exerçait
+silencieusement l'assistant *texte*. Le chemin qu'obtient réellement un humain
+n'avait aucune couverture. C'est la même erreur de banc deux fois dans une même
+release : une vérification qui a l'air de tester la chose et en teste une autre.
+
+Deux gardes, parce qu'une seule n'aurait pas suffi. Un balayage statique vérifie
+que chaque `entry.<champ>` lu par l'assistant existe sur les deux types
+d'entrée, ce qui généralise au prochain champ ajouté ; et un parcours complet
+pilote le vrai assistant **sur un pty**, touche après touche, parce que seul un
+terminal exerce le chemin terminal. Les deux ont été testées par mutation en
+rejouant la régression v0.7.0 à l'identique.
+
+**Tests** 8152 → **8211**.
 
 ---
 
