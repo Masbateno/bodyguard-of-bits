@@ -76,6 +76,46 @@
 > branch that printed them was deleted; the other counted `FAILED` and read an
 > ERROR as the guard holding.
 
+> **v0.16.0 (this snapshot).** What the score *means* when BOB cannot read part
+> of the host. It is a sum over the checks that ran, and a check unable to read
+> its input made deductions that are **unknown, not zero**: masking
+> `/etc/ssh/sshd_config` removed four and moved the score from 7 to **8** — up,
+> on a host BOB could see less of, while `degraded_sections` stayed empty
+> (correctly: it is reserved for a section whose check *raised*). The number now
+> renders as the ceiling it is, `≤ 8/10`; the risk level derived from it reads
+> as a best case; the trend arrow is withheld while bounded; and a summary line
+> names how many sections were not fully read — eight, unprivileged, on the
+> development host. Deducting for unreadability was rejected: it penalises the
+> operator for BOB's own privileges. `score` stays an integer in JSON;
+> `score_is_upper_bound` and `unverified` are additive, and `--diff` no longer
+> calls a finding resolved when its section was not re-evaluated.
+>
+> `logs.brute_found` is renamed to `logs.blocked_repeat_public`, joining the two
+> siblings the v0.15.5 fix created, with `bob/_v0160_renames.py` keeping the old
+> name working on all three surfaces that would otherwise break — baselines,
+> `ignore.yml`, `--explain` — each with its own test, because each fails
+> differently.
+>
+> **What the audit-report review found.** Six sinks render the score
+> independently and the change had reached two: the archived report said
+> `Score : 7/10` where the terminal said `≤ 7/10`, about the same audit. All six
+> carry it now, and the guard — not the six edits — is the fix. It immediately
+> found that **`--target` could be satisfied by a ceiling**, so a CI gate went
+> green on an audit that could not read part of the host; a gate fails closed
+> now. Separately, `bob -q -d` wrote a 440-line report with **no summary block
+> at all**: `-q` is about stdout, `-d` is a file explicitly asked for, and this
+> module's own rule already said so. Fixing that introduced the v0.8.3
+> UnboundLocalError shape, caught by the tests and now by a static guard.
+>
+> **And a regression the whole suite missed.** `--format=html` crashed —
+> `'>=' not supported between instances of 'str' and 'int'` — because the bound
+> was applied by reassigning `score` to a string above a `_score_color(score)`
+> that compares it against thresholds. 8144 tests were green: the HTML stub
+> defaults the bound to False, so the bounded path was never rendered. It was
+> found by running the binary. A source-presence check is not a rendering
+> check, and the three format builders that had only one are now driven in both
+> states.
+
 
 ---
 
@@ -248,7 +288,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 209 test files, ~5530 functions, 8147 collected (v0.15.5)
+├── tests/                     ← 209 test files, ~5530 functions, 8147 collected (v0.16.0)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec

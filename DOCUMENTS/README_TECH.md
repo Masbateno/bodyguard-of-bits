@@ -25,7 +25,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
 - **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 174 entries (107 formal CIS, 60 best-practice, 7 Docker)
 - **5 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / DETECTION & HEALTH
-- **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target (CI-ready)
+- **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target, **and since v0.16.0 whenever the score is an upper bound** — a gate cannot be satisfied by a ceiling (CI-ready)
 
 ### Network & firewall
 
@@ -589,7 +589,7 @@ When using `--quiet`, the exit code tells you the audit result:
 | `1`  | `EXIT_WARNINGS`      | Warnings detected (improvements suggested) |
 | `2`  | `EXIT_ALERTS`        | Alerts detected — action required |
 | `3`  | `EXIT_ERROR`         | Technical error (CLI parsing, IO, internal) |
-| `4`  | `EXIT_TARGET_MISSED` | `--target N` specified and score < N |
+| `4`  | `EXIT_TARGET_MISSED` | `--target N` specified and score < N, **or the score is an upper bound** (v0.16.0): a check could not read its input, so "at least N" was never established. A gate fails closed. |
 | `130`| *(signal convention)* | Interrupted with Ctrl-C. Since v0.14.1 `main()` catches `KeyboardInterrupt` and prints one localised line instead of a Python traceback. Not a `bob.__main__` constant — it is the shell's `128 + SIGINT`. |
 
 The constants are exposed in `bob.__main__` for programmatic access:
@@ -649,6 +649,8 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `info_count` | int | Number of INFO-level findings (new in v2) |
 | `profile` | string | The audit profile that produced this result (`server` / `desktop` / `workstation` / `container`). New in v0.14.1, additive within v3. Since v0.14.0 the profile changes finding severities, `warning_count` and therefore the exit code, so two payloads for the same host can legitimately disagree — this field is what explains the difference. |
 | `degraded_sections` | array | Section names whose check raised and was degraded in place rather than aborting the audit (new in v0.14.1, additive within v3). Empty on a healthy run. Each also appears as a `<section>.unavailable` INFO finding. Lets a consumer tell "score 9 with every section evaluated" from "score 9 with two sections never run". |
+| `score_is_upper_bound` | bool | **New in v0.16.0.** True when a check could not read its input, so the deductions it did not make are *unknown, not zero* and `score` is a ceiling rather than a measurement. Masking `/etc/ssh/sshd_config` removes four deductions and moves the score from 7 to **8** — up, on a host BOB can see less of. `score` stays an integer so existing consumers are unaffected; this says what it is worth. |
+| `unverified` | array | **New in v0.16.0.** The finding keys that mean a section could not be fully read (`ssh.config_unreadable`, `suid_audit.ok_partial`, …). Empty on a fully privileged run. Alert on `score_is_upper_bound` rather than counting this list: one unreadable section is enough to make the score a ceiling. |
 | `deductions` | array | Score deductions (filtered: `points > 0`) |
 | `domain_scores` | object | Per-domain sub-scores |
 | `posture_escalation` | object | Posture-driven risk-level adjustment context (new in v2) |

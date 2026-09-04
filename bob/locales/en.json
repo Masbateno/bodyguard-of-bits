@@ -861,7 +861,7 @@
       "1": "Warnings present",
       "2": "Alerts present — action required",
       "3": "Technical error",
-      "4": "--target N specified and score < N"
+      "4": "--target N missed, or the score is an upper bound"
     }
   },
   "cli": {

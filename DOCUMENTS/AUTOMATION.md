@@ -226,6 +226,8 @@ The generic payload is intentionally minimal and stable:
   "warnings": 2,
   "profile": "server",
   "degraded_sections": [],
+  "score_is_upper_bound": false,
+  "unverified": [],
   "domain_scores": {"ssh": 8, "firewall": 10},
   "findings": [
     {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Root login allowed via SSH", "detail": "", "note": ""}
@@ -239,6 +241,7 @@ This generic envelope is its **own** flat contract (distinct from the `bob --jso
 
   - **`profile`** — the audit profile that produced these numbers. Since v0.14.0 the profile changes finding severities, `warnings` and therefore the exit code, so two payloads from the same host can legitimately disagree; without this field nothing explains why. Use it to group or compare hosts.
   - **`degraded_sections`** — the sections whose check raised and were degraded in place instead of aborting the audit (empty list on a healthy run). **This is the field to alert on.** A receiver seeing `score: 9, alerts: 0` cannot otherwise tell a clean host from one where two sections never ran; the exit code deliberately stays driven by the real findings, so incompleteness is only visible here (and as `<section>.unavailable` INFO findings, which the generic envelope does not enumerate — it carries ALERT and WARN only).
+  - **`score_is_upper_bound`** — true when a check could not read its input. The deductions it did not make are **unknown, not zero**, so `score` is a ceiling. An audit run without the privileges it needs reads *higher* than a full one, which is why a monitoring rule on `score` alone can go green on a blinder run. **`unverified`** lists the finding keys behind it. Since v0.16.0 `--target N` also fails closed on a bounded score: a gate cannot be satisfied by a ceiling.
 
 A reasonable monitoring rule is therefore *"page on `alerts > 0`, and warn separately whenever `degraded_sections` is non-empty"* — the second condition means the audit itself is unhealthy, not the host.
 

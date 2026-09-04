@@ -226,6 +226,8 @@ Le payload générique est volontairement minimal et stable :
   "warnings": 2,
   "profile": "server",
   "degraded_sections": [],
+  "score_is_upper_bound": false,
+  "unverified": [],
   "domain_scores": {"ssh": 8, "firewall": 10},
   "findings": [
     {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Connexion root autorisée via SSH", "detail": "", "note": ""}
@@ -239,6 +241,7 @@ Cette enveloppe générique a son **propre** contrat plat (distinct du schéma d
 
   - **`profile`** — le profil d'audit qui a produit ces chiffres. Depuis la v0.14.0 le profil change les sévérités des findings, `warnings` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et sans ce champ rien ne l'explique. À utiliser pour regrouper ou comparer des hôtes.
   - **`degraded_sections`** — les sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (liste vide sur une exécution saine). **C'est le champ sur lequel alerter.** Un récepteur voyant `score: 9, alerts: 0` ne peut pas distinguer autrement un hôte sain d'un hôte où deux sections n'ont jamais tourné ; le code de sortie reste délibérément piloté par les findings réels, donc l'incomplétude n'est visible qu'ici (et via les findings INFO `<section>.unavailable`, que l'enveloppe générique n'énumère pas — elle ne porte que les ALERT et WARN).
+  - **`score_is_upper_bound`** — vrai quand un check n'a pas pu lire son entrée. Les déductions qu'il n'a pas faites sont **inconnues, pas nulles**, donc `score` est un plafond. Un audit lancé sans les privilèges nécessaires affiche un score *plus élevé* qu'un audit complet : une règle de supervision portant sur `score` seul peut donc passer au vert sur une exécution plus aveugle. **`unverified`** liste les clés de constat qui l'expliquent. Depuis la v0.16.0, `--target N` échoue aussi fermé sur un score borné : un portail ne peut pas être satisfait par un plafond.
 
 Une règle de supervision raisonnable est donc « alerter sur `alerts > 0`, et avertir séparément dès que `degraded_sections` est non vide » — la seconde condition signifie que c'est l'audit lui-même qui est en mauvaise santé, pas l'hôte.
 

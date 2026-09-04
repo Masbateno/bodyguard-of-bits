@@ -25,7 +25,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et ship ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
 - **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 174 entrées (107 CIS formels, 60 best-practice, 7 Docker)
 - **5 en-têtes de groupes thématiques** — sortie organisée en : FIREWALL & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / DÉTECTION & SANTÉ
-- **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible (intégration CI)
+- **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible, **et depuis la v0.16.0 dès que le score est une borne supérieure** — un portail ne peut pas être satisfait par un plafond (intégration CI) **Depuis la v0.16.0, il retourne aussi 4 dès que le score est une borne supérieure** — un portail ne peut pas être satisfait par un plafond.
 
 ### Réseau & pare-feu
 
@@ -589,7 +589,7 @@ En mode `--quiet`, le code de retour indique le résultat de l'audit :
 | `1`  | `EXIT_WARNINGS`      | Avertissements détectés (améliorations suggérées) |
 | `2`  | `EXIT_ALERTS`        | Alertes détectées — action requise |
 | `3`  | `EXIT_ERROR`         | Erreur technique (parsing CLI, IO, interne) |
-| `4`  | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N |
+| `4`  | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N, **ou score en borne supérieure** (v0.16.0) : un check n'a pas pu lire son entrée, donc « au moins N » n'a jamais été établi. Un portail échoue fermé. |
 | `130`| *(convention signal)* | Interrompu par Ctrl-C. Depuis la v0.14.1, `main()` attrape `KeyboardInterrupt` et affiche une ligne localisée au lieu d'un traceback Python. Ce n'est pas une constante de `bob.__main__` — c'est le `128 + SIGINT` du shell. |
 
 Les constantes sont exposées dans `bob.__main__` pour un usage programmatique :
@@ -649,6 +649,8 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `info_count` | int | Nombre de findings INFO (nouveau en v2) |
 | `profile` | string | Le profil d'audit qui a produit ce résultat (`server` / `desktop` / `workstation` / `container`). Nouveau en v0.14.1, additif dans v3. Depuis la v0.14.0 le profil change les sévérités des findings, `warning_count` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et c'est ce champ qui l'explique. |
 | `degraded_sections` | array | Noms des sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (nouveau en v0.14.1, additif dans v3). Vide sur une exécution saine. Chacune apparaît aussi comme un finding INFO `<section>.unavailable`. Permet de distinguer « score 9, toutes sections évaluées » de « score 9, deux sections jamais exécutées ». |
+| `score_is_upper_bound` | bool | **Nouveau en v0.16.0.** Vrai quand un check n'a pas pu lire son entrée : les déductions qu'il n'a pas faites sont *inconnues, pas nulles*, et `score` est un plafond, pas une mesure. Masquer `/etc/ssh/sshd_config` retire quatre déductions et fait passer le score de 7 à **8** — vers le haut, sur un hôte dont BOB voit moins. `score` reste un entier pour ne casser aucun consommateur ; ce champ dit ce qu'il vaut. |
+| `unverified` | array | **Nouveau en v0.16.0.** Les clés de constat signifiant qu'une section n'a pas pu être entièrement lue (`ssh.config_unreadable`, `suid_audit.ok_partial`, …). Vide sur un audit pleinement privilégié. Alerter sur `score_is_upper_bound` plutôt que compter cette liste : une seule section illisible suffit à faire du score un plafond. |
 | `deductions` | array | Déductions de score (filtrées : `points > 0`) |
 | `domain_scores` | object | Sous-scores par domaine |
 | `posture_escalation` | object | Contexte de l'ajustement du niveau de risque par la posture (nouveau en v2) |
