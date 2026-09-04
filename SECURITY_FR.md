@@ -272,7 +272,7 @@ des caractères tels quels. Chaque écrivain échappe donc pour son propre forma
 | Markdown | `<` en entité, `[` et `]` échappés pour que liens et images ne se rendent pas, `\|` pour que le tableau survive ; `cmd` va dans un code span dont la clôture est dimensionnée à son contenu |
 | Slack | `&`, `<` et `>` échappés selon les règles propres à Slack |
 | CSV | une cellule commençant par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe, pour qu'un contenu ayant seulement *transité* par BOB ne puisse pas s'exécuter à l'ouverture de l'export |
-| Rapport HTML `-d` | `html.escape` plus `_safe_url`, qui ramène les URL `javascript:`, `data:` et `vbscript:` à `#` |
+| Rapport HTML par email | `html.escape` plus `_safe_url`, qui ramène les URL `javascript:`, `data:` et `vbscript:` à `#`. Il s'agit de `bob/report_markdown.py`, atteint par `--install-cron` lorsqu'une adresse est fournie — l'audit planifié envoie son rapport en HTML. **Ce n'est pas** le rapport `-d`, que cette ligne désignait jusqu'en v0.16.0 : `-d` écrit un `.log` en texte brut et n'interprète aucun balisage. |
 
 **La v0.15.0 a trouvé cette couche absente chez deux écrivains.** Le rapport
 Markdown n'échappait que le séparateur de tableau : `<img src=x onerror=…>`
@@ -296,6 +296,7 @@ BOB lit les variables d'environnement suivantes. Toutes sont opt-in ; aucune n'e
 | `BOB_WEBHOOK_ALLOW_INSECURE=1` | non défini | Autorise les URLs `http://` pour les webhooks (rejet par défaut). La charge utile fuite hostname + IP publique + score + alertes en clair — à n'utiliser que sur réseau privé de confiance ou en lab local. |
 | ~~`BOB_SANDBOX_LEGACY=1`~~ | retiré en v0.9.0 (TD-1) | Pre-v0.9.0, exécutait les plugins dans le processus parent au lieu du sandbox enfant (spawn). Retiré ; l'env var est ignorée. Les plugins s'exécutent toujours dans le sandbox enfant. |
 | `BOB_DEBUG=1` | non défini | Commutateur de diagnostic, deux effets. (1) Affiche la trace Python complète sur sortie `EXIT_ERROR=3` (depuis v0.6.1) — sans, une seule ligne résumé + un hint pour activer la variable s'affichent. (2) Depuis la **v0.13.3**, installe un vrai handler de logging sur le logger `bob` au niveau DEBUG, ce qui rend visibles les enregistrements internes `logger.debug` / `logger.warning` autrement avalés (notamment la trace d'échec par subprocess de `_run()`). Utile pour diagnostiquer les crashs et les checks qui ne renvoient silencieusement rien ; jamais requis en production. |
+| `FORCE_COLOR=1` | non définie | Force la couleur ANSI même quand stdout n'est pas un terminal. Ajoutée en v0.14.0, quand la couleur est devenue auto-détectée (`--no-color` → `NO_COLOR` → `FORCE_COLOR` → `isatty()`) et que la sortie redirigée a cessé de porter des codes d'échappement. Documentée dans la note de fin de vie v0.13.x ci-dessus mais absente de cette table jusqu'en v0.16.0. |
 | `NO_COLOR` | non défini | Désactive toute sortie couleur ANSI, équivalent à `--no-color`. Suit la convention [no-color.org](https://no-color.org) : **toute valeur non vide** désactive la couleur, une valeur vide est ignorée. Honorée depuis la **v0.13.3**. |
 
 ## Surface réseau

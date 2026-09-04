@@ -63,9 +63,19 @@ def build_script_content(notify_email: str, log_dir: "Path | str") -> str:
         "if log_file:\n"
         "    try:\n"
         "        content = open(log_file, encoding='utf-8', errors='replace').read()\n"
-        "        m = re.search(r'Score\\s*:\\s*(\\d+/10)', content)\n"
+        # v0.16.0 — the report renders "Score     : ≤ 7/10" when a check could
+        # not read its input. The previous pattern did not match that at all
+        # (\\s* does not consume the ≤), so the subject silently became
+        # "Score N/A" on any host with one unreadable section — which is most
+        # hosts audited without full privileges. The bound is kept in the
+        # subject: dropping it would put a plain number on an email whose
+        # attached report says a ceiling. The prefix is captured as
+        # "any non-digit, non-newline run" rather than the ≤ character, so the
+        # generated cron script stays pure ASCII and carries no encoding
+        # assumption of its own.
+        "        m = re.search(r'Score\\s*:\\s*([^\\d\\n]*)(\\d+/10)', content)\n"
         "        if m:\n"
-        "            score = m.group(1)\n"
+        "            score = m.group(1).strip() + (' ' if m.group(1).strip() else '') + m.group(2)\n"
         "    except OSError:\n"
         "        pass\n"
         "subject = f'[BOB] {hostname} - Score {score}'\n"

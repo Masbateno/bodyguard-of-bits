@@ -332,7 +332,7 @@ escapes for its own format:
 | Markdown | `<` to an entity, `[` and `]` escaped so links and images do not render, `\|` so the table survives; `cmd` goes in a code span with a fence sized to its content |
 | Slack | `&`, `<` and `>` escaped per Slack's own rules |
 | CSV | a cell beginning with `=`, `+`, `-` or `@` is prefixed with a single quote, so content that merely passed *through* BOB cannot execute when the operator opens the export |
-| `-d` HTML report | `html.escape` plus `_safe_url`, which reduces `javascript:`, `data:` and `vbscript:` URLs to `#` |
+| HTML email report | `html.escape` plus `_safe_url`, which reduces `javascript:`, `data:` and `vbscript:` URLs to `#`. This is `bob/report_markdown.py`, reached by `--install-cron` when an address is given — the scheduled audit mails its report as HTML. **Not** the `-d` report, which this row named until v0.16.0: `-d` writes a plain-text `.log` and interprets no markup. |
 
 **v0.15.0 found this layer missing in two writers.** The Markdown report escaped
 only the table separator, so `<img src=x onerror=…>` executed in any renderer
@@ -355,6 +355,7 @@ required for normal operation.
 | `BOB_WEBHOOK_ALLOW_INSECURE=1` | unset | Allow `http://` webhook URLs (default rejects them). The audit payload leaks hostname + public IP + score + alerts in plaintext — only use on a trusted private network or for local lab testing. |
 | ~~`BOB_SANDBOX_LEGACY=1`~~ | retired in v0.9.0 (TD-1) | Pre-v0.9.0, ran plugins in the parent process instead of the spawn'd sandbox child. Removed; the env var is now ignored. Plugins always execute in the spawn'd sandbox child. |
 | `BOB_DEBUG=1` | unset | Diagnostics switch, two effects. (1) Prints the full Python traceback on `EXIT_ERROR=3` exits (since v0.6.1) — without it, errors print a one-line summary + the hint to set this variable. (2) Since **v0.13.3**, installs a real logging handler on the `bob` logger at DEBUG level, surfacing the internal `logger.debug` / `logger.warning` records that are otherwise swallowed (notably `_run()`'s per-subprocess failure trace). Useful for diagnosing crashes and checks that silently return nothing; never required in production. |
+| `FORCE_COLOR=1` | unset | Force ANSI colour even when stdout is not a TTY. Added in v0.14.0, when colour became auto-detected (`--no-color` → `NO_COLOR` → `FORCE_COLOR` → `isatty()`) and redirected output stopped carrying escape codes. Documented in the v0.13.x end-of-life note above but missing from this table until v0.16.0. |
 | `NO_COLOR` | unset | Disables all ANSI colour output, equivalent to `--no-color`. Follows the [no-color.org](https://no-color.org) convention: **any non-empty value** disables colour, an empty value is ignored. Honoured since **v0.13.3**. |
 
 ## Network surface

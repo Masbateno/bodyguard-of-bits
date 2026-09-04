@@ -89,7 +89,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 - **`--output-dir PATH`** — override report save directory for the current run; no persist
 - **Comparative report** — baseline saved after each audit (`~/.config/bob/last_baseline.json`); next run shows score delta, alert/warn changes, new/closed ports, started/stopped services; new and resolved ALERT+WARN finding keys tracked separately
 - **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 1000-entry rotation
-- **Ignore list** — `--ignore KEY` adds a finding key to `ignore.yml`; `--show-ignored` lists active exceptions; silences matching findings without scoring
+- **Ignore list** — `--ignore KEY` adds a finding key to `ignore.yml`; `--show-ignored` runs the audit and displays suppressed findings in grey alongside the normal output (it is not a listing command); silences matching findings without scoring
 - **`--diff` mode** — runs audit silently and displays only the baseline delta (score, alerts, warnings, info)
 - **`--breakdown` / `-B`** — runs audit silently and displays the full score computation path: all deductions (key · domain · points · context), tool caps, engine cap, raw score, per-domain scores with progress bars, domain-average override, final score color-coded by severity
 - **Plugin check API** — drop a Python file in `~/.config/bob/checks.d/` to add a custom audit check; fail-safe (exceptions never abort the audit); ANSI-sanitized

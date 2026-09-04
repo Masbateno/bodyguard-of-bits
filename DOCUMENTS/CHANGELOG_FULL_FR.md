@@ -198,7 +198,48 @@ l'affichage, et les trois constructeurs de format qui n'avaient qu'une
 vérification de source — HTML, Markdown, CSV — sont exercés dans les deux
 états. Réintroduire la régression exacte en fait échouer un.
 
-**Tests** 8089 → **8147**.
+**Une passe exhaustive sur les options, et un document de sécurité lu ligne à ligne.**
+
+Les 45 options longues ont été exercées — pas une douzaine représentative. Tout
+se comporte : le `--json-v1` retiré répond toujours par son message de retrait
+v0.9.0 plutôt que « option inconnue », `--reconfigure` / `--manage-logs` /
+`--manage-cron` sortent tous en 0 sur EOF, `--yes` seul est rejeté avec sa
+raison, `--webhook` vers un hôte injoignable avertit et continue, et
+`--explain logs.brute_found` passe par l'alias de cette version. `--target=5`
+retourne 4 sur un hôte à 7 : la règle d'échec fermé fonctionne.
+
+**`--install-cron` avec une adresse email était cassé par cette version.** Le
+script généré extrait le score du journal d'audit pour composer le sujet, via
+`re.search(r'Score\s*:\s*(\d+/10)', content)`. Le rapport rend désormais
+`Score     : ≤ 7/10`, et `\s*` ne consomme pas `≤` — le motif ne correspondait
+donc **pas du tout** et le sujet devenait silencieusement `[BOB] hôte - Score
+N/A`. C'est le cas de la plupart des hôtes audités sans privilèges complets, et
+le seul symptôme est un sujet d'email que personne ne rattacherait à un
+changement de score. Aucun test ne rend le rapport pour le réinjecter dans le
+script généré ; c'est en lisant le chemin cron qu'il est apparu. Le préfixe est
+maintenant capturé comme « toute suite de non-chiffres hors saut de ligne », ce
+qui conserve la borne dans le sujet et garde le script généré en ASCII pur —
+`[^\d\n]*` plutôt que `\D*`, qui matche les sauts de ligne et atteindrait un
+nombre situé plus bas.
+
+**SECURITY.md nommait une sortie qui n'existe pas.** Sa table de rendu de texte
+non fiable attribuait `html.escape` et `_safe_url` au « rapport HTML `-d` ». Or
+`-d` écrit un `.log` en texte brut et n'interprète aucun balisage ; la
+protection est réelle mais appartient à `bob/report_markdown.py`, atteint par
+`--install-cron` quand une adresse est fournie. Une politique de sécurité qui
+attribue une protection à la mauvaise sortie est pire qu'une qui se tait : le
+lecteur en conclut que `-d` produit du HTML. Les deux locales nomment désormais
+le rapport email et disent explicitement que ce n'est pas `-d`.
+
+Également : `FORCE_COLOR` était documentée dans la note de fin de vie v0.13.x et
+absente de la table des variables d'environnement où elle a sa place. Vérifié et
+correct : chaque variable `BOB_*` du code figure dans cette table ; l'affirmation
+« deux appels HTTPS sortants » tient, la géolocalisation d'IP lisant une base
+GeoLite2 locale et non le réseau ; et la section bac à sable énonce toujours
+clairement qu'un sandbox Python en processus n'est pas une frontière de
+sécurité.
+
+**Tests** 8089 → **8152**.
 
 ---
 

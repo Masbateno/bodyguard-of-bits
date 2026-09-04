@@ -187,7 +187,45 @@ the three format builders that had only a source-presence check — HTML,
 Markdown, CSV — are each driven in both states. Reinstating the exact
 regression fails one of them.
 
-**Tests** 8089 → **8147**.
+**An exhaustive option pass, and a security document read line by line.**
+
+All 45 long options were exercised — not a representative dozen. Everything
+behaves: the retired `--json-v1` still answers with its v0.9.0 retirement
+message rather than "unknown option", `--reconfigure` / `--manage-logs` /
+`--manage-cron` all exit 0 on EOF, `--yes` alone is rejected with the reason,
+`--webhook` to an unreachable host warns and continues, and `--explain
+logs.brute_found` resolves through this release's alias. `--target=5` returns 4
+on a host scoring 7, which is the fail-closed rule working.
+
+**`--install-cron` with an email address was broken by this release.** The
+generated script pulls the score out of the audit log to build the subject
+line, with `re.search(r'Score\s*:\s*(\d+/10)', content)`. The report now
+renders `Score     : ≤ 7/10`, and `\s*` does not consume `≤` — so the pattern
+did not match *at all* and the subject silently became `[BOB] host - Score
+N/A`. That is most hosts audited without full privileges, and the only symptom
+is an email subject nobody would connect to a scoring change. No test renders
+the report and feeds it back to the generated script; it was found by reading
+the cron path. The prefix is now captured as "any non-digit, non-newline run",
+which keeps the bound in the subject and keeps the generated script pure ASCII
+— `[^\d\n]*` rather than `\D*`, which matches newlines and would reach a
+number on a later line.
+
+**SECURITY.md named a sink that does not exist.** Its untrusted-text table
+attributed `html.escape` plus `_safe_url` to "the `-d` HTML report". `-d` writes
+a plain-text `.log` and interprets no markup; the control is real but belongs to
+`bob/report_markdown.py`, reached by `--install-cron` when an address is given.
+A security policy claiming a mitigation for the wrong sink is worse than one
+that says nothing: a reader concludes `-d` produces HTML. Both locales now name
+the email report and say explicitly that it is not `-d`.
+
+Also there: `FORCE_COLOR` was documented in the v0.13.x end-of-life note and
+missing from the environment-variable table it belongs in. Verified and
+correct: every `BOB_*` variable in the code appears in that table; the "two
+outbound HTTPS calls" claim holds, since IP geolocation reads a local GeoLite2
+database rather than the network; and the sandbox section still states plainly
+that in-process Python sandboxing is not a security boundary.
+
+**Tests** 8089 → **8152**.
 
 ---
 
