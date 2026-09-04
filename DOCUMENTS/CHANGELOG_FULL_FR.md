@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.16.0] — 03-09-2026
+## [v0.16.0] — 04-09-2026
 
 **Le score montait quand BOB voyait moins.**
 

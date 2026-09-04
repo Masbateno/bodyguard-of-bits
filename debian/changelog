@@ -35,7 +35,7 @@ bodyguard-of-bits (0.16.0-1) UNRELEASED; urgency=low
     -d is a file the operator asked for. The quiet gate moved inside the function
     that writes it, where display.py's own rule already put it.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 03 Sep 2026 20:30:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 04 Sep 2026 10:00:00 +0200
 
 bodyguard-of-bits (0.15.5-1) UNRELEASED; urgency=low
 
