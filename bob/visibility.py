@@ -88,6 +88,30 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
 NOT_A_VISIBILITY_LIMIT: frozenset[str] = frozenset()
 
 
+#: Suffix of the key ``_sec``'s fault isolation emits when a check raises
+#: (``bob/runner.py``, v0.14.1). One per section, so it cannot be enumerated in
+#: the frozenset above — hence a predicate rather than a literal.
+UNAVAILABLE_SUFFIX = ".unavailable"
+
+
+def is_visibility_key(key: str) -> bool:
+    """True when *key* means BOB could not see part of the host.
+
+    v0.16.2. ``VISIBILITY_KEYS`` covers checks that ran and said honestly what
+    they could not read. It could not cover the case where the check does not
+    complete at all: ``_sec`` isolates the failure and emits
+    ``<section>.unavailable``, a key generated per section.
+
+    Leaving that out inverted the accounting. Making ``/etc/cron.d``
+    untraversable takes the cron section from emitting
+    ``cron.unreadable_files`` — an honest, counted admission — to raising, so
+    the honest key vanishes and ``unverified`` goes **down**, from 9 keys to 8,
+    on a host BOB can see *less* of. A section that failed hardest counted as
+    better verified than one that degraded gracefully.
+    """
+    return key in VISIBILITY_KEYS or key.endswith(UNAVAILABLE_SUFFIX)
+
+
 def section_of(key: str) -> str:
     """The section a finding key belongs to — its first dotted segment."""
     return key.split(".", 1)[0]

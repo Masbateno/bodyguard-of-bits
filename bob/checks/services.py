@@ -31,6 +31,7 @@ from bob.checks import _ufw
 from bob.checks._run import (
     TranslationFunc,
     _command_exists,
+    path_is_file,
     _identity_t,
     _run,
     package_installed,
@@ -471,7 +472,7 @@ def _detect_installation(service: Service) -> tuple[bool, str]:
     # where the operator stood when they typed the command.
     for binary_ref in service.detection.binary:
         if binary_ref.startswith("/"):
-            if Path(binary_ref).is_file():
+            if path_is_file(Path(binary_ref)):
                 return True, "binary"
         elif _command_exists(binary_ref):
             return True, "binary"
@@ -576,10 +577,18 @@ def _is_safe_service_config(path: Path, declared: str) -> bool:
     """
     if not path.is_absolute():
         return False
-    if not path.is_symlink():
-        return True
-    root = Path(declared.split("*", 1)[0]).parent
+    # v0.16.2 — ``is_symlink()`` was outside the guard below. It ignores four
+    # errnos and re-raises the rest, so a config path under an untraversable
+    # directory raised PermissionError out of the always-on core and cost the
+    # whole audit, the same shape as the binary probe fixed in this release.
+    #
+    # The failure answer must be False, not True: this call decides whether a
+    # path is safe to read, and "I could not tell" is not "safe". Widening the
+    # existing try keeps every successful path byte-identical.
     try:
+        if not path.is_symlink():
+            return True
+        root = Path(declared.split("*", 1)[0]).parent
         return path.resolve().is_relative_to(root.resolve())
     except (OSError, ValueError):
         return False

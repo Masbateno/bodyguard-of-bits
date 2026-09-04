@@ -34,7 +34,7 @@ if TYPE_CHECKING:  # pragma: no cover — annotation only, avoids the
     from bob.profiles import AuditProfile
 from enum import Enum
 
-from bob.visibility import VISIBILITY_KEYS
+from bob.visibility import is_visibility_key
 
 logger = logging.getLogger(__name__)
 
@@ -540,7 +540,7 @@ class ScoreEngine:
                 # An ignored visibility finding does not count: the operator
                 # asked not to hear about it, and silencing the caveat must not
                 # silently bound the score with no visible reason.
-                if finding.key in VISIBILITY_KEYS and finding.key not in self.unverified:
+                if is_visibility_key(finding.key) and finding.key not in self.unverified:
                     self.unverified.append(finding.key)
         # A qualification pointing at a finding the operator silenced is a
         # reference to something no consumer can resolve: the qualifier is not

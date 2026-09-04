@@ -84,7 +84,41 @@ actif (plafond : 3/10) » trois lignes au-dessus de « Score final : 7/10 » : l
 plafond porte sur le **domaine**, délibérément et documenté, mais le libellé ne
 disait jamais lequel.
 
-**Tests** 8282 → **8305**.
+**L'aveuglement ne doit jamais rétrécir le registre de l'aveuglement.** Deux
+autres cas de la même famille, trouvés en rendant des répertoires non
+traversables sur le banc plutôt qu'en lisant le code — 23 d'un coup, et c'est
+ainsi que les deux sont sortis.
+
+**L'audit mourait sur l'un d'eux.** La détection de services sonde un chemin de
+binaire absolu depuis le noyau always-on, que l'isolation de fautes v0.14.1 de
+`_sec` ne couvre délibérément pas. `Path.is_file()` ignore quatre errnos et
+relève les autres : un `/usr/local/bin` non traversable donnait
+`[Errno 13] Permission denied: '/usr/local/bin/gitea'` — sortie 3, aucun
+rapport, aucun constat. La v0.15.2 avait écrit `path_exists` pour exactement
+cette forme ; `is_file` était la seule méthode qu'elle n'avait pas enveloppée.
+`path_is_file` en est le jumeau, et la garde livrée avec lui a immédiatement
+trouvé un second site : `is_symlink()` était hors du `try` qui protégeait déjà
+la ligne suivante. Celui-là décide si un chemin de configuration est sûr à
+lire : sa réponse d'échec est donc **False** — « je n'ai pas pu savoir » n'est
+pas « sûr ».
+
+**Et la comptabilité était inversée.** Quand une section lève, `_sec` l'isole et
+émet `<section>.unavailable`, une clé générée par section et donc absente de
+tout ensemble énuméré. Rendre `/etc/cron.d` non traversable faisait passer
+`unverified` de 9 clés **à 8** : la section cron cessait d'émettre son honnête
+`cron.unreadable_files` et son échec pur ne comptait pour rien. Une section qui
+échouait le plus fort se lisait comme mieux vérifiée qu'une section qui
+dégradait proprement — l'inversion exacte que cette version existe pour fermer,
+sur le seul chemin que le contrat de la v0.16.0 avait nommé sans jamais le
+câbler. `is_visibility_key` est un prédicat et non un littéral, puisque la clé
+n'est pas énumérable.
+
+Les deux corrigés, 23 répertoires non traversables produisent désormais un audit
+complet qui dit ce qu'il vaut : `~ 7/10`, trois sections dégradées, 18 clés non
+vérifiées, et « le score est entre 4 et 8 » — un intervalle assez large pour
+dire d'un coup d'œil que cette exécution ne vaut pas grand-chose.
+
+**Tests** 8282 → **8318**.
 
 ---
 

@@ -76,7 +76,37 @@ is that `--yes` prints the audit trail `--quiet` would suppress. And
 score: 7/10": the cap is on the *domain*, deliberately and documented, but the
 wording never said which.
 
-**Tests** 8282 → **8305**.
+**Blindness must never shrink the record of blindness.** Two more of the same
+family, found by making directories untraversable on the bench rather than by
+reading code — 23 of them at once, which is how both surfaced.
+
+**The audit died on one of them.** Service detection probes an absolute binary
+path from the always-on core, which `_sec`'s v0.14.1 fault isolation
+deliberately does not cover. `Path.is_file()` ignores four errnos and re-raises
+the rest, so an untraversable `/usr/local/bin` gave `[Errno 13] Permission
+denied: '/usr/local/bin/gitea'` — exit 3, no report, no findings. v0.15.2 wrote
+`path_exists` for exactly this shape; `is_file` was the one method it did not
+wrap. `path_is_file` is its twin, and the guard that came with it immediately
+found a second site: `is_symlink()` sat outside the `try` that already guarded
+the line below it. That one decides whether a config path is safe to read, so
+its failure answer is **False** — "I could not tell" is not "safe".
+
+**And the accounting was inverted.** When a section raises, `_sec` isolates it
+and emits `<section>.unavailable`, a key generated per section and therefore in
+no enumerated set. Making `/etc/cron.d` untraversable took `unverified` from 9
+keys **down to 8**: the cron section stopped emitting its honest
+`cron.unreadable_files` and its outright failure counted as nothing. A section
+that failed hardest read as better verified than one that degraded gracefully —
+the exact inversion this release exists to close, on the one path v0.16.0's own
+contract had named and never wired in. `is_visibility_key` is a predicate
+rather than a literal, because the key cannot be enumerated.
+
+With both fixed, 23 untraversable directories now produce a complete audit that
+says what it is worth: `~ 7/10`, three sections degraded, 18 unverified keys,
+and `the score is between 4 and 8` — a span wide enough to tell the operator at
+a glance that this run is barely worth reading.
+
+**Tests** 8282 → **8318**.
 
 ---
 

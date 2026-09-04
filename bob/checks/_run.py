@@ -488,6 +488,30 @@ def path_exists(path: "Path") -> bool:
         return False
 
 
+def path_is_file(path: "Path") -> bool:
+    """Whether *path* is a regular file, without raising when it is off-limits.
+
+    v0.16.2 — the twin of :func:`path_exists`, and it was missing. ``is_file()``
+    ignores the same four errnos as ``exists()`` and re-raises the rest, so an
+    absolute path under an untraversable directory raises ``PermissionError``.
+
+    That killed the whole audit, not a section: service detection probes an
+    absolute binary path from the always-on core, which ``_sec``'s v0.14.1
+    fault isolation deliberately does not cover. Making ``/usr/local/bin``
+    untraversable produced ``[Errno 13] Permission denied:
+    '/usr/local/bin/gitea'``, exit 3, no report — the exact shape v0.15.2 wrote
+    ``path_exists`` to close, reachable through the one method it did not wrap.
+
+    False means "not usable from where BOB stands", which is the right answer
+    for a caller deciding whether a service is installed: a binary it cannot
+    stat is a binary it cannot audit.
+    """
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def _identity_t(key: str, **kwargs) -> str:
     """Fallback translation function — returns the key itself.
 
