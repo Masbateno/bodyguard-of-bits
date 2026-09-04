@@ -41,8 +41,20 @@ _ROOT = Path(__file__).resolve().parent.parent
 class TestTheDirectoryFormExplainsItself:
 
     def test_it_names_the_two_supported_forms(self):
+        # -E -S, and not a bare interpreter.
+        #
+        # The message only appears when `bob` is genuinely unimportable. On CI
+        # the package is pip-installed, so site-packages supplies it, the
+        # directory form works and returns 0 — the first version of this test
+        # asserted 3 and failed the release gate. That is the same mechanism as
+        # the stale editable-install .pth that made the form work on the
+        # maintainer's machine without sudo and fail under it.
+        #
+        # -S skips site-packages (and .pth processing), -E ignores PYTHONPATH.
+        # Not -I: since 3.11 it implies -P, which drops the script's directory
+        # from sys.path — the very thing under test.
         proc = subprocess.run(
-            [sys.executable, "bob", "--version"],
+            [sys.executable, "-E", "-S", "bob", "--version"],
             cwd=_ROOT, capture_output=True, text=True, timeout=60,
         )
         assert proc.returncode == 3
@@ -53,7 +65,7 @@ class TestTheDirectoryFormExplainsItself:
     def test_the_supported_form_is_unaffected(self):
         """The polarity twin — the fix must not shadow a working invocation."""
         proc = subprocess.run(
-            [sys.executable, "-m", "bob", "--version"],
+            [sys.executable, "-E", "-S", "-m", "bob", "--version"],
             cwd=_ROOT, capture_output=True, text=True, timeout=60,
         )
         assert proc.returncode == 0

@@ -225,6 +225,21 @@ outbound HTTPS calls" claim holds, since IP geolocation reads a local GeoLite2
 database rather than the network; and the sandbox section still states plainly
 that in-process Python sandboxing is not a security boundary.
 
+**The release gate caught a test that asserted an environment.** The guard for
+`python3 bob` ran the directory form and asserted exit 3 — but the message only
+appears when `bob` is genuinely unimportable, and on CI the package is
+pip-installed, so site-packages supplies it, the form works and returns 0. All
+five Python versions in the matrix failed on that one test, and nothing reached
+PyPI: the gate did its job.
+
+It is the same mechanism as the stale editable-install `.pth` that made the
+directory form work on the maintainer's machine without sudo and fail under it
+— an installed copy masking the condition under test. The subprocess now runs
+with `-E -S`: `-S` skips site-packages and `.pth` processing, `-E` ignores
+PYTHONPATH. Not `-I`, which since 3.11 implies `-P` and drops the script's
+directory from `sys.path` — the very thing under test. Verified locally in both
+conditions, with a copy of the package on PYTHONPATH to reproduce CI.
+
 **Tests** 8089 → **8152**.
 
 ---

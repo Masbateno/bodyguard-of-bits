@@ -239,6 +239,22 @@ GeoLite2 locale et non le réseau ; et la section bac à sable énonce toujours
 clairement qu'un sandbox Python en processus n'est pas une frontière de
 sécurité.
 
+**Le portail de publication a attrapé un test qui affirmait un environnement.**
+La garde de `python3 bob` lançait la forme répertoire et exigeait le code 3 —
+mais le message n'apparaît que si `bob` est réellement inimportable, et sur la
+CI le paquet est pip-installé : site-packages le fournit, la forme fonctionne
+et retourne 0. Les cinq versions de Python de la matrice ont échoué sur ce seul
+test, et rien n'a atteint PyPI : le portail a fait son travail.
+
+C'est le même mécanisme que le `.pth` d'installation éditable périmé qui
+faisait marcher la forme répertoire sans sudo et échouer avec — une copie
+installée masquant la condition observée. Le sous-processus tourne désormais
+avec `-E -S` : `-S` saute site-packages et le traitement des `.pth`, `-E`
+ignore PYTHONPATH. Pas `-I`, qui depuis 3.11 implique `-P` et retire le
+répertoire du script de `sys.path` — précisément ce qui est observé. Vérifié
+localement dans les deux conditions, avec une copie du paquet sur PYTHONPATH
+pour reproduire la CI.
+
 **Tests** 8089 → **8152**.
 
 ---
