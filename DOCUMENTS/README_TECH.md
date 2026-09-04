@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.16.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.16.1-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -98,7 +98,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 
 - **Detailed report** — timestamped log file with ASCII art header, system info, findings, and recommendations; created with `-d`; filename: `bob_YYYYMMDD_HHMMSS.log`
 - **`--manage-logs`** — interactive UI to list, preview, and delete saved report files; scrollable preview with full/summary toggle
-- **`--install-cron`** — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email; MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`
+- **`--install-cron`** — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email, then pin the audit's profile, language and outbound-probe stance (v0.16.1 — a cron runs as root, so without these it would read root's saved profile and cron's bare `$LANG`); MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; resulting command line shown before writing; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`
 - **`--manage-cron`** — looping TUI: list installed cron jobs, edit schedule or notification email, delete; email address book accessible from the menu even without any cron installed
 
 ---

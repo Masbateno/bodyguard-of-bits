@@ -362,7 +362,28 @@
     "script_written": "Script created: {path}",
     "cron_written": "Cron installed: {path}",
     "done_schedule": "Automated audit '{name}' configured — {schedule}",
-    "invalid_time": "Invalid time format (expected HH:MM)"
+    "invalid_time": "Invalid time format (expected HH:MM)",
+    "prompt_profile": "Audit profile for this scheduled run:",
+    "profile": {
+      "server": "server — full hardening requirements (default)",
+      "desktop": "desktop — relaxed for a personal machine",
+      "workstation": "workstation — relaxed for a developer machine",
+      "container": "container — host-level checks skipped"
+    },
+    "profile_hint": "A cron runs as root, so without this it would use root's saved profile — not yours.",
+    "invalid_profile": "Unrecognised profile",
+    "prompt_lang": "Language of the report and notification email:",
+    "lang": {
+      "en": "English",
+      "fr": "Français"
+    },
+    "lang_hint": "Cron runs with a bare environment, so the language must be pinned here.",
+    "invalid_lang": "Unrecognised language",
+    "prompt_network": "Outbound probes:",
+    "network_online": "Enabled — look up the public IP address",
+    "network_offline": "Disabled — no HTTP calls (--offline)",
+    "invalid_network": "Unrecognised choice",
+    "audit_command": "Scheduled command: {command}"
   },
   "manage_cron": {
     "title": "BOB CRON MANAGEMENT",

@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-09-02" "BOB 0.16.0" "User Commands"
+.TH BOB 1 "2026-09-04" "BOB 0.16.1" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -278,7 +278,16 @@ is
 .TP
 .BR \-c ", " \-\-install\-cron
 Run an interactive wizard to install a cron job that audits the system on
-a schedule and emails the report.
+a schedule and emails the report. The wizard asks for a name, a schedule, a
+time, notification addresses, and then the audit's profile, language and
+outbound-probe stance \(em each pre-selected from the invoking session. Those
+three are pinned into the generated script because cron runs as root: without
+them the scheduled audit would read root's saved profile rather than yours,
+and cron's bare environment, where
+.B $LANG
+is normally unset. The resulting command line is shown before anything is
+written. Installed cron jobs are not changed by an upgrade; re-run this wizard
+with the same name to regenerate one.
 .TP
 .B \-\-manage\-cron
 Manage installed cron jobs (list, edit schedule/email, delete).

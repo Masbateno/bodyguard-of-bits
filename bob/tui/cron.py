@@ -610,6 +610,48 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
 # Curses install wizard
 # ---------------------------------------------------------------------------
 
+def _curses_choice_screen(stdscr, title: str, prompt: str, options: "list[str]",
+                          selected: int, hint: str = "") -> "int | None":
+    """One curses screen, one closed question. Returns index, or None on Esc.
+
+    Same key contract as the schedule wizard's step 1: arrows or vi keys to
+    move, Enter or a digit to pick, Esc to step back, q to quit outright.
+    """
+    import curses as _c
+    has_color = _c.has_colors()
+    hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
+    ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
+    sel = selected
+    while True:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        _draw(stdscr, 0, 0, f"  {title}"[:w - 1].ljust(w - 1), hdr_attr)
+        _draw(stdscr, 2, 2, prompt[:w - 3])
+        for i, opt in enumerate(options):
+            is_cur = (i == sel)
+            attr = (_c.color_pair(1) | _c.A_BOLD) if (is_cur and has_color) else (_c.A_REVERSE if is_cur else _c.A_NORMAL)
+            _draw(stdscr, 4 + i, 2, f"  {i + 1}. {opt}  "[:w - 3], attr)
+        if hint:
+            _draw(stdscr, 5 + len(options), 2, hint[:w - 3])
+        _draw(stdscr, h - 1, 0, "  ↑↓: move   Enter: select   Esc: back   q: quit"[:w - 1].ljust(w - 1), ftr_attr)
+        stdscr.refresh()
+        ch_i = _read_key(stdscr)
+        if ch_i == 27:
+            return None
+        if ch_i in (ord("q"), ord("Q")):
+            raise _CronQuit()
+        if ch_i in (_c.KEY_UP, ord("k")):
+            sel = max(0, sel - 1)
+        elif ch_i in (_c.KEY_DOWN, ord("j")):
+            sel = min(len(options) - 1, sel + 1)
+        elif ch_i in (10, 13, _c.KEY_ENTER):
+            return sel
+        elif ord("1") <= ch_i <= ord("9"):
+            idx = ch_i - ord("1")
+            if idx < len(options):
+                return idx
+
+
 def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
     """Curses TUI for --install-cron."""
     import curses as _c
@@ -632,7 +674,13 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
     log_dir = _Path(log_dir_str)
 
     # State machine constants
-    LANDING, STEP_NAME, STEP_SCHEDULE, STEP_EMAIL, STEP_OVERWRITE, STEP_WRITE = range(6)
+    # v0.16.1: STEP_PROFILE/LANG/NETWORK pin what the scheduled audit runs.
+    (LANDING, STEP_NAME, STEP_SCHEDULE, STEP_EMAIL,
+     STEP_PROFILE, STEP_LANG, STEP_NETWORK,
+     STEP_OVERWRITE, STEP_WRITE) = range(9)
+    from bob.cron._options import (
+        CRON_LANGS, CRON_PROFILES, build_audit_options, default_dimensions,
+    )
 
     # Outer loop: one full landing→create cycle per iteration; continues back to LANDING after success
     while True:
@@ -643,6 +691,8 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         slug = ""
         schedule_expr = ""
         notify_email = ""
+        sel_profile, sel_lang, sel_offline = default_dimensions(config)
+        audit_options = ""
 
         # Inner state machine
         while True:
@@ -697,6 +747,49 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                         _curses_status_flash(stdscr, f"✔ {t('install_cron.mta_found', mta=_mta_name or 'sendmail')}")
                     else:
                         _curses_status_flash(stdscr, f"⚠ {t('install_cron.mta_missing')}")
+                step = STEP_PROFILE
+
+            elif step == STEP_PROFILE:
+                idx = _curses_choice_screen(
+                    stdscr, "bob --install-cron", t("install_cron.prompt_profile"),
+                    [t(f"install_cron.profile.{p}") for p in CRON_PROFILES],
+                    CRON_PROFILES.index(sel_profile),
+                    hint=t("install_cron.profile_hint"),
+                )
+                if idx is None:       # Esc → back to email
+                    step = STEP_EMAIL
+                    continue
+                sel_profile = CRON_PROFILES[idx]
+                step = STEP_LANG
+
+            elif step == STEP_LANG:
+                idx = _curses_choice_screen(
+                    stdscr, "bob --install-cron", t("install_cron.prompt_lang"),
+                    [t(f"install_cron.lang.{lang}") for lang in CRON_LANGS],
+                    CRON_LANGS.index(sel_lang),
+                    hint=t("install_cron.lang_hint"),
+                )
+                if idx is None:       # Esc → back to profile
+                    step = STEP_PROFILE
+                    continue
+                sel_lang = CRON_LANGS[idx]
+                step = STEP_NETWORK
+
+            elif step == STEP_NETWORK:
+                idx = _curses_choice_screen(
+                    stdscr, "bob --install-cron", t("install_cron.prompt_network"),
+                    [t("install_cron.network_online"), t("install_cron.network_offline")],
+                    1 if sel_offline else 0,
+                )
+                if idx is None:       # Esc → back to language
+                    step = STEP_LANG
+                    continue
+                sel_offline = (idx == 1)
+                audit_options = build_audit_options(sel_profile, sel_lang, sel_offline)
+                _curses_status_flash(stdscr, t(
+                    "install_cron.audit_command",
+                    command=f"bob --quiet --detailed {audit_options}",
+                ))
                 step = STEP_OVERWRITE
 
             elif step == STEP_OVERWRITE:
@@ -714,8 +807,8 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                     ch_i = _read_key(stdscr)
                     if ch_i in (ord("q"), ord("Q")):
                         raise _CronQuit()
-                    if ch_i == 27:        # Esc → back to email
-                        step = STEP_EMAIL
+                    if ch_i == 27:        # Esc → back to network
+                        step = STEP_NETWORK
                         break
                     if ch_i in (ord("y"), ord("Y")):
                         step = STEP_WRITE
@@ -729,7 +822,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         cron_path   = CRON_DIR / f"bob-{slug}"
         script_path = SCRIPT_DIR / f"bob-{slug}"
 
-        script_content = build_script_content(notify_email, log_dir)
+        script_content = build_script_content(notify_email, log_dir, audit_options)
 
         # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed
         # the mutation path (apply_cron_schedule) but the curses install

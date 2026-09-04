@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 8156 unit tests · 19 doc files · 5+ distros field-tested │
+│                 8208 unit tests · 19 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -241,8 +241,9 @@ bodyguard-of-bits/
 │   ├── cron/                  ← split package since v0.6.0 (was 1204 L monolith)
 │   │   ├── __init__.py        ← public re-exports incl. datetime + _EMAIL_RE (101 L)
 │   │   ├── _parse.py          ← CronEntry + parsing + listing + validators + MTA + constants (369 L)
-│   │   ├── _io.py             ← atomic-write delegation (bob/_atomic.py) + build_script_content + apply_cron_* (158 L)
-│   │   ├── _install.py        ← prompt_emails/prompt_email + plain wizard + run_install_cron (327 L)
+│   │   ├── _io.py             ← atomic-write delegation (bob/_atomic.py) + build_script_content + apply_cron_* (193 L)
+│   │   ├── _options.py        ← v0.16.1 the 3 closed audit dimensions a scheduled run carries (94 L)
+│   │   ├── _install.py        ← prompt_emails/prompt_email + plain wizard + run_install_cron (408 L)
 │   │   └── _manage.py         ← edit_cron_email/schedule + plain wizard + run_manage_cron (452 L)
 │   ├── tui/                   ← optional curses subpackage (v0.4.1 extraction)
 │   │   ├── __init__.py
@@ -288,7 +289,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 211 test files, ~5542 functions, 8156 collected (v0.16.0)
+├── tests/                     ← 212 test files, ~5568 functions, 8208 collected (v0.16.1)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -334,7 +335,7 @@ bodyguard-of-bits/
 | `history.py` | 191 | `--history` sparkline, JSONL append at `~/.config/bob/history.jsonl`, rotate@1000 |
 | `ignore.py` | 201 | Persistent ignore list `~/.config/bob/ignore.yml`; canonical key regex validation (v0.7.1 M-3); `--unignore` symmetric helper (v0.8.1 T57). v0.10.0 D-4 back-compat for legacy umbrella entries is centralised in `scoring.py::ScoreEngine.apply`, not here. |
 | `fixes.py` | 148 | `--fix` interactive UI with [y/N] prompts |
-| `cron/` (package) | **1407** | Split in v0.6.0 from 1204 L monolith. `__init__.py` (101) re-exports the public surface incl. `datetime` + `_EMAIL_RE` · `_parse.py` (369) CronEntry + parsing + validators + MTA detection + day helpers · `_io.py` (158) delegates to `bob/_atomic.py` (v0.6.1) + `build_script_content` + `apply_cron_schedule` / `apply_cron_email` · `_install.py` (327) prompt_emails/prompt_email + plain wizard + `run_install_cron` · `_manage.py` (452) `_manage_email_store` + edit_cron_email/schedule + plain wizard + `run_manage_cron` |
+| `cron/` (package) | **1628** | Split in v0.6.0 from 1204 L monolith. `__init__.py` (112) re-exports the public surface incl. `datetime` + `_EMAIL_RE` · `_parse.py` (369) CronEntry + parsing + validators + MTA detection + day helpers · `_io.py` (193) delegates to `bob/_atomic.py` (v0.6.1) + `build_script_content(notify_email, log_dir, audit_options="")` + `apply_cron_schedule` / `apply_cron_email` · `_options.py` (94) **v0.16.1** `CRON_PROFILES` / `CRON_LANGS` / `build_audit_options` / `default_dimensions` — the profile, language and network dimensions a scheduled audit pins, built from closed sets only because the result lands in a root-owned script · `_install.py` (408) prompt_emails/prompt_email + `_prompt_choice` + plain wizard + `run_install_cron` · `_manage.py` (452) `_manage_email_store` + edit_cron_email/schedule + plain wizard + `run_manage_cron` |
 | `tui/cron.py` | 949 | Curses TUI for `--install-cron` / `--manage-cron`; `_Schedule(IntEnum)` (DAILY/WEEKDAYS/MONTHDAYS/CUSTOM) + `_is_printable_input_char` helper (v0.5.x) |
 | `manage_logs.py` | 1037 | `--manage-logs` curses TUI with score history chart; `_is_finding_continuation` helper + 3 bare `input()` now catch EOFError (v0.5.x) |
 | `completion.py` | 74 | `--install-completion` → writes `/etc/bash_completion.d/bob`; v0.8.2 bash completion sync + v0.9.0 `cur="="` companion fix |
@@ -473,7 +474,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 | 605 | `bob/checks/ssh/_subchecks.py` | Biggest submodule of the ssh/ package (check_ssh + per-area helpers + v0.10.1 client x11 detection) |
 | 552 | `bob/domain_scores.py` | Per-domain sub-scores + `_PREFIX_TO_DOMAIN` (36) + inactive-domain reason codes (v0.12.1) |
 
-> The biggest *split package* totals: `bob/checks/ssh/` at 1524 L (across 5 files, largest sub 605 — grew with the v0.10.1 D-4 Rank 1 client x11 detection) and `bob/cron/` at 1407 L (across 5 files, largest sub 452). Both are net-larger than the pre-split monolith because the split added docstrings and re-export boilerplate, but per-file LoC is now well under the 1000-L soft ceiling.
+> The biggest *split package* totals: `bob/checks/ssh/` at 1524 L (across 5 files, largest sub 605 — grew with the v0.10.1 D-4 Rank 1 client x11 detection) and `bob/cron/` at 1628 L (across 6 files, largest sub 452). Both are net-larger than the pre-split monolith because the split added docstrings and re-export boilerplate, but per-file LoC is now well under the 1000-L soft ceiling.
 >
 > Notable shrink: `bob/json_output.py` dropped 545 L → 350 L in v0.9.0 F-3 when `--json-v1` and the entire v1 builder path (`_build_v1`, `_populate_v1_full_blocks`, `SCHEMA_V1_REQUIRED_KEYS`, `SCHEMA_V1_FULL_KEYS`) were retired. Cleanest "schema retrait" in the v0.7.x → v0.9.x cycle.
 
@@ -732,7 +733,7 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 | `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` | `0600` | Detailed audit report (`-d`) — `os.open(..., 0o600)` | One per `-d` run; managed via `--manage-logs` |
 | `/usr/local/bin/bob` | exec | Sudo PATH symlink to pipx venv binary | Created by `--install-completion` |
 | `/etc/bash_completion.d/bob` | r | Bash completion script | Created by `--install-completion` |
-| `/usr/local/bin/bob-{slug}` | exec | Cron wrapper script. `{slug}` is the slugified user-entered name via `bob/cron/_parse.py::make_slug(name)` (re-exported from `bob.cron`) — lowercased, non-alphanum → `-`, stripped | Created by `--install-cron` |
+| `/usr/local/bin/bob-{slug}` | exec | Cron wrapper script. `{slug}` is the slugified user-entered name via `bob/cron/_parse.py::make_slug(name)` (re-exported from `bob.cron`) — lowercased, non-alphanum → `-`, stripped. Runs `bob --quiet --detailed` plus the profile / language / network options chosen in the wizard (v0.16.1); before that the audit line was fixed, so a root cron silently used root's saved profile and cron's bare `$LANG` | Created by `--install-cron` |
 | `/etc/cron.d/bob-{slug}` | r | Cron entry (system) — same `{slug}` rule | Created by `--install-cron`; managed by `--manage-cron` |
 
 > When BOB runs under `sudo`, all writes to `~/.config/bob/` are auto-`chown`-ed back to `$SUDO_USER` (since v0.3.6).
@@ -829,7 +830,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 - `bob/_sandbox.py` (881 LoC, down from 956 after v0.9.0 TD-1 dropped the legacy bypass) — single-file sandbox runner. Soft-ceiling candidate but cohesive (single responsibility); split would scatter the in-process restriction policy. Accept as-is for now.
 - `bob/tui/cron.py` (949 LoC) is the largest single-file curses unit after the v0.6.0 splits. Soft-ceiling candidate but works — touching curses code is high-risk-for-low-reward, and the v0.5.7 targeted audit already swept it.
 - ~~`bob/checks/ssh.py` (1296 LoC)~~ **Done in v0.6.0** — split into the `bob/checks/ssh/` package (5 files, largest `_subchecks.py` at 605 L). Contract preserved via `__init__.py` re-exports.
-- ~~`bob/cron.py` (1204 LoC)~~ **Done in v0.6.0** — split into the `bob/cron/` package (5 files, largest 452 L). Test file grew from 382 → ~850 L over the cycle.
+- ~~`bob/cron.py` (1204 LoC)~~ **Done in v0.6.0** — split into the `bob/cron/` package (6 files since v0.16.1, largest 452 L). Test file grew from 382 → ~850 L over the cycle.
 - `bob/runner.py` `_sec()` closure pattern works but adds an extra layer of indirection. Was a refactor in v0.3.5 (-295L from previous form). Could potentially flatten further, but not urgent.
 
 ---
@@ -887,7 +888,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 211 test files, ~5542 functions, **8156 collected** (v0.16.0) | `pytest --collect-only -q` |
+| Tests | 212 test files, ~5568 functions, **8208 collected** (v0.16.1) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

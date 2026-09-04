@@ -381,7 +381,28 @@
     "script_written": "Script créé : {path}",
     "cron_written": "Cron installé : {path}",
     "done_schedule": "Audit automatique '{name}' configuré — {schedule}",
-    "invalid_time": "Format d'heure invalide (attendu HH:MM)"
+    "invalid_time": "Format d'heure invalide (attendu HH:MM)",
+    "prompt_profile": "Profil d'audit pour cette exécution programmée :",
+    "profile": {
+      "server": "server — exigences de durcissement complètes (défaut)",
+      "desktop": "desktop — assoupli pour une machine personnelle",
+      "workstation": "workstation — assoupli pour une machine de développement",
+      "container": "container — contrôles au niveau de l'hôte ignorés"
+    },
+    "profile_hint": "Un cron s'exécute en root : sans ce choix, il utiliserait le profil enregistré de root, pas le tien.",
+    "invalid_profile": "Profil non reconnu",
+    "prompt_lang": "Langue du rapport et de l'e-mail de notification :",
+    "lang": {
+      "en": "English",
+      "fr": "Français"
+    },
+    "lang_hint": "Cron s'exécute avec un environnement nu : la langue doit être fixée ici.",
+    "invalid_lang": "Langue non reconnue",
+    "prompt_network": "Sondes sortantes :",
+    "network_online": "Actives — recherche de l'adresse IP publique",
+    "network_offline": "Inactives — aucun appel HTTP (--offline)",
+    "invalid_network": "Choix non reconnu",
+    "audit_command": "Commande programmée : {command}"
   },
   "manage_cron": {
     "title": "GESTION DES CRONS BOB",

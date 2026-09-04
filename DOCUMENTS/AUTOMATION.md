@@ -12,7 +12,7 @@ This document explains how to configure BOB to run automatically on a schedule a
 sudo bob --install-cron
 ```
 
-The wizard guides you through 4 steps:
+The wizard guides you through 7 steps:
 
 1. **Name** — a short label for this cron job (e.g. `nightly`, `weekly`). Press Enter to use the suggested name.
 2. **Schedule** — choose from:
@@ -22,11 +22,40 @@ The wizard guides you through 4 steps:
    - Custom cron expression (e.g. `0 3 * * 1`)
 3. **Time** — execution time in `HH:MM` format (default: `03:00`). Not shown for custom expressions.
 4. **Email** — optional notification address. Leave empty to disable.
+5. **Profile** — `server`, `desktop`, `workstation` or `container`.
+6. **Language** — English or French, for both the report and the notification email.
+7. **Outbound probes** — enabled, or disabled (`--offline`).
 
 A plain-language preview is shown before confirmation:
 ```
   → Schedule: every Monday, Wednesday, Friday at 02:30
 ```
+
+### What the scheduled audit runs
+
+Steps 5 to 7 exist because **a cron runs as root**. Before v0.16.1 the generated
+script ran a fixed `bob --quiet --detailed`, so the scheduled audit read *root's*
+saved profile — not yours — and cron's bare environment, where `$LANG` is
+usually unset, so the report came out in English whatever you had chosen.
+
+That mattered beyond cosmetics: the profile decides which findings deduct,
+therefore the warning count, therefore the exit code, therefore whether the
+notification email is sent at all.
+
+Each of the three screens opens on the value of the session installing the
+cron, so `sudo bob -p desktop --french --install-cron` needs three keystrokes.
+The resulting command line is printed before anything is written:
+
+```
+  Scheduled command: bob --quiet --detailed --profile desktop --french
+```
+
+`--quiet` and `--detailed` are structural rather than preferences: cron has no
+terminal, and the notification email *is* the `.log` that `--detailed` writes.
+
+Existing cron jobs are untouched by an upgrade — their script keeps the command
+line it was generated with. Re-run `sudo bob --install-cron` with the same name
+to regenerate one.
 
 ### Files created
 

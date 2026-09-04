@@ -6,6 +6,97 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.16.1] — 2026-09-04
+
+**A scheduled audit ran a different audit than the one you chose.**
+
+`--install-cron` generated a wrapper script whose audit line was fixed:
+`bob --quiet --detailed`, and nothing else. Cron runs it as root, so the audit
+read *root's* saved profile rather than the operator's, and cron's bare
+environment, where `$LANG` is normally unset — so a French installation
+produced an English report every night.
+
+The profile is not a display preference. It decides which findings deduct,
+therefore the warning count, therefore the exit code, therefore whether
+`if [ "$RC" -gt 0 ]` fires and the notification email is sent at all. An
+operator auditing as `desktop` by hand, whose cron silently audited as
+`server`, got a different verdict, a different score and a different mail
+policy from the run they had done themselves on the same host minutes earlier.
+
+The wizard now asks three closed questions — profile, language, outbound probes
+— on three screens, in both the plain-text and the curses flow. Each opens on
+the value of the installing session, so `sudo bob -p desktop --french
+--install-cron` costs three keystrokes, and the resulting command line is
+printed before anything is written:
+
+```
+  Scheduled command: bob --quiet --detailed --profile desktop --french
+```
+
+Every dimension is emitted explicitly, including at its default value: the
+point is that the scheduled audit inherits nothing. `--quiet` and `--detailed`
+stay unconditional — they are structural rather than preferences, since cron
+has no terminal and the notification email *is* the `.log` that `--detailed`
+writes.
+
+`--verbose` was considered for the generated line and rejected on measurement
+rather than on reading. Two audits run `--quiet --detailed` and `--quiet
+--verbose --detailed` produce identical logs: under `--quiet`, `display_result`
+writes the finding to the report and returns before `verbose` is consumed, and
+the report already receives the full `ss` table unconditionally. In a cron it
+would be an inert flag advertising a deeper audit than it delivers.
+
+The option string lands in a root-owned script under `/usr/local/bin`, so it is
+built in one place — `bob/cron/_options.py` — from closed sets only,
+re-validated against a strict shape at the write site, and refused rather than
+passed through when unrecognised. The wizard already constrains the choice to a
+menu; a hardening tool must not rely on its own UI as the sole guard for a root
+write, the same reasoning as the control-character strip on the cron name in
+v0.12.2. All sixteen combinations are round-tripped through the real argument
+parser in the suite, because a regex proves the string is well-shaped and only
+the parser proves it works — and this script is executed months later with
+nobody watching.
+
+The curses flow cannot be driven through a pipe, so its three screens are
+pinned by guards anchored on each `elif step ==` branch body rather than on the
+presence of a string anywhere in the file: every one of these transition names
+appears in more than one branch, and a presence check cannot tell a correct
+wizard from a broken one. Each guard was mutation-tested, and the two that
+failed to bite were rewritten before shipping.
+
+**Installed cron jobs are not modified.** Their script keeps the command line it
+was generated with. Re-run `sudo bob --install-cron` with the same name to
+regenerate one.
+
+**A French audit's report opened and closed in English.** Found in a real
+v0.16.0 run on the maintainer's own machine. Between `[INFORMATIONS SYSTÈME]`
+and `[RÉSUMÉ DE L'AUDIT]`, two lines were not translated: `[INFO] Starting
+audit` and the closing `[NEXT STEPS]`.
+
+The first is sharper than a missing translation. `bob/__main__.py` printed
+`t("audit.starting")` to the terminal and wrote the literal `"Starting audit"`
+to the report, eight lines apart — the same event, translated on screen and
+English in the archived file. The key existed and was translated in both
+locales; the report call site simply did not use it. The second was a heading
+whose three numbered steps were already translated.
+
+Both are the class v0.7.3 M-5 closed for six field labels, with the same
+rationale — "pre-v0.7.3 they were hardcoded English so a French audit's .log
+carried mixed-language content" — and both were missed by it. A guard now
+rejects any operator-visible literal written to the text report.
+
+`bob/report_markdown.py`, the cron email report, is deliberately exempt and
+says so in its own source: `write_header` takes `labels` and discards them with
+`_ = labels  # intentionally unused for now`. English by decision, not by
+oversight. The guard records the exemption rather than overturning it, and
+fails if that rationale disappears — but the decision is undocumented for the
+operator, who gets an English report from a French installation with nothing
+saying why.
+
+**Tests** 8152 → **8208**.
+
+---
+
 ## [v0.16.0] — 2026-09-04
 
 **The score went up when BOB could see less.**
@@ -240,32 +331,7 @@ PYTHONPATH. Not `-I`, which since 3.11 implies `-P` and drops the script's
 directory from `sys.path` — the very thing under test. Verified locally in both
 conditions, with a copy of the package on PYTHONPATH to reproduce CI.
 
-**A French audit's report opened and closed in English.** Found in a real
-v0.16.0 run on the maintainer's own machine. Between `[INFORMATIONS SYSTÈME]`
-and `[RÉSUMÉ DE L'AUDIT]`, two lines were not translated: `[INFO] Starting
-audit` and the closing `[NEXT STEPS]`.
-
-The first is sharper than a missing translation. `bob/__main__.py` printed
-`t("audit.starting")` to the terminal and wrote the literal `"Starting audit"`
-to the report, eight lines apart — the same event, translated on screen and
-English in the archived file. The key existed and was translated in both
-locales; the report call site simply did not use it. The second was a heading
-whose three numbered steps were already translated.
-
-Both are the class v0.7.3 M-5 closed for six field labels, with the same
-rationale — "pre-v0.7.3 they were hardcoded English so a French audit's .log
-carried mixed-language content" — and both were missed by it. A guard now
-rejects any operator-visible literal written to the text report.
-
-`bob/report_markdown.py`, the cron email report, is deliberately exempt and
-says so in its own source: `write_header` takes `labels` and discards them with
-`_ = labels  # intentionally unused for now`. English by decision, not by
-oversight. The guard records the exemption rather than overturning it, and
-fails if that rationale disappears — but the decision is undocumented for the
-operator, who gets an English report from a French installation with nothing
-saying why.
-
-**Tests** 8089 → **8156**.
+**Tests** 8089 → **8152**.
 
 ---
 

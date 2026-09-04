@@ -15,6 +15,7 @@ Curses TUI code lives in bob.tui.cron.
 Module layout (v0.6.0 #14 split):
   - ``_parse``:   CronEntry + parsing + listing + cron_to_human + build_schedule_expr
                   + validators + day helpers + MTA detection + constants
+  - ``_options``: the three closed audit dimensions a cron carries (v0.16.1)
   - ``_io``:      _atomic_write + build_script_content + apply_cron_schedule
                   + apply_cron_email (all file-mutation helpers)
   - ``_install``: prompt_emails / prompt_email + _run_install_cron_plain
@@ -50,6 +51,12 @@ from ._parse import (  # noqa: F401 — private helpers re-exported for tests + 
     make_slug,
     parse_cron_file,
     suggest_name,
+)
+from ._options import (
+    CRON_LANGS,
+    CRON_PROFILES,
+    build_audit_options,
+    default_dimensions,
 )
 from ._io import (  # noqa: F401 — _atomic_write re-exported for back-compat
     _atomic_write,
@@ -87,6 +94,10 @@ __all__ = [
     "apply_cron_schedule",
     "build_schedule_expr",
     "build_script_content",
+    "CRON_LANGS",
+    "CRON_PROFILES",
+    "build_audit_options",
+    "default_dimensions",
     "cron_to_human",
     "edit_cron_email",
     "edit_cron_schedule",

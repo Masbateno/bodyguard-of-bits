@@ -183,9 +183,9 @@ finding kept printing in full; if you remember it that way, it is fixed.)
 sudo bob --install-cron
 ```
 
-The wizard walks you through name → schedule → time → optional email. Files created :
+The wizard walks you through name → schedule → time → optional email → profile → language → outbound probes. Files created :
 
-- `/usr/local/bin/bob-{name}` — wrapper script that calls BOB with your saved config
+- `/usr/local/bin/bob-{name}` — wrapper script that calls BOB with the profile, language and network stance you chose. Those three are asked because a cron runs as root: before v0.16.1 the script read *root's* saved config, not yours, so a `desktop` operator's nightly audit silently graded as `server` — and since the profile drives the exit code, it also decided whether the email was sent
 - `/etc/cron.d/bob-{name}` — system cron entry
 
 For incident-response automation, configure a webhook in `~/.config/bob/config.conf` :
@@ -275,7 +275,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2242 keys × 2 locales as of v0.15.3 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2259 keys × 2 locales as of v0.16.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the 60 uncoded ones *are* translated), and the **38 service labels** — 27 of which carry descriptive English prose, such as `Samba (Windows file sharing)` or `Apache Web Server` — treated as product names. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 

@@ -12,7 +12,7 @@ Ce document explique comment configurer BOB pour s'exécuter automatiquement sel
 sudo bob --install-cron
 ```
 
-Le wizard vous guide en 4 étapes :
+Le wizard vous guide en 7 étapes :
 
 1. **Nom** — un court libellé pour ce cron (ex : `nightly`, `weekly`). Appuyez sur Entrée pour utiliser le nom suggéré.
 2. **Planification** — choisissez parmi :
@@ -22,11 +22,41 @@ Le wizard vous guide en 4 étapes :
    - Expression cron personnalisée (ex : `0 3 * * 1`)
 3. **Heure** — heure d'exécution au format `HH:MM` (défaut : `03:00`). Non affichée pour les expressions personnalisées.
 4. **Email** — adresse de notification optionnelle. Laissez vide pour désactiver.
+5. **Profil** — `server`, `desktop`, `workstation` ou `container`.
+6. **Langue** — anglais ou français, pour le rapport comme pour l'e-mail de notification.
+7. **Sondes sortantes** — actives, ou désactivées (`--offline`).
 
 Un aperçu en langage naturel est affiché avant confirmation :
 ```
   → Planification : tous les lundi, mercredi, vendredi à 02:30
 ```
+
+### Ce que l'audit programmé exécute réellement
+
+Les étapes 5 à 7 existent parce qu'**un cron s'exécute en root**. Avant la
+v0.16.1, le script généré lançait un `bob --quiet --detailed` figé : l'audit
+programmé lisait donc le profil enregistré de *root* — pas le vôtre — et
+l'environnement nu de cron, où `$LANG` est généralement absent, si bien que le
+rapport sortait en anglais quel que soit votre choix.
+
+Ce n'était pas qu'une question de cosmétique : le profil décide quels constats
+déduisent, donc le nombre d'avertissements, donc le code de sortie, donc si
+l'e-mail de notification part ou non.
+
+Chacun des trois écrans s'ouvre sur la valeur de la session qui installe le
+cron : `sudo bob -p desktop --french --install-cron` ne demande que trois
+touches. La ligne de commande résultante est affichée avant toute écriture :
+
+```
+  Commande programmée : bob --quiet --detailed --profile desktop --french
+```
+
+`--quiet` et `--detailed` sont structurels, pas des préférences : cron n'a pas
+de terminal, et l'e-mail de notification *est* le `.log` qu'écrit `--detailed`.
+
+Une mise à jour ne touche pas les crons existants — leur script conserve la
+ligne de commande avec laquelle il a été généré. Relancez
+`sudo bob --install-cron` avec le même nom pour en régénérer un.
 
 ### Fichiers créés
 

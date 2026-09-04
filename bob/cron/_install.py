@@ -20,6 +20,7 @@ from bob._tty import prompt_wizard, safe_input
 from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
 
 from ._io import build_script_content
+from ._options import CRON_LANGS, CRON_PROFILES, build_audit_options, default_dimensions
 from ._parse import (
     CRON_DIR,
     SCRIPT_DIR,
@@ -113,6 +114,32 @@ def prompt_email(t) -> str:
     if emails is None or not emails:
         return ""
     return emails[0]
+
+def _prompt_choice(t, prompt_key: str, option_keys: "list[str]",
+                   default_index: int, hint_key: str = "") -> "int | None":
+    """One screen, one closed question. Returns the chosen index, or None.
+
+    ``None`` means the operator cancelled (``q`` or EOF); the caller must then
+    leave the system untouched. Pressing Enter accepts ``default_index``,
+    which the wizard seeds from the installing session — so the common case
+    is one keystroke per screen.
+    """
+    print()
+    print(f"  {t(prompt_key)}")
+    for i, key in enumerate(option_keys, 1):
+        marker = " ←" if i - 1 == default_index else ""
+        print(f"    {i}. {t(key)}{marker}")
+    if hint_key:
+        print()
+        print(f"  {t(hint_key)}")
+    print()
+    raw = prompt_wizard("  > ", default=str(default_index + 1))
+    if raw is None:
+        return None
+    if not (raw.isdigit() and 1 <= int(raw) <= len(option_keys)):
+        return -1        # caller reports the per-question error message
+    return int(raw) - 1
+
 
 def _run_install_cron_plain(user_config, config, t) -> int:
     """Install a cron job for automated audits using the schedule wizard."""
@@ -254,6 +281,57 @@ def _run_install_cron_plain(user_config, config, t) -> int:
         else:
             print(f"  ⚠ {t('install_cron.mta_missing')}")
 
+    # --- Steps 5-7: what the scheduled audit actually runs (v0.16.1) ---
+    # Before v0.16.1 the generated script hardcoded ``--quiet --detailed`` and
+    # nothing else, so a cron running as root picked up root's saved profile
+    # and cron's bare $LANG — a different audit from the operator's, on the
+    # same host. Each dimension is a closed set, pre-selected from the
+    # installing session.
+    def_profile, def_lang, def_offline = default_dimensions(config)
+
+    idx = _prompt_choice(
+        t, "install_cron.prompt_profile",
+        [f"install_cron.profile.{p}" for p in CRON_PROFILES],
+        CRON_PROFILES.index(def_profile),
+        hint_key="install_cron.profile_hint",
+    )
+    if idx is None:
+        print(f"  {t('install_cron.cancelled')}")
+        return 0
+    if idx < 0:
+        print(f"  ✖ {t('install_cron.invalid_profile')}")
+        return 1
+    sel_profile = CRON_PROFILES[idx]
+
+    idx = _prompt_choice(
+        t, "install_cron.prompt_lang",
+        [f"install_cron.lang.{lang}" for lang in CRON_LANGS],
+        CRON_LANGS.index(def_lang),
+        hint_key="install_cron.lang_hint",
+    )
+    if idx is None:
+        print(f"  {t('install_cron.cancelled')}")
+        return 0
+    if idx < 0:
+        print(f"  ✖ {t('install_cron.invalid_lang')}")
+        return 1
+    sel_lang = CRON_LANGS[idx]
+
+    idx = _prompt_choice(
+        t, "install_cron.prompt_network",
+        ["install_cron.network_online", "install_cron.network_offline"],
+        1 if def_offline else 0,
+    )
+    if idx is None:
+        print(f"  {t('install_cron.cancelled')}")
+        return 0
+    if idx < 0:
+        print(f"  ✖ {t('install_cron.invalid_network')}")
+        return 1
+    sel_offline = (idx == 1)
+
+    audit_options = build_audit_options(sel_profile, sel_lang, sel_offline)
+
     cron_path   = CRON_DIR / f"bob-{slug}"
     script_path = SCRIPT_DIR / f"bob-{slug}"
 
@@ -263,7 +341,10 @@ def _run_install_cron_plain(user_config, config, t) -> int:
             return 0
 
     now_str      = datetime.now().strftime("%Y-%m-%d")
-    script_content = build_script_content(notify_email, log_dir)
+    script_content = build_script_content(notify_email, log_dir, audit_options)
+
+    print()
+    print(f"  {t('install_cron.audit_command', command=f'bob --quiet --detailed {audit_options}')}")
 
     # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed the
     # mutation path (apply_cron_schedule) but the install paths kept raw
