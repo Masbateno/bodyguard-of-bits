@@ -180,7 +180,25 @@ une clé en repli crocheté sur un chemin soumis à la même contrainte et avait
 dépendance tierce absente levant aussi `ImportError` : l'avaler remplacerait une
 trace inutile par une explication fausse.
 
-**Tests** 8089 → **8144**.
+**`--format=html` plantait, et toute la suite était verte.** Porter la borne
+dans la sortie HTML avait été fait en réaffectant `score` à une chaîne — trois
+lignes au-dessus d'un `_score_color(score)` qui la compare à des seuils. La
+commande mourait sur `'>=' not supported between instances of 'str' and 'int'`
+et produisait zéro octet ; en v0.15.5 elle en produisait 25 628.
+
+La suite ne l'a pas vu parce que le double de test HTML fixe
+`score_is_upper_bound` à False : le chemin borné n'était jamais rendu. C'est en
+lançant le binaire sur l'hôte local qu'il est apparu — la garde ajoutée un
+commit plus tôt vérifiait seulement que le *nom* figurait dans le source de
+chaque sortie, ce qui reste vrai d'un fichier qui plante dessus. Une
+vérification de présence n'est pas une vérification de rendu.
+
+Deux noms désormais, `score` pour les comparaisons et `score_text` pour
+l'affichage, et les trois constructeurs de format qui n'avaient qu'une
+vérification de source — HTML, Markdown, CSV — sont exercés dans les deux
+états. Réintroduire la régression exacte en fait échouer un.
+
+**Tests** 8089 → **8147**.
 
 ---
 

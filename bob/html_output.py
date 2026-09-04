@@ -162,7 +162,13 @@ def build_html_output(
         t = _fallback_t
     ts         = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     # v0.16.0 — see markdown_output for why every sink carries this.
-    score      = f"≤ {engine.score}" if engine.score_is_upper_bound else engine.score
+    # Two names, deliberately. A first version reassigned `score` to a string
+    # when bounded, and `_score_color(score)` three lines below compares it
+    # against thresholds — so --format=html died with
+    # "'>=' not supported between instances of 'str' and 'int'". The HTML tests
+    # never saw it because their engine stub defaults the bound to False.
+    score      = engine.score
+    score_text = f"≤ {score}" if engine.score_is_upper_bound else str(score)
     _bound_note = (
         f" &nbsp; <em>{_h(t('scoring.visibility_label'))}</em>"
         if engine.score_is_upper_bound else ""
@@ -207,7 +213,7 @@ def build_html_output(
     # --- Summary ---
     a('<dl class="meta-grid">')
     a(f"<dt>{_h(t('html_output.field_score'))}</dt><dd>"
-      f'<span class="score-circle" style="background:{_h(s_color)}">{score}</span>'
+      f'<span class="score-circle" style="background:{_h(s_color)}">{score_text}</span>'
       f" / 10 &nbsp; <strong>{_h(level_label)}</strong>"
       f"{_bound_note}</dd>")
     a(f"<dt>{_h(t('html_output.field_alerts'))}</dt><dd>{engine.alert_count}</dd>")

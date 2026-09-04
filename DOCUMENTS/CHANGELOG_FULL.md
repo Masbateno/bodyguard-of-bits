@@ -169,7 +169,25 @@ the same constraint and needed a hotfix — and only a missing `bob` is caught,
 because a missing third-party dependency raises ImportError too and swallowing
 it would replace one unhelpful traceback with a wrong explanation.
 
-**Tests** 8089 → **8144**.
+**`--format=html` crashed, and the whole suite was green.** Carrying the bound
+into the HTML sink was done by reassigning `score` to a string — three lines
+above a `_score_color(score)` that compares it against thresholds. The command
+died with `'>=' not supported between instances of 'str' and 'int'` and
+produced zero bytes; on v0.15.5 it produced 25 628.
+
+The suite never saw it because the HTML test stub defaults
+`score_is_upper_bound` to False, so the bounded path was never rendered. It was
+found by running the binary against the local host — the guard added one commit
+earlier checked only that the *name* appeared in each sink's source, which
+stays true of a file that crashes on it. A source-presence check is not a
+rendering check.
+
+Two names now, `score` for the comparisons and `score_text` for display, and
+the three format builders that had only a source-presence check — HTML,
+Markdown, CSV — are each driven in both states. Reinstating the exact
+regression fails one of them.
+
+**Tests** 8089 → **8147**.
 
 ---
 

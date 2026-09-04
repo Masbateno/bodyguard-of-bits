@@ -118,6 +118,65 @@ class TestTheSinksActuallyRenderTheCeiling:
             )
 
 
+class TestTheThreeFormatBuildersRenderBothWays:
+    """Driven for real, because the source-presence guard let a crash through.
+
+    `--format=html` died with "'>=' not supported between instances of 'str'
+    and 'int'": the bound was applied by reassigning `score` to a string, three
+    lines above a `_score_color(score)` that compares it against thresholds.
+    8144 tests were green — the HTML stub defaults the bound to False, so the
+    bounded path was never rendered. It was found by running the binary, not by
+    the suite.
+
+    Each builder is now exercised in both states.
+    """
+
+    def _engine(self, bounded: bool):
+        from bob.scoring import CheckResult, ScoreEngine
+
+        result = CheckResult()
+        if bounded:
+            result.info(message="unreadable", key="ssh.config_unreadable")
+        result.warn_with_deduction(key="ssh.password_auth", message="x",
+                                   reason="x", points=2, nature="improvement")
+        engine = ScoreEngine()
+        engine.apply(result)
+        engine.finalize()
+        return engine
+
+    def _sys_info(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(hostname="h", os_name="Linux", kernel="6.0",
+                               ufw_version="0.36", user="u")
+
+    def test_html_renders_in_both_states(self):
+        from bob.html_output import build_html_output
+
+        bounded = build_html_output(self._engine(True), self._sys_info())
+        plain   = build_html_output(self._engine(False), self._sys_info())
+        assert "≤" in bounded
+        assert "≤" not in plain
+
+    def test_markdown_renders_in_both_states(self):
+        from bob.markdown_output import build_markdown_output
+
+        bounded = build_markdown_output(self._engine(True), self._sys_info())
+        plain   = build_markdown_output(self._engine(False), self._sys_info())
+        assert "≤" in bounded
+        assert "≤" not in plain
+
+    def test_csv_carries_the_flag_in_both_states(self):
+        from bob.csv_output import build_csv_output
+
+        bounded = build_csv_output(self._engine(True), self._sys_info())
+        plain   = build_csv_output(self._engine(False), self._sys_info())
+        assert "score_is_upper_bound" in bounded
+        # Additive column, not a prefixed number: a spreadsheet reads that
+        # column as a number and "≤ 7" would break every formula.
+        assert "≤" not in bounded and "≤" not in plain
+
+
 @pytest.mark.parametrize("sink", _SINKS)
 def test_every_sink_knows_whether_the_score_is_a_ceiling(sink):
     source = (_ROOT / sink).read_text(encoding="utf-8")
