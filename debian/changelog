@@ -1,4 +1,4 @@
-bodyguard-of-bits (0.16.1-1) UNRELEASED; urgency=low
+bodyguard-of-bits (0.16.2-1) UNRELEASED; urgency=low
 
   * The score went up when BOB could see less. It is a sum over the checks that
     ran, and a check unable to read its input made deductions that are unknown,

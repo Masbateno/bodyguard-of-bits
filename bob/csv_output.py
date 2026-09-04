@@ -20,6 +20,8 @@ _HEADERS = [
     "timestamp",
     "score",
     "score_is_upper_bound",
+    "score_low",
+    "score_high",
     "risk",
     "alerts",
     "warnings",
@@ -90,6 +92,9 @@ def build_csv_output(
         # consumes that column as a number, and prefixing it would break every
         # existing formula. The flag says what the number is worth.
         "score_is_upper_bound": int(engine.score_is_upper_bound),
+        # v0.16.2 — equal to `score` when nothing was blind.
+        "score_low":  engine.score_span[0],
+        "score_high": engine.score_span[1],
         "risk":      engine.level.value,
         "alerts":    engine.alert_count,
         "warnings":  engine.warn_count,

@@ -37,6 +37,13 @@ class FakeEngine:
         self.findings    = list(findings)
         self.score       = 7
         self.score_is_upper_bound = False   # v0.16.0
+        # v0.16.2 — same reasoning, one release later: the score can now be
+        # uncertain without being a ceiling, and the summary unpacks a span.
+        # Left unset on a MagicMock, both answer yes and the stub renders a
+        # state the audit never produced.
+        self.score_is_uncertain = False
+        self.score_span = (self.score, self.score)
+        self.blinded_domains = []
         self.unverified  = []
         self.level       = RiskLevel.MEDIUM
         self.breakdown   = []

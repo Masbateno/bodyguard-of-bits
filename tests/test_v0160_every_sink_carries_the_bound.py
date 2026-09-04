@@ -245,16 +245,58 @@ class TestATargetCannotBeSatisfiedByACeiling:
     privileges it needs went green. A gate fails closed.
     """
 
-    def test_the_comparison_consults_the_bound(self):
+    def test_the_comparison_consults_verifiability(self):
+        """v0.16.2 widened this from the bound to uncertainty.
+
+        Making ``score_is_upper_bound`` honest — false when blindness removed a
+        whole domain, because the score is then not a ceiling — would have let
+        exactly that run start passing the gate. ``score_is_uncertain`` is the
+        property the gate is actually about.
+        """
         source = (_ROOT / "bob" / "__main__.py").read_text(encoding="utf-8")
-        assert "engine.score_is_upper_bound" in source, (
-            "--target must not be satisfiable by a ceiling"
+        assert "engine.score_is_uncertain" in source, (
+            "--target must not be satisfiable by a score nothing verified"
         )
 
     def test_a_measured_score_above_target_still_passes(self):
         """The polarity twin: the gate must still open on a full audit."""
         source = (_ROOT / "bob" / "__main__.py").read_text(encoding="utf-8")
-        assert "engine.score < config.target or engine.score_is_upper_bound" in source, (
-            "the bound is an additional reason to miss the target, not a "
+        assert "engine.score < config.target or engine.score_is_uncertain" in source, (
+            "uncertainty is an additional reason to miss the target, not a "
             "replacement for the comparison"
+        )
+
+    def test_both_kinds_of_blindness_close_the_gate(self):
+        """Behavioural, because pinning a literal is what forced this edit.
+
+        A ceiling and an unknown direction are different states after v0.16.2;
+        both must fail a gate, and a fully-verified score above the target must
+        still open it.
+        """
+        from bob.scoring import ScoreEngine
+
+        def gate(engine, target):
+            return target > 0 and (
+                engine.score < target or engine.score_is_uncertain
+            )
+
+        clean = ScoreEngine()
+        clean.finalize()
+        assert clean.unverified == []
+        assert gate(clean, 1) is False, "a verified score must open the gate"
+
+        ceiling = ScoreEngine()
+        ceiling.finalize()
+        ceiling.unverified = ["ssh.config_unreadable"]
+        assert ceiling.score_is_upper_bound is True
+        assert gate(ceiling, 1) is True, "a ceiling must not satisfy a target"
+
+        unknown = ScoreEngine()
+        unknown.finalize()
+        unknown.unverified = ["user_accounts.no_passwd"]
+        unknown.set_score_uncertainty(["file_perms"], (5, 7))
+        assert unknown.score_is_upper_bound is False, "no longer a ceiling"
+        assert gate(unknown, 1) is True, (
+            "an unknown direction must not satisfy a target either — this is "
+            "the regression v0.16.2 would have introduced"
         )

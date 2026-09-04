@@ -58,6 +58,11 @@ SCHEMA_V3_REQUIRED_KEYS = frozenset({
     "score",
     "score_max",
     "score_is_upper_bound",
+    "target",
+    "target_met",
+    "score_low",
+    "score_high",
+    "unscored_domains",
     "unverified",
     "risk",
     "network_context",        # A-2 (always dict, never overwritten)
@@ -93,6 +98,26 @@ SCHEMA_V3_FULL_KEYS = frozenset({
     "hardening",
     "ipv6",
 })
+
+
+def _target(config) -> "int | None":
+    """The requested score target, or None when ``--target`` was not given."""
+    t = getattr(config, "target", 0) or 0
+    return t if t > 0 else None
+
+
+def _target_met(engine, config) -> "bool | None":
+    """Whether the gate opened — the same condition ``__main__`` exits on.
+
+    None when no target was requested. Mirrors, deliberately, rather than
+    recomputing from the score alone: a score above the bar on a run that
+    could not read part of the host does NOT meet the target, and a consumer
+    reading only ``score >= target`` would disagree with the exit code.
+    """
+    t = _target(config)
+    if t is None:
+        return None
+    return not (engine.score < t or getattr(engine, "score_is_uncertain", False))
 
 
 def build_json_data(
@@ -221,6 +246,21 @@ def _build_v3(
         # `score` keeps its meaning as an integer so existing consumers are not
         # broken; these two fields say what it is worth.
         "score_is_upper_bound": engine.score_is_upper_bound,
+        # v0.16.2, additive. When blindness removes a whole domain from the
+        # average the score is no longer a ceiling — it moved in an unknown
+        # direction — so the pair below is what a consumer can rely on. With
+        # nothing blind they both equal `score`, so a reader needs no special
+        # case: `score_low == score_high` means fully verified.
+        # v0.16.2, additive. `--target N` gates a pipeline through exit code 4
+        # and left no trace in any machine output, so a consumer reading this
+        # document could not tell that a gate had been requested, let alone
+        # that it had failed. null when no target was set; `target_met` mirrors
+        # the exit condition exactly, uncertainty included.
+        "target":          _target(config),
+        "target_met":      _target_met(engine, config),
+        "score_low":       engine.score_span[0],
+        "score_high":      engine.score_span[1],
+        "unscored_domains": sorted(getattr(engine, "blinded_domains", []) or []),
         "unverified":      sorted(engine.unverified),
         "risk":            engine.effective_level.value,
         "network_context": nc_block,

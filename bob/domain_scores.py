@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from bob.scoring import ScoreEngine
 
 from bob.scoring import MAX_SCORE, FindingLevel
+from bob.visibility import VISIBILITY_KEYS
 
 # ---------------------------------------------------------------------------
 # Domain definitions
@@ -177,6 +178,7 @@ REASON_INFO_ONLY       = "info_only"        # assessed; only INFO notices
 REASON_PROFILE_SKIPPED = "profile_skipped"  # the active profile skips it
 REASON_FILTERED        = "filtered"         # excluded by --check / --skip
 REASON_NOT_INSTALLED   = "not_installed"    # service/component absent
+REASON_UNREADABLE      = "unreadable"       # v0.16.2: BOB could not read it
 
 
 def domain_inactive_reason(
@@ -202,6 +204,15 @@ def domain_inactive_reason(
     FILTERED — only a host where the disk section ran and found nothing would
     read NOT_INSTALLED (which does not happen for disk in practice).
     """
+    # v0.16.2 — check blindness BEFORE "assessed, only INFO notices". A domain
+    # whose input could not be read emits exactly that: INFO notices and
+    # nothing scoreable, so it was reported as "no action needed" — a clean
+    # pass, on a domain BOB never looked at. `/etc/passwd` unreadable rendered
+    # `Files & Access — no action needed` beside a score its absence had moved.
+    if any(k in VISIBILITY_KEYS and key_to_domain(k) == domain
+           for k in (getattr(engine, "unverified", []) or [])):
+        return REASON_UNREADABLE
+
     for finding in engine.findings:
         if finding.level is FindingLevel.INFO and key_to_domain(finding.key) == domain:
             return REASON_INFO_ONLY
@@ -405,6 +416,47 @@ def apply_domain_score_override(engine: "ScoreEngine") -> None:
         glob = min(glob, MAX_SCORE - 1)
     engine.set_global_score(glob, precap=precap)
     engine.set_domain_scores(scores, active, capped_indices)
+    engine.set_score_uncertainty(*_uncertainty(engine, scores, active))
+
+
+def _uncertainty(engine, scores, active) -> "tuple[list[str], tuple[int, int]]":
+    """Which domains went unscored *because BOB could not read them*, and the
+    span the score would occupy if it could have.
+
+    v0.16.2. v0.16.0 established that a check unable to read its input makes
+    deductions that are unknown rather than zero, so the score is a ceiling.
+    That is true while the domain is still scored. When the *whole domain*
+    falls out of the average — every one of its findings reduced to INFO
+    because the file never opened — the denominator changes instead of the
+    numerator, and the score moves in a direction nobody can predict. Masking
+    /etc/passwd drops `file_perms` (10/10) and takes the score from 7 down to
+    6, so rendering it as `<= 6` claims a ceiling below the true value.
+
+    The span needs no invented data: a domain scores in [0, MAX_SCORE] by
+    construction, so putting the missing ones at both extremes brackets the
+    truth. With nothing blind the span collapses onto the score itself.
+    """
+    from bob.visibility import VISIBILITY_KEYS  # noqa: F401  (contract anchor)
+
+    blinded = sorted({
+        dom for key in getattr(engine, "unverified", []) or []
+        if (dom := _PREFIX_TO_DOMAIN.get(key.split(".")[0])) is not None
+        and dom not in active
+        and dom in scores
+    })
+    if not blinded:
+        return [], (engine.score, engine.score)
+
+    scored = [d for d in DOMAINS if d in active and d in scores]
+    total = sum(scores[d]["score"] for d in scored)
+    n = len(scored) + len(blinded)
+    low  = max(0, min(MAX_SCORE, round(total / n)))
+    high = max(0, min(MAX_SCORE, round((total + MAX_SCORE * len(blinded)) / n)))
+    # The headline cap applies to the span exactly as it applies to the score,
+    # or the high end would promise a perfect audit the deductions contradict.
+    if engine.raw_score < MAX_SCORE:
+        low, high = min(low, MAX_SCORE - 1), min(high, MAX_SCORE - 1)
+    return blinded, (low, high)
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +476,7 @@ def _reason_text(reason: str, t, profile_name: str) -> str:
         return f"not assessed ({profile_name} profile)"
     key, fallback = {
         REASON_INFO_ONLY:     ("domain_scores.reason.no_action",     "no action needed"),
+        REASON_UNREADABLE:    ("domain_scores.reason.unreadable",    "could not be read"),
         REASON_FILTERED:      ("domain_scores.reason.filtered",      "not assessed (--check/--skip)"),
         REASON_NOT_INSTALLED: ("domain_scores.reason.not_installed", "not installed"),
     }.get(reason, ("domain_scores.reason.not_installed", "not installed"))

@@ -6,6 +6,80 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.16.2] — 2026-09-04
+
+**A ceiling claims a direction, and blindness does not always have one.**
+
+v0.16.0 reasoned that a check unable to read its input makes deductions that are
+unknown rather than zero, so the score can only be too high — a ceiling, `≤ 8/10`.
+That holds while the blinded check's domain is still scored.
+
+It stops holding when the **whole domain** leaves the average. The global score
+is a mean over active domains; a domain whose every finding fell to INFO because
+the file never opened is dropped, so the *denominator* changes rather than the
+numerator and the result moves in a direction nobody can predict. Masking
+`/etc/passwd` drops `file_perms` (10/10) and takes the score from 7 **down** to
+6 — so `≤ 6` claimed a ceiling below the true value, and the domain rendered as
+`no action needed`: a clean pass on something BOB never looked at.
+
+Three states now, not two. A ceiling stays `≤ N/10`. A direction nobody can
+predict renders `~ N/10` beside the span it is known to lie in, and that span is
+arithmetic rather than a guess — a domain scores in [0, 10] by construction, so
+placing the missing ones at both extremes brackets the truth:
+
+```
+Security score : ~ 6/10
+Risk level : ✖ HIGH — unverified
+Visibility : 9 section(s) not fully read · 1 domain(s) not scored — the score is between 5 and 7
+Files & Access           —  could not be read
+```
+
+The span says how much is at stake, which `~` alone does not: two blinded
+domains widen it visibly, which is the signal v0.16.0 was built to give. `score`
+stays an integer; `score_low` / `score_high` / `unscored_domains` are additive,
+and `score_low == score_high` is how a consumer reads "fully verified" without a
+special case. All seven sinks carry it, each in the shape its consumer takes.
+
+**The gate moved with it.** `--target` consulted `score_is_upper_bound`; making
+that property honest would have let exactly the unpredictable run start passing
+a CI gate. It reads `score_is_uncertain` now — verifiability, not direction. The
+guard that caught this was pinned to a source literal and had to be edited for
+the third time in three releases, so it is behavioural now, with both states and
+the polarity twin.
+
+**`--target` left no trace in any machine output.** It gates a pipeline through
+exit code 4 and appeared in no JSON, CSV, Markdown or HTML document, so a
+consumer could not tell a gate had been requested, let alone that it failed.
+`target` and `target_met` are additive in JSON, and `target_met` mirrors the
+exit condition rather than recomputing from the score — a number above the bar
+on a run that read less does not meet the target.
+
+**The cron script stopped shipping the working tree to production.** The
+generated wrapper exported `PYTHONPATH=<the package's parent>` unconditionally.
+That line exists for installs outside pip, but run from a git checkout it wrote
+that checkout onto the path, so the nightly audit executed uncommitted edits,
+silently, for ever. It is now emitted only when a clean interpreter — no
+PYTHONPATH, cwd outside the tree, the same user cron will run as — cannot import
+`bob` on its own. Fails safe: if the probe cannot run, the line is written,
+because a cron that cannot import BOB does nothing and says nothing.
+
+**And four smaller ones the option sweep had found.** `--webhook` with
+`--offline` was skipped in silence while the sibling `--test-webhook` announced
+it — v0.11.1 M-2 taught one path and left the other mute. `--ignore=KEY`
+validated the *shape* and not the existence, so a typo was written and matched
+nothing for ever while the list claimed the finding was handled; it now warns
+with a suggestion and still writes, because an ignore list may legitimately name
+a component absent from this host. The refusal of `--quiet --fix --apply` gave a
+reason that was false with `--yes` — there are no prompts then; the real reason
+is that `--yes` prints the audit trail `--quiet` would suppress. And
+`--breakdown` said "Score cap active (ceiling: 3/10)" three lines above "Final
+score: 7/10": the cap is on the *domain*, deliberately and documented, but the
+wording never said which.
+
+**Tests** 8282 → **8305**.
+
+---
+
 ## [v0.16.1] — 2026-09-04
 
 **Two surfaces of the same claim, and only one was ever exercised.**

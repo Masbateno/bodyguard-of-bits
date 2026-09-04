@@ -177,11 +177,58 @@ class TestTheNumberSaysWhatItIs:
             "score — the number itself has to say it is a ceiling"
         )
 
+    @staticmethod
+    def _score_line(*, score: int, prev: int, bounded: bool,
+                    uncertain: bool = False, span=None) -> str:
+        """Render the summary's score line. Behavioural — the source-literal
+        version of this guard had to be edited every time the condition was
+        widened, which is a guard measuring its own wording."""
+        from bob import i18n, output
+        from bob.display import _summary_header_lines
+        from bob.scoring import RiskLevel
+
+        class _E:
+            pass
+
+        e = _E()
+        e.score = score
+        e.score_is_upper_bound = bounded
+        e.score_is_uncertain = uncertain or bounded
+        e.score_span = span or (score, score)
+        e.blinded_domains = ["file_perms"] if (uncertain and not bounded) else []
+        e.unverified = ["ssh.config_unreadable"] if e.score_is_uncertain else []
+        e.level = e.effective_level = RiskLevel.MEDIUM
+        e.risk_at_best = "medium"
+
+        class _C:
+            target = 0
+            profile = "server"
+            quiet = False
+
+        i18n.init("en")
+        output.init(no_color=True)
+        lines = _summary_header_lines(e, None, _C(), i18n.t,
+                                      profile_name="server", prev_score=prev)
+        return lines[0][1]
+
     def test_the_delta_arrow_is_withheld_while_bounded(self):
-        source = (_ROOT / "bob" / "display.py").read_text(encoding="utf-8")
-        assert "if prev_score is not None and not bounded:" in source, (
-            '"↑ +1" against a ceiling is the same false reassurance one level up'
-        )
+        """"↑ +1" against a ceiling is the same false reassurance one level up."""
+        line = self._score_line(score=8, prev=7, bounded=True)
+        assert "≤" in line
+        assert "↑" not in line and "↓" not in line
+
+    def test_the_delta_arrow_is_withheld_while_the_direction_is_unknown(self):
+        """v0.16.2 — a run whose blindness dropped a domain is precisely the one
+        whose delta means nothing."""
+        line = self._score_line(score=6, prev=7, bounded=False,
+                                uncertain=True, span=(5, 7))
+        assert "~" in line
+        assert "↑" not in line and "↓" not in line
+
+    def test_the_arrow_is_shown_on_a_fully_verified_run(self):
+        """Polarity: withholding must not become permanent."""
+        line = self._score_line(score=8, prev=7, bounded=False)
+        assert "↑" in line and "≤" not in line and "~" not in line
 
     def test_both_json_fields_are_emitted(self):
         source = (_ROOT / "bob" / "json_output.py").read_text(encoding="utf-8")

@@ -168,10 +168,19 @@ def build_html_output(
     # "'>=' not supported between instances of 'str' and 'int'". The HTML tests
     # never saw it because their engine stub defaults the bound to False.
     score      = engine.score
-    score_text = f"≤ {score}" if engine.score_is_upper_bound else str(score)
+    # v0.16.2 — three states, as in the terminal. `score` stays an int: the
+    # crash above came from reassigning it, and the same trap is one edit away.
+    _uncertain = getattr(engine, "score_is_uncertain", engine.score_is_upper_bound)
+    if engine.score_is_upper_bound:
+        score_text = f"≤ {score}"
+    elif _uncertain:
+        _lo, _hi = engine.score_span
+        score_text = f"~ {score} <small>({_lo}–{_hi})</small>"
+    else:
+        score_text = str(score)
     _bound_note = (
         f" &nbsp; <em>{_h(t('scoring.visibility_label'))}</em>"
-        if engine.score_is_upper_bound else ""
+        if _uncertain else ""
     )
     s_color    = _score_color(score)
     # I-1 (v0.7.0 Phase 2.1): use effective_level (posture-aware) for the

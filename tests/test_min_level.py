@@ -285,6 +285,13 @@ class TestScoreTrend:
         # came out as "≤ 8/10". A stub that answers yes to questions it was
         # never taught is not a stub, it is a second implementation.
         engine.score_is_upper_bound = False
+        # v0.16.2 — same reasoning, one release later: the score can now be
+        # uncertain without being a ceiling, and the summary unpacks a span.
+        # Left unset on a MagicMock, both answer yes and the stub renders a
+        # state the audit never produced.
+        engine.score_is_uncertain = False
+        engine.score_span = (score, score)
+        engine.blinded_domains = []
         engine.unverified = []
         engine.findings = []
         engine._deductions = []

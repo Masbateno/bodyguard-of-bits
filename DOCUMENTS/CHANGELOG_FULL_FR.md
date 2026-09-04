@@ -6,6 +6,88 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.16.2] — 04-09-2026
+
+**Un plafond affirme une direction, et l'aveuglement n'en a pas toujours une.**
+
+La v0.16.0 raisonnait ainsi : un check incapable de lire son entrée ne déduit
+rien alors que ces déductions sont inconnues, donc le score ne peut être que trop
+haut — un plafond, `≤ 8/10`. C'est vrai tant que le domaine du check aveuglé est
+encore noté.
+
+Ça cesse de l'être quand le **domaine entier** quitte la moyenne. Le score global
+est une moyenne sur les domaines actifs ; un domaine dont tous les constats sont
+retombés en INFO parce que le fichier ne s'est jamais ouvert en sort, donc c'est
+le *dénominateur* qui change, pas le numérateur, et le résultat bouge dans une
+direction que personne ne peut prédire. Masquer `/etc/passwd` retire
+`file_perms` (10/10) et fait passer le score de 7 à **6** — `≤ 6` affirmait donc
+un plafond en dessous de la vraie valeur, et le domaine s'affichait
+`no action needed` : un feu vert sur quelque chose que BOB n'a jamais regardé.
+
+Trois états désormais, et non deux. Un plafond reste `≤ N/10`. Une direction
+imprévisible s'affiche `~ N/10`, à côté de l'intervalle où l'on sait qu'il se
+trouve — et cet intervalle est de l'arithmétique, pas une supposition : un
+domaine vaut entre 0 et 10 par construction, donc placer les manquants aux deux
+extrêmes encadre la vérité :
+
+```
+Score de sécurité : ~ 6/10
+Niveau de risque : ✖ ÉLEVÉ — non vérifié
+Visibilité : 9 section(s) non entièrement lue(s) · 1 domaine(s) non noté(s) — le score est entre 5 et 7
+Fichiers & Accès         —  n'a pas pu être lu
+```
+
+L'intervalle dit **combien est en jeu**, ce que `~` seul ne dit pas : deux
+domaines aveuglés l'élargissent visiblement, et c'est exactement le signal pour
+lequel la v0.16.0 a été écrite. `score` reste un entier ; `score_low` /
+`score_high` / `unscored_domains` sont additifs, et `score_low == score_high`
+est la façon dont un consommateur lit « entièrement vérifié » sans cas
+particulier. Les sept rendus le portent, chacun dans la forme que son
+consommateur accepte.
+
+**Le portail a suivi.** `--target` consultait `score_is_upper_bound` ; rendre
+cette propriété honnête aurait laissé passer au vert exactement l'exécution
+imprévisible. Il lit maintenant `score_is_uncertain` — la vérifiabilité, pas la
+direction. La garde qui l'a rattrapé était épinglée sur un littéral de source et
+a dû être modifiée pour la troisième fois en trois versions : elle est désormais
+comportementale, avec les deux états et le jumeau de polarité.
+
+**`--target` ne laissait aucune trace dans les sorties machine.** Il ferme une
+chaîne d'intégration par le code de sortie 4 et n'apparaissait dans aucun
+document JSON, CSV, Markdown ou HTML : un consommateur ne pouvait pas savoir
+qu'un portail avait été demandé, encore moins qu'il avait échoué. `target` et
+`target_met` sont additifs en JSON, et `target_met` reflète la condition de
+sortie au lieu de la recalculer depuis le score — un nombre au-dessus de la
+barre sur une exécution qui a lu moins ne satisfait pas l'objectif.
+
+**Le script cron a cessé d'expédier l'arbre de travail en production.** Le
+wrapper généré exportait `PYTHONPATH=<parent du paquet>` sans condition. Cette
+ligne existe pour les installations hors pip, mais lancée depuis un dépôt git
+elle y inscrivait ce dépôt : l'audit nocturne exécutait donc des modifications
+non commitées, en silence, indéfiniment. Elle n'est plus émise que lorsqu'un
+interpréteur propre — sans PYTHONPATH, hors de l'arbre, sous le même compte que
+cron — n'arrive pas à importer `bob` seul. Elle échoue du bon côté : si la sonde
+ne peut pas tourner, la ligne est écrite, car un cron qui ne peut pas importer
+BOB ne fait rien et ne dit rien.
+
+**Et quatre plus petits, trouvés par le balayage d'options.** `--webhook` avec
+`--offline` était sauté en silence alors que le frère `--test-webhook`
+l'annonçait — la v0.11.1 M-2 avait instruit un chemin et laissé l'autre muet.
+`--ignore=CLÉ` validait la *forme* et non l'existence : une faute de frappe était
+écrite et ne correspondait plus jamais à rien pendant que la liste prétendait le
+constat traité ; elle avertit désormais avec une suggestion et écrit quand même,
+car une liste d'ignore peut légitimement nommer un composant absent de cet hôte.
+Le refus de `--quiet --fix --apply` donnait une raison fausse avec `--yes` — il
+n'y a alors plus de prompt ; la vraie raison est que `--yes` imprime la trace
+d'audit que `--quiet` supprimerait. Et `--breakdown` annonçait « Plafond de score
+actif (plafond : 3/10) » trois lignes au-dessus de « Score final : 7/10 » : le
+plafond porte sur le **domaine**, délibérément et documenté, mais le libellé ne
+disait jamais lequel.
+
+**Tests** 8282 → **8305**.
+
+---
+
 ## [v0.16.1] — 04-09-2026
 
 **Deux surfaces d'une même affirmation, et une seule était exercée.**

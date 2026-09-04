@@ -209,6 +209,22 @@ def _run(argv=None) -> int:
                 file=sys.stderr,
             )
             return EXIT_ERROR
+        # v0.16.2 — the shape was validated, the existence was not. A typo
+        # such as `firewall.inactve` is well-formed, is written, and then
+        # matches nothing for ever: the finding the operator meant to waive
+        # keeps appearing while the ignore list says it is handled. `--check`
+        # already refuses an unknown section with a suggestion; this warns and
+        # still writes, because an ignore list may legitimately name a key for
+        # a component absent from this host.
+        _known = _known_finding_keys()
+        if _known and config.ignore_key not in _known:
+            import difflib
+            _near = difflib.get_close_matches(config.ignore_key, sorted(_known), n=1, cutoff=0.6)
+            print("⚠  " + i18n.t("cli.ignore.unknown_key",
+                                 requested=config.ignore_key,
+                                 suggestion=_near[0] if _near else "—"),
+                  file=sys.stderr)
+
         added = add_ignore_key(config.ignore_key)
         if added:
             print("✔ " + i18n.t("cli.ignore.added", requested=config.ignore_key))
@@ -565,6 +581,13 @@ def _run(argv=None) -> int:
 
             # ---- Webhook notification (non-fatal) ----------------------------------
             _webhook_url = config.webhook_url or user_config.get_webhook_url()
+            # v0.16.2 — say it. --offline legitimately suppresses the POST, but
+            # suppressing it silently means an operator who asked for a delivery
+            # gets nothing and no reason. The sibling path already announced it:
+            # v0.11.1 M-2 taught --test-webhook to say "skipped: --offline is
+            # set" and left the audit path mute.
+            if _webhook_url and config.offline and not config.quiet and not _machine_mode:
+                output.print_info(t("webhook.skipped_offline"))
             if _webhook_url and not config.offline:
                 # Persist URL if supplied via CLI flag (keeps it for future runs)
                 if config.webhook_url and config.webhook_url != user_config.get_webhook_url():
@@ -684,8 +707,13 @@ def _run(argv=None) -> int:
             # is "unknown", and a CI gate that reads unknown as pass is the
             # exact failure this release is about: an audit run without the
             # privileges it needs would go green. A gate fails closed.
+            # v0.16.2 — reads score_is_uncertain, not score_is_upper_bound.
+            # Making the bound honest meant a run whose blindness removed a
+            # whole domain stopped being "bounded", and this gate would have
+            # started passing it. The gate is about verifiability, not about
+            # which direction the error points.
             if config.target > 0 and (
-                engine.score < config.target or engine.score_is_upper_bound
+                engine.score < config.target or engine.score_is_uncertain
             ):
                 _exit = EXIT_TARGET_MISSED
             elif engine.alert_count > 0:
@@ -779,6 +807,20 @@ def _run(argv=None) -> int:
     finally:
         if _devnull is not None:
             _devnull.close()
+
+
+def _known_finding_keys() -> "set[str]":
+    """Every finding key BOB can emit, for validating an ignore entry.
+
+    Read from EXPLAIN_KEYS, which the project already keeps exhaustive and
+    guarded. Returns an empty set if that import fails, so a warning can never
+    be the thing that breaks ``--ignore``.
+    """
+    try:
+        from bob.explain import EXPLAIN_KEYS
+        return set(EXPLAIN_KEYS)
+    except Exception:      # pragma: no cover — defensive
+        return set()
 
 
 def main(argv=None) -> int:

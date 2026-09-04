@@ -208,7 +208,15 @@ def build_markdown_output(
     # Six sinks render it and only two were updated at first; the report an
     # operator archives said 7/10 where the terminal said ≤ 7/10, about the
     # same audit. A guard now covers all of them.
-    _sc = f"≤ {engine.score}" if engine.score_is_upper_bound else f"{engine.score}"
+    # v0.16.2 — three states, same as the terminal: a ceiling, a direction
+    # nobody can predict (a whole domain left the average), or a plain number.
+    if engine.score_is_upper_bound:
+        _sc = f"≤ {engine.score}"
+    elif getattr(engine, "score_is_uncertain", False):
+        _lo, _hi = engine.score_span
+        _sc = f"~ {engine.score} (between {_lo} and {_hi})"
+    else:
+        _sc = f"{engine.score}"
     lines.append(f"| **{t('markdown_output.field_score')}** | {_sc}/10 |")
     lines.append(f"| **{t('markdown_output.field_risk_level')}** | {risk_emoji} {level_label} |")
     lines.append(f"| **{t('markdown_output.field_alerts')}** | {engine.alert_count} |")

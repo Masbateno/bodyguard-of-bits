@@ -263,8 +263,10 @@
     "score_label": "Score de sécurité",
     "risk_label": "Niveau de risque",
     "risk_at_best": "{level} au mieux",
+    "risk_unverified": "{level} — non vérifié",
     "visibility_label": "Visibilité",
     "visibility_value": "{count} section(s) non entièrement lue(s) — le score est un plafond",
+    "visibility_unscored": "{count} section(s) non entièrement lue(s) · {domains} domaine(s) non noté(s) — le score est entre {low} et {high}",
     "scope_degraded": "{count} section(s) en échec, dégradée(s) : {sections}",
     "scope_filtered": "le périmètre a été restreint par --check / --skip",
     "scope_label": "Périmètre",
@@ -835,7 +837,7 @@
       "shorthands": "Raccourcis : --format=json / --format=json-full",
       "long_aliases": "Alias longs de -j / -J",
       "html": "Alias long de --format=html",
-      "min_level": "N'affiche que les constats à partir de : warn  |  alert",
+      "min_level": "Constats de niveau ≥ : warn | alert (le contexte de run reste)",
       "fix": "Aperçu des correctifs (à blanc — rien n'est exécuté)",
       "apply": "Exécute les correctifs en interactif (requiert --fix)",
       "yes": "Confirme tout avec traçabilité (requiert --fix --apply)",
@@ -903,6 +905,7 @@
       "added": "Clé ignorée ajoutée : {requested}",
       "added_file": "Fichier : {path}",
       "already_present": "Clé déjà présente : {requested}",
+    "unknown_key": "La clé d'ignore '{requested}' ne correspond à aucun constat que BOB peut émettre — elle ne masquera jamais rien. Vouliez-vous dire : {suggestion}",
       "removed": "Clé d'ignore retirée : {requested}",
       "not_present": "Clé absente de la liste d'ignore : {requested}"
     },
@@ -946,6 +949,7 @@
     }
   },
   "webhook": {
+    "skipped_offline": "Webhook non envoyé : --offline est actif (aucun appel réseau sortant).",
     "error": {
       "scheme_invalid": "L'URL du webhook doit commencer par https:// (ou http:// avec BOB_WEBHOOK_ALLOW_INSECURE=1) : {url}",
       "plain_http_insecure": "L'URL du webhook utilise http:// non chiffré — le payload d'audit serait envoyé en clair. Utilisez https:// ou définissez BOB_WEBHOOK_ALLOW_INSECURE=1 pour outrepasser : {url}",
@@ -961,7 +965,7 @@
     "deductions_header": "Déductions appliquées ({count}) :",
     "capped": "[plafonnée — limite outil atteinte]",
     "tool_cap_applied": "Plafond outil : {tool} — {raw} pt bruts → {counted} pt comptabilisés (plafond : {cap} pt)",
-    "engine_cap_applied": "Plafond de score actif : {reason} (plafond : {maximum}/10)",
+    "engine_cap_applied": "Plafond de domaine actif : {reason} (ce domaine est plafonné à {maximum}/10 ; le score affiché est la moyenne des domaines)",
     "raw_score": "Score brut (somme des déductions) : {score}/10",
     "domain_scores_header": "Scores par domaine (domaines actifs) :",
     "domain_average": "Moyenne des domaines ({count} domaines actifs) : {score}/10",
@@ -1197,6 +1201,7 @@
     "firewall": "Pare-feu & Services",
     "reason": {
       "no_action": "aucune action requise",
+      "unreadable": "n'a pas pu être lu",
       "not_assessed": "non évalué (profil {profile})",
       "filtered": "non évalué (--check/--skip)",
       "not_installed": "non installé"

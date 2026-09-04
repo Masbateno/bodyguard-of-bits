@@ -459,6 +459,13 @@ class ScoreEngine:
         # set, and so `score_is_upper_bound` cannot disagree with the list that
         # explains it.
         self.unverified: list[str] = []
+        # v0.16.2 — domains that fell out of the score average *because BOB
+        # could not read them*, and the span the score would occupy if it
+        # could have. Set by domain_scores.apply_domain_score_override; empty
+        # and collapsed onto the score until then, so an engine used without
+        # the domain layer behaves exactly as it did before.
+        self.blinded_domains: list[str] = []
+        self._score_span: "tuple[int, int] | None" = None
         self.ignore_keys: frozenset[str] = frozenset()
         self._finalized: bool = False
         self._domain_scores: dict | None = None
@@ -654,17 +661,55 @@ class ScoreEngine:
     # Read-only properties
     # ------------------------------------------------------------------
 
-    @property
-    def score_is_upper_bound(self) -> bool:
-        """True when a check could not read its input.
+    def set_score_uncertainty(self, blinded_domains, span) -> None:
+        """Record which domains went unscored through blindness, and the span.
 
-        The score is then a **ceiling**: the deductions those checks did not
-        make are unknown, not zero. Masking /etc/ssh/sshd_config removes four
-        deductions and moves the score from 7 to 8 — up, on a host BOB can see
-        less of. Callers must render the number as bounded and must not derive
-        an unqualified risk level from it.
+        Called by ``domain_scores.apply_domain_score_override`` once the domain
+        average exists. See ``domain_scores._uncertainty`` for the reasoning.
+        """
+        self.blinded_domains = list(blinded_domains)
+        self._score_span = (int(span[0]), int(span[1]))
+
+    @property
+    def score_span(self) -> "tuple[int, int]":
+        """The interval the true score lies in, given what could not be read.
+
+        Collapses onto ``(score, score)`` when nothing is blind, so callers can
+        use it unconditionally.
+        """
+        return self._score_span or (self.score, self.score)
+
+    @property
+    def score_is_uncertain(self) -> bool:
+        """True when anything at all could not be read.
+
+        This — not :attr:`score_is_upper_bound` — is what a gate must consult.
+        v0.16.0 made ``--target`` fail closed on a bounded score; when v0.16.2
+        made the bound honest, a run whose blindness removed a whole domain
+        stopped being "bounded" and would have started passing the gate. The
+        gate is about verifiability, which is exactly this.
         """
         return bool(self.unverified)
+
+    @property
+    def score_is_upper_bound(self) -> bool:
+        """True when the score can only be too high.
+
+        A check that could not read its input made deductions that are unknown
+        rather than zero, so the score is a **ceiling**: masking
+        /etc/ssh/sshd_config removes four deductions and moves the score from 7
+        to 8, up, on a host BOB can see less of.
+
+        v0.16.2: that reasoning holds only while the blinded check's domain is
+        still scored. When the whole domain drops out of the average — every
+        finding reduced to INFO because the file never opened — the denominator
+        changes rather than the numerator and the score moves in an
+        unpredictable direction. Masking /etc/passwd drops ``file_perms``
+        (10/10) and takes the score from 7 *down* to 6, so calling 6 a ceiling
+        claims a bound below the true value. In that case this is False and
+        :attr:`score_span` says what is actually known.
+        """
+        return bool(self.unverified) and not self.blinded_domains
 
     @property
     def score(self) -> int:

@@ -83,6 +83,8 @@ class Report(Protocol):
         posture_annotation: str = "",
         score_is_upper_bound: bool = False,
         unverified_count: int = 0,
+        score_span: "tuple[int, int] | None" = None,
+        unscored_domains: int = 0,
         profile_name: str = "",
         scope_note: str = "",
     ) -> None: ...
@@ -334,6 +336,8 @@ class AuditReport:
         posture_annotation: str = "",
         score_is_upper_bound: bool = False,
         unverified_count: int = 0,
+        score_span: "tuple[int, int] | None" = None,
+        unscored_domains: int = 0,
         profile_name: str = "",
         scope_note: str = "",
     ) -> None:
@@ -395,7 +399,7 @@ class AuditReport:
         ]
         if profile_name:
             _used.append(labels.get("profile", "Profile"))
-        if score_is_upper_bound:
+        if score_is_upper_bound or unscored_domains:
             _used.append(labels.get("visibility", "Visible"))
         if scope_note:
             _used.append(labels.get("scope", "Scope"))
@@ -416,7 +420,15 @@ class AuditReport:
         self._writeln(f"{ok_lbl:<{_w}}: {ok_count}")
         self._writeln(f"{warn_lbl:<{_w}}: {warn_count}")
         self._writeln(f"{alert_lbl:<{_w}}: {alert_count}")
-        score_str = f"≤ {score}/10" if score_is_upper_bound else f"{score}/10"
+        # v0.16.2 — the archived report carries the same three states as the
+        # screen. That equality is the whole point of this parameter: v0.16.0
+        # found the .log saying "7/10" where the terminal said "≤ 7/10".
+        if score_is_upper_bound:
+            score_str = f"≤ {score}/10"
+        elif unscored_domains and score_span:
+            score_str = f"~ {score}/10  ({score_span[0]}–{score_span[1]})"
+        else:
+            score_str = f"{score}/10"
         self._writeln(f"{score_lbl:<{_w}}: {score_str}")
         self._writeln(f"{risk_lbl:<{_w}}: {risk_str}")
         self._writeln(f"{ctx_lbl:<{_w}}: {context_str}")

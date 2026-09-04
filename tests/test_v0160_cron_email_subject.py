@@ -74,13 +74,37 @@ class TestTheSubjectSurvivesABoundedScore:
 
 class TestTheGeneratedScriptStaysAscii:
 
+    @staticmethod
+    def _embedded_python() -> str:
+        """The Python heredoc out of an actually generated script.
+
+        v0.16.2 — this used to slice a 4000-character window of ``_io.py``'s
+        *source* ending at the ``PYTHON_EOF`` marker, so any prose added within
+        that distance failed the guard even though Python comments never reach
+        the generated file. Two explanatory comments did exactly that. Reading
+        the product instead of the neighbourhood of the product is both
+        stricter and impossible to trip by accident.
+        """
+        from bob.cron._io import build_script_content
+
+        script = build_script_content("a@b.c", "/var/log/bob")
+        start = script.index("PYTHON_EOF") + len("PYTHON_EOF")
+        end = script.index("PYTHON_EOF", start)
+        return script[start:end]
+
     def test_no_non_ascii_in_the_generated_python(self):
         """
         The script is embedded in a shell heredoc and run by cron, with no
         encoding declaration of its own. Matching on the ≤ character would put
         a dependency there for no gain.
         """
-        source = _IO.read_text(encoding="utf-8")
-        block = source[source.index("PYTHON_EOF") - 4000: source.index("PYTHON_EOF")]
+        block = self._embedded_python()
         offenders = sorted({c for c in block if ord(c) > 127})
         assert not offenders, f"non-ASCII in the generated cron script: {offenders}"
+
+    def test_the_guard_is_looking_at_something(self):
+        """Positive control: an empty slice would pass for ever."""
+        block = self._embedded_python()
+        assert "send_audit_log_as_html_email" in block, (
+            "the heredoc extraction no longer finds the embedded Python"
+        )

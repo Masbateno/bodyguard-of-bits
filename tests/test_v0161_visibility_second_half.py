@@ -229,13 +229,18 @@ class TestTheTargetLineAgreesWithTheExitCode:
 
     @staticmethod
     def _exit_predicate(score: int, target: int, bounded: bool) -> bool:
-        """Mirror of __main__.py's gate. Asserted against the source below."""
+        """Mirror of __main__.py's gate. Asserted against the source below.
+
+        v0.16.2: the gate reads ``score_is_uncertain``. In this class's cases
+        the two coincide — every ``bounded`` fixture here is uncertain — so the
+        mirror is unchanged in substance.
+        """
         return target > 0 and (score < target or bounded)
 
     def test_the_gate_in_main_is_still_the_predicate_mirrored_here(self):
         """A mirror that drifts proves nothing. Pin it to the real source."""
         src = (_ROOT / "bob" / "__main__.py").read_text(encoding="utf-8")
-        assert "engine.score < config.target or engine.score_is_upper_bound" in src, (
+        assert "engine.score < config.target or engine.score_is_uncertain" in src, (
             "the --target gate changed shape; update _exit_predicate with it"
         )
 

@@ -469,12 +469,24 @@ def _summary_header_lines(engine, network_context, config, t,
     # one, because a caveat printed beside the score is not read by anyone who
     # reads only the score: masking sshd_config moves it from 7 to 8, up, on a
     # host BOB can see less of.
-    bounded = engine.score_is_upper_bound
-    score_str = f"≤ {score}/10" if bounded else f"{score}/10"
+    bounded   = engine.score_is_upper_bound
+    uncertain = getattr(engine, "score_is_uncertain", bounded)
+    if bounded:
+        score_str = f"≤ {score}/10"
+    elif uncertain:
+        # v0.16.2 — blindness removed a whole domain from the average, so the
+        # score moved in a direction nobody can predict. `≤` would claim a
+        # ceiling below the true value; the span beside it says what is known.
+        score_str = f"~ {score}/10"
+    else:
+        score_str = f"{score}/10"
 
-    # The delta is withheld while bounded rather than shown against a ceiling.
-    # "↑ +1" on a run that saw less is the same false reassurance one level up.
-    if prev_score is not None and not bounded:
+    # The delta is withheld while the score is not fully verified, rather than
+    # shown against a ceiling. "↑ +1" on a run that saw less is the same false
+    # reassurance one level up — and v0.16.2 widened this from `bounded` to
+    # `uncertain`, because a run whose blindness dropped a whole domain is
+    # precisely the one whose delta means nothing.
+    if prev_score is not None and not uncertain:
         delta = score - prev_score
         if delta > 0:
             score_str += f"  {_c.green}↑ +{delta}{_c.reset}"
@@ -486,6 +498,11 @@ def _summary_header_lines(engine, network_context, config, t,
         # The risk level is derived from the score, so a bounded score yields a
         # best case, not a verdict.
         risk_value = f"{icon} {t('scoring.risk_at_best', level=level_str)}"
+    elif uncertain:
+        # v0.16.2 — "at best" claims a direction, and here there is none: the
+        # missing domain could have been worse or better than the rest. The
+        # level is stated as unverified rather than as a best case.
+        risk_value = f"{icon} {t('scoring.risk_unverified', level=level_str)}"
     if posture_annotation:
         risk_value = f"{risk_value}  ({posture_annotation})"
 
@@ -493,7 +510,7 @@ def _summary_header_lines(engine, network_context, config, t,
         (t("scoring.score_label"),     score_str),
         (t("scoring.risk_label"),      risk_value),
     ]
-    if bounded:
+    if uncertain:
         # Beside the score, not in a section further down: this is what makes
         # the ceiling visible to someone who reads only the summary box.
         #
@@ -502,10 +519,23 @@ def _summary_header_lines(engine, network_context, config, t,
         # them are unreadable — and the list was redundant anyway, since each
         # of those sections prints its own "could not read" finding above.
         sections = {section_of(k) for k in engine.unverified}
-        lines.append((
-            t("scoring.visibility_label"),
-            t("scoring.visibility_value", count=len(sections)),
-        ))
+        blinded = getattr(engine, "blinded_domains", []) or []
+        if blinded:
+            # v0.16.2 — naming the span costs nothing invented: a domain scores
+            # in [0, 10] by construction, so the unscored ones at both extremes
+            # bracket the truth. It also says how much is at stake, which "~"
+            # alone does not: two blinded domains widen it visibly.
+            low, high = engine.score_span
+            lines.append((
+                t("scoring.visibility_label"),
+                t("scoring.visibility_unscored",
+                  count=len(sections), domains=len(blinded), low=low, high=high),
+            ))
+        else:
+            lines.append((
+                t("scoring.visibility_label"),
+                t("scoring.visibility_value", count=len(sections)),
+            ))
     lines += [
         (t("scoring.network_context"), ctx_str),
         (t("scoring.profile_label"),   profile_name.capitalize()),
@@ -514,7 +544,7 @@ def _summary_header_lines(engine, network_context, config, t,
     target = getattr(config, "target", 0)
     if target:
         gap = target - score
-        if gap <= 0 and bounded:
+        if gap <= 0 and uncertain:
             # v0.16.1 — the exit code has failed closed on a bounded score since
             # v0.16.0 (`score < target or score_is_upper_bound`), and this line
             # was never updated to match. It printed "✔ target reached" while
@@ -717,8 +747,14 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
         risk_level=(
             t("scoring.risk_at_best", level=t(f"scoring.level.{_effective.value}"))
             if engine.score_is_upper_bound
+            # v0.16.2 — and "unverified" rather than "at best" when the
+            # direction is unknown, exactly as the screen renders it.
+            else t("scoring.risk_unverified", level=t(f"scoring.level.{_effective.value}"))
+            if getattr(engine, "score_is_uncertain", False)
             else t(f"scoring.level.{_effective.value}")
         ),
+        score_span=engine.score_span,
+        unscored_domains=len(getattr(engine, "blinded_domains", []) or []),
         network_context=t(f"scoring.context.{network_context}"),
         public_ip=public_ip or "",
         ok_count=engine.ok_count,

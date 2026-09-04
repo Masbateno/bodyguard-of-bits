@@ -263,8 +263,10 @@
     "score_label": "Security score",
     "risk_label": "Risk level",
     "risk_at_best": "{level} at best",
+    "risk_unverified": "{level} — unverified",
     "visibility_label": "Visibility",
     "visibility_value": "{count} section(s) not fully read — the score is a ceiling",
+    "visibility_unscored": "{count} section(s) not fully read · {domains} domain(s) not scored — the score is between {low} and {high}",
     "scope_degraded": "{count} section(s) failed and were degraded: {sections}",
     "scope_filtered": "the run was narrowed by --check / --skip",
     "scope_label": "Scope",
@@ -835,7 +837,7 @@
       "shorthands": "Shorthands: --format=json / --format=json-full",
       "long_aliases": "Long-form aliases of -j / -J",
       "html": "Long-form alias of --format=html",
-      "min_level": "Only show findings at or above: warn  |  alert",
+      "min_level": "Only show findings at or above: warn | alert (run context stays)",
       "fix": "Preview available fixes (dry run — nothing is executed)",
       "apply": "Execute fixes interactively (requires --fix)",
       "yes": "Auto-confirm all fixes with audit trail (requires --fix --apply)",
@@ -903,6 +905,7 @@
       "added": "Ignored key added: {requested}",
       "added_file": "File: {path}",
       "already_present": "Key already present: {requested}",
+    "unknown_key": "Ignore key '{requested}' matches no finding BOB can emit — it will never suppress anything. Did you mean: {suggestion}",
       "removed": "Ignored key removed: {requested}",
       "not_present": "Key not present in the ignore list: {requested}"
     },
@@ -946,6 +949,7 @@
     }
   },
   "webhook": {
+    "skipped_offline": "Webhook not sent: --offline is set (no outbound network calls).",
     "error": {
       "scheme_invalid": "Webhook URL must start with https:// (or http:// with BOB_WEBHOOK_ALLOW_INSECURE=1): {url}",
       "plain_http_insecure": "Webhook URL is plain http:// — audit payload would be sent unencrypted. Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override: {url}",
@@ -961,7 +965,7 @@
     "deductions_header": "Deductions applied ({count}):",
     "capped": "[capped — tool limit reached]",
     "tool_cap_applied": "Tool cap: {tool} — {raw} pt raw → {counted} pt counted (cap: {cap} pt)",
-    "engine_cap_applied": "Score cap active: {reason} (ceiling: {maximum}/10)",
+    "engine_cap_applied": "Domain score cap active: {reason} (that domain is capped at {maximum}/10; the headline is the domain average)",
     "raw_score": "Raw score (sum of deductions): {score}/10",
     "domain_scores_header": "Domain scores (active domains):",
     "domain_average": "Domain average ({count} active domains): {score}/10",
@@ -1197,6 +1201,7 @@
     "firewall": "Firewall & Services",
     "reason": {
       "no_action": "no action needed",
+      "unreadable": "could not be read",
       "not_assessed": "not assessed ({profile} profile)",
       "filtered": "not assessed (--check/--skip)",
       "not_installed": "not installed"

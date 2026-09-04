@@ -42,6 +42,13 @@ class FakeEngine:
         # measurement or a ceiling. A stub that omits it fails loudly here,
         # which is the point: the attribute is not optional for a renderer.
         self.score_is_upper_bound = False
+        # v0.16.2 — same reasoning, one release later: the score can now be
+        # uncertain without being a ceiling, and the summary unpacks a span.
+        # Left unset on a MagicMock, both answer yes and the stub renders a
+        # state the audit never produced.
+        self.score_is_uncertain = False
+        self.score_span = (score, score)
+        self.blinded_domains = []
         self.unverified = []
         self.findings  = findings or []
         self.breakdown = deductions or []

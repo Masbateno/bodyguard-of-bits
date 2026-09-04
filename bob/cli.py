@@ -755,7 +755,16 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
     if config.watch_mode and config.html_mode:
         raise CLIError("--watch is incompatible with --html (watch mode uses interactive output)")
     if config.quiet and config.fix and config.apply:
-        raise CLIError("--quiet is incompatible with --fix --apply (fix mode requires interactive prompts)")
+        # v0.16.2 — the reason, accurately. With --yes there are no prompts, so
+        # "requires interactive prompts" was simply false; the real reason is
+        # that --yes writes an audit trail of what it changed and --quiet would
+        # suppress exactly that. Unattended remediation with no record is the
+        # thing being refused, in both cases.
+        raise CLIError(
+            "--quiet is incompatible with --fix --apply: fix mode prompts for "
+            "each change, and with --yes it prints the audit trail of what it "
+            "changed — --quiet would suppress the only record"
+        )
     if config.json_mode and config.fix and config.apply:
         raise CLIError("--json is incompatible with --fix --apply (fix mode is interactive)")
 
