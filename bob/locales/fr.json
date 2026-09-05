@@ -887,7 +887,7 @@
       "1": "Avertissements présents",
       "2": "Alertes présentes — action requise",
       "3": "Erreur technique",
-      "4": "--target N manqué, ou le score est une borne supérieure"
+      "4": "--target N manqué, ou le score n'a pas pu être entièrement vérifié"
     }
   },
   "cli": {

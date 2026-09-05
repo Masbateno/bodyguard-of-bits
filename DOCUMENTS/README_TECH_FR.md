@@ -25,7 +25,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et ship ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
 - **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 174 entrées (107 CIS formels, 60 best-practice, 7 Docker)
 - **5 en-têtes de groupes thématiques** — sortie organisée en : FIREWALL & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / DÉTECTION & SANTÉ
-- **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible, **et depuis la v0.16.0 dès que le score est une borne supérieure** — un portail ne peut pas être satisfait par un plafond (intégration CI) **Depuis la v0.16.0, il retourne aussi 4 dès que le score est une borne supérieure** — un portail ne peut pas être satisfait par un plafond.
+- **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible, **et depuis la v0.16.2 dès que quelque chose n'a pas pu être lu** — un score que rien n'a vérifié ne peut pas satisfaire un portail (intégration CI). La v0.16.0 disait « dès que le score est une borne supérieure » ; cela ne couvrait plus le cas où l'aveuglement retire un domaine de notation entier, l'exécution la moins fiable de toutes.
 
 ### Réseau & pare-feu
 
@@ -589,7 +589,7 @@ En mode `--quiet`, le code de retour indique le résultat de l'audit :
 | `1`  | `EXIT_WARNINGS`      | Avertissements détectés (améliorations suggérées) |
 | `2`  | `EXIT_ALERTS`        | Alertes détectées — action requise |
 | `3`  | `EXIT_ERROR`         | Erreur technique (parsing CLI, IO, interne) |
-| `4`  | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N, **ou score en borne supérieure** (v0.16.0) : un check n'a pas pu lire son entrée, donc « au moins N » n'a jamais été établi. Un portail échoue fermé. |
+| `4`  | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N, **ou quelque chose n'a pas pu être lu** (v0.16.2, élargi depuis « borne supérieure ») : un check n'a pas pu lire son entrée, donc « au moins N » n'a jamais été établi. Un portail échoue fermé. |
 | `130`| *(convention signal)* | Interrompu par Ctrl-C. Depuis la v0.14.1, `main()` attrape `KeyboardInterrupt` et affiche une ligne localisée au lieu d'un traceback Python. Ce n'est pas une constante de `bob.__main__` — c'est le `128 + SIGINT` du shell. |
 
 Les constantes sont exposées dans `bob.__main__` pour un usage programmatique :

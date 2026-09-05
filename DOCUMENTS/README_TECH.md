@@ -25,7 +25,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
 - **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 174 entries (107 formal CIS, 60 best-practice, 7 Docker)
 - **5 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / DETECTION & HEALTH
-- **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target, **and since v0.16.0 whenever the score is an upper bound** — a gate cannot be satisfied by a ceiling (CI-ready)
+- **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target, **and since v0.16.2 whenever anything could not be read** — a score nothing verified cannot satisfy a gate (CI-ready). v0.16.0 said "whenever the score is an upper bound"; that stopped covering the case where blindness removes a whole scoring domain, which is the least trustworthy run of all
 
 ### Network & firewall
 
@@ -589,7 +589,7 @@ When using `--quiet`, the exit code tells you the audit result:
 | `1`  | `EXIT_WARNINGS`      | Warnings detected (improvements suggested) |
 | `2`  | `EXIT_ALERTS`        | Alerts detected — action required |
 | `3`  | `EXIT_ERROR`         | Technical error (CLI parsing, IO, internal) |
-| `4`  | `EXIT_TARGET_MISSED` | `--target N` specified and score < N, **or the score is an upper bound** (v0.16.0): a check could not read its input, so "at least N" was never established. A gate fails closed. |
+| `4`  | `EXIT_TARGET_MISSED` | `--target N` specified and score < N, **or anything could not be read** (v0.16.2, widened from "is an upper bound"): a check could not read its input, so "at least N" was never established. A gate fails closed. |
 | `130`| *(signal convention)* | Interrupted with Ctrl-C. Since v0.14.1 `main()` catches `KeyboardInterrupt` and prints one localised line instead of a Python traceback. Not a `bob.__main__` constant — it is the shell's `128 + SIGINT`. |
 
 The constants are exposed in `bob.__main__` for programmatic access:

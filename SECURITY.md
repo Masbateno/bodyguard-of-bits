@@ -31,10 +31,18 @@ that could not read its input contributed nothing — so masking
 `/etc/ssh/sshd_config` moved the score from 7 to **8**, up, on a host BOB could
 see less of. The number is now rendered as the ceiling it is (`≤ 8/10`), the
 risk level derived from it reads as a best case, and a summary line names how
-many sections could not be fully read. `score` stays an integer in JSON; two
-additive fields, `score_is_upper_bound` and `unverified`, say what it is worth.
-`--diff` no longer reports a finding as resolved when its section was not
-re-evaluated.
+many sections could not be fully read.
+
+**v0.16.2 adds a third state.** The ceiling holds while the blinded check's
+domain is still scored; when blindness removes a *whole* domain from the score
+average the denominator changes and the number can move either way, so it
+renders as `~ 8/10` beside the span it is known to lie in (`between 6 and 8`).
+A `--target` gate fails closed in both cases: it consults whether anything went
+unread, not which direction the error points. `score` stays an integer in JSON;
+`score_is_upper_bound`, `unverified`, `score_low`, `score_high` and
+`unscored_domains` are additive. `--diff` no longer reports a finding as
+resolved when its section was not re-evaluated, nor calls a score movement an
+improvement or a degradation when the run read less than the one before it.
 
 **v0.14.x is end-of-life as of 2026-08-31** (the day v0.15.0 ships, per the
 "latest minor line only" policy above). No security fixes will be backported.

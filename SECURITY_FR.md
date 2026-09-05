@@ -32,9 +32,19 @@ rien — masquer `/etc/ssh/sshd_config` faisait donc **monter** le score de 7 à
 8, sur un hôte dont BOB voyait moins. Le nombre est désormais rendu comme le
 plafond qu'il est (`≤ 8/10`), le niveau de risque qui en dérive se lit comme un
 meilleur cas, et une ligne de résumé indique combien de sections n'ont pas pu
-être entièrement lues. `score` reste un entier en JSON ; deux champs additifs,
-`score_is_upper_bound` et `unverified`, disent ce qu'il vaut. `--diff` ne
-rapporte plus un constat comme résolu quand sa section n'a pas été réévaluée.
+être entièrement lues.
+
+**La v0.16.2 ajoute un troisième état.** Le plafond ne vaut que tant que le
+domaine du check aveuglé est encore noté ; quand l'aveuglement retire un
+domaine *entier* de la moyenne, le dénominateur change et le nombre peut bouger
+dans les deux sens — il s'affiche alors `~ 8/10`, à côté de l'intervalle où on
+le sait situé (`entre 6 et 8`). Un portail `--target` échoue fermé dans les deux
+cas : il consulte le fait que quelque chose n'a pas été lu, pas la direction de
+l'erreur. `score` reste un entier en JSON ; `score_is_upper_bound`,
+`unverified`, `score_low`, `score_high` et `unscored_domains` sont additifs.
+`--diff` ne rapporte plus un constat comme résolu quand sa section n'a pas été
+réévaluée, ni un écart de score comme une amélioration ou une dégradation quand
+l'exécution a lu moins que la précédente.
 
 **v0.14.x est en fin de vie depuis le 31-08-2026** (jour du ship de v0.15.0,
 selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun

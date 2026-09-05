@@ -50,7 +50,7 @@ by default).
 .B \-\-target=\fIN\fR
 Set a security score target in 1\(en10. When the resulting score is below
 .IR N ,
-or when the score is an upper bound because a check could not read its input,
+or when anything could not be read, so the score is not fully verified,
 .B bob
 exits with code
 .B 4
@@ -386,8 +386,10 @@ Technical error (CLI parsing, IO, internal).
 .TP
 .B 4
 .B \-\-target=\fIN\fR
-specified and score < N, or the score is an upper bound: a check that could
-not read its input leaves the target unverifiable, so the gate fails closed.
+specified and score < N, or anything could not be read: a score nothing
+verified cannot satisfy a gate, so it fails closed. Widened in v0.16.2 from
+\(lqis an upper bound\(rq, which stops being true when blindness removes a
+whole scoring domain.
 .
 .SH JSON OUTPUT
 .B \-\-json

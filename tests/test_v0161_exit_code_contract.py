@@ -34,12 +34,47 @@ _CONTRACT_DOCS = (
     "man/bob.1",
 )
 
-#: Wordings that carry "the score is a ceiling", per language. A document must
-#: use one of them where it describes code 4.
-_CEILING_WORDS = re.compile(
-    r"upper bound|ceiling|borne supérieure|plafond",
-    re.IGNORECASE,
-)
+#: What each gate predicate obliges the documents to say, per language.
+#:
+#: v0.16.2 — the first version of this guard matched "ceiling|upper bound",
+#: the wording of the moment. When the gate widened from
+#: ``score_is_upper_bound`` to ``score_is_uncertain`` — a run whose blindness
+#: drops a whole domain is no longer a ceiling, yet must still fail the gate —
+#: seven documents kept describing the narrower rule and the guard stayed
+#: green. A guard that matches a word cannot notice the word became wrong.
+#:
+#: So the requirement is derived from the predicate the source actually uses.
+#: An unlisted predicate fails loudly: whoever changes the gate has to say
+#: here what the documents must now claim.
+_PREDICATE_WORDS = {
+    "score_is_uncertain": re.compile(
+        r"could not be read|could not be fully verified|nothing verified"
+        r"|not fully verified|n'a pas pu être lu|pas pu être entièrement vérifié"
+        r"|que rien n'a vérifié",
+        re.IGNORECASE,
+    ),
+    "score_is_upper_bound": re.compile(
+        r"upper bound|ceiling|borne supérieure|plafond", re.IGNORECASE,
+    ),
+}
+
+
+def _gate_predicate() -> str:
+    """The property ``--target``'s gate consults, read from the source."""
+    src = (_ROOT / "bob" / "__main__.py").read_text(encoding="utf-8")
+    m = re.search(r"engine\.score < config\.target or engine\.(\w+)", src)
+    assert m, "the --target gate no longer has its expected shape"
+    return m.group(1)
+
+
+def _required_words() -> "re.Pattern":
+    predicate = _gate_predicate()
+    assert predicate in _PREDICATE_WORDS, (
+        f"the --target gate now reads `{predicate}`, which this guard does not "
+        f"know. Add it to _PREDICATE_WORDS with the wording every document "
+        f"must carry, then update the documents."
+    )
+    return _PREDICATE_WORDS[predicate]
 
 
 def _locale_exit_4(lang: str) -> str:
@@ -50,11 +85,11 @@ def _locale_exit_4(lang: str) -> str:
 class TestTheHelpStringItselfCarriesBothConditions:
 
     @pytest.mark.parametrize("lang", ["en", "fr"])
-    def test_code_4_names_the_upper_bound(self, lang):
+    def test_code_4_matches_the_gate_the_binary_uses(self, lang):
         """`--help` is what an operator reads before writing a CI gate."""
-        assert _CEILING_WORDS.search(_locale_exit_4(lang)), (
-            f"{lang}.json help.exit.4 no longer says a bounded score fails the "
-            f"gate: {_locale_exit_4(lang)!r}"
+        assert _required_words().search(_locale_exit_4(lang)), (
+            f"{lang}.json help.exit.4 describes a rule the binary no longer "
+            f"applies (gate reads `{_gate_predicate()}`): {_locale_exit_4(lang)!r}"
         )
 
     @pytest.mark.parametrize("lang", ["en", "fr"])
@@ -94,10 +129,9 @@ class TestEveryDocumentAgreesWithIt:
     def test_code_4_mentions_the_upper_bound(self, rel):
         """The row (or entry) describing code 4 must carry both conditions."""
         chunks = self._passages_about_code_4(rel)
-        assert any(_CEILING_WORDS.search(c) for c in chunks), (
-            f"{rel} describes exit code 4 without saying that a bounded score "
-            f"also fails the gate. The binary has behaved that way since "
-            f"v0.16.0; see the --target gate in bob/__main__.py."
+        assert any(_required_words().search(c) for c in chunks), (
+            f"{rel} describes exit code 4 in terms the gate no longer uses — "
+            f"it reads `{_gate_predicate()}`. See bob/__main__.py."
         )
 
     @pytest.mark.parametrize("rel", _CONTRACT_DOCS)
@@ -152,4 +186,49 @@ class TestTheTestHistoryKeepsItsOwnPromise:
         assert en, "the English history table went missing"
         assert en == fr, (
             f"only in EN: {sorted(en - fr)} · only in FR: {sorted(fr - en)}"
+        )
+
+    @pytest.mark.parametrize("rel", ["DOCUMENTS/TESTING.md", "DOCUMENTS/TESTING_FR.md"])
+    def test_the_table_is_not_mangled(self, rel):
+        """v0.16.2 — a release row must be a row, and nothing else a row.
+
+        Written after corrupting both files three releases running with
+        ``sed 's|\\| v0\\.16\\.1 \\| 8277 \\||…|'``: with ``|`` as the delimiter
+        the escaped pipes read as an empty alternation, the pattern matched the
+        empty string at the start of every line, and the replacement was
+        prepended to all 2134 of them. v0.16.1 shipped with the document's
+        first line reading ``| v0.16.1 | 8282 |*[Lire en français]…``.
+
+        The shape is cheap to assert and the damage was not: no line may carry
+        more than one release cell, and the locale link must still open the
+        file.
+        """
+        text = (_ROOT / rel).read_text(encoding="utf-8")
+        lines = text.splitlines()
+
+        assert lines[0].startswith("*["), (
+            f"{rel} no longer opens with its locale link — something was "
+            f"prepended to line 1: {lines[0][:70]!r}"
+        )
+        doubled = [
+            f"line {i}: {ln[:70]}"
+            for i, ln in enumerate(lines, 1)
+            if len(re.findall(r"\| v0\.\d+\.\d+ \| \d+ \|", ln)) > 1
+        ]
+        assert not doubled, (
+            f"{rel} has lines carrying more than one release cell:\n  "
+            + "\n  ".join(doubled[:5])
+        )
+
+    @pytest.mark.parametrize("rel", ["DOCUMENTS/TESTING.md", "DOCUMENTS/TESTING_FR.md"])
+    def test_the_versions_run_downwards(self, rel):
+        """A row inserted at the wrong anchor lands out of order and reads as a
+        gap in the history. Cheap to check, and it catches a lost row too."""
+        text = (_ROOT / rel).read_text(encoding="utf-8")
+        found = re.findall(r"^\| v(\d+)\.(\d+)\.(\d+) \| \d+ \|", text, re.M)
+        keys = [tuple(int(x) for x in v) for v in found]
+        assert len(keys) >= 30, f"{rel}: only {len(keys)} release rows"
+        assert keys == sorted(keys, reverse=True), (
+            f"{rel}: release rows are not in descending order — "
+            f"first break near {next((a for a, b in zip(keys, sorted(keys, reverse=True)) if a != b), None)}"
         )

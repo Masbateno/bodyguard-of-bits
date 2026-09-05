@@ -289,7 +289,7 @@ Le code reflète les *findings*, pas le score :
 | `1` | `EXIT_WARNINGS` | Avertissements détectés (améliorations suggérées) |
 | `2` | `EXIT_ALERTS` | Alertes détectées — action requise |
 | `3` | `EXIT_ERROR` | Erreur technique (parsing CLI, E/S, interne) |
-| `4` | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N, **ou score en borne supérieure** (v0.16.0) : un check qui n'a pas pu lire son entrée rend l'objectif non vérifiable, et un portail échoue fermé |
+| `4` | `EXIT_TARGET_MISSED` | `--target N` spécifié et score < N, **ou quelque chose n'a pas pu être lu** (v0.16.2, élargi depuis « borne supérieure ») : un score que rien n'a vérifié ne peut pas satisfaire un portail, il échoue fermé |
 
 Notez que `3` est une **erreur technique**, pas un mauvais score : un audit qui
 échoue ne sort jamais en 3. Utilisez `--target N` pour poser un seuil de score en CI.

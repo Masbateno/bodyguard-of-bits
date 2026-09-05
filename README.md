@@ -289,7 +289,7 @@ The code reflects the *findings*, not the score:
 | `1` | `EXIT_WARNINGS` | Warnings detected (improvements suggested) |
 | `2` | `EXIT_ALERTS` | Alerts detected — action required |
 | `3` | `EXIT_ERROR` | Technical error (CLI parsing, IO, internal) |
-| `4` | `EXIT_TARGET_MISSED` | `--target N` specified and score < N, **or the score is an upper bound** (v0.16.0): a check that could not read its input makes the target unverifiable, and a gate fails closed |
+| `4` | `EXIT_TARGET_MISSED` | `--target N` specified and score < N, **or anything could not be read** (v0.16.2, widened from "is an upper bound"): a score nothing verified cannot satisfy a gate, so it fails closed |
 
 Note that `3` is a **technical error**, not a bad score: a failing audit never
 exits 3. Use `--target N` if you want a score threshold to gate CI.
