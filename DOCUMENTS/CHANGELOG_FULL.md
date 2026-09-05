@@ -106,7 +106,7 @@ says what it is worth: `~ 7/10`, three sections degraded, 18 unverified keys,
 and `the score is between 4 and 8` — a span wide enough to tell the operator at
 a glance that this run is barely worth reading.
 
-**Tests** 8282 → **8322**.
+**Tests** 8282 → **8327**.
 
 ---
 

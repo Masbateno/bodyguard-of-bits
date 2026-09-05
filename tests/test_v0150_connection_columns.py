@@ -25,6 +25,7 @@ the example in the function's own docstring) keeps working.
 
 from __future__ import annotations
 
+import re
 import subprocess
 
 import pytest
@@ -128,6 +129,24 @@ class TestTheIPv6ColumnForm:
 
 
 class TestAgainstTheLiveCommand:
+    @staticmethod
+    def _without_zone(column: str) -> str:
+        """Drop the ``%iface`` scope ``ss`` prints on a scoped address.
+
+        v0.16.2 — this assertion used to demand a byte-exact round-trip, which
+        the parser never promised: ``split_ss_address`` extracts the zone and
+        ``_parse_connections`` deliberately discards it, because none of the
+        verdicts here depend on which interface an address is scoped to.
+
+        So the test failed only while a scoped connection happened to exist —
+        a VPN link printing ``100.64.100.6%tun0:41076`` — and passed the rest
+        of the time. Found on the eve of tagging v0.16.2, in a full-suite run,
+        having passed three runs in a row before and after. A live-system
+        assertion that is wrong about the contract does not fail honestly: it
+        waits for the right host state, which is the worst kind of red.
+        """
+        return re.sub(r"%[^\]:]+", "", column)
+
     @pytest.mark.skipif(
         subprocess.run(["which", "ss"], capture_output=True).returncode != 0,
         reason="ss not installed")
@@ -141,8 +160,36 @@ class TestAgainstTheLiveCommand:
             f"ss printed {len(rows)} connections, the parser produced {len(parsed)}"
         for conn, line in zip(parsed, rows):
             cols = line.split()
-            assert _as_ss_column(conn.local_addr, conn.local_port) == cols[2]
-            assert _as_ss_column(conn.remote_addr, conn.remote_port) == cols[3]
+            assert _as_ss_column(conn.local_addr, conn.local_port) == self._without_zone(cols[2])
+            assert _as_ss_column(conn.remote_addr, conn.remote_port) == self._without_zone(cols[3])
+
+
+class TestAScopedAddressIsParsedWithoutItsZone:
+    """The deterministic twin of the live check above.
+
+    A live assertion only fires when the host happens to be in the right
+    state; this one states the contract outright, so the behaviour is pinned
+    whether or not a VPN is up when the suite runs.
+    """
+
+    @pytest.mark.parametrize("column,addr,port", [
+        ("100.64.100.6%tun0:41076", "100.64.100.6", 41076),   # IPv4 over a tunnel
+        ("[fe80::1%eth0]:22",       "fe80::1",      22),       # IPv6 link-local
+        ("192.168.1.5:443",         "192.168.1.5",  443),      # unscoped, unchanged
+        ("[::1]:5432",              "::1",          5432),     # IPv6 loopback
+    ])
+    def test_the_zone_is_dropped_and_the_address_survives(self, column, addr, port):
+        out = ("Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n"
+               f"0      0      {column}    3.220.254.12:443")
+        conn = _parse_connections(out)[0]
+        assert (conn.local_addr, conn.local_port) == (addr, port)
+        assert (conn.remote_addr, conn.remote_port) == ("3.220.254.12", 443)
+
+    def test_a_scoped_connection_is_not_dropped(self):
+        """Polarity: discarding the zone must not discard the connection."""
+        out = ("Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n"
+               "0      0      100.64.100.6%tun0:41076    3.220.254.12:443")
+        assert len(_parse_connections(out)) == 1
 
 
 class TestTheSensitivePortFindingCanFire:

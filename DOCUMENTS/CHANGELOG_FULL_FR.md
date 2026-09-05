@@ -118,7 +118,7 @@ complet qui dit ce qu'il vaut : `~ 7/10`, trois sections dégradées, 18 clés n
 vérifiées, et « le score est entre 4 et 8 » — un intervalle assez large pour
 dire d'un coup d'œil que cette exécution ne vaut pas grand-chose.
 
-**Tests** 8282 → **8322**.
+**Tests** 8282 → **8327**.
 
 ---
 
