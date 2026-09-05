@@ -602,7 +602,7 @@ class TestBuildScriptContent:
         assert 'export AUDIT_EMAIL=' in script
         assert 'export AUDIT_LOG=' in script
 
-    def test_pythonpath_export_avoids_trailing_colon(self):
+    def test_pythonpath_export_avoids_trailing_colon(self, monkeypatch):
         """M-3 (v0.7.4): the generated PYTHONPATH export must NOT produce
         ``PATH:`` (with a trailing colon) when ``$PYTHONPATH`` is unset.
 
@@ -611,7 +611,17 @@ class TestBuildScriptContent:
         Python interprets the trailing colon as "also search CWD" — a
         long-standing footgun (root's CWD becomes /root/, so anything
         in /root/foo.py shadows stdlib).
+
+        v0.16.2 made the export conditional — it is written only when a clean
+        interpreter cannot import ``bob`` on its own — so the probe is forced
+        here rather than left to the host. Unforced, this test passed on a
+        working checkout (where ``bob`` is not installed, so the line is
+        emitted) and failed on CI (where it is pip-installed, so it is not):
+        an assertion whose outcome depends on how the runner was provisioned.
         """
+        import bob.cron._io as _io
+
+        monkeypatch.setattr(_io, "_needs_pythonpath", lambda: True)
         script = build_script_content("a@b.c", "/var/log/bob")
         # The fix uses ``${PYTHONPATH:+:$PYTHONPATH}`` which expands to
         # an empty string when PYTHONPATH is unset, and to ``:value`` when set.
@@ -622,6 +632,24 @@ class TestBuildScriptContent:
         ) or ':"$PYTHONPATH"' not in script
         # The safe pattern (must appear):
         assert '${PYTHONPATH:+:$PYTHONPATH}' in script
+
+    def test_the_export_is_omitted_when_the_package_is_importable(self, monkeypatch):
+        """The polarity twin, and the point of v0.16.2's change.
+
+        Emitted unconditionally, the line put whatever tree ``--install-cron``
+        ran from onto the cron job's path — so a wizard run from a git checkout
+        sent uncommitted edits to the nightly audit, silently, for ever.
+        """
+        import bob.cron._io as _io
+
+        monkeypatch.setattr(_io, "_needs_pythonpath", lambda: False)
+        script = build_script_content("a@b.c", "/var/log/bob")
+        assert "export PYTHONPATH=" not in script
+        # The script must still be a script: dropping the line must not eat
+        # the blank line separating the header from the audit command.
+        assert script.startswith("#!/bin/bash")
+        assert "--quiet --detailed" in script
+        assert "RC=$?" in script
 
 
 # ---------------------------------------------------------------------------
