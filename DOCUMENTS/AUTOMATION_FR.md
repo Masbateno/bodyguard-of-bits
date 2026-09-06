@@ -382,28 +382,48 @@ Dans un terminal interactif, une interface TUI curses s'ouvre. Un mode texte de 
 
 L'interface à curseur affiche tous les rapports avec leur date, taille et score. Un graphique d'historique des scores est affiché en haut.
 
-**Navigation et actions :**
+**Le socle commun** — depuis la v0.16.3, tous les écrans curses de BOB
+acceptent la même navigation, et la ligne en bas d'écran énumère toujours
+exactement ce que cet écran accepte, dans la langue de l'interface :
 
 | Touche | Action |
 |--------|--------|
-| `↑` / `↓` | Déplacer le curseur |
-| `Entrée` | Prévisualiser le rapport sélectionné (visualiseur scrollable) |
-| `Espace` | Marquer / démarquer un rapport pour suppression |
+| `↑` / `↓` ou `j` / `k` | Déplacer le curseur |
+| `PgUp` / `PgDn` | Page |
+| `g` / `G` | Aller au début / à la fin |
+| `Entrée` | Choisir |
+
+**Les sorties.** `q` quitte, et seulement depuis la **première page** d'un
+assistant — plus profond, `Échap` recule d'un écran et rien ne sort d'un coup :
+une seule touche ne peut pas abandonner un cron à moitié saisi trois écrans
+plus haut.
+
+**`l` bascule la langue de l'interface**, sur les premières pages uniquement.
+Cette touche existe parce que ces assistants tournent sous `sudo`, qui
+réinitialise l'environnement : un opérateur dont le shell est en français peut
+atterrir dans un assistant anglais sans l'avoir choisi. L'indication nomme la
+langue vers laquelle on va — `l Français` en anglais, `l English` en français —
+et tout l'écran bascule à chaud.
+
+**Ce que cet écran ajoute :**
+
+| Touche | Action |
+|--------|--------|
+| `Espace` | Marquer / démarquer un rapport pour suppression (les lignes marquées sont en rouge) |
 | `a` | Marquer tous les rapports |
 | `d` | Supprimer les rapports marqués (confirmation requise) |
-| `u` | Démarquer tout |
+| `u` | Démarquer tout — affiché seulement une fois quelque chose de marqué |
 | `c` | Changer l'emplacement de stockage |
-| `q` | Quitter |
 
 ### Visualiseur de rapport
 
-Appuyer sur `Entrée` sur un rapport ouvre un visualiseur scrollable en lecture seule :
+Appuyer sur `Entrée` sur un rapport ouvre un visualiseur scrollable en lecture
+seule. C'est un écran imbriqué : `Échap` revient à la liste, et `q` ne quitte
+pas :
 
 | Touche | Action |
 |--------|--------|
-| `↑` / `↓` / `PgUp` / `PgDn` | Faire défiler |
-| `g` | Aller en haut |
-| `G` | Aller en bas |
+| `↑` / `↓` / `j` / `k` / `PgUp` / `PgDn` / `g` / `G` | Faire défiler (le socle commun) |
 | `s` | Basculer entre log complet et vue résumé (score + findings ALERT/WARN uniquement) |
 | `Échap` | Revenir à la liste des rapports |
 

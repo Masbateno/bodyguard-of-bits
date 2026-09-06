@@ -173,7 +173,7 @@ Le texte de référence complet est montré en mode `--verbose`.
 ## --explain
 
 ```
-bob --explain                     # TUI interactif — naviguez avec ↑↓, Entrée pour voir
+bob --explain                     # TUI interactif — ↑↓/jk PgUp/PgDn g/G pour naviguer, Entrée pour voir, l pour la langue
 bob --explain ssh.password_auth   # consultation directe
 bob --explain list                # lister toutes les clés explicables
 ```

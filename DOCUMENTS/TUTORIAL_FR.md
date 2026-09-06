@@ -98,7 +98,7 @@ Tu peux lister chaque clé explainable :
 
 ```bash
 bob --explain list                          # 187 clés en v0.15.x
-bob --explain                               # picker interactif (↑↓ naviguer, Enter voir, q quitter)
+bob --explain                               # picker interactif (↑↓/jk, PgUp/PgDn, g/G, Entrée, l langue, q quitter)
 ```
 
 La tab-completion sur `bob --explain <TAB>` suggère les clés canoniques.

@@ -98,7 +98,7 @@ You can list every explainable key :
 
 ```bash
 bob --explain list                          # 187 keys at v0.15.x
-bob --explain                               # interactive picker (↑↓ navigate, Enter view, q quit)
+bob --explain                               # interactive picker (↑↓/jk, PgUp/PgDn, g/G, Enter, l language, q quit)
 ```
 
 Tab-completion on `bob --explain <TAB>` suggests canonical keys.

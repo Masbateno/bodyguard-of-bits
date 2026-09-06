@@ -898,7 +898,7 @@
       "show_ignored": "Display suppressed findings in grey alongside normal output",
       "history": "Display score history sparkline (last 10 audits) and exit",
       "explain": "Interactive explain picker, or explain a specific key",
-      "explain_interactive": "(interactive — ↑↓ navigate, Enter view, q quit)",
+      "explain_interactive": "(interactive — arrows/jk, PgUp/PgDn, g/G, l, q)",
       "explain_list": "(list all keys)",
       "explain_key": "(explain a key)",
       "version": "Show version and exit",

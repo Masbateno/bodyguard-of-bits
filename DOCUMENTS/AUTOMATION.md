@@ -381,28 +381,45 @@ In an interactive terminal, a full curses TUI opens. A plain text fallback is us
 
 The cursor-based interface shows all reports with their date, size and score. A score history chart is displayed at the top.
 
-**Navigation and actions:**
+**The shared floor** — since v0.16.3 every curses screen in BOB accepts the
+same navigation, and the line at the bottom of the screen always lists exactly
+what that screen accepts, in the interface language:
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` | Move cursor |
-| `Enter` | Preview the selected report (scrollable viewer) |
-| `Space` | Mark / unmark report for deletion |
+| `↑` / `↓` or `j` / `k` | Move cursor |
+| `PgUp` / `PgDn` | Page |
+| `g` / `G` | Jump to top / bottom |
+| `Enter` | Select |
+
+**Exits.** `q` quits, and only from a wizard's **first page** — deeper in, `Esc`
+steps back one screen and nothing leaves outright, so a single keystroke cannot
+abandon a half-entered cron job from three screens down.
+
+**`l` switches the interface language**, on first pages only. It exists because
+these wizards run under `sudo` and sudo resets the environment: an operator
+whose shell is French can land in an English wizard through no choice of their
+own. The hint names the language it switches *to* — `l Français` in English,
+`l English` in French — and the whole screen flips live.
+
+**What this screen adds:**
+
+| Key | Action |
+|-----|--------|
+| `Space` | Mark / unmark report for deletion (marked rows read red) |
 | `a` | Mark all reports |
 | `d` | Delete marked reports (confirmation required) |
-| `u` | Unmark all |
+| `u` | Unmark all — shown only once something is marked |
 | `c` | Change storage location |
-| `q` | Quit |
 
 ### Report preview viewer
 
-Pressing `Enter` on a report opens a scrollable read-only viewer:
+Pressing `Enter` on a report opens a scrollable read-only viewer. It is a
+nested screen, so `Esc` returns to the list and `q` does not quit:
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` / `PgUp` / `PgDn` | Scroll |
-| `g` | Go to top |
-| `G` | Go to bottom |
+| `↑` / `↓` / `j` / `k` / `PgUp` / `PgDn` / `g` / `G` | Scroll (the shared floor) |
 | `s` | Toggle between full log and summary view (score + ALERT/WARN findings only) |
 | `Esc` | Return to report list |
 
