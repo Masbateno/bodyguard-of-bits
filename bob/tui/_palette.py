@@ -68,3 +68,24 @@ def init_palette(curses, *, notice: "int | None" = None) -> bool:
     except curses.error:
         return False
     return True
+
+def marked_attr(curses, has_color: bool) -> int:
+    """How a row the operator has toggled with Space is drawn.
+
+    v0.16.3 — one answer, because there were four. ``--manage-logs`` drew a
+    marked file in red bold; ``--manage-cron`` drew it yellow, which is the
+    accent colour used for headers; and the two e-mail screens drew it in no
+    colour at all, leaving only a ✔ to carry the state. A mark is a pending
+    destructive selection on three of those four screens, so it reads red
+    everywhere now.
+
+    ``NOTICE`` is red on every screen except ``--explain``'s detail heading,
+    and ``--explain`` has nothing to toggle. Where a screen also colours a
+    property with the same pair — ``--manage-cron`` marks legacy entries — the
+    mark stays bold and the property plain, so the two remain distinct.
+
+    Without colour the row is underlined, which is what ``--manage-logs`` has
+    always done and the only distinction a monochrome terminal has left once
+    reverse video is spent on the cursor.
+    """
+    return (curses.color_pair(NOTICE) | curses.A_BOLD) if has_color else curses.A_UNDERLINE

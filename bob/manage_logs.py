@@ -17,6 +17,7 @@ from pathlib import Path
 # v0.16.3 — safe at module level: bob/tui/__init__.py is a docstring and
 # _keys.py never imports curses, so a headless build stays importable.
 from bob.tui import _keys
+from bob.tui._palette import marked_attr
 from bob._tty import read_line as _rl
 
 # ---------------------------------------------------------------------------
@@ -866,7 +867,7 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
                 if is_cursor:
                     attr = (curses.color_pair(1) | curses.A_BOLD) if has_color else curses.A_REVERSE
                 elif is_marked:
-                    attr = (curses.color_pair(4) | curses.A_BOLD) if has_color else curses.A_UNDERLINE
+                    attr = marked_attr(curses, has_color)
                 else:
                     attr = curses.color_pair(3) if has_color else 0
 

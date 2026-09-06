@@ -64,7 +64,25 @@ which; `q` and `l` ride together; every glyph has a binding and every binding
 has a glyph; and every action round-trips through `resolve`. Two of those
 guards were inert when first written and were repaired before shipping.
 
-**Tests** 8328 → **8454**.
+
+**Three follow-ups from a read of the harmonised screens.** A toggled row was
+red bold in `--manage-logs`, yellow in `--manage-cron` and uncoloured in both
+e-mail screens, where only a ✔ carried the state; on three of those four a mark
+is a pending destructive selection, so it reads red everywhere now, from one
+`marked_attr` in the palette. `--manage-cron` dispatched Space, `a` and `m`
+while declaring none of them — it marked entries, selected them all and opened
+the address book without ever saying so — and the address book itself
+dispatched `a` undeclared. Both were found by a new guard written for exactly
+that direction: an action a screen acts on must be one it advertises, the
+mirror of the check that an advertised key does something. Its first version
+compared double-quoted literals against `ast.unparse` output, which normalises
+to single quotes, so it matched nothing and reported a clean bill on a screen
+dispatching three undeclared keys; the repaired version found the fourth.
+
+`Esc back` now appears on all nine nested screens. It appears on none of the
+four landing pages, and that is the whole of the exception: a wizard's first
+page has nowhere to go back to, and its `q` is the way out.
+**Tests** 8328 → **8470**.
 
 ---
 

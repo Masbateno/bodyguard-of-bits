@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from bob.tui import _keys
+from bob.tui._palette import marked_attr
 from datetime import datetime
 from enum import IntEnum
 from typing import NamedTuple
@@ -84,11 +85,27 @@ _SCHEDULE_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
 _CONFIRM_KEYS  = (_keys.CONFIRM,) + _keys.NESTED_EXIT
 _INPUT_KEYS    = _keys.NESTED_EXIT
 _EMAIL_KEYS    = _keys.NAVIGATION + (_keys.TOGGLE, _keys.NEW, _keys.SELECT) + _keys.NESTED_EXIT
-_STORE_KEYS    = _keys.NAVIGATION + (_keys.TOGGLE, _keys.NEW, _keys.DELETE) + _keys.NESTED_EXIT
+_STORE_KEYS    = _keys.NAVIGATION + (
+    _keys.TOGGLE, _keys.ALL, _keys.NEW, _keys.DELETE,
+) + _keys.NESTED_EXIT
 _EDIT_KEYS     = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
 _CHOICE_KEYS   = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
 _LANDING_KEYS  = (_keys.CREATE,) + _keys.LANDING_EXIT
-_MANAGE_KEYS   = _keys.NAVIGATION + (_keys.SELECT, _keys.DELETE) + _keys.LANDING_EXIT
+# Space marks an entry for deletion here exactly as it does in
+# --manage-logs; v0.16.3 shipped the dispatch without the hint, so the
+# screen did something it never advertised.
+_MANAGE_KEYS   = _keys.NAVIGATION + (
+    _keys.SELECT, _keys.TOGGLE, _keys.ALL, _keys.DELETE, _keys.BOOK,
+) + _keys.LANDING_EXIT
+
+
+def _with_unmark(actions, n_sel: int):
+    """Insert UNMARK before the exit actions when something is marked."""
+    if not n_sel:
+        return actions
+    head = tuple(a for a in actions if a not in _keys.LANDING_EXIT)
+    tail = tuple(a for a in actions if a in _keys.LANDING_EXIT)
+    return head + (_keys.UNMARK,) + tail
 
 
 def _draw_footer(stdscr, t, actions, has_color: bool) -> None:
@@ -432,11 +449,16 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
                 if idx >= n:
                     break
                 addr = saved[idx]
-                mark = "✔ " if addr in selected else "  "
+                _is_marked = addr in selected
+                mark = "✔ " if _is_marked else "  "
                 line = f"  {mark}{addr}"
                 is_cur = (idx == cursor)
-                attr = (_c.color_pair(1) | _c.A_BOLD) if (is_cur and has_color) else (
-                    _c.A_REVERSE if is_cur else _c.A_NORMAL)
+                if is_cur:
+                    attr = (_c.color_pair(1) | _c.A_BOLD) if has_color else _c.A_REVERSE
+                elif _is_marked:
+                    attr = marked_attr(_c, has_color)
+                else:
+                    attr = _c.A_NORMAL
                 _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
 
         # v0.16.3 — a transient message when there is one, otherwise the
@@ -540,11 +562,16 @@ def _curses_email_store_sub(stdscr, t) -> None:
                 if idx >= n:
                     break
                 addr = emails[idx]
-                mark = "✔ " if idx in marked else "  "
+                _is_marked = idx in marked
+                mark = "✔ " if _is_marked else "  "
                 line = f"  {mark}{addr}"
                 is_cur = (idx == cursor)
-                attr = (_c.color_pair(1) | _c.A_BOLD) if (is_cur and has_color) else (
-                    _c.A_REVERSE if is_cur else _c.A_NORMAL)
+                if is_cur:
+                    attr = (_c.color_pair(1) | _c.A_BOLD) if has_color else _c.A_REVERSE
+                elif _is_marked:
+                    attr = marked_attr(_c, has_color)
+                else:
+                    attr = _c.A_NORMAL
                 _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
 
         if status:
@@ -1005,8 +1032,8 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                     attr = _c.color_pair(1) | _c.A_BOLD
                 elif is_cur:
                     attr = _c.A_REVERSE
-                elif is_marked and has_color:
-                    attr = _c.color_pair(2)
+                elif is_marked:
+                    attr = marked_attr(_c, has_color)
                 elif entry.legacy and has_color:
                     attr = _c.color_pair(4)
                 else:
@@ -1026,9 +1053,10 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             _draw(stdscr, h - 1, 0, f"  {status}"[:w - 1].ljust(w - 1), ftr_attr)
             status = ""
         else:
-            _draw_footer(stdscr, t,
-                         _MANAGE_KEYS + ((_keys.UNMARK,) if n_sel else ()),
-                         has_color)
+            # UNMARK slots in before the exit actions: q and l close the line
+            # on every screen, and an action appearing after them reads as an
+            # afterthought rather than part of the set.
+            _draw_footer(stdscr, t, _with_unmark(_MANAGE_KEYS, n_sel), has_color)
 
         stdscr.refresh()
 

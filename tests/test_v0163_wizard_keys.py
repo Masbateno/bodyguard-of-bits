@@ -290,3 +290,149 @@ class TestTheContractIsInternallyConsistent:
         import curses
 
         assert _keys.resolve(curses, ord("z"), _keys.NAVIGATION) is None
+
+#: Which declared set belongs to which screen function. Needed because the
+#: reverse check below reads a function body and must know what that screen
+#: promised.
+_SCREEN_OF = {
+    "bob/tui/cron.py::_run_manage_cron_curses":   "bob.tui.cron._MANAGE_KEYS",
+    "bob/tui/cron.py::_curses_email_list_sub":    "bob.tui.cron._EMAIL_KEYS",
+    "bob/tui/cron.py::_curses_email_store_sub":   "bob.tui.cron._STORE_KEYS",
+    "bob/manage_logs.py::_run_manage_logs_curses": "bob.manage_logs._LIST_KEYS",
+    "bob/manage_logs.py::_curses_preview_log":    "bob.manage_logs._PREVIEW_KEYS",
+    "bob/explain.py::_picker":                    "bob.explain._PICKER_KEYS",
+    "bob/explain.py::_detail_screen":             "bob.explain._DETAIL_KEYS",
+}
+
+
+class TestAScreenNeverActsOnAKeyItDoesNotAdvertise:
+    """The mirror of "an advertised key does something", and the one that was
+    missing: ``--manage-cron`` dispatched Space, ``a`` and ``m`` while
+    declaring none of them, so the screen marked entries, selected them all and
+    opened the address book without ever saying so. A key that works in secret
+    is discoverable only by reading the source.
+    """
+
+    #: The literal a dispatch uses, per action. Only actions whose key is a
+    #: plain character are checked — the arrows and Enter are shared by every
+    #: screen and carry no per-screen meaning.
+    #: Written with single quotes because ``ast.unparse`` normalises string
+    #: literals to them — the first version of this table used double quotes,
+    #: matched nothing, and reported a clean bill on a screen dispatching three
+    #: undeclared keys.
+    _LITERALS = {
+        "ord(' ')": _keys.TOGGLE,
+        "ord('a')": _keys.ALL,
+        "ord('u')": _keys.UNMARK,
+        "ord('d')": _keys.DELETE,
+        "ord('c')": _keys.CHANGE,
+        "ord('s')": _keys.SUMMARY,
+        "ord('m')": _keys.BOOK,
+        "ord('n')": _keys.NEW,
+        "ord('q')": _keys.QUIT,
+        "ord('l')": _keys.LANG,
+    }
+
+    @pytest.mark.parametrize("where", sorted(_SCREEN_OF))
+    def test_every_key_the_screen_handles_is_declared(self, where):
+        rel, fn_name = where.split("::")
+        tree = ast.parse((_ROOT / rel).read_text(encoding="utf-8"))
+        fn = next((n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef) and n.name == fn_name), None)
+        assert fn is not None, f"{where} no longer exists"
+        body = ast.unparse(fn)
+
+        declared = set(_declared_sets()[_SCREEN_OF[where]])
+        # UNMARK is offered only once something is marked; the screen may hold
+        # its dispatch unconditionally, so accept it wherever TOGGLE is.
+        if _keys.TOGGLE in declared:
+            declared.add(_keys.UNMARK)
+
+        undeclared = sorted(
+            action for literal, action in self._LITERALS.items()
+            if literal in body and action not in declared
+        )
+        assert not undeclared, (
+            f"{where} acts on {undeclared} without advertising them — the "
+            "footer is composed from the declared set, so the operator has no "
+            "way to learn these exist"
+        )
+
+    def test_the_sweep_reads_real_functions(self):
+        """Positive control: a typo in the inventory would pass every case."""
+        for where in _SCREEN_OF:
+            rel, fn_name = where.split("::")
+            tree = ast.parse((_ROOT / rel).read_text(encoding="utf-8"))
+            assert any(isinstance(n, ast.FunctionDef) and n.name == fn_name
+                       for n in ast.walk(tree)), where
+
+
+class TestAMarkedRowLooksTheSameEverywhere:
+    """A toggled row was red bold in --manage-logs, yellow in --manage-cron and
+    uncoloured in both e-mail screens. On three of those four a mark is a
+    pending destructive selection."""
+
+    @staticmethod
+    def _marked_branches(rel: str) -> "list[tuple[int, str]]":
+        """Every branch guarded on "this row is marked", with its body.
+
+        AST rather than a line window: the first version of this guard looked
+        three lines around any mention of a mark and flagged the *else*
+        branches beside it — the presence-in-a-neighbourhood pattern that has
+        produced a false report in this project more than once.
+        """
+        tree = ast.parse((_ROOT / rel).read_text(encoding="utf-8"))
+        out = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.If):
+                continue
+            test = ast.unparse(node.test)
+            if not re.search(r"\bis_marked\b|\b_is_marked\b", test):
+                continue
+            out.append((node.lineno, "\n".join(ast.unparse(x) for x in node.body)))
+        return out
+
+    @pytest.mark.parametrize("rel", ["bob/tui/cron.py", "bob/manage_logs.py"])
+    def test_the_sweep_finds_the_marked_branches(self, rel):
+        """Positive control: a guard over nothing passes for ever."""
+        assert self._marked_branches(rel), f"{rel} has no marked-row branch"
+
+    @pytest.mark.parametrize("rel", ["bob/tui/cron.py", "bob/manage_logs.py"])
+    def test_no_screen_colours_a_mark_by_hand(self, rel):
+        offenders = [
+            f"line {ln}: {body.splitlines()[0][:60]}"
+            for ln, body in self._marked_branches(rel)
+            if "color_pair" in body and "marked_attr" not in body
+        ]
+        assert not offenders, (
+            f"{rel} picks the colour for a marked row itself: " + "; ".join(offenders)
+        )
+
+    @pytest.mark.parametrize("rel", ["bob/tui/cron.py", "bob/manage_logs.py"])
+    def test_the_screen_uses_the_shared_attribute(self, rel):
+        assert "marked_attr" in (_ROOT / rel).read_text(encoding="utf-8"), rel
+
+    def test_the_mark_is_red_and_bold_with_colour(self):
+        from bob.tui._palette import NOTICE, marked_attr
+
+        class _C:
+            A_BOLD, A_UNDERLINE = 1 << 8, 1 << 9
+
+            @staticmethod
+            def color_pair(n):
+                return n
+
+        assert marked_attr(_C, True) == (NOTICE | _C.A_BOLD)
+
+    def test_it_falls_back_to_underline_without_colour(self):
+        """Reverse video is spent on the cursor, so a mark needs its own mark."""
+        from bob.tui._palette import marked_attr
+
+        class _C:
+            A_BOLD, A_UNDERLINE = 1 << 8, 1 << 9
+
+            @staticmethod
+            def color_pair(n):
+                return n
+
+        assert marked_attr(_C, False) == _C.A_UNDERLINE

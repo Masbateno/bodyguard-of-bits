@@ -69,7 +69,27 @@ toute liaison a un glyphe ; et chaque action fait l'aller-retour par `resolve`.
 Deux de ces gardes étaient inertes à la première écriture et ont été réparées
 avant livraison.
 
-**Tests** 8328 → **8454**.
+
+**Trois suites, nées d'une relecture des écrans harmonisés.** Une ligne marquée
+était rouge gras dans `--manage-logs`, jaune dans `--manage-cron` et sans
+couleur dans les deux écrans e-mail, où seule une ✔ portait l'état ; sur trois
+de ces quatre écrans une marque est une sélection destructive en attente, elle
+se lit donc rouge partout désormais, depuis un unique `marked_attr` dans la
+charte. `--manage-cron` dispatchait Espace, `a` et `m` sans en déclarer aucun —
+il marquait des entrées, les sélectionnait toutes et ouvrait le carnet
+d'adresses sans jamais le dire — et le carnet lui-même dispatchait `a` sans le
+déclarer. Les deux ont été trouvés par une garde écrite pour exactement ce
+sens : une action sur laquelle un écran agit doit être une action qu'il
+annonce, le miroir de la vérification inverse. Sa première version comparait
+des littéraux entre guillemets doubles à la sortie d'`ast.unparse`, qui les
+normalise en guillemets simples : elle ne correspondait à rien et donnait un
+bulletin de santé propre à un écran dispatchant trois touches non déclarées ;
+la version réparée a trouvé la quatrième.
+
+`Esc retour` figure désormais sur les neuf écrans imbriqués. Il ne figure sur
+aucune des quatre pages de garde, et c'est toute l'exception : la première page
+d'un assistant n'a nulle part où revenir, et son `q` est la sortie.
+**Tests** 8328 → **8470**.
 
 ---
 
