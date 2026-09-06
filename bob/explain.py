@@ -40,6 +40,11 @@ import logging
 import re
 import sys
 
+# v0.16.3 — a top-level import despite bob/tui's "import lazily from non-TUI
+# code" policy, and safe: bob/tui/__init__.py is a docstring and _keys.py
+# deliberately never imports curses (it resolves the constants against a module
+# passed in). A headless bob-core build stays importable.
+from bob.tui import _keys
 from bob.cis_refs import get_cis_ref
 
 logger = logging.getLogger(__name__)
@@ -854,7 +859,12 @@ def _detail_screen(stdscr, key: str, t) -> None:
         stdscr.erase()
 
         # ── header ──────────────────────────────────────────────────────────
-        header = f"  {norm}    " + t("explain.ui.detail_header") + "  "
+        # v0.16.3 — title and progress in the banner, keys in the footer, as on
+        # every other screen. The progress used to sit in the footer with the
+        # words "scroll up" / "top" hardcoded in English, on a screen whose
+        # body is fully translated.
+        _pct = min(100, int(100 * (scroll + body_h) / max(1, len(content))))
+        header = f"  {norm}    {_pct}%  "
         hdr_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
         try:
             stdscr.addstr(0, 0, header.ljust(w - 1)[: w - 1], hdr_attr)
@@ -873,27 +883,34 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 pass
 
         # ── footer ───────────────────────────────────────────────────────────
-        pct    = int(100 * (scroll + body_h) / max(1, len(content)))
-        pct    = min(pct, 100)
-        footer = f"  {pct}%  ({'scroll up' if scroll > 0 else 'top'}) "
-        try:
-            stdscr.addstr(h - 1, 0, footer[: w - 1], curses.A_DIM)
-        except curses.error:
-            pass
+        _ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
+        for _i, _line in enumerate(reversed(_keys.footer_lines(t, _DETAIL_KEYS, w - 2))):
+            try:
+                stdscr.addstr(h - 1 - _i, 0, _line.ljust(w - 1)[: w - 1], _ftr_attr)
+            except curses.error:
+                pass
 
         stdscr.refresh()
 
         ch = stdscr.getch()
-        if ch == 27:                                   # ESC only — q stays in detail
+        action = _keys.resolve(curses, ch, _DETAIL_KEYS)
+        if action == _keys.BACK:                       # nested screen: Esc goes back
             return
-        elif ch == curses.KEY_UP:
-            scroll = max(0, scroll - 1)
-        elif ch == curses.KEY_DOWN:
-            scroll = min(max_scroll, scroll + 1)
-        elif ch == curses.KEY_PPAGE:
-            scroll = max(0, scroll - body_h)
-        elif ch == curses.KEY_NPAGE:
-            scroll = min(max_scroll, scroll + body_h)
+        elif action == _keys.MOVE:
+            scroll = max(0, min(max_scroll, scroll + _keys.direction(curses, ch)))
+        elif action == _keys.PAGE:
+            scroll = max(0, min(max_scroll, scroll + body_h * _keys.direction(curses, ch)))
+        elif action == _keys.EDGE:
+            scroll = 0 if _keys.is_top(ch) else max_scroll
+
+
+#: What the picker accepts. The navigation floor is universal; SELECT and
+#: QUIT are this screen's own — it is a wizard's first page, so ``q`` exits
+#: here and nowhere deeper.
+_PICKER_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.LANDING_EXIT
+
+#: The detail screen is nested, so it goes back rather than quitting.
+_DETAIL_KEYS = _keys.NAVIGATION + _keys.NESTED_EXIT
 
 
 def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
@@ -936,7 +953,13 @@ def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
         stdscr.erase()
 
         # ── header ──────────────────────────────────────────────────────────
-        header = "  " + t("explain.ui.picker_header") + "  "
+        # v0.16.3 — the banner carries the title and the context; the keys live
+        # in the footer, as on every other screen. They used to be merged here,
+        # which is why this wizard advertised a different set from the others.
+        header = "  bob --explain    " + t(
+            "explain.ui.picker_counts",
+            n_keys=len(key_indices), n_groups=len(_EXPLAIN_GROUPS),
+        ) + "  "
         hdr_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
         try:
             stdscr.addstr(0, 0, header.ljust(w - 1)[: w - 1], hdr_attr)
@@ -978,37 +1001,41 @@ def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
                         pass
 
         # ── footer ───────────────────────────────────────────────────────────
-        n_keys = len(key_indices)
-        footer = "  " + t(
-            "explain.ui.picker_footer",
-            n_keys=n_keys,
-            n_groups=len(_EXPLAIN_GROUPS),
-        ) + " "
-        try:
-            stdscr.addstr(h - 1, 0, footer[: w - 1], curses.A_DIM)
-        except curses.error:
-            pass
+        ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
+        for i, line in enumerate(reversed(_keys.footer_lines(t, _PICKER_KEYS, w - 2))):
+            try:
+                stdscr.addstr(h - 1 - i, 0, line.ljust(w - 1)[: w - 1], ftr_attr)
+            except curses.error:
+                pass
 
         stdscr.refresh()
 
         ch = stdscr.getch()
 
-        if ch in (ord("q"), ord("Q")):                 # q / Q → quit (ESC stays in picker)
+        action = _keys.resolve(curses, ch, _PICKER_KEYS)
+        pos = key_indices.index(selected) if selected in key_indices else 0
+
+        if action == _keys.QUIT:                       # landing screen: q exits
             return ("quit", None, selected)
 
-        elif ch == curses.KEY_UP:
-            # Move to the previous selectable item — clamp at first
-            pos = key_indices.index(selected) if selected in key_indices else 0
-            if pos > 0:
-                selected = key_indices[pos - 1]
+        elif action == _keys.LANG:                     # landing screen: l switches
+            _keys.toggle_language()
+            continue
 
-        elif ch == curses.KEY_DOWN:
-            # Move to the next selectable item — clamp at last
-            pos = key_indices.index(selected) if selected in key_indices else 0
-            if pos < len(key_indices) - 1:
-                selected = key_indices[pos + 1]
+        elif action == _keys.MOVE:
+            # Clamped, as before: UP on the first key stays, DOWN on the last stays.
+            pos = max(0, min(len(key_indices) - 1, pos + _keys.direction(curses, ch)))
+            selected = key_indices[pos]
 
-        elif ch in (curses.KEY_ENTER, 10, 13):
+        elif action == _keys.PAGE:
+            step = max(1, list_h) * _keys.direction(curses, ch)
+            pos = max(0, min(len(key_indices) - 1, pos + step))
+            selected = key_indices[pos]
+
+        elif action == _keys.EDGE:
+            selected = key_indices[0 if _keys.is_top(ch) else -1]
+
+        elif action == _keys.SELECT:
             if items[selected][0] == "key":
                 # Show detail screen inside curses, then return to picker
                 _detail_screen(stdscr, items[selected][1], t)

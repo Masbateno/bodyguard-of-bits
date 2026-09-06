@@ -6,6 +6,68 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.16.3] — 2026-09-06
+
+**Five wizards, five key contracts, and a hint line that was English on three of them.**
+
+Each interactive screen invented its own bindings and spelled its own hints out
+beside the dispatch. `--explain` navigated with the arrows alone,
+`--manage-logs` added PgUp/PgDn, the cron screens added `j`/`k`, and none of
+them had `g`/`G`. `Esc` went back on some screens and did nothing on others.
+Two of the three wizards merged the title and the hints into the top banner
+while the third kept a separate footer.
+
+And the hint line itself was translated in `--explain` only. A French operator
+read French content under `↑↓: move   Enter: preview   Spc: mark` — the class
+v0.15.3 closed for `--help` ("it returned English under `--french` since
+v0.1.0"), still open on every screen an operator actually drives.
+
+One floor now, everywhere: `↑↓`/`jk`, `PgUp`/`PgDn`, `g`/`G`, plus `⏎`. Each
+screen declares the actions it accepts once, and both the footer and the
+dispatch derive from that declaration, so the line and the bindings cannot say
+different things. `bob/tui/_keys.py` is to the keys what `_palette.py` is to
+the colours, and for the same reason: the previous arrangement was three copies
+that happened to agree, which is how the palette defect stayed uniform and
+invisible for nine releases.
+
+**`q` exits from a wizard's first page and nowhere else.** Deeper in, `Esc`
+steps back and nothing leaves outright — a single keystroke should not abandon
+a half-entered cron job from three screens down. Six nested screens lost their
+`q`, including the overwrite confirmation that sat at the end of the install
+wizard.
+
+**Screen-specific actions appear only where they do something.** `u unmark all`
+shows up once something is marked and not before; `s summary` only in the log
+preview; `m email book` only in the cron manager. An action with nothing to act
+on is noise on the one line an operator reads to learn the screen.
+
+**And a language switch on every landing page.** These wizards run under
+`sudo`, and sudo resets the environment: an operator whose shell is French can
+land in an English wizard through no choice of their own, with no way out but
+Ctrl-C and a re-run with `--french`. `l` now flips the whole screen live —
+banner, footer and body — because the `t` every screen holds is
+`bob.i18n.t`, a module function reading a module global, so re-initialising
+swaps everything on the next redraw with no plumbing at all. The label names
+the language it switches *to*: `l Français` in English, `l English` in French.
+Where a config is in scope its `lang` follows, so `--install-cron`'s language
+screen cannot end up contradicting the display it is drawn on.
+
+Along the way the harmonisation surfaced English literals the wizards had been
+carrying for releases: `[FULL]`/`[SUMMARY]`, `line 1–20 / 340`, `scroll up`,
+`Confirm deletion below`, `Email address book`, `Install cron`, `Delete X?` —
+all now translated, on screens whose bodies always had been.
+
+Guarded in six directions, each mutation-tested with a negative control: no
+screen may write its own hints; every list declares all three navigation
+actions; a screen is a landing screen or a nested one and the inventory says
+which; `q` and `l` ride together; every glyph has a binding and every binding
+has a glyph; and every action round-trips through `resolve`. Two of those
+guards were inert when first written and were repaired before shipping.
+
+**Tests** 8328 → **8454**.
+
+---
+
 ## [v0.16.2] — 2026-09-04
 
 **A ceiling claims a direction, and blindness does not always have one.**

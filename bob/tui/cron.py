@@ -12,6 +12,7 @@ Plain-text flows and core data types live in bob.cron.
 from __future__ import annotations
 
 import re
+from bob.tui import _keys
 from datetime import datetime
 from enum import IntEnum
 from typing import NamedTuple
@@ -69,6 +70,41 @@ class _WizardEntry(NamedTuple):
     hour: int = 3
     minute: int = 0
     time_simple: bool = True
+
+
+# ---------------------------------------------------------------------------
+# What each screen accepts. Declared once per screen; the footer and the
+# dispatch are both derived from it, so they cannot disagree.
+#
+# ``q`` and ``l`` appear only on a wizard's first page: deeper in, Esc steps
+# back and nothing leaves outright, so one keystroke cannot abandon a
+# half-entered cron job from three screens down.
+# ---------------------------------------------------------------------------
+_SCHEDULE_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
+_CONFIRM_KEYS  = (_keys.CONFIRM,) + _keys.NESTED_EXIT
+_INPUT_KEYS    = _keys.NESTED_EXIT
+_EMAIL_KEYS    = _keys.NAVIGATION + (_keys.TOGGLE, _keys.NEW, _keys.SELECT) + _keys.NESTED_EXIT
+_STORE_KEYS    = _keys.NAVIGATION + (_keys.TOGGLE, _keys.NEW, _keys.DELETE) + _keys.NESTED_EXIT
+_EDIT_KEYS     = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
+_CHOICE_KEYS   = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
+_LANDING_KEYS  = (_keys.CREATE,) + _keys.LANDING_EXIT
+_MANAGE_KEYS   = _keys.NAVIGATION + (_keys.SELECT, _keys.DELETE) + _keys.LANDING_EXIT
+
+
+def _draw_footer(stdscr, t, actions, has_color: bool) -> None:
+    """Draw the shared key line, wrapping onto a second row when needed.
+
+    v0.16.3 — every screen used to spell its own hints out in English. They
+    disagreed about which keys existed, and a French operator read French
+    content under an English hint line. Both problems come from one place: the
+    line was written by hand beside the dispatch instead of derived from it.
+    """
+    import curses as _c
+
+    h, w = stdscr.getmaxyx()
+    attr = _c.color_pair(2) if has_color else _c.A_REVERSE
+    for i, line in enumerate(reversed(_keys.footer_lines(t, actions, w - 2))):
+        _draw(stdscr, h - 1 - i, 0, line[:w - 1].ljust(w - 1), attr)
 
 
 def _draw(stdscr, row: int, col: int, text: str, attr: int = 0) -> None:
@@ -191,21 +227,20 @@ def _apply_cron_email_str(entry, new_email: str) -> str:
 # Schedule wizard (shared by install and edit flows)
 # ---------------------------------------------------------------------------
 
-def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit schedule") -> "str | None":
+def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None" = None) -> "str | None":
     """Full schedule wizard inside curses. Returns new cron expression or None."""
     import curses as _c
     has_color = _c.has_colors()
     hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
-    ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
 
     def _hdr(suffix=""):
         h2, w2 = stdscr.getmaxyx()
-        label = f"  {title_prefix}: {entry.name}  {suffix}" if entry else f"  {title_prefix}  {suffix}"
+        _prefix = title_prefix or t("cron_ui.edit_schedule")
+        label = f"  {_prefix}: {entry.name}  {suffix}" if entry else f"  {_prefix}  {suffix}"
         _draw(stdscr, 0, 0, label[:w2 - 1].ljust(w2 - 1), hdr_attr)
 
-    def _ftr(msg="  Esc: back   q: quit"):
-        h2, w2 = stdscr.getmaxyx()
-        _draw(stdscr, h2 - 1, 0, msg[:w2 - 1].ljust(w2 - 1), ftr_attr)
+    def _ftr(actions=_INPUT_KEYS):
+        _draw_footer(stdscr, t, actions, has_color)
 
     # Step 1 — schedule type
     options = [
@@ -224,17 +259,18 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
             is_cur = (i == sel)
             attr = (_c.color_pair(1) | _c.A_BOLD) if (is_cur and has_color) else (_c.A_REVERSE if is_cur else _c.A_NORMAL)
             _draw(stdscr, 4 + i, 2, f"  {i + 1}. {opt}  "[:w - 3], attr)
-        _ftr("  ↑↓: move   Enter: select   Esc: back   q: quit")
+        _ftr(_SCHEDULE_KEYS)
         stdscr.refresh()
         ch_i = _read_key(stdscr)
         if ch_i == 27:
             return None
-        elif ch_i in (ord("q"), ord("Q")):
-            raise _CronQuit()
         elif ch_i in (_c.KEY_UP, ord("k")):
             sel = max(0, sel - 1)
         elif ch_i in (_c.KEY_DOWN, ord("j")):
             sel = min(3, sel + 1)
+        elif ch_i in (_c.KEY_PPAGE, _c.KEY_NPAGE, ord("g"), ord("G")):
+            # Short menu: a page and an edge are the same move.
+            sel = 0 if ch_i in (_c.KEY_PPAGE, ord("g")) else 3
         elif ch_i in (10, 13, _c.KEY_ENTER):
             choice = sel + 1
             break
@@ -338,11 +374,9 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: str = "Edit 
         _hdr()
         _draw(stdscr, 2, 2, t("install_cron.preview", schedule=human))
         _draw(stdscr, 4, 2, t("manage_cron.confirm_update"))
-        _ftr("  y: confirm   Esc: back   q: quit")
+        _ftr(_CONFIRM_KEYS)
         stdscr.refresh()
         ch_i = _read_key(stdscr)
-        if ch_i in (ord("q"), ord("Q")):
-            raise _CronQuit()
         if ch_i in (ord("y"), ord("Y"), 10, 13) or ch_i == _c.KEY_ENTER:
             return schedule_expr
         return None
@@ -383,8 +417,7 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
         h, w = stdscr.getmaxyx()
         body_h = max(1, h - 2)
 
-        hdr = ("  Select notification emails    "
-               "Spc: toggle   n: new   Enter: confirm   Esc: back   q: quit")
+        hdr = f"  {t('cron_ui.select_emails')}    " + t("tui.email_selected", count=len(selected))
         hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
         ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
         _draw(stdscr, 0, 0, hdr[:w - 1].ljust(w - 1), hdr_attr)
@@ -406,22 +439,19 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
                     _c.A_REVERSE if is_cur else _c.A_NORMAL)
                 _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
 
+        # v0.16.3 — a transient message when there is one, otherwise the
+        # shared key line. The count belongs in the banner: it is context.
         if status:
-            footer = f"  {status}"
+            _draw(stdscr, h - 1, 0, f"  {status}"[:w - 1].ljust(w - 1), ftr_attr)
             status = ""
-        elif selected:
-            footer = f"  {len(selected)} selected — Enter: confirm"
         else:
-            footer = "  0 selected — n: add email   Enter: no email"
-        _draw(stdscr, h - 1, 0, footer[:w - 1].ljust(w - 1), ftr_attr)
+            _draw_footer(stdscr, t, _EMAIL_KEYS, has_color)
 
         stdscr.refresh()
         ch_i = _read_key(stdscr)
 
         if ch_i == 27:
             return None
-        elif ch_i in (ord("q"), ord("Q")):
-            raise _CronQuit()
         elif ch_i in (_c.KEY_UP, ord("k")):
             if cursor > 0:
                 cursor -= 1
@@ -432,6 +462,16 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
                 cursor += 1
             if cursor >= scroll + body_h:
                 scroll = cursor - body_h + 1
+        elif ch_i in (_c.KEY_PPAGE, _c.KEY_NPAGE, ord("g"), ord("G")):
+            # v0.16.3 — the footer advertises PgUp/PgDn and g/G on every list,
+            # so every list must honour them. A hint for a key that does
+            # nothing is the defect this release exists to close.
+            if ch_i in (ord("g"), ord("G")):
+                cursor = 0 if ch_i == ord("g") else max(0, n - 1)
+            else:
+                step = body_h if ch_i == _c.KEY_NPAGE else -body_h
+                cursor = max(0, min(n - 1, cursor + step))
+            scroll = max(0, min(cursor, max(0, n - body_h)))
         elif ch_i == ord(" "):
             if 0 <= cursor < n:
                 addr = saved[cursor]
@@ -443,7 +483,7 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
             stdscr.erase()
             h, w = stdscr.getmaxyx()
             _draw(stdscr, 0, 0, "  Add email address".ljust(w - 1), hdr_attr)
-            _draw(stdscr, h - 2, 0, "  Esc: back".ljust(w - 1), ftr_attr)
+            _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
             raw = _curses_readline(stdscr, h - 1, w, "Email")
             if raw and _EMAIL_RE.match(raw.strip()):
                 addr = raw.strip()
@@ -486,11 +526,9 @@ def _curses_email_store_sub(stdscr, t) -> None:
         ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
         n_sel = len(marked)
         if n_sel:
-            hdr = (f"  Email address book    ↑↓: move   Spc: toggle   "
-                   f"d: delete ({n_sel})   u: unmark all   Esc: back")
+            hdr = f"  {t('cron_ui.address_book')}    " + t("tui.email_selected", count=n_sel)
         else:
-            hdr = ("  Email address book    ↑↓: move   Spc: mark   "
-                   "a: all   d: delete   n: add   Esc: back")
+            hdr = f"  {t('cron_ui.address_book')}    " + t("tui.email_count", count=n)
         _draw(stdscr, 0, 0, hdr[:w - 1].ljust(w - 1), hdr_attr)
 
         if not emails:
@@ -510,11 +548,10 @@ def _curses_email_store_sub(stdscr, t) -> None:
                 _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
 
         if status:
-            footer = f"  {status}"
+            _draw(stdscr, h - 1, 0, f"  {status}"[:w - 1].ljust(w - 1), ftr_attr)
             status = ""
         else:
-            footer = f"  {n} email(s)"
-        _draw(stdscr, h - 1, 0, footer[:w - 1].ljust(w - 1), ftr_attr)
+            _draw_footer(stdscr, t, _STORE_KEYS, has_color)
 
         stdscr.refresh()
         ch_i = _read_key(stdscr)
@@ -531,6 +568,16 @@ def _curses_email_store_sub(stdscr, t) -> None:
                 cursor += 1
             if cursor >= scroll + body_h:
                 scroll = cursor - body_h + 1
+        elif ch_i in (_c.KEY_PPAGE, _c.KEY_NPAGE, ord("g"), ord("G")):
+            # v0.16.3 — the footer advertises PgUp/PgDn and g/G on every list,
+            # so every list must honour them. A hint for a key that does
+            # nothing is the defect this release exists to close.
+            if ch_i in (ord("g"), ord("G")):
+                cursor = 0 if ch_i == ord("g") else max(0, n - 1)
+            else:
+                step = body_h if ch_i == _c.KEY_NPAGE else -body_h
+                cursor = max(0, min(n - 1, cursor + step))
+            scroll = max(0, min(cursor, max(0, n - body_h)))
         elif ch_i == ord(" "):
             if 0 <= cursor < n:
                 if cursor in marked:
@@ -578,26 +625,26 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
-        ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
-        hdr = f"  Edit: {entry.name}    ↑↓: move   Enter: select   Esc: back   q: quit"
+        hdr = f"  {t('cron_ui.edit', name=entry.name)}"
         _draw(stdscr, 0, 0, hdr[:w - 1].ljust(w - 1), hdr_attr)
         for i, opt in enumerate(options):
             is_cur = (i == sel)
             attr = (_c.color_pair(1) | _c.A_BOLD) if (is_cur and has_color) else (
                 _c.A_REVERSE if is_cur else _c.A_NORMAL)
             _draw(stdscr, 2 + i, 2, f"  {i + 1}. {opt}  "[:w - 3], attr)
-        _draw(stdscr, h - 1, 0, "  Esc: back   q: quit"[:w - 1].ljust(w - 1), ftr_attr)
+        _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
         stdscr.refresh()
         ch_i = _read_key(stdscr)
 
         if ch_i == 27:
             return
-        elif ch_i in (ord("q"), ord("Q")):
-            raise _CronQuit()
         elif ch_i in (_c.KEY_UP, ord("k")):
             sel = max(0, sel - 1)
         elif ch_i in (_c.KEY_DOWN, ord("j")):
             sel = min(1, sel + 1)
+        elif ch_i in (_c.KEY_PPAGE, _c.KEY_NPAGE, ord("g"), ord("G")):
+            # Short menu: a page and an edge are the same move.
+            sel = 0 if ch_i in (_c.KEY_PPAGE, ord("g")) else 1
         elif (
             ch_i in (_c.KEY_ENTER, 10, 13)
             or (ch_i == ord("1") and sel == 0)
@@ -624,7 +671,7 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
 # Curses install wizard
 # ---------------------------------------------------------------------------
 
-def _curses_choice_screen(stdscr, title: str, prompt: str, options: "list[str]",
+def _curses_choice_screen(stdscr, t, title: str, prompt: str, options: "list[str]",
                           selected: int, hint: str = "") -> "int | None":
     """One curses screen, one closed question. Returns index, or None on Esc.
 
@@ -634,7 +681,6 @@ def _curses_choice_screen(stdscr, title: str, prompt: str, options: "list[str]",
     import curses as _c
     has_color = _c.has_colors()
     hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
-    ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
     sel = selected
     while True:
         stdscr.erase()
@@ -647,17 +693,18 @@ def _curses_choice_screen(stdscr, title: str, prompt: str, options: "list[str]",
             _draw(stdscr, 4 + i, 2, f"  {i + 1}. {opt}  "[:w - 3], attr)
         if hint:
             _draw(stdscr, 5 + len(options), 2, hint[:w - 3])
-        _draw(stdscr, h - 1, 0, "  ↑↓: move   Enter: select   Esc: back   q: quit"[:w - 1].ljust(w - 1), ftr_attr)
+        _draw_footer(stdscr, t, _CHOICE_KEYS, has_color)
         stdscr.refresh()
         ch_i = _read_key(stdscr)
         if ch_i == 27:
             return None
-        if ch_i in (ord("q"), ord("Q")):
-            raise _CronQuit()
         if ch_i in (_c.KEY_UP, ord("k")):
             sel = max(0, sel - 1)
         elif ch_i in (_c.KEY_DOWN, ord("j")):
             sel = min(len(options) - 1, sel + 1)
+        elif ch_i in (_c.KEY_PPAGE, _c.KEY_NPAGE, ord("g"), ord("G")):
+            # Short menu: a page and an edge are the same move.
+            sel = 0 if ch_i in (_c.KEY_PPAGE, ord("g")) else len(options) - 1
         elif ch_i in (10, 13, _c.KEY_ENTER):
             return sel
         elif ord("1") <= ch_i <= ord("9"):
@@ -679,7 +726,6 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         pass
     has_color = _c.has_colors()
     hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
-    ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
@@ -715,11 +761,14 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 h, w = stdscr.getmaxyx()
                 _draw(stdscr, 0, 0, "  bob --install-cron".ljust(w - 1), hdr_attr)
                 _draw(stdscr, 2, 2, t("install_cron.landing_prompt"))
-                _draw(stdscr, h - 1, 0, "  Enter: create   q: quit".ljust(w - 1), ftr_attr)
+                _draw_footer(stdscr, t, _LANDING_KEYS, has_color)
                 stdscr.refresh()
                 ch_i = _read_key(stdscr)
                 if ch_i in (ord("q"), ord("Q")):
                     raise _CronQuit()
+                if ch_i in (ord("l"), ord("L")):    # landing: switch language
+                    _keys.toggle_language(config)
+                    continue
                 if ch_i in (10, 13) or ch_i == _c.KEY_ENTER:
                     step = STEP_NAME
 
@@ -741,7 +790,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
             elif step == STEP_SCHEDULE:
                 result = _curses_schedule_wizard(
-                    stdscr, _WizardEntry(raw_name), config, t, title_prefix="Install cron"
+                    stdscr, _WizardEntry(raw_name), config, t, title_prefix=t("cron_ui.install_cron")
                 )
                 if result is None:        # Esc → back to name
                     step = STEP_NAME
@@ -765,7 +814,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
             elif step == STEP_PROFILE:
                 idx = _curses_choice_screen(
-                    stdscr, "bob --install-cron", t("install_cron.prompt_profile"),
+                    stdscr, t, "bob --install-cron", t("install_cron.prompt_profile"),
                     [t(f"install_cron.profile.{p}") for p in CRON_PROFILES],
                     CRON_PROFILES.index(sel_profile),
                     hint=t("install_cron.profile_hint"),
@@ -778,7 +827,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
             elif step == STEP_LANG:
                 idx = _curses_choice_screen(
-                    stdscr, "bob --install-cron", t("install_cron.prompt_lang"),
+                    stdscr, t, "bob --install-cron", t("install_cron.prompt_lang"),
                     [t(f"install_cron.lang.{lang}") for lang in CRON_LANGS],
                     CRON_LANGS.index(sel_lang),
                     hint=t("install_cron.lang_hint"),
@@ -791,7 +840,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
             elif step == STEP_NETWORK:
                 idx = _curses_choice_screen(
-                    stdscr, "bob --install-cron", t("install_cron.prompt_network"),
+                    stdscr, t, "bob --install-cron", t("install_cron.prompt_network"),
                     [t("install_cron.network_online"), t("install_cron.network_offline")],
                     1 if sel_offline else 0,
                 )
@@ -816,11 +865,12 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                     h, w = stdscr.getmaxyx()
                     _draw(stdscr, 0, 0, "  bob --install-cron".ljust(w - 1), hdr_attr)
                     _draw(stdscr, 2, 2, t("install_cron.overwrite", path=str(cron_path)))
-                    _draw(stdscr, h - 1, 0, "  y: overwrite   Esc: back   q: quit".ljust(w - 1), ftr_attr)
+                    _draw_footer(stdscr, t, _CONFIRM_KEYS, has_color)
                     stdscr.refresh()
                     ch_i = _read_key(stdscr)
-                    if ch_i in (ord("q"), ord("Q")):
-                        raise _CronQuit()
+                    # v0.16.3 — no q here: this confirmation is nested three
+                    # screens into the wizard, and one keystroke must not
+                    # abandon everything entered so far. Esc steps back.
                     if ch_i == 27:        # Esc → back to network
                         step = STEP_NETWORK
                         break
@@ -921,15 +971,13 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
         ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
         if confirm_delete:
-            header = "  bob --manage-cron    Confirm deletion below  "
+            header = f"  bob --manage-cron    {t('tui.confirm_below')}"
         elif n_sel:
-            header = (f"  bob --manage-cron    "
-                      f"↑↓: move   Spc: toggle   a: all   u: unmark   "
-                      f"d: delete ({n_sel})   q: quit")
+            header = ("  bob --manage-cron    "
+                      + t("tui.cron_selected", count=n_sel, total=n))
         else:
             header = ("  bob --manage-cron    "
-                      "↑↓: move   Spc: toggle   Enter: edit   d: delete   "
-                      "m: email book   q: quit")
+                      + t("tui.cron_count", count=n))
         _draw(stdscr, 0, 0, header[:w - 1].ljust(w - 1), hdr_attr)
 
         # ── Body ─────────────────────────────────────────────────────────────
@@ -966,17 +1014,21 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                 _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
 
         # ── Footer ───────────────────────────────────────────────────────────
+        # v0.16.3 — transient message, else the shared key line. The counts
+        # moved to the banner; the confirm prompt keeps the footer because it
+        # is a question, and its keys are the CONFIRM set.
         if confirm_delete:
             names = ", ".join(e.name for e in pending_delete)
-            footer = f"  Delete {names[:w - 30]}?   y: confirm   any key: cancel"
+            _draw(stdscr, h - 1, 0,
+                  f"  {t('tui.confirm_delete', names=names[:w - 30])}"[:w - 1].ljust(w - 1),
+                  ftr_attr)
         elif status:
-            footer = f"  {status}"
+            _draw(stdscr, h - 1, 0, f"  {status}"[:w - 1].ljust(w - 1), ftr_attr)
             status = ""
-        elif n_sel:
-            footer = f"  {n_sel} selected — d: delete selected   u: unmark all"
         else:
-            footer = f"  {n} cron job(s)"
-        _draw(stdscr, h - 1, 0, footer[:w - 1].ljust(w - 1), ftr_attr)
+            _draw_footer(stdscr, t,
+                         _MANAGE_KEYS + ((_keys.UNMARK,) if n_sel else ()),
+                         has_color)
 
         stdscr.refresh()
 
@@ -1016,6 +1068,16 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                 cursor += 1
             if cursor >= scroll + body_h:
                 scroll = cursor - body_h + 1
+        elif ch in (_c.KEY_PPAGE, _c.KEY_NPAGE, ord("g"), ord("G")):
+            # v0.16.3 — the footer advertises PgUp/PgDn and g/G on every list,
+            # so every list must honour them. A hint for a key that does
+            # nothing is the defect this release exists to close.
+            if ch in (ord("g"), ord("G")):
+                cursor = 0 if ch == ord("g") else max(0, n - 1)
+            else:
+                step = body_h if ch == _c.KEY_NPAGE else -body_h
+                cursor = max(0, min(n - 1, cursor + step))
+            scroll = max(0, min(cursor, max(0, n - body_h)))
 
         # ── Selection ────────────────────────────────────────────────────────
         elif ch == ord(" "):
@@ -1049,6 +1111,9 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         elif ch in (ord("m"), ord("M")):
             if not n_sel:
                 _curses_email_store_sub(stdscr, t)
+
+        elif ch in (ord("l"), ord("L")):        # landing: switch language
+            _keys.toggle_language(config)
 
         elif ch in (ord("q"), ord("Q")):
             return 0

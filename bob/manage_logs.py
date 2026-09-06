@@ -14,6 +14,9 @@ import sys
 from datetime import datetime as _dt
 from pathlib import Path
 
+# v0.16.3 — safe at module level: bob/tui/__init__.py is a docstring and
+# _keys.py never imports curses, so a headless build stays importable.
+from bob.tui import _keys
 from bob._tty import read_line as _rl
 
 # ---------------------------------------------------------------------------
@@ -597,6 +600,11 @@ def _extract_summary_view(lines: list[str]) -> list[str]:
     return result if result else ["  (no summary data found)"]
 
 
+#: The log preview is nested under the file list, so Esc goes back and ``q``
+#: does not quit from here.
+_PREVIEW_KEYS = _keys.NAVIGATION + (_keys.SUMMARY,) + _keys.NESTED_EXIT
+
+
 def _curses_preview_log(stdscr, path: "Path", t) -> None:
     """Scrollable read-only viewer for a log file.  Esc returns to list."""
     import curses
@@ -623,11 +631,13 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
 
         stdscr.erase()
 
-        # Top banner
-        mode_tag = "[FULL]" if mode == "full" else "[SUMMARY]"
-        banner = (f"  {path.name}  {mode_tag}   "
-                  f"↑↓ / PgUp/PgDn: scroll   g/G: top/bottom   "
-                  f"s: {'summary' if mode == 'full' else 'full log'}   Esc: back")
+        # Top banner — v0.16.3: title and context only; the keys moved to the
+        # footer, where every other screen puts them. The mode tag and the line
+        # range were English literals on a screen whose body is translated.
+        mode_tag = t("tui.mode_full") if mode == "full" else t("tui.mode_summary")
+        _rng = t("tui.range", first=scroll + 1,
+                 last=min(scroll + body_h, len(lines)), total=len(lines))
+        banner = f"  {path.name}  {mode_tag}   {_rng}"
         try:
             attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
             stdscr.addstr(0, 0, banner.ljust(w - 1)[:w - 1], attr)
@@ -644,36 +654,42 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
             except curses.error:
                 pass
 
-        # Footer
-        total_lines = len(lines)
-        footer = (f"  line {scroll + 1}–{min(scroll + body_h, total_lines)}"
-                  f" / {total_lines}")
-        try:
-            stdscr.addstr(h - 1, 0, footer[:w - 1], curses.A_DIM)
-        except curses.error:
-            pass
+        # Footer — the shared key contract, translated.
+        _ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
+        for _i, _line in enumerate(reversed(_keys.footer_lines(t, _PREVIEW_KEYS, w - 2))):
+            try:
+                stdscr.addstr(h - 1 - _i, 0, _line.ljust(w - 1)[:w - 1], _ftr_attr)
+            except curses.error:
+                pass
 
         stdscr.refresh()
 
         ch = stdscr.getch()
 
-        if ch == 27:                                    # Esc → back
+        action = _keys.resolve(curses, ch, _PREVIEW_KEYS)
+        if action == _keys.BACK:                        # nested screen: Esc goes back
             break
-        elif ch in (ord("s"), ord("S")):               # toggle summary / full
+        elif action == _keys.SUMMARY:                   # toggle summary / full
             mode = "summary" if mode == "full" else "full"
             scroll = 0
-        elif ch == curses.KEY_UP:
-            scroll = max(0, scroll - 1)
-        elif ch == curses.KEY_DOWN:
-            scroll = min(max_scroll, scroll + 1)
-        elif ch == curses.KEY_PPAGE:
-            scroll = max(0, scroll - body_h)
-        elif ch == curses.KEY_NPAGE:
-            scroll = min(max_scroll, scroll + body_h)
-        elif ch in (curses.KEY_HOME, ord("g")):
-            scroll = 0
-        elif ch in (curses.KEY_END, ord("G")):
-            scroll = max_scroll
+        elif action == _keys.MOVE:
+            scroll = max(0, min(max_scroll, scroll + _keys.direction(curses, ch)))
+        elif action == _keys.PAGE:
+            scroll = max(0, min(max_scroll, scroll + body_h * _keys.direction(curses, ch)))
+        elif action == _keys.EDGE:
+            scroll = 0 if _keys.is_top(ch) else max_scroll
+
+
+#: The file list is a wizard's first page: ``q`` exits and ``l`` switches the
+#: language here, and nowhere deeper. UNMARK only appears once something is
+#: marked — an action with nothing to act on is noise on the one line an
+#: operator reads to learn the screen.
+_LIST_KEYS = _keys.NAVIGATION + (
+    _keys.SELECT, _keys.TOGGLE, _keys.ALL, _keys.DELETE, _keys.CHANGE,
+) + _keys.LANDING_EXIT
+_MARKED_KEYS = _keys.NAVIGATION + (
+    _keys.TOGGLE, _keys.DELETE, _keys.UNMARK,
+) + _keys.LANDING_EXIT
 
 
 def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
@@ -777,15 +793,17 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
         # Header
         n_sel = len(marked)
         if confirm_delete:
-            header = "  bob --manage-logs    Confirm deletion below  "
+            header = f"  bob --manage-logs    {t('tui.confirm_below')}"
         elif n_sel:
-            header = (f"  bob --manage-logs    "
-                      f"↑↓: move   Spc: toggle   d: delete ({n_sel})   "
-                      f"u: unmark all   q: quit")
+            # v0.16.3 — the banner names the screen and its state; the keys
+            # are composed in the footer from the actions this screen declares,
+            # so the line and the bindings cannot say different things.
+            header = ("  bob --manage-logs    "
+                      + t("manage_logs.banner_selected",
+                          count=n_sel, total=len(all_logs)))
         else:
             header = ("  bob --manage-logs    "
-                      "↑↓: move   Enter: preview   Spc: mark   a: all   "
-                      "d: delete   c: change dir   q: quit")
+                      + t("manage_logs.banner_total", total=len(all_logs)))
         try:
             banner_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
             stdscr.addstr(0, 0, header.ljust(w - 1)[:w - 1], banner_attr)
@@ -860,22 +878,30 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
                 except curses.error:
                     pass
 
-        # Footer
-        total = len(all_logs)
+        # Footer — v0.16.3: a transient message when there is one, otherwise
+        # the shared key line, composed from the actions this screen declares.
+        # The report count moved to the banner: it is context, not a key.
+        _ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
         if confirm_delete:
-            footer = f"  {t('manage_logs.confirm_prompt', count=len(pending_delete))}"
+            _transient = f"  {t('manage_logs.confirm_prompt', count=len(pending_delete))}"
         elif status:
-            footer = f"  {status}"
+            _transient = f"  {status}"
             status = ""
-        elif n_sel:
-            footer = (f"  {total} report(s)   {n_sel} selected   "
-                      "d: delete selected   u: unmark all")
         else:
-            footer = f"  {total} report(s)"
-        try:
-            stdscr.addstr(h - 1, 0, footer[:w - 1], curses.A_DIM)
-        except curses.error:
-            pass
+            _transient = ""
+
+        if _transient:
+            try:
+                stdscr.addstr(h - 1, 0, _transient.ljust(w - 1)[:w - 1], _ftr_attr)
+            except curses.error:
+                pass
+        else:
+            _actions = _MARKED_KEYS if n_sel else _LIST_KEYS
+            for _i, _line in enumerate(reversed(_keys.footer_lines(t, _actions, w - 2))):
+                try:
+                    stdscr.addstr(h - 1 - _i, 0, _line.ljust(w - 1)[:w - 1], _ftr_attr)
+                except curses.error:
+                    pass
 
         stdscr.refresh()
 
@@ -910,24 +936,25 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
             pending_delete = []
             continue
 
-        if ch in (ord("q"), ord("Q")):
+        _act = _keys.resolve(curses, ch, _MARKED_KEYS if n_sel else _LIST_KEYS)
+        _last = max(0, len(file_indices) - 1)
+
+        if _act == _keys.QUIT:                      # landing screen: q exits
             return 0
 
-        elif ch == curses.KEY_UP:
-            if cursor > 0:
-                cursor -= 1
+        elif _act == _keys.LANG:                    # landing screen: l switches
+            _keys.toggle_language(config)
 
-        elif ch == curses.KEY_DOWN:
-            if cursor < len(file_indices) - 1:
-                cursor += 1
+        elif _act == _keys.MOVE:
+            cursor = max(0, min(_last, cursor + _keys.direction(curses, ch)))
 
-        elif ch == curses.KEY_PPAGE:
-            cursor = max(0, cursor - body_h)
+        elif _act == _keys.PAGE:
+            cursor = max(0, min(_last, cursor + body_h * _keys.direction(curses, ch)))
 
-        elif ch == curses.KEY_NPAGE:
-            cursor = min(max(0, len(file_indices) - 1), cursor + body_h)
+        elif _act == _keys.EDGE:
+            cursor = 0 if _keys.is_top(ch) else _last
 
-        elif ch == ord(" "):
+        elif _act == _keys.TOGGLE:
             if file_indices:
                 log_i = items[file_indices[cursor]][1]
                 if log_i in marked:
@@ -935,13 +962,13 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
                 else:
                     marked.add(log_i)
 
-        elif ch in (ord("a"), ord("A")):
+        elif _act == _keys.ALL:
             marked = set(range(len(all_logs)))
 
-        elif ch in (ord("u"), ord("U")):
+        elif _act == _keys.UNMARK:
             marked.clear()
 
-        elif ch in (ord("d"), ord("D")):
+        elif _act == _keys.DELETE:
             if all_logs:
                 if marked:
                     pending_delete = sorted(marked)
@@ -950,12 +977,12 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
                 if pending_delete:
                     confirm_delete = True
 
-        elif ch in (10, 13, curses.KEY_ENTER):
+        elif _act == _keys.SELECT:
             if file_indices and not n_sel:
                 log_i = items[file_indices[cursor]][1]
                 _curses_preview_log(stdscr, all_logs[log_i], t)
 
-        elif ch in (ord("c"), ord("C")):
+        elif _act == _keys.CHANGE:
             # Inline path input — stays fully inside curses
             new_path_str = _curses_input(
                 stdscr, h - 1, w,

@@ -313,6 +313,8 @@
     "saved": "Location saved: {path}"
   },
   "manage_logs": {
+    "banner_total": "{total} report(s)",
+    "banner_selected": "{count} selected / {total}",
     "title": "REPORT MANAGEMENT",
     "no_dir": "No log location configured. Run first: sudo bob -d",
     "no_logs": "No reports found in {path}",
@@ -338,6 +340,43 @@
     "deleted_multi": "{count} report(s) deleted",
     "invalid": "Unrecognised choice",
     "history_title": "Score history (last {count} audit(s))"
+  },
+  "cron_ui": {
+    "edit_schedule": "Edit schedule",
+    "install_cron": "Install cron",
+    "address_book": "Email address book",
+    "edit": "Edit: {name}",
+    "select_emails": "Select notification emails"
+  },
+  "tui": {
+    "confirm_below": "Confirm deletion below",
+    "confirm_delete": "Delete {names}?",
+    "email_selected": "{count} selected",
+    "email_count": "{count} email(s)",
+    "cron_count": "{count} cron job(s)",
+    "cron_selected": "{count} selected / {total}",
+    "range": "line {first}–{last} / {total}",
+    "mode_full": "[FULL]",
+    "mode_summary": "[SUMMARY]",
+    "keys": {
+      "book": "email book",
+      "lang": "Français",
+      "move": "move",
+      "page": "page",
+      "edge": "top/bottom",
+      "select": "select",
+      "back": "back",
+      "quit": "quit",
+      "toggle": "toggle",
+      "all": "all",
+      "unmark": "unmark all",
+      "delete": "delete",
+      "change": "dir",
+      "summary": "summary",
+      "confirm": "confirm",
+      "new": "new",
+      "create": "create"
+    }
   },
   "install_cron": {
     "title": "BOB CRON SETUP",
@@ -1336,9 +1375,7 @@
       "label_key": "Key",
       "label_title": "Title",
       "label_cis": "CIS",
-      "picker_header": "bob --explain    ↑↓: move   Enter: view   q: quit",
-      "detail_header": "↑↓ / PgUp/PgDn: scroll   Esc: back",
-      "picker_footer": "{n_keys} keys across {n_groups} groups"
+      "picker_counts": "{n_keys} keys across {n_groups} groups"
     },
     "ssh": {
       "password_auth": {

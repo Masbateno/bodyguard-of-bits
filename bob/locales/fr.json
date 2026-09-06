@@ -332,6 +332,8 @@
     "saved": "Emplacement sauvegardé : {path}"
   },
   "manage_logs": {
+    "banner_total": "{total} rapport(s)",
+    "banner_selected": "{count} marqué(s) / {total}",
     "title": "GESTION DES RAPPORTS",
     "no_dir": "Aucun emplacement configuré. Lancez d'abord : sudo bob -d",
     "no_logs": "Aucun rapport trouvé dans {path}",
@@ -357,6 +359,43 @@
     "deleted_multi": "{count} rapport(s) supprimé(s)",
     "invalid": "Choix non reconnu",
     "history_title": "Historique des scores (derniers {count} audit(s))"
+  },
+  "cron_ui": {
+    "edit_schedule": "Modifier la planification",
+    "install_cron": "Installer un cron",
+    "address_book": "Carnet d'adresses",
+    "edit": "Modifier : {name}",
+    "select_emails": "Adresses de notification"
+  },
+  "tui": {
+    "confirm_below": "Confirmer la suppression ci-dessous",
+    "confirm_delete": "Supprimer {names} ?",
+    "email_selected": "{count} sélectionnée(s)",
+    "email_count": "{count} adresse(s)",
+    "cron_count": "{count} tâche(s) cron",
+    "cron_selected": "{count} marquée(s) / {total}",
+    "range": "ligne {first}–{last} / {total}",
+    "mode_full": "[COMPLET]",
+    "mode_summary": "[SYNTHÈSE]",
+    "keys": {
+      "book": "carnet",
+      "lang": "English",
+      "move": "déplacer",
+      "page": "page",
+      "edge": "début/fin",
+      "select": "choisir",
+      "back": "retour",
+      "quit": "quitter",
+      "toggle": "marquer",
+      "all": "tout",
+      "unmark": "tout démarquer",
+      "delete": "supprimer",
+      "change": "dossier",
+      "summary": "synthèse",
+      "confirm": "confirmer",
+      "new": "nouveau",
+      "create": "créer"
+    }
   },
   "install_cron": {
     "title": "INSTALLATION CRON BOB",
@@ -1336,9 +1375,7 @@
       "label_key": "Clé",
       "label_title": "Titre",
       "label_cis": "CIS",
-      "picker_header": "bob --explain    ↑↓ : déplacer   Entrée : afficher   q : quitter",
-      "detail_header": "↑↓ / PgUp/PgDn : défiler   Esc : retour",
-      "picker_footer": "{n_keys} clés réparties dans {n_groups} groupes"
+      "picker_counts": "{n_keys} clés réparties dans {n_groups} groupes"
     },
     "ssh": {
       "password_auth": {

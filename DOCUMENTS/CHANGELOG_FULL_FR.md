@@ -6,6 +6,73 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.16.3] — 06-09-2026
+
+**Cinq assistants, cinq contrats de touches, et une ligne d'aide en anglais sur trois d'entre eux.**
+
+Chaque écran interactif inventait ses propres liaisons et écrivait ses
+indications à la main, à côté du répartiteur. `--explain` naviguait aux seules
+flèches, `--manage-logs` ajoutait PgUp/PgDn, les écrans cron ajoutaient
+`j`/`k`, et aucun n'avait `g`/`G`. `Esc` revenait en arrière sur certains
+écrans et ne faisait rien sur d'autres. Deux assistants sur trois fondaient le
+titre et les indications dans la bannière du haut, le troisième gardait un pied
+de page séparé.
+
+Et cette ligne n'était traduite que dans `--explain`. Un opérateur français
+lisait du contenu français sous `↑↓: move   Enter: preview   Spc: mark` — la
+classe que la v0.15.3 a fermée pour `--help`, restée ouverte sur tous les
+écrans qu'on pilote réellement.
+
+Un socle unique désormais, partout : `↑↓`/`jk`, `PgUp`/`PgDn`, `g`/`G`, plus
+`⏎`. Chaque écran déclare une fois les actions qu'il accepte, et le pied de
+page comme le répartiteur en dérivent — la ligne et les liaisons ne peuvent
+plus dire deux choses différentes. `bob/tui/_keys.py` est aux touches ce que
+`_palette.py` est aux couleurs, et pour la même raison : l'arrangement
+précédent était trois copies qui concordaient par hasard, ce qui est
+exactement comment le défaut de charte est resté uniforme et invisible pendant
+neuf versions.
+
+**`q` ne quitte que depuis la première page d'un assistant.** Plus profond,
+`Esc` recule et rien ne sort d'un coup — une seule touche ne doit pas abandonner
+un cron à moitié saisi trois écrans plus haut. Six écrans imbriqués ont perdu
+leur `q`, dont la confirmation d'écrasement en fin d'assistant d'installation.
+
+**Les actions propres à un écran n'apparaissent que là où elles agissent.**
+`u tout démarquer` n'apparaît qu'une fois quelque chose de marqué ; `s synthèse`
+seulement dans l'aperçu de journal ; `m carnet` seulement dans le gestionnaire
+de cron. Une action sans objet est du bruit sur la seule ligne que l'opérateur
+lit pour comprendre l'écran.
+
+**Et une bascule de langue sur chaque page de garde.** Ces assistants tournent
+sous `sudo`, et sudo réinitialise l'environnement : un opérateur dont le shell
+est en français peut atterrir dans un assistant anglais sans l'avoir choisi,
+sans autre issue qu'un Ctrl-C et une relance avec `--french`. `l` bascule
+désormais tout l'écran à chaud — bannière, pied de page et corps — parce que le
+`t` que tient chaque écran est `bob.i18n.t`, une fonction de module lisant une
+globale : réinitialiser échange tout au redessin suivant, sans aucune
+plomberie. Le libellé nomme la langue vers laquelle on va : `l Français` en
+anglais, `l English` en français. Là où une config est à portée, son `lang`
+suit, pour que l'écran de langue de `--install-cron` ne puisse pas contredire
+l'affichage sur lequel il est dessiné.
+
+En chemin, l'harmonisation a fait sortir des littéraux anglais que les
+assistants portaient depuis des versions : `[FULL]`/`[SUMMARY]`,
+`line 1–20 / 340`, `scroll up`, `Confirm deletion below`, `Email address book`,
+`Install cron`, `Delete X?` — tous traduits désormais, sur des écrans dont le
+corps l'était depuis toujours.
+
+Gardé dans six directions, chacune testée par mutation avec contrôle négatif :
+aucun écran n'écrit ses propres indications ; toute liste déclare les trois
+actions de navigation ; un écran est une page de garde ou un écran imbriqué et
+l'inventaire le dit ; `q` et `l` vont ensemble ; tout glyphe a une liaison et
+toute liaison a un glyphe ; et chaque action fait l'aller-retour par `resolve`.
+Deux de ces gardes étaient inertes à la première écriture et ont été réparées
+avant livraison.
+
+**Tests** 8328 → **8454**.
+
+---
+
 ## [v0.16.2] — 04-09-2026
 
 **Un plafond affirme une direction, et l'aveuglement n'en a pas toujours une.**
