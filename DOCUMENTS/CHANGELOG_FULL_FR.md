@@ -6,9 +6,25 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.16.3] — 06-09-2026
+## [v0.16.3] — 07-09-2026
 
-**Cinq assistants, cinq contrats de touches, et une ligne d'aide en anglais sur trois d'entre eux.**
+**Une ligne d'aide, une note de profil, un manuel de référence — trois affirmations sur BOB, aucune vérifiée contre BOB.**
+
+Huit passes dans cette version, et toutes ont la même forme : une affirmation
+sur BOB que rien ne vérifiait.
+
+Les assistants écrivaient leurs indications de touches à la main, à côté du
+répartiteur, si bien que la ligne et les liaisons pouvaient diverger — et
+divergeaient. `--explain` terminait 32 clés sur « cette découverte s'applique
+de la même manière à tous les profils » alors que trois profils les
+rétrogradaient, parce qu'il demandait si une *traduction* existait et répondait
+à une question de *politique*. `README_TECH.md` portait vingt défauts vérifiés,
+dont une clé JSON renommée trois majeures plus tôt et une commande de tutoriel
+qui sort en 3. Chacune était une affirmation, bien tournée, qu'aucun test ne
+pouvait contredire faute de test qui regarde.
+
+Voici ces passes, dans l'ordre.
+
 
 Chaque écran interactif inventait ses propres liaisons et écrivait ses
 indications à la main, à côté du répartiteur. `--explain` naviguait aux seules

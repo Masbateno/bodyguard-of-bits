@@ -6,9 +6,24 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.16.3] — 2026-09-06
+## [v0.16.3] — 2026-09-07
 
-**Five wizards, five key contracts, and a hint line that was English on three of them.**
+**A hint line, a profile note and a reference manual — three claims about BOB, none checked against BOB.**
+
+Eight passes over this release, and every one of them is the same shape: a
+statement about BOB that nothing verified.
+
+The wizards spelled their key hints out beside the dispatch, so the line and
+the bindings could disagree — and did. `--explain` closed 32 keys with "this
+finding applies equally to all profiles" while three profiles downgraded them,
+because it asked whether a *translation* existed and answered a question about
+*policy*. `README_TECH.md` carried twenty verified defects, including a JSON
+key renamed three majors earlier and a tutorial command that exits 3. Each one
+was a claim, plausibly worded, that no test could contradict because no test
+was looking.
+
+What follows is those passes in order.
+
 
 Each interactive screen invented its own bindings and spelled its own hints out
 beside the dispatch. `--explain` navigated with the arrows alone,

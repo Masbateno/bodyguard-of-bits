@@ -1,5 +1,68 @@
 bodyguard-of-bits (0.16.3-1) UNRELEASED; urgency=low
 
+  * A hint line claims keys, a profile note claims a policy, and a reference
+    manual claims behaviour — none of the three was checked against the code.
+  * Five curses wizards each invented their own bindings and spelled their hints
+    out beside the dispatch, so the line and the bindings could disagree, and
+    the line itself was English on three of them. One key contract now, declared
+    once per screen, with the footer and the dispatch both derived from it.
+  * The bottom of every wizard is an orange key banner under a line reserved for
+    prompts and status. Two screens used to paint over their own key line: the
+    delete confirmation replaced it entirely, and seven cron text prompts were
+    drawn on top of it. Every screen also sized its body one row short whenever
+    the hints wrapped.
+  * --explain closed 32 keys with "this finding applies equally to all profiles"
+    while desktop, workstation and container downgraded them. It tested whether
+    a translation existed and used the answer to claim something about policy.
+    Every differentiated key now accounts for all four profiles, and workstation
+    joins the command after 28 overrides of its own went unmentioned since
+    v0.8.1.
+  * The cron wizards' text prompts were English inside a French wizard, and the
+    name-entry screen showed no key hints at all. Enter was dispatched by every
+    text input and declared by none.
+  * Twenty verified defects in README_TECH, in both locales: a JSON key renamed
+    three majors earlier, a network_context value nothing emits, "--fix proposes
+    and applies" against a dry run, 19 of 43 options and 6 of 38 services with
+    no entry. Everything countable is now guarded.
+  * A tutorial command told the reader to run --explain on a key that has never
+    existed, and exits 3.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 07 Sep 2026 10:00:00 +0200
+
+bodyguard-of-bits (0.16.2-1) UNRELEASED; urgency=low
+
+  * A ceiling claims a direction, and blindness does not always have one. The
+    v0.16.0 ceiling holds while the blinded check's domain is still scored; when
+    the whole domain leaves the average it is the denominator that changes and
+    the score moves unpredictably. Masking /etc/passwd takes it from 7 down to
+    6, so "<= 6" claimed a bound below the truth.
+  * Three score states now, with the span derived from the domain range. The
+    --target gate moved to score_is_uncertain: making the bound honest would
+    otherwise have opened it.
+  * The cron script stopped exporting PYTHONPATH unconditionally — a wizard run
+    from a git checkout had been sending uncommitted edits to the nightly audit.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 04 Sep 2026 20:00:00 +0200
+
+bodyguard-of-bits (0.16.1-1) UNRELEASED; urgency=low
+
+  * Two surfaces of the same claim, and only one was ever exercised. A domain
+    whose input goes unreadable leaves the score average entirely, so masking
+    /etc/passwd took the score from 7 down to 6 with the deductions identical —
+    read against a sighted baseline as a regression on a host where only BOB's
+    eyesight had changed.
+  * load_baseline never restored `unverified`, so the whole --diff visibility
+    protection was dead outside the unit tests, which never round-trip through
+    the file.
+  * --install-cron gained three screens pinning profile, language and network: a
+    scheduled audit was running as root with root's profile. The interactive
+    wizard had crashed since v0.7.0 — a pipe is not a TTY, and every test drove
+    the plain-text path.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 04 Sep 2026 12:00:00 +0200
+
+bodyguard-of-bits (0.16.0-1) UNRELEASED; urgency=low
+
   * The score went up when BOB could see less. It is a sum over the checks that
     ran, and a check unable to read its input made deductions that are unknown,
     not zero: masking /etc/ssh/sshd_config removed four deductions and moved the
