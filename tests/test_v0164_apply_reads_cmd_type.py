@@ -186,3 +186,86 @@ def test_no_editor_command_can_reach_the_apply_path():
         f"these would launch an editor under --fix --apply, with stdin closed "
         f"and a 30-second timeout: {offenders}"
     )
+
+
+class TestTheCountIsAPromiseBobCanKeep:
+    """"N automatic fixes available" was announced before consent, then broken.
+
+    Twelve findings carry shell operators — `ssh.password_auth` among them, the
+    most consequential fix in the tool. They were counted, the operator was
+    told "2 fix(es) will be applied automatically", and every one was refused
+    at execution with "unsafe shell syntax". `0 of 2 fix(es) applied.`
+
+    The refusal was right; its timing was not. Asking whether BOB can run a
+    command belongs where the command is classified, not after the operator
+    has already agreed to all of them.
+    """
+
+    _SHELL = ("sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && echo x "
+              "| sudo tee -a /etc/sysctl.conf")
+
+    def test_a_command_bob_cannot_run_is_not_counted(self):
+        out = _render([_finding("fix", cmd=self._SHELL)], apply_=False)
+        assert "1 automatic" not in out, "counted a fix BOB refuses to run"
+
+    def test_it_is_shown_with_its_command_instead(self):
+        out = _render([_finding("fix", cmd=self._SHELL)], apply_=False)
+        assert "sysctl" in out, "the command vanished from the screen"
+
+    def test_apply_no_longer_promises_then_refuses(self):
+        out = _render([_finding("fix", cmd=self._SHELL)])
+        assert "will be applied automatically" not in out, (
+            "BOB still announces it will apply a command it then refuses"
+        )
+        assert "0 of" not in out, out
+
+    def test_a_runnable_fix_is_still_counted_and_applied(self):
+        """Polarity twin — the point is not to stop applying fixes."""
+        out = _render([_finding("fix", cmd="/bin/true")])
+        assert "Applied" in out and "1 of 1" in out
+
+    @pytest.mark.parametrize("cmd,runnable", [
+        ("sudo ufw enable", True),
+        ("sudo chmod 600 /etc/shadow", True),
+        ("sudo systemctl enable --now fail2ban", True),
+        ("sudo sed -i 's/a/b/' /etc/ssh/sshd_config", True),
+        ("sudo sysctl -w a=1 && echo x | sudo tee -a /etc/sysctl.conf", False),
+        ("du -x -h /var 2>/dev/null | sort -rh", False),
+        ("sudo nano /etc/default/ufw", False),
+        ("sudo /usr/bin/nano /etc/fstab", False),
+        ("sudo vim /etc/fstab", False),
+    ])
+    def test_the_predicate(self, cmd, runnable):
+        from bob.fixes import _can_apply_unattended
+        assert _can_apply_unattended(cmd) is runnable, cmd
+
+    def test_an_editor_is_refused_by_the_predicate_not_by_luck(self):
+        """Three findings offer `sudo nano …`; none is nature=action today.
+
+        That is an accident of classification, and the apply path runs commands
+        with stdin closed on a 30-second timeout — an editor would hang there
+        until killed. The predicate makes it structural.
+        """
+        from bob.fixes import _can_apply_unattended
+        assert not _can_apply_unattended("sudo nano /etc/fail2ban/jail.local")
+
+
+class TestTheHeaderDoesNotSayZeroOverAnUrgentList:
+    """"0 automatic fix(es) available" reads as "nothing to do" to a skimmer."""
+
+    @pytest.mark.parametrize("lang", ["en", "fr"])
+    def test_it_says_what_is_true_instead(self, lang):
+        out = _render([_finding("check", cmd="sudo smartctl -a /dev/sda")],
+                      apply_=False, lang=lang)
+        assert "0 automatic" not in out
+        assert "0 correction" not in out
+
+    @pytest.mark.parametrize("lang", ["en", "fr"])
+    def test_the_box_still_closes(self, lang):
+        """A longer message must not push the border out of the frame."""
+        for findings in ([_finding("check", cmd="sudo smartctl -a /dev/sda")],
+                         [_finding("fix", cmd="/bin/true")],
+                         []):
+            out = _render(findings, apply_=False, lang=lang)
+            widths = {len(line) for line in out.splitlines() if line.startswith("║")}
+            assert len(widths) <= 1, f"{lang}: ragged box {sorted(widths)}"

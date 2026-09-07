@@ -42,6 +42,36 @@ def _print_unapplied(diag_items, manual_items, t, _c) -> None:
             print(f"  • {msg}")
 
 
+#: Commands that need a human at a keyboard. `--fix --apply` runs everything
+#: with stdin closed on a 30-second timeout, so an editor would hang there
+#: until it was killed.
+_INTERACTIVE = ("nano", "vim", "vi", "emacs", "editor", "$EDITOR")
+
+
+def _can_apply_unattended(cmd: str) -> bool:
+    """Whether BOB can actually run *cmd* itself, with nobody watching.
+
+    This used to be asked at execution time, one command after the operator
+    had already agreed to all of them — so the count above the prompt was a
+    promise BOB could not keep. Twelve findings carried shell operators,
+    including `ssh.password_auth`, the most consequential fix in the tool:
+    BOB announced "2 automatic fix(es) available", said "2 will be applied
+    automatically", and then applied `0 of 2`.
+
+    Asking here instead makes the count true before consent is given. The
+    execution-time refusal stays as a second barrier — a command reaching it
+    now means these two disagree, which is worth failing on.
+    """
+    if _has_shell_ops(cmd):
+        return False
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        return False
+    # Match on the basename so an absolute path is caught too.
+    return not any(arg.rsplit("/", 1)[-1] in _INTERACTIVE for arg in argv)
+
+
 def run_fixes(engine, config, t) -> None:
     """Display and optionally apply automatic fixes.
 
@@ -68,9 +98,11 @@ def run_fixes(engine, config, t) -> None:
     """
     actionable   = [f for f in engine.findings if f.nature == "action"]
     auto_items   = [(f.message, f.cmd) for f in actionable
-                    if f.cmd and f.cmd_type == "fix"]
+                    if f.cmd and f.cmd_type == "fix"
+                    and _can_apply_unattended(f.cmd)]
     diag_items   = [(f.message, f.cmd) for f in actionable
-                    if f.cmd and f.cmd_type != "fix"]
+                    if f.cmd and not (f.cmd_type == "fix"
+                                      and _can_apply_unattended(f.cmd))]
     manual_items = [f.message for f in actionable if not f.cmd]
 
     _c = _output._c
@@ -87,10 +119,18 @@ def run_fixes(engine, config, t) -> None:
         pad = W - 6 - len(none_msg)
         print(f"{_c.blue_bold}║{_c.reset}    {none_msg}{' '*max(0,pad)}{_c.blue_bold}║{_c.reset}")
     else:
-        count = len(auto_items)
-        count_msg = t("fixes.count", count=count)
+        # "0 automatic fix(es) available" over a list of urgent findings reads
+        # as "nothing to do here" to anyone skimming. When BOB can apply none
+        # of them, the header says what is actually true: they need a human.
+        if auto_items:
+            count_msg = t("fixes.count", count=len(auto_items))
+            mark = "✔"
+        else:
+            count_msg = t("fixes.count_manual_only",
+                          count=len(diag_items) + len(manual_items))
+            mark = "⚠"
         pad = W - 9 - len(count_msg)
-        print(f"{_c.blue_bold}║{_c.reset}    ✔  {count_msg}{' '*max(0,pad)}{_c.blue_bold}║{_c.reset}")
+        print(f"{_c.blue_bold}║{_c.reset}    {mark}  {count_msg}{' '*max(0,pad)}{_c.blue_bold}║{_c.reset}")
     print(f"{_c.blue_bold}╚{'═'*(W-2)}╝{_c.reset}")
 
     if not auto_items and not diag_items and not manual_items:
@@ -122,7 +162,7 @@ def run_fixes(engine, config, t) -> None:
 
     # ── Apply mode (--fix --apply) ───────────────────────────────────────────
     # Auto-fix mode banner — visible warning so the user knows what's happening
-    if config.yes:
+    if config.yes and sorted_items:
         auto_msg = t("fixes.auto_mode_banner", count=len(sorted_items))
         print(f"{_c.yellow_bold}  ⚠  {auto_msg}{_c.reset}")
         print()
@@ -166,9 +206,10 @@ def run_fixes(engine, config, t) -> None:
             skipped_cmds += 1
         print()
 
-    total = len(sorted_items)
-    applied = len(applied_cmds)
-    print(f"  {t('fixes.done_summary', applied=applied, total=total)}")
+    # "0 of 0 fix(es) applied." under a list BOB never intended to run is
+    # noise that reads like a failure.
+    if sorted_items:
+        print(f"  {t('fixes.done_summary', applied=len(applied_cmds), total=len(sorted_items))}")
 
     # Auto-fix summary — list every command that was applied
     if config.yes and applied_cmds:

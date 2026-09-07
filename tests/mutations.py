@@ -407,8 +407,9 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="apply/executes-a-diagnostic",
         file="bob/fixes.py",
-        old='                    if f.cmd and f.cmd_type == "fix"]',
-        new="                    if f.cmd]",
+        old='                    if f.cmd and f.cmd_type == "fix"\n'
+            "                    and _can_apply_unattended(f.cmd)]",
+        new="                    if f.cmd and _can_apply_unattended(f.cmd)]",
         kills=("tests/test_v0164_apply_reads_cmd_type.py::TestADiagnosticIsNeverApplied",),
         reason="the exact v0.16.3 behaviour: `smartctl -a` on a dying disk "
                "reported as '✔ Applied', and the operator told it was fixed",
@@ -426,9 +427,39 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="apply/a-real-fix-stops-being-applied",
         file="bob/fixes.py",
-        old='                    if f.cmd and f.cmd_type == "fix"]',
-        new='                    if f.cmd and f.cmd_type == "never"]',
+        old='                    if f.cmd and f.cmd_type == "fix"\n'
+            "                    and _can_apply_unattended(f.cmd)]",
+        new='                    if f.cmd and f.cmd_type == "never"\n'
+            "                    and _can_apply_unattended(f.cmd)]",
         kills=("tests/test_v0164_apply_reads_cmd_type.py::TestADiagnosticIsNeverApplied",),
         reason="the polarity twin: excluding diagnostics must not exclude fixes",
+    ),
+
+    Mutation(
+        id="apply/counts-a-fix-it-cannot-run",
+        file="bob/fixes.py",
+        old="                    and _can_apply_unattended(f.cmd)]",
+        new="                    ]",
+        kills=("tests/test_v0164_apply_reads_cmd_type.py::TestTheCountIsAPromiseBobCanKeep",),
+        reason="twelve findings with shell operators announced as automatic "
+               "fixes, then refused one by one — 'ssh.password_auth' among them",
+    ),
+    Mutation(
+        id="apply/editor-passes-the-predicate",
+        file="bob/fixes.py",
+        old='_INTERACTIVE = ("nano", "vim", "vi", "emacs", "editor", "$EDITOR")',
+        new="_INTERACTIVE = ()",
+        kills=("tests/test_v0164_apply_reads_cmd_type.py::TestTheCountIsAPromiseBobCanKeep",),
+        reason="an editor launched with stdin closed on a 30-second timeout "
+               "would hang the apply run until it was killed",
+    ),
+    Mutation(
+        id="apply/header-says-zero-over-an-urgent-list",
+        file="bob/fixes.py",
+        old="        if auto_items:\n            count_msg = t(\"fixes.count\", count=len(auto_items))",
+        new="        if True:\n            count_msg = t(\"fixes.count\", count=len(auto_items))",
+        kills=("tests/test_v0164_apply_reads_cmd_type.py::TestTheHeaderDoesNotSayZeroOverAnUrgentList",),
+        reason="'0 automatic fix(es) available' over four SMART alerts reads "
+               "as 'nothing to do here' to anyone skimming",
     ),
 )

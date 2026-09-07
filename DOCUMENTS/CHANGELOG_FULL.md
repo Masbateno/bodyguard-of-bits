@@ -194,7 +194,30 @@ apply path. That is an accident of classification rather than a design, and
 `--fix --apply` runs commands with stdin closed on a 30-second timeout — an
 editor there would hang until it was killed.
 
-**Tests** 8572 → **8813**.
+The same pass found a larger instance of the same shape. **Twelve findings were
+counted as automatic fixes and could never be applied** — their commands carry
+shell operators, and `run_fixes` asked whether it could run a command only at
+execution time, one at a time, after the operator had already agreed to all of
+them. `ssh.password_auth` is among them, the most consequential fix in the
+tool: BOB printed *"2 automatic fix(es) available"*, then *"2 fix(es) will be
+applied automatically"*, then `0 of 2 fix(es) applied.`
+
+The refusal was right; its timing was not. Whether BOB can run a command
+belongs where the command is classified, so the count above the prompt is a
+promise it can keep. `_can_apply_unattended` now answers that before anything
+is announced, covering shell operators and interactive editors alike — three
+findings offer `sudo nano …`, and the apply path runs with stdin closed on a
+30-second timeout, so one would hang there until killed. It was reaching none
+of them by an accident of classification; it is structural now. The
+execution-time refusal stays as a second barrier.
+
+And the header no longer says zero over a list of urgent findings. *"0 automatic
+fix(es) available"* above four SMART alerts reads as "nothing to do here" to
+anyone skimming; when BOB can apply none of them it says so instead. The
+auto-mode banner and the `0 of 0 fix(es) applied.` line are silent when there
+was never anything to run.
+
+**Tests** 8572 → **8843**.
 
 ---
 

@@ -201,7 +201,32 @@ aucun n'atteint le chemin d'application. C'est un accident de classification et
 non un choix, et `--fix --apply` exécute avec l'entrée standard fermée et un
 délai de 30 secondes — un éditeur y resterait bloqué jusqu'à être tué.
 
-**Tests** 8572 → **8813**.
+La même passe a trouvé une instance plus large de la même forme. **Douze
+constats étaient comptés comme correctifs automatiques sans jamais pouvoir être
+appliqués** — leurs commandes portent des opérateurs shell, et `run_fixes` ne
+demandait s'il pouvait exécuter une commande qu'au moment de l'exécution, une
+par une, après que l'opérateur eut déjà consenti à toutes. `ssh.password_auth`
+en fait partie, le correctif le plus lourd de conséquence de l'outil : BOB
+affichait *« 2 automatic fix(es) available »*, puis *« 2 fix(es) will be applied
+automatically »*, puis `0 of 2 fix(es) applied.`
+
+Le refus était juste ; son moment ne l'était pas. Savoir si BOB peut exécuter
+une commande appartient au moment où on la classe, pour que le compteur affiché
+au-dessus de l'invite soit une promesse tenable. `_can_apply_unattended` répond
+désormais avant toute annonce, couvrant aussi bien les opérateurs shell que les
+éditeurs interactifs — trois constats proposent `sudo nano …`, et le chemin
+d'application s'exécute entrée standard fermée avec 30 secondes de délai : l'un
+d'eux y resterait bloqué jusqu'à être tué. Il n'en atteignait aucun par accident
+de classification ; c'est structurel maintenant. Le refus à l'exécution demeure
+en seconde barrière.
+
+Et l'en-tête ne dit plus zéro au-dessus d'une liste urgente. *« 0 automatic
+fix(es) available »* au-dessus de quatre alertes SMART se lit « rien à faire
+ici » pour qui survole ; quand BOB ne peut en appliquer aucun, il le dit. La
+bannière du mode automatique et la ligne `0 of 0 fix(es) applied.` se taisent
+quand il n'y avait rien à exécuter.
+
+**Tests** 8572 → **8843**.
 
 ---
 
