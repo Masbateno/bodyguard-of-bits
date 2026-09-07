@@ -321,6 +321,7 @@
     "skipped_unsafe_shell": "syntaxe shell non sûre dans la commande",
     "auto_mode_banner": "MODE AUTO-FIX — {count} correction(s) seront appliquées automatiquement",
     "auto_summary_title": "RÉCAPITULATIF AUTO-FIX",
+      "diagnostic_items_title": "Non automatisable — BOB ne peut que vous montrer où regarder :",
     "manual_items_title": "Actions manuelles requises (aucune correction automatique disponible) :",
     "done_summary": "{applied} correction(s) sur {total} appliquée(s).",
     "dry_run_hint": "Aperçu uniquement — utilisez --fix --apply pour exécuter les corrections"

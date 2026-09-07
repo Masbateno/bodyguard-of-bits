@@ -141,7 +141,60 @@ the stale-docstring mutation pointed at a test that had nothing to do with
 docstrings. The instance had been fixed and the class left unguarded, with the
 mutation claiming otherwise.
 
-**Tests** 8572 → **8791**.
+### `--fix --apply` executed commands declared read-only, and called it done
+
+`cmd_type` says whether a command remediates (`"fix"`) or only diagnoses. Its
+own docstring: *read-only diagnostic commands that do not change state*. A
+guard added in v0.13.2 validates the field at write time, rejecting anything
+outside `fix`/`check`. `run_fixes` never read it — it selected on `nature ==
+"action"` alone.
+
+So six findings whose command is a diagnostic were counted as automatic fixes,
+executed, and reported as **`✔ Applied`**: four SMART alerts answered with
+`smartctl -a`, a full partition answered with `du`, and "no fail2ban jails"
+answered with `fail2ban-client status`. On a machine with a dying disk,
+`sudo bob --fix --apply --yes` printed *"1 automatic fix(es) available"*, ran
+`smartctl -a /dev/sda`, and told the operator it was applied. The disk was
+still dying.
+
+`smartctl` makes it worse than a no-op: its exit code is a bit field, zero on a
+healthy disk and non-zero when the disk is flagged failing. BOB therefore said
+"✔ Applied" on the disks that were fine and "✖ manual (exit 8)" on the ones
+that were not — a verdict tracking disk health rather than whether anything had
+been fixed.
+
+Declared, validated at write time, never consumed: this project's oldest shape,
+in the one place where believing it costs the most.
+
+**Their classification is unchanged, and correct.** A failing disk *is* an
+action — the most urgent in the audit — and `smartctl -a` *is* a diagnostic.
+Reclassifying was the other candidate and is the wrong one: `nature="improvement"`
+demotes a dying disk to a nice-to-have, and `cmd_type="fix"` declares that
+reading SMART counters repairs a drive, which is the claim being removed. What
+was actually wrong is that `nature` was doing two jobs at once — "the operator
+must act" and "put it in the fix list". Reading `cmd_type` gives the second back
+to the field written for it.
+
+There are three buckets now, because two were not enough: `manual_items` holds
+findings with *no* command, so excluding diagnostics from `auto_items` alone
+would have dropped all six from the screen entirely. Visible but mislabelled was
+bad; invisible is worse. They appear under their own heading with their command
+kept, marked ℹ rather than →.
+
+One command was revised, and only its command. `fail2ban.no_jails` answered
+"no jails are active" with `fail2ban-client status`, which reports the jail
+count the message had just given — a diagnostic that restates the finding tells
+the operator nothing. It now names the single jail the detail asks them to
+enable, `fail2ban-client status sshd`, which doubles as their verification
+afterwards: "does not exist" before the edit, a status block after it.
+
+An adjacent trap is pinned while the area is open: three findings offer
+`sudo nano …` commands, and none is `nature="action"`, so none reaches the
+apply path. That is an accident of classification rather than a design, and
+`--fix --apply` runs commands with stdin closed on a 30-second timeout — an
+editor there would hang until it was killed.
+
+**Tests** 8572 → **8813**.
 
 ---
 

@@ -402,4 +402,33 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="the docstring named a schema retired four minors before, which "
                "is what a reader checking what BOB produces would have believed",
     ),
+
+    # ---- what --fix --apply is allowed to run --------------------------------
+    Mutation(
+        id="apply/executes-a-diagnostic",
+        file="bob/fixes.py",
+        old='                    if f.cmd and f.cmd_type == "fix"]',
+        new="                    if f.cmd]",
+        kills=("tests/test_v0164_apply_reads_cmd_type.py::TestADiagnosticIsNeverApplied",),
+        reason="the exact v0.16.3 behaviour: `smartctl -a` on a dying disk "
+               "reported as '✔ Applied', and the operator told it was fixed",
+    ),
+    Mutation(
+        id="apply/diagnostic-vanishes-from-the-screen",
+        file="bob/fixes.py",
+        old="    if diag_items:\n        print()",
+        new="    if False:\n        print()",
+        kills=("tests/test_v0164_apply_reads_cmd_type.py::TestADiagnosticIsNeverApplied",),
+        reason="dropping them from the fix list without a third bucket removes "
+               "six actionable findings from the screen entirely — worse than "
+               "showing them mislabelled",
+    ),
+    Mutation(
+        id="apply/a-real-fix-stops-being-applied",
+        file="bob/fixes.py",
+        old='                    if f.cmd and f.cmd_type == "fix"]',
+        new='                    if f.cmd and f.cmd_type == "never"]',
+        kills=("tests/test_v0164_apply_reads_cmd_type.py::TestADiagnosticIsNeverApplied",),
+        reason="the polarity twin: excluding diagnostics must not exclude fixes",
+    ),
 )

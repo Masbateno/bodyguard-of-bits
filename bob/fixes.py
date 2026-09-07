@@ -26,12 +26,52 @@ def _has_shell_ops(cmd: str) -> bool:
                for tok in tokens)
 
 
+
+def _print_unapplied(diag_items, manual_items, t, _c) -> None:
+    """The two buckets BOB cannot act on, with their commands kept visible."""
+    if diag_items:
+        print()
+        print(f"  {_c.yellow_bold}{t('fixes.diagnostic_items_title')}{_c.reset}")
+        for msg, cmd in diag_items:
+            print(f"  •  {msg}")
+            print(f"     {_c.dim}ℹ {cmd.replace(chr(10), ' ').strip()}{_c.reset}")
+    if manual_items:
+        print()
+        print(f"  {_c.yellow_bold}{t('fixes.manual_items_title')}{_c.reset}")
+        for msg in manual_items:
+            print(f"  • {msg}")
+
+
 def run_fixes(engine, config, t) -> None:
-    """Display and optionally apply automatic fixes."""
-    auto_items   = [(f.message, f.cmd) for f in engine.findings
-                    if f.nature == "action" and f.cmd]
-    manual_items = [f.message for f in engine.findings
-                    if f.nature == "action" and not f.cmd]
+    """Display and optionally apply automatic fixes.
+
+    Three buckets, and until v0.16.4 there were two. ``cmd_type`` says whether
+    a command remediates (``"fix"``) or only diagnoses (``"check"`` — its own
+    docstring: *read-only diagnostic commands that do not change state*), and
+    this function never read it. It selected on ``nature`` alone, so six
+    findings whose command is a diagnostic were counted as automatic fixes,
+    executed, and reported as ``✔ Applied``: four SMART alerts answered with
+    ``smartctl -a``, a full partition answered with ``du``, and "no fail2ban
+    jails" answered with ``fail2ban-client status``. The disk was still dying
+    and the operator had been told it was fixed.
+
+    Their classification was right and is unchanged — a failing disk *is* an
+    action, and ``smartctl -a`` *is* a diagnostic. What was wrong is that
+    ``nature`` was doing two jobs at once, "the operator must act" and "put it
+    in the fix list". Reading ``cmd_type`` gives the second job back to the
+    field that was written for it.
+
+    The third bucket exists because dropping them from ``auto_items`` alone
+    would have removed them from the screen entirely: ``manual_items`` holds
+    findings with *no* command. Visible but mislabelled was bad; invisible
+    would have been worse.
+    """
+    actionable   = [f for f in engine.findings if f.nature == "action"]
+    auto_items   = [(f.message, f.cmd) for f in actionable
+                    if f.cmd and f.cmd_type == "fix"]
+    diag_items   = [(f.message, f.cmd) for f in actionable
+                    if f.cmd and f.cmd_type != "fix"]
+    manual_items = [f.message for f in actionable if not f.cmd]
 
     _c = _output._c
     W = 62
@@ -42,7 +82,7 @@ def run_fixes(engine, config, t) -> None:
     print(f"{_c.blue_bold}║{_c.reset}  {_c.bold}{label}{_c.reset}{' '*max(0,pad)}  {_c.blue_bold}║{_c.reset}")
     print(f"{_c.blue_bold}╠{'═'*(W-2)}╣{_c.reset}")
 
-    if not auto_items and not manual_items:
+    if not auto_items and not diag_items and not manual_items:
         none_msg = t("fixes.none")
         pad = W - 6 - len(none_msg)
         print(f"{_c.blue_bold}║{_c.reset}    {none_msg}{' '*max(0,pad)}{_c.blue_bold}║{_c.reset}")
@@ -53,7 +93,7 @@ def run_fixes(engine, config, t) -> None:
         print(f"{_c.blue_bold}║{_c.reset}    ✔  {count_msg}{' '*max(0,pad)}{_c.blue_bold}║{_c.reset}")
     print(f"{_c.blue_bold}╚{'═'*(W-2)}╝{_c.reset}")
 
-    if not auto_items and not manual_items:
+    if not auto_items and not diag_items and not manual_items:
         return
 
     # Sort ufw delete commands descending to avoid renumbering
@@ -77,10 +117,7 @@ def run_fixes(engine, config, t) -> None:
             print(f"  ✖  {msg}")
             print(f"     {_c.dim}→ {safe_cmd}{_c.reset}")
             print()
-        if manual_items:
-            print(f"  {_c.yellow_bold}{t('fixes.manual_items_title')}{_c.reset}")
-            for msg in manual_items:
-                print(f"  • {msg}")
+        _print_unapplied(diag_items, manual_items, t, _c)
         return
 
     # ── Apply mode (--fix --apply) ───────────────────────────────────────────
@@ -140,9 +177,6 @@ def run_fixes(engine, config, t) -> None:
         for cmd in applied_cmds:
             print(f"  ✔ {cmd}")
 
-    # Manual items — findings with no automatic fix
-    if manual_items:
-        print()
-        print(f"  {_c.yellow_bold}{t('fixes.manual_items_title')}{_c.reset}")
-        for msg in manual_items:
-            print(f"  • {msg}")
+    # What BOB did not apply: diagnostics it can only show, and findings with
+    # no command at all. Same block as the dry run, so the two cannot drift.
+    _print_unapplied(diag_items, manual_items, t, _c)

@@ -148,7 +148,60 @@ en rendant `v0` — et il a attrapé la mutation « docstring périmée » point
 un test sans rapport avec les docstrings. L'instance avait été corrigée et la
 classe laissée sans garde, la mutation prétendant le contraire.
 
-**Tests** 8572 → **8791**.
+### `--fix --apply` exécutait des commandes déclarées en lecture seule, et disait que c'était fait
+
+`cmd_type` dit si une commande répare (`"fix"`) ou ne fait que diagnostiquer.
+Sa propre docstring : *read-only diagnostic commands that do not change state*.
+Une garde ajoutée en v0.13.2 valide le champ à l'écriture, rejetant toute valeur
+hors `fix`/`check`. `run_fixes` ne l'a jamais lu — il sélectionnait sur
+`nature == "action"` seul.
+
+Six constats dont la commande est un diagnostic étaient donc comptés comme
+correctifs automatiques, exécutés, et annoncés **`✔ Applied`** : quatre alertes
+SMART auxquelles on répondait par `smartctl -a`, une partition pleine par `du`,
+et « aucune prison fail2ban » par `fail2ban-client status`. Sur une machine au
+disque mourant, `sudo bob --fix --apply --yes` affichait *« 1 automatic fix(es)
+available »*, lançait `smartctl -a /dev/sda`, et annonçait à l'opérateur que
+c'était appliqué. Le disque mourait toujours.
+
+`smartctl` rend la chose pire qu'une opération nulle : son code de sortie est un
+champ de bits, nul sur un disque sain et non nul quand le disque est signalé
+défaillant. BOB disait donc « ✔ Applied » sur les disques qui allaient bien et
+« ✖ manual (exit 8) » sur ceux qui allaient mal — un verdict suivant la santé du
+disque plutôt que la réalité d'une réparation.
+
+Déclaré, validé à l'écriture, jamais consommé : la plus ancienne forme de ce
+projet, à l'endroit où y croire coûte le plus cher.
+
+**Leur classification est inchangée, et juste.** Un disque défaillant **est** une
+action — la plus urgente de l'audit — et `smartctl -a` **est** un diagnostic.
+Reclasser était l'autre candidat et c'est le mauvais : `nature="improvement"`
+rétrograde un disque qui meurt en simple souhait, et `cmd_type="fix"` déclare
+que lire des compteurs SMART répare un disque, ce qui est précisément
+l'affirmation qu'on retire. Le vrai défaut était que `nature` faisait deux
+métiers — « l'opérateur doit agir » et « mets-le dans la liste des correctifs ».
+Lire `cmd_type` rend le second au champ écrit pour lui.
+
+Il y a trois seaux désormais, parce que deux ne suffisaient pas : `manual_items`
+contient les constats **sans** commande, si bien qu'exclure les diagnostics
+d'`auto_items` seul les aurait tous retirés de l'écran. Visibles mais mal
+étiquetés, c'était mauvais ; invisibles, c'est pire. Ils apparaissent sous leur
+propre titre, commande conservée, marqués ℹ et non →.
+
+Une commande a été révisée, et elle seule. `fail2ban.no_jails` répondait à
+« aucune prison active » par `fail2ban-client status`, qui rapporte le nombre de
+prisons que le message venait de donner — un diagnostic qui redit le constat
+n'apprend rien. Elle nomme maintenant la seule prison que le détail demande
+d'activer, `fail2ban-client status sshd`, ce qui sert aussi de vérification
+après coup : « n'existe pas » avant l'édition, un bloc d'état après.
+
+Un piège voisin est épinglé tant que la zone est ouverte : trois constats
+proposent des commandes `sudo nano …`, et aucun n'est `nature="action"`, donc
+aucun n'atteint le chemin d'application. C'est un accident de classification et
+non un choix, et `--fix --apply` exécute avec l'entrée standard fermée et un
+délai de 30 secondes — un éditeur y resterait bloqué jusqu'à être tué.
+
+**Tests** 8572 → **8813**.
 
 ---
 

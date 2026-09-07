@@ -519,6 +519,7 @@
     "skipped_unsafe_shell": "unsafe shell syntax in command",
     "auto_mode_banner": "AUTO-FIX MODE — {count} fix(es) will be applied automatically",
     "auto_summary_title": "AUTO-FIX SUMMARY",
+      "diagnostic_items_title": "Not automatic — BOB can only show you where to look:",
     "manual_items_title": "Manual actions required (no automatic fix available):",
     "done_summary": "{applied} of {total} fix(es) applied.",
     "dry_run_hint": "Dry run — use --fix --apply to execute fixes"

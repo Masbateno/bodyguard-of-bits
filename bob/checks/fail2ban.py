@@ -181,7 +181,13 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
             reason=_t("fail2ban.no_jails_reason"),
             points=1,
             detail=_t("fail2ban.no_jails_detail"),
-            cmd="sudo fail2ban-client status",
+            # v0.16.4 — was `fail2ban-client status`, which reports the jail
+            # count the message has just given: a diagnostic that restates the
+            # finding tells the operator nothing they did not know. This names
+            # the one jail the detail asks them to enable, and doubles as their
+            # verification afterwards — "does not exist" before the edit, a
+            # status block after it.
+            cmd="sudo fail2ban-client status sshd",
             cmd_type="check",
             nature="action",
         )
