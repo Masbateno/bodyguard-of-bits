@@ -203,7 +203,37 @@ contrôle négatif ; la première exécution de ce banc a annoncé les six inert
 ce qui s'est révélé être le harnais ne transmettant pas ses arguments — les
 mutations n'avaient jamais été appliquées.
 
-**Tests** 8328 → **8530**.
+### Les assistants cron étaient encore en anglais, et un écran n'affichait aucune touche
+
+Dix-neuf littéraux avaient survécu à la passe v0.16.3 : toutes les saisies
+(`Email`, `Name`, `Time (HH:MM)`, `Days (e.g. 1,5)`, `Expression`), les
+indications sous elles, tout l'écran « ajouter une adresse » du carnet et ses
+messages. Un opérateur français pilotait un assistant français et saisissait
+dans des champs anglais. Tout est traduit, sous un espace `cron_ui`, et une
+garde lit le source à la recherche de toute chaîne encore dessinée sur un écran
+cron sans passer par `t()` — les arguments de `t()` étant exclus par règle,
+puisque `mta="sendmail"` est un nom de programme et non de la prose. L'exclure
+par liste blanche, c'est ainsi qu'une garde se met à s'entretenir en
+s'élargissant.
+
+Le séparateur est une traduction lui aussi : `Nom: nightly` n'est pas du
+français. L'anglais reçoit `": "`, le français `" : "`, et la même clé corrige
+l'en-tête de l'assistant d'horaire.
+
+La saisie du nom de `--install-cron` n'affichait **aucune touche**. Elle
+effaçait, dessinait son en-tête et son invite, et lisait une ligne — le seul
+écran à ne jamais appeler le pied de page, si bien qu'on demandait un nom sans
+rien à l'écran pour dire comment le valider ou repartir. Plutôt que d'ajouter
+l'appel manquant, `_curses_readline` prend désormais les actions de l'écran et
+dessine le bandeau lui-même : l'oubli devient irreprésentable.
+
+Cela en a révélé un autre : Entrée était dispatchée par toutes les saisies et
+déclarée par aucune ; le bandeau n'aurait proposé que `Esc retour` — la seule
+issue annoncée d'un champ de texte était de l'abandonner. `SUBMIT` (`⏎ submit`
+/ `⏎ valider`) rejoint le contrat de touches ; ce n'est ni `SELECT` ni
+`CONFIRM`, qui veulent dire choisir une ligne et appuyer sur `y`.
+
+**Tests** 8328 → **8544**.
 
 ---
 

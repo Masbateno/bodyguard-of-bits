@@ -189,7 +189,35 @@ control; the first run of that bench reported all six inert, which turned out
 to be the harness failing to pass its arguments through — the mutations had
 never been applied.
 
-**Tests** 8328 → **8530**.
+### The cron wizards were still written in English, and one screen showed no keys
+
+Nineteen literals survived the v0.16.3 pass: every text prompt (`Email`,
+`Name`, `Time (HH:MM)`, `Days (e.g. 1,5)`, `Expression`), the inline hints
+under them, the address book's whole "add an address" screen and its statuses.
+A French operator drove a French wizard and typed into English fields. They are
+translated now, under a `cron_ui` namespace, and a guard reads the source for
+any string still drawn on a cron screen without going through `t()` — with
+`t()`'s own arguments excluded by rule, since `mta="sendmail"` is a program
+name, not prose. Excluding it by whitelist is how a guard starts being
+maintained by widening.
+
+The separator is a translation too: `Nom: nightly` is not French. English gets
+`": "`, French `" : "`, and the same key fixes the schedule wizard's header.
+
+`--install-cron`'s name entry showed **no key hints at all**. It erased, drew
+its header and prompt, and read a line — the only screen that never called the
+footer helper, so an operator was asked to type a name with nothing on screen
+telling them how to accept it or leave. Rather than adding the missing call,
+`_curses_readline` now takes the screen's actions and paints the banner itself,
+which makes forgetting it unrepresentable.
+
+That exposed one more: Enter was dispatched by every text input and declared by
+none, so the banner would have offered `Esc back` alone — the only advertised
+way out of a text field was to abandon it. `SUBMIT` (`⏎ submit` / `⏎ valider`)
+joins the key contract; it is not `SELECT` or `CONFIRM`, which mean choosing a
+row and pressing `y`.
+
+**Tests** 8328 → **8544**.
 
 ---
 

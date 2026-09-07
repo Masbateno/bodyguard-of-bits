@@ -229,3 +229,151 @@ class TestNoScreenPaintsOverItsOwnBanner:
         assert not offenders, (
             f"{name}: prompt drawn on the banner row: {offenders}"
         )
+
+
+# ---------------------------------------------------------------------------
+# An input screen must show its keys, and must not be written in English
+# ---------------------------------------------------------------------------
+
+class TestEveryInputScreenShowsItsKeys:
+
+    def test_the_input_helper_draws_its_own_chrome(self):
+        """`--install-cron`'s name entry erased, drew a prompt, and read a line.
+
+        It never drew a footer, so the screen asking an operator to type a name
+        showed no key hints at all — not even Esc. The caller used to pass a
+        row and be trusted to draw the banner itself; the helper takes the
+        screen's actions and draws the banner now, which makes forgetting it
+        unrepresentable rather than merely unlikely.
+        """
+        src = (_ROOT / "bob" / "tui" / "cron.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        fn = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and n.name == "_curses_readline")
+        params = [a.arg for a in fn.args.args]
+        assert "row" not in params, (
+            "_curses_readline takes a row again — the caller can once more draw "
+            "the prompt without a banner"
+        )
+        assert "actions" in params, "_curses_readline cannot draw a banner it is not given"
+        body = ast.unparse(fn)
+        assert "_chrome.draw" in body, "the input helper no longer paints the chrome"
+
+    def test_a_text_input_declares_the_key_that_submits_it(self):
+        """Enter was dispatched by every input and declared by none.
+
+        The banner offered `Esc back` alone, so the only advertised way out of
+        a text field was to abandon it.
+        """
+        import bob.tui.cron as cron
+        from bob.tui import _keys
+        assert _keys.SUBMIT in cron._INPUT_KEYS, (
+            "an input screen advertises no way to submit what was typed"
+        )
+        assert _keys.BACK in cron._INPUT_KEYS
+
+
+class TestTheCronScreensAreTranslated:
+    """v0.16.3 closed English-in-the-wizards everywhere except these.
+
+    Nineteen literals survived the pass — every text prompt (`Email`, `Name`,
+    `Time (HH:MM)`), the inline hints under them, the address-book screen and
+    its statuses. A French operator drove a French wizard and typed into
+    English fields.
+    """
+
+    _SOURCE = _ROOT / "bob" / "tui" / "cron.py"
+
+    @staticmethod
+    def _screen_literals() -> list[tuple[int, str]]:
+        """String constants that reach the screen, not keys or docstrings."""
+        src = TestTheCronScreensAreTranslated._SOURCE.read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        lines = src.splitlines()
+        drawing = ("_draw", "addstr", "_curses_readline", "_curses_input",
+                   "_curses_status_flash")
+        # Constants living inside a t(...) call are interpolation values, not
+        # screen prose: `t("...mta_found", mta=_name or "sendmail")` passes a
+        # program name. Excluding them by rule rather than by whitelisting
+        # "sendmail", which is how a guard starts being maintained by widening.
+        translated = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and (
+                    getattr(node.func, "id", "") == "t"
+                    or getattr(node.func, "attr", "") == "t"):
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Constant):
+                        translated.add(id(sub))
+
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fname = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
+            if fname not in drawing:
+                continue
+            for arg in ast.walk(node):
+                if id(arg) in translated:
+                    continue
+                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+                    continue
+                text = arg.value
+                # A locale key path, a format placeholder or punctuation is fine.
+                if not any(c.isalpha() for c in text):
+                    continue
+                if "." in text and " " not in text:
+                    continue
+                if text.strip() in ("str | None", "list[str]"):
+                    continue
+                # The command name itself is not prose.
+                if text.strip().startswith("bob "):
+                    continue
+                if len(text.strip()) < 4:
+                    continue
+                found.append((arg.lineno, text))
+        return found
+
+    def test_no_english_prose_is_drawn_on_a_cron_screen(self):
+        offenders = self._screen_literals()
+        assert not offenders, (
+            f"{len(offenders)} untranslated literal(s) drawn on a cron screen: "
+            f"{offenders[:6]}"
+        )
+
+    def test_the_harness_would_notice_one(self):
+        """A scraper that finds nothing passes forever."""
+        import ast as _ast
+        sample = _ast.parse('_draw(stdscr, 2, 2, "Add email address")')
+        found = [
+            n.value for n in _ast.walk(sample)
+            if isinstance(n, _ast.Constant) and isinstance(n.value, str)
+            and len(n.value) > 4 and any(c.isalpha() for c in n.value)
+        ]
+        assert "Add email address" in found, "the literal scraper is broken"
+
+    @pytest.mark.parametrize("key", [
+        "cron_ui.field_name", "cron_ui.field_email", "cron_ui.field_time",
+        "cron_ui.field_days", "cron_ui.field_expression", "cron_ui.prompt_sep",
+        "cron_ui.press_any_key", "cron_ui.add_email_title", "tui.keys.submit",
+    ])
+    def test_both_locales_carry_the_new_keys(self, key):
+        import json
+        for lang in ("en", "fr"):
+            data = json.loads((_ROOT / "bob" / "locales" / f"{lang}.json")
+                              .read_text(encoding="utf-8"))
+            node = data
+            for part in key.split("."):
+                assert part in node, f"{lang}.json is missing {key}"
+                node = node[part]
+            assert isinstance(node, str) and node.strip(), f"{lang}.json: {key} is empty"
+
+    def test_french_puts_a_space_before_its_colon(self):
+        """`Nom: nightly` is not French; the separator is a translation."""
+        import json
+        seps = {}
+        for lang in ("en", "fr"):
+            data = json.loads((_ROOT / "bob" / "locales" / f"{lang}.json")
+                              .read_text(encoding="utf-8"))
+            seps[lang] = data["cron_ui"]["prompt_sep"]
+        assert seps["fr"].startswith(" "), f"French separator is {seps['fr']!r}"
+        assert not seps["en"].startswith(" "), f"English separator is {seps['en']!r}"

@@ -83,7 +83,9 @@ class _WizardEntry(NamedTuple):
 # ---------------------------------------------------------------------------
 _SCHEDULE_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
 _CONFIRM_KEYS  = (_keys.CONFIRM,) + _keys.NESTED_EXIT
-_INPUT_KEYS    = _keys.NESTED_EXIT
+# A text input takes Enter to submit and Esc to go back. Enter was
+# dispatched and never declared, so the banner offered only a way out.
+_INPUT_KEYS    = (_keys.SUBMIT,) + _keys.NESTED_EXIT
 _EMAIL_KEYS    = _keys.NAVIGATION + (_keys.TOGGLE, _keys.NEW, _keys.SELECT) + _keys.NESTED_EXIT
 _STORE_KEYS    = _keys.NAVIGATION + (
     _keys.TOGGLE, _keys.ALL, _keys.NEW, _keys.DELETE,
@@ -170,20 +172,33 @@ def _is_printable_input_char(ch_i: int) -> bool:
 # Low-level curses primitives
 # ---------------------------------------------------------------------------
 
-def _curses_readline(stdscr, row: int, w: int, prompt: str, default: str = "") -> "str | None":
-    """Single-line text input drawn on *row* in yellow. Esc → None, Enter → str."""
+def _curses_readline(stdscr, t, actions, prompt: str, default: str = "") -> "str | None":
+    """Single-line text input on the reserved line. Esc → None, Enter → str.
+
+    It draws its own chrome. The caller used to pass a row and draw the key
+    banner itself, and one screen — ``--install-cron``'s name entry — simply
+    forgot: it erased, drew its header and prompt, and read a line with no key
+    hints anywhere on screen. Taking *actions* instead of a row makes that
+    unrepresentable, and puts the prompt on the reserved line rather than on
+    the banner, which is where seven of these used to land.
+    """
     import curses as _c
+
+    from bob.tui import _chrome
+
     _c.curs_set(1)
     buf = list(default)
     has_color = _c.has_colors()
-    attr = _c.color_pair(2) if has_color else _c.A_REVERSE
     while True:
+        h, w = stdscr.getmaxyx()
         text = "".join(buf)
-        display = f"  {prompt}: {text}"
+        # French puts a space before the colon; the separator is a
+        # translation, not a character.
+        display = f"  {prompt}{t('cron_ui.prompt_sep')}{text}"
+        _chrome.draw(stdscr, _c, t, actions, has_color, context=display)
         try:
-            stdscr.addstr(row, 0, " " * (w - 1), attr)
-            stdscr.addstr(row, 0, display[:w - 1], attr)
-            stdscr.move(row, min(len(display), w - 2))
+            stdscr.move(_chrome.context_row(t, actions, h, w),
+                        min(len(display), w - 2))
         except _c.error:
             pass
         stdscr.refresh()
@@ -201,18 +216,22 @@ def _curses_readline(stdscr, row: int, w: int, prompt: str, default: str = "") -
             buf.append(chr(ch_i))
 
 
-def _curses_status_flash(stdscr, msg: str) -> None:
+def _curses_status_flash(stdscr, t, msg: str) -> None:
     """Display *msg* on the body area and wait for a keypress."""
     import curses as _c
+
+    from bob.tui import _chrome
+
     has_color = _c.has_colors()
     hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
-    ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
     stdscr.erase()
     h, w = stdscr.getmaxyx()
     _draw(stdscr, 0, 0, " " * (w - 1), hdr_attr)
     _draw(stdscr, 2, 2, msg[:w - 3])
-    _draw(stdscr, 4, 2, "Press any key to continue…")
-    _draw(stdscr, h - 1, 0, " " * (w - 1), ftr_attr)
+    # Any key continues, so that is what the banner says — it lists no
+    # bindings because this screen has none.
+    _chrome.draw_text(stdscr, _c, has_color,
+                      ["  " + t("cron_ui.press_any_key")])
     stdscr.refresh()
     try:
         stdscr.get_wch()
@@ -263,7 +282,9 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
     def _hdr(suffix=""):
         h2, w2 = stdscr.getmaxyx()
         _prefix = title_prefix or t("cron_ui.edit_schedule")
-        label = f"  {_prefix}: {entry.name}  {suffix}" if entry else f"  {_prefix}  {suffix}"
+        _sep = t("cron_ui.prompt_sep")
+        label = (f"  {_prefix}{_sep}{entry.name}  {suffix}" if entry
+                 else f"  {_prefix}  {suffix}")
         _draw(stdscr, 0, 0, label[:w2 - 1].ljust(w2 - 1), hdr_attr)
 
     def _ftr(actions=_INPUT_KEYS):
@@ -320,9 +341,9 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         h, w = stdscr.getmaxyx()
         _hdr()
         _draw(stdscr, 2, 2, t("install_cron.prompt_weekdays"))
-        _draw(stdscr, 3, 4, "(1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat 7=Sun)")
+        _draw(stdscr, 3, 4, t("cron_ui.hint_weekdays"))
         _ftr()
-        raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Days (e.g. 1,5)")
+        raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_days"))
         if raw is None:
             return None
         parts = re.split(r"[\s,]+", raw)
@@ -335,9 +356,9 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         h, w = stdscr.getmaxyx()
         _hdr()
         _draw(stdscr, 2, 2, t("install_cron.prompt_monthdays"))
-        _draw(stdscr, 3, 4, "(e.g. 1,15)")
+        _draw(stdscr, 3, 4, t("cron_ui.hint_monthdays"))
         _ftr()
-        raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Days (e.g. 1,15)")
+        raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_days"))
         if raw is None:
             return None
         parts = re.split(r"[\s,]+", raw)
@@ -350,16 +371,16 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         h, w = stdscr.getmaxyx()
         _hdr()
         _draw(stdscr, 2, 2, t("install_cron.prompt_custom"))
-        _draw(stdscr, 3, 4, "(minute hour dom month dow)")
+        _draw(stdscr, 3, 4, t("cron_ui.hint_custom"))
         _ftr()
-        raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Expression")
+        raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_expression"))
         if raw is None:
             return None
         err = _validate_custom_cron(raw)
         if err:
             stdscr.erase()
             _draw(stdscr, 2, 2, f"✖ {err}")
-            _draw(stdscr, 4, 2, "Press any key to cancel…")
+            _draw(stdscr, 4, 2, t("cron_ui.press_any_cancel"))
             stdscr.refresh()
             try:
                 stdscr.get_wch()
@@ -374,9 +395,10 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         _hdr()
-        _draw(stdscr, 2, 2, t("install_cron.prompt_time") + f"  (default: {default_time})")
+        _draw(stdscr, 2, 2, t("install_cron.prompt_time") + "  "
+                            + t("cron_ui.default_suffix", value=default_time))
         _ftr()
-        raw_time = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Time (HH:MM)", default=default_time)
+        raw_time = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_time"), default=default_time)
         if raw_time is None:
             return None
         if not raw_time:
@@ -451,9 +473,9 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
         _draw(stdscr, 0, 0, hdr[:w - 1].ljust(w - 1), hdr_attr)
 
         if not saved:
-            _draw(stdscr, 2, 2, "No saved emails.")
-            _draw(stdscr, 3, 2, "→ Press  n  to add an email address.")
-            _draw(stdscr, 4, 2, "→ Press  Enter  to skip (no email notification).")
+            _draw(stdscr, 2, 2, t("cron_ui.no_saved_emails"))
+            _draw(stdscr, 3, 2, f"→ {t('cron_ui.hint_add_email')}")
+            _draw(stdscr, 4, 2, f"→ {t('cron_ui.hint_skip_email')}")
         else:
             for row in range(body_h):
                 idx = scroll + row
@@ -515,18 +537,18 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
         elif ch_i in (ord("n"), ord("N")):
             stdscr.erase()
             h, w = stdscr.getmaxyx()
-            _draw(stdscr, 0, 0, "  Add email address".ljust(w - 1), hdr_attr)
+            _draw(stdscr, 0, 0, f"  {t('cron_ui.add_email_title')}".ljust(w - 1), hdr_attr)
             _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
-            raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Email")
+            raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_email"))
             if raw and _EMAIL_RE.match(raw.strip()):
                 addr = raw.strip()
                 if addr not in saved:
                     store.add(addr)
                     saved.append(addr)
                 selected.add(addr)
-                status = f"✔ {addr} added"
+                status = f"✔ {t('cron_ui.email_added', email=addr)}"
             elif raw:
-                status = "✖ Invalid email address"
+                status = f"✖ {t('cron_ui.email_invalid')}"
         elif ch_i in (_c.KEY_ENTER, 10, 13):
             return ",".join(sorted(selected))
 
@@ -633,18 +655,18 @@ def _curses_email_store_sub(stdscr, t) -> None:
                 for idx in sorted(targets, reverse=True):
                     if 0 <= idx < len(emails):
                         store.remove(emails[idx])
-                status = f"✔ {len(targets)} email(s) deleted"
+                status = f"✔ {t('cron_ui.emails_deleted', count=len(targets))}"
                 marked.clear()
                 cursor = max(0, cursor - len([i for i in targets if i <= cursor]))
         elif ch_i in (ord("n"), ord("N")):
             stdscr.erase()
             h, w = stdscr.getmaxyx()
-            _draw(stdscr, 0, 0, "  Add email address".ljust(w - 1), hdr_attr)
+            _draw(stdscr, 0, 0, f"  {t('cron_ui.add_email_title')}".ljust(w - 1), hdr_attr)
             _draw(stdscr, 2, 2, t("manage_cron.email_store_enter"))
             # This screen drew no key hints at all — it asks for input and
             # offered no visible way to leave it.
             _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
-            raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Email")
+            raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_email"))
             if raw and _EMAIL_RE.match(raw.strip()):
                 store.add(raw.strip())
                 status = t("manage_cron.email_store_added", email=raw.strip())
@@ -701,7 +723,7 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
                 if new_expr:
                     err = _apply_cron_schedule(entry, new_expr)
                     if err:
-                        _curses_status_flash(stdscr, f"✖ {err}")
+                        _curses_status_flash(stdscr, t, f"✖ {err}")
             else:
                 new_email = _curses_email_list_sub(stdscr, entry.email, t)
                 if new_email is not None:
@@ -771,7 +793,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
-        _curses_status_flash(stdscr, f"✖ {t('install_cron.no_log_dir')}")
+        _curses_status_flash(stdscr, t, f"✖ {t('install_cron.no_log_dir')}")
         return 1
     log_dir = _Path(log_dir_str)
 
@@ -819,14 +841,14 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 h, w = stdscr.getmaxyx()
                 _draw(stdscr, 0, 0, "  bob --install-cron".ljust(w - 1), hdr_attr)
                 _draw(stdscr, 2, 2, t("install_cron.prompt_name", suggestion=suggestion))
-                entered = _curses_readline(stdscr, _prompt_row(stdscr, t, _LANDING_KEYS), w, "Name", default=raw_name or suggestion)
+                entered = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_name"), default=raw_name or suggestion)
                 if entered is None:       # Esc → back to landing
                     step = LANDING
                     continue
                 raw_name = entered if entered else (raw_name or suggestion)
                 slug = make_slug(raw_name)
                 if not slug:
-                    _curses_status_flash(stdscr, f"✖ {t('install_cron.invalid_name')}")
+                    _curses_status_flash(stdscr, t, f"✖ {t('install_cron.invalid_name')}")
                     continue
                 step = STEP_SCHEDULE
 
@@ -849,9 +871,9 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 if notify_email:
                     _mta_ok, _mta_name = _detect_mta()
                     if _mta_ok:
-                        _curses_status_flash(stdscr, f"✔ {t('install_cron.mta_found', mta=_mta_name or 'sendmail')}")
+                        _curses_status_flash(stdscr, t, f"✔ {t('install_cron.mta_found', mta=_mta_name or 'sendmail')}")
                     else:
-                        _curses_status_flash(stdscr, f"⚠ {t('install_cron.mta_missing')}")
+                        _curses_status_flash(stdscr, t, f"⚠ {t('install_cron.mta_missing')}")
                 step = STEP_PROFILE
 
             elif step == STEP_PROFILE:
@@ -891,7 +913,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                     continue
                 sel_offline = (idx == 1)
                 audit_options = build_audit_options(sel_profile, sel_lang, sel_offline)
-                _curses_status_flash(stdscr, t(
+                _curses_status_flash(stdscr, t, t(
                     "install_cron.audit_command",
                     command=f"bob --quiet --detailed {audit_options}",
                 ))
@@ -936,7 +958,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         try:
             _atomic_write(script_path, script_content, mode=0o755)
         except OSError as exc:
-            _curses_status_flash(stdscr, f"✖ Cannot write {script_path}: {exc}")
+            _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=script_path, error=exc)}")
             return 1
 
         now_str = datetime.now().strftime("%Y-%m-%d")
@@ -952,7 +974,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         try:
             _atomic_write(cron_path, cron_content, mode=0o640)
         except OSError as exc:
-            _curses_status_flash(stdscr, f"✖ Cannot write {cron_path}: {exc}")
+            _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=cron_path, error=exc)}")
             return 1
 
         root_config_path = _Path("/root/.config/bob/config.conf")
@@ -964,7 +986,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         except OSError:
             pass
 
-        _curses_status_flash(stdscr, f"✔ {t('install_cron.done_schedule', name=raw_name, schedule=human)}")
+        _curses_status_flash(stdscr, t, f"✔ {t('install_cron.done_schedule', name=raw_name, schedule=human)}")
         # Continue outer loop → refresh suggestion and return to LANDING
 
 

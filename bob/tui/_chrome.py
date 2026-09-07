@@ -59,7 +59,18 @@ def draw(stdscr, curses, t, actions: "tuple[str, ...]", has_color: bool,
     disappears would move the banner under the operator's eyes.
     """
     h, w = stdscr.getmaxyx()
-    lines = banner_lines(t, actions, w)
+    draw_text(stdscr, curses, has_color, banner_lines(t, actions, w), context=context)
+
+
+def draw_text(stdscr, curses, has_color: bool, lines: "list[str]",
+              *, context: str = "") -> None:
+    """Paint arbitrary banner rows, for a screen with no declared actions.
+
+    ``_curses_status_flash`` waits for any key at all; its banner says exactly
+    that rather than listing bindings it does not have. It goes through here so
+    it cannot drift from the chrome the other screens use.
+    """
+    h, w = stdscr.getmaxyx()
 
     banner_attr = ((curses.color_pair(FOOTER) | curses.A_BOLD) if has_color
                    else curses.A_REVERSE)

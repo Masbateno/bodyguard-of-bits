@@ -40,6 +40,7 @@ SUMMARY  = "summary"    #: s
 CONFIRM  = "confirm"    #: y
 NEW      = "new"        #: n
 CREATE   = "create"     #: Enter, on a landing screen
+SUBMIT   = "submit"     #: Enter, on a text-input screen
 LANG     = "lang"       #: l — switch the interface language, landing screens only
 BOOK     = "book"       #: m — open the email address book
 
@@ -74,6 +75,7 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
     EDGE:    (ord("g"), ord("G")),
     SELECT:  (10, 13),
     CREATE:  (10, 13),
+    SUBMIT:  (10, 13),
     BACK:    (27,),
     QUIT:    (ord("q"), ord("Q")),
     TOGGLE:  (ord(" "),),
@@ -93,7 +95,7 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
 #: locales with room for a screen's own actions.
 _GLYPH = {
     MOVE: "↑↓ jk", PAGE: "PgUp/PgDn", EDGE: "g/G",
-    SELECT: "⏎", CREATE: "⏎", BACK: "Esc", QUIT: "q",
+    SELECT: "⏎", CREATE: "⏎", SUBMIT: "⏎", BACK: "Esc", QUIT: "q",
     TOGGLE: "Spc", ALL: "a", UNMARK: "u", DELETE: "d",
     CHANGE: "c", SUMMARY: "s", CONFIRM: "y", NEW: "n", LANG: "l", BOOK: "m",
 }
@@ -106,6 +108,7 @@ def _special(curses, action: str) -> "tuple[int, ...]":
         PAGE: (curses.KEY_PPAGE, curses.KEY_NPAGE),
         SELECT: (curses.KEY_ENTER,),
         CREATE: (curses.KEY_ENTER,),
+        SUBMIT: (curses.KEY_ENTER,),
     }.get(action, ())
 
 
