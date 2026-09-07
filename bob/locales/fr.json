@@ -1365,6 +1365,8 @@
       "did_you_mean": "Vouliez-vous dire : {suggestions} ?",
       "why_title": "POURQUOI C'EST UN RISQUE",
       "how_title": "COMMENT CORRIGER",
+      "profile_skips": "Le profil {profile} ignore toute la section {section} : ce constat n'y est jamais levé.",
+      "profile_override": "Le profil {profile} le rétrograde en {level} — signalé, mais sans déduction.",
       "uniform_profiles_note": "Cette découverte s'applique de la même manière à tous les profils.",
       "scoring_title": "NOTATION",
       "scoring_domain": "Domaine",

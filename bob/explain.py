@@ -474,11 +474,25 @@ _DIVIDER_WIDE  = "─" * 60
 _DIVIDER_SHORT = "─" * 10
 
 # Ordered profiles shown in the profile-variant display.
-_EXPLAIN_PROFILES: tuple = ("server", "desktop", "container")
+# v0.16.3 — ``workstation`` joins the list. It has had its own severity
+# overrides since v0.8.1 and is offered by ``--profile``, yet ``--explain``
+# rendered no section for it: an operator auditing a business workstation was
+# shown how server, desktop and container treat a finding, and nothing about
+# the profile they were actually running.
+#
+# It carries no hand-written prose, and inventing 71 explanations per locale
+# would be 142 chances to say something false about a policy. Instead the
+# section is derived from the profile file itself — see
+# ``_profile_override_note`` — which cannot be wrong, and which does the same
+# for any profile whose prose is missing.
+_EXPLAIN_PROFILES: tuple = ("server", "desktop", "workstation", "container")
 
 
 def _has_profile_variants(key: str, t) -> bool:
     """Return True if *key* has at least one profile-specific 'why' translation.
+
+    Prose only. Whether a *profile* treats the key differently is a separate
+    question with a separate answer — see ``profile_override_notes``.
 
     Works with both the real i18n.t (returns "[key.path]" for missing keys)
     and mock translation functions used in tests (return the key path itself).
@@ -487,6 +501,30 @@ def _has_profile_variants(key: str, t) -> bool:
     bare_key      = f"explain.{key}.server.why"
     bracketed_key = f"[{bare_key}]"
     return probe not in (bare_key, bracketed_key)
+
+
+def profile_override_notes(key: str, t) -> list[str]:
+    """Derived lines about every shipped profile that treats *key* specially.
+
+    Empty when no profile overrides the key or skips its section — and only
+    then may the display claim the finding applies equally to all profiles.
+
+    Asking the prose alone was a claim about the wrong thing: 32 keys had no
+    per-profile ``why`` and were therefore announced as uniform across all
+    profiles while ``desktop``, ``workstation`` or ``container`` downgraded
+    them to INFO. ``ssh.password_auth`` is one — downgraded by three of the
+    four profiles, and described as applying equally to them all.
+
+    An operator reads that line to decide whether their profile changes the
+    verdict. Answering "it does not" from the absence of an explanation is
+    this project's oldest defect class, one layer up.
+    """
+    notes: list[str] = []
+    for profile in _EXPLAIN_PROFILES:
+        note = _profile_override_note(profile, key, t)
+        if note:
+            notes.append(note)
+    return notes
 
 
 def _service_label_to_subkey(label: str) -> str:
@@ -679,7 +717,6 @@ def run_explain(key: str, t) -> bool:
         for profile in _EXPLAIN_PROFILES:
             pwhy_key = f"explain.{norm}.{profile}.why"
             pwhy = t(pwhy_key)
-            # Skip profiles with no translation (handles both mock and real i18n)
             if pwhy in (pwhy_key, f"[{pwhy_key}]"):
                 continue
 
@@ -712,11 +749,17 @@ def run_explain(key: str, t) -> bool:
         print(_DIVIDER_SHORT)
         print(how_val)
         print()
-        _note = "\u24d8  " + t("explain.ui.uniform_profiles_note")
-        if sys.stdout.isatty():
-            print(f"  \033[33m{_note}\033[0m")
-        else:
-            print(f"  {_note}")
+        # Say "applies equally to all profiles" only when that is true. A
+        # profile that downgrades this key to INFO, or skips its section, is
+        # exactly what the operator came here to find out.
+        _notes = profile_override_notes(norm, t)
+        _lines = _notes or [t("explain.ui.uniform_profiles_note")]
+        for _line in _lines:
+            _note = "\u24d8  " + _line
+            if sys.stdout.isatty():
+                print(f"  \033[33m{_note}\033[0m")
+            else:
+                print(f"  {_note}")
         print()
 
     _explain_scoring(norm, t)
@@ -763,6 +806,30 @@ def _init_colors():
     from bob.tui._palette import init_palette
 
     return init_palette(curses, notice=curses.COLOR_CYAN)
+
+
+def _profile_override_note(profile: str, key: str, t) -> str:
+    """One derived line about how *profile* treats *key*, or "".
+
+    Read from ``bob/data/profiles/<profile>.conf`` through the normal loader,
+    so it inherits ``extends`` exactly as an audit does. Returns "" when the
+    profile neither overrides the key nor skips its section — there is nothing
+    to say then, and a section saying nothing is worse than none.
+    """
+    try:
+        from bob.profiles import load_profile
+        prof = load_profile(profile)
+    except Exception:                      # pragma: no cover — defensive
+        return ""
+
+    section = key.split(".", 1)[0]
+    if prof.should_skip_section(section):
+        return t("explain.ui.profile_skips", profile=profile, section=section)
+
+    level = prof.override_for(key)
+    if level:
+        return t("explain.ui.profile_override", profile=profile, level=level.upper())
+    return ""
 
 
 def _detail_screen(stdscr, key: str, t) -> None:
@@ -844,7 +911,11 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 for wrapped in textwrap.wrap(para, w - 4) or [""]:
                     lines.append((f"  {wrapped}", normal))
             lines.append(("", normal))
-            lines.append(("  \u24d8  " + t("explain.ui.uniform_profiles_note"), yellow_attr))
+            for _line in profile_override_notes(norm, t) or [
+                t("explain.ui.uniform_profiles_note")
+            ]:
+                for wrapped in textwrap.wrap("\u24d8  " + _line, w - 4) or [""]:
+                    lines.append((f"  {wrapped}", yellow_attr))
             lines.append(("", normal))
         return lines
 

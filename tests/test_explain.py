@@ -642,8 +642,47 @@ class TestRunExplainUniform:
         assert "HOW TO FIX" in out
 
     def test_uniform_key_shows_uniform_note(self):
-        out = self._capture("ssh.password_auth")
+        # ssh.permit_root_login is overridden by no shipped profile, so the
+        # uniformity claim is true of it. This assertion used to name
+        # ssh.password_auth, which desktop, workstation and container all
+        # downgrade to INFO — the test pinned the false claim in place.
+        out = self._capture("ssh.permit_root_login")
         assert "applies equally" in out
+
+    def test_overridden_key_names_the_profiles_instead(self):
+        """A key a profile treats specially must not be called uniform."""
+        out = self._capture("ssh.password_auth")
+        assert "applies equally" not in out
+        for profile in ("desktop", "workstation", "container"):
+            assert profile in out, f"{profile} downgrades this key but is unnamed"
+
+    def test_no_key_claims_uniformity_a_profile_contradicts(self):
+        """The whole population, not one example.
+
+        An operator reads that line to decide whether their profile changes
+        the verdict; 32 keys answered "it does not" while a profile silently
+        downgraded them.
+        """
+        from bob.explain import EXPLAIN_KEYS, profile_override_notes
+        from bob.profiles import load_profile
+        from bob import i18n
+
+        profiles = {
+            name: load_profile(name)
+            for name in ("server", "desktop", "workstation", "container")
+        }
+        liars = []
+        for key in EXPLAIN_KEYS:
+            if profile_override_notes(key, i18n.t):
+                continue                      # already differentiated
+            section = key.split(".", 1)[0]
+            for name, prof in profiles.items():
+                if prof.override_for(key) or prof.should_skip_section(section):
+                    liars.append(f"{key} (contradicted by {name})")
+        assert not liars, (
+            f"{len(liars)} key(s) would be announced as applying equally to "
+            f"all profiles while a profile treats them otherwise: {liars[:5]}"
+        )
 
     def test_uniform_key_no_profile_sections(self):
         out = self._capture("ssh.password_auth")

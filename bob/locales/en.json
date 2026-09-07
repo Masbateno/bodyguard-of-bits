@@ -1365,6 +1365,8 @@
       "did_you_mean": "Did you mean: {suggestions}?",
       "why_title": "WHY IT IS A RISK",
       "how_title": "HOW TO FIX",
+      "profile_skips": "The {profile} profile skips the whole {section} section, so this finding is never raised there.",
+      "profile_override": "The {profile} profile downgrades it to {level} — reported, but it costs no points there.",
       "uniform_profiles_note": "This finding applies equally to all profiles.",
       "scoring_title": "SCORING",
       "scoring_domain": "Domain",
