@@ -896,7 +896,7 @@
       "ignore_file": "  (~/.config/bob/ignore.yml)",
       "unignore": "Remove a finding key from the ignore list and exit",
       "show_ignored": "Display suppressed findings in grey alongside normal output",
-      "history": "Display score history sparkline (last 10 audits) and exit",
+      "history": "Score history: sparkline of the last 50, table of the last 10",
       "explain": "Interactive explain picker, or explain a specific key",
       "explain_interactive": "(interactive — arrows/jk, PgUp/PgDn, g/G, l, q)",
       "explain_list": "(list all keys)",

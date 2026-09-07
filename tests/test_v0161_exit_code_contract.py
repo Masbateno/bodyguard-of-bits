@@ -98,6 +98,24 @@ class TestTheHelpStringItselfCarriesBothConditions:
         assert re.search(r"target", _locale_exit_4(lang), re.IGNORECASE)
 
 
+    def test_the_constant_says_what_the_gate_does(self):
+        """The nearest documentation of all, and the one the v0.16.2 pass missed.
+
+        Nine documents were corrected when the gate widened; the comment on
+        ``EXIT_TARGET_MISSED`` itself still read "--target N specified and
+        score < N" three releases later. It sits four lines under a banner
+        saying "Documented in --help and DOCUMENTS/README_TECH.md", which is
+        exactly the kind of pointer that makes a reader trust it.
+        """
+        src = (_ROOT / "bob" / "__main__.py").read_text(encoding="utf-8")
+        m = re.search(r"^EXIT_TARGET_MISSED = 4\s*#(.*(?:\n#.*)*)", src, re.M)
+        assert m, "the constant no longer carries a comment"
+        assert _required_words().search(m.group(1)), (
+            f"the comment on EXIT_TARGET_MISSED describes a rule the gate no "
+            f"longer applies (it reads `{_gate_predicate()}`): {m.group(1)[:80]!r}"
+        )
+
+
 class TestEveryDocumentAgreesWithIt:
 
     @staticmethod

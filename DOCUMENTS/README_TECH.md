@@ -20,10 +20,10 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 - **ASCII banner** with system information — distro, hostname, UFW version, user, date
 - **UFW status check** — active/inactive, default incoming policy
 - **UFW rule analysis** — duplicate rules, unrestricted `allow from any`, IPv6 consistency
-- **Contextual scoring** — network context detection (direct public IP vs NAT); penalties doubled on internet-exposed machines; firewall inactive caps score at 3/10
+- **Contextual scoring** — network context detection (direct public IP vs NAT); penalties are heavier on internet-exposed machines (an uncovered open port goes 1 → 2 points; a high/critical exposed service 2 → 3); firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
-- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 174 entries (107 formal CIS, 60 best-practice, 7 Docker)
+- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 192 entries (108 formal CIS, 77 best-practice, 7 Docker)
 - **5 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / DETECTION & HEALTH
 - **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target, **and since v0.16.2 whenever anything could not be read** — a score nothing verified cannot satisfy a gate (CI-ready). v0.16.0 said "whenever the score is an upper bound"; that stopped covering the case where blindness removes a whole scoring domain, which is the least trustworthy run of all
 
@@ -44,7 +44,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 ### System hardening
 
 - **Hardening check** — unattended-upgrades, AppArmor mode, rp_filter, ICMP redirects, log_martians, ICMP broadcast echo; scored deductions for the most impactful settings
-- **SSH security audit** — full `sshd_config` analysis (15 directives + weak Ciphers/MACs/KEX); private key audit (type, size, passphrase); `authorized_keys` inspection; `~/.ssh/config` client-side check; `known_hosts` entry count; distro-aware install hints
+- **SSH security audit** — full `sshd_config` analysis (12 directives with value rules, plus AllowUsers/AllowGroups/DenyUsers/DenyGroups access lists and weak Ciphers/MACs/KEX); private key audit (type, size, passphrase); `authorized_keys` inspection; `~/.ssh/config` client-side check; `known_hosts` entry count; distro-aware install hints
 - **Sensitive files & sudoers** — permissions audit on `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`, `/etc/sudoers`; SSH host private key permissions; `NOPASSWD:ALL` detection across sudoers and sudoers.d
 - **System updates audit** — pending security packages via `apt-get -s upgrade` (−2 pts flat); absent `unattended-upgrades` combined with pending security updates (−1 pt compound); regular updates → INFO only
 - **System umask audit** — reads umask from `/etc/login.defs`, PAM, `/etc/profile`, shell RC files, and current process; permissive umask (0002/0000) → WARN −1 pt; conflicting sources → WARN −1 pt
@@ -60,7 +60,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 ### Detection & monitoring
 
 - **UFW log analysis** — parses `/var/log/ufw.log` over a configurable period (`--log-days=N`, default 7 days); total blocked attempts, top source IPs with geolocation, top targeted ports, bruteforce detection (>10 attempts/60 s), attempts on installed service ports
-- **SSH auth.log analysis** — parses `/var/log/auth.log`; brute-force detection (>10 failed attempts from same IP within 60 s → ALERT −2 pts); last successful logins; top failed-login sources
+- **SSH auth.log analysis** — parses `/var/log/auth.log`; brute-force detection (≥50 failed attempts across the whole analysed period, all sources combined → WARN, no deduction); last successful logins; top failed-login sources
 - **IP geolocation** — source IPs enriched with country and operator via GeoIP2 (optional, `python3-geoip2` + GeoLite2 database); private ranges identified as local network; results cached per session
 - **IoT/local source dominance** — detects when a single private IP accounts for ≥ 70 % of all blocked UFW traffic over ≥ 50 log entries (WARN, −1 pt); typical of LAN-scanning IoT devices
 - **NTP time synchronisation** — systemd-timesyncd, chronyd, or ntpd; WARN −1 pt if disabled or not synchronised
@@ -80,12 +80,12 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail
-- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 187 explainable keys across 49 prefixes; 70 keys show profile-specific sections; interactive TUI; no root required; `--explain list` shows all keys
+- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 187 explainable keys across 49 prefixes; 75 keys carry a per-profile note (a profile downgrades them or skips their section), 112 apply equally to every profile; interactive TUI; no root required; `--explain list` shows all keys
 - **Domain scores** — per-domain 0–10 sub-scores (SSH / Samba / Files & Access / Updates / Hardening / Disk Health / Firewall & Services); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases
-- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 34 filterable section names
+- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 48 section names — the 38 that are filterable, plus the 10 always-on ones it also lists
 - **`--output-dir PATH`** — override report save directory for the current run; no persist
 - **Comparative report** — baseline saved after each audit (`~/.config/bob/last_baseline.json`); next run shows score delta, alert/warn changes, new/closed ports, started/stopped services; new and resolved ALERT+WARN finding keys tracked separately
 - **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 1000-entry rotation
@@ -139,6 +139,12 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 | Jenkins                          | 8080/tcp             | High     | CI/CD console; RCE risk via script console; admin panel often unauthenticated        |
 | OpenVPN                          | 1194/udp             | Medium   | Intentional internet exposure; full internal network access if keys stolen           |
 | Squid Proxy                      | 3128/tcp             | Medium   | Open proxy risk if not restricted; can expose internal services                      |
+| Vaultwarden Password Manager     | 8000/tcp, 3012/tcp   | High     | Holds every credential on the host; exposure turns one breach into all of them        |
+| Authelia (SSO/auth proxy)        | 9091/tcp             | High     | Guards every service behind it; a bypass here bypasses all of them                    |
+| Caddy Web Server                 | 80/tcp, 443/tcp      | Medium   | Public by design; automatic TLS, but any vhost misconfiguration is internet-facing     |
+| AdGuard Home (DNS sinkhole)      | 53/udp, 53/tcp, 3000/tcp | Medium | Open DNS resolver risk if exposed; the admin UI on 3000 is a separate exposure         |
+| Ollama (local LLM)               | 11434/tcp            | Medium   | Unauthenticated API by default; exposure grants model and prompt access to anyone      |
+| Tailscale VPN                    | 41641/udp            | Low      | WireGuard mesh; the port is the encrypted transport, not an administrative surface     |
 
 > **ℹ Note on service coverage:** Detection and classification for the following services has been validated through real-world testing: SSH, Samba, Avahi, CUPS, Redis, WireGuard, Docker, Mosquitto, Syncthing, Nginx. Other services are implemented but not yet validated by a formal test protocol. If you run one of these services and notice incorrect behaviour, please open an issue on GitHub.
 
@@ -210,11 +216,11 @@ sudo bob -v
 # Detailed mode — generate a full report file
 sudo bob -d
 
-# Fix mode — propose and apply corrections interactively
+# Fix mode — preview available fixes (dry run, nothing is executed)
 sudo bob -f
 
-# Fix mode — apply all corrections without confirmation
-sudo bob -f -y
+# Fix mode — apply all corrections without confirmation (--apply is required)
+sudo bob -f --apply -y
 
 # No-colour output (useful for pipes and redirection)
 sudo bob -n > audit.txt
@@ -336,7 +342,7 @@ Inside the sandbox child:
 - No `__import__` of arbitrary modules — only an allowlist (bob.scoring, pathlib, json, etc.).
 - No network I/O.
 
-If a plugin attempts any of the above, it raises in the sandbox child, the parent records a `plugin.sandbox.error` WARN finding, and the audit continues unaffected.
+If a plugin attempts any of the above, it raises in the sandbox child, the parent records a WARN finding under one of twelve `plugin.sandbox.*` keys (`error`, `rejected`, `crashed`, `timeout`, `syntax_error`, `unreadable`, `bad_payload`, `bad_return`, `no_result`, `missing_run_check`, `runner_error`, `serialize_failed`) — an `--ignore plugin.sandbox.error` suppresses one of them, not plugin failures in general, and the audit continues unaffected.
 
 ---
 
@@ -355,7 +361,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.13.2  │  Linux hardening auditor                                     ║
+║  BOB v0.16.3  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -474,8 +480,8 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `-v`, `--verbose`       | Show technical details (port table, per-port exposure)             |
 | `-d`, `--detailed`      | Generate a full report file                                        |
 | `-q`, `--quiet`         | Suppress all output — use exit code to detect issues               |
-| `-f`, `--fix`           | Propose and apply corrections interactively                        |
-| `-y`, `--yes`           | Apply all corrections without confirmation (use with `-f`)         |
+| `-f`, `--fix`           | Preview available fixes (dry run — nothing is executed)                           |
+| `-y`, `--yes`           | Auto-confirm all fixes with an audit trail (requires `--fix --apply`) |
 | `-r`, `--reconfigure`   | Delete the saved configuration and exit (asks first)               |
 | `-n`, `--no-color`      | Force ANSI colour off (colour is auto-detected from the TTY)       |
 | `--format=FORMAT`       | Unified output flag: `json \| json-full \| csv \| markdown \| html` |
@@ -491,6 +497,25 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--manage-logs`         | Interactive UI to list, preview, and delete saved report files     |
 | `--install-cron`        | Set up an automated nightly audit (cron)                           |
 | `--install-completion`  | Install bash completion and create sudo PATH symlink               |
+| `-p`, `--profile=NAME`  | Audit profile: `server` (default), `desktop`, `workstation`, `container` |
+| `--check=LIST`          | Run only these checks (comma-separated); `--check=list` shows every available name |
+| `--skip=LIST`           | Skip these checks (comma-separated; mutually exclusive with `--check`) |
+| `--target=N`            | Score target (1–10): gap, success or ceiling; exit 4 if unmet — or if the score could not be verified |
+| `--min-level=LEVEL`     | Only show findings at or above `warn` or `alert` (the run context is unchanged) |
+| `--apply`               | Execute fixes interactively (requires `--fix`)                     |
+| `--output=FORMAT`       | Alias of `--format` (not to be confused with `--output-dir`)       |
+| `--output-dir=PATH`     | Save the detailed report to PATH (overrides the saved config)      |
+| `--html`                | Long-form alias of `--format=html`                                 |
+| `--watch[=N]`           | Re-run the audit every N seconds (default 60) — Ctrl+C to quit     |
+| `--history`             | Show the score history sparkline and recent table, then exit       |
+| `--ignore=KEY`          | Add a finding key to the ignore list and exit                      |
+| `--unignore=KEY`        | Remove a finding key from the ignore list and exit                 |
+| `--show-ignored`        | Display suppressed findings in grey alongside normal output        |
+| `--reset-baseline`      | Delete the stored audit baseline and exit                          |
+| `--test-webhook`        | Send a test payload to the configured webhook and exit (no audit)  |
+| `-C`, `--manage-cron`   | Interactive UI to list, edit or delete installed cron jobs         |
+| `--lang=CODE`           | Interface language: `en`, `fr` (default: detected from `$LANG`)    |
+| `--no-colour`           | Spelling alias of `--no-color`                                     |
 | `--french`              | Switch interface to French                                         |
 | `--english`             | Switch interface to English (symmetry with `--french`, v0.12.1)    |
 | `-V`, `--version`       | Show version and exit (no sudo required)                           |
@@ -505,7 +530,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `~/.local/bin/bob`                 | pipx entry point                                                     |
 | `/usr/local/bin/bob`               | Symlink for sudo access (created by `--install-completion`)          |
 | `/etc/bash_completion.d/bob`       | Bash completion (created by `--install-completion`)                  |
-| `/usr/local/bin/bob-nightly`       | Nightly wrapper script (created by `--install-cron`)                 |
+| `/usr/local/bin/bob-<name>`        | Wrapper script per installed job, `<name>` being the job name chosen at install time (created by `--install-cron`). `bob-nightly` is the pre-v0.12 fixed name, still recognised when reading existing jobs. |
 | `/etc/cron.d/bob-{name}`           | Named system cron entry (created by `--install-cron`)                |
 | `~/.config/bob/config.conf`        | User configuration (profile, webhook, log directory; permissions 600)|
 | `~/.config/bob/services.d/*.json`  | User plugin directory — custom service definitions (see note below)  |
@@ -572,6 +597,7 @@ All are opt-in; none is required for normal operation.
 | `FORCE_COLOR` | Any non-empty value forces colour **on** even when stdout is not a terminal — for `bob \| less -R`, or to capture a coloured log on purpose. Added in v0.14.0 alongside TTY auto-detection. |
 | `BOB_DEBUG` | Diagnostics: prints the full Python traceback on an `EXIT_ERROR` exit, and installs a real logging handler so the internal `logger.debug` / `logger.warning` records become visible (notably `_run()`'s per-subprocess failure trace). |
 | `BOB_SHARE` | Overrides the auto-detected package data directory (`bob/data/`). For distro packagers shipping the data files outside the Python package tree. |
+| `BOB_WEBHOOK_ALLOW_INSECURE` | Set to `1` to allow a plain `http://` webhook URL. Webhooks are HTTPS-only since v0.7.1 because the payload carries the host's findings; without this, an `http://` URL is refused with the reason. Documented in SECURITY.md's trust boundary as well |
 
 Precedence for colour, first match wins: `--no-color` → `NO_COLOR` → `FORCE_COLOR` → `stdout.isatty()`.
 
@@ -642,14 +668,19 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `score` | int (0–10) | Overall security score |
 | `score_max` | int | Always `10` |
 | `risk` | string | **Effective** risk level (includes posture escalation): `"low"`, `"medium"`, `"high"`, `"critical"` |
-| `network_context` | object | `{ "context": "local" \| "private" \| "public" \| "ddns" }` in short mode; extended with `interfaces`, `connections_count`, `top_remote_ips` in `--json-full` |
+| `network_context` | object | `{ "context": "local" \| "public" \| "ddns" }` in short mode (`"ddns"` is an upgrade of `"local"` applied when DDNS is active with an open unrestricted port, so exposure is scored at public weight); extended with `interfaces`, `connections_count`, `top_remote_ips` in `--json-full` |
 | `public_ip` | string | Public IP (empty if behind NAT) |
 | `alert_count` | int | Number of ALERT-level findings (renamed from `alerts` in v0.12.0) |
 | `warning_count` | int | Number of WARN-level findings (renamed from `warnings` in v0.12.0) |
 | `info_count` | int | Number of INFO-level findings (new in v2) |
 | `profile` | string | The audit profile that produced this result (`server` / `desktop` / `workstation` / `container`). New in v0.14.1, additive within v3. Since v0.14.0 the profile changes finding severities, `warning_count` and therefore the exit code, so two payloads for the same host can legitimately disagree — this field is what explains the difference. |
 | `degraded_sections` | array | Section names whose check raised and was degraded in place rather than aborting the audit (new in v0.14.1, additive within v3). Empty on a healthy run. Each also appears as a `<section>.unavailable` INFO finding. Lets a consumer tell "score 9 with every section evaluated" from "score 9 with two sections never run". |
-| `score_is_upper_bound` | bool | **New in v0.16.0.** True when a check could not read its input, so the deductions it did not make are *unknown, not zero* and `score` is a ceiling rather than a measurement. Masking `/etc/ssh/sshd_config` removes four deductions and moves the score from 7 to **8** — up, on a host BOB can see less of. `score` stays an integer so existing consumers are unaffected; this says what it is worth. |
+| `score_is_upper_bound` | bool | **New in v0.16.0, narrowed in v0.16.2.** True when the score can only be *too high*: a check could not read its input, so the deductions it did not make are unknown rather than zero. Masking `/etc/ssh/sshd_config` removes four deductions and moves the score from 7 to **8** — up, on a host BOB can see less of. Since v0.16.2 this is **false** when blindness dropped a whole domain out of the average (`unscored_domains` non-empty): the denominator changed, so the score can move *down* too — masking `/etc/passwd` takes it from 7 to 6, and calling 6 a ceiling would claim a bound below the true value. **Gate on `score_is_uncertain`, not on this**: it is true whenever anything could not be read, in either direction. `score` stays an integer so existing consumers are unaffected. |
+| `target` | int \| null | The `--target N` value for this run, or `null` when `--target` was not used. |
+| `target_met` | bool \| null | Whether the target was met. `null` without `--target`. False also when the score could not be verified — the gate reads `score_is_uncertain`, not the score alone, so an unverifiable run fails closed. |
+| `score_low` | int | Low end of the interval the true score lies in, given what could not be read. Equals `score` when nothing was blind. |
+| `score_high` | int | High end of that interval. `score_low == score_high == score` on a fully readable run, so a consumer can use the pair unconditionally. |
+| `unscored_domains` | array | Domains dropped from the score average because their input was unreadable. Non-empty means the denominator changed, so the score moved in an unpredictable direction rather than merely being a ceiling — this is what makes `score_is_upper_bound` false while `score_is_uncertain` stays true. |
 | `unverified` | array | **New in v0.16.0.** The finding keys that mean a section could not be fully read (`ssh.config_unreadable`, `suid_audit.ok_partial`, …). Empty on a fully privileged run. Alert on `score_is_upper_bound` rather than counting this list: one unreadable section is enough to make the score a ceiling. |
 | `deductions` | array | Score deductions (filtered: `points > 0`) |
 | `domain_scores` | object | Per-domain sub-scores |
@@ -724,10 +755,10 @@ For an active domain, `reason` is `null`. This lets a consumer **reproduce the h
 | Key | Type | Description |
 |---|---|---|
 | `findings` | array | All findings with `{ key, level, message, detail, nature, cmd, note, template_vars, qualified_by }`. `detail` has been present since v0.8.1 and was missing from this list. **`qualified_by`** (new in v0.15.5, additive) holds the keys of findings from the same audit that qualify this one — for instance `ssh.config_newer_than_service`, which says the SSH findings describe the config file rather than the running service. A consumer matching on `key` alone cannot tell a qualified finding from an unqualified one; it is normally empty. |
-| `services` | array | Installed network services with `{ name, installed, active, risk, ports }` |
+| `services` | array | Installed network services with `{ name, installed, active, risk, ports }`. **`ports` is an object keyed by port number**, not a list: `{ "22": { "exposure": "open_world" } }`. |
 | `open_ports` | array | Listening ports on `0.0.0.0` with `{ port, address, process }` (filtered) |
 | `open_ports_all` | array | All listening ports, including localhost-bound (new in v2) |
-| `firewall_stack` | object | UFW bypass detection: docker, libvirt, nftables, ip_forward, etc. |
+| `firewall_drivers` | object | UFW bypass detection: docker, libvirt, nftables, ip_forward, etc. Named `firewall_stack` before v0.9.0; a consumer still reading the old name takes a `KeyError`. |
 | `deductions_raw` | array | All deductions, including synthetic zero-point caps (new in v2) |
 | `hardening` | object | Sysctl/AppArmor flags (only when hardening data is collected) |
 | `ipv6` | object | IPv6 stack consistency (only when IPv6 data is collected) |
@@ -791,7 +822,7 @@ As of v0.11.x, the `--explain` key set contains **187 keys** across **49 prefixe
 - **Additions:** new keys may be added in any minor release
 - **Coverage guard:** every WARN/ALERT finding emitted by `bob/checks/*.py` must have an `EXPLAIN_KEYS` entry or be listed in `tests/test_explain_coverage.py::_KNOWN_GAPS` (currently empty — v0.8.0 drift batch backfilled 51 missing entries)
 
-Prefix vocabulary (alphabetically): `auditd, auth_log, backup, clamav, cron_audit, ddns, disk, docker, docker_audit, fail2ban, file_integrity, file_perms, firewall, firewall_stack, firmware, hardening, iptables_nft, ipv6, kernel_hardening, kernel_modules, log_rotation, logs, mac_policy, memory, network_context, ntp, password_policy, ports, prerequisites, risk, rootkit, rules, samba, secure_boot, services, services_state, smtp, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
+Prefix vocabulary (49 prefixes, alphabetically): `auditd, auth_log, backup, clamav, cloud_context, container_security, cron, ddns, disk, docker, docker_hardening, fail2ban, file_integrity, file_perms, firewall, firewall_drivers, firewall_iptables, firewall_rules, firmware, hardening, ipv6, kernel_hardening, kernel_modules, log_rotation, logs, mac_policy, memory, network_context, ntp, password_policy, plugin, ports, prerequisites, risk, rootkit, samba, secure_boot, services, services_health, smtp, socket_units, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
 
 Adding a new prefix in a future release fails `TestExplainPrefixDiscipline::test_key_prefix_is_known` until the maintainer explicitly updates `KNOWN_PREFIXES` — surfacing the addition as a deliberate decision in code review.
 

@@ -82,7 +82,7 @@ dispatching three undeclared keys; the repaired version found the fourth.
 `Esc back` now appears on all nine nested screens. It appears on none of the
 four landing pages, and that is the whole of the exception: a wizard's first
 page has nowhere to go back to, and its `q` is the way out.
-**Tests** 8328 → **8470**.
+**Tests** 8328 → **8507**.
 
 ---
 

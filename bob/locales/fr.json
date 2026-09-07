@@ -896,7 +896,7 @@
       "ignore_file": "  (~/.config/bob/ignore.yml)",
       "unignore": "Retire une clé de constat des ignorés puis sort",
       "show_ignored": "Affiche en gris les constats supprimés",
-      "history": "Affiche l'historique des scores (10 derniers audits) puis sort",
+      "history": "Historique : sparkline des 50 derniers, table des 10 derniers",
       "explain": "Sélecteur interactif, ou explique une clé précise",
       "explain_interactive": "(interactif — flèches/jk, PgUp/PgDn, g/G, l, q)",
       "explain_list": "(liste toutes les clés)",

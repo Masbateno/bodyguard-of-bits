@@ -90,7 +90,10 @@ EXIT_OK            = 0  # clean audit — no alerts, no warnings
 EXIT_WARNINGS      = 1  # warnings detected (improvements suggested)
 EXIT_ALERTS        = 2  # alerts detected (action required)
 EXIT_ERROR         = 3  # technical error (CLI parsing, IO, internal)
-EXIT_TARGET_MISSED = 4  # --target N specified and score < N
+EXIT_TARGET_MISSED = 4  # --target N and score < N, or anything could not be read
+#                         (v0.16.2 widened this from "the score is an upper
+#                          bound": making that property honest would have
+#                          opened the gate on the least trustworthy run)
 
 
 def require_root() -> None:

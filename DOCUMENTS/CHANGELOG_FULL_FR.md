@@ -89,7 +89,7 @@ la version réparée a trouvé la quatrième.
 `Esc retour` figure désormais sur les neuf écrans imbriqués. Il ne figure sur
 aucune des quatre pages de garde, et c'est toute l'exception : la première page
 d'un assistant n'a nulle part où revenir, et son `q` est la sortie.
-**Tests** 8328 → **8470**.
+**Tests** 8328 → **8507**.
 
 ---
 
