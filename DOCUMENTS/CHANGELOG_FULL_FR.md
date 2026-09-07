@@ -6,6 +6,52 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.16.4] — 07-09-2026
+
+**« Cette garde mord » était une affirmation dans un message de commit, que rien ne revérifiait.**
+
+Neuf commits de la v0.16.3 disent « mutation-tested with a negative control ».
+C'était vrai à l'écriture et vérifiable par personne ensuite : le shell qui l'a
+exécuté n'existe plus, et il en reste une seule mention dans les fichiers de
+tests. Une garde dont l'ancre dérive à un refactor ultérieur devient inerte en
+silence, l'affirmation restant dans l'historique.
+
+Les mutations sont un fichier désormais. `tests/mutations.py` en contient 26 —
+le fichier, le changement exact, les tests qui doivent échouer à cause de lui,
+et une phrase sur ce qui revient s'ils n'échouent pas — et `scripts/mutate.py`
+rejoue chacune : il casse le code, lance uniquement les tests nommés, exige une
+sortie non nulle, restaure le fichier et vérifie qu'il est revenu à l'octet près.
+
+Chaque étape qui pourrait ne rien faire en silence affirme désormais qu'elle a
+fait quelque chose. L'ancre doit apparaître **exactement une fois** — zéro
+signifie qu'un refactor l'a déplacée, plus d'une qu'elle est ambiguë — et les
+deux cas arrêtent le banc sur une erreur plutôt que sur un verdict. Cela en a
+attrapé deux dès la première exécution : une ligne d'aide ajoutée à trois
+endroits, et un appel que l'extraction de `draw_text` avait déplacé.
+
+**Le banc énonce ses propres contrôles à chaque exécution.** Les gardes nommées
+doivent passer non mutées : c'est le contrôle négatif. Puis un changement qui
+*ne peut rien* changer — une espace dans une docstring de module — doit
+**survivre**. Les deux fois où ce banc a réellement menti, c'était de cette
+seconde sorte : une fois en cherchant `failed` en minuscules dans le `FAILED` de
+pytest, déclarant inertes cinq gardes vivantes ; une fois parce que son
+enveloppe shell ne transmettait jamais ses arguments au script de mutation, si
+bien qu'aucune mutation n'était appliquée et que les six revenaient « inertes ».
+Chacune a produit une table nette et plausible ne décrivant rien, sans que rien
+dans le banc n'objecte.
+
+`tests/test_v0164_mutation_contract.py` en est la moitié rapide : il vérifie
+dans la suite ordinaire que chaque ancre correspond encore exactement une fois
+et que chaque nœud de test nommé est collectable — une ancre qui dérive échoue
+en quelques secondes en nommant la garde dont la visée est à revoir.
+
+Un job CI rejoue tout le contrat puis lance `git diff --exit-code`, parce qu'un
+banc qui laisse l'arbre muté est un mensonge d'un autre genre.
+
+**Tests** 8572 → **8680**.
+
+---
+
 ## [v0.16.3] — 07-09-2026
 
 **Une ligne d'aide, une note de profil, un manuel de référence — trois affirmations sur BOB, aucune vérifiée contre BOB.**

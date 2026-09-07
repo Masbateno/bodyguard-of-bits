@@ -6,6 +6,50 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.16.4] — 2026-09-07
+
+**"This guard bites" was a claim in a commit message, and nothing re-checked it.**
+
+Nine commits in v0.16.3 say "mutation-tested with a negative control". That was
+true when written and verifiable by nobody afterwards: the shell that ran it is
+gone, and one mention of it survives in the test files. A guard whose anchor
+drifts during a later refactor goes quietly inert with the claim still standing
+in the history.
+
+The mutations are a file now. `tests/mutations.py` holds 26 of them — the file,
+the exact change, the tests that must fail because of it, and a sentence on
+what returns if they do not — and `scripts/mutate.py` replays each one: it
+breaks the code, runs only the named tests, requires a non-zero exit, restores
+the file and checks it came back byte-identical.
+
+Every step that could silently do nothing now asserts that it did something.
+The anchor must appear **exactly once** — zero means a refactor moved it, more
+than one means the mutation is ambiguous — and both cases stop the bench with
+an error rather than a verdict. That caught two on the first run: a helper line
+that had been added in three places, and a call the `draw_text` extraction had
+moved.
+
+**The bench states its own controls on every run.** The named guards must pass
+unmutated, which is the negative control. Then a change that *cannot* matter —
+one space inside a module docstring — must **survive**. Both times this bench
+has actually lied it was of that second kind: once it grepped `failed` in lower
+case against pytest's `FAILED` and reported five live guards inert; once its
+shell wrapper never forwarded its arguments to the mutation script, so no
+mutation was applied and all six came back "inert". Each produced a clean,
+plausible table describing nothing, and nothing in the bench objected.
+
+`tests/test_v0164_mutation_contract.py` is the fast half: it checks in the
+ordinary test run that every anchor still matches exactly once and every named
+test node is collectable, so a drifting anchor fails in seconds and names the
+guard whose aim needs re-checking.
+
+A CI job runs the whole contract and then `git diff --exit-code`, because a
+bench that leaves the tree mutated is its own kind of lie.
+
+**Tests** 8572 → **8680**.
+
+---
+
 ## [v0.16.3] — 2026-09-07
 
 **A hint line, a profile note and a reference manual — three claims about BOB, none checked against BOB.**

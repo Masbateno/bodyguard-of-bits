@@ -1,3 +1,17 @@
+bodyguard-of-bits (0.16.4-1) UNRELEASED; urgency=low
+
+  * "This guard bites" was a claim in a commit message and nothing re-checked
+    it. Nine v0.16.3 commits made it; one mention survives in the tests. The
+    mutations now live in tests/mutations.py and scripts/mutate.py replays them
+    in CI: each breaks the code one way and requires the named guards to go red.
+  * The bench states its own controls on every run — the guards must pass
+    unmutated, and a change that cannot matter must survive. Both times this
+    bench has lied it was of the second kind: a clean table describing nothing,
+    once from grepping "failed" in lower case against pytest's FAILED, once from
+    a shell wrapper that never forwarded its arguments.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 07 Sep 2026 22:00:00 +0200
+
 bodyguard-of-bits (0.16.3-1) UNRELEASED; urgency=low
 
   * A hint line claims keys, a profile note claims a policy, and a reference

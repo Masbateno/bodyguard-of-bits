@@ -29,6 +29,38 @@ jobs:
       - name: Lint shipped package
         run: ruff check bob/
 
+  mutation:
+    name: mutation — every guard must still bite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade pip and install package
+        run: pip install --upgrade pip && pip install pytest beautifulsoup4 && pip install -e .
+
+      # A guard that cannot fail reports safety it does not provide. Until
+      # v0.16.4 that was checked by hand from a shell heredoc and reported in a
+      # commit message: nine v0.16.3 commits claim "mutation-tested" and one
+      # mention of it survives in the tests. The evidence evaporated, and a
+      # guard whose anchor drifts in a later refactor goes quietly inert with
+      # the claim still in the history.
+      #
+      # scripts/mutate.py breaks the code the way tests/mutations.py describes
+      # and requires the named tests to go red. It runs its own controls first:
+      # the guards must pass unmutated, and a change that cannot matter — a
+      # space inside a docstring — must survive. Both failures this bench has
+      # actually had were of the second kind, a clean table describing nothing.
+      - name: The guards must bite
+        run: python3 scripts/mutate.py
+
+      - name: The tree must be exactly as it was
+        run: git diff --exit-code
+
   pytest:
     name: pytest — Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest

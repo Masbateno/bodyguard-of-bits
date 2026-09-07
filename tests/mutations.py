@@ -1,0 +1,282 @@
+"""The defects each guard is supposed to catch, written down so they stay caught.
+
+Not collected by pytest — it is data, read by ``scripts/mutate.py``, which
+breaks the code exactly this way and requires the named tests to go red.
+
+**Why it is a file and not a habit.** Nine commits in v0.16.3 say
+"mutation-tested with a negative control". That was true when written and
+verifiable by nobody afterwards: the shell that ran it is gone, and a guard
+whose anchor drifts during a later refactor goes quietly inert with the claim
+still in the history. Here the claim is executable.
+
+**Adding a guard means adding its mutation.** The entry says which single
+change to make and which tests must fail because of it. If a refactor moves the
+anchor, the bench stops with "the anchor appears 0 times" — which is the point:
+that is the moment the guard's aim needs re-checking, and it is exactly the
+moment nobody would otherwise notice.
+
+``old`` must appear **exactly once** in the file. Prefer a distinctive line over
+a short fragment, and name the tests as narrowly as the defect allows so the
+run stays fast.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from bob import __version__ as _V
+
+
+@dataclass(frozen=True)
+class Mutation:
+    id: str
+    file: str
+    old: str
+    new: str
+    kills: "tuple[str, ...]"
+    reason: str
+
+
+_EXPLAIN = "tests/test_explain.py"
+_CHROME = "tests/test_v0163_bottom_chrome.py"
+_CLAIMS = "tests/test_v0163_readme_tech_claims.py"
+_DOCEX = "tests/test_v0163_doc_examples_run.py"
+
+
+MUTATIONS: "tuple[Mutation, ...]" = (
+
+    # ---- --explain: what a profile does with a finding ---------------------
+    Mutation(
+        id="explain/uniformity-claim-unconditional",
+        file="bob/explain.py",
+        old="    notes: list[str] = []\n    for profile in _EXPLAIN_PROFILES:",
+        new="    notes: list[str] = []\n    return notes\n    for profile in _EXPLAIN_PROFILES:",
+        kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
+        reason="every key would again claim it applies equally to all profiles, "
+               "including the 32 that three profiles downgrade",
+    ),
+    Mutation(
+        id="explain/default-profiles-silent",
+        file="bob/explain.py",
+        old="        _profile_override_note(profile, key, t)\n"
+            '        or t("explain.ui.profile_default", profile=profile)',
+        new="        _profile_override_note(profile, key, t)\n"
+            '        or ""',
+        kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
+        reason="a profile applying the default severity would go unmentioned, "
+               "leaving its operator to read the silence",
+    ),
+    Mutation(
+        id="explain/four-lines-on-a-uniform-key",
+        file="bob/explain.py",
+        old="    if not profile_override_notes(key, t):\n        return []",
+        new="    if False:\n        return []",
+        kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
+        reason="a key no profile treats specially would list four profiles "
+               "saying the same thing — noise, not accountability",
+    ),
+    Mutation(
+        id="explain/workstation-unknown",
+        file="bob/explain.py",
+        old='_EXPLAIN_PROFILES: tuple = ("server", "desktop", "workstation", "container")',
+        new='_EXPLAIN_PROFILES: tuple = ("server", "desktop", "container")',
+        kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
+        reason="the regression a reader found by eye: workstation absent from "
+               "--explain despite 28 overrides of its own since v0.8.1",
+    ),
+    Mutation(
+        id="explain/prose-branch-skips-a-profile",
+        file="bob/explain.py",
+        old="                # No prose written for this profile. Say what its .conf says",
+        new="                continue\n                # No prose written for this profile. Say what its .conf says",
+        kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
+        reason="the 71 keys with per-profile prose would again drop the profile "
+               "that has none — all 71 lack a workstation variant",
+    ),
+    Mutation(
+        id="explain/how-to-fix-not-indented",
+        file="bob/explain.py",
+        old='            print(_indent(t("explain.ui.how_title")))',
+        new='            print(t("explain.ui.how_title"))',
+        kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
+        reason="the remedy would sit flush with the prose above it again",
+    ),
+    Mutation(
+        id="explain/profile-header-not-orange",
+        file="bob/explain.py",
+        old='    return f"{_c.orange}{label}{_c.reset}" if _c.orange else label',
+        new="    return label",
+        kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
+        reason="the [ profile ] heading would lose its colour on a terminal",
+    ),
+
+    # ---- the bottom chrome every wizard shares ------------------------------
+    Mutation(
+        id="tui/chrome-no-reserved-line",
+        file="bob/tui/_chrome.py",
+        old="    _safe(stdscr, curses, h - 1 - len(lines),\n"
+            "          context.ljust(w - 1)[:w - 1], ctx_attr)",
+        new="    pass",
+        kills=(f"{_CHROME}::TestTheGeometry", f"{_CHROME}::TestTheColours"),
+        reason="prompts and confirmations would go back to painting over the "
+               "key banner they ask the operator to use",
+    ),
+    Mutation(
+        id="tui/chrome-height-frozen",
+        file="bob/tui/_chrome.py",
+        old="    return len(banner_lines(t, actions, width)) + 1",
+        new="    return 2",
+        kills=(f"{_CHROME}::TestTheGeometry",),
+        reason="a screen would size its body one row short whenever the hints "
+               "wrap, hiding the last entry under the banner",
+    ),
+    Mutation(
+        id="tui/banner-loses-its-band",
+        file="bob/tui/_chrome.py",
+        old="    banner_attr = ((curses.color_pair(FOOTER) | curses.A_BOLD) if has_color\n"
+            "                   else curses.A_REVERSE)",
+        new="    banner_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)",
+        kills=(f"{_CHROME}::TestTheColours",),
+        reason="the key hints would go back to plain accent text with no band",
+    ),
+    Mutation(
+        id="tui/banner-truncates-instead-of-wrapping",
+        file="bob/tui/_chrome.py",
+        old="    draw_text(stdscr, curses, has_color, banner_lines(t, actions, w), context=context)",
+        new="    draw_text(stdscr, curses, has_color, [_keys.footer(t, actions, w)[:w - 1]], context=context)",
+        kills=(f"{_CHROME}::TestNothingIsTruncatedAway", f"{_CHROME}::TestTheGeometry"),
+        reason="at 80 columns five screens overflow in French and the cut would "
+               "take the exit hint, which sits on the right",
+    ),
+    Mutation(
+        id="tui/body-sized-by-a-constant",
+        file="bob/manage_logs.py",
+        old="        body_h = max(1, h - 1 - _ch.chrome_height(t, _MARKED_KEYS, w))",
+        new="        body_h = max(1, h - 2)",
+        kills=(f"{_CHROME}::TestNoScreenPaintsOverItsOwnBanner",),
+        reason="the pre-v0.16.3 arithmetic, already one short when hints wrap",
+    ),
+    Mutation(
+        id="tui/prompt-drawn-on-the-banner-row",
+        file="bob/tui/cron.py",
+        old='        raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_expression"))',
+        new='        raw = _curses_readline(stdscr, h - 1, w, "Expression")',
+        kills=(f"{_CHROME}::TestNoScreenPaintsOverItsOwnBanner",),
+        reason="seven cron prompts were drawn at h-1, erasing the keys they "
+               "were asking the operator to use",
+    ),
+    Mutation(
+        id="tui/input-helper-takes-a-row-again",
+        file="bob/tui/cron.py",
+        old="def _curses_readline(stdscr, t, actions, prompt: str",
+        new="def _curses_readline(stdscr, t, row, prompt: str",
+        kills=(f"{_CHROME}::TestEveryInputScreenShowsItsKeys",),
+        reason="the caller could once more draw a prompt without a banner — how "
+               "--install-cron's name entry ended up showing no keys at all",
+    ),
+    Mutation(
+        id="tui/input-hides-the-submit-key",
+        file="bob/tui/cron.py",
+        old="_INPUT_KEYS    = (_keys.SUBMIT,) + _keys.NESTED_EXIT",
+        new="_INPUT_KEYS    = _keys.NESTED_EXIT",
+        kills=(f"{_CHROME}::TestEveryInputScreenShowsItsKeys",),
+        reason="Enter is dispatched by every text input; undeclared, the only "
+               "advertised way out of a field is to abandon it",
+    ),
+    Mutation(
+        id="tui/cron-prompt-back-to-english",
+        file="bob/tui/cron.py",
+        old='t("cron_ui.field_name")',
+        new='"Name"',
+        kills=(f"{_CHROME}::TestTheCronScreensAreTranslated",),
+        reason="a French operator would type into an English field again",
+    ),
+    Mutation(
+        id="tui/french-colon-loses-its-space",
+        file="bob/locales/fr.json",
+        old='"prompt_sep": " : "',
+        new='"prompt_sep": ": "',
+        kills=(f"{_CHROME}::TestTheCronScreensAreTranslated",),
+        reason="`Nom: nightly` is not French; the separator is a translation",
+    ),
+    Mutation(
+        id="tui/summary-toggle-frozen",
+        file="bob/manage_logs.py",
+        old='    return _PREVIEW_KEYS if mode == "full" else _PREVIEW_KEYS_SUMMARY',
+        new="    return _PREVIEW_KEYS",
+        kills=(f"{_CHROME}::TestAToggleAdvertisesWhereItGoes",),
+        reason="the banner would offer the summary to someone already reading it",
+    ),
+    Mutation(
+        id="tui/summary-toggle-hidden",
+        file="bob/manage_logs.py",
+        old="_PREVIEW_KEYS_SUMMARY = _keys.NAVIGATION + (_keys.FULL,) + _keys.NESTED_EXIT",
+        new="_PREVIEW_KEYS_SUMMARY = _keys.NAVIGATION + _keys.NESTED_EXIT",
+        kills=(f"{_CHROME}::TestAToggleAdvertisesWhereItGoes",),
+        reason="`s` still works there — hiding it is a screen acting on a key it "
+               "does not advertise, the defect v0.16.3 closed everywhere else",
+    ),
+
+    # ---- what the reference manual claims -----------------------------------
+    Mutation(
+        id="docs/json-key-renamed-away",
+        file="DOCUMENTS/README_TECH.md",
+        old="| `firewall_drivers` | object |",
+        new="| `firewall_stack` | object |",
+        kills=(f"{_CLAIMS}::TestEveryPublishedJsonKeyIsDocumented",),
+        reason="the pre-v0.9.0 name; a consumer following the document takes a "
+               "KeyError",
+    ),
+    Mutation(
+        id="docs/option-missing-from-the-reference",
+        file="DOCUMENTS/README_TECH.md",
+        old="| `--target=N`",
+        new="| `--targetXX=N`",
+        kills=(f"{_CLAIMS}::TestTheOptionsReferenceIsComplete",),
+        reason="19 of 43 options were undiscoverable to a reader of the reference",
+    ),
+    Mutation(
+        id="docs/service-missing-a-row",
+        file="DOCUMENTS/README_TECH.md",
+        old="| Ollama (local LLM)",
+        new="| OllamaXX (local LLM)",
+        kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
+        reason="the table carried 31 rows for 38 shipped services",
+    ),
+    Mutation(
+        id="docs/cis-reference-count-stale",
+        file="DOCUMENTS/README_TECH.md",
+        old="192 entries (108 formal CIS",
+        new="174 entries (107 formal CIS",
+        kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
+        reason="the count drifted by 18 entries across several releases",
+    ),
+    Mutation(
+        id="docs/network-context-phantom-value",
+        file="DOCUMENTS/README_TECH.md",
+        old='`{ "context": "local" \\| "public" \\| "ddns" }`',
+        new='`{ "context": "local" \\| "private" \\| "public" \\| "ddns" }`',
+        kills=(f"{_CLAIMS}::TestTheNamesAreReal",),
+        reason='"private" was offered as a value; no code path has ever emitted it',
+    ),
+    Mutation(
+        id="docs/sample-banner-version-stale",
+        file="DOCUMENTS/README_TECH.md",
+        # Anchored on the *current* version, read from the package: a literal
+        # here would break the bench at every release, which is churn, not a
+        # finding. The fast guard caught exactly that on the v0.16.4 bump.
+        old=f"║  BOB v{_V}  │  Linux hardening auditor",
+        new="║  BOB v0.13.2  │  Linux hardening auditor",
+        kills=(f"{_CLAIMS}::TestTheNamesAreReal",),
+        reason="the sample banner sat three minor versions behind the package",
+    ),
+    Mutation(
+        id="docs/example-command-does-not-run",
+        file="DOCUMENTS/TUTORIAL.md",
+        old="bob --explain ssh.password_auth",
+        new="bob --explain ssh.password_auth_enabled",
+        kills=(f"{_DOCEX}::test_every_explain_key_shown_to_a_user_exists",),
+        reason="the tutorial told a first-time reader to run a command that "
+               "exits 3 on a key that has never existed",
+    ),
+)
