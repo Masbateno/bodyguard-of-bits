@@ -90,7 +90,58 @@ entry may name a version the changelog has never heard of.
 Both are in the mutation contract, reproducing what actually happened rather
 than an abstraction of it.
 
-**Tests** 8572 → **8747**.
+### The source makes claims about itself, and nothing checked those either
+
+The hunt that produced this release's other passes turned inward. BOB's
+docstrings are unusually assertive — "this module never imports curses", "single
+source of truth", "no other module defines services inline" — which makes them
+unusually checkable, and unusually dangerous once stale.
+
+Three probes over the i18n surface found nothing, which is worth saying: all
+1114 literal `t()` keys resolve in both locales, five families of dynamically
+built keys produce nothing untranslated across sections, domains, sshd
+directives, correlation rules and exit codes, and not one of the 2325 keys is
+unread. That surface is healthy.
+
+**The headless build was the find.** `bob/tui/_keys.py`, `_palette.py` and
+`_chrome.py` each promise they never import curses; `explain.py`,
+`manage_logs.py` and `tui/cron.py` import them at module level *because of* that
+promise; and the Debian packaging splits `bob-core` from `bob-tui` on the same
+assumption. Load-bearing in three places, true when measured — and never
+exercised, because every machine that runs the suite has curses. One `import
+curses` at the top of `_keys.py` breaks a packaging contract with the suite
+entirely green. It is the shape of "a pipe is not a TTY": the environment
+guarantees you do not test the case. A subprocess now imports ten modules with
+the import blocked, and a negative control fails if the blocker ever stops
+blocking.
+
+Two of the three promises were also written in the wrong place — stated in the
+modules that *rely* on them rather than in the modules that could break them.
+They are in all three module docstrings now.
+
+**Seventeen "single source of truth" claims, all true, none held.** One
+`atomic_write`, one `_EMAIL_RE`, one `set_posture_from_engine`, one
+`service_label_to_subkey`, one `SCORE_BAR_WIDTH`, one `_SECTIONS`, four modules
+importing one shared fallback translator — checked by hand and now pinned. "True
+today, load bearing and unverified" is the state a property is in immediately
+before it stops being true, and a second copy of any of these would fail no test
+while it agreed with the first. The colour chart lived in three modules that
+agreed for nine releases.
+
+**And one claim was already false.** `_build_v3` emits `"schema_version": "3"`
+and its docstring said `v2 producer — v0.7.0 schema` from v0.12.0, when the v2
+builder became v3 in place. The JSON contract is the surface consumers script
+against, so the docstring is where they would look first. A producer may no
+longer name a schema it does not emit.
+
+The mutation bench earned its keep twice more here: it found the narrow-terminal
+header guard inert — it asserted the title survived and the full version was
+absent, which a truncating header satisfies by rendering `v0` — and it caught
+the stale-docstring mutation pointed at a test that had nothing to do with
+docstrings. The instance had been fixed and the class left unguarded, with the
+mutation claiming otherwise.
+
+**Tests** 8572 → **8791**.
 
 ---
 

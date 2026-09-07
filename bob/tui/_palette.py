@@ -16,6 +16,12 @@ this uses xterm index 208, a true orange; on an 8-colour terminal it falls back
 to `COLOR_YELLOW`, the nearest thing available and still clearly distinct from
 the cyan banner. Terminals with no colour at all keep the `A_REVERSE`
 highlighting each screen already applies as its fallback.
+
+This module never imports curses: the constants are resolved against a
+module handed in by the caller. ``bob-core`` ships without ``bob-tui``
+and must still import, and two non-TUI modules import this one at top
+level on the strength of that. tests/test_v0164_headless_import.py
+holds it.
 """
 
 from __future__ import annotations

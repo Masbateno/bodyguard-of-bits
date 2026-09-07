@@ -94,7 +94,61 @@ avoir une, et aucune entrée ne peut nommer une version que le changelog ignore.
 Les deux sont au contrat de mutation, reproduisant ce qui s'est réellement passé
 plutôt qu'une abstraction.
 
-**Tests** 8572 → **8747**.
+### Le source affirme des choses sur lui-même, et rien ne les vérifiait non plus
+
+La chasse qui a produit les autres passes de cette version s'est retournée vers
+l'intérieur. Les docstrings de BOB sont inhabituellement assertives — « ce
+module n'importe jamais curses », « single source of truth », « aucun autre
+module ne définit de services en dur » — ce qui les rend inhabituellement
+vérifiables, et inhabituellement dangereuses une fois périmées.
+
+Trois sondes sur la surface i18n n'ont rien donné, et cela mérite d'être dit :
+les 1114 clés littérales `t()` résolvent dans les deux locales, cinq familles de
+clés construites dynamiquement ne produisent rien de non traduit (sections,
+domaines, directives sshd, règles de corrélation, codes de sortie), et aucune des
+2325 clés n'est orpheline. Cette surface est saine.
+
+**Le build headless était la trouvaille.** `bob/tui/_keys.py`, `_palette.py` et
+`_chrome.py` promettent chacun de ne jamais importer curses ; `explain.py`,
+`manage_logs.py` et `tui/cron.py` les importent au niveau module *à cause* de
+cette promesse ; et le packaging Debian sépare `bob-core` de `bob-tui` sur la
+même hypothèse. Porteuse en trois endroits, vraie à la mesure — et jamais
+exercée, puisque toute machine qui fait tourner la suite a curses. Un `import
+curses` en tête de `_keys.py` casse un contrat de packaging avec la suite
+entièrement verte. C'est la forme de « un tuyau n'est pas un terminal » :
+l'environnement garantit qu'on ne teste pas le cas. Un sous-processus importe
+désormais dix modules avec l'import bloqué, et un contrôle négatif échoue si le
+bloqueur cesse de bloquer.
+
+Deux des trois promesses étaient de plus écrites au mauvais endroit — énoncées
+dans les modules qui s'y *fient* plutôt que dans ceux qui pourraient les casser.
+Elles sont dans les trois docstrings de module désormais.
+
+**Dix-sept « single source of truth », toutes vraies, aucune tenue.** Un seul
+`atomic_write`, un seul `_EMAIL_RE`, un seul `set_posture_from_engine`, un seul
+`service_label_to_subkey`, un seul `SCORE_BAR_WIDTH`, un seul `_SECTIONS`,
+quatre modules important un unique traducteur de repli — vérifiées à la main et
+désormais épinglées. « Vraie aujourd'hui, porteuse et non vérifiée » est l'état
+d'une propriété juste avant qu'elle cesse de l'être, et une seconde copie de
+n'importe laquelle ne ferait échouer aucun test tant qu'elle s'accorderait avec
+la première. La charte de couleurs a vécu dans trois modules d'accord entre eux
+pendant neuf versions.
+
+**Et une affirmation était déjà fausse.** `_build_v3` émet
+`"schema_version": "3"` et sa docstring disait `v2 producer — v0.7.0 schema`
+depuis la v0.12.0, quand le constructeur v2 est devenu v3 sur place. Le contrat
+JSON est la surface que les consommateurs scriptent : la docstring est le
+premier endroit où ils regarderaient. Un producteur ne peut plus nommer un
+schéma qu'il n'émet pas.
+
+Le banc de mutation a de nouveau gagné sa place deux fois : il a trouvé inerte
+la garde d'en-tête sur terminal étroit — elle affirmait que le titre survivait
+et que la version complète était absente, ce qu'un en-tête qui tronque satisfait
+en rendant `v0` — et il a attrapé la mutation « docstring périmée » pointée vers
+un test sans rapport avec les docstrings. L'instance avait été corrigée et la
+classe laissée sans garde, la mutation prétendant le contraire.
+
+**Tests** 8572 → **8791**.
 
 ---
 

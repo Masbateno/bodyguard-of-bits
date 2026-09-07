@@ -206,11 +206,19 @@ def _build_v3(
     degraded_sections: "tuple[str, ...] | list[str]" = (),
     audit_seconds: "float | None" = None,
 ) -> dict:
-    """v2 producer — v0.7.0 schema.
+    """v3 producer — the only schema BOB emits.
 
-    Differences from v1 (driven by tests/test_json_schema_v2.py):
+    Named ``_build_v3`` and emitting ``"schema_version": "3"``, but its
+    docstring said "v2 producer — v0.7.0 schema" from v0.12.0, when the v2
+    builder became v3 in place, until v0.16.4. A reader checking what BOB
+    produces read the name of a schema retired four minors earlier.
 
-      - ``schema_version`` = "2"
+    The differences below are the ones that took v1 to this shape; they are
+    history, and the section heading now says so.
+
+    History — what changed from v1:
+
+      - ``schema_version`` = "2", then "3" (F9, v0.12.0)
       - ``timestamp`` → ``timestamp_utc`` (B-3 — name signals UTC encoding)
       - ``info_count`` added at top level (B-7)
       - ``network_context`` is ALWAYS a dict with a canonical ``context``

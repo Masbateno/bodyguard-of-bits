@@ -19,9 +19,11 @@ fit: on an 80-column terminal five screens overflow in French (the
 ``--manage-cron`` manager runs to 105 columns), and a ``[:w]`` slice would cut
 from the right, which is where the exit hint sits.
 
-Like :mod:`bob.tui._palette`, this module never imports curses — ``bob.tui``
-may be absent from a headless ``bob-core`` build, and the caller is already
-inside a ``curses.wrapper`` session.
+Like :mod:`bob.tui._palette`, this module never imports curses: the
+constants are resolved against a module handed in by the caller. ``bob-core``
+ships without ``bob-tui`` and must still import, and the caller is already
+inside a ``curses.wrapper`` session. tests/test_v0164_headless_import.py
+holds it.
 """
 
 from __future__ import annotations

@@ -19,6 +19,12 @@ once and both are derived from that.
 Modelled on ``bob/tui/_palette.py``, and for the same reason: the previous
 arrangement was three copies that happened to agree, which is how the palette
 defect stayed uniform and invisible.
+
+This module never imports curses: the constants are resolved against a
+module handed in by the caller. ``bob-core`` ships without ``bob-tui``
+and must still import, and two non-TUI modules import this one at top
+level on the strength of that. tests/test_v0164_headless_import.py
+holds it.
 """
 
 from __future__ import annotations

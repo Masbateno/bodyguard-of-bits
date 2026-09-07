@@ -358,4 +358,48 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="a narrow terminal would lose the title to make room for a "
                "version number, which tells the operator less",
     ),
+
+    # ---- the headless build ---------------------------------------------------
+    Mutation(
+        id="headless/keys-imports-curses",
+        file="bob/tui/_keys.py",
+        old="from __future__ import annotations",
+        new="from __future__ import annotations\nimport curses  # noqa: F401",
+        kills=("tests/test_v0164_headless_import.py::test_the_module_does_not_import_curses_at_all",
+               "tests/test_v0164_headless_import.py::test_it_imports_with_curses_unavailable"),
+        reason="bob-core would stop importing on a machine with no curses, and "
+               "the full suite would stay green because the test machine has it",
+    ),
+    Mutation(
+        id="headless/blocker-stops-blocking",
+        file="tests/test_v0164_headless_import.py",
+        old='    if name.split(".")[0] in ("curses", "_curses"):',
+        new='    if name.split(".")[0] in ("nothing_at_all",):',
+        kills=("tests/test_v0164_headless_import.py::test_the_blocker_actually_blocks",),
+        reason="the bench would import curses freely and pass on every machine "
+               "that has one, which is every machine that runs it",
+    ),
+
+    # ---- what the source claims about itself ---------------------------------
+    Mutation(
+        id="claims/second-copy-of-a-single-source",
+        file="bob/display.py",
+        old="def _compute_posture_annotation(engine, t) -> tuple:",
+        new="def _compute_posture_annotation(engine, t) -> tuple:\n"
+            "    pass\n\n\n"
+            "def _compute_posture_annotation(engine, t) -> tuple:",
+        kills=("tests/test_v0164_uniqueness_claims.py::test_the_symbol_is_defined_exactly_once",),
+        reason="a second definition works until the two drift, which is the only "
+               "way this defect ever announces itself — the colour chart lived in "
+               "three modules that happened to agree for nine releases",
+    ),
+    Mutation(
+        id="claims/stale-schema-in-a-docstring",
+        file="bob/json_output.py",
+        old='    """v3 producer — the only schema BOB emits.',
+        new='    """v2 producer — v0.7.0 schema.',
+        kills=("tests/test_v0164_uniqueness_claims.py::test_no_producer_names_a_schema_it_does_not_emit",),
+        reason="the docstring named a schema retired four minors before, which "
+               "is what a reader checking what BOB produces would have believed",
+    ),
 )
