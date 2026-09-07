@@ -89,6 +89,80 @@ la version réparée a trouvé la quatrième.
 `Esc retour` figure désormais sur les neuf écrans imbriqués. Il ne figure sur
 aucune des quatre pages de garde, et c'est toute l'exception : la première page
 d'un assistant n'a nulle part où revenir, et son `q` est la sortie.
+### `--explain` affirmait à 32 clés qu'elles s'appliquaient identiquement à tous les profils
+
+`--explain` terminait chaque clé sans prose par profil sur la ligne
+`ⓘ Cette découverte s'applique de la même manière à tous les profils.` C'est la
+phrase que lit un opérateur pour décider si son profil change le verdict, et
+pour 32 clés elle était fausse : `ssh.password_auth` est rétrogradée en INFO
+par `desktop`, `workstation` et `container`, et était décrite comme
+s'appliquant identiquement aux quatre.
+
+L'affichage posait la mauvaise question. Il testait l'existence d'une
+*traduction*, puis se servait de la réponse pour affirmer quelque chose sur la
+*politique* — et aucune clé, dans aucune des deux locales, ne porte de prose
+par profil : l'affirmation était donc tirée d'une absence d'explication. C'est
+la plus ancienne classe de défauts de ce projet, un étage plus haut : la même
+forme que déclarer zéro port ouvert parce que `ss` n'a pas pu tourner.
+
+Prose et politique sont désormais deux questions. `profile_override_notes()`
+dérive ce que chaque profil livré fait réellement, depuis son `.conf` et par le
+chargeur normal, donc en héritant d'`extends` exactement comme un audit. La
+ligne d'uniformité ne survit que là où aucun profil ne la contredit — 112 clés
+sur 187. Les 75 autres nomment le profil et disent s'il rétrograde le constat
+ou saute purement sa section.
+
+`workstation` rejoint les profils que `--explain` connaît. Il a ses 28
+surcharges propres depuis la v0.8.1 et la commande ne le mentionnait pas.
+
+Le test qui exigeait que `ssh.password_auth` affiche « applies equally »
+épinglait l'affirmation fausse. Il nomme désormais une clé qu'aucun profil ne
+surcharge, et deux gardes le remplacent : une sur le rendu de cette clé, une
+sur toute la population des 187.
+
+### README_TECH : vingt défauts vérifiés, et des gardes pour la moitié dénombrable
+
+Un audit par agent a rendu 23 affirmations ancrées sur README_TECH.md ; vingt
+ont été vérifiées au banc et corrigées dans les deux locales. Le document se
+trompait sur ce que fait l'outil, pas seulement sur ses chiffres. `sudo bob -f
+-y` était donné en exemple d'usage, et il sort en 3 — `--yes` exige `--fix
+--apply`. `--fix` était décrit comme « propose et applique les corrections »
+alors qu'il tourne à blanc. Le brute force auth.log était documenté « >10
+tentatives échouées depuis la même IP en 60 s → ALERT, −2 pts » ; le seuil est
+50, compté sur toute la période analysée, toutes sources confondues, et lève un
+WARN sans déduction — quatre affirmations, quatre fausses. « Pénalités doublées
+sur les machines exposées » est vrai d'un port ouvert non couvert (1 → 2) et
+faux d'un service critique exposé (2 → 3). `plugin.sandbox.error` était nommée
+comme *la* clé d'échec du bac à sable ; elle est l'une de douze, si bien qu'un
+`--ignore` dessus masque un douzième de ce qu'un lecteur attend.
+
+Il se trompait aussi sur des noms qu'un consommateur recopie. `firewall_stack`
+est devenue `firewall_drivers` en v0.9.0 et est restée dans la table JSON trois
+majeures durant — suivre le document vaut un `KeyError`. `network_context`
+était documenté comme produisant `"private"`, que rien n'a jamais produit.
+`services[].ports` était documenté en liste ; c'est un objet indexé par port.
+`score_is_upper_bound` portait encore son sens de la v0.16.0, trois versions
+après que la v0.16.2 l'eut restreint et eut déplacé le portail `--target` vers
+`score_is_uncertain` : neuf surfaces avaient été corrigées alors, celle-là non.
+
+Et il se trompait sur ce qu'il énumère : 5 clés JSON requises absentes, 19
+options sur 43 manquantes de la référence, 6 services sur 38 sans ligne, 6
+préfixes fantômes et 10 vrais absents, 174 entrées CIS contre 192, 15
+directives SSH contre 12, une bannière d'exemple périmée de trois mineures. Une
+de plus est sortie de l'extraction de la vérité terrain : `--help` annonçait
+que la sparkline d'historique couvre les 10 derniers audits ; elle en couvre
+jusqu'à 50, et c'est la table en dessous qui en liste 10.
+
+La moitié dénombrable est désormais gardée — clés JSON, options, services,
+préfixes, comptes, noms, dans les deux locales. La prose ne se garde pas et
+reste un travail de lecture ; cette frontière est tout l'objet du nouveau
+fichier. Chaque garde est testée par mutation avec contrôle négatif, et trois
+étaient inertes à la première écriture : la vérification des services
+comparait les identifiants en sous-chaîne et acceptait une ligne renommée
+`OllamaXX`, celle des options faisait de même avec `--targetXX`, et une fois
+bornée aux frontières de mot sa classe de caractères était `[a-z0-9-]`, que
+`--targetXX` traversait encore sans encombre.
+
 **Tests** 8328 → **8507**.
 
 ---

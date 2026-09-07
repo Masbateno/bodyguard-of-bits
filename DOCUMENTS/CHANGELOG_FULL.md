@@ -82,6 +82,75 @@ dispatching three undeclared keys; the repaired version found the fourth.
 `Esc back` now appears on all nine nested screens. It appears on none of the
 four landing pages, and that is the whole of the exception: a wizard's first
 page has nowhere to go back to, and its `q` is the way out.
+### `--explain` told 32 keys they applied equally to every profile
+
+`--explain` closed every key without per-profile prose with the line
+`ⓘ This finding applies equally to all profiles.` That sentence is the one an
+operator reads to decide whether their profile changes the verdict, and for 32
+keys it was false: `ssh.password_auth` is downgraded to INFO by `desktop`,
+`workstation` and `container`, and was described as applying equally to all
+four.
+
+The display asked the wrong question. It tested whether a *translation*
+existed, then used the answer to make a claim about *policy* — and no key in
+either locale carries per-profile prose, so the claim was made from an absence
+of explanation. That is this project's oldest defect class, one layer up: the
+same shape as reporting zero open ports because `ss` could not run.
+
+Prose and policy are two questions now. `profile_override_notes()` derives what
+each shipped profile actually does from its `.conf` through the normal loader,
+so it inherits `extends` exactly as an audit does. The uniformity line survives
+only where no profile contradicts it — 112 keys of 187. The other 75 name the
+profile and say whether it downgrades the finding or skips its section outright.
+
+`workstation` joins the profiles `--explain` knows about. It has had its own 28
+overrides since v0.8.1 and the command never mentioned it.
+
+The test asserting `ssh.password_auth` shows "applies equally" had pinned the
+false claim in place. It now names a key no profile overrides, and two guards
+replace it: one on that key's render, one over the whole population of 187.
+
+### README_TECH: twenty verified defects, and guards for the countable half
+
+An agent audit returned 23 anchored claims about README_TECH.md; twenty were
+verified at the bench and corrected in both locales. The document was wrong
+about what the tool does, not only about its numbers. `sudo bob -f -y` was
+given as an example of use, and it exits 3 — `--yes` requires `--fix --apply`.
+`--fix` was described as "propose and apply corrections" against a pure dry
+run. auth.log brute force was documented as ">10 failed attempts from the same
+IP within 60 s → ALERT, −2 pts"; the threshold is 50, counted across the whole
+analysed period with all sources combined, raising WARN with no deduction —
+four claims, four wrong. "Penalties doubled on internet-exposed machines" is
+true of an uncovered open port (1 → 2) and false of a high/critical exposed
+service (2 → 3). `plugin.sandbox.error` was named as *the* sandbox failure key;
+it is one of twelve, so an `--ignore` on it suppresses a twelfth of what a
+reader would expect.
+
+It was also wrong about names a consumer copies. `firewall_stack` was renamed
+`firewall_drivers` in v0.9.0 and stayed in the JSON table for three majors —
+following the document earns a `KeyError`. `network_context` was documented as
+producing `"private"`, which nothing has ever produced. `services[].ports` was
+documented as a list; it is an object keyed by port. `score_is_upper_bound`
+still carried its v0.16.0 meaning, three releases after v0.16.2 narrowed it and
+moved the `--target` gate to `score_is_uncertain`: nine surfaces were corrected
+then, and this was not one of them.
+
+And it was wrong about what it enumerates: 5 required JSON keys absent, 19 of
+43 options missing from the options reference, 6 of 38 services with no row, 6
+phantom prefixes alongside 10 real ones missing, 174 CIS entries against 192,
+15 SSH directives against 12, a sample banner three minors stale. One more
+surfaced while extracting ground truth: `--help` said the history sparkline
+covers the last 10 audits; it covers up to 50, and the table below it lists 10.
+
+The countable half is now guarded — JSON keys, options, services, prefixes,
+counts, names, in both locales. Prose is not guardable and stays a reading job;
+that line is the point of the new file. Every guard is mutation-tested with a
+negative control, and three were inert when first written: the services check
+matched ids as substrings and accepted a row renamed to `OllamaXX`, the options
+check did the same with `--targetXX`, and after that was word-bounded its
+boundary class was `[a-z0-9-]`, which `--targetXX` still walked straight
+through.
+
 **Tests** 8328 → **8507**.
 
 ---
