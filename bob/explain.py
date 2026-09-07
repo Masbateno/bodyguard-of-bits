@@ -999,7 +999,8 @@ def _detail_screen(stdscr, key: str, t) -> None:
     while True:
         h, w    = stdscr.getmaxyx()
         content = _build_lines(w)
-        body_h  = h - 2          # 1 header + 1 footer
+        from bob.tui import _chrome as _ch
+        body_h  = max(1, h - 1 - _ch.chrome_height(t, _DETAIL_KEYS, w))
         max_scroll = max(0, len(content) - body_h)
 
         stdscr.erase()
@@ -1028,13 +1029,9 @@ def _detail_screen(stdscr, key: str, t) -> None:
             except curses.error:
                 pass
 
-        # ── footer ───────────────────────────────────────────────────────────
-        _ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
-        for _i, _line in enumerate(reversed(_keys.footer_lines(t, _DETAIL_KEYS, w - 2))):
-            try:
-                stdscr.addstr(h - 1 - _i, 0, _line.ljust(w - 1)[: w - 1], _ftr_attr)
-            except curses.error:
-                pass
+        # ── bottom chrome ────────────────────────────────────────────────────
+        from bob.tui import _chrome
+        _chrome.draw(stdscr, curses, t, _DETAIL_KEYS, has_color)
 
         stdscr.refresh()
 
@@ -1084,7 +1081,8 @@ def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
 
     while True:
         h, w = stdscr.getmaxyx()
-        list_h = h - 2  # 1 header line + 1 footer line
+        from bob.tui import _chrome as _ch
+        list_h = max(1, h - 1 - _ch.chrome_height(t, _PICKER_KEYS, w))
 
         # Keep selected item in view
         if selected - scroll >= list_h:
@@ -1146,13 +1144,9 @@ def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
                     except curses.error:
                         pass
 
-        # ── footer ───────────────────────────────────────────────────────────
-        ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
-        for i, line in enumerate(reversed(_keys.footer_lines(t, _PICKER_KEYS, w - 2))):
-            try:
-                stdscr.addstr(h - 1 - i, 0, line.ljust(w - 1)[: w - 1], ftr_attr)
-            except curses.error:
-                pass
+        # ── bottom chrome ────────────────────────────────────────────────────
+        from bob.tui import _chrome
+        _chrome.draw(stdscr, curses, t, _PICKER_KEYS, has_color)
 
         stdscr.refresh()
 

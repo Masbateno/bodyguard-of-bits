@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 8515 unit tests · 19 doc files · 5+ distros field-tested │
+│                 8530 unit tests · 19 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -239,7 +239,7 @@ bodyguard-of-bits/
 │   │       ├── _parsers.py    ← pure parsers, key-type helpers, collect_host_keys (446 L)
 │   │       └── _subchecks.py  ← check_ssh entry point + per-area _check_* helpers, incl. v0.10.1 client-side ForwardX11 detection (605 L)
 │   ├── cron/                  ← split package since v0.6.0 (was 1204 L monolith)
-│   │   ├── __init__.py        ← public re-exports incl. datetime + _EMAIL_RE (101 L)
+│   │   ├── __init__.py        ← public re-exports incl. datetime + _EMAIL_RE (102 L)
 │   │   ├── _parse.py          ← CronEntry + parsing + listing + validators + MTA + constants (369 L)
 │   │   ├── _io.py             ← atomic-write delegation (bob/_atomic.py) + build_script_content + apply_cron_* (193 L)
 │   │   ├── _options.py        ← v0.16.1 the 3 closed audit dimensions a scheduled run carries (94 L)
@@ -248,7 +248,8 @@ bodyguard-of-bits/
 │   ├── tui/                   ← optional curses subpackage (v0.4.1 extraction)
 │   │   ├── __init__.py
 │   │   ├── _keys.py           ← v0.16.3 THE curses key contract: actions, footer, dispatch (205 L)
-│   │   ├── _palette.py        ← v0.16.1 THE curses colour chart, single source for all 3 screens (91 L)
+│   │   ├── _palette.py        ← v0.16.1 THE curses colour chart, single source for all 3 screens (102 L)
+│   │   ├── _chrome.py         ← v0.16.3 THE bottom chrome: reserved context line + orange key banner (81 L)
 │   │   └── cron.py            ← curses wizard for --install-cron / --manage-cron (1149 L)
 │   ├── display.py             ← terminal output helpers + _compute_posture_annotation single helper (v0.7.2 M-10), 903 L
 │   ├── output.py              ← low-level terminal primitives, 675 L
@@ -291,7 +292,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 222 test files, ~5701 functions, 8515 collected (v0.16.3)
+├── tests/                     ← 223 test files, ~5711 functions, 8530 collected (v0.16.3)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -340,7 +341,8 @@ bodyguard-of-bits/
 | `fixes.py` | 148 | `--fix` interactive UI with [y/N] prompts |
 | `cron/` (package) | **1628** | Split in v0.6.0 from 1204 L monolith. `__init__.py` (112) re-exports the public surface incl. `datetime` + `_EMAIL_RE` · `_parse.py` (369) CronEntry + parsing + validators + MTA detection + day helpers · `_io.py` (193) delegates to `bob/_atomic.py` (v0.6.1) + `build_script_content(notify_email, log_dir, audit_options="")` + `apply_cron_schedule` / `apply_cron_email` · `_options.py` (94) **v0.16.1** `CRON_PROFILES` / `CRON_LANGS` / `build_audit_options` / `default_dimensions` — the profile, language and network dimensions a scheduled audit pins, built from closed sets only because the result lands in a root-owned script · `_install.py` (408) prompt_emails/prompt_email + `_prompt_choice` + plain wizard + `run_install_cron` · `_manage.py` (452) `_manage_email_store` + edit_cron_email/schedule + plain wizard + `run_manage_cron` |
 | `tui/_keys.py` | 205 | **v0.16.3** the key contract every curses screen obeys. Action constants (`MOVE`/`PAGE`/`EDGE`/`SELECT`/`BACK`/`QUIT`/`LANG` + per-screen ones), `NAVIGATION` (the floor every list gets), `LANDING_EXIT` vs `NESTED_EXIT`, `resolve()` / `direction()` / `is_top()` for the dispatch, `footer_lines()` which composes the translated hint line and wraps it rather than truncating, `conflicts()`, and `toggle_language()`. A screen declares its actions once and both the footer and the dispatch derive from that, so the line and the bindings cannot drift apart. Never imports curses — the constants are resolved against a module passed in — so `bob-core` stays importable. **Do not spell key hints out anywhere else**; a guard rejects it |
-| `tui/_palette.py` | 91 | **v0.16.1** the five curses colour pairs, defined once. `SELECTION` / `ACCENT` / `NORMAL` / `NOTICE` / `BANNER` + `init_palette(curses, notice=)` + `selection_background(curses)`. Before it, `explain.py`, `manage_logs.py` and `tui/cron.py` each called `init_pair` themselves with the same chart — they agreed, which is why the cursor row and the banner shared a cyan background on all three screens. Selection is now orange (xterm-256 index 208, falling back to `COLOR_YELLOW` on an 8-colour terminal). `notice` is the one per-screen slot: red for a warning list, cyan for `--explain`'s detail heading. **Do not call `init_pair` outside this module** — a guard rejects it. **v0.16.3** adds `marked_attr(curses, has_color)`: a row toggled with Space reads red bold, or underlined without colour, on every screen — it was red in `--manage-logs`, yellow in `--manage-cron` and uncoloured in both e-mail screens |
+| `tui/_palette.py` | 102 | **v0.16.1** the five curses colour pairs, defined once. `SELECTION` / `ACCENT` / `NORMAL` / `NOTICE` / `BANNER` + `init_palette(curses, notice=)` + `selection_background(curses)`. Before it, `explain.py`, `manage_logs.py` and `tui/cron.py` each called `init_pair` themselves with the same chart — they agreed, which is why the cursor row and the banner shared a cyan background on all three screens. Selection is now orange (xterm-256 index 208, falling back to `COLOR_YELLOW` on an 8-colour terminal). `notice` is the one per-screen slot: red for a warning list, cyan for `--explain`'s detail heading. **Do not call `init_pair` outside this module** — a guard rejects it. **v0.16.3** adds `marked_attr(curses, has_color)`: a row toggled with Space reads red bold, or underlined without colour, on every screen — it was red in `--manage-logs`, yellow in `--manage-cron` and uncoloured in both e-mail screens. **v0.16.3** also adds three pairs: `PROFILE` (the `[ profile ]` heading in `--explain`), `FOOTER` (white on orange — the key banner) and `CONTEXT` (white on black — the line reserved above it). All three take their orange from the same `selection_background()` call as the cursor row, so the chart cannot disagree with itself |
+| `tui/_chrome.py` | 81 | **v0.16.3** the bottom of every wizard, drawn once. `chrome_height()` sizes a screen's body; `context_row()` says where a prompt belongs; `draw()` paints the reserved line and the orange key banner under it. Before it, the hints were accent-coloured text on the last row and two screens painted over that row: `--manage-logs` replaced the whole key line with its delete confirmation — asking for a destructive confirmation on a screen that had just hidden the cancel key — and the cron wizards drew seven text prompts at `h - 1`, on top of the footer they had just drawn. Every screen also sized its body `h - 2`, one short whenever the hints wrapped, so the second banner row landed on the body's last entry. The banner takes a second row rather than truncating: at 80 columns five screens overflow in French, and a `[:w]` slice cuts from the right, where the exit hint sits. Never imports curses |
 | `tui/cron.py` | 1056 | Curses TUI for `--install-cron` / `--manage-cron`; `_Schedule(IntEnum)` (DAILY/WEEKDAYS/MONTHDAYS/CUSTOM) + `_is_printable_input_char` helper (v0.5.x) + `_curses_choice_screen` (v0.16.1, the three audit-dimension screens). `_WizardEntry` carries `time_simple` since v0.16.1 — its absence crashed every interactive `--install-cron` from v0.7.0 to v0.16.0 |
 | `manage_logs.py` | 1037 | `--manage-logs` curses TUI with score history chart; `_is_finding_continuation` helper + 3 bare `input()` now catch EOFError (v0.5.x) |
 | `completion.py` | 74 | `--install-completion` → writes `/etc/bash_completion.d/bob`; v0.8.2 bash completion sync + v0.9.0 `cur="="` companion fix |
@@ -547,7 +549,7 @@ def check_xxx(snapshot: XxxSnapshot, t: TranslationFunc | None = None) -> CheckR
 >
 > Note (v0.5.x): `CheckResult.warn_with_deduction()` and `.alert_with_deduction()` fuse the two-step `warn/alert(...) + add_deduction(...)` pattern into a single call. ~120 sites in `bob/checks/*.py` were migrated during the v0.5.0–v0.5.4 refactor (net −519 LoC). The two-step pattern still works (additive change), but new code should use the fused helpers.
 
-**Why it matters**: pulls the I/O side effects to a single function (`from_system`), making `check_xxx` deterministic for unit tests. **Do not break this contract during refactoring** — it's the foundation for the ~8515-test suite running with no mocks.
+**Why it matters**: pulls the I/O side effects to a single function (`from_system`), making `check_xxx` deterministic for unit tests. **Do not break this contract during refactoring** — it's the foundation for the ~8530-test suite running with no mocks.
 
 ### 2. Subprocess via `_run()` helper (every check *module* uses this)
 
@@ -894,7 +896,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 222 test files, ~5701 functions, **8515 collected** (v0.16.3) | `pytest --collect-only -q` |
+| Tests | 223 test files, ~5711 functions, **8530 collected** (v0.16.3) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

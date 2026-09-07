@@ -152,7 +152,44 @@ check did the same with `--targetXX`, and after that was word-bounded its
 boundary class was `[a-z0-9-]`, which `--targetXX` still walked straight
 through.
 
-**Tests** 8328 → **8515**.
+### The bottom of every wizard is two bands now
+
+The key hints were accent-coloured text on the last row, and two screens
+painted straight over that row. `--manage-logs` replaced the entire key line
+with its delete confirmation — the operator was asked to confirm a destructive
+action on a screen that had just hidden every key, the one to cancel included.
+The cron wizards drew each of their seven text prompts at `h - 1`, on top of
+the footer they had drawn a moment earlier; one of them, the address book's
+"add an address" screen, drew no key hints at all and offered no visible way
+out.
+
+One row was doing two jobs. The bottom is two bands: a line reserved for
+prompts and status, and under it an orange key banner mirroring the cyan
+header — white on the tool's orange, padded to the full width, taking its
+colour from the same `selection_background()` call as the cursor row so the
+chart cannot disagree with itself. The reserved line stays reserved when there
+is nothing to say, because a line that appears and disappears moves the banner
+under the operator's eye.
+
+The banner takes a second row rather than truncating. At 80 columns five
+screens overflow in French — the `--manage-cron` manager runs to 105 characters
+— and a `[:w]` slice cuts from the right, which is exactly where the exit hint
+sits.
+
+It also closes a sizing defect none of the screens knew they had: every one of
+them sized its body `h - 2`, one row short whenever the hints wrapped, so the
+second hint row landed on the body's last line and hid an entry. Bodies are
+sized from the chrome's real height now, and from its widest state on the two
+screens whose banner grows when something is marked — a list that changes
+height the moment an entry is toggled is worse than one row less.
+
+`bob/tui/_chrome.py` is to the bottom what `_keys.py` is to the bindings and
+`_palette.py` to the colours. Six guards, each mutation-tested with a negative
+control; the first run of that bench reported all six inert, which turned out
+to be the harness failing to pass its arguments through — the mutations had
+never been applied.
+
+**Tests** 8328 → **8530**.
 
 ---
 

@@ -28,6 +28,8 @@ NORMAL    = 3   #: ordinary rows
 NOTICE    = 4   #: per-screen: warnings (red) or detail headings (cyan)
 BANNER    = 5   #: the top title bar
 PROFILE   = 6   #: a [ profile ] section header in --explain
+FOOTER    = 7   #: the bottom key banner — white on orange
+CONTEXT   = 8   #: the line above it — prompts and status, on black
 
 #: xterm-256 index for orange. Used only when the terminal advertises 256
 #: colours; see the module docstring for the fallback.
@@ -69,6 +71,11 @@ def init_palette(curses, *, notice: "int | None" = None) -> bool:
         # Same orange-or-yellow choice as the selected row, so the two
         # never disagree about which orange this tool uses.
         curses.init_pair(PROFILE,   selection_background(curses), -1)
+        # The bottom chrome: a key banner mirroring the cyan header,
+        # and one line above it reserved for prompts and status so a
+        # confirmation no longer paints over the keys it asks about.
+        curses.init_pair(FOOTER,    curses.COLOR_WHITE, selection_background(curses))
+        curses.init_pair(CONTEXT,   curses.COLOR_WHITE, curses.COLOR_BLACK)
     except curses.error:
         return False
     return True

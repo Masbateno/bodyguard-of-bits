@@ -626,7 +626,8 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
         lines = full_lines if mode == "full" else summary_lines
 
         h, w = stdscr.getmaxyx()
-        body_h = max(1, h - 2)
+        from bob.tui import _chrome as _ch
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _PREVIEW_KEYS, w))
         max_scroll = max(0, len(lines) - body_h)
         scroll = max(0, min(scroll, max_scroll))
 
@@ -655,13 +656,9 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
             except curses.error:
                 pass
 
-        # Footer — the shared key contract, translated.
-        _ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
-        for _i, _line in enumerate(reversed(_keys.footer_lines(t, _PREVIEW_KEYS, w - 2))):
-            try:
-                stdscr.addstr(h - 1 - _i, 0, _line.ljust(w - 1)[:w - 1], _ftr_attr)
-            except curses.error:
-                pass
+        # Bottom chrome — the shared key contract, translated.
+        from bob.tui import _chrome
+        _chrome.draw(stdscr, curses, t, _PREVIEW_KEYS, has_color)
 
         stdscr.refresh()
 
@@ -777,7 +774,10 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
             cur_item_pos = 0
 
         h, w = stdscr.getmaxyx()
-        body_h = max(1, h - 2)
+        # Widest case: the marked variant, so the list does not change
+        # height the moment an entry is toggled.
+        from bob.tui import _chrome as _ch
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _MARKED_KEYS, w))
 
         if file_indices:
             if cur_item_pos - scroll >= body_h:
@@ -882,7 +882,6 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
         # Footer — v0.16.3: a transient message when there is one, otherwise
         # the shared key line, composed from the actions this screen declares.
         # The report count moved to the banner: it is context, not a key.
-        _ftr_attr = (curses.color_pair(2) if has_color else curses.A_REVERSE)
         if confirm_delete:
             _transient = f"  {t('manage_logs.confirm_prompt', count=len(pending_delete))}"
         elif status:
@@ -891,18 +890,13 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
         else:
             _transient = ""
 
-        if _transient:
-            try:
-                stdscr.addstr(h - 1, 0, _transient.ljust(w - 1)[:w - 1], _ftr_attr)
-            except curses.error:
-                pass
-        else:
-            _actions = _MARKED_KEYS if n_sel else _LIST_KEYS
-            for _i, _line in enumerate(reversed(_keys.footer_lines(t, _actions, w - 2))):
-                try:
-                    stdscr.addstr(h - 1 - _i, 0, _line.ljust(w - 1)[:w - 1], _ftr_attr)
-                except curses.error:
-                    pass
+        # The confirmation used to *replace* the key line, so the operator was
+        # asked to confirm a destructive action on a screen that had just
+        # hidden every key, including the one to cancel. It sits on the
+        # reserved line above the banner now, and the keys stay visible.
+        _actions = _MARKED_KEYS if n_sel else _LIST_KEYS
+        from bob.tui import _chrome
+        _chrome.draw(stdscr, curses, t, _actions, has_color, context=_transient)
 
         stdscr.refresh()
 
@@ -985,8 +979,9 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
 
         elif _act == _keys.CHANGE:
             # Inline path input — stays fully inside curses
+            from bob.tui import _chrome as _ch2
             new_path_str = _curses_input(
-                stdscr, h - 1, w,
+                stdscr, _ch2.context_row(t, _actions, h, w), w,
                 t("manage_logs.change_prompt"),
                 str(log_dir),
             )

@@ -165,7 +165,45 @@ comparait les identifiants en sous-chaîne et acceptait une ligne renommée
 bornée aux frontières de mot sa classe de caractères était `[a-z0-9-]`, que
 `--targetXX` traversait encore sans encombre.
 
-**Tests** 8328 → **8515**.
+### Le bas de chaque assistant est désormais deux bandes
+
+Les indications de touches étaient du texte coloré sur la dernière ligne, et
+deux écrans écrivaient par-dessus. `--manage-logs` remplaçait toute la ligne de
+touches par sa confirmation de suppression — on demandait à l'opérateur de
+confirmer une action destructive sur un écran qui venait de masquer toutes les
+touches, celle d'annulation comprise. Les assistants cron dessinaient chacune de
+leurs sept saisies en `h - 1`, sur le pied de page qu'ils venaient de tracer ;
+l'un d'eux, l'écran « ajouter une adresse » du carnet, n'affichait aucune touche
+du tout et n'offrait aucune sortie visible.
+
+Une seule ligne faisait deux métiers. Le bas est maintenant deux bandes : une
+ligne réservée aux prompts et aux messages, et sous elle un bandeau orange de
+touches en miroir du bandeau cyan d'en-tête — blanc sur l'orange de l'outil,
+sur toute la largeur, tirant sa couleur du même `selection_background()` que la
+ligne de curseur, pour que la charte ne puisse pas se contredire. La ligne
+réservée le reste quand il n'y a rien à dire : une ligne qui apparaît et
+disparaît déplace le bandeau sous l'œil.
+
+Le bandeau prend une seconde ligne plutôt que de tronquer. À 80 colonnes, cinq
+écrans débordent en français — le gestionnaire `--manage-cron` fait 105
+caractères — et une coupe `[:w]` taille par la droite, précisément où se trouve
+l'indication de sortie.
+
+Cela ferme aussi un défaut de dimensionnement qu'aucun écran ne se connaissait :
+tous calculaient leur corps en `h - 2`, une ligne de trop dès que les
+indications se repliaient, si bien que la seconde ligne d'indications tombait
+sur la dernière entrée du corps et la masquait. Les corps sont dimensionnés sur
+la hauteur réelle du chrome, et sur son état le plus large pour les deux écrans
+dont le bandeau grandit quand quelque chose est marqué — une liste qui change de
+hauteur au moment où l'on marque une entrée est pire qu'une ligne en moins.
+
+`bob/tui/_chrome.py` est au bas ce que `_keys.py` est aux liaisons et
+`_palette.py` aux couleurs. Six gardes, chacune testée par mutation avec
+contrôle négatif ; la première exécution de ce banc a annoncé les six inertes,
+ce qui s'est révélé être le harnais ne transmettant pas ses arguments — les
+mutations n'avaient jamais été appliquées.
+
+**Tests** 8328 → **8530**.
 
 ---
 

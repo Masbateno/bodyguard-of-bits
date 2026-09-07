@@ -108,20 +108,30 @@ def _with_unmark(actions, n_sel: int):
     return head + (_keys.UNMARK,) + tail
 
 
-def _draw_footer(stdscr, t, actions, has_color: bool) -> None:
-    """Draw the shared key line, wrapping onto a second row when needed.
+def _draw_footer(stdscr, t, actions, has_color: bool, *, context: str = "") -> None:
+    """Draw the bottom chrome: the key banner and the line reserved above it.
 
     v0.16.3 — every screen used to spell its own hints out in English. They
     disagreed about which keys existed, and a French operator read French
     content under an English hint line. Both problems come from one place: the
     line was written by hand beside the dispatch instead of derived from it.
+
+    The hints are an orange banner now, mirroring the cyan header, and *context*
+    goes on the reserved line above it rather than over the top of it — this
+    screen's text prompts used to be drawn at ``h - 1``, erasing the very keys
+    they were asking the operator to use.
     """
     import curses as _c
 
+    from bob.tui import _chrome
+    _chrome.draw(stdscr, _c, t, actions, has_color, context=context)
+
+
+def _prompt_row(stdscr, t, actions) -> int:
+    """Row a text prompt belongs on: the reserved line, not the banner."""
+    from bob.tui import _chrome
     h, w = stdscr.getmaxyx()
-    attr = _c.color_pair(2) if has_color else _c.A_REVERSE
-    for i, line in enumerate(reversed(_keys.footer_lines(t, actions, w - 2))):
-        _draw(stdscr, h - 1 - i, 0, line[:w - 1].ljust(w - 1), attr)
+    return _chrome.context_row(t, actions, h, w)
 
 
 def _draw(stdscr, row: int, col: int, text: str, attr: int = 0) -> None:
@@ -312,7 +322,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         _draw(stdscr, 2, 2, t("install_cron.prompt_weekdays"))
         _draw(stdscr, 3, 4, "(1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat 7=Sun)")
         _ftr()
-        raw = _curses_readline(stdscr, h - 1, w, "Days (e.g. 1,5)")
+        raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Days (e.g. 1,5)")
         if raw is None:
             return None
         parts = re.split(r"[\s,]+", raw)
@@ -327,7 +337,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         _draw(stdscr, 2, 2, t("install_cron.prompt_monthdays"))
         _draw(stdscr, 3, 4, "(e.g. 1,15)")
         _ftr()
-        raw = _curses_readline(stdscr, h - 1, w, "Days (e.g. 1,15)")
+        raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Days (e.g. 1,15)")
         if raw is None:
             return None
         parts = re.split(r"[\s,]+", raw)
@@ -342,7 +352,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         _draw(stdscr, 2, 2, t("install_cron.prompt_custom"))
         _draw(stdscr, 3, 4, "(minute hour dom month dow)")
         _ftr()
-        raw = _curses_readline(stdscr, h - 1, w, "Expression")
+        raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Expression")
         if raw is None:
             return None
         err = _validate_custom_cron(raw)
@@ -366,7 +376,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         _hdr()
         _draw(stdscr, 2, 2, t("install_cron.prompt_time") + f"  (default: {default_time})")
         _ftr()
-        raw_time = _curses_readline(stdscr, h - 1, w, "Time (HH:MM)", default=default_time)
+        raw_time = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Time (HH:MM)", default=default_time)
         if raw_time is None:
             return None
         if not raw_time:
@@ -432,7 +442,8 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
 
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        body_h = max(1, h - 2)
+        from bob.tui import _chrome as _ch
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _EMAIL_KEYS, w))
 
         hdr = f"  {t('cron_ui.select_emails')}    " + t("tui.email_selected", count=len(selected))
         hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
@@ -506,7 +517,7 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
             h, w = stdscr.getmaxyx()
             _draw(stdscr, 0, 0, "  Add email address".ljust(w - 1), hdr_attr)
             _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
-            raw = _curses_readline(stdscr, h - 1, w, "Email")
+            raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Email")
             if raw and _EMAIL_RE.match(raw.strip()):
                 addr = raw.strip()
                 if addr not in saved:
@@ -542,7 +553,8 @@ def _curses_email_store_sub(stdscr, t) -> None:
 
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        body_h = max(1, h - 2)
+        from bob.tui import _chrome as _ch
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _STORE_KEYS, w))
 
         hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
         ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
@@ -629,7 +641,10 @@ def _curses_email_store_sub(stdscr, t) -> None:
             h, w = stdscr.getmaxyx()
             _draw(stdscr, 0, 0, "  Add email address".ljust(w - 1), hdr_attr)
             _draw(stdscr, 2, 2, t("manage_cron.email_store_enter"))
-            raw = _curses_readline(stdscr, h - 1, w, "Email")
+            # This screen drew no key hints at all — it asks for input and
+            # offered no visible way to leave it.
+            _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
+            raw = _curses_readline(stdscr, _prompt_row(stdscr, t, _INPUT_KEYS), w, "Email")
             if raw and _EMAIL_RE.match(raw.strip()):
                 store.add(raw.strip())
                 status = t("manage_cron.email_store_added", email=raw.strip())
@@ -804,7 +819,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 h, w = stdscr.getmaxyx()
                 _draw(stdscr, 0, 0, "  bob --install-cron".ljust(w - 1), hdr_attr)
                 _draw(stdscr, 2, 2, t("install_cron.prompt_name", suggestion=suggestion))
-                entered = _curses_readline(stdscr, h - 1, w, "Name", default=raw_name or suggestion)
+                entered = _curses_readline(stdscr, _prompt_row(stdscr, t, _LANDING_KEYS), w, "Name", default=raw_name or suggestion)
                 if entered is None:       # Esc → back to landing
                     step = LANDING
                     continue
@@ -978,7 +993,11 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
     while True:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        body_h = max(1, h - 2)
+        from bob.tui import _chrome as _ch
+        # Sized for the widest the banner ever gets on this screen — with
+        # `u unmark all` present. Sizing it for the current selection would
+        # make the list change height the moment an entry is marked.
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _with_unmark(_MANAGE_KEYS, 1), w))
 
         crons = list_installed_crons()
         lang = config.lang
