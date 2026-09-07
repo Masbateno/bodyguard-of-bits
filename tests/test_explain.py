@@ -656,6 +656,45 @@ class TestRunExplainUniform:
         for profile in ("desktop", "workstation", "container"):
             assert profile in out, f"{profile} downgrades this key but is unnamed"
 
+    def test_a_differentiated_key_accounts_for_every_profile(self):
+        """No profile may be left to silence on a key that differentiates.
+
+        `auditd.no_rules` is downgraded by desktop and skipped by container,
+        while server and workstation apply the default severity — workstation
+        *refusing* the downgrade desktop grants. Naming only the deviating
+        profiles left a reader on server or workstation to read the absence of
+        their profile as "same as default", which is an absence standing in for
+        an answer.
+        """
+        out = self._capture("auditd.no_rules")
+        for profile in ("server", "desktop", "workstation", "container"):
+            assert profile in out, f"{profile} is unaccounted for on a differentiated key"
+        assert "applies equally" not in out
+
+    def test_a_uniform_key_does_not_list_four_profiles(self):
+        """The counterpart: four lines saying the same thing is noise.
+
+        Without this, satisfying the test above by always printing every
+        profile would pass.
+        """
+        out = self._capture("ssh.permit_root_login")
+        assert "applies equally" in out
+        assert "applies the default severity" not in out
+
+    def test_every_differentiated_key_names_all_four_profiles(self):
+        """The population, not the one example."""
+        from bob.explain import EXPLAIN_KEYS, profile_override_notes, profile_notes_for_display
+        from bob import i18n
+
+        short = []
+        for key in EXPLAIN_KEYS:
+            if not profile_override_notes(key, i18n.t):
+                continue
+            lines = profile_notes_for_display(key, i18n.t)
+            if len(lines) != 4:
+                short.append(f"{key} ({len(lines)} lines)")
+        assert not short, f"differentiated keys not accounting for all four profiles: {short[:5]}"
+
     def test_no_key_claims_uniformity_a_profile_contradicts(self):
         """The whole population, not one example.
 

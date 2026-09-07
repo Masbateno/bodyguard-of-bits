@@ -527,6 +527,34 @@ def profile_override_notes(key: str, t) -> list[str]:
     return notes
 
 
+def profile_notes_for_display(key: str, t) -> list[str]:
+    """Every profile's line for *key*, or [] when none of them deviates.
+
+    Where :func:`profile_override_notes` answers "does any profile treat this
+    differently" — the question that decides which branch renders — this
+    answers "what does each profile do", which is what an operator reads.
+
+    The difference is the profiles that apply the default. Naming only the
+    deviating ones left ``server`` never mentioned anywhere and ``workstation``
+    absent from the five keys where it *refuses* the downgrade ``desktop``
+    grants, so the finding counts in full there. A reader on one of those
+    profiles saw an explanation that did not mention it and had to read the
+    silence as "same as default" — an absence standing in for an answer, which
+    is the defect this whole display was rewritten to stop making.
+
+    Returns [] for a key no profile deviates on, so the caller still prints the
+    single "applies equally to all profiles" line rather than four saying the
+    same thing.
+    """
+    if not profile_override_notes(key, t):
+        return []
+    return [
+        _profile_override_note(profile, key, t)
+        or t("explain.ui.profile_default", profile=profile)
+        for profile in _EXPLAIN_PROFILES
+    ]
+
+
 def _service_label_to_subkey(label: str) -> str:
     """M-3 (v0.8.1 audit) backward-compat alias for
     ``bob.registry.service_label_to_subkey``.
@@ -752,7 +780,7 @@ def run_explain(key: str, t) -> bool:
         # Say "applies equally to all profiles" only when that is true. A
         # profile that downgrades this key to INFO, or skips its section, is
         # exactly what the operator came here to find out.
-        _notes = profile_override_notes(norm, t)
+        _notes = profile_notes_for_display(norm, t)
         _lines = _notes or [t("explain.ui.uniform_profiles_note")]
         for _line in _lines:
             _note = "\u24d8  " + _line
@@ -911,7 +939,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 for wrapped in textwrap.wrap(para, w - 4) or [""]:
                     lines.append((f"  {wrapped}", normal))
             lines.append(("", normal))
-            for _line in profile_override_notes(norm, t) or [
+            for _line in profile_notes_for_display(norm, t) or [
                 t("explain.ui.uniform_profiles_note")
             ]:
                 for wrapped in textwrap.wrap("\u24d8  " + _line, w - 4) or [""]:
