@@ -217,7 +217,7 @@ way out of a text field was to abandon it. `SUBMIT` (`⏎ submit` / `⏎ valider
 joins the key contract; it is not `SELECT` or `CONFIRM`, which mean choosing a
 row and pressing `y`.
 
-**Tests** 8328 → **8544**.
+**Tests** 8328 → **8572**.
 
 ---
 

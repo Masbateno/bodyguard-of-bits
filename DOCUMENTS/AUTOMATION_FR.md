@@ -340,18 +340,28 @@ sudo bob --reset-baseline
 
 ### `--history` — tendance du score dans le temps
 
-Affiche un sparkline des 50 derniers scores d'audit depuis `~/.config/bob/history.jsonl` :
+Affiche un sparkline sur les 50 derniers scores d'audit depuis
+`~/.config/bob/history.jsonl`, puis une table des dix plus récents avec leur
+flèche de tendance :
 
 ```bash
 bob --history
 ```
 
 ```
-Historique des scores (50 derniers audits) :
-  ▃▃▅▆▇▇▇▇▆▇▇▇▇█████████  courant : 8/10
-  ┴─────────────────────┴
-  2026-05-10           2026-05-17
+  Historique des scores
+  ────────────────────────────────────────────
+  ▅▅▆▆▇▇▇▇
+
+  2026-05-17 00:00   8/10  →  low
+  2026-05-16 00:00   8/10  →  low
+  2026-05-15 00:00   8/10  ↑  low
+  2026-05-14 00:00   7/10  →  medium
+  2026-05-13 00:00   7/10  ↑  medium
+  2026-05-12 00:00   6/10  →  medium
 ```
+
+Le sparkline couvre jusqu'à 50 entrées ; la table en dessous en liste 10.
 
 Le fichier d'historique append une ligne par audit (timestamp + score + niveau) et rotate à 1000 entrées. Pas de sudo requis pour `--history` seul.
 
@@ -383,8 +393,14 @@ Dans un terminal interactif, une interface TUI curses s'ouvre. Un mode texte de 
 L'interface à curseur affiche tous les rapports avec leur date, taille et score. Un graphique d'historique des scores est affiché en haut.
 
 **Le socle commun** — depuis la v0.16.3, tous les écrans curses de BOB
-acceptent la même navigation, et la ligne en bas d'écran énumère toujours
-exactement ce que cet écran accepte, dans la langue de l'interface :
+acceptent la même navigation, et un **bandeau orange** en bas d'écran énumère
+toujours exactement ce que cet écran accepte, dans la langue de l'interface. Il
+fait miroir au bandeau cyan d'en-tête et se replie sur une seconde ligne plutôt
+que de tronquer quand les indications ne tiennent pas dans le terminal — couper
+par la droite emporterait d'abord l'indication de sortie. La ligne juste
+au-dessus est **réservée aux invites et aux messages** : une confirmation de
+suppression ou un champ de saisie s'y affiche, et le bandeau de touches reste
+visible en dessous au lieu d'être recouvert :
 
 | Touche | Action |
 |--------|--------|
@@ -392,6 +408,12 @@ exactement ce que cet écran accepte, dans la langue de l'interface :
 | `PgUp` / `PgDn` | Page |
 | `g` / `G` | Aller au début / à la fin |
 | `Entrée` | Choisir |
+
+**Les champs de saisie.** Quand un écran demande de taper quelque chose — un
+nom de tâche, une adresse e-mail, une heure — l'invite occupe la ligne réservée
+et le bandeau en dessous affiche `⏎ valider` et `Esc retour`. Toutes ces invites
+sont traduites ; avant la v0.16.3 elles étaient en anglais dans un assistant
+français.
 
 **Les sorties.** `q` quitte, et seulement depuis la **première page** d'un
 assistant — plus profond, `Échap` recule d'un écran et rien ne sort d'un coup :

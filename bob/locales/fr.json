@@ -412,6 +412,7 @@
       "delete": "supprimer",
       "change": "dossier",
       "summary": "synthèse",
+      "full": "vue complète",
       "submit": "valider",
       "confirm": "confirmer",
       "new": "nouveau",

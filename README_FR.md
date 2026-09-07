@@ -128,7 +128,7 @@ $ sudo bob -d
 ⚠ [WARN] Le système envoie des redirections ICMP — exploitable pour du MITM
    → sudo sysctl -w net.ipv4.conf.all.send_redirects=0
    [CIS:3.3.2]
-   ? bob --explain hardening.send_redirects
+   ? bob --explain hardening.send_redirects_enabled
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  Score de sécurité : 8/10  ↑ +1                                              ║

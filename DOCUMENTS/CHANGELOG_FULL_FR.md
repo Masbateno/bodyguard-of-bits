@@ -233,7 +233,7 @@ issue annoncée d'un champ de texte était de l'abandonner. `SUBMIT` (`⏎ submi
 / `⏎ valider`) rejoint le contrat de touches ; ce n'est ni `SELECT` ni
 `CONFIRM`, qui veulent dire choisir une ligne et appuyer sur `y`.
 
-**Tests** 8328 → **8544**.
+**Tests** 8328 → **8572**.
 
 ---
 

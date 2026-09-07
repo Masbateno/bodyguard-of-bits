@@ -339,18 +339,28 @@ sudo bob --reset-baseline
 
 ### `--history` — score trend over time
 
-Renders a sparkline of the last 50 audit scores from `~/.config/bob/history.jsonl`:
+Renders a sparkline over the last 50 audit scores from
+`~/.config/bob/history.jsonl`, then a table of the ten most recent with their
+trend arrow:
 
 ```bash
 bob --history
 ```
 
 ```
-Score history (last 50 audits):
-  ▃▃▅▆▇▇▇▇▆▇▇▇▇█████████  current: 8/10
-  ┴─────────────────────┴
-  2026-05-10           2026-05-17
+  Score History
+  ────────────────────────────────────────────
+  ▅▅▆▆▇▇▇▇
+
+  2026-05-17 00:00   8/10  →  low
+  2026-05-16 00:00   8/10  →  low
+  2026-05-15 00:00   8/10  ↑  low
+  2026-05-14 00:00   7/10  →  medium
+  2026-05-13 00:00   7/10  ↑  medium
+  2026-05-12 00:00   6/10  →  medium
 ```
+
+The sparkline covers up to 50 entries; the table below it lists 10.
 
 The history file appends one line per audit (timestamp + score + level) and rotates at 1000 entries. No sudo required for `--history` alone.
 
@@ -382,8 +392,13 @@ In an interactive terminal, a full curses TUI opens. A plain text fallback is us
 The cursor-based interface shows all reports with their date, size and score. A score history chart is displayed at the top.
 
 **The shared floor** — since v0.16.3 every curses screen in BOB accepts the
-same navigation, and the line at the bottom of the screen always lists exactly
-what that screen accepts, in the interface language:
+same navigation, and an **orange banner** across the bottom of the screen always
+lists exactly what that screen accepts, in the interface language. It mirrors
+the cyan header, and wraps onto a second row rather than truncating when the
+hints do not fit the terminal — cutting from the right would take the exit hint
+first. The line immediately above it is **reserved for prompts and status**: a
+delete confirmation or a text field appears there, and the key banner stays
+visible underneath instead of being painted over.
 
 | Key | Action |
 |-----|--------|
@@ -391,6 +406,11 @@ what that screen accepts, in the interface language:
 | `PgUp` / `PgDn` | Page |
 | `g` / `G` | Jump to top / bottom |
 | `Enter` | Select |
+
+**Text fields.** Where a screen asks you to type something — a job name, an
+e-mail address, a time — the prompt sits on the reserved line and the banner
+below it shows `⏎ submit` and `Esc back`. All of these prompts are translated;
+before v0.16.3 they were English on a French wizard.
 
 **Exits.** `q` quits, and only from a wizard's **first page** — deeper in, `Esc`
 steps back one screen and nothing leaves outright, so a single keystroke cannot

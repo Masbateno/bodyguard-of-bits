@@ -605,6 +605,17 @@ def _extract_summary_view(lines: list[str]) -> list[str]:
 #: does not quit from here.
 _PREVIEW_KEYS = _keys.NAVIGATION + (_keys.SUMMARY,) + _keys.NESTED_EXIT
 
+#: Same screen once the condensed view is showing. `s` still works — it is what
+#: goes back to the whole log — so hiding it would break the rule that a screen
+#: never acts on a key it does not advertise. What was wrong was the label:
+#: the banner read `s summary` to an operator already looking at the summary.
+_PREVIEW_KEYS_SUMMARY = _keys.NAVIGATION + (_keys.FULL,) + _keys.NESTED_EXIT
+
+
+def _preview_keys(mode: str) -> "tuple[str, ...]":
+    """The actions the preview advertises, which depend on what it is showing."""
+    return _PREVIEW_KEYS if mode == "full" else _PREVIEW_KEYS_SUMMARY
+
 
 def _curses_preview_log(stdscr, path: "Path", t) -> None:
     """Scrollable read-only viewer for a log file.  Esc returns to list."""
@@ -627,7 +638,7 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
 
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _PREVIEW_KEYS, w))
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _preview_keys(mode), w))
         max_scroll = max(0, len(lines) - body_h)
         scroll = max(0, min(scroll, max_scroll))
 
@@ -658,16 +669,17 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
 
         # Bottom chrome — the shared key contract, translated.
         from bob.tui import _chrome
-        _chrome.draw(stdscr, curses, t, _PREVIEW_KEYS, has_color)
+        _actions = _preview_keys(mode)
+        _chrome.draw(stdscr, curses, t, _actions, has_color)
 
         stdscr.refresh()
 
         ch = stdscr.getch()
 
-        action = _keys.resolve(curses, ch, _PREVIEW_KEYS)
+        action = _keys.resolve(curses, ch, _actions)
         if action == _keys.BACK:                        # nested screen: Esc goes back
             break
-        elif action == _keys.SUMMARY:                   # toggle summary / full
+        elif action in (_keys.SUMMARY, _keys.FULL):     # toggle summary / full
             mode = "summary" if mode == "full" else "full"
             scroll = 0
         elif action == _keys.MOVE:

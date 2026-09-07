@@ -377,3 +377,50 @@ class TestTheCronScreensAreTranslated:
             seps[lang] = data["cron_ui"]["prompt_sep"]
         assert seps["fr"].startswith(" "), f"French separator is {seps['fr']!r}"
         assert not seps["en"].startswith(" "), f"English separator is {seps['en']!r}"
+
+
+class TestAToggleAdvertisesWhereItGoes:
+    """`s summary` stayed on the banner while the summary was already showing.
+
+    It is a toggle: `s` switches to the condensed view, and `s` again returns
+    to the whole log. The banner named only the first direction, so an operator
+    reading the summary was told they could press `s` to get the summary.
+
+    Hiding the hint in that mode was the other candidate fix and is the wrong
+    one: `s` still works there, and a screen that acts on a key it does not
+    advertise is the defect this release closed everywhere else.
+    """
+
+    @pytest.mark.parametrize("lang", ["en", "fr"])
+    def test_the_label_follows_the_mode(self, lang):
+        from bob import i18n
+        from bob.tui import _keys
+        import bob.manage_logs as ml
+        i18n.init(lang)
+        try:
+            full = _keys.footer_lines(i18n.t, ml._preview_keys("full"), 200)[0]
+            summ = _keys.footer_lines(i18n.t, ml._preview_keys("summary"), 200)[0]
+            assert full != summ, "the banner reads the same in both modes"
+            assert i18n.t("tui.keys.summary") in full
+            assert i18n.t("tui.keys.full") in summ
+            assert i18n.t("tui.keys.summary") not in summ, (
+                "the summary view still offers to show the summary"
+            )
+        finally:
+            i18n.init("en")
+
+    def test_the_key_stays_advertised_in_both_modes(self):
+        """Whatever it is called, `s` must appear — it does something."""
+        from bob.tui import _keys
+        import bob.manage_logs as ml
+        for mode in ("full", "summary"):
+            actions = ml._preview_keys(mode)
+            glyphs = {_keys._GLYPH[a] for a in actions}
+            assert "s" in glyphs, f"{mode}: `s` is dispatched but not advertised"
+
+    def test_the_two_directions_never_share_a_screen(self):
+        """Both bind `s`; declaring both at once would be a real conflict."""
+        from bob.tui import _keys
+        import bob.manage_logs as ml
+        for mode in ("full", "summary"):
+            assert not _keys.conflicts(ml._preview_keys(mode)), mode

@@ -128,7 +128,7 @@ $ sudo bob
 ⚠ [WARN]  System sends ICMP redirects — exploitable for MITM on a non-router
    → sudo sysctl -w net.ipv4.conf.all.send_redirects=0
    [CIS:3.3.2]
-   ? bob --explain hardening.send_redirects
+   ? bob --explain hardening.send_redirects_enabled
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  Security score   : 8/10  ↑ +1                                               ║

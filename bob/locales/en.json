@@ -393,6 +393,7 @@
       "delete": "delete",
       "change": "dir",
       "summary": "summary",
+      "full": "full view",
       "submit": "submit",
       "confirm": "confirm",
       "new": "new",

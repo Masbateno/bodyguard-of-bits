@@ -36,7 +36,8 @@ ALL      = "all"        #: a
 UNMARK   = "unmark"     #: u
 DELETE   = "delete"     #: d
 CHANGE   = "change"     #: c
-SUMMARY  = "summary"    #: s
+SUMMARY  = "summary"    #: s — switch to the condensed view
+FULL     = "full"       #: s — switch back to the whole log
 CONFIRM  = "confirm"    #: y
 NEW      = "new"        #: n
 CREATE   = "create"     #: Enter, on a landing screen
@@ -84,6 +85,7 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
     DELETE:  (ord("d"), ord("D")),
     CHANGE:  (ord("c"), ord("C")),
     SUMMARY: (ord("s"), ord("S")),
+    FULL:    (ord("s"), ord("S")),
     CONFIRM: (ord("y"), ord("Y")),
     NEW:     (ord("n"), ord("N")),
     LANG:    (ord("l"), ord("L")),
@@ -97,7 +99,7 @@ _GLYPH = {
     MOVE: "↑↓ jk", PAGE: "PgUp/PgDn", EDGE: "g/G",
     SELECT: "⏎", CREATE: "⏎", SUBMIT: "⏎", BACK: "Esc", QUIT: "q",
     TOGGLE: "Spc", ALL: "a", UNMARK: "u", DELETE: "d",
-    CHANGE: "c", SUMMARY: "s", CONFIRM: "y", NEW: "n", LANG: "l", BOOK: "m",
+    CHANGE: "c", SUMMARY: "s", FULL: "s", CONFIRM: "y", NEW: "n", LANG: "l", BOOK: "m",
 }
 
 

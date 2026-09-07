@@ -73,7 +73,7 @@ If `sudo bob` complains the firewall is not detectable, install `ufw` (BOB targe
 The score starts at 10/10 and deducts based on findings. Each finding has :
 
 - A **level** : OK (✔, green) / WARN (⚠, yellow) / ALERT (✖, red)
-- A **key** (e.g. `ssh.password_auth_enabled`) — stable identifier for scripting + `--explain` lookups
+- A **key** (e.g. `ssh.password_auth`) — stable identifier for scripting + `--explain` lookups
 - A short message + optionally a `cmd=` hint if BOB knows how to fix it
 
 The verdict is conditioned by your profile (`server` by default) — desktop profiles deduct less aggressively on certain server-only concerns (backup, auditd, MAC policy). See Step 5 for profiles.
@@ -85,7 +85,7 @@ The verdict is conditioned by your profile (`server` by default) — desktop pro
 If a finding does not make sense, ask BOB to explain it :
 
 ```bash
-bob --explain ssh.password_auth_enabled
+bob --explain ssh.password_auth
 ```
 
 No `sudo` needed — `--explain` is a standalone, profile-aware lookup. The output shows :
@@ -275,7 +275,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2321 keys × 2 locales as of v0.16.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2322 keys × 2 locales as of v0.16.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the 60 uncoded ones *are* translated), and the **38 service labels** — 27 of which carry descriptive English prose, such as `Samba (Windows file sharing)` or `Apache Web Server` — treated as product names. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 
