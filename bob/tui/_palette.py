@@ -27,6 +27,7 @@ ACCENT    = 2   #: group headers, prompts, footer hints
 NORMAL    = 3   #: ordinary rows
 NOTICE    = 4   #: per-screen: warnings (red) or detail headings (cyan)
 BANNER    = 5   #: the top title bar
+PROFILE   = 6   #: a [ profile ] section header in --explain
 
 #: xterm-256 index for orange. Used only when the terminal advertises 256
 #: colours; see the module docstring for the fallback.
@@ -65,6 +66,9 @@ def init_palette(curses, *, notice: "int | None" = None) -> bool:
         curses.init_pair(NORMAL,    curses.COLOR_WHITE,  -1)
         curses.init_pair(NOTICE,    curses.COLOR_RED if notice is None else notice, -1)
         curses.init_pair(BANNER,    curses.COLOR_WHITE,  curses.COLOR_CYAN)
+        # Same orange-or-yellow choice as the selected row, so the two
+        # never disagree about which orange this tool uses.
+        curses.init_pair(PROFILE,   selection_background(curses), -1)
     except curses.error:
         return False
     return True

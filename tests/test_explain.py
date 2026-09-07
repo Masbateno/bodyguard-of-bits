@@ -754,6 +754,65 @@ class TestRunExplainUniform:
             "sentinels, not translations"
         )
 
+    def test_the_how_to_fix_block_is_indented(self):
+        """A profile section runs long; the remedy needs to be findable in it."""
+        out = self._capture("clamav.db_very_outdated")
+        how = self.t("explain.ui.how_title")
+        indented = [l for l in out.splitlines() if l.strip() == how]
+        assert indented, "no HOW TO FIX heading rendered at all"
+        assert all(l.startswith("    ") for l in indented), (
+            f"HOW TO FIX headings not indented: {indented}"
+        )
+        # The body follows the heading, not just the heading itself.
+        lines = out.splitlines()
+        i = lines.index(indented[0])
+        body = [l for l in lines[i + 2:i + 5] if l.strip()]
+        assert body and all(l.startswith("    ") for l in body), (
+            f"the HOW TO FIX body is not indented with its heading: {body}"
+        )
+
+    def test_the_profile_header_is_plain_when_stdout_is_not_a_terminal(self):
+        """Piped output carries no escapes, whatever the colour policy says."""
+        out = self._capture("clamav.db_very_outdated")
+        assert "[ workstation ]" in out
+        assert "\033" not in out and "\x1b" not in out
+
+    def test_the_profile_header_takes_the_shared_orange_on_a_terminal(self):
+        """Brackets included — colouring the word alone leaves them plain.
+
+        Driven through a pty because the header dispatches on
+        ``sys.stdout.isatty()``: a pipe exercises the other branch, and the
+        colour would go untested with the suite green.
+        """
+        import os
+        import pty
+        import sys as _sys
+
+        pid, fd = pty.fork()
+        if pid == 0:                              # pragma: no cover — child
+            os.execvp(_sys.executable, [
+                _sys.executable, "-m", "bob", "--explain",
+                "clamav.db_very_outdated", "--english",
+            ])
+        chunks = []
+        try:
+            while True:
+                data = os.read(fd, 65536)
+                if not data:
+                    break
+                chunks.append(data)
+        except OSError:
+            pass
+        os.waitpid(pid, 0)
+        text = b"".join(chunks).decode("utf-8", "replace")
+
+        headers = [l for l in text.splitlines() if "[ workstation ]" in l]
+        assert headers, "the workstation header never rendered"
+        assert "\x1b[38;5;208m[ workstation ]\x1b[0m" in headers[0], (
+            f"the profile header is not painted in the shared orange, brackets "
+            f"included: {headers[0]!r}"
+        )
+
     def test_no_key_claims_uniformity_a_profile_contradicts(self):
         """The whole population, not one example.
 

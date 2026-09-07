@@ -152,7 +152,7 @@ check did the same with `--targetXX`, and after that was word-bounded its
 boundary class was `[a-z0-9-]`, which `--targetXX` still walked straight
 through.
 
-**Tests** 8328 → **8512**.
+**Tests** 8328 → **8515**.
 
 ---
 

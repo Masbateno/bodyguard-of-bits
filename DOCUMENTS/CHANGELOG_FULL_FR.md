@@ -165,7 +165,7 @@ comparait les identifiants en sous-chaîne et acceptait une ligne renommée
 bornée aux frontières de mot sa classe de caractères était `[a-z0-9-]`, que
 `--targetXX` traversait encore sans encombre.
 
-**Tests** 8328 → **8512**.
+**Tests** 8328 → **8515**.
 
 ---
 

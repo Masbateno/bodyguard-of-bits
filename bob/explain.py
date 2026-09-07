@@ -752,7 +752,7 @@ def run_explain(key: str, t) -> bool:
                 # profile reading server/desktop/container and concluding
                 # their profile was not covered at all.
                 print()
-                print(f"[ {profile} ]")
+                print(_profile_header(profile))
                 print(_DIVIDER_SHORT)
                 print(_profile_override_note(profile, norm, t)
                       or t("explain.ui.profile_default", profile=profile))
@@ -769,13 +769,13 @@ def run_explain(key: str, t) -> bool:
             )
 
             print()
-            print(f"[ {profile} ]")
+            print(_profile_header(profile))
             print(_DIVIDER_SHORT)
             print(pwhy)
             print()
-            print(t("explain.ui.how_title"))
-            print(_DIVIDER_SHORT)
-            print(phow)
+            print(_indent(t("explain.ui.how_title")))
+            print(_indent(_DIVIDER_SHORT))
+            print(_indent(phow))
             print()
     else:
         # Uniform risk across all profiles
@@ -784,9 +784,9 @@ def run_explain(key: str, t) -> bool:
         print(_DIVIDER_SHORT)
         print(why_val)
         print()
-        print(t("explain.ui.how_title"))
-        print(_DIVIDER_SHORT)
-        print(how_val)
+        print(_indent(t("explain.ui.how_title")))
+        print(_indent(_DIVIDER_SHORT))
+        print(_indent(how_val))
         print()
         # Say "applies equally to all profiles" only when that is true. A
         # profile that downgrades this key to INFO, or skips its section, is
@@ -847,6 +847,30 @@ def _init_colors():
     return init_palette(curses, notice=curses.COLOR_CYAN)
 
 
+def _indent(text: str, spaces: int = 4) -> str:
+    """Shift every line of *text* right, blank lines included as blank."""
+    pad = " " * spaces
+    return "\n".join(pad + line if line.strip() else line
+                     for line in text.split("\n"))
+
+
+def _profile_header(profile: str) -> str:
+    """``[ profile ]`` in orange when the terminal takes colour.
+
+    Brackets included: they are part of the label, and colouring the word
+    alone leaves the delimiters reading as ordinary text.
+
+    Honours the tool's colour policy through ``bob.output._c`` — resolved at
+    call time, since ``output.init`` rebinds it — and the TTY check, so a
+    piped or ``--no-color`` run stays plain.
+    """
+    label = f"[ {profile} ]"
+    if not sys.stdout.isatty():
+        return label
+    from bob.output import _c
+    return f"{_c.orange}{label}{_c.reset}" if _c.orange else label
+
+
 def _profile_override_note(profile: str, key: str, t) -> str:
     """One derived line about how *profile* treats *key*, or "".
 
@@ -898,6 +922,10 @@ def _detail_screen(stdscr, key: str, t) -> None:
         lines: list[tuple[str, int]] = []
 
         h_attr      = (_c.color_pair(4) | _c.A_BOLD) if has_color else _c.A_BOLD
+        # Same pair the text path paints orange, from the shared chart.
+        from bob.tui._palette import PROFILE as _PROFILE_PAIR
+        prof_attr   = ((_c.color_pair(_PROFILE_PAIR) | _c.A_BOLD)
+                       if has_color else _c.A_BOLD)
         yellow_attr = _c.color_pair(2) if has_color else 0
         dim         = _c.A_DIM
         normal      = 0
@@ -916,7 +944,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 pwhy = t(pwhy_key)
                 if pwhy in (pwhy_key, f"[{pwhy_key}]"):
                     lines.append(("", normal))
-                    lines.append((f"  [ {profile} ]", bold))
+                    lines.append((f"  [ {profile} ]", prof_attr))
                     lines.append(("  " + "─" * 10, dim))
                     _derived = (_profile_override_note(profile, norm, t)
                                 or t("explain.ui.profile_default", profile=profile))
@@ -932,17 +960,17 @@ def _detail_screen(stdscr, key: str, t) -> None:
                     else how_val
                 )
                 lines.append(("", normal))
-                lines.append((f"  [ {profile} ]", bold))
+                lines.append((f"  [ {profile} ]", prof_attr))
                 lines.append(("  " + "─" * 10, dim))
                 for para in pwhy.split("\n"):
                     for wrapped in textwrap.wrap(para, w - 4) or [""]:
                         lines.append((f"  {wrapped}", normal))
                 lines.append(("", normal))
-                lines.append(("  " + t("explain.ui.how_title"), bold))
-                lines.append(("  " + "─" * 10, dim))
+                lines.append(("      " + t("explain.ui.how_title"), bold))
+                lines.append(("      " + "─" * 10, dim))
                 for para in phow.split("\n"):
-                    for wrapped in textwrap.wrap(para, w - 4) or [""]:
-                        lines.append((f"  {wrapped}", normal))
+                    for wrapped in textwrap.wrap(para, w - 8) or [""]:
+                        lines.append((f"      {wrapped}", normal))
                 lines.append(("", normal))
         else:
             lines.append(("", normal))
@@ -952,11 +980,11 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 for wrapped in textwrap.wrap(para, w - 4) or [""]:
                     lines.append((f"  {wrapped}", normal))
             lines.append(("", normal))
-            lines.append(("  HOW TO FIX", bold))
-            lines.append(("  " + "─" * 10, dim))
+            lines.append(("      " + t("explain.ui.how_title"), bold))
+            lines.append(("      " + "─" * 10, dim))
             for para in how_val.split("\n"):
-                for wrapped in textwrap.wrap(para, w - 4) or [""]:
-                    lines.append((f"  {wrapped}", normal))
+                for wrapped in textwrap.wrap(para, w - 8) or [""]:
+                    lines.append((f"      {wrapped}", normal))
             lines.append(("", normal))
             for _line in profile_notes_for_display(norm, t) or [
                 t("explain.ui.uniform_profiles_note")
