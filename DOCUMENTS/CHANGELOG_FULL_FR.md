@@ -100,8 +100,10 @@ s'appliquant identiquement aux quatre.
 
 L'affichage posait la mauvaise question. Il testait l'existence d'une
 *traduction*, puis se servait de la réponse pour affirmer quelque chose sur la
-*politique* — et aucune clé, dans aucune des deux locales, ne porte de prose
-par profil : l'affirmation était donc tirée d'une absence d'explication. C'est
+*politique*. 71 clés portent bien une prose par profil ; les 116 autres
+recevaient la ligne d'uniformité par défaut, et 32 d'entre elles sont
+surchargées par un profil : l'affirmation était donc tirée d'une absence
+d'explication. C'est
 la plus ancienne classe de défauts de ce projet, un étage plus haut : la même
 forme que déclarer zéro port ouvert parce que `ss` n'a pas pu tourner.
 
@@ -163,7 +165,7 @@ comparait les identifiants en sous-chaîne et acceptait une ligne renommée
 bornée aux frontières de mot sa classe de caractères était `[a-z0-9-]`, que
 `--targetXX` traversait encore sans encombre.
 
-**Tests** 8328 → **8510**.
+**Tests** 8328 → **8512**.
 
 ---
 

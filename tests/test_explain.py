@@ -695,6 +695,65 @@ class TestRunExplainUniform:
                 short.append(f"{key} ({len(lines)} lines)")
         assert not short, f"differentiated keys not accounting for all four profiles: {short[:5]}"
 
+    def test_every_key_render_accounts_for_all_four_profiles(self):
+        """Read the rendered page, for all 187 keys, not the helper.
+
+        The guard this replaces asserted on ``profile_notes_for_display``, and
+        `--explain` does not call it on the 71 keys that carry per-profile
+        prose — those take the other branch, which skipped any profile whose
+        prose was missing. All 71 lack a `workstation` variant, so every one of
+        them rendered server/desktop/container and silently dropped the fourth,
+        with the helper-level guard green throughout.
+
+        A guard that tests a function the renderer bypasses proves nothing
+        about the page. This one renders.
+        """
+        import io
+        import sys as _sys
+        from bob import i18n
+        from bob.explain import (
+            EXPLAIN_KEYS, run_explain, _has_profile_variants, profile_override_notes,
+        )
+
+        bad = []
+        for key in EXPLAIN_KEYS:
+            differentiated = (
+                _has_profile_variants(key, i18n.t)
+                or profile_override_notes(key, i18n.t)
+            )
+            if not differentiated:
+                continue
+            buf, old = io.StringIO(), _sys.stdout
+            _sys.stdout = buf
+            try:
+                run_explain(key, i18n.t)
+            finally:
+                _sys.stdout = old
+            out = buf.getvalue()
+            absent = [p for p in ("server", "desktop", "workstation", "container")
+                      if f"[ {p} ]" not in out and p not in out]
+            if absent:
+                bad.append(f"{key} -> {absent}")
+        assert not bad, (
+            f"{len(bad)} key page(s) leave a profile unaccounted for: {bad[:5]}"
+        )
+
+    def test_the_translator_under_test_is_live(self):
+        """A negative control for every count in this file.
+
+        ``i18n.t`` returns ``[some.key.path]`` for every key when no locale is
+        loaded, so a measurement taken against an uninitialised translator sees
+        no prose anywhere and reports a tidy, meaningless zero. conftest loads
+        it; this fails loudly if that ever stops happening, instead of letting
+        the counts quietly describe nothing.
+        """
+        from bob import i18n
+        probe = i18n.t("explain.clamav.db_very_outdated.server.why")
+        assert not probe.startswith("["), (
+            "the locale is not loaded — every count in this file is measuring "
+            "sentinels, not translations"
+        )
+
     def test_no_key_claims_uniformity_a_profile_contradicts(self):
         """The whole population, not one example.
 

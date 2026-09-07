@@ -92,9 +92,10 @@ keys it was false: `ssh.password_auth` is downgraded to INFO by `desktop`,
 four.
 
 The display asked the wrong question. It tested whether a *translation*
-existed, then used the answer to make a claim about *policy* — and no key in
-either locale carries per-profile prose, so the claim was made from an absence
-of explanation. That is this project's oldest defect class, one layer up: the
+existed, then used the answer to make a claim about *policy*. 71 keys do carry
+per-profile prose; the other 116 got the uniformity line by default, and 32 of
+those are overridden by a profile — so the claim was made from an absence of
+explanation. That is this project's oldest defect class, one layer up: the
 same shape as reporting zero open ports because `ss` could not run.
 
 Prose and policy are two questions now. `profile_override_notes()` derives what
@@ -151,7 +152,7 @@ check did the same with `--targetXX`, and after that was word-bounded its
 boundary class was `[a-z0-9-]`, which `--targetXX` still walked straight
 through.
 
-**Tests** 8328 → **8510**.
+**Tests** 8328 → **8512**.
 
 ---
 

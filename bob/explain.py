@@ -746,6 +746,17 @@ def run_explain(key: str, t) -> bool:
             pwhy_key = f"explain.{norm}.{profile}.why"
             pwhy = t(pwhy_key)
             if pwhy in (pwhy_key, f"[{pwhy_key}]"):
+                # No prose written for this profile. Say what its .conf says
+                # rather than omitting the section: all 71 prose keys lack a
+                # `workstation` variant, so skipping left an operator on that
+                # profile reading server/desktop/container and concluding
+                # their profile was not covered at all.
+                print()
+                print(f"[ {profile} ]")
+                print(_DIVIDER_SHORT)
+                print(_profile_override_note(profile, norm, t)
+                      or t("explain.ui.profile_default", profile=profile))
+                print()
                 continue
 
             # Use profile-specific how if present, otherwise fall back to generic
@@ -904,6 +915,14 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 pwhy_key = f"explain.{norm}.{profile}.why"
                 pwhy = t(pwhy_key)
                 if pwhy in (pwhy_key, f"[{pwhy_key}]"):
+                    lines.append(("", normal))
+                    lines.append((f"  [ {profile} ]", bold))
+                    lines.append(("  " + "─" * 10, dim))
+                    _derived = (_profile_override_note(profile, norm, t)
+                                or t("explain.ui.profile_default", profile=profile))
+                    for wrapped in textwrap.wrap(_derived, w - 4) or [""]:
+                        lines.append((f"  {wrapped}", normal))
+                    lines.append(("", normal))
                     continue
                 phow_key = f"explain.{norm}.{profile}.how"
                 phow_candidate = t(phow_key)

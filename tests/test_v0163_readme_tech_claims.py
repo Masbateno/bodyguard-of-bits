@@ -228,21 +228,37 @@ class TestTheCataloguesMatch:
 
     @pytest.mark.parametrize("lang", LOCALES)
     def test_the_profile_differentiated_key_counts(self, lang):
-        """The pair must sum to the whole, or one of the two is stale."""
-        from bob import i18n
-        from bob.explain import EXPLAIN_KEYS, profile_override_notes
-        diff = sum(1 for k in EXPLAIN_KEYS if profile_override_notes(k, i18n.t))
-        uniform = len(EXPLAIN_KEYS) - diff
-        doc = _doc(lang)
-        pattern = (r"(\d+) keys carry a per-profile note[^;]*?, (\d+) apply equally"
-                   if lang == "en" else
-                   r"(\d+) clés portent une note par profil[^;]*?, (\d+) s'appliquent identiquement")
-        m = re.search(pattern, doc)
-        assert m, f"{lang}: the per-profile key counts sentence is gone or reshaped"
-        assert (int(m.group(1)), int(m.group(2))) == (diff, uniform), (
-            f"{lang}: document says {m.group(1)}/{m.group(2)}; code has {diff}/{uniform}"
-        )
+        """The pair must sum to the whole, or one of the two is stale.
 
+        Counted the way the page branches: a key renders per-profile sections
+        when prose exists for it *or* when a profile file overrides it. The
+        first version of this counted overrides alone and pinned 75/112, which
+        described neither branch — the 71 prose keys render per-profile
+        sections too.
+        """
+        from bob import i18n
+        from bob.explain import EXPLAIN_KEYS, _has_profile_variants, profile_override_notes
+        assert not i18n.t("explain.clamav.db_very_outdated.server.why").startswith("["), (
+            "the locale is not loaded — this count would measure sentinels"
+        )
+        diff = sum(
+            1 for k in EXPLAIN_KEYS
+            if _has_profile_variants(k, i18n.t) or profile_override_notes(k, i18n.t)
+        )
+        uniform = len(EXPLAIN_KEYS) - diff
+        pattern = (r"(\d+) of them render a section per profile[^—]*— (\d+) with prose"
+                   if lang == "en" else
+                   r"(\d+) d\'entre elles rendent une section par profil[^—]*— (\d+) avec une prose")
+        m = re.search(pattern, _doc(lang))
+        assert m, f"{lang}: the per-profile key counts sentence is gone or reshaped"
+        assert int(m.group(1)) == diff, (
+            f"{lang}: document says {m.group(1)} differentiated keys; code has {diff}"
+        )
+        prose = sum(1 for k in EXPLAIN_KEYS if _has_profile_variants(k, i18n.t))
+        assert int(m.group(2)) == prose, (
+            f"{lang}: document says {m.group(2)} prose keys; code has {prose}"
+        )
+        assert str(uniform) in _doc(lang), f"{lang}: the uniform count {uniform} is not stated"
 
 # ---------------------------------------------------------------------------
 # Names and shapes the document commits to
