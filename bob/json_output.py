@@ -85,6 +85,12 @@ SCHEMA_V3_REQUIRED_KEYS = frozenset({
     # terminal text output, so two JSON payloads for the same host could differ
     # in their counts with nothing in either explaining why. Additive within v3.
     "profile",
+    # v0.16.4: how long the audit took, in seconds, rounded to milliseconds.
+    # A figure the operator now reads on screen needs a machine trace — the
+    # lesson v0.16.2 took from --target, which printed a verdict and left
+    # nothing in the payload to check it against. Null when the run did not
+    # time itself. Additive within v3.
+    "duration_seconds",
 })
 
 # Additional top-level keys present in v3 only when ``full=True``.
@@ -137,6 +143,7 @@ def build_json_data(
     profile=None,
     config=None,
     degraded_sections: "tuple[str, ...] | list[str]" = (),
+    audit_seconds: "float | None" = None,
 ) -> dict:
     """Serialize audit results to a JSON-ready dict.
 
@@ -169,6 +176,7 @@ def build_json_data(
         ports_snapshot, stack_snapshot, net_snapshot, full, version,
         hardening_snapshot, ipv6_snapshot, profile=profile, config=config,
         degraded_sections=degraded_sections,
+        audit_seconds=audit_seconds,
     )
 
 
@@ -196,6 +204,7 @@ def _build_v3(
     profile=None,
     config=None,
     degraded_sections: "tuple[str, ...] | list[str]" = (),
+    audit_seconds: "float | None" = None,
 ) -> dict:
     """v2 producer — v0.7.0 schema.
 
@@ -270,6 +279,8 @@ def _build_v3(
         "info_count":      engine.info_count,
         "degraded_sections": list(degraded_sections),
         "profile":         getattr(profile, "name", "") or "server",
+        "duration_seconds": (None if audit_seconds is None
+                             else round(max(0.0, float(audit_seconds)), 3)),
         "deductions": [
             {
                 "reason":        d.reason,

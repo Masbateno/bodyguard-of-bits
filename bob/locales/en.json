@@ -291,6 +291,9 @@
     "breakdown_title": "Score breakdown",
     "cap_note": "Score capped at {max} (firewall inactive)",
     "target_label": "Target",
+      "duration_label": "Duration",
+      "duration_seconds": "{seconds} s",
+      "duration_minutes": "{minutes} min {seconds} s",
     "target_reached": "{target}/10 — target reached",
     "target_unverifiable": "{target}/10 — the score clears it, but it is a ceiling: not verifiable",
     "target_gap": "{target}/10 — +{gap} pt(s) needed"

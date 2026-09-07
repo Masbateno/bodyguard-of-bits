@@ -424,3 +424,76 @@ class TestAToggleAdvertisesWhereItGoes:
         import bob.manage_logs as ml
         for mode in ("full", "summary"):
             assert not _keys.conflicts(ml._preview_keys(mode)), mode
+
+
+class TestTheHeaderCarriesTheVersion:
+    """Sixteen places wrote row 0 themselves; the version is written once.
+
+    Adding it to all sixteen would have been sixteen chances to write it
+    differently — how the key hints and the colour chart both drifted before
+    they were centralised. `_chrome.draw_header` owns the title bar now.
+    """
+
+    @staticmethod
+    def _row0(title="  bob --explain", w=100, has_color=True):
+        from bob.tui import _chrome
+        scr = _RecordingScreen(24, w)
+        _chrome.draw_header(scr, _FakeCurses, title, has_color)
+        assert len(scr.writes) == 1, "the header wrote more than one row"
+        return scr.writes[0]
+
+    def test_the_version_is_pinned_to_the_right(self):
+        from bob import __version__
+        row, col, text, _ = self._row0()
+        assert row == 0 and col == 0
+        assert text.rstrip().endswith(f"v{__version__}"), text[-20:]
+
+    def test_the_title_stays_on_the_left(self):
+        _, _, text, _ = self._row0(title="  bob --manage-logs")
+        assert text.startswith("  bob --manage-logs")
+
+    def test_the_row_is_the_banner_colour(self):
+        from bob.tui._palette import BANNER
+        _, _, _, attr = self._row0()
+        assert attr == _FakeCurses.color_pair(BANNER) | _FakeCurses.A_BOLD
+
+    def test_a_monochrome_terminal_still_gets_a_bar(self):
+        _, _, _, attr = self._row0(has_color=False)
+        assert attr == _FakeCurses.A_REVERSE
+
+    def test_the_row_is_padded_to_the_width(self):
+        _, _, text, _ = self._row0(w=100)
+        assert len(text) == 99
+
+    def test_a_narrow_terminal_keeps_the_title_and_drops_the_version(self):
+        """The version appears in full or not at all — never as a fragment.
+
+        The first version of this asserted "the title is there and the full
+        version is not", which a truncating header satisfies: at 24 columns it
+        rendered `bob --install-cron v0`, keeping the title and cutting the
+        stamp to two characters. The mutation bench caught that this guard was
+        inert. `v0` is not a version, it is debris that looks like one, and the
+        property worth holding is that the stamp is never half-written.
+        """
+        from bob import __version__
+        stamp = f"v{__version__}"
+        _, _, text, _ = self._row0(title="  bob --install-cron", w=24)
+        assert "bob --install-cron" in text, "the title was sacrificed"
+        fragments = [stamp[:n] for n in range(2, len(stamp))]
+        debris = [f for f in fragments if f in text and stamp not in text]
+        assert not debris, (
+            f"a truncated version stamp reached the title bar: {text!r} carries "
+            f"{debris[-1]!r}, which is not a version"
+        )
+
+    def test_no_wizard_still_paints_row_zero_itself(self):
+        """The point of centralising it is that nobody does it by hand again."""
+        offenders = []
+        for name, path in _WIZARDS.items():
+            for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if "addstr(0, 0" in line or "_draw(stdscr, 0, 0" in line:
+                    offenders.append(f"{name}:{n}")
+        assert not offenders, (
+            f"these write the title bar directly instead of through "
+            f"_chrome.draw_header: {offenders}"
+        )

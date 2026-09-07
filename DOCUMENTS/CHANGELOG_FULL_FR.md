@@ -48,7 +48,53 @@ en quelques secondes en nommant la garde dont la visée est à revoir.
 Un job CI rejoue tout le contrat puis lance `git diff --exit-code`, parce qu'un
 banc qui laisse l'arbre muté est un mensonge d'un autre genre.
 
-**Tests** 8572 → **8680**.
+### L'audit dit combien de temps il a pris, et le bandeau dit quel BOB a tourné
+
+Aucun des deux chiffres n'existait. Un audit de quatre secondes et un de
+quatre-vingt-dix sont identiques une fois la boîte de synthèse à l'écran, et un
+assistant ne donnait aucun signe de la version pilotée — ce qui compte le plus
+là où c'est le plus difficile à retrouver : une conversation de support sur une
+machine devant laquelle on n'est pas assis.
+
+La durée est mesurée à l'horloge monotone, si bien qu'un ajustement d'horloge en
+cours d'exécution ne peut pas afficher un chiffre négatif, et elle démarre aux
+checks et non à l'entrée du processus : l'analyse des arguments et la
+vérification root ne sont pas l'audit. Elle figure sur la ligne de synthèse,
+dans le rapport archivé, et comme `duration_seconds` dans la charge JSON —
+additif dans le schéma v3, `null` quand l'exécution ne s'est pas chronométrée,
+parce que `null` et `0.0` sont deux affirmations différentes et que l'une est
+fausse. Un chiffre que l'opérateur lit doit avoir une trace machine : c'est la
+leçon que la v0.16.2 a tirée de `--target`, qui imprimait un verdict sans rien
+laisser pour le vérifier.
+
+La version est cadrée à droite dans le bandeau cyan des cinq assistants. Seize
+endroits répartis sur trois modules écrivaient la ligne 0 eux-mêmes, chacun
+composant et cadrant son propre titre : y ajouter une version aurait été seize
+occasions de l'écrire différemment — exactement ainsi que les indications de
+touches et la charte de couleurs avaient dérivé avant d'être centralisées.
+`_chrome.draw_header` possède le bandeau désormais, et une garde rejette tout
+écran qui peint la ligne 0 à la main. Sur un terminal trop étroit pour les deux,
+la version est abandonnée plutôt que coupée : un titre tronqué pour faire place
+à `v0` en dit moins qu'un titre.
+
+### Le changelog Debian doit décrire les versions qu'il nomme
+
+Trouvé en livrant la v0.16.3 : l'entrée `0.16.3-1` portait le texte de la
+**v0.16.0**, et les 0.16.1 et 0.16.2 n'avaient aucune entrée — le fichier avait
+été bumpé trois versions de suite sans que son contenu soit réécrit. Un
+packageur de distribution lit ce fichier pour savoir ce qu'il livre.
+
+Deux formes, un invariant chacune. Bumper sans réécrire laisse deux entrées
+ouvrant sur la même phrase : chaque premier point doit donc être unique — ce qui
+attrape aussi la forme plus paresseuse, copier l'entrée précédente en n'éditant
+que son numéro. Sauter des versions laisse des trous : toute version documentée
+dans `CHANGELOG_FULL.md` au-dessus de la plus ancienne entrée Debian doit en
+avoir une, et aucune entrée ne peut nommer une version que le changelog ignore.
+
+Les deux sont au contrat de mutation, reproduisant ce qui s'est réellement passé
+plutôt qu'une abstraction.
+
+**Tests** 8572 → **8747**.
 
 ---
 

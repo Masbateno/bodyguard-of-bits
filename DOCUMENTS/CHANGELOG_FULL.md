@@ -46,7 +46,51 @@ guard whose aim needs re-checking.
 A CI job runs the whole contract and then `git diff --exit-code`, because a
 bench that leaves the tree mutated is its own kind of lie.
 
-**Tests** 8572 → **8680**.
+### The audit says how long it took, and the title bar says which BOB ran
+
+Neither figure existed. An audit that takes four seconds and one that takes
+ninety look identical once the summary box is on screen, and a wizard gave no
+sign of which version an operator was driving — which matters most in the
+situation where it is hardest to find out, a support conversation about a
+machine you are not sitting at.
+
+The duration is measured with a monotonic clock so a clock adjustment mid-run
+cannot render a negative figure, and it starts at the checks rather than at
+process entry: argument parsing and the root gate are not the audit. It appears
+on the summary line, in the archived report, and as `duration_seconds` in the
+JSON payload — additive within schema v3, `null` when a run did not time
+itself, because `null` and `0.0` are different claims and one of them is
+false. A figure the operator reads needs a machine trace; that is the lesson
+v0.16.2 took from `--target`, which printed a verdict and left nothing for
+anything to check it against.
+
+The version is right-aligned in the cyan title bar of all five wizards. Sixteen
+places across three modules wrote row 0 themselves, each composing and padding
+its own title, so adding a version to each would have been sixteen chances to
+write it differently — which is exactly how the key hints and the colour chart
+drifted before they were centralised. `_chrome.draw_header` owns the bar now,
+and a guard rejects any screen that paints row 0 by hand. On a terminal too
+narrow for both, the version is dropped rather than cut: a title truncated to
+make room for `v0` says less than a title.
+
+### The Debian changelog must describe the versions it names
+
+Found while shipping v0.16.3: the `0.16.3-1` entry carried the **v0.16.0**
+text, and 0.16.1 and 0.16.2 had no entry at all — the file had been
+version-bumped three releases running without its contents being rewritten. A
+distribution packager reads that file to know what they are shipping.
+
+Two shapes, one invariant each. Bumping without rewriting leaves two entries
+opening on the same sentence, so every opening bullet must be unique — which
+also catches the lazier form, copying the previous entry and editing its
+version number. Skipping releases leaves gaps, so every version documented in
+`CHANGELOG_FULL.md` at or above the oldest Debian entry must have one, and no
+entry may name a version the changelog has never heard of.
+
+Both are in the mutation contract, reproducing what actually happened rather
+than an abstraction of it.
+
+**Tests** 8572 → **8747**.
 
 ---
 

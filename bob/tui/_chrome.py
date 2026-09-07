@@ -27,7 +27,7 @@ inside a ``curses.wrapper`` session.
 from __future__ import annotations
 
 from bob.tui import _keys
-from bob.tui._palette import CONTEXT, FOOTER
+from bob.tui._palette import BANNER, CONTEXT, FOOTER
 
 
 def banner_lines(t, actions: "tuple[str, ...]", width: int) -> "list[str]":
@@ -80,6 +80,35 @@ def draw_text(stdscr, curses, has_color: bool, lines: "list[str]",
         _safe(stdscr, curses, h - 1 - i, line.ljust(w - 1)[:w - 1], banner_attr)
     _safe(stdscr, curses, h - 1 - len(lines),
           context.ljust(w - 1)[:w - 1], ctx_attr)
+
+
+def draw_header(stdscr, curses, title: str, has_color: bool) -> None:
+    """The cyan title bar, with the running version pinned to its right.
+
+    Sixteen places across three modules wrote row 0 themselves, each composing
+    its own title and each padding it its own way. Adding the version to all
+    sixteen would have been sixteen chances to write it differently, which is
+    how the key hints and the colour chart both drifted before they were
+    centralised. It is written once, here.
+
+    The version is right-aligned and dropped rather than truncated when the
+    terminal is too narrow for both: a title cut in half to make room for a
+    version number tells the operator less than a title alone.
+    """
+    from bob import __version__
+
+    h, w = stdscr.getmaxyx()
+    width = max(1, w - 1)
+    attr = ((curses.color_pair(BANNER) | curses.A_BOLD) if has_color
+            else curses.A_REVERSE)
+
+    stamp = f"v{__version__}  "
+    left = title[:width]
+    if len(left) + len(stamp) + 2 <= width:
+        line = left.ljust(width - len(stamp)) + stamp
+    else:
+        line = left.ljust(width)
+    _safe(stdscr, curses, 0, line[:width], attr)
 
 
 def _safe(stdscr, curses, row: int, text: str, attr: int) -> None:

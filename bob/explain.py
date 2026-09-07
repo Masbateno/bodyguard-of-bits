@@ -1012,11 +1012,8 @@ def _detail_screen(stdscr, key: str, t) -> None:
         # body is fully translated.
         _pct = min(100, int(100 * (scroll + body_h) / max(1, len(content))))
         header = f"  {norm}    {_pct}%  "
-        hdr_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
-        try:
-            stdscr.addstr(0, 0, header.ljust(w - 1)[: w - 1], hdr_attr)
-        except curses.error:
-            pass
+        from bob.tui import _chrome
+        _chrome.draw_header(stdscr, curses, header, has_color)
 
         # ── content ──────────────────────────────────────────────────────────
         for row in range(body_h):
@@ -1104,11 +1101,8 @@ def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
             "explain.ui.picker_counts",
             n_keys=len(key_indices), n_groups=len(_EXPLAIN_GROUPS),
         ) + "  "
-        hdr_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
-        try:
-            stdscr.addstr(0, 0, header.ljust(w - 1)[: w - 1], hdr_attr)
-        except curses.error:
-            pass
+        from bob.tui import _chrome
+        _chrome.draw_header(stdscr, curses, header, has_color)
 
         # ── items ────────────────────────────────────────────────────────────
         for row in range(list_h):

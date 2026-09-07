@@ -13,6 +13,7 @@ import json as _json
 import logging
 import os
 import sys
+import time as _time
 import traceback
 from contextlib import redirect_stdout
 from datetime import datetime
@@ -544,6 +545,11 @@ def _run(argv=None) -> int:
             # screen said "Démarrage de l'audit" — the mixed-language content
             # v0.7.3 M-5 fixed for six field labels and missed here.
             report.write_finding("INFO", t("audit.starting"))
+            # v0.16.4 — how long the audit took. Monotonic, so a clock
+            # adjustment mid-run cannot produce a negative or absurd figure;
+            # started here rather than at process entry so it measures the
+            # audit and not argument parsing or the root check.
+            _audit_started = _time.monotonic()
             network_context, public_ip = detect_network_context(offline=config.offline)
 
             result             = run_checks(config, t, engine, report, registry, network_context,
@@ -641,11 +647,13 @@ def _run(argv=None) -> int:
             # calls are gated by config.quiet so bob -q produces empty stdout;
             # report.write_* calls always run so the .log file remains
             # complete". The gate is now where that sentence says it is.
+            audit_seconds = _time.monotonic() - _audit_started
             print_audit_summary(engine, network_context, public_ip, config, t, report, snapshots,
                                 profile_name=active_profile.name,
                                 prev_score=prev_baseline.score if prev_baseline else None,
                                 fw_policy=fw_policy,
-                                degraded_sections=degraded_sections)
+                                degraded_sections=degraded_sections,
+                                audit_seconds=audit_seconds)
 
             if not config.quiet:
                 from bob.domain_scores import render_domain_scores
@@ -738,6 +746,7 @@ def _run(argv=None) -> int:
                 schema_version="3",
                 profile=active_profile, config=config,
                 degraded_sections=degraded_sections,
+                audit_seconds=audit_seconds,
             )
             print(_json.dumps(data, ensure_ascii=False, indent=2))
 

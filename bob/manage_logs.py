@@ -651,11 +651,8 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
         _rng = t("tui.range", first=scroll + 1,
                  last=min(scroll + body_h, len(lines)), total=len(lines))
         banner = f"  {path.name}  {mode_tag}   {_rng}"
-        try:
-            attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
-            stdscr.addstr(0, 0, banner.ljust(w - 1)[:w - 1], attr)
-        except curses.error:
-            pass
+        from bob.tui import _chrome
+        _chrome.draw_header(stdscr, curses, banner, has_color)
 
         # Body
         for row in range(body_h):
@@ -817,11 +814,8 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
         else:
             header = ("  bob --manage-logs    "
                       + t("manage_logs.banner_total", total=len(all_logs)))
-        try:
-            banner_attr = (curses.color_pair(5) | curses.A_BOLD) if has_color else curses.A_REVERSE
-            stdscr.addstr(0, 0, header.ljust(w - 1)[:w - 1], banner_attr)
-        except curses.error:
-            pass
+        from bob.tui import _chrome
+        _chrome.draw_header(stdscr, curses, header, has_color)
 
         # Body
         for row in range(body_h):

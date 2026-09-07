@@ -291,6 +291,9 @@
     "breakdown_title": "Détail du score",
     "cap_note": "Score plafonné à {max} (pare-feu inactif)",
     "target_label": "Objectif",
+      "duration_label": "Durée",
+      "duration_seconds": "{seconds} s",
+      "duration_minutes": "{minutes} min {seconds} s",
     "target_reached": "{target}/10 — objectif atteint",
     "target_unverifiable": "{target}/10 — le score le franchit, mais c'est un plafond : non vérifiable",
     "target_gap": "{target}/10 — +{gap} pt(s) à gagner"

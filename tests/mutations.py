@@ -279,4 +279,83 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="the tutorial told a first-time reader to run a command that "
                "exits 3 on a key that has never existed",
     ),
+
+    # ---- what the packaging changelog claims --------------------------------
+    Mutation(
+        id="packaging/debian-entry-bumped-not-written",
+        file="debian/changelog",
+        old='  * "This guard bites" was a claim in a commit message and nothing re-checked',
+        new='  * The score went up when BOB could see less. It is a sum over the checks that',
+        kills=("tests/test_v0164_debian_changelog.py::test_no_two_entries_open_on_the_same_sentence",),
+        reason="reproduces v0.16.3 exactly: the entry carries an older release's "
+               "story, so a packager reads about the wrong version",
+    ),
+    Mutation(
+        id="packaging/debian-release-skipped",
+        file="debian/changelog",
+        old="bodyguard-of-bits (0.16.2-1) UNRELEASED; urgency=low",
+        new="bodyguard-of-bits (0.16.2-XX) SKIPPED; urgency=low",
+        kills=("tests/test_v0164_debian_changelog.py::test_no_release_is_missing_its_entry",),
+        reason="a published release with no packaging entry — 0.16.1 and 0.16.2 "
+               "were both missing until v0.16.4",
+    ),
+
+    # ---- how long the audit took --------------------------------------------
+    Mutation(
+        id="duration/wall-clock-instead-of-monotonic",
+        file="bob/__main__.py",
+        old="            _audit_started = _time.monotonic()",
+        new="            _audit_started = _time.time()",
+        kills=("tests/test_v0164_audit_duration.py::TestTheMeasurementIsHonest",),
+        reason="a clock adjustment mid-run would print a negative duration, "
+               "which is a statement about the audit that is not true",
+    ),
+    Mutation(
+        id="duration/negative-reaches-the-screen",
+        file="bob/display.py",
+        old="    seconds = max(0.0, float(seconds))",
+        new="    seconds = float(seconds)",
+        kills=("tests/test_v0164_audit_duration.py::TestTheFormatter",),
+        reason="the summary line would render `-3.0 s` rather than clamping",
+    ),
+    Mutation(
+        id="duration/untimed-run-fabricates-a-zero",
+        file="bob/json_output.py",
+        old='        "duration_seconds": (None if audit_seconds is None\n'
+            "                             else round(max(0.0, float(audit_seconds)), 3)),",
+        new='        "duration_seconds": round(float(audit_seconds or 0.0), 3),',
+        kills=("tests/test_v0164_audit_duration.py::TestThePayloadCarriesIt",),
+        reason="null means 'this run did not time itself'; 0.0 claims an "
+               "instantaneous audit, which is a different and false statement",
+    ),
+    Mutation(
+        id="duration/computed-twice",
+        file="bob/__main__.py",
+        old="            audit_seconds = _time.monotonic() - _audit_started",
+        new="            audit_seconds = _time.monotonic() - _audit_started  # noqa\n"
+            "            del audit_seconds\n"
+            "            audit_seconds = _time.monotonic() - _audit_started",
+        kills=("tests/test_v0164_audit_duration.py::TestTheMeasurementIsHonest",),
+        reason="the screen and the payload would read two different numbers "
+               "for the same run",
+    ),
+
+    # ---- the title bar ------------------------------------------------------
+    Mutation(
+        id="header/version-dropped",
+        file="bob/tui/_chrome.py",
+        old='    stamp = f"v{__version__}  "',
+        new='    stamp = ""',
+        kills=("tests/test_v0163_bottom_chrome.py::TestTheHeaderCarriesTheVersion",),
+        reason="the running version would vanish from every wizard's title bar",
+    ),
+    Mutation(
+        id="header/title-truncated-to-fit-the-version",
+        file="bob/tui/_chrome.py",
+        old="    if len(left) + len(stamp) + 2 <= width:",
+        new="    if True:",
+        kills=("tests/test_v0163_bottom_chrome.py::TestTheHeaderCarriesTheVersion",),
+        reason="a narrow terminal would lose the title to make room for a "
+               "version number, which tells the operator less",
+    ),
 )

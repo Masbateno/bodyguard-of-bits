@@ -12,7 +12,7 @@ Plain-text flows and core data types live in bob.cron.
 from __future__ import annotations
 
 import re
-from bob.tui import _keys
+from bob.tui import _chrome, _keys
 from bob.tui._palette import marked_attr
 from datetime import datetime
 from enum import IntEnum
@@ -223,10 +223,9 @@ def _curses_status_flash(stdscr, t, msg: str) -> None:
     from bob.tui import _chrome
 
     has_color = _c.has_colors()
-    hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
     stdscr.erase()
     h, w = stdscr.getmaxyx()
-    _draw(stdscr, 0, 0, " " * (w - 1), hdr_attr)
+    _chrome.draw_header(stdscr, _c, "", has_color)
     _draw(stdscr, 2, 2, msg[:w - 3])
     # Any key continues, so that is what the banner says — it lists no
     # bindings because this screen has none.
@@ -277,7 +276,6 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
     """Full schedule wizard inside curses. Returns new cron expression or None."""
     import curses as _c
     has_color = _c.has_colors()
-    hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
 
     def _hdr(suffix=""):
         h2, w2 = stdscr.getmaxyx()
@@ -285,7 +283,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         _sep = t("cron_ui.prompt_sep")
         label = (f"  {_prefix}{_sep}{entry.name}  {suffix}" if entry
                  else f"  {_prefix}  {suffix}")
-        _draw(stdscr, 0, 0, label[:w2 - 1].ljust(w2 - 1), hdr_attr)
+        _chrome.draw_header(stdscr, _c, label, has_color)
 
     def _ftr(actions=_INPUT_KEYS):
         _draw_footer(stdscr, t, actions, has_color)
@@ -468,9 +466,8 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
         body_h = max(1, h - 1 - _ch.chrome_height(t, _EMAIL_KEYS, w))
 
         hdr = f"  {t('cron_ui.select_emails')}    " + t("tui.email_selected", count=len(selected))
-        hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
         ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
-        _draw(stdscr, 0, 0, hdr[:w - 1].ljust(w - 1), hdr_attr)
+        _chrome.draw_header(stdscr, _c, hdr, has_color)
 
         if not saved:
             _draw(stdscr, 2, 2, t("cron_ui.no_saved_emails"))
@@ -537,7 +534,7 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
         elif ch_i in (ord("n"), ord("N")):
             stdscr.erase()
             h, w = stdscr.getmaxyx()
-            _draw(stdscr, 0, 0, f"  {t('cron_ui.add_email_title')}".ljust(w - 1), hdr_attr)
+            _chrome.draw_header(stdscr, _c, f"  {t('cron_ui.add_email_title')}", has_color)
             _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
             raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_email"))
             if raw and _EMAIL_RE.match(raw.strip()):
@@ -578,14 +575,13 @@ def _curses_email_store_sub(stdscr, t) -> None:
         from bob.tui import _chrome as _ch
         body_h = max(1, h - 1 - _ch.chrome_height(t, _STORE_KEYS, w))
 
-        hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
         ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
         n_sel = len(marked)
         if n_sel:
             hdr = f"  {t('cron_ui.address_book')}    " + t("tui.email_selected", count=n_sel)
         else:
             hdr = f"  {t('cron_ui.address_book')}    " + t("tui.email_count", count=n)
-        _draw(stdscr, 0, 0, hdr[:w - 1].ljust(w - 1), hdr_attr)
+        _chrome.draw_header(stdscr, _c, hdr, has_color)
 
         if not emails:
             _draw(stdscr, 2, 2, t("manage_cron.email_store_empty"))
@@ -661,7 +657,7 @@ def _curses_email_store_sub(stdscr, t) -> None:
         elif ch_i in (ord("n"), ord("N")):
             stdscr.erase()
             h, w = stdscr.getmaxyx()
-            _draw(stdscr, 0, 0, f"  {t('cron_ui.add_email_title')}".ljust(w - 1), hdr_attr)
+            _chrome.draw_header(stdscr, _c, f"  {t('cron_ui.add_email_title')}", has_color)
             _draw(stdscr, 2, 2, t("manage_cron.email_store_enter"))
             # This screen drew no key hints at all — it asks for input and
             # offered no visible way to leave it.
@@ -688,9 +684,8 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
     while True:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
         hdr = f"  {t('cron_ui.edit', name=entry.name)}"
-        _draw(stdscr, 0, 0, hdr[:w - 1].ljust(w - 1), hdr_attr)
+        _chrome.draw_header(stdscr, _c, hdr, has_color)
         for i, opt in enumerate(options):
             is_cur = (i == sel)
             attr = (_c.color_pair(1) | _c.A_BOLD) if (is_cur and has_color) else (
@@ -744,12 +739,11 @@ def _curses_choice_screen(stdscr, t, title: str, prompt: str, options: "list[str
     """
     import curses as _c
     has_color = _c.has_colors()
-    hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
     sel = selected
     while True:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        _draw(stdscr, 0, 0, f"  {title}"[:w - 1].ljust(w - 1), hdr_attr)
+        _chrome.draw_header(stdscr, _c, f"  {title}", has_color)
         _draw(stdscr, 2, 2, prompt[:w - 3])
         for i, opt in enumerate(options):
             is_cur = (i == sel)
@@ -789,7 +783,6 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
     except _c.error:
         pass
     has_color = _c.has_colors()
-    hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
@@ -823,7 +816,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
             if step == LANDING:
                 stdscr.erase()
                 h, w = stdscr.getmaxyx()
-                _draw(stdscr, 0, 0, "  bob --install-cron".ljust(w - 1), hdr_attr)
+                _chrome.draw_header(stdscr, _c, "  bob --install-cron", has_color)
                 _draw(stdscr, 2, 2, t("install_cron.landing_prompt"))
                 _draw_footer(stdscr, t, _LANDING_KEYS, has_color)
                 stdscr.refresh()
@@ -839,7 +832,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
             elif step == STEP_NAME:
                 stdscr.erase()
                 h, w = stdscr.getmaxyx()
-                _draw(stdscr, 0, 0, "  bob --install-cron".ljust(w - 1), hdr_attr)
+                _chrome.draw_header(stdscr, _c, "  bob --install-cron", has_color)
                 _draw(stdscr, 2, 2, t("install_cron.prompt_name", suggestion=suggestion))
                 entered = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_name"), default=raw_name or suggestion)
                 if entered is None:       # Esc → back to landing
@@ -927,7 +920,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 while True:
                     stdscr.erase()
                     h, w = stdscr.getmaxyx()
-                    _draw(stdscr, 0, 0, "  bob --install-cron".ljust(w - 1), hdr_attr)
+                    _chrome.draw_header(stdscr, _c, "  bob --install-cron", has_color)
                     _draw(stdscr, 2, 2, t("install_cron.overwrite", path=str(cron_path)))
                     _draw_footer(stdscr, t, _CONFIRM_KEYS, has_color)
                     stdscr.refresh()
@@ -1036,7 +1029,6 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         n_sel = len(marked)
 
         # ── Header ──────────────────────────────────────────────────────────
-        hdr_attr = (_c.color_pair(5) | _c.A_BOLD) if has_color else _c.A_REVERSE
         ftr_attr = _c.color_pair(2) if has_color else _c.A_REVERSE
         if confirm_delete:
             header = f"  bob --manage-cron    {t('tui.confirm_below')}"
@@ -1046,7 +1038,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         else:
             header = ("  bob --manage-cron    "
                       + t("tui.cron_count", count=n))
-        _draw(stdscr, 0, 0, header[:w - 1].ljust(w - 1), hdr_attr)
+        _chrome.draw_header(stdscr, _c, header, has_color)
 
         # ── Body ─────────────────────────────────────────────────────────────
         if not crons:

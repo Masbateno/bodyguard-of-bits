@@ -449,9 +449,26 @@ def _compute_posture_annotation(engine, t) -> tuple:
     return effective_level, annotation
 
 
+def format_duration(seconds: float, t) -> str:
+    """A run length an operator can read at a glance.
+
+    Sub-minute runs are the normal case and get one decimal — the difference
+    between 4.2 s and 41 s is the one worth seeing. Past a minute the decimal
+    is noise, so it becomes ``2 min 07 s``. Negative input cannot happen from a
+    monotonic clock and is clamped rather than rendered, because a summary line
+    reading ``-3.0 s`` would be a claim about the audit that is not true.
+    """
+    seconds = max(0.0, float(seconds))
+    if seconds < 60:
+        return t("scoring.duration_seconds", seconds=f"{seconds:.1f}")
+    minutes, rest = divmod(int(round(seconds)), 60)
+    return t("scoring.duration_minutes", minutes=minutes, seconds=f"{rest:02d}")
+
+
 def _summary_header_lines(engine, network_context, config, t,
                            profile_name: str,
-                           prev_score: "int | None") -> list[tuple[str, str]]:
+                           prev_score: "int | None",
+                           audit_seconds: "float | None" = None) -> list[tuple[str, str]]:
     """Build the score / risk / network / profile / target header lines."""
     from bob.output import _c
     from bob.scoring import RiskLevel
@@ -559,6 +576,10 @@ def _summary_header_lines(engine, network_context, config, t,
         else:
             target_val = f"{_c.yellow}▲ {t('scoring.target_gap', target=target, gap=gap)}{_c.reset}"
         lines.append((t("scoring.target_label"), target_val))
+
+    if audit_seconds is not None:
+        lines.append((t("scoring.duration_label"),
+                      format_duration(audit_seconds, t)))
 
     return lines
 
@@ -676,7 +697,8 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
                          report, snapshots, profile_name: str = "server",
                          prev_score: "int | None" = None,
                          fw_policy: str = "deny",
-                         degraded_sections: "tuple[str, ...] | list[str]" = ()) -> None:
+                         degraded_sections: "tuple[str, ...] | list[str]" = (),
+                         audit_seconds: "float | None" = None) -> None:
     """Write the audit summary to the report, and print it unless quiet.
 
     v0.16.0: the terminal half is gated here rather than at the call site. It
@@ -690,7 +712,8 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
     # that print_summary_box prepends to every label ("  " + label)
     inner = _TERM_WIDTH - 4
 
-    lines = _summary_header_lines(engine, network_context, config, t, profile_name, prev_score)
+    lines = _summary_header_lines(engine, network_context, config, t, profile_name,
+                                  prev_score, audit_seconds)
     lines.extend(_summary_findings_lines(engine, t, inner))
     lines.extend(_summary_breakdown_lines(engine, t, inner))
 
