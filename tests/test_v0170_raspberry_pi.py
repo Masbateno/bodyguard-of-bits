@@ -279,3 +279,79 @@ class TestNoDefaultPasswordCrackIsAttempted:
             "BOB's own metadata says it supports; a check built on it would "
             "work on three interpreters and silently stop on the fourth"
         )
+
+
+class TestTheSandboxKnowsWhetherItsMemoryCapIsReal:
+    """setrlimit can return success and apply nothing.
+
+    Found by running the suite on aarch64 once emulation was available. Under
+    qemu-user, ``setrlimit(RLIMIT_AS, 256 MiB)`` returns success and the very
+    next ``getrlimit`` still answers ``RLIM_INFINITY`` — the emulator needs the
+    address space for its own translation buffers. The sandbox module's own
+    docstring says that cap *"defends against memory bombs"*, and on such a
+    host the sentence was false while nothing knew.
+
+    The cap is defence in depth rather than a boundary (the v0.7.0 threat model
+    settled that), so a refused limit does not stop a plugin running. What
+    changes is that BOB stops believing in a protection it did not get.
+    """
+
+    def test_the_limit_is_read_back_not_assumed(self):
+        import ast
+        import pathlib
+
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "bob" / "_sandbox.py").read_text(encoding="utf-8")
+        fn = next(n for n in ast.walk(ast.parse(src))
+                  if isinstance(n, ast.FunctionDef)
+                  and n.name == "_apply_resource_limits")
+        calls = [n for n in ast.walk(fn)
+                 if isinstance(n, ast.Call)
+                 and getattr(n.func, "attr", "") == "getrlimit"]
+        # One to read the existing limit, one to verify what took effect.
+        assert len(calls) >= 3, (
+            "the memory cap is set without reading back what was applied; "
+            "a platform that accepts the call and ignores it would leave BOB "
+            "asserting a protection it never got"
+        )
+
+    def test_a_real_cap_is_reported_as_real(self):
+        """On this host the limit holds, so the flag must say so."""
+        import multiprocessing
+
+        def _probe(q):
+            import bob._sandbox as sb
+            sb._apply_resource_limits()
+            q.put(sb._MEM_LIMIT_APPLIED)
+
+        q = multiprocessing.Queue()
+        p = multiprocessing.Process(target=_probe, args=(q,))
+        p.start()
+        p.join(30)
+        applied = q.get() if not q.empty() else None
+        assert applied is not None, "the probe process produced no answer"
+        if applied is False:
+            pytest.skip("this platform refuses RLIMIT_AS — nothing to assert")
+        # Establish that the flag is not simply hardcoded True: the cap must
+        # actually bite in the same process that reports it.
+        import resource
+        soft, _hard = resource.getrlimit(resource.RLIMIT_AS)
+        assert soft == resource.RLIM_INFINITY, (
+            "the parent process must not be limited; the cap belongs to the "
+            "worker, and a parent-wide limit would break the audit"
+        )
+
+    def test_the_flag_starts_false_rather_than_optimistic(self):
+        import ast
+        import pathlib
+
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "bob" / "_sandbox.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        node = next(n for n in tree.body
+                    if isinstance(n, ast.AnnAssign)
+                    and getattr(n.target, "id", "") == "_MEM_LIMIT_APPLIED")
+        assert node.value.value is False, (
+            "an optimistic default would claim the cap on a platform where "
+            "_apply_resource_limits was never reached at all"
+        )

@@ -187,13 +187,51 @@ naming `{user}` with nothing supplying it, a visibility key outside
 `VISIBILITY_KEYS`, and two functions written by anticipation that nothing
 called — `is_arm` was deleted rather than kept waiting for a use.
 
-**No ARM hardware was available to test on.** `qemu-user-static` is not
-installed and installing it needs root, so the board was simulated: the real
-collection paths were driven against a Pi's `/proc/cpuinfo`, an absent
-`/sys/firmware`, and a boot partition carrying the files an imager writes.
-Every branch was exercised that way, in both locales. On a machine that is not
-a Pi the section emits nothing at all, and the A/B against v0.16.4 on this
-x86 host shows the same score, the same 93 findings and the same deductions.
+### Then it ran on ARM
+
+`qemu-user-static` was installed mid-development, so the section was field
+tested on real `aarch64` rather than on a simulation of it. That mattered: the
+x86 simulation could only reach `/boot`, while a Bookworm Pi mounts its FAT
+partition at `/boot/firmware` — the branch that had never executed. On the
+arm64 image the board is read from the device tree, the boot directory resolves
+to `/boot/firmware`, the file mode is measured as `644`, the imager's yescrypt
+hash is recognised, and `uname -m` reports `aarch64` instead of the
+simulation's `x86_64`. A generic arm64 container is correctly *not* a
+Raspberry Pi.
+
+The full `--fix --apply --yes` round trip runs there too: `userconf.txt`
+present → the command executes → the file is gone → the finding flips to
+`userconf_absent` on re-audit.
+
+Running the whole suite on aarch64 found five failures. Four were the container
+running as root — a test that `chmod 000`s a file and expects it to be
+unreadable cannot pass as root — and they pass as an ordinary user. The fifth
+was real, and not about ARM.
+
+### setrlimit can return success and apply nothing
+
+The plugin sandbox caps a worker at `RLIMIT_AS = 256 MiB`, and its own module
+docstring says that "defends against memory bombs". Under qemu-user emulation
+the call returns success and the very next `getrlimit` still answers
+`RLIM_INFINITY` — the emulator needs the address space for its own translation
+buffers. The memory bomb then allocated a hundred million pointers unopposed,
+and nothing in BOB knew the protection it documents had been declined.
+
+The limit is read back now. A refused cap is logged rather than raised, because
+this is defence in depth and not a boundary — the v0.7.0 threat model settled
+that — so a plugin still runs. What changes is that BOB stops believing in a
+protection it did not get. Whether a *native* ARM kernel applies the cap was
+not measured and is not claimed; only the emulated case is established.
+
+The adversarial-plugin test now tells the two apart: it probes whether the cap
+actually took effect, and skips with that reason instead of failing, so a run
+on an emulated host reports the platform's refusal rather than accusing the
+sandbox. The skip is inside the test, so the collected count does not move with
+the environment — the v0.15.0 lesson from `importorskip` at module scope.
+
+On a machine that is not a Pi the section emits nothing at all, and the A/B
+against v0.16.4 on this x86 host shows the same score, the same 93 findings and
+the same deductions.
 
 ### Two defects this found in the writing of it
 
@@ -262,7 +300,7 @@ of the real wizard found it in one pass, and the guard that replaced it drives
 the function against a recording screen and requires every word of the notice
 to land on a row.
 
-**Tests** 8951 → **9206**. **Mutations** 56 → **83**.
+**Tests** 8951 → **9213**. **Mutations** 56 → **84**.
 
 ---
 

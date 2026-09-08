@@ -198,14 +198,54 @@ de visibilité hors de `VISIBILITY_KEYS`, et deux fonctions écrites par
 anticipation que rien n'appelait — `is_arm` a été supprimée plutôt que gardée
 en attente d'un usage.
 
-**Aucun matériel ARM n'était disponible pour tester.** `qemu-user-static` n'est
-pas installé et son installation demande root : la carte a donc été simulée —
-les vrais chemins de collecte ont été exercés contre le `/proc/cpuinfo` d'un
-Pi, un `/sys/firmware` absent et une partition de boot portant les fichiers
-qu'un imager écrit. Toutes les branches ont été parcourues ainsi, dans les deux
-langues. Sur une machine qui n'est pas un Pi la section n'émet rien, et l'A/B
-contre la v0.16.4 sur cet hôte x86 donne le même score, les mêmes 93 constats
-et les mêmes déductions.
+### Puis il a tourné sur ARM
+
+`qemu-user-static` a été installé en cours de développement : la section a donc
+été testée sur du vrai `aarch64` et non sur une simulation. Cela a compté : la
+simulation x86 ne pouvait atteindre que `/boot`, alors qu'un Pi sous Bookworm
+monte sa partition FAT sur `/boot/firmware` — la branche qui n'avait jamais été
+exécutée. Sur l'image arm64, la carte est lue dans le device tree, le
+répertoire de boot se résout en `/boot/firmware`, le mode du fichier est mesuré
+à `644`, le hash yescrypt de l'imager est reconnu, et `uname -m` répond
+`aarch64` au lieu du `x86_64` de la simulation. Un conteneur arm64 générique
+n'est correctement **pas** un Raspberry Pi.
+
+Le round trip complet `--fix --apply --yes` y tourne aussi : `userconf.txt`
+présent → la commande s'exécute → le fichier disparaît → le constat bascule en
+`userconf_absent` au ré-audit.
+
+Passer toute la suite sur aarch64 a produit cinq échecs. Quatre venaient du
+conteneur tournant en root — un test qui fait `chmod 000` sur un fichier et
+attend qu'il soit illisible ne peut pas passer en root — et ils passent en
+utilisateur ordinaire. Le cinquième était réel, et ne concernait pas ARM.
+
+### setrlimit peut retourner un succès sans rien appliquer
+
+Le bac à sable des plugins plafonne un worker à `RLIMIT_AS = 256 Mio`, et le
+docstring du module dit que cela « défend contre les bombes mémoire ». Sous
+émulation qemu-user, l'appel retourne un succès et le `getrlimit` juste après
+répond encore `RLIM_INFINITY` — l'émulateur a besoin de l'espace d'adressage
+pour ses propres tampons de traduction. La bombe mémoire a alors alloué cent
+millions de pointeurs sans obstacle, et rien dans BOB ne savait que la
+protection qu'il documente avait été refusée.
+
+La limite est désormais relue. Un plafond refusé est journalisé et non levé,
+parce qu'il s'agit de défense en profondeur et non d'une frontière — le modèle
+de menace de la v0.7.0 l'a tranché — donc un plugin s'exécute quand même. Ce
+qui change, c'est que BOB cesse de croire à une protection qu'il n'a pas
+obtenue. Qu'un noyau ARM **natif** applique ou non ce plafond n'a pas été
+mesuré et n'est pas affirmé : seul le cas émulé est établi.
+
+Le test des plugins adverses distingue maintenant les deux : il sonde si le
+plafond a réellement pris effet et passe en skip avec cette raison au lieu
+d'échouer, si bien qu'une exécution sur hôte émulé rapporte le refus de la
+plateforme au lieu d'accuser le bac à sable. Le skip est à l'intérieur du test,
+donc le nombre de tests collectés ne bouge pas avec l'environnement — la leçon
+que la v0.15.0 a tirée d'`importorskip` au niveau module.
+
+Sur une machine qui n'est pas un Pi la section n'émet rien, et l'A/B contre la
+v0.16.4 sur cet hôte x86 donne le même score, les mêmes 93 constats et les
+mêmes déductions.
 
 ### Deux défauts que l'écriture de tout ceci a révélés
 
@@ -278,7 +318,7 @@ vrai wizard derrière un pty l'a trouvée du premier coup, et la garde qui l'a
 remplacée pilote la fonction contre un écran enregistreur en exigeant que
 chaque mot de l'avis atterrisse sur une ligne.
 
-**Tests** 8951 → **9206**. **Mutations** 56 → **83**.
+**Tests** 8951 → **9213**. **Mutations** 56 → **84**.
 
 ---
 

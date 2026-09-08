@@ -732,6 +732,20 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "an Orange Pi would get advice about files it does not have",
     ),
 
+    Mutation(
+        id="pi/memory-cap-assumed-not-verified",
+        file="bob/_sandbox.py",
+        old="        applied_soft, _applied_hard = resource.getrlimit(resource.RLIMIT_AS)\n"
+            "        _MEM_LIMIT_APPLIED = (applied_soft != resource.RLIM_INFINITY\n"
+            "                              and applied_soft <= MEM_LIMIT)",
+        new="        _MEM_LIMIT_APPLIED = True",
+        kills=(f"{_PI}::TestTheSandboxKnowsWhetherItsMemoryCapIsReal::"
+               "test_the_limit_is_read_back_not_assumed",),
+        reason="setrlimit returns success and applies nothing under qemu-user on "
+               "aarch64, so the sandbox claimed a 256 MiB cap it never got — "
+               "found by running the suite on ARM once emulation was available",
+    ),
+
     # ---- the files a verdict is read from ----------------------------------
     Mutation(
         id="paths/pam-stack-is-debians-only",

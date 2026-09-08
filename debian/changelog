@@ -32,6 +32,12 @@ bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
     usually still guarding the live account), the first-boot ssh marker, and
     the historical pi account when it can actually log in. No default-password
     test: that needs crypt, removed from the standard library in Python 3.13.
+  * Field tested on emulated aarch64, which found a defect that has nothing to
+    do with ARM: setrlimit(RLIMIT_AS) returns success and applies nothing under
+    qemu-user, so the plugin sandbox claimed a 256 MiB memory cap it never got
+    while its own docstring said that cap defends against memory bombs. The
+    limit is read back now and a refused cap is logged; it stays defence in
+    depth rather than a boundary, so a plugin still runs.
   * The cron wizard promised delivery it had never established. "sendmail
     available — notifications will be delivered" was decided by
     shutil.which("sendmail"), which a Postfix installed and never configured

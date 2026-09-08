@@ -459,6 +459,12 @@ def _build_restricted_builtins() -> _ImmutableBuiltins:
     return _ImmutableBuiltins(safe)
 
 
+#: Whether the last :func:`_apply_resource_limits` actually got the memory cap
+#: it asked for. False on a platform that accepts ``setrlimit`` and applies
+#: nothing.
+_MEM_LIMIT_APPLIED: bool = False
+
+
 def _apply_resource_limits() -> None:
     """Cap memory + CPU in the worker process.
 
@@ -484,12 +490,35 @@ def _apply_resource_limits() -> None:
         return
 
     # --- Memory cap -----------------------------------------------------
+    # v0.17.0: read back. ``setrlimit`` can return success and apply nothing —
+    # measured under qemu-user emulation on aarch64, where the call succeeds and
+    # ``getrlimit`` immediately after still answers RLIM_INFINITY, because the
+    # emulator needs the address space for its own translation buffers. The
+    # module docstring says this cap "defends against memory bombs"; on a host
+    # where it silently did not apply, that sentence was false and nothing knew.
+    #
+    # Recorded rather than raised: this is defence in depth, not a boundary (see
+    # the threat model above), so a plugin still runs. What changes is that BOB
+    # no longer believes in a protection it did not get.
+    global _MEM_LIMIT_APPLIED
+    _MEM_LIMIT_APPLIED = False
     try:
         MEM_LIMIT = 256 * 1024 * 1024
         soft, hard = resource.getrlimit(resource.RLIMIT_AS)
         new_soft = min(MEM_LIMIT, soft) if soft != resource.RLIM_INFINITY else MEM_LIMIT
         new_hard = min(MEM_LIMIT, hard) if hard != resource.RLIM_INFINITY else MEM_LIMIT
         resource.setrlimit(resource.RLIMIT_AS, (new_soft, new_hard))
+        applied_soft, _applied_hard = resource.getrlimit(resource.RLIMIT_AS)
+        _MEM_LIMIT_APPLIED = (applied_soft != resource.RLIM_INFINITY
+                              and applied_soft <= MEM_LIMIT)
+        if not _MEM_LIMIT_APPLIED:
+            # Not raised: the cap is defence in depth, so the plugin still
+            # runs. Said, because the module documents a protection that this
+            # platform declined to give, and silence is how that stays untrue.
+            logger.warning(
+                "plugin sandbox: RLIMIT_AS was accepted but not applied "
+                "(getrlimit still answers %r) — the 256 MiB memory cap is not "
+                "in force on this platform", applied_soft)
     except (OSError, ValueError):
         # Limit already tighter or insufficient privilege. Best-effort.
         pass
