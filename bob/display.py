@@ -608,9 +608,13 @@ def _add_finding_lines(icon_prefix: str, item, inner: int) -> list[tuple[str, st
             lines.append((f"{code_prefix}{_oc.dim}[{cis_code}]{_oc.reset}", ""))
         norm = _norm_key(item.key)
         if norm in EXPLAIN_KEYS:
+            # v0.16.4 — violet, like every other command in the box. This one
+            # sat plain because it is assembled here rather than coming from a
+            # finding's `cmd`, which is the half of the box that was painted.
             hint_prefix = " " * len(icon_prefix) + "? "
             hint = f"bob --explain {norm}"
-            lines.extend(_wrap_for_box(hint_prefix, hint, inner))
+            for content, val in _wrap_for_box(hint_prefix, hint, inner):
+                lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))
     return lines
 
 

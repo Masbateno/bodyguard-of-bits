@@ -40,6 +40,9 @@ class _FakeCurses:
     """Records init_pair calls. Stands in for a terminal that has colour."""
 
     COLOR_BLACK, COLOR_RED, COLOR_YELLOW, COLOR_WHITE, COLOR_CYAN = 0, 1, 3, 7, 6
+    # v0.16.4: the fallback for violet on a terminal without 256 colours,
+    # used by the VERBATIM pair.
+    COLOR_MAGENTA = 5
     error = RuntimeError
 
     def __init__(self, colors: int = 256, has: bool = True):

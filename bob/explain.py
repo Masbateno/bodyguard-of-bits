@@ -775,7 +775,7 @@ def run_explain(key: str, t) -> bool:
             print()
             print(_indent(t("explain.ui.how_title")))
             print(_indent(_DIVIDER_SHORT))
-            print(_indent(phow))
+            print(_how_block(phow))
             print()
     else:
         # Uniform risk across all profiles
@@ -786,7 +786,7 @@ def run_explain(key: str, t) -> bool:
         print()
         print(_indent(t("explain.ui.how_title")))
         print(_indent(_DIVIDER_SHORT))
-        print(_indent(how_val))
+        print(_how_block(how_val))
         print()
         # Say "applies equally to all profiles" only when that is true. A
         # profile that downgrades this key to INFO, or skips its section, is
@@ -845,6 +845,51 @@ def _init_colors():
     from bob.tui._palette import init_palette
 
     return init_palette(curses, notice=curses.COLOR_CYAN)
+
+
+def _how_block(text: str) -> str:
+    """A HOW TO FIX block with its verbatim lines in violet, prose left alone.
+
+    Same rule as the curses screen: indentation marks the material. The charter
+    says violet means "reproduce this exactly" on both surfaces, so a text page
+    that left every line plain would make that sentence false.
+    """
+    if not sys.stdout.isatty():
+        return _indent(text)
+    from bob.output import command as _command
+    out = []
+    for line in text.split("\n"):
+        out.append(_command(line) if _is_verbatim_line(line) else line)
+    return _indent("\n".join(out))
+
+
+def _is_verbatim_line(line: str) -> bool:
+    """Whether a line of a HOW TO FIX block must be reproduced exactly.
+
+    These blocks are numbered prose *and* material to transcribe:
+
+        1. Edit /etc/samba/smb.conf
+        2. In the [global] section set:
+           server signing = mandatory
+        4. Restart Samba:
+           sudo systemctl restart smbd
+
+    Indentation marks the material, and the locale is consistent about it
+    across all 187 keys — 664 indented lines against 527 numbered steps and 74
+    notes. Painting the whole block violet was the first attempt and it emptied
+    the colour of meaning; two thirds of a block is prose.
+
+    **Verbatim, not runnable.** `server signing = mandatory` is not a command,
+    and separating the two is neither reliable nor useful. Not reliable: 37 of
+    these lines are `sudo nano <file>  →  <directive>`, a command and a
+    directive on one line, and classifying the rest needed a sixty-binary regex
+    that still left 16% unsorted — a rule that needs such a list is a heuristic
+    that drifts at the first check using a binary nobody listed. Not useful:
+    from the operator's side both say the same thing, *reproduce this exactly,
+    do not paraphrase*, and the prose above already says whether to run it or
+    write it.
+    """
+    return bool(line) and line[:1].isspace() and bool(line.strip())
 
 
 def _indent(text: str, spaces: int = 4) -> str:
@@ -922,6 +967,8 @@ def _detail_screen(stdscr, key: str, t) -> None:
         lines: list[tuple[str, int]] = []
 
         h_attr      = (_c.color_pair(4) | _c.A_BOLD) if has_color else _c.A_BOLD
+        from bob.tui._palette import VERBATIM as _VERBATIM_PAIR
+        cmd_attr    = _c.color_pair(_VERBATIM_PAIR) if has_color else _c.A_NORMAL
         # Same pair the text path paints orange, from the shared chart.
         from bob.tui._palette import PROFILE as _PROFILE_PAIR
         prof_attr   = ((_c.color_pair(_PROFILE_PAIR) | _c.A_BOLD)
@@ -969,8 +1016,9 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 lines.append(("      " + t("explain.ui.how_title"), bold))
                 lines.append(("      " + "─" * 10, dim))
                 for para in phow.split("\n"):
+                    _a = cmd_attr if _is_verbatim_line(para) else normal
                     for wrapped in textwrap.wrap(para, w - 8) or [""]:
-                        lines.append((f"      {wrapped}", normal))
+                        lines.append((f"      {wrapped}", _a))
                 lines.append(("", normal))
         else:
             lines.append(("", normal))
@@ -983,8 +1031,9 @@ def _detail_screen(stdscr, key: str, t) -> None:
             lines.append(("      " + t("explain.ui.how_title"), bold))
             lines.append(("      " + "─" * 10, dim))
             for para in how_val.split("\n"):
+                _a = cmd_attr if _is_verbatim_line(para) else normal
                 for wrapped in textwrap.wrap(para, w - 8) or [""]:
-                    lines.append((f"      {wrapped}", normal))
+                    lines.append((f"      {wrapped}", _a))
             lines.append(("", normal))
             for _line in profile_notes_for_display(norm, t) or [
                 t("explain.ui.uniform_profiles_note")

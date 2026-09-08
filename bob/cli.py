@@ -823,7 +823,9 @@ def print_help(t, version: str) -> None:
     # FORCE_COLOR / TTY detection).
     def section(key: str) -> None:
         from bob import output as _o
-        bold, reset = (_o._c.bold, _o._c.reset) if not _o._no_color else ("", "")
+        # `_c` is already empty strings when colour is off — asking
+        # `_no_color` was the second of two ways to ask the same thing.
+        bold, reset = _o._c.bold, _o._c.reset
         print(f"\n{bold}{t('help.section.' + key)}{reset}")
 
     def opt(flags: str, key: str, col: int = 28) -> None:

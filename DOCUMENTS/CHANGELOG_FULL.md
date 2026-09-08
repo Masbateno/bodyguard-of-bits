@@ -217,7 +217,50 @@ anyone skimming; when BOB can apply none of them it says so instead. The
 auto-mode banner and the `0 of 0 fix(es) applied.` line are silent when there
 was never anything to run.
 
-**Tests** 8572 → **8879**.
+### A charter, because the graphic conventions had never been written down
+
+The code conventions had a chapter in `README_DEV`; what a colour means had
+nothing. It was discoverable by reading six modules, which is how it drifted.
+
+`DOCUMENTS/CONVENTIONS.md` and its French twin now hold both: the graphic
+charter — colour on each surface, symbols, boxes, sanitisation, width — and the
+code conventions moved out of `README_DEV`, which keeps the architecture and
+points at the charter. Nothing outside `README_DEV`'s own table of contents
+linked to the moved section, so the move costs no reader.
+
+Measuring the charter before writing it turned up five gaps, all closed here.
+Two colours were declared and never consumed. `_c` meant the colour table in
+six modules and the **curses module** in `tui/cron.py`. There were two ways to
+ask whether colour is on — `_c` being empty, or the `_no_color` flag — and
+`print_help` used the second while everything else used the first, which is why
+a guard passed alone and failed in the suite. Violet did not exist in curses at
+all, so the same commands were violet in `bob --explain` and plain inside the
+wizard. And the two box styles had a rule nobody had stated: double `╔═╗` for a
+top-level result, single `┌─┐` for a section header.
+
+**Violet marks what must be reproduced exactly**, which is broader than the
+first wording and deliberately so. `server signing = mandatory` in a `HOW TO
+FIX` block is not a command, and narrowing violet to commands is neither
+reliable nor useful: 37 of those lines are `sudo nano <file>  →  <directive>`,
+a command and a directive at once, and sorting the rest took a sixty-binary
+regex that still left 16% unclassified. A rule that needs such a list is a
+heuristic that drifts at the first check using a binary nobody listed — and
+from the operator's side both say *copy this exactly*, with the prose above
+already saying whether to run it or write it.
+
+Inside those blocks it is indentation that marks the material: 664 indented
+lines against 527 numbered steps and 74 notes, consistent across all 187 keys.
+Painting a whole block violet was the first attempt and emptied the colour of
+meaning, since two thirds of a block is prose.
+
+Fifteen guards hold the checkable half — no colour declared and unused, no
+module building its own escape sequence, one way to ask about colour, the two
+surfaces agreeing on which orange and which violet, no frame drawn outside the
+presentation modules, no second copy of the moved conventions. The half that is
+a judgement about each string stays a reading job, and the charter says which
+is which.
+
+**Tests** 8572 → **8937**.
 
 ---
 

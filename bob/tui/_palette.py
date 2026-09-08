@@ -36,6 +36,7 @@ BANNER    = 5   #: the top title bar
 PROFILE   = 6   #: a [ profile ] section header in --explain
 FOOTER    = 7   #: the bottom key banner — white on orange
 CONTEXT   = 8   #: the line above it — prompts and status, on black
+VERBATIM  = 9   #: material to reproduce exactly — violet, as in the text output
 
 #: xterm-256 index for orange. Used only when the terminal advertises 256
 #: colours; see the module docstring for the fallback.
@@ -50,6 +51,20 @@ def selection_background(curses) -> int:
     except Exception:          # a terminal that lies about its capabilities
         pass
     return curses.COLOR_YELLOW
+
+
+#: xterm-256 index for violet, the same one bob.output uses for a command.
+VIOLET_256 = 135
+
+
+def _violet(curses) -> int:
+    """Violet, or the closest an 8-colour terminal has."""
+    try:
+        if getattr(curses, "COLORS", 0) >= 256:
+            return VIOLET_256
+    except Exception:          # a terminal that lies about its capabilities
+        pass
+    return curses.COLOR_MAGENTA
 
 
 def init_palette(curses, *, notice: "int | None" = None) -> bool:
@@ -82,6 +97,11 @@ def init_palette(curses, *, notice: "int | None" = None) -> bool:
         # confirmation no longer paints over the keys it asks about.
         curses.init_pair(FOOTER,    curses.COLOR_WHITE, selection_background(curses))
         curses.init_pair(CONTEXT,   curses.COLOR_WHITE, curses.COLOR_BLACK)
+        # Violet marks what must be reproduced exactly — a command to run
+        # or a directive to write. The same lines read as ordinary prose
+        # inside a wizard until v0.16.4: the convention stopped at the
+        # curses boundary for no reason anyone had stated.
+        curses.init_pair(VERBATIM,  _violet(curses), -1)
     except curses.error:
         return False
     return True

@@ -490,4 +490,80 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="the command goes back inside the prose, where it cannot be "
                "coloured without colouring the sentence",
     ),
+
+    # ---- the graphic charter -------------------------------------------------
+    Mutation(
+        id="charter/a-colour-goes-unused",
+        file="bob/output.py",
+        old='    orange       = "\\033[38;5;208m",',
+        new='    orange       = "\\033[38;5;208m",\n    spare        = "\\033[38;5;99m",',
+        kills=("tests/test_v0164_graphic_charter.py::TestColourIsDeclaredOnceAndConsumed",),
+        reason="a declared-and-never-consumed colour — the class this project "
+               "has already mined twice elsewhere",
+    ),
+    Mutation(
+        id="charter/two-ways-to-ask-about-colour",
+        file="bob/cli.py",
+        old="        bold, reset = _o._c.bold, _o._c.reset",
+        new='        bold, reset = (_o._c.bold, _o._c.reset) if not _o._no_color else ("", "")',
+        kills=("tests/test_v0164_graphic_charter.py::TestColourIsDeclaredOnceAndConsumed",),
+        reason="`_c` is already empty when colour is off; consulting `_no_color` "
+               "is a second answer to one question, and print_help used it",
+    ),
+    Mutation(
+        id="charter/the-two-violets-drift-apart",
+        file="bob/tui/_palette.py",
+        old="VIOLET_256 = 135",
+        new="VIOLET_256 = 129",
+        kills=("tests/test_v0164_graphic_charter.py::TestTheTwoSurfacesAgree",),
+        reason="a command would be one violet in the terminal and another in a "
+               "wizard — the charter says the surfaces agree",
+    ),
+    Mutation(
+        id="charter/a-check-module-draws-a-box",
+        file="bob/checks/firewall.py",
+        old="def check_firewall(",
+        new='def _rogue_box():\n    print("┌────┐")\n\n\ndef check_firewall(',
+        kills=("tests/test_v0164_graphic_charter.py::TestBoxesFollowOneRule",),
+        reason="frame drawing leaking out of the presentation modules is the "
+               "drift the box rule exists to catch",
+    ),
+    Mutation(
+        id="charter/how-to-fix-painted-whole",
+        file="bob/explain.py",
+        old="    return bool(line) and line[:1].isspace() and bool(line.strip())",
+        new="    return True",
+        kills=("tests/test_v0164_command_convention.py::TestOnlyTheVerbatimLinesInAHowToFixBlockAreViolet",),
+        reason="numbered prose painted as verbatim material empties the "
+               "colour of meaning — two thirds of a block is prose",
+    ),
+    Mutation(
+        id="charter/readme-dev-keeps-a-second-copy",
+        file="DOCUMENTS/README_DEV.md",
+        old="Moved to **[CONVENTIONS.md](CONVENTIONS.md)** in v0.16.4",
+        new="### Snapshot / check pattern\n\nMoved to **[CONVENTIONS.md](CONVENTIONS.md)** in v0.16.4",
+        kills=("tests/test_v0164_graphic_charter.py::TestTheCharterExists",),
+        reason="two copies of the conventions will disagree, which is what "
+               "moving them into one document was for",
+    ),
+
+    Mutation(
+        id="convention/fix-screen-commands-go-dim",
+        file="bob/fixes.py",
+        old='            print(f"     {_c.dim}→ {_c.reset}{_output.command(safe_cmd)}")',
+        new='            print(f"     {_c.dim}→ {safe_cmd}{_c.reset}")',
+        kills=("tests/test_v0164_command_convention.py::TestEveryCommandOnScreenWearsTheConvention",),
+        reason="the screen whose entire content is commands printed them dim, "
+               "found by sweeping the real audit rather than reading the source",
+    ),
+    Mutation(
+        id="convention/explain-hint-goes-plain",
+        file="bob/display.py",
+        old="            for content, val in _wrap_for_box(hint_prefix, hint, inner):\n"
+            '                lines.append((f"{_oc.violet_bold}{content}{_oc.reset}", val))',
+        new="            lines.extend(_wrap_for_box(hint_prefix, hint, inner))",
+        kills=("tests/test_v0164_command_convention.py::TestEveryCommandOnScreenWearsTheConvention",),
+        reason="`? bob --explain <key>` in the summary box is assembled rather "
+               "than coming from a finding's cmd, which is why it stayed plain",
+    ),
 )

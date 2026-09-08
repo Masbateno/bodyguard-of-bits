@@ -34,7 +34,8 @@ def _print_unapplied(diag_items, manual_items, t, _c) -> None:
         print(f"  {_c.yellow_bold}{t('fixes.diagnostic_items_title')}{_c.reset}")
         for msg, cmd in diag_items:
             print(f"  •  {msg}")
-            print(f"     {_c.dim}ℹ {cmd.replace(chr(10), ' ').strip()}{_c.reset}")
+            print(f"     {_c.dim}ℹ {_c.reset}"
+                  f"{_output.command(cmd.replace(chr(10), ' ').strip())}")
     if manual_items:
         print()
         print(f"  {_c.yellow_bold}{t('fixes.manual_items_title')}{_c.reset}")
@@ -156,7 +157,9 @@ def run_fixes(engine, config, t) -> None:
         for msg, cmd in sorted_items:
             safe_cmd = cmd.replace("\n", " ").strip()
             print(f"  ✖  {msg}")
-            print(f"     {_c.dim}→ {safe_cmd}{_c.reset}")
+            # The whole point of this screen is the commands; they are the
+            # canonical place to copy from, so they wear the convention.
+            print(f"     {_c.dim}→ {_c.reset}{_output.command(safe_cmd)}")
             print()
         _print_unapplied(diag_items, manual_items, t, _c)
         return
@@ -175,7 +178,7 @@ def run_fixes(engine, config, t) -> None:
     for msg, cmd in sorted_items:
         safe_cmd = cmd.replace("\n", " ").strip()
         print(f"  ✖  {msg}")
-        print(f"  → {safe_cmd}")
+        print(f"  → {_output.command(safe_cmd)}")
         if config.yes:
             answer = "y"
         else:
@@ -217,7 +220,7 @@ def run_fixes(engine, config, t) -> None:
         print()
         print(f"{_c.blue_bold}  [{t('fixes.auto_summary_title')}]{_c.reset}")
         for cmd in applied_cmds:
-            print(f"  ✔ {cmd}")
+            print(f"  ✔ {_output.command(cmd)}")
 
     # What BOB did not apply: diagnostics it can only show, and findings with
     # no command at all. Same block as the dry run, so the two cannot drift.

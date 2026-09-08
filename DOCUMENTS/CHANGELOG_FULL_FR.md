@@ -226,7 +226,55 @@ ici » pour qui survole ; quand BOB ne peut en appliquer aucun, il le dit. La
 bannière du mode automatique et la ligne `0 of 0 fix(es) applied.` se taisent
 quand il n'y avait rien à exécuter.
 
-**Tests** 8572 → **8879**.
+### Une charte, parce que les conventions graphiques n'avaient jamais été écrites
+
+Les conventions de code avaient un chapitre dans `README_DEV` ; ce que veut dire
+une couleur n'avait rien. Cela se découvrait en lisant six modules, et c'est
+ainsi que cela a dérivé.
+
+`DOCUMENTS/CONVENTIONS.md` et son jumeau français portent désormais les deux :
+la charte graphique — la couleur sur chaque surface, les symboles, les boîtes,
+l'assainissement, la largeur — et les conventions de code sorties de
+`README_DEV`, qui garde l'architecture et pointe vers la charte. Rien hors de la
+table des matières de `README_DEV` ne pointait sur la section déplacée : le
+déplacement ne coûte aucun lecteur.
+
+Mesurer la charte avant de l'écrire a fait apparaître cinq écarts, tous fermés
+ici. Deux couleurs étaient déclarées sans jamais être consommées. `_c` désignait
+la table de couleurs dans six modules et le **module curses** dans
+`tui/cron.py`. Il y avait deux façons de demander si la couleur est active —
+`_c` vide, ou le drapeau `_no_color` — et `print_help` utilisait la seconde
+quand tout le reste utilisait la première, ce qui a fait passer une garde seule
+et échouer dans la suite. Le violet n'existait pas du tout en curses, si bien
+que les mêmes commandes étaient violettes dans `bob --explain` et neutres dans
+l'assistant. Et les deux styles de boîte suivaient une règle que personne
+n'avait énoncée : double `╔═╗` pour un résultat de haut niveau, simple `┌─┐`
+pour un en-tête de section.
+
+**Le violet marque ce qui doit être reproduit à l'identique**, ce qui est plus
+large que le premier libellé, et délibérément. `server signing = mandatory` dans
+un bloc `HOW TO FIX` n'est pas une commande, et restreindre le violet aux
+commandes n'est ni fiable ni utile : 37 de ces lignes sont
+`sudo nano <fichier>  →  <directive>`, une commande et une directive à la fois,
+et trier le reste a demandé une regex de soixante binaires laissant encore 16 %
+non classés. Une règle qui exige une telle liste est une heuristique qui dérive
+au premier check utilisant un binaire non listé — et du point de vue de
+l'opérateur, les deux disent *recopie ceci exactement*, la prose au-dessus
+indiquant déjà s'il faut lancer ou écrire.
+
+Dans ces blocs, c'est l'indentation qui marque la matière : 664 lignes indentées
+contre 527 étapes numérotées et 74 notes, de façon constante sur les 187 clés.
+Peindre un bloc entier en violet a été le premier essai et a vidé la couleur de
+son sens, les deux tiers d'un bloc étant de la prose.
+
+Quinze gardes tiennent la moitié vérifiable — aucune couleur déclarée et
+inutilisée, aucun module fabriquant sa propre séquence d'échappement, une seule
+façon de demander la couleur, les deux surfaces d'accord sur quel orange et quel
+violet, aucun cadre dessiné hors des modules de présentation, aucune seconde
+copie des conventions déplacées. La moitié qui relève du jugement sur chaque
+chaîne reste un travail de lecture, et la charte dit laquelle est laquelle.
+
+**Tests** 8572 → **8937**.
 
 ---
 

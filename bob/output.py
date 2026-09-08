@@ -70,12 +70,10 @@ class _Colours(NamedTuple):
     green:  str
     cyan:   str
     blue:   str
-    violet: str
     red_bold:    str
     yellow_bold: str
     orange_bold: str
     green_bold:  str
-    cyan_bold:   str
     blue_bold:   str
     violet_bold: str
 
@@ -90,12 +88,10 @@ _COLOURS_ON = _Colours(
     green        = "\033[32m",
     cyan         = "\033[36m",
     blue         = "\033[34m",
-    violet       = "\033[38;5;135m",
     red_bold     = "\033[1;31m",
     yellow_bold  = "\033[1;33m",
     orange_bold  = "\033[1;38;5;208m",
     green_bold   = "\033[1;32m",
-    cyan_bold    = "\033[1;36m",
     blue_bold    = "\033[1;34m",
     violet_bold  = "\033[1;38;5;135m",
 )
