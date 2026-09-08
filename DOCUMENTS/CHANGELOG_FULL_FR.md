@@ -6,6 +6,82 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.17.0] — 08-09-2026
+
+**Le wizard cron promettait une remise qu'il n'avait jamais établie.**
+
+`--install-cron` affichait *« Transport mail : Postfix (sendmail disponible —
+les notifications seront envoyées) »*, et toute la base de cette phrase était
+`shutil.which("sendmail")`. Un Postfix installé depuis la distribution et
+jamais pourvu d'un relais y satisfait et jette chaque message. La seule
+promesse sur laquelle l'opérateur s'appuie — être prévenu quand le score
+tombe — était donc faite à partir de la présence d'un binaire sur le disque, et
+le cas où elle échoue est précisément celui que personne ne voit jamais :
+la façon de l'apprendre serait le mail qui n'arrive pas.
+
+`bob --test-email` envoie un vrai message à la première adresse de notification
+enregistrée, via `send_html_email` — le transport même qu'utilise le script
+cron généré, pas une réimplémentation — et rapporte ce que sendmail a
+réellement répondu. Il sort en non-zéro quand le message a été refusé, ce que
+`shutil.which` ne pouvait pas voir et ce pour quoi la commande existe.
+`--test-webhook` faisait cela pour le webhook depuis la v0.8.2 ; le chemin que
+la plupart des gens empruntent réellement n'avait rien.
+
+Elle s'arrête aussi avant la même erreur à l'autre bout : un sendmail qui sort
+en 0 signifie que le MTA a mis le message en file, et un relais ou un filtre
+anti-spam peut encore le jeter. La commande dit *accepté*, et dit qu'accepté
+n'est pas délivré.
+
+### Une tâche sans adresse ne prévenait personne, et rien ne le disait
+
+L'avis ne se déclenchait que si une adresse avait été saisie. Or le seul canal
+du script généré *est* cet email — `if [ "$RC" -gt 0 ] && [ -n "$NOTIFY_EMAILS" ]`
+et rien d'autre — de sorte qu'un cron installé sans adresse écrivait un rapport
+sur le disque à intervalles réguliers et ne prévenait personne, en silence,
+aussi longtemps qu'il tournait.
+
+`describe_reporting` répond à la question que l'on posait réellement au
+wizard — quelqu'un entendra-t-il parler de cette tâche — et il y répond une
+fois, après le choix réseau, parce que deux des cinq issues en dépendent. Un
+webhook enregistré dans la config de root *est* l'autre sortie, et un audit
+programmé le déclenche bien ; mais `--offline` supprime le POST, et le wizard
+propose `--offline` trois étapes après l'adresse. Proposer le webhook sans
+vérifier cela aurait été le même défaut reconstruit ailleurs.
+
+Le verdict est lu dans `/root/.config/bob/config.conf` et non dans la config de
+l'utilisateur qui installe, pour la raison qui a fait épingler le profil et la
+langue dans le script en v0.16.1 : une entrée cron tourne en root, et la config
+de root n'est pas celle de l'opérateur.
+
+### La moitié du conseil n'atteignait pas l'écran
+
+L'avis était dessiné avec `msg[:w - 3]`. Sur un terminal de quatre-vingts
+colonnes c'est une coupe franche, sans ellipse ni retour à la ligne :
+l'opérateur lisait la première phrase d'une instruction qui en comptait deux,
+sans moyen de savoir qu'il en existait une seconde. Les deux wizards
+enveloppent désormais — celui en curses sur les lignes que le bandeau de pied
+laisse libres, celui en texte à la largeur du terminal, continuation indentée.
+
+Neuf mutations couvrent ce travail dans `tests/mutations.py`, et deux d'entre
+elles existent parce qu'une garde était inerte. Le test de l'ordre du flush
+n'affirmait que la non-vacuité de stdout, ce que l'interpréteur garantit à la
+sortie, flush ou pas ; fusionner les deux flux est le seul montage où l'ordre
+est observable.
+
+L'autre était pire, et aucune lecture du source ne l'aurait trouvée. La
+première version enveloppante dimensionnait son corps avec
+`_chrome.chrome_height()` — sans argument, trois requis — de sorte que l'écran
+levait `TypeError` à vue et que le wizard mourait sur un *« Fatal error »* à
+l'écran dont le rôle entier est de rapporter ce qui vient de mal tourner. La
+garde était une inspection d'AST et passait sans broncher. Une exécution du
+vrai wizard derrière un pty l'a trouvée du premier coup, et la garde qui l'a
+remplacée pilote la fonction contre un écran enregistreur en exigeant que
+chaque mot de l'avis atterrisse sur une ligne.
+
+**Tests** 8951 → **9016**. **Mutations** 56 → **65**.
+
+---
+
 ## [v0.16.4] — 08-09-2026
 
 **« Cette garde mord » était une affirmation dans un message de commit, que rien ne revérifiait.**

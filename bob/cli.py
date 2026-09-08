@@ -139,6 +139,18 @@ class AuditConfig:
     webhook_format: str = "auto"
     """--webhook-format=FMT: payload format — 'auto' (default), 'generic', or 'slack'."""
 
+    test_email: bool = False
+    """v0.17.0: --test-email — send a real message through the same transport
+    the cron job uses, and say what happened.
+
+    `--install-cron` decided an MTA was available from `shutil.which("sendmail")`
+    and told the operator *"notifications will be delivered"*. A Postfix that is
+    installed and never configured satisfies that test and delivers nothing, so
+    the one promise the operator is relying on — that they will be warned — was
+    made from the presence of a binary. `--test-webhook` had existed since
+    v0.8.2; its counterpart for the path most people actually use had not.
+    """
+
     test_webhook: bool = False
     """v0.8.2: --test-webhook — POST a minimal smoke payload to the configured
     webhook URL and exit. Validates the URL + scheme + reachability + receiver
@@ -518,6 +530,10 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
         elif arg.startswith("--webhook-format="):
             config.webhook_format = arg.split("=", 1)[1].strip()
 
+        # v0.17.0: --test-email prove-the-transport command
+        elif arg == "--test-email":
+            config.test_email = True
+
         # v0.8.2: --test-webhook smoke command
         elif arg == "--test-webhook":
             config.test_webhook = True
@@ -885,6 +901,7 @@ def print_help(t, version: str) -> None:
     section("integrations")
     opt("-w, --webhook=URL",     "help.opt.webhook")
     opt("    --webhook-format=F","help.opt.webhook_format")
+    opt("    --test-email",      "help.opt.test_email")
     opt("    --test-webhook",    "help.opt.test_webhook")
 
     section("configuration")

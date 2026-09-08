@@ -47,6 +47,18 @@ def chrome_height(t, actions: "tuple[str, ...]", width: int) -> int:
     return len(banner_lines(t, actions, width)) + 1
 
 
+def text_height(lines: "list[str]") -> int:
+    """Rows :func:`draw_text` occupies: the given rows plus the context line.
+
+    The sibling of :func:`chrome_height` for a screen with no declared actions.
+    It exists so ``_curses_status_flash`` can size its body by asking rather
+    than by assuming: it first asked ``chrome_height()`` with no arguments,
+    which raises, and the screen it was sizing is the one that reports what
+    just went wrong.
+    """
+    return len(lines) + 1
+
+
 def context_row(t, actions: "tuple[str, ...]", height: int, width: int) -> int:
     """The row reserved for a prompt or a status message."""
     return height - chrome_height(t, actions, width)

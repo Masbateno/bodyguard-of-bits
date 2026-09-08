@@ -41,6 +41,7 @@ _EXPLAIN = "tests/test_explain.py"
 _CHROME = "tests/test_v0163_bottom_chrome.py"
 _CLAIMS = "tests/test_v0163_readme_tech_claims.py"
 _DOCEX = "tests/test_v0163_doc_examples_run.py"
+_MAIL = "tests/test_v0170_mail_transport.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -575,5 +576,103 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=("tests/test_v0164_fix_commands_run_unattended.py::test_no_install_command_would_stop_to_ask",),
         reason="apt refuses to proceed without confirmation, so --fix --apply "
                "--yes reported `0 of 2 fix(es) applied.` — proven in a container",
+    ),
+
+    # ---- the cron wizard's promise of delivery -----------------------------
+    Mutation(
+        id="mail/presence-taken-for-delivery",
+        file="bob/cron/_parse.py",
+        old='        if available:\n'
+            '            return "\u2714", "install_cron.mta_found", {"mta": name or "sendmail"}\n'
+            '        return "\u26a0", "install_cron.mta_missing", {}',
+        new='        return "\u2714", "install_cron.mta_found", {"mta": name or "sendmail"}',
+        kills=(f"{_MAIL}::TestWillAnyoneHearFromThisJob::"
+               "test_address_without_a_transport_is_a_warning",),
+        reason="a host with no MTA at all would again be told its notifications "
+               "are fine, which is the v0.16.4 message reworded",
+    ),
+    Mutation(
+        id="mail/offline-webhook-offered-anyway",
+        file="bob/cron/_parse.py",
+        old='    if offline:\n        return "\u26a0", "install_cron.reports_webhook_offline", {}',
+        new='    if False:\n        return "\u26a0", "install_cron.reports_webhook_offline", {}',
+        kills=(f"{_MAIL}::TestWillAnyoneHearFromThisJob::"
+               "test_offline_suppresses_the_webhook_so_that_job_is_mute",),
+        reason="the wizard would offer the webhook as the way out to a job whose "
+               "--offline suppresses the POST, so it would notify nobody",
+    ),
+    Mutation(
+        id="mail/silent-job-declared-covered",
+        file="bob/cron/_parse.py",
+        old='    if not url:\n        return "\u26a0", "install_cron.reports_nobody", {}',
+        new='    if not url:\n        return "\u2714", "install_cron.reports_webhook", {}',
+        kills=(f"{_MAIL}::TestWillAnyoneHearFromThisJob::"
+               "test_no_address_and_no_webhook_notifies_nobody",),
+        reason="a job with no address and no webhook writes a report to disk on a "
+               "schedule and tells nobody; saying otherwise is the whole defect",
+    ),
+    Mutation(
+        id="mail/address-book-never-read",
+        file="bob/__main__.py",
+        old="        _addrs = EmailStore.load().all()",
+        new="        _addrs = EmailStore().all()",
+        kills=(f"{_MAIL}::TestTestEmailReportsWhatSendmailAnswered::"
+               "test_the_store_is_actually_read_from_disk",
+               f"{_MAIL}::TestTestEmailReportsWhatSendmailAnswered::"
+               "test_sendmail_accepting_exits_zero"),
+        reason="the constructor holds an empty list, so --test-email answered "
+               "\"no address configured\" on every host, always \u2014 the first "
+               "form this command was written in",
+    ),
+    Mutation(
+        id="mail/refusal-reported-as-success",
+        file="bob/__main__.py",
+        old='            print("\u2716 " + i18n.t("cli.test_email.rejected"), file=sys.stderr)',
+        new='            return EXIT_OK',
+        kills=(f"{_MAIL}::TestTestEmailReportsWhatSendmailAnswered::"
+               "test_sendmail_refusing_exits_nonzero",),
+        reason="a refused message would exit 0, making the one command whose "
+               "purpose is to catch that failure silent about it",
+    ),
+    Mutation(
+        id="mail/attempt-announced-after-the-verdict",
+        file="bob/__main__.py",
+        old='        print("\u2139  " + i18n.t("cli.test_email.sending", to=_to), flush=True)',
+        new='        print("\u2139  " + i18n.t("cli.test_email.sending", to=_to))',
+        kills=(f"{_MAIL}::TestTestEmailReportsWhatSendmailAnswered::"
+               "test_the_attempt_is_announced_before_the_verdict",),
+        reason="stdout is block-buffered when redirected, so a piped run read as "
+               "though the failure preceded the attempt",
+    ),
+    Mutation(
+        id="mail/notice-sliced-to-width-again",
+        file="bob/tui/cron.py",
+        old="    for _i, _line in enumerate(_rendered):",
+        new="    for _i, _line in enumerate([msg[:w - 3]]):",
+        kills=(f"{_MAIL}::TestTheNoticeReachesTheScreenWhole::"
+               "test_the_flash_wraps_rather_than_slicing",),
+        reason="on 80 columns the operator read the first half of two sentences "
+               "of advice and never learned there was a second half",
+    ),
+    Mutation(
+        id="mail/flash-screen-crashes-on-sight",
+        file="bob/tui/cron.py",
+        old="_chrome.text_height(_banner)",
+        new="_chrome.chrome_height()",
+        kills=(f"{_MAIL}::TestTheNoticeReachesTheScreenWhole::"
+               "test_the_flash_actually_renders",),
+        reason="chrome_height takes three arguments, so the wizard died with "
+               "\"Fatal error\" at the screen whose job is reporting what went "
+               "wrong \u2014 found by a pty run, not by the guard reading the source",
+    ),
+    Mutation(
+        id="mail/plain-notice-truncated",
+        file="bob/cron/_install.py",
+        old="    for line in textwrap.wrap(msg, width,",
+        new="    for line in textwrap.wrap(msg[:width], width,",
+        kills=(f"{_MAIL}::TestTheNoticeReachesTheScreenWhole::"
+               "test_wrapping_keeps_every_word",),
+        reason="the same cut in the plain wizard, which is the path cron "
+               "installs actually take over ssh without a TTY",
     ),
 )

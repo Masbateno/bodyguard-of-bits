@@ -1,3 +1,25 @@
+bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
+
+  * The cron wizard promised delivery it had never established. "sendmail
+    available — notifications will be delivered" was decided by
+    shutil.which("sendmail"), which a Postfix installed and never configured
+    satisfies while dropping every message. It now says presence is presence,
+    and bob --test-email sends a real message through the same transport the
+    cron job uses and reports what sendmail actually answered.
+  * A job installed with no notification address got no notice at all, and the
+    generated script's only channel is that email: it wrote a report to disk on
+    a schedule and told nobody. The wizard now gives its verdict once, after
+    the network choice, because a saved webhook is the other way out and
+    --offline suppresses it.
+  * The notice was printed with a hard truncation at the terminal width, so on
+    80 columns the operator read the first half of the advice. Wrapping it
+    introduced a crash no reading of the source found — the flash sized itself
+    with chrome_height() and no arguments, so --install-cron died with "Fatal
+    error" at the screen that reports what went wrong. A pty run of the real
+    wizard found it; the guard that replaced the AST check renders it.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 08 Sep 2026 12:00:00 +0200
+
 bodyguard-of-bits (0.16.4-1) UNRELEASED; urgency=low
 
   * "This guard bites" was a claim in a commit message and nothing re-checked

@@ -194,6 +194,49 @@ Le wizard te guide à travers nom → planning → heure → email optionnel →
 - `/usr/local/bin/bob-{nom}` — wrapper script qui appelle BOB avec le profil, la langue et la posture réseau que tu as choisis. Ces trois-là sont demandés parce qu'un cron s'exécute en root : avant la v0.16.1 le script lisait la config sauvegardée de *root*, pas la tienne, si bien que l'audit nocturne d'un opérateur `desktop` était silencieusement noté en `server` — et comme le profil pilote le code de sortie, il décidait aussi si l'email partait
 - `/etc/cron.d/bob-{nom}` — entry cron système
 
+### S'assurer que la notification peut réellement arriver
+
+La dernière ligne du wizard te dit qui entendra parler de cette tâche. Lis-la :
+trois de ses cinq réponses sont *personne*.
+
+Le script généré notifie **par email et par rien d'autre**. Si tu passes
+l'adresse, l'audit tourne quand même et écrit quand même son rapport dans ton
+répertoire de logs — mais rien ne te parvient, et jusqu'à la v0.17.0 rien ne le
+disait. Un webhook enregistré dans la config de **root** est l'autre sortie, et
+un audit programmé le déclenche bien, mais `--offline` supprime le POST.
+
+Si tu as donné une adresse, le wizard te dit si un binaire `sendmail` existe.
+C'est tout ce qu'il peut te dire, et ce n'est pas assez : un Postfix installé
+depuis la distribution et jamais pourvu d'un relais satisfait à ce test et
+jette chaque message. Établis le reste en envoyant :
+
+```bash
+bob --test-email                            # un vrai message, par le transport du cron
+```
+
+Il emprunte le même chemin de code que la tâche programmée : un succès ici
+signifie que le mail de la tâche prendrait la même route. Il sort en non-zéro
+quand `sendmail` refuse le message — l'échec autrement invisible, puisque la
+façon de l'apprendre serait le mail qui n'arrive jamais.
+
+*Accepté n'est pas délivré.* Une sortie 0 signifie que le MTA a pris le
+message ; un relais ou un filtre anti-spam peut encore le jeter. Vérifie la
+boîte de réception une fois, puis fais confiance à la planification.
+
+**Pas de MTA sur l'hôte ?** Deux options honnêtes :
+
+| | |
+|---|---|
+| `postfix` | Un serveur de mail complet. Choisis *« Site Internet »* si l'hôte peut émettre directement, ou *« Système satellite »* en nommant le relais de ton fournisseur si le port 25 est bloqué en sortie — ce qu'il est sur la plupart des connexions résidentielles et chez beaucoup d'hébergeurs. |
+| `msmtp` + `msmtp-mta` | Relaie via un compte mail existant (un `~/.msmtprc` avec ton hôte SMTP, l'utilisateur et un mot de passe d'application). Bien plus léger que Postfix, et la bonne réponse pour un portable ou un petit VPS qui ne fait qu'émettre. |
+
+Les noms de paquets varient selon la distribution, et la configuration du
+relais aussi — le guide Postfix de [`AUTOMATION.md`](AUTOMATION.md) en est la
+version longue, y compris la partie dont la plupart des gens ont réellement
+besoin : relayer via un fournisseur parce que le port 25 est bloqué en sortie.
+
+Ou renonce au mail et utilise un webhook, qui n'a besoin de rien de tout cela.
+
 Pour l'automation incident-response, configure un webhook dans `~/.config/bob/config.conf` :
 
 ```bash
@@ -282,7 +325,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2327 clés × 2 locales en v0.16.1 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2342 clés × 2 locales en v0.17.0 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les 60 non codées, elles, *sont* traduites), et les **38 libellés de services** — dont 27 portent de la prose anglaise descriptive, comme `Samba (Windows file sharing)` ou `Apache Web Server` — traités comme des noms de produits. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 

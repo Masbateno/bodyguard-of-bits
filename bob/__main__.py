@@ -310,6 +310,66 @@ def _run(argv=None) -> int:
         print("\u2714 " + i18n.t("cli.reconfigure.done", path=str(user_config.path)))
         return EXIT_OK
 
+    # v0.17.0 — --test-email: prove the transport, do not assume it
+    if config.test_email:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        from bob.config import EmailStore, _EMAIL_RE
+
+        # Recipient: the address the cron job would notify. Saved addresses
+        # first, so the test exercises what is actually configured rather than
+        # something typed for the occasion.
+        _addrs = EmailStore.load().all()
+        if not _addrs:
+            print("✖ " + i18n.t("cli.test_email.no_address"), file=sys.stderr)
+            return EXIT_ERROR
+        _to = _addrs[0]
+        if not _EMAIL_RE.match(_to):
+            # EmailStore.add validates, so reaching here means the file was
+            # edited by hand. Name the file rather than blaming the address book.
+            from bob.config import _DEFAULT_CONFIG_DIR, _EMAILS_FILENAME
+            print("✖ " + i18n.t("cli.test_email.bad_address", to=_to,
+                                path=str(_DEFAULT_CONFIG_DIR / _EMAILS_FILENAME)),
+                  file=sys.stderr)
+            return EXIT_ERROR
+
+        # `which("sendmail")` is what the wizard asked, and it is not an answer:
+        # a Postfix installed and never configured passes it. Say what was
+        # established, then establish the rest by sending.
+        import shutil as _shutil
+        if not _shutil.which("sendmail"):
+            print("✖ " + i18n.t("cli.test_email.no_sendmail"), file=sys.stderr)
+            return EXIT_ERROR
+
+        # Flushed: the verdict below goes to stderr, and an unflushed stdout
+        # made a redirected run read as if the failure preceded the attempt.
+        print("ℹ  " + i18n.t("cli.test_email.sending", to=_to), flush=True)
+        try:
+            from bob.report_markdown import send_html_email
+            _ok = send_html_email(
+                recipient=_to,
+                subject=i18n.t("cli.test_email.subject"),
+                html_content=(
+                    "<html><body><p>"
+                    + i18n.t("cli.test_email.body")
+                    + "</p></body></html>"
+                ),
+                plain_text_fallback=i18n.t("cli.test_email.body"),
+            )
+        except Exception as _exc:            # noqa: BLE001
+            print("\u2716 " + i18n.t("cli.test_email.failed", error=_exc),
+                  file=sys.stderr)
+            return EXIT_ERROR
+        if not _ok:
+            # sendmail exited non-zero. That is the case the wizard could never
+            # see, and the whole reason this command exists.
+            print("✖ " + i18n.t("cli.test_email.rejected"), file=sys.stderr)
+            print("  " + i18n.t("cli.test_email.rejected_hint"), file=sys.stderr)
+            return EXIT_ERROR
+        print("✔ " + i18n.t("cli.test_email.accepted", to=_to))
+        print("  " + i18n.t("cli.test_email.accepted_caveat"))
+        return EXIT_OK
+
     # v0.8.2 — --test-webhook smoke command
     if config.test_webhook:
         i18n.init(lang=config.lang)

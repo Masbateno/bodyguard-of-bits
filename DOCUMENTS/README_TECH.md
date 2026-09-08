@@ -3,7 +3,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.16.4-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.17.0-brightgreen)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
@@ -79,7 +79,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 38 check
 
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
-- **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail. **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.16.4. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking
+- **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail. **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.17.0. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking
 - **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 187 explainable keys across 49 prefixes; 103 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 84 apply equally to every profile; interactive TUI; no root required; `--explain list` shows all keys
 - **Domain scores** — per-domain 0–10 sub-scores (SSH / Samba / Files & Access / Updates / Hardening / Disk Health / Firewall & Services); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
@@ -361,7 +361,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.16.4  │  Linux hardening auditor                                     ║
+║  BOB v0.17.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -512,6 +512,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--unignore=KEY`        | Remove a finding key from the ignore list and exit                 |
 | `--show-ignored`        | Display suppressed findings in grey alongside normal output        |
 | `--reset-baseline`      | Delete the stored audit baseline and exit                          |
+| `--test-email`          | Send a real test message through the cron mail transport and exit  |
 | `--test-webhook`        | Send a test payload to the configured webhook and exit (no audit)  |
 | `-C`, `--manage-cron`   | Interactive UI to list, edit or delete installed cron jobs         |
 | `--lang=CODE`           | Interface language: `en`, `fr` (default: detected from `$LANG`)    |
@@ -674,7 +675,7 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `warning_count` | int | Number of WARN-level findings (renamed from `warnings` in v0.12.0) |
 | `info_count` | int | Number of INFO-level findings (new in v2) |
 | `profile` | string | The audit profile that produced this result (`server` / `desktop` / `workstation` / `container`). New in v0.14.1, additive within v3. Since v0.14.0 the profile changes finding severities, `warning_count` and therefore the exit code, so two payloads for the same host can legitimately disagree — this field is what explains the difference. |
-| `duration_seconds` | float \| null | How long the audit took, in seconds, rounded to milliseconds. Measured from the moment the checks start — not from process entry, so it excludes argument parsing and the root check — with a monotonic clock, so a clock adjustment mid-run cannot make it negative. `null` when the run did not time itself. New in v0.16.4, additive within v3. |
+| `duration_seconds` | float \| null | How long the audit took, in seconds, rounded to milliseconds. Measured from the moment the checks start — not from process entry, so it excludes argument parsing and the root check — with a monotonic clock, so a clock adjustment mid-run cannot make it negative. `null` when the run did not time itself. New in v0.17.0, additive within v3. |
 | `degraded_sections` | array | Section names whose check raised and was degraded in place rather than aborting the audit (new in v0.14.1, additive within v3). Empty on a healthy run. Each also appears as a `<section>.unavailable` INFO finding. Lets a consumer tell "score 9 with every section evaluated" from "score 9 with two sections never run". |
 | `score_is_upper_bound` | bool | **New in v0.16.0, narrowed in v0.16.2.** True when the score can only be *too high*: a check could not read its input, so the deductions it did not make are unknown rather than zero. Masking `/etc/ssh/sshd_config` removes four deductions and moves the score from 7 to **8** — up, on a host BOB can see less of. Since v0.16.2 this is **false** when blindness dropped a whole domain out of the average (`unscored_domains` non-empty): the denominator changed, so the score can move *down* too — masking `/etc/passwd` takes it from 7 to 6, and calling 6 a ceiling would claim a bound below the true value. **Gate on `score_is_uncertain`, not on this**: it is true whenever anything could not be read, in either direction. `score` stays an integer so existing consumers are unaffected. |
 | `target` | int \| null | The `--target N` value for this run, or `null` when `--target` was not used. |

@@ -193,6 +193,48 @@ The wizard walks you through name → schedule → time → optional email → p
 - `/usr/local/bin/bob-{name}` — wrapper script that calls BOB with the profile, language and network stance you chose. Those three are asked because a cron runs as root: before v0.16.1 the script read *root's* saved config, not yours, so a `desktop` operator's nightly audit silently graded as `server` — and since the profile drives the exit code, it also decided whether the email was sent
 - `/etc/cron.d/bob-{name}` — system cron entry
 
+### Make sure the notification can actually arrive
+
+The wizard's last line tells you who will hear from this job. Read it: three of
+its five answers are *nobody*.
+
+The generated script notifies **by email and by nothing else**. If you skip the
+address, the audit still runs and still writes its report to your log
+directory — but nothing comes to you, and until v0.17.0 nothing said so. A
+webhook saved in **root's** config is the other way out, and a scheduled audit
+does fire it, but `--offline` suppresses the POST.
+
+If you did give an address, the wizard tells you whether a `sendmail` binary
+exists. That is all it can tell you, and it is not enough: a Postfix installed
+from the distribution and never given a relay satisfies the check and drops
+every message. Establish the rest by sending one:
+
+```bash
+bob --test-email                            # a real message, through the cron transport
+```
+
+It uses the same code path as the scheduled job, so a success here means the
+job's mail would take the same route. It exits non-zero when `sendmail` refuses
+the message — the failure that is otherwise invisible, because the way you find
+out is the mail that never comes.
+
+*Accepted is not delivered.* Exit 0 means the MTA took the message; a relay or
+a spam filter can still drop it. Check the inbox once, then trust the schedule.
+
+**No MTA on the host?** Two honest options:
+
+| | |
+|---|---|
+| `postfix` | A full mail server. Choose *"Internet Site"* if the host can send directly, or *"Satellite system"* and name your provider's relay if port 25 is blocked outbound — which it is on most home connections and many cloud providers. |
+| `msmtp` + `msmtp-mta` | Relays through an existing mail account (a `~/.msmtprc` with your SMTP host, user and an app password). Much smaller than Postfix, and the right answer for a laptop or a small VPS that only ever sends. |
+
+Package names vary by distribution, and so does the relay configuration — the
+Postfix walkthrough in [`AUTOMATION.md`](AUTOMATION.md) is the long version,
+including the part most people actually need, which is relaying through a
+provider because port 25 is blocked outbound.
+
+Or skip mail entirely and use a webhook, which needs none of this.
+
 For incident-response automation, configure a webhook in `~/.config/bob/config.conf` :
 
 ```bash
@@ -280,7 +322,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2327 keys × 2 locales as of v0.16.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2342 keys × 2 locales as of v0.17.0 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the 60 uncoded ones *are* translated), and the **38 service labels** — 27 of which carry descriptive English prose, such as `Samba (Windows file sharing)` or `Apache Web Server` — treated as product names. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 

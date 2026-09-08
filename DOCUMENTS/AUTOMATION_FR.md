@@ -183,7 +183,27 @@ sudo apt install postfix
 sudo apt install msmtp-mta
 ```
 
-`--install-cron` détecte automatiquement votre MTA (Postfix, Exim, msmtp, ssmtp) et avertit si aucun n'est trouvé.
+Les commandes ci-dessus sont celles de Debian. `postfix` et `msmtp` portent le
+même nom de paquet sur la plupart des distributions ; le paquet compagnon
+`-mta`, qui installe le binaire `sendmail`, non — vérifiez-le auprès de votre
+gestionnaire de paquets.
+
+`--install-cron` détecte votre MTA (Postfix, Exim, msmtp, ssmtp) et dit lequel
+il a trouvé. **Détecter n'est pas délivrer.** Tout ce qu'il établit, c'est
+l'existence d'un binaire `sendmail`, ce à quoi satisfait aussi un Postfix
+installé et jamais pourvu d'un relais, qui jette pourtant chaque message —
+voyez la configuration de relais plus bas, c'est elle qui fait réellement
+sortir le courrier de l'hôte.
+
+```bash
+bob --test-email                 # envoie un vrai message par le transport du cron
+```
+
+C'est le seul moyen de savoir avant la première exécution programmée. La
+commande emprunte le même chemin de code que le script cron et sort en non-zéro
+quand `sendmail` refuse le message. Une sortie zéro signifie que le MTA l'a
+*accepté* — un relais ou un filtre anti-spam peut encore le jeter, vérifiez donc
+la boîte de réception une fois.
 
 La notification est envoyée **uniquement si l'audit détecte des alertes ou des avertissements** (code de sortie > 0). Si votre configuration est saine, vous ne recevez rien.
 

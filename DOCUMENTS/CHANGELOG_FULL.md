@@ -6,6 +6,78 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.17.0] — 2026-09-08
+
+**The cron wizard promised delivery it had never established.**
+
+`--install-cron` printed *"Mail transport: Postfix (sendmail available —
+notifications will be delivered)"*, and the entire basis for that sentence was
+`shutil.which("sendmail")`. A Postfix installed from the distribution and never
+given a relay satisfies it and drops every message. So the one promise the
+operator is relying on — that they will be told when the score falls — was made
+from the presence of a binary on disk, and the case where it fails is precisely
+the case nobody ever sees, because the way you would find out is the mail that
+does not arrive.
+
+`bob --test-email` sends a real message to the first saved notification
+address, through `send_html_email` — the same transport the generated cron
+script uses, not a reimplementation of it — and reports what sendmail actually
+answered. It exits non-zero when the message was refused, which is the case
+`shutil.which` could never see and the reason the command exists. `--test-webhook`
+has done this for the webhook since v0.8.2; the path most people actually use
+had nothing.
+
+It also stops short of the same mistake at the other end: sendmail exiting 0
+means the MTA queued the message, and a relay or a spam filter can still drop
+it. The command says *accepted*, and says that accepted is not delivered.
+
+### A job with no address told nobody, and nothing said so
+
+The notice only ever fired when an address had been entered. The generated
+script's only channel *is* that email — `if [ "$RC" -gt 0 ] && [ -n "$NOTIFY_EMAILS" ]`
+and nothing else — so a cron installed without one wrote a report to disk on a
+schedule and notified nobody, silently, for as long as it ran.
+
+`describe_reporting` answers the question the wizard was actually being asked —
+will anyone hear from this job — and it answers it once, after the network
+choice, because two of the five outcomes depend on it. A webhook saved in
+root's config *is* the other way out, and a scheduled audit does fire it; but
+`--offline` suppresses the POST, and the wizard offers `--offline` three steps
+after the address. Offering the webhook without checking that would have been
+the same defect rebuilt in a new place.
+
+The verdict is read from `/root/.config/bob/config.conf` rather than from the
+installing user's, for the reason v0.16.1 pinned the profile and the language
+into the script itself: a cron entry runs as root, and root's saved config is
+not the operator's.
+
+### Half the advice never reached the screen
+
+The notice was drawn with `msg[:w - 3]`. On an eighty-column terminal that is a
+hard cut with no ellipsis and no wrap, so the operator read the first sentence
+of a two-sentence instruction and had no way to know a second one existed. Both
+wizards wrap now — the curses one across the rows the bottom chrome leaves
+free, the plain one to the terminal width with the continuation indented.
+
+Nine mutations cover this work in `tests/mutations.py`, and two of them exist
+because a guard was inert. The test for the flush ordering asserted only that
+stdout was non-empty, which the interpreter guarantees at exit whether or not
+the flush is there; merging the two streams is the only arrangement in which
+the ordering is observable at all.
+
+The other was worse, and no reading of the source would have found it. The
+first wrapping version sized its body with `_chrome.chrome_height()` — no
+arguments, three required — so the flash raised `TypeError` on sight and the
+wizard died with *"Fatal error"* at the screen whose entire job is to report
+what just went wrong. The guard was an AST check and passed happily. A pty run
+of the real wizard found it in one pass, and the guard that replaced it drives
+the function against a recording screen and requires every word of the notice
+to land on a row.
+
+**Tests** 8951 → **9016**. **Mutations** 56 → **65**.
+
+---
+
 ## [v0.16.4] — 2026-09-08
 
 **"This guard bites" was a claim in a commit message, and nothing re-checked it.**

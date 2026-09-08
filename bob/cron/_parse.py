@@ -367,3 +367,53 @@ def _detect_mta() -> tuple[bool, str]:
         if check():
             return True, name
     return True, ""
+
+
+# ---------------------------------------------------------------------------
+# What the installed job will actually report, and to whom
+# ---------------------------------------------------------------------------
+
+#: The config the scheduled audit reads. A cron entry runs as root, so a
+#: webhook saved by the operator's own user is invisible to it — the wizard
+#: already writes ``log_dir`` here for the same reason.
+ROOT_CONFIG_PATH = Path("/root/.config/bob/config.conf")
+
+
+def describe_reporting(notify_emails, offline: bool,
+                       root_config_path: "Path | None" = None) -> tuple[str, str, dict]:
+    """Say how the job being installed will reach its operator.
+
+    Returns ``(glyph, locale_key, format_kwargs)``.
+
+    Until v0.17.0 the wizard said one thing on this subject — *"sendmail
+    available — notifications will be delivered"* — and said it only when an
+    address had been entered. Both halves were wrong. The presence of a
+    sendmail binary establishes nothing about delivery: a Postfix installed
+    and never configured satisfies ``shutil.which`` and drops every message.
+    And a job installed with no address at all got no notice whatsoever, while
+    the generated script's *only* channel is that email — so it wrote a log to
+    disk on a schedule and told nobody, forever, in silence.
+
+    The remaining channel is the webhook, which a scheduled audit does fire,
+    but only by reading root's saved config and only when the job is online.
+    Both conditions are checked here rather than asserted, because getting
+    this wrong is the same mistake in a new place.
+    """
+    if notify_emails:
+        available, name = _detect_mta()
+        if available:
+            return "✔", "install_cron.mta_found", {"mta": name or "sendmail"}
+        return "⚠", "install_cron.mta_missing", {}
+
+    url = ""
+    try:
+        from bob.config import UserConfig
+        url = UserConfig.load(path=root_config_path or ROOT_CONFIG_PATH).get_webhook_url()
+    except (OSError, ValueError):
+        url = ""
+
+    if not url:
+        return "⚠", "install_cron.reports_nobody", {}
+    if offline:
+        return "⚠", "install_cron.reports_webhook_offline", {}
+    return "✔", "install_cron.reports_webhook", {}

@@ -24,14 +24,32 @@ from ._options import CRON_LANGS, CRON_PROFILES, build_audit_options, default_di
 from ._parse import (
     CRON_DIR,
     SCRIPT_DIR,
-    _detect_mta,
     _validate_custom_cron,
     build_schedule_expr,
     cron_to_human,
+    describe_reporting,
     list_installed_crons,
     make_slug,
     suggest_name,
 )
+
+
+def _print_wrapped(msg: str, indent: str = "  ") -> None:
+    """Print *msg* wrapped to the terminal, continuation lines aligned.
+
+    v0.17.0: the MTA notice grew from one clause to two sentences when it
+    stopped promising delivery it could not verify. A bare ``print`` leaves
+    the wrapping to the terminal, which breaks mid-word and does not indent
+    the continuation, so the advice read as two unrelated fragments.
+    """
+    import shutil
+    import textwrap
+
+    width = max(40, shutil.get_terminal_size((80, 24)).columns - 2)
+    for line in textwrap.wrap(msg, width,
+                              initial_indent=indent,
+                              subsequent_indent=indent + "  ") or [""]:
+        print(line)
 
 
 def prompt_emails(t) -> list[str] | None:
@@ -274,12 +292,9 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     notify_emails_raw = prompt_emails(t)
     notify_emails = notify_emails_raw or []   # None (cancelled) → no email
     notify_email  = ",".join(notify_emails)   # comma-separated for storage
-    if notify_emails:
-        _mta_ok, _mta_name = _detect_mta()
-        if _mta_ok:
-            print(f"  ✔ {t('install_cron.mta_found', mta=_mta_name or 'sendmail')}")
-        else:
-            print(f"  ⚠ {t('install_cron.mta_missing')}")
+    # The notice used to fire here, and only when an address had been given.
+    # Whether the job reaches anyone also depends on the network choice made
+    # three steps further down, so it is reported once, after that choice.
 
     # --- Steps 5-7: what the scheduled audit actually runs (v0.16.1) ---
     # Before v0.16.1 the generated script hardcoded ``--quiet --detailed`` and
@@ -345,6 +360,9 @@ def _run_install_cron_plain(user_config, config, t) -> int:
 
     print()
     print(f"  {t('install_cron.audit_command', command=f'bob --quiet --detailed {audit_options}')}")
+
+    _glyph, _key, _kw = describe_reporting(notify_emails, sel_offline)
+    _print_wrapped(f"{_glyph} {t(_key, **_kw)}")
 
     # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed the
     # mutation path (apply_cron_schedule) but the install paths kept raw

@@ -43,7 +43,7 @@ from bob.cron import (
     make_slug,
     suggest_name,
     _validate_custom_cron,
-    _detect_mta,
+    describe_reporting,
     # File-patching helpers — single source of truth, see v0.4.8 cleanup pass
     # that merged the duplicated implementations.
     apply_cron_schedule,
@@ -222,15 +222,28 @@ def _curses_status_flash(stdscr, t, msg: str) -> None:
 
     from bob.tui import _chrome
 
+    import textwrap
+
     has_color = _curses.has_colors()
     stdscr.erase()
     h, w = stdscr.getmaxyx()
     _chrome.draw_header(stdscr, _curses, "", has_color)
-    _draw(stdscr, 2, 2, msg[:w - 3])
+    # v0.17.0: this used to be ``msg[:w - 3]``. The MTA notice is two sentences
+    # long, so on an 80-column terminal the operator read the first half of the
+    # advice and never learned there was a second half. Wrap, and stop at the
+    # last row the chrome leaves free rather than writing off-screen.
     # Any key continues, so that is what the banner says — it lists no
     # bindings because this screen has none.
-    _chrome.draw_text(stdscr, _curses, has_color,
-                      ["  " + t("cron_ui.press_any_key")])
+    _banner = ["  " + t("cron_ui.press_any_key")]
+    _room = max(1, h - 2 - _chrome.text_height(_banner))
+    _rendered: list[str] = []
+    for _para in msg.split("\n"):
+        _rendered.extend(textwrap.wrap(_para, max(20, w - 4)) or [""])
+    for _i, _line in enumerate(_rendered):
+        if _i >= _room:
+            break
+        _draw(stdscr, 2 + _i, 2, _line)
+    _chrome.draw_text(stdscr, _curses, has_color, _banner)
     stdscr.refresh()
     try:
         stdscr.get_wch()
@@ -863,12 +876,8 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                     step = STEP_SCHEDULE
                     continue
                 notify_email = result
-                if notify_email:
-                    _mta_ok, _mta_name = _detect_mta()
-                    if _mta_ok:
-                        _curses_status_flash(stdscr, t, f"✔ {t('install_cron.mta_found', mta=_mta_name or 'sendmail')}")
-                    else:
-                        _curses_status_flash(stdscr, t, f"⚠ {t('install_cron.mta_missing')}")
+                # v0.17.0: the MTA notice moved to the end of the wizard —
+                # see describe_reporting.
                 step = STEP_PROFILE
 
             elif step == STEP_PROFILE:
@@ -908,10 +917,17 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                     continue
                 sel_offline = (idx == 1)
                 audit_options = build_audit_options(sel_profile, sel_lang, sel_offline)
+                # Both dimensions that decide whether anyone hears from this
+                # job — the address and the network stance — are settled by
+                # now, so the verdict is given once, here, rather than guessed
+                # at the email step.
+                _glyph, _key, _kw = describe_reporting(
+                    [e for e in notify_email.split(",") if e.strip()], sel_offline,
+                )
                 _curses_status_flash(stdscr, t, t(
                     "install_cron.audit_command",
                     command=f"bob --quiet --detailed {audit_options}",
-                ))
+                ) + "\n\n" + f"{_glyph} {t(_key, **_kw)}")
                 step = STEP_OVERWRITE
 
             elif step == STEP_OVERWRITE:
