@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, install_fix, path_exists
 from bob.scoring import CheckResult
 
 # Age thresholds (days)
@@ -177,10 +177,11 @@ def check_rootkit(snapshot: RootkitSnapshot, t: TranslationFunc | None = None) -
     result = CheckResult()
 
     if not snapshot.rkhunter_installed and not snapshot.chkrootkit_installed:
+        _cmd, _detail = install_fix(_t, _t("rootkit.not_installed_detail"), "rkhunter")
         result.info(
             message=_t("rootkit.not_installed"),
-            detail=_t("rootkit.not_installed_detail"),
-            cmd="sudo apt install -y rkhunter",
+            detail=_detail,
+            cmd=_cmd,
             key="rootkit.not_installed",
         )
         return result

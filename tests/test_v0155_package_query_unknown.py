@@ -79,8 +79,13 @@ class TestPresenceIsNotAnAnswer:
     """
 
     def test_a_present_but_mute_manager_is_not_trusted(self, monkeypatch):
+        # v0.17.0: the probe reads run_result now, because rpm's verdict comes
+        # from its exit status — an empty stdout is a *success* under --quiet.
+        # A manager that answers nothing and fails is the mute one.
         monkeypatch.setattr(run_mod, "_PACKAGE_QUERY_STATE", None)
-        monkeypatch.setattr(run_mod, "_run", lambda *a, **kw: "")
+        monkeypatch.setattr(
+            run_mod, "run_result",
+            lambda *a, **kw: run_mod.CommandResult(stdout="", ok=False, stderr=""))
         assert run_mod.package_query_possible() is False
 
     def test_a_healthy_manager_is(self, monkeypatch):
@@ -90,7 +95,7 @@ class TestPresenceIsNotAnAnswer:
     def test_every_known_manager_has_a_sentinel(self):
         """A manager without one falls back to mere presence — the very thing
         this replaces. The list must not drift apart."""
-        tools = {tool for tool, _, _ in run_mod._PACKAGE_QUERIES}
+        tools = {entry[0] for entry in run_mod._PACKAGE_QUERIES}
         assert tools == set(run_mod._PACKAGE_SENTINELS)
 
     def test_the_sentinel_is_the_manager_itself(self):

@@ -42,6 +42,7 @@ _CHROME = "tests/test_v0163_bottom_chrome.py"
 _CLAIMS = "tests/test_v0163_readme_tech_claims.py"
 _DOCEX = "tests/test_v0163_doc_examples_run.py"
 _MAIL = "tests/test_v0170_mail_transport.py"
+_PKGNAMES = "tests/test_v0170_package_names.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -570,12 +571,88 @@ MUTATIONS: "tuple[Mutation, ...]" = (
 
     Mutation(
         id="fixes/install-command-waits-for-a-human",
-        file="bob/checks/firewall.py",
-        old="sudo apt install -y ufw",
-        new="sudo apt install ufw",
+        file="bob/checks/_run.py",
+        # v0.17.0 moved this out of firewall.py: the command is built once for
+        # every manager now, so the missing flag is mutated where it would
+        # actually be written.
+        old='("apt",     f"sudo apt install -y {_PKGS}"),',
+        new='("apt",     f"sudo apt install {_PKGS}"),',
         kills=("tests/test_v0164_fix_commands_run_unattended.py::test_no_install_command_would_stop_to_ask",),
         reason="apt refuses to proceed without confirmation, so --fix --apply "
                "--yes reported `0 of 2 fix(es) applied.` — proven in a container",
+    ),
+    Mutation(
+        id="packages/no-command-kills-the-check",
+        file="bob/scoring.py",
+        old='        self.cmd     = sanitize_multiline(\n'
+            '            (self.cmd or "").replace("\\r\\n", "\\n").replace("\\r", " ").replace("\\t", " "))',
+        new='        self.cmd     = sanitize_multiline(\n'
+            '            self.cmd.replace("\\r\\n", "\\n").replace("\\r", " ").replace("\\t", " "))',
+        kills=(f"{_PKGNAMES}::TestTheNoCommandBranchIsExercisedOnThisHost",),
+        reason="a finding with no command raised inside a check, where fault "
+               "isolation swallowed it and rendered the whole section "
+               "'unavailable' — three checks died that way on Arch and Fedora "
+               "while every test on this Debian host stayed green",
+    ),
+    Mutation(
+        id="packages/rpm-error-sentence-read-as-installed",
+        file="bob/checks/_run.py",
+        old='    ("rpm",        ("-q", "--quiet", _PKG),      None,                   True),',
+        new='    ("rpm",        ("-q", _PKG),                 None,                   False),',
+        kills=(f"{_PKGNAMES}::TestRpmAnswersNoToAnAbsentPackage",),
+        reason="rpm prints 'package X is not installed' on stdout, so 'any "
+               "output proves installed' made every query answer yes on the "
+               "whole RHEL family — measured on fedora:latest, where v0.16.4 "
+               "reported a Debian package and an invented name both installed",
+    ),
+    Mutation(
+        id="packages/exit-code-branch-ignored",
+        file="bob/checks/_run.py",
+        old="        if by_exit:\n            if result.ok:\n                return tool",
+        new="        if False:\n            if result.ok:\n                return tool",
+        kills=(f"{_PKGNAMES}::TestRpmAnswersNoToAnAbsentPackage::"
+               "test_a_real_rpm_success_is_still_a_yes",),
+        reason="--quiet prints nothing on success, so dropping the exit-code "
+               "branch flips the fault the other way: every rpm package absent",
+    ),
+    Mutation(
+        id="packages/debian-name-handed-to-another-manager",
+        file="bob/checks/_run.py",
+        old="    if any(n is None for n in names):\n        return None",
+        new="    if False:\n        return None",
+        kills=(f"{_PKGNAMES}::TestUnknownNamesProduceNoCommand",),
+        reason="an unmapped package would render as an empty install command, "
+               "so `sudo pacman -S --noconfirm` with no argument, or worse a "
+               "confident command that installs nothing",
+    ),
+    Mutation(
+        id="packages/microcode-asks-debian-names-only",
+        file="bob/checks/firmware.py",
+        old="        candidates = list(package_name_candidates(_logical)) if _logical else []",
+        new='        candidates = ["intel-microcode"] if _logical else []',
+        kills=(f"{_PKGNAMES}::TestTheMicrocodeVerdictIsNotDebianOnly",),
+        reason="the false verdict this closed: rpm -q intel-microcode answers "
+               "nothing on Fedora, where the package is microcode_ctl, and BOB "
+               "deducted a point from every host of two distribution families",
+    ),
+    Mutation(
+        id="packages/absence-asserted-without-a-known-name",
+        file="bob/checks/firmware.py",
+        old="        elif not (snapshot.package_query_possible and snapshot.microcode_name_known):",
+        new="        elif not snapshot.package_query_possible:",
+        kills=(f"{_PKGNAMES}::TestTheMicrocodeVerdictIsNotDebianOnly",),
+        reason="on a manager whose name BOB never measured, an empty answer "
+               "would again become 'not installed' rather than 'not established'",
+    ),
+    Mutation(
+        id="packages/debian-only-suffix-travels",
+        file="bob/checks/_run.py",
+        old='    if cmd and then_apt and _MANAGER_ALIASES.get(mgr, mgr) != "apt":\n        cmd = None',
+        new="    if False:\n        cmd = None",
+        kills=(f"{_PKGNAMES}::TestDebianOnlyFollowUpsDoNotTravel",),
+        reason="aideinit, pam-auth-update and dpkg-reconfigure are Debian's own "
+               "tools; appending them to a dnf command hands out a remedy whose "
+               "second half cannot run",
     ),
 
     # ---- the cron wizard's promise of delivery -----------------------------

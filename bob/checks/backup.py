@@ -42,7 +42,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _command_exists, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import _command_exists, install_fix, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -390,21 +390,23 @@ def check_backup(
         return result
 
     # --- No backup tool found -----------------------------------------------
+    _cmd, _detail = install_fix(
+        _t, _t("backup.no_backup_detail"), "borgbackup", "borgmatic")
     if profile_name == "server":
         result.warn_with_deduction(
             key="backup.no_backup",
             message=_t("backup.no_backup"),
             reason=_t("backup.no_backup_reason"),
             points=1,
-            detail=_t("backup.no_backup_detail"),
-            cmd="sudo apt install -y borgbackup borgmatic",
+            detail=_detail,
+            cmd=_cmd,
             nature="improvement",
         )
     else:
         result.info(
             message=_t("backup.no_backup"),
-            detail=_t("backup.no_backup_detail"),
-            cmd="sudo apt install -y borgbackup borgmatic",
+            detail=_detail,
+            cmd=_cmd,
             key="backup.no_backup",
         )
 

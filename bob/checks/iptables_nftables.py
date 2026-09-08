@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from bob.checks._run import _command_exists, _identity_t, _run, run_result
+from bob.checks._run import _command_exists, _identity_t, _run, install_command, run_result
 from bob.scoring import CheckResult
 
 
@@ -246,7 +246,7 @@ def check_iptables_nftables(
             message=_t("firewall_iptables.no_backend"),
             points=3,
             nature="action",
-            cmd="sudo apt install -y iptables",
+            cmd=install_command("iptables"),
         )
         return result
 

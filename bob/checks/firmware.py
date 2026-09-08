@@ -22,7 +22,6 @@ Split into:
 from __future__ import annotations
 
 import re
-import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,6 +32,10 @@ from bob.checks._run import (
     _identity_t,
     _run,
     package_installed,
+    detect_install_manager,
+    install_fix,
+    package_name,
+    package_name_candidates,
     package_query_possible,
 )
 from bob.scoring import CheckResult
@@ -64,6 +67,10 @@ class FirmwareSnapshot:
         microcode_installed:     True if the CPU-appropriate microcode package is installed.
         microcode_package:       Name of the microcode package found (or "").
         microcode_not_applicable: True if CPU vendor is not Intel or AMD (no package needed).
+        microcode_name_known:    False when BOB has no measured package name for
+                                 this host's package manager, so a negative
+                                 answer proves nothing (openSUSE, and any
+                                 distribution not yet probed).
         package_query_possible:  False when no supported package manager exists,
                                  so "not installed" could not be established.
     """
@@ -73,6 +80,7 @@ class FirmwareSnapshot:
     cpu_vendor:               str        = ""
     microcode_installed:      bool       = False
     package_query_possible:   bool       = True
+    microcode_name_known:     bool       = True
     microcode_package:        str        = ""
     microcode_not_applicable: bool       = False
 
@@ -88,12 +96,18 @@ class FirmwareSnapshot:
         snap.cpu_vendor = _detect_cpu_vendor()
 
         # --- CPU microcode package ------------------------------------------
-        if snap.cpu_vendor == "intel":
-            candidates = ["intel-microcode"]
-        elif snap.cpu_vendor == "amd":
-            candidates = ["amd64-microcode"]
-        else:
-            candidates = []
+        # Every name the package is known by, not Debian's alone. Asking for
+        # `intel-ucode` on Debian costs one query and answers nothing, which is
+        # the correct answer there; asking only for `intel-microcode` on Arch
+        # answered nothing on a host where the microcode *was* installed.
+        _logical = (f"microcode-{snap.cpu_vendor}"
+                    if snap.cpu_vendor in ("intel", "amd") else "")
+        candidates = list(package_name_candidates(_logical)) if _logical else []
+        # Whether a *negative* may be asserted: only when this host's manager is
+        # one whose name for the package BOB has actually measured. openSUSE
+        # calls it something else again, and nobody measured it.
+        snap.microcode_name_known = bool(
+            _logical and package_name(_logical, detect_install_manager()))
 
         if candidates:
             for pkg in candidates:
@@ -198,7 +212,7 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
                 message=_t("firmware.microcode_na"),
                 key="firmware.microcode_na",
             )
-        elif not snapshot.package_query_possible:
+        elif not (snapshot.package_query_possible and snapshot.microcode_name_known):
             # v0.15.5: no dpkg/rpm/pacman/apk on this host, so "no microcode
             # package" was never established — only "nothing could be asked".
             # Asserting the negative here (WARN, −1) invented a verdict on
@@ -210,14 +224,16 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
                 key="firmware.microcode_unknown",
             )
         else:
-            pkg = "intel-microcode" if snapshot.cpu_vendor == "intel" else "amd64-microcode"
+            _logical = f"microcode-{snapshot.cpu_vendor}"
+            _cmd, _detail = install_fix(
+                _t, _t("firmware.microcode_missing_detail"), _logical)
             result.warn_with_deduction(
                 key="firmware.microcode_missing",
                 message=_t("firmware.microcode_missing", vendor=snapshot.cpu_vendor.upper()),
                 reason=_t("firmware.microcode_missing_reason", vendor=snapshot.cpu_vendor.upper()),
                 points=1,
-                detail=_t("firmware.microcode_missing_detail"),
-                cmd=f"sudo apt install -y {shlex.quote(pkg)}",
+                detail=_detail,
+                cmd=_cmd,
             )
 
     return result

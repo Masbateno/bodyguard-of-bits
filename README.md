@@ -314,7 +314,11 @@ Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
 | **Tier 2** (CI-validated) | Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 | Smoke + offline audit run on every PR; no locale sentinels, no Python tracebacks |
 | **Tier 3** (works but untested) | Other Debian/RHEL/SUSE/Arch-family Linux | Best-effort; checks degrade gracefully |
 
-On non-apt distributions (Fedora, RHEL, openSUSE, Arch), checks that rely on `apt` (e.g. pending security updates) emit INFO instead of WARN — BOB does not currently consume `dnf`/`zypper`/`pacman` metadata. CIS Ubuntu 22.04 references are still emitted when the underlying control (sysctl flags, SSH config, file permissions) is OS-agnostic.
+On non-apt distributions (Fedora, RHEL, openSUSE, Arch, Alpine), checks that rely on `apt` metadata (e.g. pending security updates) emit INFO instead of WARN — BOB does not consume `dnf`/`zypper`/`pacman` update metadata. CIS Ubuntu 22.04 references are still emitted when the underlying control (sysctl flags, SSH config, file permissions) is OS-agnostic.
+
+**Remediation commands are chosen for your package manager** since v0.17.0. Before that every "install this" finding read `sudo apt install …` on every host, and the package names were Debian's — `sudo dnf install auditd` installs nothing, because Fedora calls it `audit`. The names were measured in containers rather than recalled, and where BOB has no measured name for your manager it says so instead of inventing a command: an instruction that installs nothing is worse than an admission, because you have no reason to doubt it.
+
+The same release fixed a query that answered yes to everything on the whole RPM family. `rpm -q nosuchpackage` prints *"package nosuchpackage is not installed"* on **stdout** and exits 1; BOB counted any output as proof of installation, so on Fedora, RHEL and openSUSE every package read as installed — including names that exist nowhere. The visible effect was an audit reporting on services that were not there, and a microcode verdict of "OK" that had checked nothing. **If you run BOB on an RPM-based distribution, v0.17.0 is not optional.**
 
 ---
 

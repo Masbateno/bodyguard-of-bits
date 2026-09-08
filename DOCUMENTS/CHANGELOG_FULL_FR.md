@@ -8,7 +8,9 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ## [v0.17.0] — 08-09-2026
 
-**Le wizard cron promettait une remise qu'il n'avait jamais établie.**
+**Sur toute la famille RPM, BOB répondait oui à tout paquet qu'on lui
+soumettait — y compris des noms qui n'existent nulle part. Et le wizard cron
+promettait une remise qu'il n'avait jamais établie.**
 
 `--install-cron` affichait *« Transport mail : Postfix (sendmail disponible —
 les notifications seront envoyées) »*, et toute la base de cette phrase était
@@ -31,6 +33,87 @@ Elle s'arrête aussi avant la même erreur à l'autre bout : un sendmail qui sor
 en 0 signifie que le MTA a mis le message en file, et un relais ou un filtre
 anti-spam peut encore le jeter. La commande dit *accepté*, et dit qu'accepté
 n'est pas délivré.
+
+### Les verdicts étaient portables. Les remèdes attachés ne l'étaient pas.
+
+La v0.15.2 avait appris à l'interrogation de paquets à questionner cinq
+gestionnaires au lieu du seul dpkg, parce qu'une question dpkg-only rendait tout
+service absent sur quatre distributions sur cinq. La moitié « conseil » de cette
+leçon n'a jamais été apprise : dix-huit findings disaient à l'opérateur de
+lancer `sudo apt install …` quel que soit son hôte. BOB avait raison sur le
+problème et tort sur le remède.
+
+Chaque commande d'installation est désormais construite depuis une table
+unique, pour le gestionnaire que l'hôte possède réellement. Les noms y ont été
+**mesurés en conteneur** plutôt que récités, et la version récitée se trompait
+en trois endroits :
+
+| BOB cherche | Debian | Fedora | Arch |
+|---|---|---|---|
+| `auditd` | auditd | **audit** | **audit** |
+| `libpam-pwquality` | libpam-pwquality | **libpwquality** | **libpwquality** |
+| `borgbackup` | borgbackup | borgbackup | **borg** |
+| `aide` | aide | aide | **absent** |
+
+`sudo dnf install auditd` n'installe rien. `sudo pacman -S aide` échoue : aide
+n'est pas dans les dépôts d'Arch. Là où BOB n'a pas de nom mesuré, il n'émet
+donc **aucune commande** — il dit ce qu'il cherche, donne le paquet Debian en
+illustration et avoue le trou. Une commande synthétisée est pire que rien : une
+instruction précise et assurée qui ne fait rien, et dont l'opérateur n'a aucune
+raison de douter.
+
+La même règle vaut pour les suites. `aideinit`, `pam-auth-update` et
+`dpkg-reconfigure` sont des outils propres à Debian, et trois findings les
+ajoutaient à un conseil qu'ils s'apprêtaient à tendre à un opérateur Fedora ou
+Arch ; un demi-remède n'est pas un remède, donc ceux-là n'émettent pas de
+commande non plus. `systemctl enable --now`, portable, continue de suivre.
+
+### rpm répondait oui à toutes les questions, y compris inventées
+
+`rpm -q paquet-inexistant` écrit « package paquet-inexistant is not installed »
+sur **stdout** et sort en 1. La table d'interrogation disait « toute sortie
+prouve que le paquet est installé » — affirmation écrite pour rpm et vraie
+seulement de pacman et d'apk. Sur RHEL, Fedora et openSUSE, `package_installed`
+répondait donc oui pour tout nom qu'on lui donnait. Mesuré sur `fedora:latest` :
+la v0.16.4 déclarait `amd64-microcode` — un paquet Debian — installé, et une
+chaîne inventée sur le moment aussi.
+
+La v0.15.2 avait remplacé « tout absent hors Debian » par la même faute
+inversée pour la famille rpm, et rien ne l'a remarqué, parce que ce mode de
+défaillance est le silence : un check qui croit un paquet présent cesse
+simplement de demander. L'audit d'un conteneur Fedora passe de 137 findings à
+60 — les 77 manquants portaient sur des services qui n'étaient pas installés.
+Le verdict microcode disait **OK** sans avoir rien vérifié ; il dit désormais
+`missing`, correctement, et coûte son point.
+
+rpm est interrogé avec `--quiet` et jugé sur son code de sortie. pacman et apk
+gardent le test sur la sortie, parce qu'ils n'impriment réellement rien quand le
+paquet est absent — mesuré le même jour.
+
+### Deux défauts que l'écriture de tout ceci a révélés
+
+Aucun n'était visible depuis une suite verte sur cet hôte Debian.
+
+`Finding.cmd` est typé `str` et sanitisé sans condition : le premier `cmd=None`
+a donc levé `AttributeError` **à l'intérieur d'un check**, où l'isolation de
+fautes l'a rattrapé et a rendu toute la section *« unavailable »*. Trois checks
+mouraient ainsi sur Arch et Fedora pendant que chaque test passait ici, puisque
+sur Debian la commande n'est jamais None. Une garde force désormais la branche
+en nommant un gestionnaire au lieu d'en détecter un.
+
+Et la garde qui tenait chaque commande d'installation à un drapeau non
+interactif depuis la v0.16.4 est devenue inerte en silence : elle raclait les
+littéraux `cmd="…"` du source, et ces littéraux venaient d'emménager dans une
+table. Elle lit aussi la table maintenant — et y a attrapé un drapeau manquant
+dès la première exécution. Elle n'avait par ailleurs jamais vu `clamav.py`, qui
+avait figé sa commande dans un défaut de dataclass et la passait par
+`cmd=snapshot.install_cmd` ; un audit Fedora continuait d'afficher
+`sudo apt install -y clamav clamav-daemon` alors que tous les autres findings
+étaient devenus portables.
+
+A/B contre la v0.16.4 en conteneur : **Arch et Alpine, aucun verdict ne bouge**
+— seules les commandes changent. Fedora perd cinq findings qu'il n'aurait jamais
+dû produire et en gagne deux qu'il aurait dû.
 
 ### Une tâche sans adresse ne prévenait personne, et rien ne le disait
 
@@ -78,7 +161,7 @@ vrai wizard derrière un pty l'a trouvée du premier coup, et la garde qui l'a
 remplacée pilote la fonction contre un écran enregistreur en exigeant que
 chaque mot de l'avis atterrisse sur une ligne.
 
-**Tests** 8951 → **9016**. **Mutations** 56 → **65**.
+**Tests** 8951 → **9098**. **Mutations** 56 → **72**.
 
 ---
 

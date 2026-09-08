@@ -369,16 +369,31 @@ _PKG = "%PKG%"
 
 # Package managers BOB knows how to interrogate, in the order they are tried.
 #
-# ``marker`` is the substring proving the package is installed; ``None`` means
-# any output at all does (rpm, pacman and apk print the package on success and
-# nothing on stdout when it is missing). Every entry is a scripting interface:
-# `dpkg-query -W`, `rpm -q`, `pacman -Q` and `apk info -e` are all stable and
-# locale-independent, unlike their display counterparts.
-_PACKAGE_QUERIES: "tuple[tuple[str, tuple[str, ...], str | None], ...]" = (
-    ("dpkg-query", ("-W", "-f=${Status}", _PKG), "install ok installed"),
-    ("rpm",        ("-q", _PKG),                    None),   # RHEL, Fedora, openSUSE
-    ("pacman",     ("-Q", _PKG),                    None),   # Arch
-    ("apk",        ("info", "-e", _PKG),            None),   # Alpine
+# ``marker`` is the substring proving the package is installed. ``None`` means
+# any output at all does — true for ``pacman -Q`` and ``apk info -e``, which
+# print nothing on stdout when the package is missing (measured 2026-09-08 in
+# archlinux:latest and alpine:latest).
+#
+# It was **not** true for rpm, and that was the entry it was written for.
+# ``rpm -q nosuchpackage`` prints *"package nosuchpackage is not installed"* on
+# **stdout** and exits 1, so "any output counts" made every query answer yes:
+# on RHEL, Fedora and openSUSE ``package_installed`` reported every package
+# installed, including names that exist nowhere — ``rpm -q amd64-microcode``,
+# a Debian package, answered "installed" on a Fedora container.
+#
+# v0.15.2 had replaced "everything absent outside Debian" with the same fault
+# inverted for the rpm family, and nothing noticed because the failure mode is
+# silence: a check that believes a package is present simply stops asking.
+#
+# ``by_exit`` takes the verdict from the exit status instead, with ``--quiet``
+# so rpm says nothing at all. Every entry remains a scripting interface —
+# ``dpkg-query -W``, ``rpm -q``, ``pacman -Q`` and ``apk info -e`` are stable
+# and locale-independent, unlike their display counterparts.
+_PACKAGE_QUERIES: "tuple[tuple[str, tuple[str, ...], str | None, bool], ...]" = (
+    ("dpkg-query", ("-W", "-f=${Status}", _PKG), "install ok installed", False),
+    ("rpm",        ("-q", "--quiet", _PKG),      None,                   True),   # RHEL, Fedora, openSUSE
+    ("pacman",     ("-Q", _PKG),                 None,                   False),  # Arch
+    ("apk",        ("info", "-e", _PKG),         None,                   False),  # Alpine
 )
 
 # A package each manager necessarily owns: the manager itself. Asking for it is
@@ -409,8 +424,8 @@ def package_query_possible() -> bool:
     global _PACKAGE_QUERY_STATE
     if _PACKAGE_QUERY_STATE is None:
         _PACKAGE_QUERY_STATE = any(
-            _package_query_answers(tool, args, marker)
-            for tool, args, marker in _PACKAGE_QUERIES
+            _package_query_answers(tool, args, marker, by_exit)
+            for tool, args, marker, by_exit in _PACKAGE_QUERIES
         )
     return _PACKAGE_QUERY_STATE
 
@@ -418,7 +433,8 @@ def package_query_possible() -> bool:
 _PACKAGE_QUERY_STATE: "bool | None" = None
 
 
-def _package_query_answers(tool: str, args: "tuple[str, ...]", marker: "str | None") -> bool:
+def _package_query_answers(tool: str, args: "tuple[str, ...]", marker: "str | None",
+                           by_exit: bool = False) -> bool:
     """True when *tool* is present AND its database answers a known-good query.
 
     Presence is not enough, and dpkg proves why: with an unreadable database it
@@ -436,8 +452,10 @@ def _package_query_answers(tool: str, args: "tuple[str, ...]", marker: "str | No
     sentinel = _PACKAGE_SENTINELS.get(tool)
     if sentinel is None:          # unknown manager: fall back to presence
         return True
-    output = _run(tool, *(a.replace(_PKG, sentinel) for a in args))
-    return bool(marker in output if marker else output.strip())
+    result = run_result(tool, *(a.replace(_PKG, sentinel) for a in args))
+    if by_exit:
+        return result.ok
+    return bool(marker in result.stdout if marker else result.stdout.strip())
 
 
 def package_installed(name: str) -> "str | None":
@@ -455,16 +473,230 @@ def package_installed(name: str) -> "str | None":
     were unified — a rule kept in several copies is a rule that will disagree
     with itself.
     """
-    for tool, args, marker in _PACKAGE_QUERIES:
+    for tool, args, marker, by_exit in _PACKAGE_QUERIES:
         if not _command_exists(tool):
             continue
-        output = _run(tool, *(a.replace(_PKG, name) for a in args))
-        if marker is None:
-            if output.strip():
+        result = run_result(tool, *(a.replace(_PKG, name) for a in args))
+        if by_exit:
+            if result.ok:
                 return tool
-        elif marker in output:
+        elif marker is None:
+            if result.stdout.strip():
+                return tool
+        elif marker in result.stdout:
             return tool
     return None
+
+
+# ---------------------------------------------------------------------------
+# The installing twin of _PACKAGE_QUERIES
+# ---------------------------------------------------------------------------
+#
+# v0.15.2 taught BOB to *ask* five package managers instead of dpkg alone,
+# because a dpkg-only query reported every service absent on four distributions
+# out of five. The advice half of that lesson was never learned: eighteen
+# findings told the operator to run ``sudo apt install …`` whatever host they
+# were on. The verdict had been made portable; the remedy attached to it had
+# not, so BOB was correct about the problem and wrong about the fix.
+#
+# Measured in containers rather than recalled, because the recalled version was
+# wrong in three places (2026-09-08, fedora:latest, archlinux:latest,
+# alpine:latest — see tests/test_v0170_package_names.py for the probe):
+#
+#   * ``sudo dnf install auditd`` installs nothing. The package is ``audit``.
+#   * ``sudo pacman -S aide`` fails: aide is not in Arch's repositories at all.
+#   * ``libpam-pwquality`` is Debian's spelling; everyone else calls the
+#     package ``libpwquality``.
+#
+# So a synthesised command is worse than no command: it is a specific,
+# confident instruction that does nothing, and the operator has no reason to
+# doubt it. Where the name is not known, BOB says what it is looking for and
+# admits the gap.
+
+#: Substituted with the space-joined package list.
+_PKGS = "%PKGS%"
+
+#: Package managers BOB knows how to *install* with, in the order tried.
+#: Ordered so a Debian host that also has ``dnf`` installed still gets apt.
+#: ``-y`` where the manager needs it: ``--fix --apply`` runs these unattended,
+#: and a command that stops to ask a question applies nothing (v0.16.4).
+_INSTALL_MANAGERS: "tuple[tuple[str, str], ...]" = (
+    ("apt",     f"sudo apt install -y {_PKGS}"),
+    ("apt-get", f"sudo apt-get install -y {_PKGS}"),
+    ("dnf",     f"sudo dnf install -y {_PKGS}"),
+    ("yum",     f"sudo yum install -y {_PKGS}"),
+    ("pacman",  f"sudo pacman -S --noconfirm {_PKGS}"),
+    ("zypper",  f"sudo zypper --non-interactive install {_PKGS}"),
+    # apk does not prompt (measured: `apk add logrotate </dev/null` exits 0 in
+    # alpine:latest), but it accepts the flag, and carrying it keeps every row
+    # of this table answerable by the same rule instead of one exception.
+    ("apk",     f"sudo apk add --no-interactive {_PKGS}"),
+)
+
+#: What each logical package is called per install manager.
+#:
+#: ``None`` means **BOB does not know**, which is not the same as "not needed":
+#: either the package is absent from that distribution's repositories, or it
+#: exists under a name nobody measured. Both must produce advice, never a
+#: command.
+#:
+#: ``yum`` inherits from ``dnf`` and ``apt-get`` from ``apt`` (same
+#: repositories); ``zypper`` is declared only where the name was identical
+#: everywhere it *was* measured, because openSUSE was not one of the probes and
+#: guessing from the RHEL column is how the three errors above happened.
+_PACKAGE_NAMES: "dict[str, dict[str, str | None]]" = {
+    # Identical on Debian, Fedora, Arch and Alpine — safe everywhere.
+    "fail2ban":      {"apt": "fail2ban",      "dnf": "fail2ban",  "pacman": "fail2ban",  "apk": "fail2ban",  "zypper": "fail2ban"},
+    "logrotate":     {"apt": "logrotate",     "dnf": "logrotate", "pacman": "logrotate", "apk": "logrotate", "zypper": "logrotate"},
+    "smartmontools": {"apt": "smartmontools", "dnf": "smartmontools", "pacman": "smartmontools", "apk": "smartmontools", "zypper": "smartmontools"},
+    "clamav":        {"apt": "clamav",        "dnf": "clamav",    "pacman": "clamav",    "apk": "clamav",    "zypper": "clamav"},
+    "ufw":           {"apt": "ufw",           "dnf": "ufw",       "pacman": "ufw",       "apk": "ufw",       "zypper": None},
+    "borgmatic":     {"apt": "borgmatic",     "dnf": "borgmatic", "pacman": "borgmatic", "apk": "borgmatic", "zypper": None},
+
+    # Measured differences.
+    "auditd":        {"apt": "auditd",        "dnf": "audit",     "pacman": "audit",     "apk": "audit",     "zypper": None},
+    "pwquality":     {"apt": "libpam-pwquality", "dnf": "libpwquality", "pacman": "libpwquality", "apk": "libpwquality", "zypper": None},
+    "borgbackup":    {"apt": "borgbackup",    "dnf": "borgbackup", "pacman": "borg",     "apk": "borgbackup", "zypper": None},
+    "clamav-daemon": {"apt": "clamav-daemon", "dnf": "clamd",     "pacman": None,        "apk": "clamav-daemon", "zypper": None},
+    "rkhunter":      {"apt": "rkhunter",      "dnf": "rkhunter",  "pacman": "rkhunter",  "apk": None,        "zypper": None},
+    "audit-plugins": {"apt": "audispd-plugins", "dnf": "audispd-plugins", "pacman": "audispd-plugins", "apk": None, "zypper": None},
+    "apparmor":      {"apt": "apparmor",      "dnf": None,        "pacman": "apparmor",  "apk": "apparmor",  "zypper": None},
+
+    # Debian-only, or drifting with the distribution's own version.
+    #
+    # ``iptables`` is not a missing measurement: Fedora ships it under a
+    # different package (``iptables-nft`` / ``iptables-legacy``) and which one
+    # is right depends on the host's firewall backend. That is a decision, not
+    # a name lookup, so BOB does not make it.
+    "apparmor-utils":    {"apt": "apparmor-utils"},
+    "apparmor-profiles": {"apt": "apparmor-profiles apparmor-profiles-extra"},
+    "aide":              {"apt": "aide", "dnf": "aide"},
+    "iptables":          {"apt": "iptables", "pacman": "iptables", "apk": "iptables"},
+    "auto-updates":      {"apt": "unattended-upgrades"},
+
+    # CPU microcode. Measured the same day and for the same reason: the
+    # firmware check asked ``rpm -q intel-microcode`` on Fedora and ``pacman -Q
+    # intel-microcode`` on Arch, where those packages do not exist under those
+    # names, and turned the empty answer into "no microcode package installed"
+    # plus a one-point deduction. That is a false *verdict*, on every host of
+    # two distribution families, not merely unusable advice — and the docstring
+    # of the query helper had named ``microcode_ctl`` since v0.15.2 while the
+    # list of names it was given stayed Debian's.
+    "microcode-intel":   {"apt": "intel-microcode", "dnf": "microcode_ctl", "pacman": "intel-ucode", "apk": "intel-ucode"},
+    "microcode-amd":     {"apt": "amd64-microcode", "dnf": "amd-ucode-firmware", "pacman": "amd-ucode", "apk": "amd-ucode"},
+}
+
+
+def package_name_candidates(logical: str) -> "tuple[str, ...]":
+    """Every name *logical* is known by, across all managers.
+
+    For asking rather than installing. A query costs nothing and cannot be
+    wrong: ``intel-ucode`` is simply absent on Debian. Asserting *absence* is
+    what needs the manager to be known — see :func:`package_name`.
+    """
+    names = _PACKAGE_NAMES.get(logical)
+    if names is None:
+        raise KeyError(f"no package mapping declared for {logical!r}")
+    seen: "dict[str, None]" = {}
+    for value in names.values():
+        if value:
+            for part in value.split():
+                seen[part] = None
+    return tuple(seen)
+
+#: ``yum`` reads the same repositories as ``dnf``; ``apt-get`` the same as
+#: ``apt``. Declared once rather than duplicated down the table.
+_MANAGER_ALIASES = {"yum": "dnf", "apt-get": "apt"}
+
+
+def detect_install_manager() -> str:
+    """The package manager this host installs with, or ``""`` when unknown.
+
+    Deliberately separate from :func:`package_installed`, which answers with the
+    *query* tool: a host has ``rpm`` for asking and ``dnf`` for installing, and
+    ``rpm`` cannot tell Fedora from openSUSE while ``dnf`` and ``zypper`` can.
+    """
+    for tool, _template in _INSTALL_MANAGERS:
+        if _command_exists(tool):
+            return tool
+    return ""
+
+
+def package_name(logical: str, manager: str) -> "str | None":
+    """What *logical* is called for *manager*, or None when BOB does not know."""
+    names = _PACKAGE_NAMES.get(logical)
+    if names is None:
+        raise KeyError(f"no package mapping declared for {logical!r}")
+    return names.get(_MANAGER_ALIASES.get(manager, manager))
+
+
+def install_command(*logical: str, manager: "str | None" = None) -> "str | None":
+    """The command that installs *logical* here, or None when BOB cannot say.
+
+    None is a verdict, not a failure: the caller must then leave the finding
+    without a command, so it is reported as manual work rather than as a fix
+    that ``--fix --apply`` would run and count. A command that installs nothing
+    still exits 0 on some managers, which would have BOB report success.
+    """
+    mgr = detect_install_manager() if manager is None else manager
+    if not mgr:
+        return None
+    names = [package_name(name, mgr) for name in logical]
+    if any(n is None for n in names):
+        return None
+    template = dict(_INSTALL_MANAGERS).get(mgr)
+    if template is None:
+        return None
+    return template.replace(_PKGS, " ".join(n for n in names if n))
+
+
+def install_advice(t, *logical: str, manager: "str | None" = None) -> str:
+    """Prose for the case :func:`install_command` cannot answer.
+
+    Names the Debian package as an illustration and says plainly that the name
+    on this host is not known, rather than transliterating it into a command
+    that would fail. The operator's own package manager can search for it; BOB
+    guessing on their behalf is what this whole module exists to stop.
+    """
+    mgr = detect_install_manager() if manager is None else manager
+    example = " ".join(
+        n for n in (package_name(name, "apt") for name in logical) if n
+    ) or " ".join(logical)
+    if not mgr:
+        return t("install.no_manager", example=example)
+    return t("install.unknown_name", manager=mgr, example=example)
+
+
+def install_fix(t, detail: "str | None", *logical: str,
+                then: str = "", then_apt: str = "") -> "tuple[str | None, str]":
+    """``(cmd, detail)`` for a finding whose remedy is "install this package".
+
+    The single shape every call site uses, so the decision *not* to invent a
+    command is taken in one place. When the name is unknown the command becomes
+    None — which puts the finding in the manual bucket rather than among the
+    fixes ``--fix --apply`` will run and count — and the reason is appended to
+    the detail, where the operator is already reading.
+
+    *then* is a follow-up command that works anywhere (``systemctl enable`` and
+    friends). *then_apt* is one that does **not**: ``aideinit``,
+    ``pam-auth-update`` and ``dpkg-reconfigure`` are Debian's own tools, and
+    three findings appended them to advice they were about to hand a Fedora or
+    Arch operator. Where a *then_apt* is declared and the host does not install
+    with apt, there is no command — half a remedy is not a remedy.
+    """
+    mgr = detect_install_manager()
+    cmd = install_command(*logical, manager=mgr)
+    if cmd and then_apt and _MANAGER_ALIASES.get(mgr, mgr) != "apt":
+        cmd = None
+    if cmd:
+        for suffix in (then, then_apt):
+            if suffix:
+                cmd = f"{cmd} && {suffix}"
+        # Never None: ``Finding.detail`` is typed ``str`` and sanitised
+        # unconditionally, so a None reaches ``_flatten`` and raises.
+        return cmd, detail or ""
+    advice = install_advice(t, *logical, manager=mgr)
+    return None, f"{detail} {advice}" if detail else advice
 
 
 def path_exists(path: "Path") -> bool:

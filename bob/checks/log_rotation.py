@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import TranslationFunc, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 
@@ -149,13 +149,15 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
     # 1. logrotate                                                         #
     # ------------------------------------------------------------------ #
     if not snapshot.logrotate_installed:
+        _cmd, _detail = install_fix(
+            _t, _t("log_rotation.logrotate_missing_detail"), "logrotate")
         result.warn_with_deduction(
             key="log_rotation.logrotate_missing",
             message=_t("log_rotation.logrotate_missing"),
             reason=_t("log_rotation.logrotate_missing_reason"),
             points=1,
-            detail=_t("log_rotation.logrotate_missing_detail"),
-            cmd="sudo apt install -y logrotate",
+            detail=_detail,
+            cmd=_cmd,
             nature="improvement",
         )
     else:

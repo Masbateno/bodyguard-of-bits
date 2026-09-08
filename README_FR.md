@@ -314,7 +314,11 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 | **Tier 2** (validé par la CI) | Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 | Smoke + audit hors ligne sur chaque PR ; pas de sentinelles locale, pas de traceback Python |
 | **Tier 3** (fonctionne mais non testé) | Autres Debian / RHEL / SUSE / Arch-family | Best-effort ; les vérifications dégradent proprement |
 
-Sur les distributions non-apt (Fedora, RHEL, openSUSE, Arch), les checks reposant sur `apt` (ex : mises à jour de sécurité en attente) émettent INFO au lieu de WARN — BOB ne consomme pas encore les métadonnées `dnf`/`zypper`/`pacman`. Les références CIS Ubuntu 22.04 restent émises tant que le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de la distribution.
+Sur les distributions non-apt (Fedora, RHEL, openSUSE, Arch, Alpine), les checks qui s'appuient sur les métadonnées `apt` (ex. mises à jour de sécurité en attente) émettent INFO au lieu de WARN — BOB ne consomme pas les métadonnées de mise à jour de `dnf`/`zypper`/`pacman`. Les références CIS Ubuntu 22.04 restent émises quand le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de l'OS.
+
+**Les commandes de remédiation sont choisies pour votre gestionnaire de paquets** depuis la v0.17.0. Auparavant, chaque finding « installez ceci » affichait `sudo apt install …` sur tous les hôtes, avec les noms de paquets de Debian — or `sudo dnf install auditd` n'installe rien, Fedora l'appelant `audit`. Les noms ont été mesurés en conteneur, pas récités ; et là où BOB n'a pas de nom mesuré pour votre gestionnaire, il le dit au lieu d'inventer une commande : une instruction qui n'installe rien est pire qu'un aveu, puisque vous n'avez aucune raison d'en douter.
+
+La même version corrige une interrogation qui répondait oui à tout sur toute la famille RPM. `rpm -q paquet-inexistant` écrit « package paquet-inexistant is not installed » sur **stdout** et sort en 1 ; BOB comptait toute sortie comme preuve d'installation, si bien que sur Fedora, RHEL et openSUSE tout paquet était réputé installé — y compris des noms qui n'existent nulle part. L'effet visible : un audit qui rendait compte de services absents, et un verdict microcode « OK » qui n'avait rien vérifié. **Si vous faites tourner BOB sur une distribution RPM, la v0.17.0 n'est pas optionnelle.**
 
 ---
 

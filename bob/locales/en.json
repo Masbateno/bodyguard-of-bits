@@ -135,6 +135,10 @@
     "warn": "WARNING",
     "alert": "ALERT"
   },
+  "install": {
+    "no_manager": "BOB found no package manager it knows on this host. On Debian and Ubuntu this is provided by: {example}",
+    "unknown_name": "BOB does not know what this package is called for {manager}, so it will not invent a command that would install nothing. On Debian and Ubuntu it is: {example} — search your own repositories for the equivalent."
+  },
   "prerequisites": {
     "ufw_installed": "UFW is installed",
     "ufw_missing": "UFW is not installed — install it with: sudo apt install ufw"

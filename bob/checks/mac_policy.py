@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, path_exists
+from bob.checks._run import install_fix, TranslationFunc, _command_exists, _identity_t, _run, path_exists
 from bob.scoring import CheckResult
 
 # Regex: "   N profiles are in enforce mode."
@@ -231,11 +231,13 @@ def check_mac_policy(
         and snapshot.apparmor_enforcing == 0
         and snapshot.apparmor_complain == 0
     ):
+        _cmd, _detail = install_fix(
+            _t, _t("mac_policy.apparmor_no_profiles_detail"), "apparmor-profiles")
         if profile_name == "desktop":
             result.info(
                 message=_t("mac_policy.apparmor_no_profiles"),
-                detail=_t("mac_policy.apparmor_no_profiles_detail"),
-                cmd="sudo apt install -y apparmor-profiles apparmor-profiles-extra",
+                detail=_detail,
+                cmd=_cmd,
                 key="mac_policy.apparmor_no_profiles",
             )
         else:
@@ -244,8 +246,8 @@ def check_mac_policy(
                 message=_t("mac_policy.apparmor_no_profiles"),
                 reason=_t("mac_policy.apparmor_no_profiles_reason"),
                 points=1,
-                detail=_t("mac_policy.apparmor_no_profiles_detail"),
-                cmd="sudo apt install -y apparmor-profiles apparmor-profiles-extra",
+                detail=_detail,
+                cmd=_cmd,
                 nature="action",
             )
         return result
@@ -322,13 +324,22 @@ def check_mac_policy(
         return result
 
     # --- No MAC framework found ---------------------------------------------
+    # `apparmor-utils` is Debian's split of the tooling; Arch and Alpine ship it
+    # inside `apparmor`, and Fedora ships SELinux instead of AppArmor entirely.
+    # The systemctl half is portable, so it rides along wherever a command is
+    # produced at all.
+    _cmd, _detail = install_fix(
+        _t, _t("mac_policy.no_mac_detail"), "apparmor",
+        then="sudo systemctl enable --now apparmor",
+        then_apt="sudo apt install -y apparmor-utils",
+    )
     result.warn_with_deduction(
         key="mac_policy.no_mac",
         message=_t("mac_policy.no_mac"),
         reason=_t("mac_policy.no_mac_reason"),
         points=1,
-        detail=_t("mac_policy.no_mac_detail"),
-        cmd="sudo apt install -y apparmor apparmor-utils && sudo systemctl enable --now apparmor",
+        detail=_detail,
+        cmd=_cmd,
         nature="action",
     )
     return result

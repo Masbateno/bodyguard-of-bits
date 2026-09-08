@@ -29,6 +29,12 @@ class TestEveryManagerIsAsked:
     def test_the_manager_is_in_the_table(self, tool):
         assert tool in [entry[0] for entry in _PACKAGE_QUERIES]
 
+    def test_every_row_declares_how_its_answer_is_read(self):
+        """v0.17.0 added the fourth field; a row missing it reads as output."""
+        for entry in _PACKAGE_QUERIES:
+            assert len(entry) == 4, f"{entry[0]} does not say how it is judged"
+            assert isinstance(entry[3], bool)
+
     def test_dpkg_leads(self):
         """Debian is the project's reference; its query stays first."""
         assert _PACKAGE_QUERIES[0][0] == "dpkg-query"
@@ -37,19 +43,22 @@ class TestEveryManagerIsAsked:
         """One `_command_exists` per family is the whole cost on any host."""
         with (
             patch("bob.checks._run._command_exists", return_value=False),
-            patch("bob.checks._run._run") as runner,
+            patch("bob.checks._run.run_result") as runner,
         ):
             assert package_installed("anything") is None
         runner.assert_not_called()
 
 
 class TestHowEachAnswerIsRead:
-    def _ask(self, present_tool, output):
+    def _ask(self, present_tool, output, ok=True):
+        from bob.checks._run import CommandResult
+
         def exists(tool):
             return tool == present_tool
         with (
             patch("bob.checks._run._command_exists", side_effect=exists),
-            patch("bob.checks._run._run", return_value=output),
+            patch("bob.checks._run.run_result",
+                  return_value=CommandResult(stdout=output, ok=ok, stderr="")),
         ):
             return package_installed("whatever")
 
@@ -61,18 +70,30 @@ class TestHowEachAnswerIsRead:
         assert self._ask("dpkg-query", "deinstall ok config-files") is None
 
     @pytest.mark.parametrize("tool,output", [
-        ("rpm",    "httpd-2.4.62-1.fc41.x86_64\n"),
         ("pacman", "apache 2.4.62-1\n"),
         ("apk",    "vsftpd-3.0.5-r2\n"),
     ])
-    def test_the_others_answer_by_printing_the_package(self, tool, output):
+    def test_pacman_and_apk_answer_by_printing_the_package(self, tool, output):
         assert self._ask(tool, output) == tool
 
-    @pytest.mark.parametrize("tool", ["rpm", "pacman", "apk"])
+    def test_rpm_answers_with_its_exit_code(self):
+        """v0.17.0 — rpm was in the list above, and should never have been.
+
+        ``rpm -q nosuchpackage`` prints *"package nosuchpackage is not
+        installed"* on **stdout** and exits 1, so "any output proves installed"
+        made every query answer yes on the whole RHEL family. Measured on
+        fedora:latest: v0.16.4 reported ``amd64-microcode`` — a Debian
+        package — installed, and an invented name too. It is asked with
+        ``--quiet`` now, which prints nothing either way.
+        """
+        assert self._ask("rpm", "", ok=True) == "rpm"
+        assert self._ask("rpm", "package whatever is not installed\n", ok=False) is None
+
+    @pytest.mark.parametrize("tool", ["pacman", "apk"])
     def test_silence_means_absent(self, tool):
         assert self._ask(tool, "") is None
 
-    @pytest.mark.parametrize("tool", ["rpm", "pacman", "apk"])
+    @pytest.mark.parametrize("tool", ["pacman", "apk"])
     def test_whitespace_is_not_an_answer(self, tool):
         assert self._ask(tool, "  \n\t\n") is None
 
@@ -88,14 +109,16 @@ class TestTheDpkgArgumentSurvivesSubstitution:
     def test_the_status_format_reaches_dpkg_intact(self):
         seen = {}
 
+        from bob.checks._run import CommandResult
+
         def record(*args, **kwargs):
             seen["args"] = args
-            return ""
+            return CommandResult(stdout="", ok=False, stderr="")
 
         with (
             patch("bob.checks._run._command_exists",
                   side_effect=lambda tool: tool == "dpkg-query"),
-            patch("bob.checks._run._run", side_effect=record),
+            patch("bob.checks._run.run_result", side_effect=record),
         ):
             package_installed("nginx")
         assert seen["args"] == ("dpkg-query", "-W", "-f=${Status}", "nginx")

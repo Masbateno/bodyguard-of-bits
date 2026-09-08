@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, install_fix
 from bob.scoring import CheckResult
 
 _OPEN_ANY_RE = re.compile(
@@ -138,10 +138,12 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
 
     # --- UFW installed ---
     if not status.installed:
+        _cmd, _detail = install_fix(_t, None, "ufw")
         result.alert(
             message=_t("prerequisites.ufw_missing"),
+            detail=_detail,
             nature="action",
-            cmd="sudo apt install -y ufw",
+            cmd=_cmd,
             key="prerequisites.ufw_missing",
         )
         return result  # nothing more to check

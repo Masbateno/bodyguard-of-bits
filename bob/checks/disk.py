@@ -25,7 +25,7 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, install_fix
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -130,10 +130,11 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
 
     # --- smartctl unavailable ---
     if not snapshot.smartctl_available:
+        _cmd, _detail = install_fix(_t, _t("disk.smartctl_missing_detail"), "smartmontools")
         result.info(
             message=_t("disk.smartctl_missing"),
-            detail=_t("disk.smartctl_missing_detail"),
-            cmd="sudo apt install -y smartmontools",
+            detail=_detail,
+            cmd=_cmd,
             key="disk.smartctl_missing",
         )
 

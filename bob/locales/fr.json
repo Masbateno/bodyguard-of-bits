@@ -135,6 +135,10 @@
     "warn": "ATTENTION",
     "alert": "ALERTE"
   },
+  "install": {
+    "no_manager": "BOB n'a trouvé sur cet hôte aucun gestionnaire de paquets qu'il connaisse. Sur Debian et Ubuntu, cela est fourni par : {example}",
+    "unknown_name": "BOB ignore le nom de ce paquet pour {manager} et n'inventera pas une commande qui n'installerait rien. Sur Debian et Ubuntu il s'appelle : {example} — cherchez l'équivalent dans vos propres dépôts."
+  },
   "prerequisites": {
     "ufw_installed": "UFW est installé",
     "ufw_missing": "UFW n'est pas installé — installez-le avec : sudo apt install ufw"

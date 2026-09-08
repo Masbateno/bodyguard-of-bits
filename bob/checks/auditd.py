@@ -29,6 +29,7 @@ from bob.checks._run import (
     _command_exists,
     _identity_t,
     _run,
+    install_fix,
     run_result,
     unit_active_state,
 )
@@ -187,10 +188,12 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
     is_desktop = profile_name.lower() in ("desktop", "workstation")
 
     if not snapshot.installed:
+        _cmd, _detail = install_fix(
+            _t, _t("auditd.not_installed_detail"), "auditd", "audit-plugins")
         result.info(
             message=_t("auditd.not_installed"),
-            detail=_t("auditd.not_installed_detail"),
-            cmd="sudo apt install -y auditd audispd-plugins",
+            detail=_detail,
+            cmd=_cmd,
             key="auditd.not_installed",
         )
         return result

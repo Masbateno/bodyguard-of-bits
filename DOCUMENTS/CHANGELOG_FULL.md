@@ -8,7 +8,9 @@ All notable changes to this project are documented here.
 
 ## [v0.17.0] — 2026-09-08
 
-**The cron wizard promised delivery it had never established.**
+**On the whole RPM family, BOB answered yes to every package it was asked
+about — including names that exist nowhere. And the cron wizard promised
+delivery it had never established.**
 
 `--install-cron` printed *"Mail transport: Postfix (sendmail available —
 notifications will be delivered)"*, and the entire basis for that sentence was
@@ -30,6 +32,83 @@ had nothing.
 It also stops short of the same mistake at the other end: sendmail exiting 0
 means the MTA queued the message, and a relay or a spam filter can still drop
 it. The command says *accepted*, and says that accepted is not delivered.
+
+### The verdicts were portable. The remedies attached to them were not.
+
+v0.15.2 taught the package query to ask five managers instead of dpkg alone,
+because a dpkg-only question reported every service absent on four
+distributions out of five. The advice half of that lesson went unlearned:
+eighteen findings told the operator to run `sudo apt install …` whatever host
+they were on, so BOB was right about the problem and wrong about the fix.
+
+Every install command is built from one table now, for the manager the host
+actually has. The names in it were **measured in containers** rather than
+recalled, and the recalled version was wrong in three places:
+
+| BOB wants | Debian | Fedora | Arch |
+|---|---|---|---|
+| `auditd` | auditd | **audit** | **audit** |
+| `libpam-pwquality` | libpam-pwquality | **libpwquality** | **libpwquality** |
+| `borgbackup` | borgbackup | borgbackup | **borg** |
+| `aide` | aide | aide | **absent** |
+
+`sudo dnf install auditd` installs nothing. `sudo pacman -S aide` fails: aide is
+not in Arch's repositories at all. So where BOB has no measured name, it emits
+**no command** — it says what it is looking for, gives the Debian package as an
+illustration and admits the gap. A synthesised command is worse than none: a
+specific, confident instruction that does nothing, which the operator has no
+reason to doubt.
+
+The same rule covers follow-ups. `aideinit`, `pam-auth-update` and
+`dpkg-reconfigure` are Debian's own tools, and three findings appended them to
+advice they were about to hand a Fedora or Arch operator; half a remedy is not
+a remedy, so those produce no command either. `systemctl enable --now`, being
+portable, still rides along.
+
+### rpm answered yes to every question, including invented ones
+
+`rpm -q nosuchpackage` prints *"package nosuchpackage is not installed"* on
+**stdout** and exits 1. The query table said "any output at all proves the
+package is installed" — a claim written for rpm and true only of pacman and
+apk. So on RHEL, Fedora and openSUSE, `package_installed` answered yes for
+every name it was ever given. Measured on `fedora:latest`: v0.16.4 reported
+`amd64-microcode` — a Debian package — installed, and a string invented on the
+spot too.
+
+v0.15.2 had replaced "everything absent outside Debian" with the same fault
+inverted for the rpm family, and nothing noticed, because this failure mode is
+silence: a check that believes a package is present simply stops asking. The
+audit of a Fedora container went from 137 findings to 60 — the missing 77 were
+about services that were not installed. The microcode verdict said **OK**
+having checked nothing; it says `missing` now, correctly, and costs its point.
+
+rpm is asked with `--quiet` and judged by its exit status. pacman and apk keep
+their output test, because they genuinely print nothing when the package is
+absent — measured the same day.
+
+### Two defects this found in the writing of it
+
+Neither was visible from a green suite on this Debian host.
+
+`Finding.cmd` is typed `str` and sanitised unconditionally, so the first
+`cmd=None` raised `AttributeError` **inside a check**, where fault isolation
+caught it and rendered the whole section *"unavailable"*. Three checks died
+that way on Arch and Fedora while every test here passed, because on Debian the
+command is never None. There is a guard now that forces the branch by naming a
+manager rather than by detecting one.
+
+And the guard that had held every install command to a non-interactive flag
+since v0.16.4 went quietly inert: it scraped `cmd="…"` literals from the source,
+and the literals had just moved into a table. It reads the table too now — and
+caught a missing flag in it on the first run. It had also never seen
+`clamav.py`, which froze its command into a dataclass default and handed it
+over as `cmd=snapshot.install_cmd`; a Fedora audit kept printing
+`sudo apt install -y clamav clamav-daemon` after every other finding had been
+made portable.
+
+A/B against v0.16.4 in containers: **Arch and Alpine, no verdict moves at all**
+— only the commands change. Fedora loses five findings it should never have
+made and gains two it should have.
 
 ### A job with no address told nobody, and nothing said so
 
@@ -74,7 +153,7 @@ of the real wizard found it in one pass, and the guard that replaced it drives
 the function against a recording screen and requires every word of the notice
 to land on a row.
 
-**Tests** 8951 → **9016**. **Mutations** 56 → **65**.
+**Tests** 8951 → **9098**. **Mutations** 56 → **72**.
 
 ---
 

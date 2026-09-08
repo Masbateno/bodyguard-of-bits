@@ -195,12 +195,22 @@ class Finding:
             # keeps that behaviour for every format at once.
             return text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
 
-        self.message = sanitize(_flatten(self.message), max_len=2048)
-        self.detail  = sanitize(_flatten(self.detail),  max_len=2048)
-        self.note    = sanitize(_flatten(self.note),    max_len=2048)
+        # v0.17.0 — None is now a meaningful answer, not a programming error:
+        # ``install_command`` returns it when BOB does not know what a package
+        # is called on this distribution, and the finding must then carry no
+        # command at all. These four fields are typed ``str`` and sanitised
+        # unconditionally, so a None reached ``.replace`` and raised
+        # AttributeError *inside a check* — where fault isolation caught it and
+        # rendered the whole section "unavailable". Three checks died that way
+        # on Arch and Fedora while the Debian suite stayed green, because on
+        # Debian the command is never None.
+        self.message = sanitize(_flatten(self.message or ""), max_len=2048)
+        self.detail  = sanitize(_flatten(self.detail or ""),  max_len=2048)
+        self.note    = sanitize(_flatten(self.note or ""),    max_len=2048)
         # cmd keeps its newlines — remediation blocks are legitimately
         # multi-line — but a stray CR or tab still becomes a space.
-        self.cmd     = sanitize_multiline(self.cmd.replace("\r\n", "\n").replace("\r", " ").replace("\t", " "))
+        self.cmd     = sanitize_multiline(
+            (self.cmd or "").replace("\r\n", "\n").replace("\r", " ").replace("\t", " "))
 
 @dataclass
 class ScoreCap:

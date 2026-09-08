@@ -63,9 +63,35 @@ def _fix_commands():
     return out
 
 
+def _install_templates():
+    """The rendered install commands from the shared table.
+
+    v0.17.0 moved every ``sudo apt install …`` out of the call sites and into
+    ``_INSTALL_MANAGERS``, because a Debian command is wrong advice on a Fedora
+    host. That emptied this guard without failing it — the AST scrape simply
+    found nothing to object to, which is how a guard goes quietly inert. The
+    table is now scraped too, so a template written without its
+    non-interactive flag is caught in the one place all of them live.
+    """
+    from bob.checks._run import _INSTALL_MANAGERS, _PKGS
+    return [
+        (f"bob/checks/_run.py:_INSTALL_MANAGERS[{tool}]", f"install.{tool}",
+         "action", "fix", template.replace(_PKGS, "somepackage"))
+        for tool, template in _INSTALL_MANAGERS
+    ]
+
+
 def test_the_scan_finds_commands_at_all():
     """A scraper that matched nothing would satisfy everything below."""
-    assert len(_fix_commands()) > 100, "the cmd scrape broke"
+    assert len(_fix_commands()) > 80, "the cmd scrape broke"
+
+
+def test_every_manager_has_a_template_to_scan():
+    """The install half moved to a table; the guard has to follow it there."""
+    from bob.checks._run import _INSTALL_MANAGERS
+    rendered = _install_templates()
+    assert len(rendered) == len(_INSTALL_MANAGERS) >= 5
+    assert all("somepackage" in text for *_rest, text in rendered)
 
 
 @pytest.mark.parametrize("manager", sorted(_PROMPTS))
@@ -73,7 +99,7 @@ def test_no_install_command_would_stop_to_ask(manager):
     """Whether BOB runs it or the operator copies it, it must not hang."""
     flags = _PROMPTS[manager]
     offenders = []
-    for where, key, _nature, _ctype, text in _fix_commands():
+    for where, key, _nature, _ctype, text in _fix_commands() + _install_templates():
         if not re.search(rf"\b{re.escape(manager)}\b", text):
             continue
         if not re.search(r"\b(install|add|-S)\b", text):

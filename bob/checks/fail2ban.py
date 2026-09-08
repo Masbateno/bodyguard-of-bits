@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, unit_active_state
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, install_fix, unit_active_state
 from bob.scoring import CheckResult
 
 # Jail names that protect SSH (checked via substring match)
@@ -136,10 +136,11 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
     result = CheckResult()
 
     if not snapshot.installed:
+        _cmd, _detail = install_fix(_t, _t("fail2ban.not_installed_detail"), "fail2ban")
         result.info(
             message=_t("fail2ban.not_installed"),
-            detail=_t("fail2ban.not_installed_detail"),
-            cmd="sudo apt install -y fail2ban",
+            detail=_detail,
+            cmd=_cmd,
             key="fail2ban.not_installed",
         )
         return result

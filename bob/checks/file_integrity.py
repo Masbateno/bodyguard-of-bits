@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists
+from bob.checks._run import install_fix, TranslationFunc, _command_exists, _identity_t, path_exists
 from bob.scoring import CheckResult
 
 # Age threshold before a stale check is flagged
@@ -152,10 +152,16 @@ def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | N
     result = CheckResult()
 
     if not snapshot.tool:
+        # `aideinit` is Debian's wrapper. Fedora's aide wants `aide --init`, and
+        # appending Debian's name to a dnf command would hand the operator a
+        # remedy whose second half cannot run.
+        _cmd, _detail = install_fix(
+            _t, _t("file_integrity.not_installed_detail"), "aide",
+            then_apt="sudo aideinit")
         result.info(
             message=_t("file_integrity.not_installed"),
-            detail=_t("file_integrity.not_installed_detail"),
-            cmd="sudo apt install -y aide && sudo aideinit",
+            detail=_detail,
+            cmd=_cmd,
             key="file_integrity.not_installed",
         )
         return result

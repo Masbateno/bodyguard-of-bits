@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import package_installed, _command_exists, _identity_t, _run, is_unit_active, path_exists
+from bob.checks._run import install_fix, package_installed, _command_exists, _identity_t, _run, is_unit_active, path_exists
 from bob.scoring import CheckResult
 
 # Age threshold (in seconds) above which the APT cache is considered stale.
@@ -352,13 +352,20 @@ def check_updates(
     if not uu_ok:
         if security and profile_name not in ("workstation", "desktop"):
             # Compound risk: security gap + no automation (server/default only)
+            # Unattended upgrades are a Debian package *and* a Debian concept:
+            # Fedora's equivalent is dnf-automatic, whose own package name moved
+            # to dnf5-plugin-automatic, and which is configured differently.
+            # BOB names what it wants and stops there.
+            _cmd, _detail = install_fix(
+                _t, _t("updates.unattended_not_configured_detail"), "auto-updates",
+                then_apt="sudo dpkg-reconfigure -plow unattended-upgrades")
             result.warn_with_deduction(
                 key="updates.unattended_not_configured",
                 message=_t("updates.unattended_not_configured"),
                 reason=_t("updates.unattended_not_configured_reason"),
                 points=1,
-                detail=_t("updates.unattended_not_configured_detail"),
-                cmd="sudo apt install -y unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
+                detail=_detail,
+                cmd=_cmd,
                 nature="improvement",
             )
         else:

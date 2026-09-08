@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, is_unit_active, path_exists  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import TranslationFunc, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,12 @@ class ClamAVSnapshot:
     clamd_active:         bool           = False  # clamav-daemon service running
     db_age_days:          int | None  = None   # None = no DB file found
     last_scan_date:       str | None  = None   # ISO date string or None
-    install_cmd:          str            = "sudo apt install -y clamav clamav-daemon"
+    # v0.17.0: no longer a Debian command frozen into a default. It reached the
+    # screen through ``cmd=snapshot.install_cmd``, so neither the sweep over
+    # ``cmd="…"`` literals nor the guard over them saw it, and a Fedora audit
+    # kept printing `sudo apt install -y clamav clamav-daemon` after every other
+    # finding had been made portable.
+    install_cmd:          "str | None"   = None
 
     @classmethod
     def from_system(cls) -> "ClamAVSnapshot":
@@ -156,10 +161,12 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
 
     # --- Not installed ---
     if not snapshot.installed:
+        _cmd, _detail = install_fix(
+            _t, _t("clamav.not_installed_detail"), "clamav", "clamav-daemon")
         result.info(
             message=_t("clamav.not_installed"),
-            detail=_t("clamav.not_installed_detail"),
-            cmd=snapshot.install_cmd,
+            detail=_detail,
+            cmd=snapshot.install_cmd or _cmd,
             key="clamav.not_installed",
         )
         return result
@@ -169,12 +176,14 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
 
     # --- freshclam ---
     if not snapshot.freshclam_installed:
+        _cmd, _detail = install_fix(
+            _t, _t("clamav.freshclam_missing_detail"), "clamav")
         result.warn_with_deduction(
             key="clamav.freshclam_missing",
             message=_t("clamav.freshclam_missing"),
             points=1,
-            detail=_t("clamav.freshclam_missing_detail"),
-            cmd="sudo apt install -y clamav",
+            detail=_detail,
+            cmd=_cmd,
             nature="action",
         )
 

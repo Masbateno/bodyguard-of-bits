@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t, join_continuations
+from bob.checks._run import install_fix, TranslationFunc, _identity_t, join_continuations
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -232,13 +232,19 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
         # rejects any shell operator (&&, ||, ;) via fixes._has_shell_ops.
         # Two-step install isn't safely chainable in a single exec — emit as
         # improvement so the user sees the guidance without --fix breaking.
+        # `pam-auth-update` is Debian's PAM stack editor and exists nowhere
+        # else; on any other distribution the module has to be wired into the
+        # PAM files by hand, so half a command would be worse than none.
+        _cmd, _detail = install_fix(
+            _t, _t("password_policy.no_quality_module_detail"), "pwquality",
+            then_apt="sudo pam-auth-update")
         result.warn_with_deduction(
             key="password_policy.no_quality_module",
             message=_t("password_policy.no_quality_module"),
             reason=_t("password_policy.no_quality_module_reason"),
             points=_DEDUCTION_NO_QUALITY_MODULE,
-            detail=_t("password_policy.no_quality_module_detail"),
-            cmd="sudo apt install -y libpam-pwquality && sudo pam-auth-update",
+            detail=_detail,
+            cmd=_cmd,
             nature="improvement",
         )
         has_finding = True
