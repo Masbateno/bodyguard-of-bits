@@ -75,6 +75,7 @@ from bob.checks.systemd_hardening import ServiceHardeningSnapshot, check_service
 from bob.checks.container_security import ContainerSecuritySnapshot, check_container_security
 from bob.checks.socket_units import SocketUnitsSnapshot, check_socket_units
 from bob.checks.cloud_context import CloudContextSnapshot, check_cloud_context
+from bob.checks.raspberry_pi import RaspberryPiSnapshot, check_raspberry_pi
 from bob.checks.firmware import FirmwareSnapshot, check_firmware
 from bob.plugin_checks import load_plugin_checks
 
@@ -126,6 +127,7 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("container_security", False),
     _Section("socket_units",      False),
     _Section("cloud_context",     False),
+    _Section("raspberry_pi",      False),
     _Section("updates",           False),
     _Section("umask",             False),
     _Section("memory",            False),
@@ -939,6 +941,10 @@ def run_checks(
     # ---- CHECK 49 — Host-side cloud context (only on a cloud instance) ----
     _sec("cloud_context", CloudContextSnapshot.from_system, check_cloud_context,
          skip_if=lambda s: not s.is_cloud)
+
+    # ---- CHECK 50 — Raspberry Pi boot partition (only on a Pi) ----
+    _sec("raspberry_pi", RaspberryPiSnapshot.from_system, check_raspberry_pi,
+         skip_if=lambda s: not s.is_pi)
 
     # ---- CHECK 13 — System updates ----
     _sec("updates", UpdatesSnapshot.from_system, check_updates, profile_name=_pname)

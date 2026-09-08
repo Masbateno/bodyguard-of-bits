@@ -135,6 +135,66 @@ the false deduction. Alpine's warning becomes an INFO that says what was not
 established. On Debian, nothing moves: same score, same 93 findings, same
 deductions, not one command changed.
 
+### And it had never asked what machine it was on
+
+Every check reasoned about software; none about the hardware underneath. Three
+findings stated x86 facts on boards that have no x86 in them, and the clearest
+was Secure Boot: with no UEFI firmware present, BOB announced **"Legacy BIOS
+detected"** — and a Raspberry Pi has no BIOS either. It boots from a bootloader
+in EEPROM. The sentence was a guess wearing the clothes of an observation, and
+it now says only what was established: no UEFI was found. When the firmware
+names the board, the message names it back.
+
+`bob/platform.py` reads the machine from `uname` and the board from the device
+tree, falling back to `/proc/cpuinfo`. It answers empty rather than guessing,
+which is the same contract as `package_installed` and `read_pam_stack`.
+
+### The Raspberry Pi section
+
+A Pi boots from a **FAT partition**, and FAT carries no ownership and no
+permission bits of its own. A file's apparent mode comes entirely from the
+mount options, and none of it survives the card being read on another machine.
+
+The Raspberry Pi Imager writes provisioning files there, and one of them holds
+a **password hash**. The first boot is meant to consume and delete it. When it
+is still present, a credential digest is sitting on a filesystem that cannot
+protect it — and the same hash usually still guards the live account, so
+cracking it offline is not a historical curiosity but the current password.
+BOB reports the mode it measured rather than one it assumed, and recognises
+every crypt scheme the imager writes, including Bookworm's yescrypt.
+
+The section also reports the first-boot `ssh` marker (INFO — sshd's own
+configuration decides what that exposes, and the ssh section already judges
+it), and the distribution's historical `pi` account when it can actually log
+in. "Exists" is not the finding: an account whose password field is `!` or `*`
+is a leftover, not a way in.
+
+**What this deliberately does not do** is test whether that account still has
+the default password. It would need a crypt implementation, and `crypt` was
+removed from the standard library in Python 3.13 — which BOB's own metadata
+says it supports. A check that works on three interpreters and silently stops
+on the fourth is worse than one that states its limit, which is the lesson
+v0.15.0 took from `importorskip`.
+
+A board BOB has never met is not a Raspberry Pi: the device tree has to name
+one. And a Pi whose boot partition is not mounted where BOB looks gets "not
+found" rather than "clean" — saying the partition carries no credentials would
+be a verdict about files it never saw.
+
+The eleven contract guards this release had to satisfy each caught something
+real: a bare `Path.exists()` that would abort the audit on EACCES, a message
+naming `{user}` with nothing supplying it, a visibility key outside
+`VISIBILITY_KEYS`, and two functions written by anticipation that nothing
+called — `is_arm` was deleted rather than kept waiting for a use.
+
+**No ARM hardware was available to test on.** `qemu-user-static` is not
+installed and installing it needs root, so the board was simulated: the real
+collection paths were driven against a Pi's `/proc/cpuinfo`, an absent
+`/sys/firmware`, and a boot partition carrying the files an imager writes.
+Every branch was exercised that way, in both locales. On a machine that is not
+a Pi the section emits nothing at all, and the A/B against v0.16.4 on this
+x86 host shows the same score, the same 93 findings and the same deductions.
+
 ### Two defects this found in the writing of it
 
 Neither was visible from a green suite on this Debian host.
@@ -202,7 +262,7 @@ of the real wizard found it in one pass, and the guard that replaced it drives
 the function against a recording screen and requires every word of the notice
 to land on a row.
 
-**Tests** 8951 → **9132**. **Mutations** 56 → **76**.
+**Tests** 8951 → **9206**. **Mutations** 56 → **83**.
 
 ---
 

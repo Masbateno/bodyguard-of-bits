@@ -72,6 +72,7 @@
     "container_security": "POSTURE DE SÉCURITÉ DU CONTENEUR",
     "socket_units": "UNITÉS SOCKET SYSTEMD",
     "cloud_context": "CONTEXTE CLOUD (CÔTÉ HÔTE)",
+    "raspberry_pi": "PARTITION DE BOOT RASPBERRY PI",
     "firmware": "AUDIT FIRMWARE & MICROCODE",
     "descriptions": {
       "auditd": "Démon d'audit Linux (auditd) — règles, état du service, surveillance fichiers sensibles",
@@ -105,6 +106,7 @@
       "container_security": "Sécurité conteneur — capabilities, seccomp, userns, rootfs (uniquement dans un conteneur)",
       "socket_units": "Unités socket systemd — sockets en écoute orphelines (service backing absent) ou en échec",
       "cloud_context": "Contexte cloud — exposition cloud côté hôte (IMDS, cloud-init, user-data) ; uniquement sur une instance cloud",
+      "raspberry_pi": "Raspberry Pi — fichiers de provisionnement laissés sur la partition FAT de boot et compte par défaut historique ; uniquement sur un Raspberry Pi",
       "umask": "Umask système — valeur par défaut /etc/login.defs",
       "updates": "Mises à jour de paquets — cache APT, sécurité/réguliers en attente, unattended-upgrades",
       "user_accounts": "Comptes utilisateurs — collisions UID 0, mots de passe vides, comptes système",
@@ -2609,6 +2611,18 @@
         }
       }
     },
+    "raspberry_pi": {
+      "userconf_present": {
+        "title": "Hash de mot de passe laissé sur la partition de boot du Raspberry Pi",
+        "why": "Le Raspberry Pi Imager écrit userconf.txt pour que le premier démarrage crée un compte avec le mot de passe que vous avez choisi. Le fichier contient ce mot de passe sous forme de hash crypt, et le premier démarrage est censé le consommer puis le supprimer.\n\nQuand il est encore là, une empreinte de mot de passe repose sur un système de fichiers FAT. FAT n'a ni propriétaire ni bits de permission propres : le mode apparent du fichier vient entièrement des options de montage, et il s'évapore dès que la carte est lue sur une autre machine. Une carte SD retirée d'un Pi — sur une étagère, dans une poubelle, dans un tiroir — livre un hash attaquable hors ligne aussi longtemps que l'attaquant le souhaite, sans limite de débit et sans journal.\n\nCe même hash protège généralement encore le compte vivant : le casser n'est donc pas une curiosité historique, c'est le mot de passe actuel.",
+        "how": "1. Vérifier que le compte qu'il nomme existe déjà :\n   getent passwd <utilisateur>\n2. Si oui, le fichier a fait son travail. Le supprimer :\n   sudo rm /boot/firmware/userconf.txt\n   (sur Raspberry Pi OS avant Bookworm, la partition est montée sur /boot)\n3. Si le compte n'existe pas, le premier démarrage ne s'est pas terminé. Corrigez cela d'abord, puis supprimez le fichier — ne le retirez pas simplement, vous n'auriez plus aucun accès.\n4. Considérez le mot de passe comme exposé si la carte a quitté vos mains : passwd <utilisateur>"
+      },
+      "legacy_account": {
+        "title": "Le compte par défaut du Raspberry Pi peut encore se connecter",
+        "why": "Raspberry Pi OS a livré un compte `pi` jusqu'en 2022, et tous les tutoriels écrits avant cette date disent encore de l'utiliser. La moitié d'un identifiant est le nom d'utilisateur, et celui-ci est connu de tout le monde — y compris de chaque scanner ayant jamais sondé le port 22.\n\nUn compte dont l'attaquant possède déjà le nom n'est plus qu'à une devinette d'une tentative de connexion qui ne lui coûte rien. Combiné à l'authentification par mot de passe en SSH et à un Pi joignable depuis internet, c'est la façon la plus courante dont ces cartes sont prises.\n\nBOB rapporte que le compte existe, a un mot de passe défini et un shell de connexion. Il ne teste délibérément pas si le mot de passe est resté celui de la distribution : cela demanderait une implémentation de crypt, or `crypt` a été retiré de la bibliothèque standard Python en 3.13, que BOB supporte. Une vérification qui marcherait sur trois versions de l'interpréteur et cesserait de marcher à la suivante serait pire que de le dire.",
+        "how": "1. Établir si le compte sert encore :\n   sudo lastlog -u pi\n   sudo grep -rn '\\bpi\\b' /etc/cron* /etc/sudoers /etc/sudoers.d /etc/systemd/system 2>/dev/null\n2. Si rien n'en dépend, créez le vôtre et supprimez celui-ci :\n   sudo adduser <votrenom>\n   sudo usermod -aG sudo <votrenom>\n   (connectez-vous avec le nouveau compte, vérifiez que sudo marche, puis :)\n   sudo deluser --remove-home pi\n3. Si quelque chose en dépend, verrouillez la connexion au lieu de supprimer :\n   sudo passwd -l pi\n   sudo usermod -s /usr/sbin/nologin pi\n4. Quoi que vous choisissiez, coupez l'authentification par mot de passe SSH et passez aux clés :\n   sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh"
+      }
+    },
     "secure_boot": {
       "setup_mode": {
         "title": "Secure Boot en mode Setup (aucune clé Platform Key enregistrée)",
@@ -3181,14 +3195,32 @@
     "rules_unreadable": "Impossible de lire les règles d'audit",
     "rules_unreadable_detail": "`auditctl -l` n'a rien renvoyé alors qu'auditd tourne : la requête a été refusée, ce n'est pas qu'aucune règle n'est chargée — l'outil affiche littéralement « No rules » quand le système d'audit est joignable et n'en contient aucune. Généralement une CAP_AUDIT_CONTROL absente. BOB n'annonce pas un jeu de règles vide qu'il n'a pas vu. Vérifier avec : sudo auditctl -l"
   },
+  "raspberry_pi": {
+    "board": "{model} ({arch})",
+    "boot_not_found": "Partition de boot Raspberry Pi introuvable — son contenu n'a pas été vérifié",
+    "boot_not_found_detail": "BOB cherche la partition FAT de boot dans /boot/firmware et /boot, identifiée par le config.txt que lit le firmware. Aucun des deux n'en contenait, donc rien de ce qui suit n'a été établi sur les fichiers de provisionnement que cette partition porte normalement.",
+    "userconf_present": "Un fichier de provisionnement contenant un hash de mot de passe pour « {user} » est encore sur la partition de boot : {path}",
+    "userconf_present_reason": "Une empreinte de mot de passe repose sur un système de fichiers incapable de la protéger",
+    "userconf_present_detail": "Le Raspberry Pi Imager écrit userconf.txt pour définir le mot de passe du premier compte, et le premier démarrage est censé le consommer puis le supprimer. Il est toujours là, en mode {mode}. La partition de boot est en FAT : elle n'a aucune notion de propriétaire, ses permissions viennent donc entièrement des options de montage et disparaissent dès que la carte est lue sur une autre machine. Le hash est cassable hors ligne, au rythme de l'attaquant. Si le compte est déjà créé, supprimez le fichier : sudo rm {path}",
+    "userconf_absent": "Aucun identifiant de provisionnement laissé sur la partition de boot",
+    "ssh_marker": "Marqueur SSH de premier démarrage encore présent : {path}",
+    "ssh_marker_detail": "Un fichier vide nommé « ssh » sur la partition de boot demande à Raspberry Pi OS d'activer sshd au démarrage suivant. Il est normalement retiré une fois pris en compte. Sa présence n'expose rien en soi — c'est la configuration de sshd qui en décide — mais elle signifie que l'accès distant a été activé par un fichier que quiconque a la carte peut créer.",
+    "legacy_account": "Le compte par défaut « {user} » existe et peut se connecter",
+    "legacy_account_reason": "Un nom d'utilisateur universellement connu réduit de moitié le travail d'une attaque sur le mot de passe",
+    "legacy_account_detail": "Raspberry Pi OS était livré avec un compte « {user} » jusqu'en 2022, et tous les guides écrits avant cette date disent encore de l'utiliser. Le compte présent ici a un mot de passe défini et un shell de connexion : il est donc utilisable. BOB ne teste pas si le mot de passe est resté celui de la distribution — cela demanderait une implémentation de crypt, or crypt a été retiré de la bibliothèque standard Python en 3.13. Vérifiez-le vous-même, et préférez un compte dont l'attaquant doit deviner le nom.",
+    "account_unknown": "Impossible de lire /etc/shadow — l'état du compte par défaut n'a pas été établi",
+    "account_unknown_detail": "Le champ mot de passe décide si le compte « {user} » peut se connecter, et /etc/shadow n'a pas pu être lu. Lancez BOB en root pour l'établir. Rien n'est affirmé dans un sens ou dans l'autre."
+  },
   "secure_boot": {
     "enabled": "Secure Boot est activé",
     "disabled": "Secure Boot est désactivé",
     "disabled_detail": "Secure Boot empêche l'exécution de chargeurs de démarrage non signés. Sur un desktop, exploiter cette absence nécessite un accès physique ou une compromission root préalable — si aucun des deux ne s'applique, le risque est faible. Activez-le dans les paramètres UEFI/BIOS si votre matériel le supporte (les noyaux Ubuntu/Mint standard sont signés).",
     "disabled_server_detail": "Secure Boot est désactivé. Sur les serveurs et machines virtuelles, c'est courant (images cloud, noyaux personnalisés, hyperviseurs). Envisagez de l'activer si la plateforme le supporte.",
     "disabled_reason": "Secure Boot désactivé — protection contre les malwares au niveau du démarrage inactive",
-    "no_uefi": "BIOS legacy détecté — Secure Boot non applicable",
-    "no_uefi_detail": "Ce système utilise un BIOS legacy (non-UEFI). Secure Boot est une fonctionnalité UEFI et ne peut pas être activé.",
+    "no_uefi": "Aucun firmware UEFI trouvé — Secure Boot est une fonction UEFI et ne s'applique pas ici",
+    "no_uefi_detail": "BOB n'a trouvé aucun /sys/firmware/efi : ce système n'a donc pas démarré via UEFI. Secure Boot est une fonction UEFI et ne peut pas être activé sans elle. Sur un PC cela signifie généralement un démarrage en BIOS legacy ; sur un autre matériel, c'est peut-être simplement sa façon de démarrer.",
+    "no_uefi_board_detail": "Cette carte démarre depuis son propre firmware et non via UEFI : Secure Boot n'est pas un réglage qu'elle possède. Rien ne manque ici. Vérifier ce que cette machine exécute au démarrage relève de son outillage firmware propre — sur un Raspberry Pi, rpi-eeprom-update rapporte et met à jour le bootloader.",
+    "no_uefi_board": "{board} — pas d'UEFI, Secure Boot ne s'applique donc pas",
     "setup_mode": "Secure Boot est en mode Setup — aucune clé Platform Key enrollée",
     "setup_mode_detail": "Secure Boot est techniquement activé mais en mode Setup : aucune Platform Key (PK) n'est enrollée. Cela signifie que n'importe quel chargeur de démarrage ou noyau non signé peut s'exécuter — Secure Boot n'offre aucune protection. Enrollez des clés ou désactivez le mode Setup dans les paramètres UEFI/BIOS.",
     "setup_mode_reason": "Secure Boot en mode Setup — aucune Platform Key enrollée, protection inactive",

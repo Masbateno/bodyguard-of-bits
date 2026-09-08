@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
+from bob.platform import raspberry_pi_model
 
 # Possible states returned by the detection logic
 _STATE_ENABLED    = "enabled"
@@ -46,8 +47,12 @@ class SecureBootSnapshot:
 
     Args:
         state:      One of "enabled", "disabled", "no_uefi", "unknown".
+        board:      Board name from the firmware when there is one.
     """
     state: str = _STATE_UNKNOWN
+    #: Board name when the firmware names one (Raspberry Pi), else "". Only
+    #: consulted for the no-UEFI message, which must not invent a firmware type.
+    board: str = ""
 
     @classmethod
     def from_system(cls) -> "SecureBootSnapshot":
@@ -89,8 +94,14 @@ class SecureBootSnapshot:
             except OSError:
                 pass
         elif not os.path.isdir("/sys/firmware/efi"):
-            # No EFI directory at all → legacy BIOS
+            # No EFI directory at all. What that means depends on the machine,
+            # and BOB used to answer "legacy BIOS" for all of them — a sentence
+            # that is simply false on a Raspberry Pi, which has no BIOS either:
+            # it boots from a bootloader in EEPROM. The state records what was
+            # established (no UEFI); the board is recorded separately so the
+            # message can say the right thing.
             snap.state = _STATE_NO_UEFI
+            snap.board = raspberry_pi_model()
             return snap
 
         # 3. bootctl fallback
@@ -127,8 +138,10 @@ def check_secure_boot(snapshot: SecureBootSnapshot, t: TranslationFunc | None = 
 
     if snapshot.state == _STATE_NO_UEFI:
         result.info(
-            message=_t("secure_boot.no_uefi"),
-            detail=_t("secure_boot.no_uefi_detail"),
+            message=(_t("secure_boot.no_uefi_board", board=snapshot.board)
+                     if snapshot.board else _t("secure_boot.no_uefi")),
+            detail=(_t("secure_boot.no_uefi_board_detail", board=snapshot.board)
+                    if snapshot.board else _t("secure_boot.no_uefi_detail")),
             key="secure_boot.no_uefi",
         )
         return result

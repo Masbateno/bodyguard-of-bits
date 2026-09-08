@@ -342,6 +342,13 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "cloud_context.userdata_world_readable",
         "socket_units.orphan_exposed",
     ]),
+    # v0.17.0: the two Raspberry Pi findings that carry a deduction. The rest
+    # of the section is INFO — the board name, the ssh marker — and INFO keys
+    # are not required to be explainable.
+    ("Raspberry Pi", [
+        "raspberry_pi.userconf_present",
+        "raspberry_pi.legacy_account",
+    ]),
     ("Container isolation", [
         "container_security.privileged",
         "container_security.cap_sys_admin",

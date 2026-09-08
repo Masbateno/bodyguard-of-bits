@@ -843,5 +843,15 @@
     "ref": "Best practice — Keep cloud-init user-data at 0600 and rotate any credential it exposed",
     "ref_fr": "Bonne pratique — Garder le user-data cloud-init en 0600 et renouveler tout identifiant qu'il a exposé",
     "code": null
+  },
+  "raspberry_pi.userconf_present": {
+    "ref": "Best practice — Remove the Imager's userconf.txt from the boot partition once the account exists; FAT cannot protect a password hash",
+    "ref_fr": "Bonne pratique — Retirer le userconf.txt de l'Imager de la partition de boot une fois le compte créé ; FAT ne peut pas protéger une empreinte de mot de passe",
+    "code": null
+  },
+  "raspberry_pi.legacy_account": {
+    "ref": "Best practice — Replace the distribution's default account with one whose username an attacker has to discover",
+    "ref_fr": "Bonne pratique — Remplacer le compte par défaut de la distribution par un compte dont l'attaquant doit deviner le nom",
+    "code": null
   }
 }

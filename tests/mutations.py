@@ -44,6 +44,7 @@ _DOCEX = "tests/test_v0163_doc_examples_run.py"
 _MAIL = "tests/test_v0170_mail_transport.py"
 _PKGNAMES = "tests/test_v0170_package_names.py"
 _PATHS = "tests/test_v0170_distro_paths.py"
+_PI = "tests/test_v0170_raspberry_pi.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -249,7 +250,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="192 entries (108 formal CIS",
+        old="194 entries (108 formal CIS",
         new="174 entries (107 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -654,6 +655,81 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="aideinit, pam-auth-update and dpkg-reconfigure are Debian's own "
                "tools; appending them to a dnf command hands out a remedy whose "
                "second half cannot run",
+    ),
+
+    # ---- what machine this is ----------------------------------------------
+    Mutation(
+        id="pi/secure-boot-invents-a-bios",
+        file="bob/checks/secure_boot.py",
+        old="            message=(_t(\"secure_boot.no_uefi_board\", board=snapshot.board)\n"
+            "                     if snapshot.board else _t(\"secure_boot.no_uefi\")),",
+        new='            message=_t("secure_boot.no_uefi"),',
+        kills=(f"{_PI}::TestSecureBootNoLongerInventsAFirmwareType::"
+               "test_a_named_board_gets_its_own_message",),
+        reason="a board that names itself would go back to the generic sentence, "
+               "the one that used to say 'Legacy BIOS detected' on hardware "
+               "that has no BIOS",
+    ),
+    Mutation(
+        id="pi/credential-hash-goes-unreported",
+        file="bob/checks/raspberry_pi.py",
+        old="    if snapshot.userconf_user:",
+        new="    if False:",
+        kills=(f"{_PI}::TestTheProvisioningHashIsAFinding::"
+               "test_a_hash_left_behind_is_a_warning_with_a_deduction",),
+        reason="a password hash left on a FAT partition would be reported as a "
+               "clean boot partition instead",
+    ),
+    Mutation(
+        id="pi/only-sha512-hashes-recognised",
+        file="bob/checks/raspberry_pi.py",
+        old=r'_USERCONF_RE = re.compile(r"^([A-Za-z0-9._-]{1,32}):(\$[0-9a-z]{1,2}\$\S+)\s*$")',
+        new=r'_USERCONF_RE = re.compile(r"^([A-Za-z0-9._-]{1,32}):(\$6\$\S+)\s*$")',
+        kills=(f"{_PI}::TestTheProvisioningHashIsAFinding::"
+               "test_every_crypt_scheme_raspberry_pi_os_uses_is_recognised",),
+        reason="Bookworm's imager writes yescrypt ($y$), so pinning $6$ would "
+               "miss every hash written by a current Raspberry Pi Imager",
+    ),
+    Mutation(
+        id="pi/locked-account-read-as-usable",
+        file="bob/checks/raspberry_pi.py",
+        old='            return bool(secret) and not secret.startswith(("!", "*")), True',
+        new="            return bool(secret), True",
+        kills=(f"{_PI}::TestTheDefaultAccount::"
+               "test_a_locked_account_is_not_a_way_in",),
+        reason="`!` and `*` mean no password will ever match; a locked account "
+               "would be reported as a way in and cost a point it should not",
+    ),
+    Mutation(
+        id="pi/unreadable-shadow-read-as-no-password",
+        file="bob/checks/raspberry_pi.py",
+        old="        # Unreadable is not \"no password\": say the answer was not established.\n"
+            "        return False, False",
+        new="        return False, True",
+        kills=(f"{_PI}::TestTheDefaultAccount::"
+               "test_unreadable_shadow_is_not_established_rather_than_absent",),
+        reason="an unreadable /etc/shadow would be reported as an established "
+               "negative — the class v0.15.2 closed for packages",
+    ),
+    Mutation(
+        id="pi/unmounted-boot-declared-clean",
+        file="bob/checks/raspberry_pi.py",
+        old="    if snapshot.boot_dir is None:",
+        new="    if None is None and False:",
+        kills=(f"{_PI}::TestNothingIsSaidOnAMachineThatIsNotAPi::"
+               "test_an_unmounted_boot_partition_is_not_a_clean_one",),
+        reason="a partition BOB never found would be reported as carrying no "
+               "provisioning credentials",
+    ),
+    Mutation(
+        id="pi/a-pc-mistaken-for-a-board",
+        file="bob/platform.py",
+        old='        if "raspberry pi" in model.lower():\n            return model',
+        new="        return model",
+        kills=(f"{_PI}::TestTheBoardIsIdentifiedFromTheFirmware::"
+               "test_another_board_is_not_a_raspberry_pi",),
+        reason="any device tree would name this a Raspberry Pi, so a Radxa or "
+               "an Orange Pi would get advice about files it does not have",
     ),
 
     # ---- the files a verdict is read from ----------------------------------

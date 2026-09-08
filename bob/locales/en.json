@@ -72,6 +72,7 @@
     "container_security": "CONTAINER SECURITY POSTURE",
     "socket_units": "SYSTEMD SOCKET UNITS",
     "cloud_context": "CLOUD CONTEXT (HOST-SIDE)",
+    "raspberry_pi": "RASPBERRY PI BOOT PARTITION",
     "firmware": "FIRMWARE & MICROCODE AUDIT",
     "descriptions": {
       "auditd": "Linux audit daemon (auditd) — rules, service state, sensitive-file watches",
@@ -105,6 +106,7 @@
       "container_security": "Container security — capabilities, seccomp, userns, rootfs (only inside a container)",
       "socket_units": "Systemd socket units — orphaned (backing service gone) or failed listening sockets",
       "cloud_context": "Cloud context — host-side cloud exposure (IMDS, cloud-init, user-data); only on a cloud instance",
+      "raspberry_pi": "Raspberry Pi — provisioning files left on the FAT boot partition and the historical default account; only on a Raspberry Pi",
       "umask": "System umask — /etc/login.defs default value",
       "updates": "Package updates — APT cache, security/regular pending, unattended-upgrades",
       "user_accounts": "User accounts — UID 0 collisions, empty passwords, system accounts",
@@ -2609,6 +2611,18 @@
         }
       }
     },
+    "raspberry_pi": {
+      "userconf_present": {
+        "title": "Password hash left on the Raspberry Pi boot partition",
+        "why": "The Raspberry Pi Imager writes userconf.txt so the first boot can create an account with a password you chose. The file holds that password as a crypt hash, and the first boot is meant to consume it and delete the file.\n\nWhen it is still there, a credential digest is sitting on a FAT filesystem. FAT has no owner and no permission bits of its own: whatever mode the file appears to have comes entirely from the mount options, and it evaporates the moment the card is read on another machine. An SD card taken from a Pi — off a shelf, out of a bin, out of a drawer — hands over a hash that can be attacked offline for as long as the attacker likes, with no rate limit and no log.\n\nThe same hash usually still protects the live account, so cracking it is not a historical curiosity: it is the current password.",
+        "how": "1. Confirm the account it names already exists:\n   getent passwd <username>\n2. If it does, the file has done its job. Delete it:\n   sudo rm /boot/firmware/userconf.txt\n   (on Raspberry Pi OS before Bookworm the partition is mounted at /boot)\n3. If the account does not exist, the first boot did not complete. Fix that first, then delete the file — do not simply remove it, or you will have no way in.\n4. Treat the password as exposed if the card has ever been out of your hands: passwd <username>"
+      },
+      "legacy_account": {
+        "title": "Raspberry Pi's default account can still log in",
+        "why": "Raspberry Pi OS shipped a `pi` account until 2022, and every tutorial written before then still tells people to use it. Half of a credential is the username, and this one is known to everyone — including every scanner that has ever probed port 22.\n\nAn account whose name an attacker already has is one guess away from a login attempt that costs them nothing. Combined with password authentication over SSH and a Pi reachable from the internet, that is the single most common way these boards are taken over.\n\nBOB reports that the account exists, has a password set and has a login shell. It deliberately does not test whether the password is still the distribution's historical default: that requires a crypt implementation, and `crypt` was removed from the Python standard library in 3.13, which BOB supports. A check that works on three interpreter versions and stops working on the next would be worse than saying so.",
+        "how": "1. Establish whether the account is still in use:\n   sudo lastlog -u pi\n   sudo grep -rn '\\bpi\\b' /etc/cron* /etc/sudoers /etc/sudoers.d /etc/systemd/system 2>/dev/null\n2. If nothing depends on it, create your own account and remove this one:\n   sudo adduser <yourname>\n   sudo usermod -aG sudo <yourname>\n   (log in as the new account, verify sudo works, then:)\n   sudo deluser --remove-home pi\n3. If something does depend on it, lock the login instead of deleting:\n   sudo passwd -l pi\n   sudo usermod -s /usr/sbin/nologin pi\n4. Whatever you choose, turn off SSH password authentication and use a key:\n   sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh"
+      }
+    },
     "secure_boot": {
       "setup_mode": {
         "title": "Secure Boot is in Setup Mode (no Platform Key enrolled)",
@@ -3181,14 +3195,32 @@
     "rules_unreadable": "Audit rules could not be read",
     "rules_unreadable_detail": "`auditctl -l` returned nothing while auditd is running, which means the query was refused rather than that no rules are loaded — it prints the literal \"No rules\" when the audit system is reachable and holds none. Usually a missing CAP_AUDIT_CONTROL. BOB does not report an empty rule set it never saw. Check with: sudo auditctl -l"
   },
+  "raspberry_pi": {
+    "board": "{model} ({arch})",
+    "boot_not_found": "Raspberry Pi boot partition not found — its contents were not checked",
+    "boot_not_found_detail": "BOB looks for the FAT boot partition at /boot/firmware and /boot, identified by the config.txt the firmware reads. Neither held one, so nothing below was established about the provisioning files that partition normally carries.",
+    "userconf_present": "Provisioning file with a password hash for '{user}' is still on the boot partition: {path}",
+    "userconf_present_reason": "A credential digest is sitting on a filesystem that cannot protect it",
+    "userconf_present_detail": "The Raspberry Pi Imager writes userconf.txt to set the first account's password, and the first boot is meant to consume and delete it. It is still here, with mode {mode}. The boot partition is FAT: it has no concept of ownership, so the permissions come entirely from the mount options and are gone the moment the card is read on another machine. The hash is offline-crackable at the attacker's leisure. If the account has already been created, delete the file: sudo rm {path}",
+    "userconf_absent": "No provisioning credentials left on the boot partition",
+    "ssh_marker": "First-boot SSH marker still present: {path}",
+    "ssh_marker_detail": "An empty file named 'ssh' on the boot partition tells Raspberry Pi OS to enable sshd on the next boot. It is normally removed once acted on. Its presence does not itself expose anything — sshd's own configuration decides that — but it means remote access was switched on by a file anyone with the card can create.",
+    "legacy_account": "The default '{user}' account exists and can log in",
+    "legacy_account_reason": "A universally known username halves the work of a password attack",
+    "legacy_account_detail": "Raspberry Pi OS shipped with a '{user}' account until 2022, and every guide written before then still tells people to use it. The account here has a password set and a login shell, so it is usable. BOB does not test whether the password is still the distribution's historical default — that needs a crypt implementation, and crypt was removed from the Python standard library in 3.13. Check it yourself, and prefer an account whose name an attacker has to discover.",
+    "account_unknown": "Could not read /etc/shadow — the default account's state was not established",
+    "account_unknown_detail": "Whether the '{user}' account can log in is decided by its password field, and /etc/shadow could not be read. Run BOB as root to establish it. Nothing is being claimed either way."
+  },
   "secure_boot": {
     "enabled": "Secure Boot is enabled",
     "disabled": "Secure Boot is disabled",
     "disabled_detail": "Secure Boot prevents unsigned bootloaders from running. On a desktop, exploiting this requires physical access or a prior root compromise — if neither applies, the risk is low. Enable it in UEFI/BIOS settings if your hardware and kernel support it (standard Ubuntu/Mint kernels are signed).",
     "disabled_server_detail": "Secure Boot is disabled. On servers and VMs this is common (cloud images, custom kernels, hypervisors). Consider enabling it if the platform supports it.",
     "disabled_reason": "Secure Boot disabled — boot-level malware protection inactive",
-    "no_uefi": "Legacy BIOS detected — Secure Boot not applicable",
-    "no_uefi_detail": "This system uses a legacy BIOS (non-UEFI). Secure Boot is a UEFI feature and cannot be enabled.",
+    "no_uefi": "No UEFI firmware found — Secure Boot is a UEFI feature and does not apply here",
+    "no_uefi_detail": "BOB found no /sys/firmware/efi, so this system did not boot through UEFI. Secure Boot is a UEFI feature and cannot be enabled without it. On a PC this usually means legacy BIOS boot; on other hardware it may simply be how the machine boots.",
+    "no_uefi_board_detail": "This board boots from its own firmware rather than UEFI, so Secure Boot is not a setting it has. Nothing is missing here. Verifying what this machine runs at boot is a matter for its own firmware tooling — on a Raspberry Pi, rpi-eeprom-update reports and updates the bootloader.",
+    "no_uefi_board": "{board} — no UEFI, so Secure Boot does not apply",
     "setup_mode": "Secure Boot is in Setup Mode — no Platform Key enrolled",
     "setup_mode_detail": "Secure Boot is technically enabled but in Setup Mode: no Platform Key (PK) is enrolled. This means any unsigned bootloader or kernel can run — Secure Boot provides no protection. Enroll keys or disable Setup Mode in UEFI/BIOS settings.",
     "setup_mode_reason": "Secure Boot in Setup Mode — no Platform Key enrolled, protection inactive",

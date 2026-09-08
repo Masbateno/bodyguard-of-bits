@@ -62,6 +62,13 @@ _ACTIONABLE_METHODS = frozenset({
 # shell command. Each entry needs a one-line rationale (inline comment)
 # explaining WHY operating-system-level automation is inappropriate.
 _MANUAL_BY_DESIGN = frozenset({
+    # v0.17.0 — a default account on a Raspberry Pi. There is no safe one-line
+    # remediation: `userdel pi` destroys a home directory that may hold the
+    # only copy of something, and `usermod -l` renames an account that services,
+    # cron entries and sudoers rules may name. Which of those apply is a fact
+    # about this machine that only its operator has. The detail says what to
+    # weigh; a cmd= here would offer to make the decision unattended.
+    "raspberry_pi.legacy_account",
     # v0.15.4 "teeth": a container's isolation is fixed by the flags it was
     # started with. No command run ON THE HOST removes --privileged from a
     # container that is already running; the operator re-launches it without

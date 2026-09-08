@@ -142,6 +142,71 @@ titre. Fedora perd la fausse déduction. L'avertissement d'Alpine devient un INF
 qui dit ce qui n'a pas été établi. Sur Debian, rien ne bouge : même score, mêmes
 93 findings, mêmes déductions, pas une commande modifiée.
 
+### Et il n'avait jamais demandé sur quelle machine il tournait
+
+Chaque check raisonnait sur du logiciel ; aucun sur le matériel en dessous.
+Trois constats énonçaient des faits x86 sur des cartes qui n'ont pas de x86 du
+tout, et le plus net était Secure Boot : sans firmware UEFI, BOB annonçait
+**« Legacy BIOS detected »** — or un Raspberry Pi n'a pas de BIOS non plus. Il
+démarre depuis un bootloader en EEPROM. La phrase était une supposition
+déguisée en observation ; elle ne dit désormais que ce qui a été établi : aucun
+UEFI trouvé. Quand le firmware nomme la carte, le message la nomme en retour.
+
+`bob/platform.py` lit la machine via `uname` et la carte via le device tree,
+avec `/proc/cpuinfo` en repli. Il répond vide plutôt que de deviner — le même
+contrat que `package_installed` et `read_pam_stack`.
+
+### La section Raspberry Pi
+
+Un Pi démarre depuis une **partition FAT**, et FAT ne porte ni propriétaire ni
+bits de permission propres. Le mode apparent d'un fichier vient entièrement des
+options de montage, et rien n'en survit à la lecture de la carte sur une autre
+machine.
+
+Le Raspberry Pi Imager y écrit des fichiers de provisionnement, dont l'un
+contient un **hash de mot de passe**. Le premier démarrage est censé le
+consommer et le supprimer. Quand il est encore là, une empreinte de mot de
+passe repose sur un système de fichiers incapable de la protéger — et ce même
+hash protège généralement encore le compte vivant : le casser hors ligne n'est
+donc pas une curiosité historique mais le mot de passe actuel. BOB rapporte le
+mode qu'il a mesuré plutôt qu'un mode supposé, et reconnaît tous les schémas
+crypt que l'imager écrit, yescrypt de Bookworm compris.
+
+La section rapporte aussi le marqueur `ssh` de premier démarrage (INFO — c'est
+la configuration de sshd qui décide de ce qu'il expose, et la section ssh en
+juge déjà), et le compte `pi` historique de la distribution quand il peut
+réellement se connecter. « Exister » n'est pas le constat : un compte dont le
+champ mot de passe vaut `!` ou `*` est un vestige, pas une entrée.
+
+**Ce que cela ne fait délibérément pas**, c'est tester si ce compte a gardé le
+mot de passe par défaut. Il faudrait une implémentation de crypt, or `crypt` a
+été retiré de la bibliothèque standard en Python 3.13 — que les métadonnées de
+BOB déclarent supporter. Une vérification qui marche sur trois interpréteurs et
+s'arrête en silence au quatrième est pire qu'une qui énonce sa limite : c'est
+la leçon que la v0.15.0 a tirée d'`importorskip`.
+
+Une carte que BOB n'a jamais rencontrée n'est pas un Raspberry Pi : il faut que
+le device tree en nomme un. Et un Pi dont la partition de boot n'est pas montée
+là où BOB regarde reçoit « introuvable » et non « propre » — dire que la
+partition ne porte aucun identifiant serait un verdict sur des fichiers jamais
+vus.
+
+Les onze gardes de contrat que cette version a dû satisfaire ont chacune
+attrapé quelque chose de réel : un `Path.exists()` nu qui aurait avorté l'audit
+sur EACCES, un message nommant `{user}` sans que rien ne le fournisse, une clé
+de visibilité hors de `VISIBILITY_KEYS`, et deux fonctions écrites par
+anticipation que rien n'appelait — `is_arm` a été supprimée plutôt que gardée
+en attente d'un usage.
+
+**Aucun matériel ARM n'était disponible pour tester.** `qemu-user-static` n'est
+pas installé et son installation demande root : la carte a donc été simulée —
+les vrais chemins de collecte ont été exercés contre le `/proc/cpuinfo` d'un
+Pi, un `/sys/firmware` absent et une partition de boot portant les fichiers
+qu'un imager écrit. Toutes les branches ont été parcourues ainsi, dans les deux
+langues. Sur une machine qui n'est pas un Pi la section n'émet rien, et l'A/B
+contre la v0.16.4 sur cet hôte x86 donne le même score, les mêmes 93 constats
+et les mêmes déductions.
+
 ### Deux défauts que l'écriture de tout ceci a révélés
 
 Aucun n'était visible depuis une suite verte sur cet hôte Debian.
@@ -213,7 +278,7 @@ vrai wizard derrière un pty l'a trouvée du premier coup, et la garde qui l'a
 remplacée pilote la fonction contre un écran enregistreur en exigeant que
 chaque mot de l'avis atterrisse sur une ligne.
 
-**Tests** 8951 → **9132**. **Mutations** 56 → **76**.
+**Tests** 8951 → **9206**. **Mutations** 56 → **83**.
 
 ---
 

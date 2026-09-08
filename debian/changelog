@@ -23,6 +23,15 @@ bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
   * A third hiding place for a Debian command: translated prose.
     prerequisites.ufw_missing said "sudo apt install ufw" while the same
     finding's cmd field said "sudo dnf install -y ufw".
+  * BOB had never asked what machine it was on. With no UEFI firmware present
+    it announced "Legacy BIOS detected" -- a Raspberry Pi has no BIOS either,
+    it boots from a bootloader in EEPROM. It now reports only that no UEFI was
+    found, and names the board when the firmware names one.
+  * New Raspberry Pi section: the Imager's userconf.txt left on the FAT boot
+    partition (a password hash on a filesystem with no ownership of its own,
+    usually still guarding the live account), the first-boot ssh marker, and
+    the historical pi account when it can actually log in. No default-password
+    test: that needs crypt, removed from the standard library in Python 3.13.
   * The cron wizard promised delivery it had never established. "sendmail
     available — notifications will be delivered" was decided by
     shutil.which("sendmail"), which a Postfix installed and never configured
