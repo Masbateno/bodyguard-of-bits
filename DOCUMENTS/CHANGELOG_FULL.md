@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.16.4] — 2026-09-07
+## [v0.16.4] — 2026-09-08
 
 **"This guard bites" was a claim in a commit message, and nothing re-checked it.**
 
@@ -260,7 +260,44 @@ presentation modules, no second copy of the moved conventions. The half that is
 a judgement about each string stays a reading job, and the charter says which
 is which.
 
-**Tests** 8572 → **8937**.
+### A fix that stops to ask cannot be applied by a mode that does not ask
+
+Driven for real in a throwaway container, which is the only place `--fix
+--apply` can be exercised: `sudo apt install ufw` exits 1 under auto-fix. apt
+refuses to proceed without confirmation and says so itself — *"apt does not have
+a stable CLI interface. Use with caution in scripts."* So the mode whose entire
+promise is *apply these without asking me* ran a command that asks, and printed
+`0 of 2 fix(es) applied.`
+
+Seventeen install commands carried no non-interactive flag; three to four of
+them reach execution. Before and after, in the container:
+
+    sudo apt install ufw      -> exit 1
+    sudo apt install -y ufw   -> exit 0
+
+and the round-trip then closes — `2 of 2 fix(es) applied.`, and both findings
+are gone from the next audit. That round trip had never been run: this project
+had verified that a remediation command is *coherent*, never that applying it
+makes the finding go away.
+
+The tutorial promised more than the audit can deliver, and the same container
+disproved it. *"Re-run `sudo bob` to confirm the score went up"* — it went from
+7 to **6**, because installing UFW clears "UFW is not installed" and raises "UFW
+is installed but inactive", which costs more. The fix worked; the machine is one
+step further along; the number moved the other way. The tutorial says that now,
+in both locales.
+
+Two documents made claims this release turned out to be able to check.
+`README.md` said *"a typical audit completes in under 5 seconds"* — unverifiable
+when written, and now measurable by the very field this release added. Five runs
+on the maintainer's own machine: **none** under five seconds, median 6.0 s. The
+minimal container came in at 4.9 s, which is presumably where the number came
+from. The README says a few seconds now, gives both figures, and points at the
+duration the audit reports so a reader need not take it on trust. `SECURITY.md`
+records the narrowed eligible set, since it is where a reader checks what BOB is
+allowed to execute.
+
+**Tests** 8572 → **8951**.
 
 ---
 

@@ -566,4 +566,14 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="`? bob --explain <key>` in the summary box is assembled rather "
                "than coming from a finding's cmd, which is why it stayed plain",
     ),
+
+    Mutation(
+        id="fixes/install-command-waits-for-a-human",
+        file="bob/checks/firewall.py",
+        old="sudo apt install -y ufw",
+        new="sudo apt install ufw",
+        kills=("tests/test_v0164_fix_commands_run_unattended.py::test_no_install_command_would_stop_to_ask",),
+        reason="apt refuses to proceed without confirmation, so --fix --apply "
+               "--yes reported `0 of 2 fix(es) applied.` — proven in a container",
+    ),
 )

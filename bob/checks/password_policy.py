@@ -238,7 +238,7 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
             reason=_t("password_policy.no_quality_module_reason"),
             points=_DEDUCTION_NO_QUALITY_MODULE,
             detail=_t("password_policy.no_quality_module_detail"),
-            cmd="sudo apt install libpam-pwquality && sudo pam-auth-update",
+            cmd="sudo apt install -y libpam-pwquality && sudo pam-auth-update",
             nature="improvement",
         )
         has_finding = True

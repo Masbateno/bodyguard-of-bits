@@ -10,7 +10,7 @@ bodyguard-of-bits (0.16.4-1) UNRELEASED; urgency=low
     once from grepping "failed" in lower case against pytest's FAILED, once from
     a shell wrapper that never forwarded its arguments.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 07 Sep 2026 22:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 08 Sep 2026 10:00:00 +0200
 
 bodyguard-of-bits (0.16.3-1) UNRELEASED; urgency=low
 

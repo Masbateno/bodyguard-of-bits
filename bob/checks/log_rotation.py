@@ -155,7 +155,7 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
             reason=_t("log_rotation.logrotate_missing_reason"),
             points=1,
             detail=_t("log_rotation.logrotate_missing_detail"),
-            cmd="sudo apt install logrotate",
+            cmd="sudo apt install -y logrotate",
             nature="improvement",
         )
     else:

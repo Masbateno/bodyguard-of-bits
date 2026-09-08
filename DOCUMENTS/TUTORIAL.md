@@ -122,7 +122,12 @@ sudo bob --fix --apply                      # interactive confirmation per fix
 sudo bob --fix --apply -y                   # batch mode (audit trail saved to ~/.config/bob/fix-audit.log)
 ```
 
-Re-run `sudo bob` to confirm the score went up.
+Re-run `sudo bob` to see what changed. The score usually rises, but not
+always: installing a package can *reveal* a finding that was hidden behind
+its absence — `sudo apt install -y ufw` clears "UFW is not installed" and
+raises "UFW is installed but inactive", which costs more. That is the audit
+telling you the truth about a machine that is now one step further along,
+not a fix that failed.
 
 ---
 

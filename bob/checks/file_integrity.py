@@ -155,7 +155,7 @@ def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | N
         result.info(
             message=_t("file_integrity.not_installed"),
             detail=_t("file_integrity.not_installed_detail"),
-            cmd="sudo apt install aide && sudo aideinit",
+            cmd="sudo apt install -y aide && sudo aideinit",
             key="file_integrity.not_installed",
         )
         return result

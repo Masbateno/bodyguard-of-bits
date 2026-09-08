@@ -180,7 +180,7 @@ def check_rootkit(snapshot: RootkitSnapshot, t: TranslationFunc | None = None) -
         result.info(
             message=_t("rootkit.not_installed"),
             detail=_t("rootkit.not_installed_detail"),
-            cmd="sudo apt install rkhunter",
+            cmd="sudo apt install -y rkhunter",
             key="rootkit.not_installed",
         )
         return result

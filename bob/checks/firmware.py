@@ -217,7 +217,7 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
                 reason=_t("firmware.microcode_missing_reason", vendor=snapshot.cpu_vendor.upper()),
                 points=1,
                 detail=_t("firmware.microcode_missing_detail"),
-                cmd=f"sudo apt install {shlex.quote(pkg)}",
+                cmd=f"sudo apt install -y {shlex.quote(pkg)}",
             )
 
     return result

@@ -246,7 +246,7 @@ def check_iptables_nftables(
             message=_t("firewall_iptables.no_backend"),
             points=3,
             nature="action",
-            cmd="sudo apt install iptables",
+            cmd="sudo apt install -y iptables",
         )
         return result
 

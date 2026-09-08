@@ -397,14 +397,14 @@ def check_backup(
             reason=_t("backup.no_backup_reason"),
             points=1,
             detail=_t("backup.no_backup_detail"),
-            cmd="sudo apt install borgbackup borgmatic",
+            cmd="sudo apt install -y borgbackup borgmatic",
             nature="improvement",
         )
     else:
         result.info(
             message=_t("backup.no_backup"),
             detail=_t("backup.no_backup_detail"),
-            cmd="sudo apt install borgbackup borgmatic",
+            cmd="sudo apt install -y borgbackup borgmatic",
             key="backup.no_backup",
         )
 

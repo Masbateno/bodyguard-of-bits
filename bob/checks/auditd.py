@@ -190,7 +190,7 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
         result.info(
             message=_t("auditd.not_installed"),
             detail=_t("auditd.not_installed_detail"),
-            cmd="sudo apt install auditd audispd-plugins",
+            cmd="sudo apt install -y auditd audispd-plugins",
             key="auditd.not_installed",
         )
         return result

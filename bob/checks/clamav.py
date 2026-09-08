@@ -86,7 +86,7 @@ class ClamAVSnapshot:
     clamd_active:         bool           = False  # clamav-daemon service running
     db_age_days:          int | None  = None   # None = no DB file found
     last_scan_date:       str | None  = None   # ISO date string or None
-    install_cmd:          str            = "sudo apt install clamav clamav-daemon"
+    install_cmd:          str            = "sudo apt install -y clamav clamav-daemon"
 
     @classmethod
     def from_system(cls) -> "ClamAVSnapshot":
@@ -174,7 +174,7 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
             message=_t("clamav.freshclam_missing"),
             points=1,
             detail=_t("clamav.freshclam_missing_detail"),
-            cmd="sudo apt install clamav",
+            cmd="sudo apt install -y clamav",
             nature="action",
         )
 

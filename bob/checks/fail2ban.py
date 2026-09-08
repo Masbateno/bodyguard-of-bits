@@ -139,7 +139,7 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
         result.info(
             message=_t("fail2ban.not_installed"),
             detail=_t("fail2ban.not_installed_detail"),
-            cmd="sudo apt install fail2ban",
+            cmd="sudo apt install -y fail2ban",
             key="fail2ban.not_installed",
         )
         return result

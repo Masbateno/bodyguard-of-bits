@@ -158,6 +158,17 @@ BOB traverse trois frontières de confiance pendant une exécution :
 
 Le mode `--fix` affiche les commandes de remédiation et ne les exécute qu'après que l'utilisateur tape `y`. BOB **n'écrit jamais** vers des fichiers système en dehors de `~/.config/bob/` et du répertoire de log choisi par l'utilisateur sans confirmation explicite. Même en mode `--apply` (auto-fix), seules les commandes listées dans le texte de remédiation propre à BOB sont éligibles — il n'y a pas d'eval de messages de findings ni d'expansion shell de données dynamiques.
 
+Depuis la **v0.16.4**, l'ensemble éligible est plus étroit encore, et resserré
+là où les commandes sont *classées* et non là où elles sont exécutées. Une
+commande n'est exécutée que si elle est déclarée `cmd_type="fix"` — un
+diagnostic comme `smartctl -a` est la preuve d'un constat, pas sa remédiation,
+et il était exécuté puis annoncé comme appliqué — et seulement si BOB peut la
+lancer sans surveillance : aucun opérateur shell, aucun éditeur interactif.
+Tout le reste est affiché avec sa commande sans jamais être exécuté, de sorte
+que le compteur au-dessus de l'invite de confirmation est une promesse
+tenable. Les chemins interpolés dans une commande passent par `shlex.quote`,
+et l'exécution se fait par `shlex.split`, sans shell.
+
 ### Plugin checks (`~/.config/bob/checks.d/*.py`)
 
 Depuis la **v0.7.0**, les plugins s'exécutent dans un **sandbox in-process restreint** :

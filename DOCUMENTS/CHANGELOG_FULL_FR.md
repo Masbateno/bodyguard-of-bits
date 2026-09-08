@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.16.4] — 07-09-2026
+## [v0.16.4] — 08-09-2026
 
 **« Cette garde mord » était une affirmation dans un message de commit, que rien ne revérifiait.**
 
@@ -274,7 +274,45 @@ violet, aucun cadre dessiné hors des modules de présentation, aucune seconde
 copie des conventions déplacées. La moitié qui relève du jugement sur chaque
 chaîne reste un travail de lecture, et la charte dit laquelle est laquelle.
 
-**Tests** 8572 → **8937**.
+### Un correctif qui s'arrête pour poser une question ne peut pas être appliqué par un mode qui n'en pose pas
+
+Piloté pour de vrai dans un conteneur jetable, seul endroit où `--fix --apply`
+peut être éprouvé : `sudo apt install ufw` sort en 1 sous auto-correction. apt
+refuse de continuer sans confirmation et le dit lui-même — *« apt does not have
+a stable CLI interface. Use with caution in scripts. »* Le mode dont toute la
+promesse est *applique sans me demander* lançait donc une commande qui demande,
+et affichait `0 of 2 fix(es) applied.`
+
+Dix-sept commandes d'installation ne portaient aucun drapeau non interactif ;
+trois à quatre atteignent l'exécution. Avant et après, dans le conteneur :
+
+    sudo apt install ufw      -> exit 1
+    sudo apt install -y ufw   -> exit 0
+
+et l'aller-retour se referme alors — `2 of 2 fix(es) applied.`, et les deux
+constats ont disparu de l'audit suivant. Cet aller-retour n'avait jamais été
+fait : ce projet avait vérifié qu'une commande de remédiation est *cohérente*,
+jamais que l'appliquer fait disparaître le constat.
+
+Le tutoriel promettait plus que l'audit ne peut tenir, et le même conteneur l'a
+démenti. *« Re-lance `sudo bob` pour confirmer que le score est remonté »* — il
+est passé de 7 à **6**, parce qu'installer UFW efface « UFW n'est pas installé »
+et lève « UFW est installé mais inactif », qui coûte davantage. Le correctif a
+marché ; la machine est un cran plus loin ; le chiffre est allé dans l'autre
+sens. Le tutoriel le dit désormais, dans les deux langues.
+
+Deux documents portaient des affirmations que cette version s'est trouvée
+capable de vérifier. `README.md` disait *« un audit typique se termine en moins
+de 5 secondes »* — invérifiable à l'écriture, et désormais mesurable par le champ
+même que cette version ajoute. Cinq exécutions sur la machine du mainteneur :
+**aucune** sous cinq secondes, médiane 6,0 s. Le conteneur minimal, lui, tient en
+4,9 s — c'est vraisemblablement de là que venait le chiffre. Le README dit
+maintenant « quelques secondes », donne les deux mesures, et renvoie à la durée
+que l'audit annonce, pour qu'un lecteur n'ait pas à nous croire sur parole.
+`SECURITY_FR.md` consigne le rétrécissement de l'ensemble éligible, puisque c'est
+là qu'on vérifie ce que BOB a le droit d'exécuter.
+
+**Tests** 8572 → **8951**.
 
 ---
 

@@ -358,7 +358,7 @@ def check_updates(
                 reason=_t("updates.unattended_not_configured_reason"),
                 points=1,
                 detail=_t("updates.unattended_not_configured_detail"),
-                cmd="sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
+                cmd="sudo apt install -y unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
                 nature="improvement",
             )
         else:

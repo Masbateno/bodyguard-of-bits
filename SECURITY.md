@@ -219,6 +219,16 @@ in `--apply` mode (auto-fix), only the commands listed in BOB's own remediation
 text are eligible — there is no eval of finding messages or shell expansion
 of dynamic data.
 
+Since **v0.16.4** the eligible set is narrower still, and narrowed where the
+commands are *classified* rather than where they are run. A command is
+executed only if it is declared `cmd_type="fix"` — a diagnostic such as
+`smartctl -a` is a finding's evidence, not its remediation, and was being
+executed and reported as applied — and only if BOB can run it unattended: no
+shell operators, no interactive editor. Everything else is displayed with its
+command and never run, so the count shown above the confirmation prompt is a
+promise BOB can keep. Paths interpolated into a command go through
+`shlex.quote`, and execution is `shlex.split` without a shell.
+
 ### Plugin checks (`~/.config/bob/checks.d/*.py`)
 
 Since **v0.7.0**, plugins run in a **restricted in-process sandbox**:

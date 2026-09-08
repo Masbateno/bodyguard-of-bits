@@ -446,7 +446,7 @@ def _collect_host_keys() -> list[HostKeyInfo]:
 def _detect_ssh_install_cmd() -> str:
     """Return the distro-appropriate command to install openssh-server."""
     candidates = [
-        ("apt",    "sudo apt install openssh-server"),
+        ("apt",    "sudo apt install -y openssh-server"),
         ("apt-get","sudo apt-get install openssh-server"),
         ("dnf",    "sudo dnf install openssh-server"),
         ("yum",    "sudo yum install openssh-server"),

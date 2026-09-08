@@ -141,7 +141,7 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
         result.alert(
             message=_t("prerequisites.ufw_missing"),
             nature="action",
-            cmd="sudo apt install ufw",
+            cmd="sudo apt install -y ufw",
             key="prerequisites.ufw_missing",
         )
         return result  # nothing more to check

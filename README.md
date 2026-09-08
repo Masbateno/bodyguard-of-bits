@@ -51,7 +51,7 @@ A pure CIS-strict mode (no contextual modulation) is on the roadmap.
 
 ## Install
 
-> **Safety**: BOB is audit-only. It executes only read-only commands (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) and never writes outside `~/.config/bob` and its log directory. The optional `--fix --apply` mode prompts before each remediation; nothing else modifies system state. A typical audit completes in under 5 seconds.
+> **Safety**: BOB is audit-only. It executes only read-only commands (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) and never writes outside `~/.config/bob` and its log directory. The optional `--fix --apply` mode prompts before each remediation, and only for commands BOB can run unattended — a diagnostic like `smartctl -a` is shown, never executed. Adding `--yes` skips the prompts; nothing else modifies system state. An audit takes a few seconds and **reports its own duration** since v0.16.4, so you need not take that on trust: around six seconds on a working desktop, under five on a minimal container.
 
 ### Prerequisites
 

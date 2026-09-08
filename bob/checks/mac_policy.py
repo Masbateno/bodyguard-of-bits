@@ -235,7 +235,7 @@ def check_mac_policy(
             result.info(
                 message=_t("mac_policy.apparmor_no_profiles"),
                 detail=_t("mac_policy.apparmor_no_profiles_detail"),
-                cmd="sudo apt install apparmor-profiles apparmor-profiles-extra",
+                cmd="sudo apt install -y apparmor-profiles apparmor-profiles-extra",
                 key="mac_policy.apparmor_no_profiles",
             )
         else:
@@ -245,7 +245,7 @@ def check_mac_policy(
                 reason=_t("mac_policy.apparmor_no_profiles_reason"),
                 points=1,
                 detail=_t("mac_policy.apparmor_no_profiles_detail"),
-                cmd="sudo apt install apparmor-profiles apparmor-profiles-extra",
+                cmd="sudo apt install -y apparmor-profiles apparmor-profiles-extra",
                 nature="action",
             )
         return result
@@ -328,7 +328,7 @@ def check_mac_policy(
         reason=_t("mac_policy.no_mac_reason"),
         points=1,
         detail=_t("mac_policy.no_mac_detail"),
-        cmd="sudo apt install apparmor apparmor-utils && sudo systemctl enable --now apparmor",
+        cmd="sudo apt install -y apparmor apparmor-utils && sudo systemctl enable --now apparmor",
         nature="action",
     )
     return result

@@ -133,7 +133,7 @@ def check_disk(snapshot: DiskSnapshot, *, t: TranslationFunc | None = None) -> C
         result.info(
             message=_t("disk.smartctl_missing"),
             detail=_t("disk.smartctl_missing_detail"),
-            cmd="sudo apt install smartmontools",
+            cmd="sudo apt install -y smartmontools",
             key="disk.smartctl_missing",
         )
 
