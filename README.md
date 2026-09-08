@@ -320,6 +320,8 @@ On non-apt distributions (Fedora, RHEL, openSUSE, Arch, Alpine), checks that rel
 
 The same release fixed a query that answered yes to everything on the whole RPM family. `rpm -q nosuchpackage` prints *"package nosuchpackage is not installed"* on **stdout** and exits 1; BOB counted any output as proof of installation, so on Fedora, RHEL and openSUSE every package read as installed — including names that exist nowhere. The visible effect was an audit reporting on services that were not there, and a microcode verdict of "OK" that had checked nothing. **If you run BOB on an RPM-based distribution, v0.17.0 is not optional.**
 
+The same release stopped BOB reading Debian's filenames to decide. `/etc/pam.d/common-password` is Debian's name for the PAM password stack, and the password-policy check deducted a point on every Fedora, RHEL, openSUSE and Arch host having read nothing — Fedora's `system-auth` carries `pam_pwquality.so` on line 13. Alpine, which has no PAM at all, now gets "could not establish" rather than a deduction, and the score says it is a ceiling.
+
 ---
 
 ## See also

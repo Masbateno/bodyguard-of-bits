@@ -34,7 +34,6 @@ def policy(tmp_path, monkeypatch):
     for name in ("login.defs", "common-password", "pwquality.conf"):
         (tmp_path / name).write_text("")
     monkeypatch.setattr(pp, "_LOGIN_DEFS_PATH", tmp_path / "login.defs")
-    monkeypatch.setattr(pp, "_COMMON_PASSWORD", tmp_path / "common-password")
     monkeypatch.setattr(pp, "_PWQUALITY_CONF", tmp_path / "pwquality.conf")
     monkeypatch.setattr(pp, "_PWQUALITY_CONF_D", confd)
 
@@ -47,7 +46,13 @@ def policy(tmp_path, monkeypatch):
             (tmp_path / "pwquality.conf").write_text(pwquality)
         for name, body in (dropins or {}).items():
             (confd / name).write_text(body)
-        return pp.PasswordPolicySnapshot.from_system()
+        # v0.17.0: the PAM file is injected through _pam_paths, because
+        # `/etc/pam.d/common-password` stopped being *the* source — it is
+        # Debian's name for a stack that Fedora, RHEL and Arch call
+        # `system-auth`, and reading only Debian's name produced a deduction
+        # on every one of them.
+        return pp.PasswordPolicySnapshot.from_system(
+            _pam_paths=(tmp_path / "common-password",))
     return _collect
 
 

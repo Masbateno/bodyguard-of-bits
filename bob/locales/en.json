@@ -141,7 +141,7 @@
   },
   "prerequisites": {
     "ufw_installed": "UFW is installed",
-    "ufw_missing": "UFW is not installed — install it with: sudo apt install ufw"
+    "ufw_missing": "UFW is not installed"
   },
   "firewall": {
     "active": "UFW firewall is active",
@@ -1214,7 +1214,7 @@
     "security_pending_reason": "{count} security package(s) pending update",
     "regular_pending": "{count} package(s) pending update (non-security)",
     "unattended_not_configured": "unattended-upgrades not configured — security patches require manual intervention",
-    "unattended_not_configured_detail": "Install and enable: sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
+    "unattended_not_configured_detail": "Unattended security upgrades are not configured, so patches wait for someone to remember. The package providing them is Debian's unattended-upgrades; Fedora and RHEL use dnf-automatic, whose own package name moved with dnf5, and the configuration differs.",
     "unattended_not_configured_reason": "unattended-upgrades not configured",
     "apt_cache_stale": "APT cache is {days} day(s) old — pending updates may be under-reported",
     "apt_cache_stale_detail": "BOB reads /var/cache/apt/pkgcache.bin to decide what is pending. With a stale cache the dist-upgrade simulation may return 0 packages even when security updates are available upstream. Refresh first, then re-run the audit.",
@@ -1596,7 +1596,7 @@
       "not_active": {
         "title": "SSH server is installed but the sshd service is not running",
         "why": "The openssh-server package is installed but sshd is not active — operators cannot connect via SSH. Whether this is a problem depends on intent. On a server, SSH is typically the primary administration channel — having it dormant after a reboot means a console drive is required to recover access. On a desktop without remote management, an inactive sshd is the safe state and the package could simply be uninstalled.",
-        "how": "If SSH IS wanted (typical for servers):\n1. Start and enable the service:\n   sudo systemctl enable --now ssh\n2. Verify it is listening:\n   ss -tlnp | grep :22\n3. Confirm authentication works from a known-good client.\nIf SSH is NOT wanted (typical for non-administered desktops):\n1. Stop and disable cleanly:\n   sudo systemctl disable --now ssh\n2. Optional — remove the package entirely:\n   sudo apt remove --purge openssh-server",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nIf SSH IS wanted (typical for servers):\n1. Start and enable the service:\n   sudo systemctl enable --now ssh\n2. Verify it is listening:\n   ss -tlnp | grep :22\n3. Confirm authentication works from a known-good client.\nIf SSH is NOT wanted (typical for non-administered desktops):\n1. Stop and disable cleanly:\n   sudo systemctl disable --now ssh\n2. Optional — remove the package entirely:\n   sudo apt remove --purge openssh-server",
         "server": {
           "why": "On a server, an inactive sshd typically means a maintenance session was not reversed. Re-enable; without SSH, the next remote intervention requires hardware console access."
         },
@@ -1663,7 +1663,7 @@
       "unattended_not_configured": {
         "title": "Automatic security updates not configured",
         "why": "Without automatic updates, security patches accumulate until someone manually applies them. Maintenance windows of exposure grow over time, and critical patches are often missed on servers without active monitoring.",
-        "how": "1. Install the package:\n   sudo apt install unattended-upgrades\n2. Configure it interactively:\n   sudo dpkg-reconfigure -plow unattended-upgrades\n3. Verify the service is active:\n   sudo systemctl status unattended-upgrades\n4. Test with a dry run:\n   sudo unattended-upgrade --dry-run -d",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install the package:\n   sudo apt install unattended-upgrades\n2. Configure it interactively:\n   sudo dpkg-reconfigure -plow unattended-upgrades\n3. Verify the service is active:\n   sudo systemctl status unattended-upgrades\n4. Test with a dry run:\n   sudo unattended-upgrade --dry-run -d",
         "server": {
           "why": "On an exposed server, every unpatched day is an open window. Attackers actively scan for systems missing recent CVEs. Manual update management on a server almost always means patches lag — automatic security updates are non-negotiable on public-facing infrastructure."
         },
@@ -1672,7 +1672,7 @@
         },
         "container": {
           "why": "In a container environment, updates are managed at the image level — not via unattended-upgrades. If your pipeline regularly rebuilds from an updated base image, this finding does not apply. Verify your CI/CD includes base image refresh.",
-          "how": "Rebuild the image from an updated base rather than running apt inside the container:\n   # Update your Dockerfile base image tag, then:\n   docker build --pull -t <your-image> .\n   docker compose up -d\nFor the host system (if unattended-upgrades is needed there):\n   sudo apt install unattended-upgrades\n   sudo dpkg-reconfigure -plow unattended-upgrades"
+          "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nRebuild the image from an updated base rather than running apt inside the container:\n   # Update your Dockerfile base image tag, then:\n   docker build --pull -t <your-image> .\n   docker compose up -d\nFor the host system (if unattended-upgrades is needed there):\n   sudo apt install unattended-upgrades\n   sudo dpkg-reconfigure -plow unattended-upgrades"
         }
       },
       "apt_cache_stale": {
@@ -1722,7 +1722,7 @@
       "logrotate_missing": {
         "title": "logrotate is missing or has no active configuration files",
         "why": "Without logrotate, log files in /var/log/ grow without limit. On systems with verbose services (web servers, auth log floods from SSH brute-force, application stack traces) the disk can fill in days, taking the host offline. The most common cause is a custom distro install where the logrotate package was excluded, or a recently-purged install that took the configuration with it.",
-        "how": "1. Install logrotate:\n   sudo apt install logrotate\n2. Verify the default rotation directory has rules:\n   ls /etc/logrotate.d/\n3. (Optional) Re-create rules for any package that should have shipped one:\n   sudo dpkg-reconfigure <package>\n4. Test rotation manually:\n   sudo logrotate -d /etc/logrotate.conf   # dry-run with verbose output\n   sudo logrotate -f /etc/logrotate.conf   # force rotation now",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install logrotate:\n   sudo apt install logrotate\n2. Verify the default rotation directory has rules:\n   ls /etc/logrotate.d/\n3. (Optional) Re-create rules for any package that should have shipped one:\n   sudo dpkg-reconfigure <package>\n4. Test rotation manually:\n   sudo logrotate -d /etc/logrotate.conf   # dry-run with verbose output\n   sudo logrotate -f /etc/logrotate.conf   # force rotation now",
         "server": {
           "why": "On a server, missing logrotate is a slow-motion outage waiting to happen — the disk fills, the host crashes. Install + verify the daily cron entry exists."
         },
@@ -1738,7 +1738,7 @@
       "blocked_repeat_public": {
         "title": "Repeated blocked connection attempts from one source",
         "why": "UFW logged more than ten separate connection attempts from one public address to one port within a minute, and dropped every one of them. That is what was measured, and it is worth knowing: something is probing a port on this host persistently. What it does *not* establish is a brute-force attack. A UFW BLOCK is a packet the firewall discarded — it never reached a service, so no credential was ever offered, and repeated credential guessing cannot be read from dropped packets. This finding used to say \"Bruteforce attempts\" anyway, and it counted packets rather than attempts, so one client the kernel was retrying could cross the threshold on its own. It now counts distinct source ports, which separates a retransmission from a new attempt, and traffic from the local network or over UDP is reported without a deduction because neither can be an authentication attack.",
-        "how": "Layered response:\n1. Install fail2ban if not present and enable the jail for the targeted service (sshd is the most common):\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # ensure the relevant jail has enabled=true\n2. Restrict the service to known IPs at the firewall layer:\n   sudo ufw allow from <trusted-ip> to any port 22\n   sudo ufw delete allow 22   # if a broader rule existed\n3. For SSH specifically, disable password auth (force pubkey only):\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nLayered response:\n1. Install fail2ban if not present and enable the jail for the targeted service (sshd is the most common):\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # ensure the relevant jail has enabled=true\n2. Restrict the service to known IPs at the firewall layer:\n   sudo ufw allow from <trusted-ip> to any port 22\n   sudo ufw delete allow 22   # if a broader rule existed\n3. For SSH specifically, disable password auth (force pubkey only):\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh",
         "server": {
           "why": "On a public-facing server, brute force attempts are constant. fail2ban + key-only SSH is the baseline. Without either, account compromise is a matter of time."
         },
@@ -1770,7 +1770,7 @@
       "no_backup": {
         "title": "No backup solution detected (timeshift, restic, borg, etc.)",
         "why": "Without a backup tool, recovery from ransomware, hardware failure, accidental deletion, or filesystem corruption is impossible. The cost of a single bad day far exceeds the cost of any backup solution. The check is not 'is the backup recent' — BOB cannot evaluate that — but 'is a backup tool even installed', which is a baseline configuration question.",
-        "how": "Pick a tool that matches your storage target:\n1. Local snapshots (laptop, single workstation) — timeshift is the simplest:\n   sudo apt install timeshift\n   sudo timeshift --create --comments 'initial baseline'\n2. Off-site / encrypted (server, NAS target) — restic or borg:\n   sudo apt install restic\n   restic init -r <backup-location>\n   restic backup -r <backup-location> /etc /home\n3. Whichever tool: schedule via systemd timer or cron, and TEST a restore at least once. Untested backups are not backups.",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nPick a tool that matches your storage target:\n1. Local snapshots (laptop, single workstation) — timeshift is the simplest:\n   sudo apt install timeshift\n   sudo timeshift --create --comments 'initial baseline'\n2. Off-site / encrypted (server, NAS target) — restic or borg:\n   sudo apt install restic\n   restic init -r <backup-location>\n   restic backup -r <backup-location> /etc /home\n3. Whichever tool: schedule via systemd timer or cron, and TEST a restore at least once. Untested backups are not backups.",
         "server": {
           "why": "On a server, no backup means a single disk failure or successful ransomware encryption is an unrecoverable incident. Pick restic / borg with an off-site target and verify restore quarterly."
         },
@@ -1786,7 +1786,7 @@
       "sensitive_remote": {
         "title": "Sensitive service is reachable from the public internet (high-criticality risk)",
         "why": "A service rated high or critical in the BOB service registry (ssh, samba, telnet, …) has an open TCP listener AND the network context indicates the host is publicly addressable (no NAT, no LAN-only firewall). The combination means the service is one bot scan away from being targeted — and for high-risk services like ssh, samba or rdp, the active threat is brute-forcing creds, exploiting known CVEs, and lateral movement after compromise.",
-        "how": "Apply in order of impact:\n1. Move the service off the public internet entirely (VPN, WireGuard, jump host):\n   sudo apt install wireguard\n   # configure WG, then bind the sensitive service to the wg interface only\n2. If public exposure is genuinely required, harden the service:\n   - SSH: key-only auth, no root login, fail2ban, port knocking or change-port-from-22 (security through obscurity helps against bot noise even if not real protection).\n   - Samba: restrict to source IPs at UFW + 'hosts allow' in smb.conf; SMB on the internet is a CVE waiting to be exploited.\n   - Telnet/RDP: do not expose. Migrate to ssh/RDP-over-VPN.\n3. Add an external monitoring alert for unexpected connections.",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nApply in order of impact:\n1. Move the service off the public internet entirely (VPN, WireGuard, jump host):\n   sudo apt install wireguard\n   # configure WG, then bind the sensitive service to the wg interface only\n2. If public exposure is genuinely required, harden the service:\n   - SSH: key-only auth, no root login, fail2ban, port knocking or change-port-from-22 (security through obscurity helps against bot noise even if not real protection).\n   - Samba: restrict to source IPs at UFW + 'hosts allow' in smb.conf; SMB on the internet is a CVE waiting to be exploited.\n   - Telnet/RDP: do not expose. Migrate to ssh/RDP-over-VPN.\n3. Add an external monitoring alert for unexpected connections.",
         "server": {
           "why": "On a public server, sensitive services on the open internet are the primary entry vector for most compromises. VPN-front the admin services and keep only the application's actual public ports exposed."
         },
@@ -1984,7 +1984,7 @@
       "apparmor_no_profiles": {
         "title": "AppArmor active but no profiles are loaded at all",
         "why": "AppArmor without profiles is just an idle kernel module — it does nothing. Common causes are a freshly installed distro that did not ship the apparmor-profiles package, or a Kali / minimal install where the policy set was omitted. Installing the standard profile pack adds dozens of confinements for common services (cups, ntpd, mysqld, snap apps, libreoffice, …) without any custom work.",
-        "how": "1. Install the AppArmor profile packages:\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n2. (Optional) install additional snap / firefox profiles:\n   sudo apt install snapd-confine-profiles\n3. Reload AppArmor to load them:\n   sudo systemctl reload apparmor\n4. Verify profiles loaded:\n   sudo aa-status",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install the AppArmor profile packages:\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n2. (Optional) install additional snap / firefox profiles:\n   sudo apt install snapd-confine-profiles\n3. Reload AppArmor to load them:\n   sudo systemctl reload apparmor\n4. Verify profiles loaded:\n   sudo aa-status",
         "server": {
           "why": "An AppArmor-active server with zero profiles means daemons run with no MAC restriction. Installing the standard profile pack gives confinement for common services (nginx, mariadb, postfix, …) immediately."
         },
@@ -1993,7 +1993,7 @@
         },
         "container": {
           "why": "Container AppArmor profiles are loaded by the host. Address on the host.",
-          "how": "Apply on the host system:\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n   sudo systemctl reload apparmor"
+          "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nApply on the host system:\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n   sudo systemctl reload apparmor"
         }
       },
       "no_enforce": {
@@ -2023,7 +2023,7 @@
         },
         "container": {
           "why": "Container hosts without MAC offer no per-container security boundary beyond namespaces. Install AppArmor on the host as a baseline.",
-          "how": "Apply on the container host:\n   sudo apt install apparmor apparmor-profiles\n   sudo systemctl enable --now apparmor"
+          "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nApply on the container host:\n   sudo apt install apparmor apparmor-profiles\n   sudo systemctl enable --now apparmor"
         }
       },
       "selinux_disabled": {
@@ -2272,7 +2272,7 @@
       "found": {
         "title": "A DDNS client is installed — your IP may be published to a public DNS name",
         "why": "Dynamic DNS clients (ddclient, no-ip, inadyn, …) periodically publish your current public IP to a hostname under a provider (yourdomain.no-ip.org, mydevice.duckdns.org, …). The hostname is then resolvable from anywhere on the internet — anyone who knows it can reach your public IP, even if it changes. DDNS itself is not a vulnerability, but it turns 'IP exposure' into 'persistent name exposure'. Every service you publish becomes effectively internet-targeted once the DDNS name is known to a scanner.",
-        "how": "Decide whether DDNS is intentional:\n1. Intentional (remote access to home services, off-site backup target, etc.) → audit every port that is reachable on the public IP:\n   sudo ufw status\n   ss -tlnp\n   Treat your DDNS name as a public asset and harden every exposed service accordingly.\n2. Unintentional or leftover (e.g. from a previous router or test setup) → disable the client:\n   sudo systemctl disable --now ddclient   # or whichever client is running\n   sudo apt remove --purge ddclient",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nDecide whether DDNS is intentional:\n1. Intentional (remote access to home services, off-site backup target, etc.) → audit every port that is reachable on the public IP:\n   sudo ufw status\n   ss -tlnp\n   Treat your DDNS name as a public asset and harden every exposed service accordingly.\n2. Unintentional or leftover (e.g. from a previous router or test setup) → disable the client:\n   sudo systemctl disable --now ddclient   # or whichever client is running\n   sudo apt remove --purge ddclient",
         "server": {
           "why": "On a server intentionally exposing services to the internet, DDNS is a design choice — but every port behind it must be hardened as if it were on a static public IP. Document which ports are intentionally exposed and harden them explicitly."
         },
@@ -2369,7 +2369,7 @@
       "no_quality_module": {
         "title": "No password quality module configured (pam_pwquality / pam_cracklib)",
         "why": "Without a PAM quality module, the system imposes no complexity requirements on local passwords. Users can set trivially guessable passwords (dictionary words, 'password123', single characters) that are trivial to crack offline if /etc/shadow is ever leaked.",
-        "how": "1. Install pam_pwquality:\n   sudo apt install libpam-pwquality\n2. Configure minimum requirements in /etc/security/pwquality.conf:\n   minlen = 12\n   dcredit = -1\n   ucredit = -1\n   lcredit = -1\n   ocredit = -1\n3. Verify PAM includes pwquality:\n   grep pam_pwquality /etc/pam.d/common-password"
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install pam_pwquality:\n   sudo apt install libpam-pwquality\n2. Configure minimum requirements in /etc/security/pwquality.conf:\n   minlen = 12\n   dcredit = -1\n   ucredit = -1\n   lcredit = -1\n   ocredit = -1\n3. Verify PAM includes pwquality:\n   grep pam_pwquality /etc/pam.d/common-password"
       },
       "weak_minlen": {
         "title": "Minimum password length too short (< 8 characters)",
@@ -2585,7 +2585,7 @@
       "not_installed": {
         "title": "Linux Audit Framework not installed",
         "why": "auditd provides kernel-level logging of system calls, file access, authentication, and privileged commands. Without it, attackers can operate undetected — privilege escalations, unauthorized access, and sensitive file reads leave no forensic trace.",
-        "how": "Install auditd and the dispatcher plugins:\n  sudo apt install auditd audispd-plugins\n  sudo systemctl enable --now auditd\n\nCreate a minimal rule set in /etc/audit/rules.d/99-local.rules:\n  -w /etc/passwd -p wa -k identity\n  -w /etc/shadow -p wa -k identity\n  -w /etc/sudoers -p wa -k sudoers\n\nLoad the rules:\n  sudo augenrules --load"
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nInstall auditd and the dispatcher plugins:\n  sudo apt install auditd audispd-plugins\n  sudo systemctl enable --now auditd\n\nCreate a minimal rule set in /etc/audit/rules.d/99-local.rules:\n  -w /etc/passwd -p wa -k identity\n  -w /etc/shadow -p wa -k identity\n  -w /etc/sudoers -p wa -k sudoers\n\nLoad the rules:\n  sudo augenrules --load"
       },
       "service_inactive": {
         "title": "auditd installed but service not running",
@@ -2632,7 +2632,7 @@
       "not_installed": {
         "title": "No file integrity monitoring tool installed",
         "why": "Without a file integrity monitor (AIDE or Tripwire), there is no way to detect unauthorized modifications to system files, configuration files, or binaries. An attacker who gains access can replace binaries, add backdoors, or alter configuration without detection.",
-        "how": "Install and initialize AIDE:\n  sudo apt install aide\n  sudo aideinit                    # creates the initial baseline database\n  sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db\n\nSchedule regular checks in cron:\n  echo '0 3 * * * root /usr/bin/aide --check 2>&1 | mail -s \"AIDE check\" root' | sudo tee /etc/cron.d/aide-check"
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nInstall and initialize AIDE:\n  sudo apt install aide\n  sudo aideinit                    # creates the initial baseline database\n  sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db\n\nSchedule regular checks in cron:\n  echo '0 3 * * * root /usr/bin/aide --check 2>&1 | mail -s \"AIDE check\" root' | sudo tee /etc/cron.d/aide-check"
       },
       "no_db": {
         "title": "File integrity tool installed but no baseline database",
@@ -2675,7 +2675,7 @@
       "brute_force": {
         "title": "Brute-force attacks detected in authentication logs",
         "why": "Repeated failed login attempts indicate active automated attacks against this machine. If password authentication or weak credentials are in use, persistent brute-force campaigns will eventually succeed. Even with strong passwords, flood attacks consume CPU and lock out legitimate users.",
-        "how": "1. Install and configure fail2ban:\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Verify the SSH jail is active:\n   sudo fail2ban-client status sshd\n3. Disable password authentication (use keys only):\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Reduce MaxAuthTries:\n   MaxAuthTries 3\n5. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install and configure fail2ban:\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Verify the SSH jail is active:\n   sudo fail2ban-client status sshd\n3. Disable password authentication (use keys only):\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Reduce MaxAuthTries:\n   MaxAuthTries 3\n5. Restart SSH:\n   sudo systemctl restart ssh"
       },
       "public_login": {
         "title": "Successful logins from public IP addresses detected",
@@ -2699,7 +2699,7 @@
       "ufw_missing": {
         "title": "UFW (Uncomplicated Firewall) is not installed",
         "why": "Without a host firewall, every listening service on the machine is exposed to whatever network it is connected to. There is no per-service allow/deny policy, no inbound default-deny, and no rule audit trail. On an internet-exposed host this is a critical gap; on a LAN-only host it still leaves the system trivially reachable by any compromised peer.",
-        "how": "1. Install UFW:\n   sudo apt install ufw\n2. Set the safe default policy:\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (If you use SSH) allow it before enabling:\n   sudo ufw allow 22/tcp\n4. Enable the firewall:\n   sudo ufw enable\n5. Verify:\n   sudo ufw status verbose"
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install UFW:\n   sudo apt install ufw\n2. Set the safe default policy:\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (If you use SSH) allow it before enabling:\n   sudo ufw allow 22/tcp\n4. Enable the firewall:\n   sudo ufw enable\n5. Verify:\n   sudo ufw status verbose"
       }
     },
     "firewall": {
@@ -2767,7 +2767,7 @@
       "microcode_missing": {
         "title": "CPU microcode update package not installed",
         "why": "CPU microcode patches critical hardware vulnerabilities including Spectre, Meltdown, MDS, TAA, and many others. Without microcode updates, these side-channel attacks can allow unprivileged processes to read kernel memory, cross VM boundaries, and extract cryptographic keys.",
-        "how": "1. Install the appropriate microcode package:\n   # Intel CPU:\n   sudo apt install intel-microcode\n   # AMD CPU:\n   sudo apt install amd64-microcode\n2. Reboot to apply:\n   sudo reboot\n3. Verify microcode is loaded:\n   grep microcode /proc/cpuinfo | head -1"
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install the appropriate microcode package:\n   # Intel CPU:\n   sudo apt install intel-microcode\n   # AMD CPU:\n   sudo apt install amd64-microcode\n2. Reboot to apply:\n   sudo reboot\n3. Verify microcode is loaded:\n   grep microcode /proc/cpuinfo | head -1"
       }
     },
     "kernel_hardening": {
@@ -2875,7 +2875,7 @@
       "no_backend": {
         "title": "No firewall backend present (no iptables, no nftables)",
         "why": "Without iptables or nftables installed and active, the kernel has no firewall rules at all — every port reachable from the network is fully exposed. UFW (or any other userspace firewall) ultimately relies on one of these backends to write rules into the kernel. Missing both means the system is operating without any packet filter whatsoever.",
-        "how": "1. Install iptables (or nftables) on the system:\n   sudo apt install iptables\n2. After install, configure UFW or another front-end and enable it:\n   sudo apt install ufw && sudo ufw enable\n3. Verify rules are loaded:\n   sudo iptables -L -n  # or: sudo nft list ruleset",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install iptables (or nftables) on the system:\n   sudo apt install iptables\n2. After install, configure UFW or another front-end and enable it:\n   sudo apt install ufw && sudo ufw enable\n3. Verify rules are loaded:\n   sudo iptables -L -n  # or: sudo nft list ruleset",
         "server": {
           "why": "A server with no firewall backend is fully exposed to the network — there is no kernel-level filtering, no default deny, no ability to restrict any service. This is one of the worst possible postures for any networked machine."
         },
@@ -2884,7 +2884,7 @@
         },
         "container": {
           "why": "Containers usually inherit packet filtering from the host. This finding suggests the host has no firewall — fix on the host system.",
-          "how": "Install on the host system:\n   sudo apt install iptables ufw\n   sudo ufw enable"
+          "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nInstall on the host system:\n   sudo apt install iptables ufw\n   sudo ufw enable"
         }
       },
       "nft_no_input_filter": {
@@ -2996,7 +2996,7 @@
       "nftables_parallel": {
         "title": "nftables ruleset active in parallel with UFW (iptables backend)",
         "why": "UFW writes its rules to the iptables backend. If nftables is also active with its own ruleset, two firewall stacks evaluate every packet — and the order of evaluation depends on kernel version, module load order, and the netfilter compatibility layer. The result is non-deterministic packet processing: a port `ufw allow` opens may be silently dropped by an nftables rule, or vice versa. Symptoms are intermittent connectivity failures that look like network bugs but are firewall ones.",
-        "how": "1. Inspect the nftables ruleset:\n   sudo nft list ruleset\n2. Decide which stack you want to keep:\n   - Keep UFW → flush nftables and disable its service:\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Switch to nftables → uninstall UFW and reconfigure rules natively in nftables:\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persist whichever choice you made (netfilter-persistent for iptables/UFW, nftables.conf for nft).",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Inspect the nftables ruleset:\n   sudo nft list ruleset\n2. Decide which stack you want to keep:\n   - Keep UFW → flush nftables and disable its service:\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Switch to nftables → uninstall UFW and reconfigure rules natively in nftables:\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persist whichever choice you made (netfilter-persistent for iptables/UFW, nftables.conf for nft).",
         "server": {
           "why": "On a server, two parallel firewall stacks produce intermittent connectivity bugs that are very hard to diagnose. Pick one stack and remove the other; consistency is more important than the specific choice."
         },
@@ -3059,6 +3059,8 @@
     "ambiguous_expiry_detail": "The account expiry field is set to 0. shadow(5) states this value \"should not be used as it is interpreted as either an account with no expiration, or as an expiration on Jan 1, 1970\" — chage on this system reports the latter. Whether the account can log in therefore depends on the implementation. Set a real date with `chage -E YYYY-MM-DD` or clear it with `chage -E -1`."
   },
   "password_policy": {
+    "pam_stack_unknown": "Password quality could not be checked: no PAM stack file was readable",
+    "pam_stack_unknown_detail": "BOB looks for a password-quality module (pam_pwquality, pam_cracklib) in the PAM password stack, which is named differently on each distribution: {paths}. None of them could be read here — either this host does not use PAM at all (Alpine does not), or the files are off-limits to the auditor. Nothing is claimed about the host's password policy either way: the setting was not established.",
     "no_quality_module": "No PAM password quality module configured (pam_pwquality/pam_cracklib absent)",
     "no_quality_module_detail": "Without pam_pwquality or pam_cracklib, users can set trivially weak passwords. Any string is accepted regardless of length or complexity.",
     "no_quality_module_reason": "No PAM password quality module configured",
@@ -3191,7 +3193,7 @@
     "setup_mode_detail": "Secure Boot is technically enabled but in Setup Mode: no Platform Key (PK) is enrolled. This means any unsigned bootloader or kernel can run — Secure Boot provides no protection. Enroll keys or disable Setup Mode in UEFI/BIOS settings.",
     "setup_mode_reason": "Secure Boot in Setup Mode — no Platform Key enrolled, protection inactive",
     "unknown": "Secure Boot state could not be determined",
-    "unknown_detail": "Could not read Secure Boot state (mokutil not installed, EFI variables inaccessible). Install mokutil to check: sudo apt install mokutil"
+    "unknown_detail": "Could not read Secure Boot state: mokutil is not installed and the EFI variables are not accessible. Installing mokutil would let BOB answer; the package is called mokutil on Debian, Ubuntu, Fedora and Arch alike."
   },
   "file_integrity": {
     "not_installed": "No file integrity monitor installed (AIDE / Tripwire)",

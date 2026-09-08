@@ -320,6 +320,8 @@ Sur les distributions non-apt (Fedora, RHEL, openSUSE, Arch, Alpine), les checks
 
 La même version corrige une interrogation qui répondait oui à tout sur toute la famille RPM. `rpm -q paquet-inexistant` écrit « package paquet-inexistant is not installed » sur **stdout** et sort en 1 ; BOB comptait toute sortie comme preuve d'installation, si bien que sur Fedora, RHEL et openSUSE tout paquet était réputé installé — y compris des noms qui n'existent nulle part. L'effet visible : un audit qui rendait compte de services absents, et un verdict microcode « OK » qui n'avait rien vérifié. **Si vous faites tourner BOB sur une distribution RPM, la v0.17.0 n'est pas optionnelle.**
 
+La même version a cessé de faire lire à BOB les noms de fichiers de Debian pour décider. `/etc/pam.d/common-password` est le nom Debian de la pile PAM « password », et le check de politique de mots de passe déduisait un point sur chaque hôte Fedora, RHEL, openSUSE et Arch sans avoir rien lu — le `system-auth` de Fedora porte `pam_pwquality.so` en ligne 13. Alpine, qui n'a aucun PAM, reçoit désormais « non établi » plutôt qu'une déduction, et le score annonce qu'il est un plafond.
+
 ---
 
 ## Voir aussi

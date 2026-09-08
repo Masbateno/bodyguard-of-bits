@@ -61,6 +61,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "log_rotation.logrotate_dir_unreadable",
     "mac_policy.apparmor_profiles_unreadable",
     "memory.swappiness_unknown",
+    "password_policy.pam_stack_unknown",
     "plugin.sandbox.unreadable",
     "ports.unreadable",
     "samba.conf_unreadable",

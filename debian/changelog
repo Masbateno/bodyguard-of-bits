@@ -13,6 +13,16 @@ bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
     and "sudo pacman -S aide" fails outright. Where BOB has no measured name it
     emits no command and says so -- a confident instruction that installs
     nothing is worse than an admission.
+  * BOB then kept reading Debian's files to decide. /etc/pam.d/common-password
+    is Debian's name for the PAM password stack, so the password check read it,
+    caught the error and concluded "no PAM quality module" -- a WARN and a
+    point -- on every Fedora, RHEL, openSUSE and Arch host, having read
+    nothing. Fedora's system-auth carries pam_pwquality.so on line 13. Alpine,
+    which has no PAM at all, now gets "could not establish" instead of a
+    deduction.
+  * A third hiding place for a Debian command: translated prose.
+    prerequisites.ufw_missing said "sudo apt install ufw" while the same
+    finding's cmd field said "sudo dnf install -y ufw".
   * The cron wizard promised delivery it had never established. "sendmail
     available — notifications will be delivered" was decided by
     shutil.which("sendmail"), which a Postfix installed and never configured

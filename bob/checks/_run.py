@@ -699,6 +699,78 @@ def install_fix(t, detail: "str | None", *logical: str,
     return None, f"{detail} {advice}" if detail else advice
 
 
+# ---------------------------------------------------------------------------
+# PAM stacks, which are not called the same thing twice
+# ---------------------------------------------------------------------------
+#
+# The package layer above fixed *what BOB advises*. This fixes *what BOB reads*,
+# and it is the same fault one level down: `/etc/pam.d/common-password` is
+# Debian's name for the password stack and exists nowhere else. The password
+# policy check read it, caught the OSError, left the module unset and concluded
+# "no PAM quality module" — a WARN and a deduction — on every Fedora, RHEL,
+# openSUSE and Arch host, having read nothing at all.
+#
+# Measured 2026-09-08 in fedora:latest, archlinux:latest and alpine:latest:
+#
+#   Debian/Ubuntu  common-password, common-session, common-auth
+#   Fedora/RHEL    system-auth, password-auth  (+ postlogin for sessions)
+#   Arch           system-auth
+#   Alpine         nothing at all — no /etc/pam.d, and no /etc/login.defs
+#
+# Alpine is the case that matters most for honesty: it does not use PAM, so
+# "no quality module configured in PAM" is not a finding about the host's
+# hardening. It is a statement about a mechanism the host does not have, and
+# BOB must say it could not establish the answer rather than deduct a point.
+_PAM_STACKS: "dict[str, tuple[str, ...]]" = {
+    # Where a password-quality module (pam_pwquality, pam_cracklib) is stacked.
+    "password": (
+        "/etc/pam.d/common-password",   # Debian, Ubuntu, Mint, Kali
+        "/etc/pam.d/system-auth",       # Fedora, RHEL, Arch, openSUSE
+        "/etc/pam.d/password-auth",     # Fedora, RHEL — the remote-login stack
+    ),
+    # Where session modules (pam_umask) are stacked.
+    "session": (
+        "/etc/pam.d/common-session",    # Debian, Ubuntu, Mint, Kali
+        "/etc/pam.d/system-auth",       # Fedora, RHEL, Arch, openSUSE
+        "/etc/pam.d/postlogin",         # Fedora, RHEL — runs after every login
+    ),
+}
+
+
+def pam_stack_paths(concern: str) -> "tuple[Path, ...]":
+    """Every file *concern* may be configured in, on any known distribution."""
+    from pathlib import Path as _Path
+
+    names = _PAM_STACKS.get(concern)
+    if names is None:
+        raise KeyError(f"no PAM stack declared for {concern!r}")
+    return tuple(_Path(n) for n in names)
+
+
+def read_pam_stack(concern: str,
+                   paths: "tuple[Path, ...] | None" = None) -> "tuple[str, bool]":
+    """``(joined text, established)`` for the *concern* stack on this host.
+
+    ``established`` is False when not one of the candidate files could be read —
+    either none exists (Alpine, which has no PAM) or every one that does is
+    off-limits. The caller must then report that it could not check, never that
+    the thing is absent: this is the distinction v0.15.2 drew for packages and
+    v0.16.0 drew for the score, applied to the files a verdict is read from.
+
+    A file that exists but cannot be opened counts as *not established* too,
+    for the same reason: unreadable is not empty.
+    """
+    chunks: "list[str]" = []
+    established = False
+    for path in (paths if paths is not None else pam_stack_paths(concern)):
+        try:
+            chunks.append(path.read_text(encoding="utf-8", errors="replace"))
+            established = True
+        except OSError:
+            continue
+    return "\n".join(chunks), established
+
+
 def path_exists(path: "Path") -> bool:
     """Whether *path* exists, without raising when the answer is off-limits.
 

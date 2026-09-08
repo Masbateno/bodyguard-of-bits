@@ -43,6 +43,7 @@ _CLAIMS = "tests/test_v0163_readme_tech_claims.py"
 _DOCEX = "tests/test_v0163_doc_examples_run.py"
 _MAIL = "tests/test_v0170_mail_transport.py"
 _PKGNAMES = "tests/test_v0170_package_names.py"
+_PATHS = "tests/test_v0170_distro_paths.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -653,6 +654,55 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="aideinit, pam-auth-update and dpkg-reconfigure are Debian's own "
                "tools; appending them to a dnf command hands out a remedy whose "
                "second half cannot run",
+    ),
+
+    # ---- the files a verdict is read from ----------------------------------
+    Mutation(
+        id="paths/pam-stack-is-debians-only",
+        file="bob/checks/_run.py",
+        old='        "/etc/pam.d/system-auth",       # Fedora, RHEL, Arch, openSUSE\n'
+            '        "/etc/pam.d/password-auth",     # Fedora, RHEL — the remote-login stack\n'
+            '    ),\n'
+            '    # Where session modules (pam_umask) are stacked.',
+        new='    ),\n'
+            '    # Where session modules (pam_umask) are stacked.',
+        kills=(f"{_PATHS}::TestThePamStackIsNotJustDebians",),
+        reason="reading only common-password produced 'no PAM quality module' "
+               "— a WARN and a deduction — on every Fedora, RHEL, openSUSE and "
+               "Arch host, having read nothing at all",
+    ),
+    Mutation(
+        id="paths/unreadable-stack-becomes-absent",
+        file="bob/checks/password_policy.py",
+        old="    if not snapshot.pam_stack_established:",
+        new="    if False:",
+        kills=(f"{_PATHS}::TestNoDeductionForAStackThatCouldNotBeRead::"
+               "test_alpine_shaped_host_gets_unknown_not_a_warning",),
+        reason="Alpine has no PAM at all, so the deduction would be a statement "
+               "about a mechanism the host does not have",
+    ),
+    Mutation(
+        id="paths/umask-reads-one-file-again",
+        file="bob/checks/umask.py",
+        old="        _pam_sessions = ((_pam_session,) if _pam_session is not None\n"
+            '                         else pam_stack_paths("session"))',
+        new='        _pam_sessions = ((_pam_session,) if _pam_session is not None\n'
+            '                         else (Path("/etc/pam.d/common-session"),))',
+        kills=(f"{_PATHS}::TestUmaskReadsTheWholeSessionStack::"
+               "test_the_default_path_consults_the_whole_stack",),
+        reason="a pam_umask stacked in system-auth or postlogin went unseen and "
+               "the scan fell through to /etc/profile as though PAM were silent",
+    ),
+    Mutation(
+        id="paths/debian-command-back-in-the-prose",
+        file="bob/locales/en.json",
+        old='"ufw_missing": "UFW is not installed"',
+        new='"ufw_missing": "UFW is not installed — install it with: sudo apt install ufw"',
+        kills=(f"{_PATHS}::TestNoDebianCommandHidesInTranslatedProse::"
+               "test_the_audits_own_messages_name_no_package_manager",),
+        reason="the message said apt while the same finding's cmd said dnf — "
+               "BOB contradicting itself on screen, in one finding, where no "
+               "guard was looking at message strings at all",
     ),
 
     # ---- the cron wizard's promise of delivery -----------------------------

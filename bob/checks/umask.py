@@ -2,7 +2,8 @@
 System umask check for BOB.
 
 Reads the system-wide umask from /etc/login.defs, /etc/profile,
-/etc/profile.d/*.sh, /etc/bash.bashrc, and /etc/pam.d/common-session.
+/etc/profile.d/*.sh, /etc/bash.bashrc, and the PAM session stack (named
+differently per distribution — see bob.checks._run.pam_stack_paths).
 
 A permissive umask (002 or 000) causes newly created files to be
 group- or world-writable by default — a privilege escalation risk.
@@ -19,7 +20,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t, path_exists
+from bob.checks._run import TranslationFunc, _identity_t, pam_stack_paths, path_exists
 from bob.scoring import CheckResult
 
 _UMASK_RE = re.compile(r"^(?!\s*#)\s*(?:umask|UMASK)\s+([0-7]{3,4})\b", re.MULTILINE)
@@ -121,7 +122,7 @@ class UmaskSnapshot:
         cls,
         *,
         _login_defs: Path = Path("/etc/login.defs"),
-        _pam_session: Path = Path("/etc/pam.d/common-session"),
+        _pam_session: "Path | None" = None,
         _profile: Path = Path("/etc/profile"),
         _bash_bashrc: Path = Path("/etc/bash.bashrc"),
         _profile_d: Path = Path("/etc/profile.d"),
@@ -130,10 +131,18 @@ class UmaskSnapshot:
         snap = cls()
         found: dict[str, str] = {}  # {source_path: normalized_value}
 
+        # v0.17.0: the session stack, not `common-session` alone. That is
+        # Debian's name for it; Fedora and RHEL stack pam_umask in
+        # `system-auth` and `postlogin`, Arch in `system-auth`. A pam_umask
+        # configured there was simply not seen, and the scan fell through to
+        # /etc/profile as though PAM had said nothing.
+        _pam_sessions = ((_pam_session,) if _pam_session is not None
+                         else pam_stack_paths("session"))
+
         # Priority-ordered candidates (first hit becomes the primary)
         candidates: list[tuple[Path, object]] = [
             (_login_defs, _LOGIN_DEFS_RE),
-            (_pam_session, _PAM_UMASK_RE),
+            *((path, _PAM_UMASK_RE) for path in _pam_sessions),
             (_profile,     _UMASK_RE),
             (_bash_bashrc, _UMASK_RE),
         ]
@@ -172,15 +181,16 @@ class UmaskSnapshot:
 
         # pam_umask.so without explicit umask= — uses login.defs UMASK or default 022
         # Common on Debian 13+ where UMASK is commented out in login.defs
-        try:
-            pam_content = _pam_session.read_text(encoding="utf-8", errors="ignore")
+        for _pam_path in _pam_sessions:
+            try:
+                pam_content = _pam_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
             if _PAM_UMASK_NOARG_RE.search(pam_content):
                 ldef_val = _scan(_login_defs, _LOGIN_DEFS_RE)
                 snap.umask_value = ldef_val if ldef_val is not None else "022"
-                snap.source = str(_pam_session)
+                snap.source = str(_pam_path)
                 return snap
-        except OSError:
-            pass
 
         # Last resort: read effective process umask from /proc/self/status
         proc_val = _get_proc_umask()

@@ -6,7 +6,7 @@ Checks the system password policy at two levels:
   2. PAM              — password quality enforcement (pam_pwquality/pam_cracklib)
                         and minimum length configuration.
 
-A system without pam_pwquality or pam_cracklib in common-password has no
+A system without pam_pwquality or pam_cracklib in the PAM password stack has no
 complexity enforcement — users can set trivially guessable passwords.
 
 The check is split into two parts:
@@ -26,7 +26,14 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import install_fix, TranslationFunc, _identity_t, join_continuations
+from bob.checks._run import (
+    TranslationFunc,
+    _identity_t,
+    install_fix,
+    join_continuations,
+    pam_stack_paths,
+    read_pam_stack,
+)
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -34,7 +41,6 @@ from bob.scoring import CheckResult
 # ---------------------------------------------------------------------------
 
 _LOGIN_DEFS_PATH    = Path("/etc/login.defs")
-_COMMON_PASSWORD    = Path("/etc/pam.d/common-password")
 _PWQUALITY_CONF     = Path("/etc/security/pwquality.conf")
 # libpwquality reads the drop-in directory *first*, in ASCII order, then the
 # main file — so the main file wins where both set a value, and a drop-in
@@ -123,15 +129,22 @@ class PasswordPolicySnapshot:
     pass_max_days:       int | None = None
     pass_min_days:       int | None = None
     pam_quality_module:  str | None = None
+    #: False when not one of the PAM password-stack files could be read: none
+    #: exists (Alpine has no PAM at all) or every one that does is off-limits.
+    #: A verdict of "no quality module" then states something BOB never
+    #: established, so the check says so instead of deducting a point.
+    pam_stack_established: bool = True
     pam_minlen:          int | None = None
 
     @classmethod
-    def from_system(cls) -> "PasswordPolicySnapshot":
+    def from_system(cls, *, _pam_paths: "tuple[Path, ...] | None" = None
+                    ) -> "PasswordPolicySnapshot":
         """
         Collect password policy configuration from the live system.
 
-        Reads /etc/login.defs, /etc/pam.d/common-password, and
-        /etc/security/pwquality.conf.  Never raises — errors reflected as
+        Reads /etc/login.defs, the PAM password stack (whatever this
+        distribution calls it — see :func:`bob.checks._run.read_pam_stack`) and
+        /etc/security/pwquality.conf. Never raises — errors reflected as
         defaults (unreadable → None fields).
 
         Returns:
@@ -155,10 +168,14 @@ class PasswordPolicySnapshot:
         except OSError:
             pass
 
-        # ---- /etc/pam.d/common-password -------------------------------------
+        # ---- the PAM password stack -----------------------------------------
+        # Not `/etc/pam.d/common-password` alone: that is Debian's name for it
+        # and exists nowhere else, so this read caught an OSError, left the
+        # module unset and produced "no PAM quality module" — a WARN and a
+        # deduction — on Fedora, RHEL, openSUSE and Arch, having read nothing.
         pam_minlen_inline: int | None = None
-        try:
-            pam_text = _COMMON_PASSWORD.read_text(encoding="utf-8", errors="replace")
+        pam_text, snap.pam_stack_established = read_pam_stack("password", _pam_paths)
+        if pam_text:
             # PAM stacks wrap with a trailing backslash — pam.conf(5) uses a
             # wrapped line as its own worked example. Unjoined, a module and the
             # `minlen=` it was given sit on different lines and never meet.
@@ -178,8 +195,6 @@ class PasswordPolicySnapshot:
                     if m:
                         pam_minlen_inline = int(m.group(1))
                     break
-        except OSError:
-            pass
 
         # ---- /etc/security/pwquality.conf -----------------------------------
         # pwquality.conf takes precedence over inline PAM option for minlen.
@@ -226,8 +241,21 @@ def check_password_policy(snapshot: PasswordPolicySnapshot, *, t: TranslationFun
     result = CheckResult()
     has_finding = False
 
+    # ---- The PAM stack could not be read at all -----------------------------
+    if not snapshot.pam_stack_established:
+        # Alpine, and any host whose PAM files are off-limits. "No quality
+        # module configured in PAM" would be a statement about a mechanism this
+        # host may not even have.
+        result.info(
+            message=_t("password_policy.pam_stack_unknown"),
+            detail=_t("password_policy.pam_stack_unknown_detail",
+                      paths=", ".join(str(p) for p in pam_stack_paths("password"))),
+            key="password_policy.pam_stack_unknown",
+        )
+        has_finding = True
+
     # ---- No PAM quality module ---------------------------------------------
-    if snapshot.pam_quality_module is None:
+    elif snapshot.pam_quality_module is None:
         # C-2 fix: nature="action" routes the cmd through --fix --apply, which
         # rejects any shell operator (&&, ||, ;) via fixes._has_shell_ops.
         # Two-step install isn't safely chainable in a single exec — emit as

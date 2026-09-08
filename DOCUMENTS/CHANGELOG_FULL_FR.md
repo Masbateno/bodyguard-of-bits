@@ -90,6 +90,58 @@ rpm est interrogé avec `--quiet` et jugé sur son code de sortie. pacman et apk
 gardent le test sur la sortie, parce qu'ils n'impriment réellement rien quand le
 paquet est absent — mesuré le même jour.
 
+### Puis BOB a continué de lire les fichiers de Debian
+
+La couche paquets a corrigé ce que BOB *conseille*. Voici la même faute un
+étage plus bas, dans ce que BOB *lit pour décider*. `/etc/pam.d/common-password`
+est le nom que Debian donne à la pile PAM « password » et n'existe nulle part
+ailleurs. Le check de politique de mots de passe le lisait, attrapait l'OSError,
+laissait le module non défini et concluait « aucun module de qualité PAM » — un
+WARN et un point de déduction — sur chaque hôte Fedora, RHEL, openSUSE et Arch,
+sans avoir rien lu du tout.
+
+Le `/etc/pam.d/system-auth` de Fedora porte `pam_pwquality.so` en ligne 13. BOB
+déduisait un point pour un module configuré depuis toujours.
+
+La pile est désormais lue là où cette distribution la range —
+`common-password` sur Debian et Ubuntu, `system-auth` et `password-auth` sur
+Fedora et RHEL, `system-auth` sur Arch — et tous les fichiers présents sont
+fusionnés, parce que Fedora empile le module dans l'un et l'inclut depuis
+l'autre. `umask` reçoit le même traitement pour la pile « session », où un
+`pam_umask` hors du `common-session` de Debian passait simplement inaperçu et où
+le balayage retombait sur `/etc/profile` comme si PAM n'avait rien dit.
+
+C'est Alpine qui décide de la conception. Elle n'a aucun `/etc/pam.d`, ni
+`/etc/login.defs`. « Aucun module de qualité configuré dans PAM » n'y est pas
+une affirmation sur le durcissement de l'hôte mais sur un mécanisme que l'hôte
+ne possède pas : BOB rapporte donc qu'il n'a pas pu établir la réponse et ne
+déduit rien — la distinction que la v0.15.2 a tracée pour les paquets et la
+v0.16.0 pour le score, appliquée aux fichiers dont un verdict est tiré. La clé
+rejoint `VISIBILITY_KEYS`, si bien que le score annonce qu'il est un plafond.
+
+### Une troisième cachette pour une commande Debian : la prose traduite
+
+`prerequisites.ufw_missing` affichait « UFW n'est pas installé — installez-le
+avec : sudo apt install ufw » pendant que le champ `cmd` du même finding,
+fraîchement rendu portable, disait `sudo dnf install -y ufw`. BOB se
+contredisait à l'écran, dans un seul finding, et aucune garde n'avait jamais
+regardé les chaînes de message — le balayage comme la garde lisaient les
+arguments `cmd=`.
+
+Quatre messages de l'audit lui-même portaient une commande de gestionnaire de
+paquets. Ce n'est plus le cas : la commande appartient au `cmd` du finding, qui
+est construit pour cet hôte. Vingt blocs `--explain` en portaient aussi ; ce
+sont des pages de manuel plutôt que des instructions, chacune s'ouvre donc en
+disant de quelle distribution sont les noms de paquets. Quatre autres nommaient
+déjà la famille dans leur propre prose, et la garde teste la propriété plutôt
+qu'une formulation : elles ont été laissées telles quelles.
+
+A/B en conteneur : **Arch ne bouge pas du tout** — son `system-auth` existe et
+n'a réellement pas de `pam_pwquality`, l'avertissement y reste donc à juste
+titre. Fedora perd la fausse déduction. L'avertissement d'Alpine devient un INFO
+qui dit ce qui n'a pas été établi. Sur Debian, rien ne bouge : même score, mêmes
+93 findings, mêmes déductions, pas une commande modifiée.
+
 ### Deux défauts que l'écriture de tout ceci a révélés
 
 Aucun n'était visible depuis une suite verte sur cet hôte Debian.
@@ -161,7 +213,7 @@ vrai wizard derrière un pty l'a trouvée du premier coup, et la garde qui l'a
 remplacée pilote la fonction contre un écran enregistreur en exigeant que
 chaque mot de l'avis atterrisse sur une ligne.
 
-**Tests** 8951 → **9098**. **Mutations** 56 → **72**.
+**Tests** 8951 → **9132**. **Mutations** 56 → **76**.
 
 ---
 

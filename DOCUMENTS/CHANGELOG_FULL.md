@@ -86,6 +86,55 @@ rpm is asked with `--quiet` and judged by its exit status. pacman and apk keep
 their output test, because they genuinely print nothing when the package is
 absent — measured the same day.
 
+### Then BOB kept reading Debian's files
+
+The package layer fixed what BOB *advises*. This is the same fault one level
+down, in what BOB *reads to decide*. `/etc/pam.d/common-password` is Debian's
+name for the PAM password stack and exists nowhere else. The password policy
+check read it, caught the OSError, left the module unset and concluded "no PAM
+quality module" — a WARN and a one-point deduction — on every Fedora, RHEL,
+openSUSE and Arch host, having read nothing at all.
+
+Fedora's `/etc/pam.d/system-auth` carries `pam_pwquality.so` on line 13. BOB was
+deducting a point for a module that had been configured all along.
+
+The stack is read wherever this distribution keeps it — `common-password` on
+Debian and Ubuntu, `system-auth` and `password-auth` on Fedora and RHEL,
+`system-auth` on Arch — and every file that exists is merged, because Fedora
+stacks the module in one and includes it from the other. `umask` got the same
+treatment for the session stack, where a `pam_umask` outside Debian's
+`common-session` had simply gone unseen and the scan fell through to
+`/etc/profile` as though PAM had said nothing.
+
+Alpine decides the design. It has no `/etc/pam.d` at all, and no
+`/etc/login.defs` either. "No quality module configured in PAM" there is not a
+statement about the host's hardening but about a mechanism the host does not
+have, so BOB reports that it could not establish the answer and deducts
+nothing — the distinction v0.15.2 drew for packages and v0.16.0 drew for the
+score, applied to the files a verdict is read from. The key joins
+`VISIBILITY_KEYS`, so the score says it is a ceiling.
+
+### A third hiding place for a Debian command: translated prose
+
+`prerequisites.ufw_missing` read *"UFW is not installed — install it with:
+sudo apt install ufw"* while the very same finding's `cmd` field, freshly made
+portable, said `sudo dnf install -y ufw`. BOB contradicted itself on screen, in
+one finding, and no guard had ever looked at message strings — the sweep and
+the guard both read `cmd=` keyword arguments.
+
+Four of the audit's own messages carried a package-manager command. They no
+longer do: the command belongs in the finding's `cmd`, which is built for this
+host. Twenty `--explain` blocks did too; those are a manual rather than an
+instruction, so each now opens by saying whose package names it is about. Four
+others already named the family in their own prose, and the guard tests that
+property rather than one wording, so they were left as they were.
+
+A/B in containers: **Arch does not move at all** — its `system-auth` exists and
+genuinely has no `pam_pwquality`, so the warning correctly stays. Fedora loses
+the false deduction. Alpine's warning becomes an INFO that says what was not
+established. On Debian, nothing moves: same score, same 93 findings, same
+deductions, not one command changed.
+
 ### Two defects this found in the writing of it
 
 Neither was visible from a green suite on this Debian host.
@@ -153,7 +202,7 @@ of the real wizard found it in one pass, and the guard that replaced it drives
 the function against a recording screen and requires every word of the notice
 to land on a row.
 
-**Tests** 8951 → **9098**. **Mutations** 56 → **72**.
+**Tests** 8951 → **9132**. **Mutations** 56 → **76**.
 
 ---
 
