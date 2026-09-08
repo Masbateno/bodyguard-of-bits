@@ -462,4 +462,32 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="'0 automatic fix(es) available' over four SMART alerts reads "
                "as 'nothing to do here' to anyone skimming",
     ),
+
+    # ---- the colour convention for runnable commands -------------------------
+    Mutation(
+        id="convention/command-loses-its-violet",
+        file="bob/output.py",
+        old='    return f"{_c.violet_bold}{text}{_c.reset}" if _c.violet_bold else text',
+        new="    return text",
+        kills=("tests/test_v0164_command_convention.py::TestTheHelper",),
+        reason="a runnable command would read like the prose around it again",
+    ),
+    Mutation(
+        id="convention/prose-after-a-command-loses-its-dim",
+        file="bob/output.py",
+        old="    body = message.replace(_c.reset, _c.reset + _c.dim) if _c.dim else message",
+        new="    body = message",
+        kills=("tests/test_v0164_command_convention.py::TestTheProseSurvivesTheColour",),
+        reason="the tail of the sentence renders brighter than its head — found "
+               "on a real terminal, not in the source",
+    ),
+    Mutation(
+        id="convention/hint-stops-being-a-template",
+        file="bob/locales/en.json",
+        old='"reconfigure_hint": "To reset it: {cmd}"',
+        new='"reconfigure_hint": "To reset it: bob --reconfigure"',
+        kills=("tests/test_v0164_command_convention.py::TestTheHintsCarryIt",),
+        reason="the command goes back inside the prose, where it cannot be "
+               "coloured without colouring the sentence",
+    ),
 )

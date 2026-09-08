@@ -786,7 +786,9 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
-        _curses_status_flash(stdscr, t, f"✖ {t('install_cron.no_log_dir')}")
+        # curses: plain text — an ANSI escape would print as garbage here.
+        _curses_status_flash(stdscr, t,
+                             f"✖ {t('install_cron.no_log_dir', cmd='sudo bob -d')}")
         return 1
     log_dir = _Path(log_dir_str)
 
@@ -1042,7 +1044,8 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
 
         # ── Body ─────────────────────────────────────────────────────────────
         if not crons:
-            _draw(stdscr, 2, 2, t("manage_cron.no_crons"))
+            _draw(stdscr, 2, 2, t("manage_cron.no_crons",
+                                  cmd="sudo bob --install-cron"))
             _draw(stdscr, 4, 2, "m: " + t("manage_cron.prompt_ex_email_book"))
         else:
             for row in range(body_h):

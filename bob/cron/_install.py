@@ -151,7 +151,7 @@ def _run_install_cron_plain(user_config, config, t) -> int:
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
-        print(f"  ✖ {t('install_cron.no_log_dir')}")
+        print(f"  ✖ {t('install_cron.no_log_dir', cmd=output.command('sudo bob -d'))}")
         return 1
     log_dir = Path(log_dir_str)
 

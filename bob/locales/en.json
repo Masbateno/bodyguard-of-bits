@@ -319,7 +319,7 @@
     "banner_total": "{total} report(s)",
     "banner_selected": "{count} selected / {total}",
     "title": "REPORT MANAGEMENT",
-    "no_dir": "No log location configured. Run first: sudo bob -d",
+    "no_dir": "No log location configured. Run first: {cmd}",
     "no_logs": "No reports found in {path}",
     "stored_in": "Reports in: {path}",
     "size_label": "KB",
@@ -424,7 +424,7 @@
     "prompt_time": "Execution time (HH:MM, default 03:00)",
     "mta_missing": "No sendmail found — notification emails won't be delivered. Install: sudo apt install postfix  or  sudo apt install msmtp-mta",
     "mta_found": "Mail transport: {mta} (sendmail available — notifications will be delivered)",
-    "no_log_dir": "No log location configured — set it first with: sudo bob -d",
+    "no_log_dir": "No log location configured — set it first with: {cmd}",
     "overwrite": "A cron already exists ({path}). Overwrite? [y/N]",
     "script_written": "Script created: {path}",
     "cron_written": "Cron installed: {path}",
@@ -454,7 +454,7 @@
   },
   "manage_cron": {
     "title": "BOB CRON MANAGEMENT",
-    "no_crons": "No BOB cron jobs installed. Run: sudo bob --install-cron",
+    "no_crons": "No BOB cron jobs installed. Run: {cmd}",
     "prompt_intro": "Manage your cron jobs:",
     "prompt_ex_edit": "edit cron job #1",
     "prompt_ex_email": "edit notification email for cron #1",
@@ -523,7 +523,7 @@
       "diagnostic_items_title": "Not automatic — BOB can only show you where to look:",
     "manual_items_title": "Manual actions required (no automatic fix available):",
     "done_summary": "{applied} of {total} fix(es) applied.",
-    "dry_run_hint": "Dry run — use --fix --apply to execute fixes"
+    "dry_run_hint": "Dry run — use {cmd} to execute fixes"
   },
   "risk_context": {
     "title": "Risk context",
@@ -532,7 +532,7 @@
   },
   "config": {
     "found": "Configuration found: {path}",
-    "reconfigure_hint": "To reset it: bob --reconfigure",
+    "reconfigure_hint": "To reset it: {cmd}",
     "error": {
       "invalid_email": "Invalid email address: {email}",
       "invalid_config_key": "Invalid config key: {config_key}",

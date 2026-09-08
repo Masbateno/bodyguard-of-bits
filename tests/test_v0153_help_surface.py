@@ -169,12 +169,36 @@ class TestManPageDocumentsEveryOption:
         assert len(adv) > 50, f"only {len(adv)} options scraped — the regex broke"
 
 
+#: ANSI SGR sequences: zero columns wide, and `--help` already emits ten of
+#: them. Stripped before measuring — see TestWidthContract.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def visible(line: str) -> str:
+    """The line as the terminal shows it, with the escape sequences removed."""
+    return _ANSI.sub("", line)
+
+
 class TestWidthContract:
     @pytest.mark.parametrize("lang", LOCALES)
     def test_no_line_exceeds_the_ceiling(self, lang):
-        """Measured in characters, not bytes: em dashes and ↑↓ are multi-byte."""
+        """Measured in visible columns: escapes and multi-byte chars are traps.
+
+        The docstring used to say "characters, not bytes: em dashes and ↑↓ are
+        multi-byte" — it had disarmed one confound and walked into the other.
+        `--help` already emits ten bolded lines, and `\x1b[1m…\x1b[0m` is eight
+        characters `len()` counts and the terminal does not. Every coloured
+        line therefore carried eight characters of invisible debt against a
+        ceiling one line already sits exactly on.
+
+        Nothing overflowed yet, because the bolded lines are short section
+        headers. It would have surfaced the first time anyone coloured
+        something near the width — and the obvious repair, raising the ceiling,
+        would have hidden a real overflow behind an imaginary one.
+        """
         long = [
-            (len(l), l) for l in render(lang).splitlines() if len(l) > MAX_WIDTH
+            (len(visible(l)), l) for l in render(lang).splitlines()
+            if len(visible(l)) > MAX_WIDTH
         ]
         assert not long, f"{lang}: {long}"
 
@@ -183,4 +207,26 @@ class TestWidthContract:
         """If the help were tiny or empty the contract would prove nothing."""
         lines = [l for l in render(lang).splitlines() if l.strip()]
         assert len(lines) > 70
-        assert max(len(l) for l in lines) > 80
+        assert max(len(visible(l)) for l in lines) > 80
+
+    @pytest.mark.parametrize("lang", LOCALES)
+    def test_the_measurement_ignores_escape_sequences(self, lang, monkeypatch):
+        """The negative control: colour must cost zero columns.
+
+        Without this, someone could restore `len(l)` and every test above would
+        still pass — the coloured lines are short enough to absorb the error.
+
+        Colour is forced on rather than inherited: `output._c` is module global
+        state, some other test in the suite leaves it off, and this passed
+        alone while failing in the run. The project has met that leak before.
+        """
+        from bob import output
+        monkeypatch.setattr(output, "_c", output._COLOURS_ON)
+        # print_help asks `_no_color` rather than reading `_c`, which is the
+        # other of the two ways this codebase asks whether colour is on.
+        monkeypatch.setattr(output, "_no_color", False)
+        coloured = [l for l in render(lang).splitlines() if _ANSI.search(l)]
+        assert coloured, f"{lang}: no coloured line found — the scrape is broken"
+        for line in coloured:
+            assert len(visible(line)) < len(line), line
+            assert not _ANSI.search(visible(line))

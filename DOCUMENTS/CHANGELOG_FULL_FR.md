@@ -226,7 +226,7 @@ ici » pour qui survole ; quand BOB ne peut en appliquer aucun, il le dit. La
 bannière du mode automatique et la ligne `0 of 0 fix(es) applied.` se taisent
 quand il n'y avait rien à exécuter.
 
-**Tests** 8572 → **8843**.
+**Tests** 8572 → **8879**.
 
 ---
 

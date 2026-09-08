@@ -451,7 +451,8 @@ def _run(argv=None) -> int:
 
             if user_config.exists():
                 output.print_info(t("config.found", path=str(user_config.path)))
-                output.print_dim(t("config.reconfigure_hint"))
+                output.print_dim(t("config.reconfigure_hint",
+                                                   cmd=output.command("bob --reconfigure")))
             if not config.quiet:
                 print()
 

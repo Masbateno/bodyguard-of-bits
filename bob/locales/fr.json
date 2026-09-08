@@ -325,7 +325,7 @@
       "diagnostic_items_title": "Non automatisable — BOB ne peut que vous montrer où regarder :",
     "manual_items_title": "Actions manuelles requises (aucune correction automatique disponible) :",
     "done_summary": "{applied} correction(s) sur {total} appliquée(s).",
-    "dry_run_hint": "Aperçu uniquement — utilisez --fix --apply pour exécuter les corrections"
+    "dry_run_hint": "Aperçu uniquement — utilisez {cmd} pour exécuter les corrections"
   },
   "risk_context": {
     "title": "Contexte de risque",
@@ -340,7 +340,7 @@
     "banner_total": "{total} rapport(s)",
     "banner_selected": "{count} marqué(s) / {total}",
     "title": "GESTION DES RAPPORTS",
-    "no_dir": "Aucun emplacement configuré. Lancez d'abord : sudo bob -d",
+    "no_dir": "Aucun emplacement configuré. Lancez d'abord : {cmd}",
     "no_logs": "Aucun rapport trouvé dans {path}",
     "stored_in": "Rapports dans : {path}",
     "size_label": "Ko",
@@ -445,7 +445,7 @@
     "prompt_time": "Heure d'exécution (HH:MM, défaut 03:00)",
     "mta_missing": "sendmail introuvable — les emails de notification ne seront pas envoyés. Installez : sudo apt install postfix  ou  sudo apt install msmtp-mta",
     "mta_found": "Transport mail : {mta} (sendmail disponible — les notifications seront envoyées)",
-    "no_log_dir": "Aucun emplacement de logs configuré — configurez-le d'abord avec : sudo bob -d",
+    "no_log_dir": "Aucun emplacement de logs configuré — configurez-le d'abord avec : {cmd}",
     "overwrite": "Un cron existe déjà ({path}). Écraser ? [y/N]",
     "script_written": "Script créé : {path}",
     "cron_written": "Cron installé : {path}",
@@ -475,7 +475,7 @@
   },
   "manage_cron": {
     "title": "GESTION DES CRONS BOB",
-    "no_crons": "Aucun cron BOB installé. Lancez : sudo bob --install-cron",
+    "no_crons": "Aucun cron BOB installé. Lancez : {cmd}",
     "prompt_intro": "Gérer vos crons :",
     "prompt_ex_edit": "modifier le cron n°1",
     "prompt_ex_email": "modifier l'email de notification du cron n°1",
@@ -532,7 +532,7 @@
   },
   "config": {
     "found": "Configuration trouvée : {path}",
-    "reconfigure_hint": "Pour la réinitialiser : bob --reconfigure",
+    "reconfigure_hint": "Pour la réinitialiser : {cmd}",
     "error": {
       "invalid_email": "Adresse e-mail invalide : {email}",
       "invalid_config_key": "Clé de configuration invalide : {config_key}",

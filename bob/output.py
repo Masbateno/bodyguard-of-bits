@@ -350,9 +350,38 @@ def print_check_cmd(lines: str | list[str]) -> None:
     _p()
 
 
+def command(text: str) -> str:
+    """Wrap *text* as a runnable command: violet bold, the house convention.
+
+    Violet marks "you can run this" — the summary box paints every finding's
+    `cmd` with it, and `print_check_cmd` does the same for diagnostics. It was
+    those two places and nowhere else, so a hint whose entire purpose is *run
+    this* — `To reset it: bob --reconfigure`, `Run: sudo bob --install-cron` —
+    arrived dimmed like the prose around it, indistinguishable from a sentence
+    that merely mentions a flag.
+
+    A flag named as context is not a command: "the run was narrowed by --check
+    / --skip" describes what happened and offers nothing to type. Colouring
+    every `--flag` in the locale would make the convention mean nothing. This
+    is for the ones an operator is meant to copy.
+
+    Respects the colour policy: returns *text* unchanged under `--no-color`.
+    """
+    return f"{_c.violet_bold}{text}{_c.reset}" if _c.violet_bold else text
+
+
 def print_dim(message: str) -> None:
-    """Print a dimmed informational line."""
-    _p(f"  {_c.dim}{message}{_c.reset}")
+    """Print a dimmed informational line.
+
+    A reset embedded in *message* — from :func:`command` marking something
+    runnable — would otherwise end the dim for everything after it, so
+    "Dry run — use --fix --apply to execute fixes" rendered its tail brighter
+    than its head. Dim is re-established after each reset, which keeps the
+    prose uniform around the colour it deliberately breaks for, and costs
+    nothing when there is no colour at all.
+    """
+    body = message.replace(_c.reset, _c.reset + _c.dim) if _c.dim else message
+    _p(f"  {_c.dim}{body}{_c.reset}")
 
 
 def yellow(text: str) -> str:

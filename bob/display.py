@@ -864,7 +864,7 @@ def display_geoip_notice(geo_status: str, t, output, *, quiet: bool = False) -> 
         if cmd.startswith("["):
             cmd = "pipx inject bodyguard-of-bits geoip2"
         output.print_info(msg)
-        output.print_info(f"\u2192 {cmd}")
+        output.print_info(f"\u2192 {output.command(cmd)}")
     elif geo_status == "no_database":
         msg = t("logs.geoip2_no_db")
         cmd = t("logs.geoip2_no_db_cmd")
@@ -873,7 +873,7 @@ def display_geoip_notice(geo_status: str, t, output, *, quiet: bool = False) -> 
         if cmd.startswith("["):
             cmd = "sudo mkdir -p /usr/share/GeoIP && sudo wget -O /usr/share/GeoIP/GeoLite2-Country.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb"
         output.print_info(msg)
-        output.print_info(f"\u2192 {cmd}")
+        output.print_info(f"\u2192 {output.command(cmd)}")
 
 
 # ---------------------------------------------------------------------------

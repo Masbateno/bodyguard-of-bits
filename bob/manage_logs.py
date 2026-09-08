@@ -259,7 +259,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
-        print(f"  ℹ {t('manage_logs.no_dir')}")
+        print(f"  ℹ {t('manage_logs.no_dir', cmd=output.command('sudo bob -d'))}")
         return 0
 
     while True:

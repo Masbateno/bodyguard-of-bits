@@ -217,7 +217,7 @@ anyone skimming; when BOB can apply none of them it says so instead. The
 auto-mode banner and the `0 of 0 fix(es) applied.` line are silent when there
 was never anything to run.
 
-**Tests** 8572 → **8843**.
+**Tests** 8572 → **8879**.
 
 ---
 

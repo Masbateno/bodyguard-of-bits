@@ -279,7 +279,7 @@ def _run_manage_cron_plain(config, t) -> int:
         crons = list_installed_crons()
 
         if not crons:
-            print(f"  ℹ {t('manage_cron.no_crons')}")
+            print(f"  ℹ {t('manage_cron.no_crons', cmd=output.command('sudo bob --install-cron'))}")
             print()
             print(f"    {'m':<8} {t('manage_cron.prompt_ex_email_book')}")
             print()

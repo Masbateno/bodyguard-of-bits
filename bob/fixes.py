@@ -150,7 +150,8 @@ def run_fixes(engine, config, t) -> None:
     # ── Dry-run preview (--fix without --apply) ─────────────────────────────
     if not getattr(config, "apply", False):
         print()
-        print(f"  {_c.dim}{t('fixes.dry_run_hint')}{_c.reset}")
+        _output.print_dim(t('fixes.dry_run_hint',
+                            cmd=_output.command('--fix --apply')))
         print()
         for msg, cmd in sorted_items:
             safe_cmd = cmd.replace("\n", " ").strip()
