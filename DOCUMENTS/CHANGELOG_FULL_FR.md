@@ -175,7 +175,52 @@ options longues et 21 courtes, toutes proposées, rien de proposé que le CLI
 refuserait. Une absence délibérée, désormais affirmée : `--json-v1`, retirée en
 v0.9.0, ne survit dans le parseur que pour répondre par une explication.
 
-**Aucun de ces neuf défauts n'est une régression de la v0.17.0.** Tous la
+**Et BOB disait à l'opérateur de démarrer ce qu'il venait d'appeler un
+vecteur d'attaque.**
+
+Sept services installés et arrêtés, sur Kali 2026.2, produisaient sept
+déductions d'une même clé et faisaient tomber le domaine *Firewall & Services*
+à 3/10 — davantage, cumulées, que ne coûte un service critique réellement
+exposé au monde (2 pt). Sur le même écran :
+
+    ⚠ VNC Server is installed on this system — service is currently stopped,
+      but the presence of this package is a potential attack vector
+
+    HOW TO FIX
+    3. Enable and start:
+       sudo systemctl enable --now <service>
+
+Suivre cette remédiation rend la machine strictement plus exposée.
+
+Les deux moitiés viennent d'une seule erreur. La v0.8.0 avait attaché le point
+en raisonnant qu'un *service de sécurité* critique dormant est une vraie
+lacune défensive — vrai de fail2ban, clamav et auditd, et vrai de rien dans ce
+registre : les 38 entrées sont des services qui écoutent le réseau, et ces
+trois-là ont leurs propres constats d'inactivité. La justification n'avait
+aucune instance dans les données auxquelles elle s'appliquait, et l'explication
+avait été écrite pour les services qu'elle décrivait, non pour ceux sur
+lesquels elle se déclenche.
+
+Ce qui la remplace est la règle que BOB énonce dans son propre README — *« BOB
+n'est pas un moteur d'analyse de menaces — il n'énumère pas les chemins
+d'attaque »*. Trois choses sont mesurées : le paquet est installé, l'unité ne
+tourne pas, elle n'est pas activée au démarrage. Les trois sont affirmées.
+Déduire pour elles exigerait de qualifier de vecteur d'attaque un service
+arrêté, ce qui suppose un chemin que BOB ne voit pas — quelqu'un qui le
+démarre, une mise à jour qui l'active. C'est donc rapporté sans être compté, et
+l'explication propose désormais le retrait d'abord, le démarrage seulement
+comme choix délibéré suivi d'un ré-audit.
+
+**Rien n'est caché pour autant** : le constat s'affiche toujours, un par
+service. Mesuré sur la même machine — six paquets dormants toujours listés, et
+le domaine qui suit ce qui est réellement exposé : 7/10 avec SSH en marche et
+son port ouvert, 10/10 avec SSH arrêté.
+
+C'est un changement de score. Les scores montent sur les hôtes portant des
+paquets dormants à risque élevé, et une référence prise avant la v0.17.1
+montrera ces constats passer d'avertissement à information.
+
+**Aucun de ces dix défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
@@ -185,7 +230,7 @@ du terrain. Des conteneurs ne le pouvaient pas : ils partagent le noyau de
 l'hôte, donc toute lecture sysctl est celle de l'hôte, et rien en eux n'est
 jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9420**. **Mutations** 87 → **106**.
+**Tests** 9240 → **9443**. **Mutations** 87 → **108**.
 
 ---
 

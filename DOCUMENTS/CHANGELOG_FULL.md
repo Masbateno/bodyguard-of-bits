@@ -161,7 +161,49 @@ nothing offered that the CLI would reject. One deliberate absence, now
 asserted: `--json-v1`, retired in v0.9.0, survives in the parser only to answer
 with an explanation.
 
-**None of these nine defects is a v0.17.0 regression.** They all predate it
+**And BOB told the operator to start what it had just called an attack
+vector.**
+
+Seven services installed and stopped, on Kali 2026.2, produced seven deductions
+of one key and took the *Firewall & Services* domain to 3/10 — more, in
+aggregate, than a genuinely world-exposed critical service costs (2 pt). On the
+same screen:
+
+    ⚠ VNC Server is installed on this system — service is currently stopped,
+      but the presence of this package is a potential attack vector
+
+    HOW TO FIX
+    3. Enable and start:
+       sudo systemctl enable --now <service>
+
+Following that remediation makes the machine strictly more exposed.
+
+Both halves come from one mistake. v0.8.0 attached the point reasoning that a
+dormant critical *security service* is a real defensive gap — true of fail2ban,
+clamav and auditd, and true of nothing in this registry: all 38 entries are
+network-listening services, and those three carry their own inactive findings.
+The justification had no instance in the data it ran on, and the explanation
+was written about the services it described rather than the ones it fires on.
+
+What replaces it is the rule from BOB's own README — *"BOB is not a
+threat-modeling engine — it does not enumerate attacker paths"*. Three things
+are measured: the package is installed, the unit is not running, it is not
+enabled at boot. All three are stated. Deducting for them requires calling a
+stopped service an attack vector, which needs a path BOB cannot see — someone
+starting it, an upgrade enabling it. So it is reported and not scored, and the
+explanation now offers removal first and starting only as a deliberate choice
+followed by a re-audit.
+
+**Nothing is hidden by this**: the finding still prints, once per service.
+Measured on the same machine — six dormant packages still listed, and the
+domain tracking what is actually exposed: 7/10 with SSH running and its port
+open, 10/10 with SSH stopped.
+
+This is a scoring change. Scores rise on hosts carrying dormant high-risk
+packages, and a baseline taken before v0.17.1 will show these findings moving
+from warning to info.
+
+**None of these ten defects is a v0.17.0 regression.** They all predate it
 by many releases; v0.17.0 simply shipped hours before the machines that could
 see them existed. v0.17.0 is not yanked: it remains strictly better than
 v0.16.4.
@@ -170,7 +212,7 @@ Two real virtual machines found all but the last, which came from the field.
 Containers could not have found them: they share the host kernel, so every
 sysctl reading is the host's, and nothing in them is ever mid-`dpkg`.
 
-**Tests** 9240 → **9420**. **Mutations** 87 → **106**.
+**Tests** 9240 → **9443**. **Mutations** 87 → **108**.
 
 ---
 
