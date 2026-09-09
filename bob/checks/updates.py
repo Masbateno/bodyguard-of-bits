@@ -334,7 +334,24 @@ def check_updates(
             reason=_t("updates.security_pending_reason", count=count),
             points=2,
             detail=_t("updates.security_pending_detail"),
-            cmd="sudo apt-get upgrade",
+            # v0.17.1: `-y` — nature="action" means --fix --apply runs this, and
+            # without the flag apt stops to ask, in the mode whose whole
+            # promise is not to ask. Proven on a real Debian 13: exit 1,
+            # "0 of 1 fix(es) applied". Same class as v0.16.4, in a verb
+            # its guard did not look at.
+            #
+            # v0.17.1: `--with-new-pkgs` — the finding above is collected with
+            # `apt-get -s dist-upgrade`, for the reason _collect_pending_updates
+            # spells out: plain `upgrade` refuses anything that pulls in a new
+            # package, which is every kernel security update. BOB was therefore
+            # detecting with one command and remediating with a strictly weaker
+            # one. Measured on Debian 13: `sudo apt-get upgrade -y` returned 0
+            # in six seconds with the kernel "kept back", BOB printed
+            # "✔ Applied / 1 of 1 fix(es) applied", and the next audit reported
+            # the same two packages. `--with-new-pkgs` installs what the upgrade
+            # needs; unlike `dist-upgrade` it still removes nothing, which is
+            # the line an unattended auditor must not cross.
+            cmd="sudo apt-get upgrade -y --with-new-pkgs",
             nature="action",
         )
 

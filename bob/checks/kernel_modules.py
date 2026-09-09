@@ -399,7 +399,10 @@ def _check_installed_kernels(
         result.info(
             message=_t("kernel_modules.kernels_update_available",
                        candidate=snapshot.apt_candidate_kernel),
-            cmd="sudo apt upgrade",
+            cmd="sudo apt-get upgrade -y --with-new-pkgs",
+            # v0.17.1: see updates.py — `-y` because apt asks otherwise,
+            # `--with-new-pkgs` because a kernel upgrade installs a new
+            # package name and plain `upgrade` silently keeps it back.
             cmd_type="fix",
             key="kernel_modules.kernels_update_available",
         )

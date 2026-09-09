@@ -47,6 +47,8 @@ _PATHS = "tests/test_v0170_distro_paths.py"
 _PI = "tests/test_v0170_raspberry_pi.py"
 _SWEEP = "tests/test_v0170_doc_counters_sweep.py"
 _UNITS = "tests/test_v0171_service_units_and_ports.py"
+_FIXTMO = "tests/test_v0171_fix_timeout_stops_what_it_started.py"
+_UPGFIX = "tests/test_v0171_upgrade_fix_can_install_what_it_found.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -679,6 +681,29 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "was added, and nothing was watching",
     ),
 
+    Mutation(
+        id="fixes/upgrade-waits-for-a-human",
+        file="bob/checks/updates.py",
+        old='cmd="sudo apt-get upgrade -y --with-new-pkgs",',
+        new='cmd="sudo apt-get upgrade --with-new-pkgs",',
+        kills=("tests/test_v0164_fix_commands_run_unattended.py::"
+               "test_no_install_command_would_stop_to_ask",),
+        reason="proven on a real Debian 13: apt-get upgrade without -y exits 1 "
+               "on 'Do you want to continue? [Y/n] Abort.' inside --fix --apply "
+               "--yes, the mode whose promise is not to ask",
+    ),
+    Mutation(
+        id="fixes/verb-list-narrow-again",
+        file="tests/test_v0164_fix_commands_run_unattended.py",
+        old='    r"(?<![\\w-])(install|add|upgrade|remove|purge|erase|reinstall"',
+        new='    r"(?<![\\w-])(install|add|remove|purge|erase|reinstall"',
+        kills=("tests/test_v0164_fix_commands_run_unattended.py::"
+               "test_the_mutating_list_covers_what_broke",),
+        reason="the guard knew three verbs and apt-get upgrade sat in the "
+               "auto-apply bucket unflagged for its whole lifetime — an "
+               "allowlist protects the allowlist",
+    ),
+
     # ---- a service believed stopped, and the port it swallowed --------------
     Mutation(
         id="services/port-credited-to-an-inactive-service",
@@ -968,5 +993,65 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "test_wrapping_keeps_every_word",),
         reason="the same cut in the plain wizard, which is the path cron "
                "installs actually take over ssh without a TTY",
+    ),
+    Mutation(
+        id="fixes/timeout-kills-sudo-only",
+        file="bob/fixes.py",
+        old="        start_new_session=True,\n",
+        new="",
+        kills=(f"{_FIXTMO}::TestTheTimeoutStopsTheWholeTree::"
+               "test_the_grandchild_does_not_survive_the_timeout",
+               f"{_FIXTMO}::TestTheTimeoutStopsTheWholeTree::"
+               "test_the_child_leads_its_own_group"),
+        reason="without its own session the child leads no group, so the "
+               "timeout signals nothing and `apt-get` outlives the `sudo` "
+               "above it \u2014 measured on Debian 13, BOB exited reporting "
+               "0 of 1 applied while the upgrade held the apt lock",
+    ),
+    Mutation(
+        id="fixes/package-budget-back-to-thirty-seconds",
+        file="bob/fixes.py",
+        old="_TIMEOUT_PACKAGE = 900",
+        new="_TIMEOUT_PACKAGE = 30",
+        kills=(f"{_FIXTMO}::TestPackageTransactionsGetABudgetTheyCanFinishIn::"
+               "test_the_long_budget_is_minutes_not_seconds",),
+        reason="thirty seconds is a budget for `ufw delete`; a package "
+               "transaction reaching it means BOB stops a healthy upgrade "
+               "mid-transaction every single time",
+    ),
+    Mutation(
+        id="fixes/timeout-told-to-rerun-by-hand",
+        file="bob/fixes.py",
+        old="                    print(f\"  \u26a0 {t('fixes.timed_out', seconds=timeout)}\")",
+        new="                    print(f\"  \u2716 {t('fixes.manual')}\")",
+        kills=(f"{_FIXTMO}::TestTheReportDoesNotLie::"
+               "test_a_timeout_is_never_dressed_as_manual",
+               f"{_FIXTMO}::TestTheReportDoesNotLie::"
+               "test_a_timeout_names_itself_and_the_budget"),
+        reason="\"apply the command manually\" after a timeout is advice to "
+               "start a second package transaction over an unfinished first "
+               "one, which is how the VM ended up unpacked but unconfigured",
+    ),
+    Mutation(
+        id="updates/fix-cannot-install-a-kernel",
+        file="bob/checks/updates.py",
+        old='cmd="sudo apt-get upgrade -y --with-new-pkgs",',
+        new='cmd="sudo apt-get upgrade -y",',
+        kills=(f"{_UPGFIX}::TestDetectionAndRemediationStayReconciled::"
+               "test_the_fix_offered_for_that_detection_matches_it",),
+        reason="BOB collects the finding with `apt-get -s dist-upgrade` and "
+               "would repair it with plain `upgrade`, which keeps every kernel "
+               "update back, returns 0, and gets reported as \"1 of 1 fix(es) "
+               "applied\" \u2014 measured on Debian 13",
+    ),
+    Mutation(
+        id="updates/fix-removes-packages-unattended",
+        file="bob/checks/updates.py",
+        old='cmd="sudo apt-get upgrade -y --with-new-pkgs",',
+        new='cmd="sudo apt-get dist-upgrade -y",',
+        kills=(f"{_UPGFIX}::TestTheProposedUpgradeCanInstallAKernel",),
+        reason="dist-upgrade would install the kernel, and would also remove "
+               "packages with nobody watching \u2014 the line an auto-applied "
+               "fix must not cross",
     ),
 )

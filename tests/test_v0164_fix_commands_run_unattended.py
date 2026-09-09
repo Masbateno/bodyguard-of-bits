@@ -37,6 +37,42 @@ _PROMPTS = {
 }
 
 
+#: Subcommands that change what is installed. Any of these run unattended must
+#: carry the manager's non-interactive flag.
+#:
+#: v0.17.1 — this was `install|add|-S`, three verbs, and `sudo apt-get upgrade`
+#: sat in the auto-apply bucket with no `-y` for the guard's whole lifetime.
+#: Proven on a real Debian 13: `--fix --apply --yes` ran it, apt stopped to ask,
+#: exit 1, "0 of 1 fix(es) applied". The same shape v0.16.4 closed, in a verb
+#: its list did not contain — a guard with an allowlist protects the allowlist.
+_MUTATES = re.compile(
+    r"(?<![\w-])(install|add|upgrade|remove|purge|erase|reinstall"
+    r"|dist-upgrade|-S|-Sy|-Syu|-U|-R|-Rs)(?![\w-])")
+
+#: `update` means two different things and only one of them asks. Measured on
+#: Debian 13 with stdin closed: `apt-get update` exits 0 and prompts for
+#: nothing — it refreshes the index. `apt-get upgrade` without `-y` exits 1 on
+#: "Do you want to continue? [Y/n] Abort." On dnf, yum and zypper, `update` *is*
+#: the upgrade and does ask, so the verb is only harmless for the apt family.
+_UPDATE = re.compile(r"(?<![\w-])update(?![\w-])")
+_APT_FAMILY = re.compile(r"(?<![\w-])(apt|apt-get|aptitude)(?![\w-])")
+
+
+def _mutates(text: str) -> bool:
+    """Whether *text* changes what is installed, and therefore may prompt."""
+    if _MUTATES.search(text):
+        return True
+    return bool(_UPDATE.search(text) and not _APT_FAMILY.search(text))
+
+#: Subcommands that only read. They need no flag, and must be classified rather
+#: than left to fall between the two — see test_no_package_verb_is_unclassified.
+_READS = re.compile(
+    r"(?<![\w-])(list|search|show|info|-q|-Q|-W|--version|policy|why)(?![\w-])")
+
+#: Every package manager BOB may name in a command.
+_MANAGERS = re.compile(r"\b(apt|apt-get|aptitude|dnf|yum|zypper|pacman|apk|dpkg|rpm)\b")
+
+
 def _fix_commands():
     """(where, key, nature, cmd_type, literal text) for every emitted cmd."""
     out = []
@@ -102,7 +138,7 @@ def test_no_install_command_would_stop_to_ask(manager):
     for where, key, _nature, _ctype, text in _fix_commands() + _install_templates():
         if not re.search(rf"\b{re.escape(manager)}\b", text):
             continue
-        if not re.search(r"\b(install|add|-S)\b", text):
+        if not _mutates(text):
             continue
         if any(re.search(rf"(?<!\w){re.escape(f)}(?!\w)", text) for f in flags):
             continue
@@ -127,3 +163,38 @@ def test_a_flag_inside_a_package_name_does_not_count():
                    for f in _PROMPTS["apt"]), (
         "a package name containing 'y' was mistaken for the flag"
     )
+
+
+def test_no_package_verb_is_unclassified():
+    """A command naming a package manager must be read as reading or mutating.
+
+    v0.17.1 — the third category is where `apt-get upgrade` lived: not matched
+    by the mutating list, so never checked for its flag, and not declared
+    read-only either. Nothing objected because nothing was looking. A verb that
+    falls between the two is now a failure, so the next one has to be
+    classified deliberately rather than by omission.
+    """
+    unclassified = []
+    for where, key, _nature, _ctype, text in _fix_commands() + _install_templates():
+        if not _MANAGERS.search(text):
+            continue
+        if _mutates(text) or _READS.search(text) or _UPDATE.search(text):
+            continue
+        unclassified.append(f"{where} ({key}): {text[:70]}")
+    assert not unclassified, (
+        "these name a package manager but no rule says whether they change "
+        f"anything, so no rule checks their flags: {unclassified}"
+    )
+
+
+def test_the_mutating_list_covers_what_broke():
+    """Negative control: the verbs that actually shipped without a flag."""
+    for cmd in ("sudo apt-get upgrade", "sudo apt upgrade",
+                "sudo apt install ufw", "sudo pacman -S ufw", "sudo apk add ufw",
+                "sudo dnf update", "sudo zypper update"):
+        assert _mutates(cmd), f"{cmd!r} is not read as mutating"
+    # apt's `update` only refreshes the index — measured: exit 0, no prompt.
+    for cmd in ("sudo apt update", "sudo apt-get update"):
+        assert not _mutates(cmd), f"{cmd!r} was wrongly read as prompting"
+    for cmd in ("apt list --upgradable", "rpm -q bash", "dpkg-query -W nginx"):
+        assert _READS.search(cmd), f"{cmd!r} is not read as read-only"
