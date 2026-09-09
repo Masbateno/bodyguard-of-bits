@@ -59,6 +59,7 @@ _SENTINEL = "tests/test_v0171_no_sentinel_reaches_the_header.py"
 _SSHUNIT = "tests/test_v0171_ssh_unit_is_resolved.py"
 _NOSYSD = "tests/test_v0171_no_systemd_is_not_a_verdict.py"
 _OPENRC = "tests/test_v0180_openrc.py"
+_SUIDOWN = "tests/test_v0180_suid_ownership.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -264,7 +265,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="194 entries (108 formal CIS",
+        old="195 entries (109 formal CIS",
         new="174 entries (107 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -1326,5 +1327,38 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="without the code, \"exited 3\" and \"could not be started\" "
                "collapse into the same False, and OpenRC answers in its exit "
                "status",
+    ),
+    Mutation(
+        id="suidowner/silence-becomes-an-accusation",
+        file="bob/checks/suid_audit.py",
+        old="    return owner.known and owner.package is None",
+        new="    return owner.package is None",
+        kills=(f"{_SUIDOWN}::TestOnlyAProvenOrphanIsAccused::"
+               "test_an_unanswerable_query_is_not",),
+        reason="a host whose package manager could not be asked would have "
+               "every unexpected SUID binary reported as belonging to no "
+               "package \u2014 an alert built out of a failed probe",
+    ),
+    Mutation(
+        id="suidowner/query-failure-read-as-orphan",
+        file="bob/checks/_run.py",
+        old="        if result.code == 1:\n            return FileOwner(None, True)\n        return FileOwner(None, False)",
+        new="        return FileOwner(None, True)",
+        kills=(f"{_SUIDOWN}::TestThreeStatesNotTwo::"
+               "test_any_other_status_settles_nothing",),
+        reason="only exit 1 means \u0022no package owns this\u0022 on all four "
+               "managers; a timeout or a locked database exits otherwise and "
+               "says nothing about the file",
+    ),
+    Mutation(
+        id="suidowner/orphan-loses-its-own-finding",
+        file="bob/checks/suid_audit.py",
+        old="        unowned_suid = [p for p in unexpected_suid if _is_unowned(p)]",
+        new="        unowned_suid = []",
+        kills=(f"{_SUIDOWN}::TestTheCollectorPopulatesIt::"
+               "test_an_orphan_reaches_the_snapshot",),
+        reason="Kali drowns one planted SUID root binary among fifteen the "
+               "distribution ships; without the split the signal is a line in "
+               "a list of sixteen",
     ),
 )

@@ -49,7 +49,46 @@ now report real states, which become verdicts, which become deductions. A
 baseline taken on Alpine, Gentoo or Devuan before v0.18.0 will differ. Nothing
 changes on a systemd host.
 
-**Tests** 9528 → **9566**. **Mutations** 117 → **121**.
+**And a SUID binary no package ships is now its own finding.**
+
+Kali 2026.2 carries fifteen unexpected SUID binaries. Every one is a
+`kismet_cap_*` helper the distribution installed, and BOB reported them as one
+warning — honest, and undiscriminating. A distribution putting SUID helpers on
+disk is surface an operator can reason about. A root-owned SUID binary
+belonging to *no* package is the shape a left-behind privilege escalation
+takes, and it was a line in a list of fifteen.
+
+The ownership queries are measured on four managers rather than read from
+documentation — Debian 13, Arch, Alpine 3.22 and openSUSE Leap 15.6:
+
+    dpkg -S /usr/bin/sh                 0  "dash: /usr/bin/sh"
+    dpkg -S /usr/local/bin/notapackage  1  "no path found matching pattern"
+    rpm -qf /bin/sh                     0  "bash-sh-4.4-150400.27.6.1.x86_64"
+    rpm -qf /tmp/notapackage            1  "file … is not owned by any package"
+    pacman -Qo /usr/bin/sh              0  "… is owned by bash 5.3.15-1"
+    pacman -Qo /usr/local/bin/nota…     1  "error: No package owns …"
+    apk info --who-owns /bin/sh         0  "… is owned by busybox-binsh-…"
+    apk info --who-owns /usr/local/…    1  "Could not find owner package"
+
+All four agree: 0 owned, 1 orphan. Anything else — a timeout, a locked
+database, a manager that does not index the path — is an answer about the
+query, not about the file, and produces no finding at all. `package_owning()`
+returns three states rather than two for exactly that reason, and only a
+proven orphan is reported.
+
+Demonstrated on Kali by planting one, then removing it:
+
+    before   ⚠ 15 unexpected root-owned SUID binary/binaries: kismet_cap_…
+    after    ⚠ 16 unexpected …
+             ✖ 1 root-owned SUID binary/binaries belong to no package:
+                 /usr/local/bin/backdoor-test
+    removed  ⚠ 15 unexpected …, and the alert is gone
+
+The wording refuses to accuse: locally compiled software, vendor installers and
+a deliberate `chmod u+s` all produce binaries no package owns. BOB reports the
+fact and leaves the judgement where the knowledge is.
+
+**Tests** 9528 → **9618**. **Mutations** 117 → **124**.
 
 ---
 

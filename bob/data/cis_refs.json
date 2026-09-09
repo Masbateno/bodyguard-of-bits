@@ -695,6 +695,7 @@
     "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
     "code": "CIS:6.1.13"
   },
+  "suid_audit.unowned_suid": {"ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed", "code": "CIS:6.1.13"},
   "systemd_timers.pipe_to_shell": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron/timers (script integrity: verify sources before execution)",
     "code": "CIS:5.1"

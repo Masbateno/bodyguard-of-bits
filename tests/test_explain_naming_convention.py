@@ -241,7 +241,11 @@ class TestExplainAuditInvariants:
         # v0.17.0 → 189: the Raspberry Pi section's two deduction-carrying
         # findings (userconf.txt left on the FAT boot partition, the
         # distribution's default account able to log in).
-        assert len(EXPLAIN_KEYS) == 189, (
+        # v0.18.0 → 190: suid_audit.unowned_suid, which separates a SUID binary
+        # the distribution ships from one no package owns — Kali carries
+        # fifteen of the first kind, and the second is what an operator needs
+        # woken for.
+        assert len(EXPLAIN_KEYS) == 190, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

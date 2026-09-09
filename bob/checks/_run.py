@@ -407,6 +407,84 @@ def service_enable_cmd(unit: str) -> str:
     return f"sudo systemctl enable --now {unit}"
 
 
+class FileOwner(NamedTuple):
+    """Which package ships a file, when that can be established at all.
+
+    Three states, deliberately not two:
+
+      * ``FileOwner("dash", True)``  — a package owns it
+      * ``FileOwner(None, True)``    — no package owns it, and the manager said so
+      * ``FileOwner(None, False)``   — nothing could answer
+
+    The middle one is the finding. A SUID binary shipped by a distribution is
+    surface an operator can reason about; one belonging to no package is the
+    shape a left-behind privilege escalation takes. The third must never be
+    read as the second, which is the mistake this module keeps having to undo.
+    """
+
+    package: "str | None"
+    known:   bool
+
+
+#: How each manager is asked who owns a path, and how it answers. Measured on
+#: the machines themselves — Debian 13, Arch, Alpine 3.22 and openSUSE Leap
+#: 15.6 — rather than read from documentation:
+#:
+#:   dpkg -S /usr/bin/sh                 0  "dash: /usr/bin/sh"
+#:   dpkg -S /usr/local/bin/notapackage  1  "no path found matching pattern"
+#:   rpm -qf /bin/sh                     0  "bash-sh-4.4-150400.27.6.1.x86_64"
+#:   rpm -qf /tmp/notapackage            1  "file ... is not owned by any package"
+#:   pacman -Qo /usr/bin/sh              0  "/usr/bin/sh is owned by bash 5.3.15-1"
+#:   pacman -Qo /usr/local/bin/nota...   1  "error: No package owns ..."
+#:   apk info --who-owns /bin/sh         0  "/bin/sh is owned by busybox-binsh-..."
+#:   apk info --who-owns /usr/local/...  1  "Could not find owner package"
+#:
+#: All four agree: 0 owned, 1 orphan. Any other status is an answer about the
+#: query, not about the file.
+_OWNER_QUERIES: "tuple[tuple[str, tuple[str, ...]], ...]" = (
+    ("dpkg",   ("-S",)),
+    ("rpm",    ("-qf",)),
+    ("pacman", ("-Qo",)),
+    ("apk",    ("info", "--who-owns")),
+)
+
+
+def package_owning(path: str, timeout: int = _CMD_TIMEOUT) -> FileOwner:
+    """Which package ships *path*, if the host's manager can be asked.
+
+    Returns ``known=False`` whenever no manager is present, the query cannot
+    run, or it exits with anything but 0 or 1 — a timeout, a locked database, a
+    manager that does not index this path. None of those mean the file is
+    unowned, and saying so would turn a broken probe into an accusation.
+    """
+    for tool, args in _OWNER_QUERIES:
+        if not _command_exists(tool):
+            continue
+        result = run_result(tool, *args, path, timeout=timeout)
+        if result.code == 0:
+            return FileOwner(_owner_name(result.stdout) or None, True)
+        if result.code == 1:
+            return FileOwner(None, True)
+        return FileOwner(None, False)
+    return FileOwner(None, False)
+
+
+def _owner_name(stdout: str) -> str:
+    """The package name out of whichever grammar answered.
+
+    `dpkg -S` prefixes it before a colon, `pacman -Qo` and `apk` put it after
+    "is owned by", and `rpm -qf` prints the NEVRA alone.
+    """
+    line = stdout.strip().splitlines()[0] if stdout.strip() else ""
+    if not line:
+        return ""
+    if " is owned by " in line:
+        return line.split(" is owned by ", 1)[1].strip()
+    if ":" in line and not line.startswith("/"):
+        return line.split(":", 1)[0].strip()
+    return line
+
+
 def unit_config_applied_at(name: str, timeout: int = _CMD_TIMEOUT) -> "float | None":
     """Epoch seconds when systemd last (re)applied this unit's configuration.
 

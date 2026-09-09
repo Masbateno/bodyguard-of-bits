@@ -50,7 +50,48 @@ OpenRC rendent désormais de vrais états, qui deviennent des verdicts, donc des
 déductions. Une référence prise sur Alpine, Gentoo ou Devuan avant la v0.18.0
 différera. Rien ne change sur un hôte systemd.
 
-**Tests** 9528 → **9566**. **Mutations** 117 → **121**.
+**Et un binaire SUID qu'aucun paquet ne livre devient un constat à part.**
+
+Kali 2026.2 porte quinze binaires SUID inattendus. Ce sont tous des helpers
+`kismet_cap_*` installés par la distribution, et BOB les rapportait en un seul
+avertissement — honnête, et sans discernement. Qu'une distribution place des
+helpers SUID sur le disque est une surface sur laquelle un opérateur peut
+raisonner. Un binaire SUID appartenant à root et à **aucun** paquet est la forme
+que prend une escalade de privilèges laissée derrière, et c'était une ligne dans
+une liste de quinze.
+
+Les requêtes de propriété sont mesurées sur quatre gestionnaires, non lues dans
+une documentation — Debian 13, Arch, Alpine 3.22 et openSUSE Leap 15.6 :
+
+    dpkg -S /usr/bin/sh                 0  "dash: /usr/bin/sh"
+    dpkg -S /usr/local/bin/notapackage  1  "no path found matching pattern"
+    rpm -qf /bin/sh                     0  "bash-sh-4.4-150400.27.6.1.x86_64"
+    rpm -qf /tmp/notapackage            1  "file … is not owned by any package"
+    pacman -Qo /usr/bin/sh              0  "… is owned by bash 5.3.15-1"
+    pacman -Qo /usr/local/bin/nota…     1  "error: No package owns …"
+    apk info --who-owns /bin/sh         0  "… is owned by busybox-binsh-…"
+    apk info --who-owns /usr/local/…    1  "Could not find owner package"
+
+Les quatre s'accordent : 0 possédé, 1 orphelin. Tout autre code — un délai
+dépassé, une base verrouillée, un gestionnaire qui n'indexe pas ce chemin — est
+une réponse sur la requête et non sur le fichier, et ne produit aucun constat.
+`package_owning()` rend trois états et non deux exactement pour cela, et seul un
+orphelin prouvé est rapporté.
+
+Démontré sur Kali en en plantant un, puis en le retirant :
+
+    avant    ⚠ 15 binaires SUID inattendus : kismet_cap_…
+    après    ⚠ 16 inattendus …
+             ✖ 1 binaire SUID n'appartenant à aucun paquet :
+                 /usr/local/bin/backdoor-test
+    retiré   ⚠ 15 inattendus …, et l'alerte a disparu
+
+Le texte refuse d'accuser : un logiciel compilé localement, l'installeur d'un
+éditeur ou un `chmod u+s` délibéré produisent tous des binaires sans paquet
+propriétaire. BOB rapporte le fait et laisse le jugement là où est la
+connaissance.
+
+**Tests** 9528 → **9618**. **Mutations** 117 → **124**.
 
 ---
 

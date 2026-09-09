@@ -19,7 +19,8 @@ import stat
 import subprocess
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t
+from bob.checks._run import (TranslationFunc, _C_LOCALE_ENV, _identity_t,
+                             package_owning)
 from bob.scoring import CheckResult
 
 
@@ -104,6 +105,17 @@ _FIND_TIMEOUT = 15  # seconds
 # Snapshot
 # ---------------------------------------------------------------------------
 
+def _is_unowned(path: str) -> bool:
+    """True only when a package manager said no package ships *path*.
+
+    False covers both "a package owns it" and "nothing could be asked", which
+    are different facts about the world but the same instruction here: do not
+    accuse this file.
+    """
+    owner = package_owning(path)
+    return owner.known and owner.package is None
+
+
 @dataclass
 class SuidSnapshot:
     """
@@ -116,6 +128,14 @@ class SuidSnapshot:
                            whitelist and not matched by the user whitelist.
         unexpected_sgid:   SGID binaries whose basename is not in the whitelist.
         whitelisted_suid:  SUID binaries suppressed by the user's glob patterns.
+        unowned_suid:      Unexpected SUID binaries that provably belong to no
+                           package. v0.18.0: a SUID helper shipped by the
+                           distribution is surface an operator can reason about
+                           — Kali carries fifteen `kismet_cap_*` of them — while
+                           one owned by nothing is the shape a left-behind
+                           privilege escalation takes. A binary whose ownership
+                           could not be established stays in unexpected_suid;
+                           "nothing answered" is not "nothing owns it".
         scan_skipped:      True if find timed out or failed entirely.
         scan_partial:      True when find produced results but could not descend
                            into every directory. Established against GNU find
@@ -131,6 +151,7 @@ class SuidSnapshot:
     unexpected_suid:  list[str] = field(default_factory=list)
     unexpected_sgid:  list[str] = field(default_factory=list)
     whitelisted_suid: list[str] = field(default_factory=list)
+    unowned_suid:     list[str] = field(default_factory=list)
     scan_skipped:     bool      = False
     scan_partial:     bool      = False
 
@@ -210,9 +231,15 @@ class SuidSnapshot:
             else:
                 unexpected_suid.append(p)
 
+        # v0.18.0: ask who ships them. Only the unexpected ones are queried —
+        # the whitelist has already accounted for the rest, and this costs one
+        # subprocess per binary.
+        unowned_suid = [p for p in unexpected_suid if _is_unowned(p)]
+
         return cls(
             suid_paths=sorted(suid_paths),
             sgid_paths=sorted(sgid_paths),
+            unowned_suid=sorted(unowned_suid),
             unexpected_suid=sorted(unexpected_suid),
             unexpected_sgid=sorted(unexpected_sgid),
             whitelisted_suid=sorted(whitelisted_suid),
@@ -285,6 +312,29 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
             points=1,
             detail=_t("suid_audit.unexpected_suid_detail"),
             cmd=" && ".join(f"stat {shlex.quote(p)}" for p in snapshot.unexpected_suid[:5]),
+            cmd_type="check",
+        )
+
+    # --- SUID binaries no package ships (v0.18.0) --------------------------
+    # Separated from the block above because the two are not the same claim.
+    # Kali ships fifteen unexpected SUID helpers from `kismet`; a distribution
+    # putting them there is surface to reason about. A root-owned SUID binary
+    # that belongs to no package is the shape a left-behind privilege
+    # escalation takes, and it is the one worth waking someone for.
+    if snapshot.unowned_suid:
+        unowned_str = ", ".join(snapshot.unowned_suid[:10])
+        unowned_suffix = (f" (+{len(snapshot.unowned_suid) - 10} more)"
+                          if len(snapshot.unowned_suid) > 10 else "")
+        result.alert_with_deduction(
+            key="suid_audit.unowned_suid",
+            message=_t("suid_audit.unowned_suid",
+                       count=len(snapshot.unowned_suid),
+                       paths=unowned_str + unowned_suffix),
+            reason=_t("suid_audit.unowned_suid_reason",
+                      count=len(snapshot.unowned_suid)),
+            points=2,
+            detail=_t("suid_audit.unowned_suid_detail"),
+            cmd=" && ".join(f"stat {shlex.quote(p)}" for p in snapshot.unowned_suid[:5]),
             cmd_type="check",
         )
 

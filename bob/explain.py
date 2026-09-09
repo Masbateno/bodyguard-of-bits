@@ -324,6 +324,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("SUID / SGID", [
         "suid_audit.unexpected_suid",
+        "suid_audit.unowned_suid",
         "suid_audit.unexpected_sgid",
     ]),
     ("Risk", [

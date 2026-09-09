@@ -1254,6 +1254,9 @@
     "ok_partial": "No unexpected SUID/SGID binaries among those scanned ({suid_count} SUID, {sgid_count} SGID) — some directories could not be read, so the scan is partial",
     "unexpected_suid": "{count} unexpected root-owned SUID binary/binaries: {paths}",
     "unexpected_suid_detail": "These binaries run as root regardless of who launches them. Verify each one is intentional, then either remove the SUID bit (chmod u-s) or add it to your local whitelist.",
+    "unowned_suid": "{count} root-owned SUID binary/binaries belong to no package: {paths}",
+    "unowned_suid_reason": "{count} SUID binary/binaries that no package manager claims",
+    "unowned_suid_detail": "Every other SUID binary on this host was put there by a package. These were not: the package manager was asked and answered that nothing ships them. That is the shape a left-behind privilege escalation takes — a root-owned binary that runs as root for anyone, installed by something other than the distribution. It may still be legitimate: locally compiled software, a vendor installer, a deliberate `chmod u+s`. BOB cannot tell those apart from the other kind, which is why this is reported rather than resolved. Check each one against what you know you installed: stat <path>",
     "unexpected_suid_reason": "{count} unexpected SUID binary/binaries found",
     "unexpected_sgid": "{count} unexpected SGID binary/binaries: {paths}",
     "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing.",
@@ -2824,6 +2827,11 @@
         "why": "SUID (Set User ID) binaries execute with the file owner's privileges (typically root) regardless of who runs them. An unexpected SUID binary is either a privilege escalation backdoor planted by an attacker, or a legitimate tool left SUID unnecessarily. Either way, it represents an uncontrolled root execution path.",
         "how": "1. Identify all SUID binaries:\n   find / -perm -4000 -type f 2>/dev/null\n2. For each unexpected binary, investigate its origin:\n   dpkg -S /path/to/binary\n3. Remove the SUID bit if not required:\n   sudo chmod u-s /path/to/binary\n4. If the binary is unknown or suspicious:\n   sha256sum /path/to/binary\n   # Compare with known-good hash from the vendor"
       },
+      "unowned_suid": {
+              "title": "A root-owned SUID binary that no package ships",
+              "why": "Every SUID binary a distribution installs is accounted for: the package manager can name what put it there. These cannot be accounted for that way — the manager was asked and answered that no package owns them.\n\nThat is the shape a left-behind privilege escalation takes. A binary owned by root with the setuid bit runs as root for whoever executes it, and one that arrived outside the package system arrived by some other means: an attacker, an installer that bypasses packaging, or a hand-made `chmod u+s`.\n\nIt is not proof of compromise. Locally compiled software, vendor installers and deliberate administrative choices all produce binaries no package owns. BOB cannot tell those apart from the other kind, and does not try — it reports the fact and leaves the judgement where the knowledge is.\n\nA binary whose ownership could not be established is not reported here. Silence from the package manager is not evidence about the file.",
+              "how": "1. Look at each one, and at when it arrived:\n   stat <path>\n2. Ask whether you put it there. Software you built or installed outside the package manager will show up in this list, and belongs there.\n3. If you did not put it there, treat the host as suspect before touching the file — its timestamps are evidence.\n4. If it is yours and the setuid bit is not needed, remove it:\n   sudo chmod u-s <path>\n5. If it is yours and the bit is needed, add the basename to your whitelist so this stays a short list worth reading."
+            },
       "unexpected_sgid": {
         "title": "Unexpected SGID binary detected",
         "why": "SGID (Set Group ID) binaries execute with the file's group privileges. An unexpected SGID binary can provide access to privileged group resources (shadow, disk, docker, sudo) for any user who runs it — enabling group-level privilege escalation.",
