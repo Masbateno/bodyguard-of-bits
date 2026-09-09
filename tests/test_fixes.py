@@ -75,12 +75,30 @@ def run_and_capture(engine, config, mock_proc=None, mock_input=None):
         mock_input = "n"
 
     buf = io.StringIO()
-    with patch("bob.fixes.subprocess.run", return_value=mock_proc) as _sp, \
+    with patch("bob.fixes._run_fix_command",
+               return_value=_as_result(mock_proc)) as _sp, \
          patch("builtins.input", return_value=mock_input) as _inp, \
          redirect_stdout(buf):
         run_fixes(engine, config, _t)
 
     return buf.getvalue()
+
+
+def _as_result(mock_proc):
+    # type: (object) -> tuple
+    """Translate a CompletedProcess-shaped mock into what _run_fix_command returns.
+
+    The seam moved from `subprocess.run` to `bob.fixes._run_fix_command` when
+    the timeout learned to stop the whole process group rather than the `sudo`
+    on top of it. The tests keep expressing intent as a return code.
+    """
+    if mock_proc is None:
+        return ("ok", 0, b"")
+    rc = getattr(mock_proc, "returncode", 0)
+    err = getattr(mock_proc, "stderr", b"")
+    if not isinstance(err, bytes):
+        err = b""
+    return (("ok" if rc == 0 else "failed"), rc, err)
 
 
 # ---------------------------------------------------------------------------
@@ -154,11 +172,11 @@ class TestDeleteSortOrder:
         )
         buf = io.StringIO()
         calls = []
-        def fake_run(args, **kwargs):
+        def fake_run(args, timeout):
             calls.append(args)
-            return MagicMock(returncode=0)
+            return ("ok", 0, b"")
 
-        with patch("bob.fixes.subprocess.run", side_effect=fake_run), \
+        with patch("bob.fixes._run_fix_command", side_effect=fake_run), \
              patch("builtins.input", return_value="y"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(), _t)
@@ -177,11 +195,11 @@ class TestDeleteSortOrder:
         )
         buf = io.StringIO()
         call_order = []
-        def fake_run(args, **kwargs):
+        def fake_run(args, timeout):
             call_order.append(" ".join(args))
-            return MagicMock(returncode=0)
+            return ("ok", 0, b"")
 
-        with patch("bob.fixes.subprocess.run", side_effect=fake_run), \
+        with patch("bob.fixes._run_fix_command", side_effect=fake_run), \
              patch("builtins.input", return_value="y"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(), _t)
@@ -200,7 +218,7 @@ class TestNoItems:
         """No findings at all → 'fixes.none' shown, no subprocess call."""
         engine = make_engine()
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run") as mock_sp, \
+        with patch("bob.fixes._run_fix_command") as mock_sp, \
              patch("builtins.input") as mock_inp, \
              redirect_stdout(buf):
             run_fixes(engine, make_config(), _t)
@@ -235,8 +253,8 @@ class TestSubprocessSuccess:
         cmd = "sudo ufw --force delete 1"
         engine = make_engine(make_finding(cmd=cmd))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run",
-                   return_value=MagicMock(returncode=0)) as mock_sp, \
+        with patch("bob.fixes._run_fix_command",
+                   return_value=("ok", 0, b"")) as mock_sp, \
              patch("builtins.input", return_value="y"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(), _t)
@@ -263,22 +281,31 @@ class TestSubprocessFailure:
 
 
 class TestSubprocessTimeout:
-    def test_manual_message_on_timeout(self):
-        """subprocess.run raises TimeoutExpired → 'fixes.manual' shown."""
-        engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
+    def test_timeout_is_not_reported_as_not_applied(self):
+        """A command BOB stopped waiting on is 'unknown', never 'apply it yourself'.
+
+        `fixes.manual` reads "apply the command manually". Printing it after a
+        timeout tells the operator to start a second package transaction over
+        a first one that may still be halfway through — which is how a Debian
+        13 VM ended up with packages unpacked but not configured.
+        """
+        engine = make_engine(make_finding(cmd="sudo apt-get upgrade -y"))
         buf = io.StringIO()
-        exc = subprocess.TimeoutExpired(cmd="sudo ufw --force delete 1", timeout=30)
-        with patch("bob.fixes.subprocess.run", side_effect=exc), \
+        with patch("bob.fixes._run_fix_command",
+                   return_value=("timeout", None, b"")), \
              patch("builtins.input", return_value="y"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(), _t)
-        assert "fixes.manual" in buf.getvalue()
+        out = buf.getvalue()
+        assert "fixes.timed_out" in out
+        assert "fixes.manual" not in out
+        assert "fixes.unknown_items_title" in out
 
     def test_oserror_handled(self):
         """OSError (command not found) → 'fixes.manual' shown."""
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run", side_effect=OSError("not found")), \
+        with patch("bob.fixes._run_fix_command", side_effect=OSError("not found")), \
              patch("builtins.input", return_value="y"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(), _t)
@@ -294,7 +321,7 @@ class TestInteractiveNo:
         """input() returns 'n' → subprocess.run not called."""
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run") as mock_sp, \
+        with patch("bob.fixes._run_fix_command") as mock_sp, \
              patch("builtins.input", return_value="n"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(yes=False), _t)
@@ -316,8 +343,8 @@ class TestAutoMode:
         """config.yes=True → input() never called."""
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run",
-                   return_value=MagicMock(returncode=0)), \
+        with patch("bob.fixes._run_fix_command",
+                   return_value=("ok", 0, b"")), \
              patch("builtins.input") as mock_inp, \
              redirect_stdout(buf):
             run_fixes(engine, make_config(yes=True), _t)
@@ -330,8 +357,8 @@ class TestAutoMode:
             make_finding(cmd="sudo ufw --force delete 3"),
         )
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run",
-                   return_value=MagicMock(returncode=0)) as mock_sp, \
+        with patch("bob.fixes._run_fix_command",
+                   return_value=("ok", 0, b"")) as mock_sp, \
              patch("builtins.input"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(yes=True), _t)
@@ -341,8 +368,8 @@ class TestAutoMode:
         """config.yes=True → auto mode banner shown before items."""
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run",
-                   return_value=MagicMock(returncode=0)), \
+        with patch("bob.fixes._run_fix_command",
+                   return_value=("ok", 0, b"")), \
              patch("builtins.input"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(yes=True), _t)
@@ -358,8 +385,8 @@ class TestAutoSummary:
         """config.yes=True + applied → 'fixes.auto_summary_title' shown."""
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run",
-                   return_value=MagicMock(returncode=0)), \
+        with patch("bob.fixes._run_fix_command",
+                   return_value=("ok", 0, b"")), \
              patch("builtins.input"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(yes=True), _t)
@@ -370,7 +397,7 @@ class TestAutoSummary:
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
         mock_proc = MagicMock(returncode=1, stderr=b"")
-        with patch("bob.fixes.subprocess.run", return_value=mock_proc), \
+        with patch("bob.fixes._run_fix_command", return_value=mock_proc), \
              patch("builtins.input"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(yes=True), _t)
@@ -381,8 +408,8 @@ class TestAutoSummary:
         cmd = "sudo ufw --force delete 1"
         engine = make_engine(make_finding(cmd=cmd))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run",
-                   return_value=MagicMock(returncode=0)), \
+        with patch("bob.fixes._run_fix_command",
+                   return_value=("ok", 0, b"")), \
              patch("builtins.input"), \
              redirect_stdout(buf):
             run_fixes(engine, make_config(yes=True), _t)
@@ -430,7 +457,7 @@ class TestDryRun:
         """Without --apply, subprocess.run is never called."""
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run") as mock_sp, \
+        with patch("bob.fixes._run_fix_command") as mock_sp, \
              patch("builtins.input") as mock_inp, \
              redirect_stdout(buf):
             run_fixes(engine, self._dry_config(), _t)
@@ -440,7 +467,7 @@ class TestDryRun:
         """Without --apply, input() is never called."""
         engine = make_engine(make_finding(cmd="sudo ufw --force delete 1"))
         buf = io.StringIO()
-        with patch("bob.fixes.subprocess.run"), \
+        with patch("bob.fixes._run_fix_command"), \
              patch("builtins.input") as mock_inp, \
              redirect_stdout(buf):
             run_fixes(engine, self._dry_config(), _t)

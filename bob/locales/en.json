@@ -532,7 +532,9 @@
       "diagnostic_items_title": "Not automatic — BOB can only show you where to look:",
     "manual_items_title": "Manual actions required (no automatic fix available):",
     "done_summary": "{applied} of {total} fix(es) applied.",
-    "dry_run_hint": "Dry run — use {cmd} to execute fixes"
+    "dry_run_hint": "Dry run — use {cmd} to execute fixes",
+    "timed_out": "timed out after {seconds}s — BOB stopped waiting; the change may be part-way through",
+    "unknown_items_title": "OUTCOME UNKNOWN — CHECK THE SYSTEM BEFORE RE-RUNNING"
   },
   "risk_context": {
     "title": "Risk context",

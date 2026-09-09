@@ -7,8 +7,10 @@ the user to apply each fix, and runs the suggested commands.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
+import signal
 import subprocess
 
 from bob import output as _output
@@ -71,6 +73,84 @@ def _can_apply_unattended(cmd: str) -> bool:
         return False
     # Match on the basename so an absolute path is caught too.
     return not any(arg.rsplit("/", 1)[-1] in _INTERACTIVE for arg in argv)
+
+
+#: Package transactions are the one class of fix BOB proposes that
+#: legitimately runs for minutes rather than seconds: a mirror to reach, an
+#: archive to unpack, maintainer scripts to run. Thirty seconds was never a
+#: budget for them, it was a budget for `ufw delete`.
+_PACKAGE_TOOLS = frozenset({
+    "apt", "apt-get", "aptitude", "dpkg", "dpkg-reconfigure",
+    "dnf", "dnf5", "yum", "rpm", "zypper", "pacman", "apk",
+    "snap", "flatpak", "unattended-upgrade", "unattended-upgrades",
+})
+
+_TIMEOUT_DEFAULT = 30
+_TIMEOUT_PACKAGE = 900
+
+#: How long a stopped process tree gets to unwind after SIGTERM before BOB
+#: escalates. dpkg uses the window to finish the item it is on.
+_TERM_GRACE = 15
+
+
+def _timeout_for(argv) -> int:
+    """Seconds *argv* is allowed to take.
+
+    Matches on the basename of every argument, so `sudo /usr/bin/apt-get`
+    and a bare `apt-get` land in the same bucket.
+    """
+    if any(arg.rsplit("/", 1)[-1] in _PACKAGE_TOOLS for arg in argv):
+        return _TIMEOUT_PACKAGE
+    return _TIMEOUT_DEFAULT
+
+
+def _stop_tree(proc) -> None:
+    """Stop the whole process group *proc* leads, SIGTERM then SIGKILL."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except OSError:
+            # Already gone, or owned by root while BOB runs unprivileged —
+            # either way there is nothing more BOB can do about it.
+            break
+        try:
+            proc.communicate(timeout=_TERM_GRACE)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+    try:
+        proc.communicate(timeout=_TERM_GRACE)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _run_fix_command(argv, timeout):
+    """Run *argv* to completion, or stop its whole process tree trying.
+
+    Returns ``(status, returncode, stderr)`` with *status* one of ``"ok"``,
+    ``"failed"`` or ``"timeout"``.
+
+    `subprocess.run(timeout=…)` kills the direct child and nothing below it.
+    Every package fix BOB proposes is `sudo apt-get …`, so the direct child
+    is *sudo*: killing it orphans the `apt-get` underneath, which carries on
+    unwatched. Measured on a Debian 13 VM — BOB printed `0 of 1 fix(es)
+    applied` while `apt-get upgrade -y` was still mid-`dpkg --configure`,
+    holding the apt lock, with BOB already gone.
+
+    `start_new_session=True` makes the child a process-group leader, so the
+    timeout can signal the group and actually stop what BOB started.
+    """
+    proc = subprocess.Popen(
+        argv, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        _, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _stop_tree(proc)
+        return "timeout", None, b""
+    return ("ok" if proc.returncode == 0 else "failed"), proc.returncode, stderr
 
 
 def run_fixes(engine, config, t) -> None:
@@ -172,6 +252,7 @@ def run_fixes(engine, config, t) -> None:
         print()
 
     applied_cmds = []
+    unknown_cmds = []
     skipped_cmds = 0
 
     print()
@@ -191,18 +272,25 @@ def run_fixes(engine, config, t) -> None:
                 print()
                 continue
             try:
-                proc = subprocess.run(
-                    shlex.split(cmd), stdin=subprocess.DEVNULL,
-                    capture_output=True, timeout=30,
-                )
-                if proc.returncode == 0:
+                argv = shlex.split(cmd)
+                timeout = _timeout_for(argv)
+                status, rc, err = _run_fix_command(argv, timeout)
+                if status == "ok":
                     print(f"  ✔ {t('fixes.applied')}")
                     applied_cmds.append(cmd)
+                elif status == "timeout":
+                    # Not "not applied" — BOB stopped waiting on a command it
+                    # had already started, so the system may be halfway
+                    # through the change. Telling the operator to "apply the
+                    # command manually" here would be advice to run a second
+                    # package transaction over the wreck of the first.
+                    print(f"  ⚠ {t('fixes.timed_out', seconds=timeout)}")
+                    unknown_cmds.append(cmd)
                 else:
-                    stderr = proc.stderr.decode(errors="replace").strip()
+                    stderr = err.decode(errors="replace").strip()
                     detail = f" — {stderr}" if stderr else ""
-                    print(f"  ✖ {t('fixes.manual')} (exit {proc.returncode}{detail})")
-            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                    print(f"  ✖ {t('fixes.manual')} (exit {rc}{detail})")
+            except (OSError, ValueError) as exc:
                 print(f"  ✖ {t('fixes.manual')} ({type(exc).__name__})")
                 skipped_cmds += 1
         else:
@@ -214,6 +302,14 @@ def run_fixes(engine, config, t) -> None:
     # noise that reads like a failure.
     if sorted_items:
         print(f"  {t('fixes.done_summary', applied=len(applied_cmds), total=len(sorted_items))}")
+
+    # A command BOB stopped waiting on is neither applied nor skipped, and
+    # the operator has to know before touching the machine again.
+    if unknown_cmds:
+        print()
+        print(f"  {_c.yellow_bold}{t('fixes.unknown_items_title')}{_c.reset}")
+        for cmd in unknown_cmds:
+            print(f"  ⚠ {_output.command(cmd)}")
 
     # Auto-fix summary — list every command that was applied
     if config.yes and applied_cmds:

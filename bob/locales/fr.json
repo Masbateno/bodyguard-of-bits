@@ -331,7 +331,9 @@
       "diagnostic_items_title": "Non automatisable — BOB ne peut que vous montrer où regarder :",
     "manual_items_title": "Actions manuelles requises (aucune correction automatique disponible) :",
     "done_summary": "{applied} correction(s) sur {total} appliquée(s).",
-    "dry_run_hint": "Aperçu uniquement — utilisez {cmd} pour exécuter les corrections"
+    "dry_run_hint": "Aperçu uniquement — utilisez {cmd} pour exécuter les corrections",
+    "timed_out": "délai dépassé après {seconds} s — BOB a cessé d'attendre ; le changement peut être à mi-chemin",
+    "unknown_items_title": "RÉSULTAT INCONNU — VÉRIFIEZ LE SYSTÈME AVANT DE RELANCER"
   },
   "risk_context": {
     "title": "Contexte de risque",
