@@ -229,6 +229,9 @@ on an emulated host reports the platform's refusal rather than accusing the
 sandbox. The skip is inside the test, so the collected count does not move with
 the environment — the v0.15.0 lesson from `importorskip` at module scope.
 
+With that in place the whole suite exits 0 on aarch64, as an ordinary user,
+with no failures and no errors.
+
 On a machine that is not a Pi the section emits nothing at all, and the A/B
 against v0.16.4 on this x86 host shows the same score, the same 93 findings and
 the same deductions.

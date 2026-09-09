@@ -243,6 +243,9 @@ plateforme au lieu d'accuser le bac à sable. Le skip est à l'intérieur du tes
 donc le nombre de tests collectés ne bouge pas avec l'environnement — la leçon
 que la v0.15.0 a tirée d'`importorskip` au niveau module.
 
+Cela fait, la suite complète sort en 0 sur aarch64, en utilisateur ordinaire,
+sans aucun échec ni erreur.
+
 Sur une machine qui n'est pas un Pi la section n'émet rien, et l'A/B contre la
 v0.16.4 sur cet hôte x86 donne le même score, les mêmes 93 constats et les
 mêmes déductions.
