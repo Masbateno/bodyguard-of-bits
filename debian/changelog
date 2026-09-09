@@ -1,4 +1,4 @@
-bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
+bodyguard-of-bits (0.17.0-1) unstable; urgency=low
 
   * On the whole RPM family, BOB answered yes to every package it was asked
     about, including names that exist nowhere. "rpm -q nosuchpackage" prints
@@ -70,7 +70,7 @@ bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
     error" at the screen that reports what went wrong. A pty run of the real
     wizard found it; the guard that replaced the AST check renders it.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 08 Sep 2026 12:00:00 +0200
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 09 Sep 2026 12:00:00 +0200
 
 bodyguard-of-bits (0.16.4-1) UNRELEASED; urgency=low
 

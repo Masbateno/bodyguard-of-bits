@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.17.0] — 2026-09-08
+## [v0.17.0] — 2026-09-09
 
 **On the whole RPM family, BOB answered yes to every package it was asked
 about — including names that exist nowhere. And the cron wizard promised

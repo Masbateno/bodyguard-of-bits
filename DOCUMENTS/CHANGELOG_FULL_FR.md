@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.17.0] — 08-09-2026
+## [v0.17.0] — 09-09-2026
 
 **Sur toute la famille RPM, BOB répondait oui à tout paquet qu'on lui
 soumettait — y compris des noms qui n'existent nulle part. Et le wizard cron
