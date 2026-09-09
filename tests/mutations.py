@@ -680,6 +680,18 @@ MUTATIONS: "tuple[Mutation, ...]" = (
 
     # ---- what machine this is ----------------------------------------------
     Mutation(
+        id="pi/probe-target-not-importable",
+        file="tests/test_v0170_raspberry_pi.py",
+        old="    proc = ctx.Process(target=_probe_memory_limit_child, args=(q,))",
+        new="    _local = _probe_memory_limit_child\n"
+            "    proc = ctx.Process(target=_local, args=(q,))",
+        kills=(f"{_PI}::TestNoProbeRidesOnForkOnlyBehaviour::"
+               "test_no_test_module_spawns_a_nested_target",),
+        reason="a target a spawn child cannot import by name works on fork and "
+               "raises PicklingError from Python 3.14 — the CI matrix caught "
+               "this where five local campaigns on 3.12 did not",
+    ),
+    Mutation(
         id="pi/secure-boot-invents-a-bios",
         file="bob/checks/secure_boot.py",
         old="            message=(_t(\"secure_boot.no_uefi_board\", board=snapshot.board)\n"

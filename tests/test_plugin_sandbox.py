@@ -208,18 +208,13 @@ class TestAdversarialPluginsBlocked:
             # count does not move with the environment — the v0.15.0 lesson
             # from `importorskip` at module scope.
             if "memory" in plugin_path.name and not ok_findings and not blocked:
-                import multiprocessing
+                # Asked in a spawn child — the context the sandbox itself uses,
+                # and the one Python 3.14 made the default. A nested probe
+                # cannot be pickled and fails there; CI found that on 3.14
+                # while it passed on 3.10 through 3.13.
+                from tests.test_v0170_raspberry_pi import probe_memory_limit
 
-                def _probe(q):
-                    import bob._sandbox as sb
-                    sb._apply_resource_limits()
-                    q.put(sb._MEM_LIMIT_APPLIED)
-
-                _q = multiprocessing.Queue()
-                _p = multiprocessing.Process(target=_probe, args=(_q,))
-                _p.start(); _p.join(30)
-                _applied = _q.get() if not _q.empty() else False
-                if not _applied:
+                if not probe_memory_limit():
                     pytest.skip(
                         "this platform accepts setrlimit(RLIMIT_AS) and applies "
                         "nothing (measured: qemu-user emulation on aarch64), so "

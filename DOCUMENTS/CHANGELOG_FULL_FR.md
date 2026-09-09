@@ -248,6 +248,18 @@ que la v0.15.0 a tirée d'`importorskip` au niveau module.
 Cela fait, la suite complète sort en 0 sur aarch64, en utilisateur ordinaire,
 sans aucun échec ni erreur.
 
+Puis la matrice CI a attrapé ce que rien de tout cela ne pouvait voir. Python
+3.14 change le défaut de `multiprocessing` et abandonne `fork` : un
+`Process(target=…)` visant une fonction imbriquée lève donc `PicklingError`,
+la cible devant être importable par son nom. Deux sondes écrites pour cette
+version faisaient exactement cela. Elles passaient de 3.10 à 3.13 et à chaque
+campagne locale ; la branche 3.14 a échoué. Le bac à sable de BOB n'a jamais
+été concerné — il demande `spawn` explicitement et vise un `_worker_main` de
+module — le défaut était entièrement dans les nouveaux tests. Ils demandent
+`spawn` eux aussi désormais, ce qui est d'ailleurs le contexte qu'ils
+prétendent mesurer, et une garde balaie chaque module de test à la recherche de
+cette forme.
+
 ### Un job arm64, et ce qu'il refuse de faire
 
 `ci/arm64_smoke.sh` tourne sur chaque PR, piloté depuis `integration.yml` via
@@ -353,7 +365,7 @@ vrai wizard derrière un pty l'a trouvée du premier coup, et la garde qui l'a
 remplacée pilote la fonction contre un écran enregistreur en exigeant que
 chaque mot de l'avis atterrisse sur une ligne.
 
-**Tests** 8951 → **9233**. **Mutations** 56 → **86**.
+**Tests** 8951 → **9240**. **Mutations** 56 → **87**.
 
 ---
 

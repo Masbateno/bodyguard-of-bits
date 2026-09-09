@@ -47,6 +47,11 @@ bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
     make: microcode degrades, absent UEFI is not announced as a BIOS, and the
     Raspberry Pi section fires. Debian Bookworm arm64 becomes Tier 2;
     Raspberry Pi OS stays Tier 3, since no physical board has been audited.
+  * Python 3.14 defaults multiprocessing away from fork, so a Process target
+    that is a nested function raises PicklingError. Two probes written for this
+    release did that; they passed on 3.10 through 3.13 and the CI matrix caught
+    them on 3.14. BOB's sandbox was never affected -- it asks for spawn
+    explicitly and targets a module-level function.
   * The cron wizard promised delivery it had never established. "sendmail
     available — notifications will be delivered" was decided by
     shutil.which("sendmail"), which a Postfix installed and never configured

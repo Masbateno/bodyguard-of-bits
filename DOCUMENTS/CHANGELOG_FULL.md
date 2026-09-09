@@ -234,6 +234,16 @@ the environment — the v0.15.0 lesson from `importorskip` at module scope.
 With that in place the whole suite exits 0 on aarch64, as an ordinary user,
 with no failures and no errors.
 
+And then the CI matrix caught what none of that could. Python 3.14 defaults
+`multiprocessing` away from `fork`, so a `Process(target=…)` whose target is a
+nested function raises `PicklingError` — the target has to be importable by
+name. Two probes written for this release did exactly that. They passed on 3.10
+through 3.13 and on every local campaign; the 3.14 leg failed. BOB's sandbox
+was never affected, because it asks for `spawn` explicitly and targets a
+module-level `_worker_main`; the defect was entirely in the new tests. They ask
+for `spawn` too now — which is also the context they claim to be measuring —
+and a guard sweeps every test module for the shape.
+
 ### An arm64 job, and what it refuses to do
 
 `ci/arm64_smoke.sh` runs on every PR, driven from `integration.yml` through
@@ -334,7 +344,7 @@ of the real wizard found it in one pass, and the guard that replaced it drives
 the function against a recording screen and requires every word of the notice
 to land on a row.
 
-**Tests** 8951 → **9233**. **Mutations** 56 → **86**.
+**Tests** 8951 → **9240**. **Mutations** 56 → **87**.
 
 ---
 

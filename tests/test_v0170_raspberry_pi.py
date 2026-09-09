@@ -24,10 +24,46 @@ from __future__ import annotations
 
 import pytest
 
+import pathlib
+
 from bob import i18n
 from bob.checks.raspberry_pi import RaspberryPiSnapshot, check_raspberry_pi
 from bob.platform import boot_firmware_dir, machine, raspberry_pi_model
 from bob.scoring import FindingLevel as FL
+
+_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def probe_memory_limit(timeout: int = 60) -> "bool | None":
+    """Whether ``_apply_resource_limits`` really gets its cap, asked in a child.
+
+    Run in a **spawn** child, for two reasons. It is the context the sandbox
+    itself uses (``mp.get_context("spawn")`` with a module-level target), so
+    this measures the process the limit is actually applied in. And a spawn
+    child re-imports its target, which means the target has to be importable —
+    a nested function is not, and Python 3.14 made that fatal by changing the
+    default start method away from ``fork``. CI caught it there while five
+    local campaigns on 3.12 did not.
+
+    The limit must not be applied in the parent: it belongs to the worker, and
+    a parent-wide 256 MiB cap would break the audit.
+    """
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    q = ctx.Queue()
+    proc = ctx.Process(target=_probe_memory_limit_child, args=(q,))
+    proc.start()
+    proc.join(timeout)
+    return q.get() if not q.empty() else None
+
+
+def _probe_memory_limit_child(q) -> None:
+    """Module-level so a spawn child can import it. See probe_memory_limit."""
+    import bob._sandbox as sb
+
+    sb._apply_resource_limits()
+    q.put(sb._MEM_LIMIT_APPLIED)
 
 
 @pytest.fixture(autouse=True)
@@ -317,18 +353,7 @@ class TestTheSandboxKnowsWhetherItsMemoryCapIsReal:
 
     def test_a_real_cap_is_reported_as_real(self):
         """On this host the limit holds, so the flag must say so."""
-        import multiprocessing
-
-        def _probe(q):
-            import bob._sandbox as sb
-            sb._apply_resource_limits()
-            q.put(sb._MEM_LIMIT_APPLIED)
-
-        q = multiprocessing.Queue()
-        p = multiprocessing.Process(target=_probe, args=(q,))
-        p.start()
-        p.join(30)
-        applied = q.get() if not q.empty() else None
+        applied = probe_memory_limit()
         assert applied is not None, "the probe process produced no answer"
         if applied is False:
             pytest.skip("this platform refuses RLIMIT_AS — nothing to assert")
@@ -355,3 +380,74 @@ class TestTheSandboxKnowsWhetherItsMemoryCapIsReal:
             "an optimistic default would claim the cap on a platform where "
             "_apply_resource_limits was never reached at all"
         )
+
+
+class TestNoProbeRidesOnForkOnlyBehaviour:
+    """Python 3.14 changed the default start method, and CI found out first.
+
+    ``multiprocessing`` defaulted to ``fork`` on Linux through 3.13, which
+    copies the parent wholesale and needs nothing picklable. 3.14 defaults away
+    from it, so a ``Process(target=...)`` whose target is a nested function
+    raises ``PicklingError`` — the target has to be importable by name.
+
+    Five local campaigns on 3.12 passed. The 3.14 leg of the CI matrix did not,
+    which is the second time this project's own history records the matrix
+    catching what a local pass could not (v0.14.1 was the first).
+
+    BOB's sandbox was never affected: it asks for ``spawn`` explicitly and
+    targets a module-level ``_worker_main``. The defect was entirely in tests
+    written for this release — which is exactly why they are checked here.
+    """
+
+    def test_the_probe_target_is_importable_by_name(self):
+        import tests.test_v0170_raspberry_pi as mod
+
+        assert callable(getattr(mod, "_probe_memory_limit_child", None)), (
+            "the probe target is not a module attribute, so a spawn or "
+            "forkserver child cannot import it"
+        )
+
+    def test_no_test_module_spawns_a_nested_target(self):
+        """The property, across the suite — not just the two that broke."""
+        import ast
+        import pathlib
+
+        offenders = []
+        for path in sorted((_ROOT / "tests").glob("test_*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            # Names defined at module level are importable by a spawn child.
+            top = {n.name for n in tree.body
+                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if getattr(node.func, "attr", "") != "Process":
+                    continue
+                for kw in node.keywords:
+                    if kw.arg != "target":
+                        continue
+                    name = getattr(kw.value, "id", None)
+                    if name is not None and name not in top:
+                        offenders.append(f"{path.name}:{node.lineno} target={name}")
+        assert not offenders, (
+            "these pass a target a spawn/forkserver child cannot import; they "
+            f"work on fork and raise PicklingError from Python 3.14: {offenders}"
+        )
+
+    def test_the_scan_would_notice_one(self):
+        """Negative control: the rule must reject the shape it exists for."""
+        import ast
+
+        src = ("import multiprocessing as mp\n"
+               "def outer():\n"
+               "    def _nested(q): pass\n"
+               "    mp.get_context('spawn').Process(target=_nested)\n")
+        tree = ast.parse(src)
+        top = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
+        found = [
+            kw.value.id for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "Process"
+            for kw in node.keywords
+            if kw.arg == "target" and getattr(kw.value, "id", None) not in top
+        ]
+        assert found == ["_nested"]
