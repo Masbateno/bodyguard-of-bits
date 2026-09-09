@@ -6,6 +6,53 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.18.0] — 2026-09-09
+
+**BOB reads OpenRC.**
+
+Until now every service on a host without systemd came back UNKNOWN. That was
+honest and useless: Alpine, Gentoo and Devuan run OpenRC, and BOB had nothing
+to say about any daemon on them — while saying plenty about their files, their
+kernel and their packages.
+
+The contract is measured, on Alpine Linux 3.22:
+
+    rc-service sshd status        exit 0    * status: started
+    rc-service crond status       exit 3    * status: stopped
+    rc-service nexistepas status  exit 1    (no such service)
+    rc-update show                sshd | default
+
+Existence is settled by `/etc/init.d/<name>`, never by the exit code, so "the
+probe could not run" and "the daemon is stopped" stay different answers. That
+distinction is the whole reason this took a release of its own: v0.17.1 had to
+undo the opposite mistake four times, once on this very machine.
+
+`CommandResult` carries the exit status now. It had `ok`, which collapses
+"exited 3" and "could not be started" into the same False — and OpenRC answers
+*in* its exit status. The field is fourth and defaulted, so the forty existing
+construction sites are untouched.
+
+`unit_active_state()` asks systemd first and OpenRC second, in one vocabulary,
+so callers never learn which init system replied — only what it said. A host
+carrying both keeps systemd's answer.
+
+**The commands changed too, and not by spelling.** `systemctl restart sshd` on
+Alpine names a program the host does not have. OpenRC takes the verb last
+(`rc-service sshd restart`) and splits `enable --now` into two (`rc-update add
+sshd default && rc-service sshd start`), so this could not be done by
+substituting a name into one template. Verified by running the resolved
+command on both kinds of host: exit 0 and the service started on Alpine, and
+Kali unchanged.
+
+**This is a breaking change.** Services that reported UNKNOWN on OpenRC hosts
+now report real states, which become verdicts, which become deductions. A
+baseline taken on Alpine, Gentoo or Devuan before v0.18.0 will differ. Nothing
+changes on a systemd host.
+
+**Tests** 9528 → **9566**. **Mutations** 117 → **121**.
+
+---
+
 ## [v0.17.1] — 2026-09-09
 
 **A service BOB believed stopped removed its own port from the audit.**

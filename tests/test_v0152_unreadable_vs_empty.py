@@ -21,7 +21,8 @@ class TestRunResultPrimitive:
     """The primitive that makes failure visible to callers."""
 
     def test_success_reports_ok(self):
-        assert run_result("echo", "hello") == CommandResult("hello\n", True)
+        # v0.18.0: a real result now carries its exit status too.
+        assert run_result("echo", "hello") == CommandResult("hello\n", True, "", 0)
 
     def test_non_zero_exit_is_not_ok(self):
         assert run_result("false").ok is False

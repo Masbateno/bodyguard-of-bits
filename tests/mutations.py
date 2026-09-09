@@ -58,6 +58,7 @@ _WHOAMI = "tests/test_v0171_audit_user_is_measured.py"
 _SENTINEL = "tests/test_v0171_no_sentinel_reaches_the_header.py"
 _SSHUNIT = "tests/test_v0171_ssh_unit_is_resolved.py"
 _NOSYSD = "tests/test_v0171_no_systemd_is_not_a_verdict.py"
+_OPENRC = "tests/test_v0180_openrc.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1240,8 +1241,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="sshunit/debian-spelling-hardcoded",
         file="bob/checks/ssh/_directives.py",
-        old='        kwargs["cmd"] = rule.cmd_template.replace("@SSH_UNIT@", ssh_unit())',
-        new='        kwargs["cmd"] = rule.cmd_template.replace("@SSH_UNIT@", "ssh")',
+        old='            "@SSH_RESTART@", service_restart_cmd(ssh_unit()))',
+        new='            "@SSH_RESTART@", "sudo systemctl restart ssh")',
         kills=(f"{_SSHUNIT}::TestNoCommandHardcodesTheDebianSpelling::"
                "test_the_directive_templates_go_through_the_resolver",
                f"{_SSHUNIT}::TestTheRenderedCommands"),
@@ -1253,8 +1254,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="sshunit/resolver-stops-asking",
         file="bob/checks/_run.py",
-        old="        if out.strip():\n            return name\n    return _SSH_UNIT_CANDIDATES[0]",
-        new="    return _SSH_UNIT_CANDIDATES[0]",
+        old="        if out.strip():\n            return name\n    # v0.18.0: OpenRC hosts",
+        new="        if False:\n            return name\n    # v0.18.0: OpenRC hosts",
         kills=(f"{_SSHUNIT}::TestItAsksSystemdRatherThanGuessing::"
                "test_arch_and_opensuse_get_sshd",),
         reason="no static name works on all five machines measured \u2014 Kali "
@@ -1274,12 +1275,56 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="nosystemd/flag-cleared-back-inside-the-guard",
         file="bob/checks/ssh/_snapshot.py",
-        old="        snap.sshd_active_known = False\n        if snap.sshd_installed and _command_exists(\"systemctl\"):",
-        new="        if snap.sshd_installed and _command_exists(\"systemctl\"):\n            snap.sshd_active_known = False",
+        old="        snap.sshd_active_known = False\n        # v0.18.0: no init-system test here.",
+        new="        snap.sshd_active_known = True\n        # v0.18.0: no init-system test here.",
         kills=(f"{_NOSYSD}::TestTheFieldDefaultsToNotKnowing::"
-               "test_the_flag_is_cleared_outside_the_systemctl_guard",),
-        reason="where the assignment sits is the whole defect: inside the "
-               "branch that requires systemd, a host without it never reaches "
-               "it and keeps the optimistic default",
+               "test_a_host_where_nothing_answers_stays_unknown",),
+        reason="the flag has to start at \u0022nothing answered\u0022; v0.17.1 "
+               "moved the assignment out of the systemd branch and v0.18.0 "
+               "removed that branch entirely, so only the default protects it",
+    ),
+    Mutation(
+        id="openrc/failed-probe-read-as-stopped",
+        file="bob/checks/_run.py",
+        old="    if code == _OPENRC_STOPPED:\n        return \"inactive\"\n    return None",
+        new="    return \"inactive\"",
+        kills=(f"{_OPENRC}::TestTheExitStatusIsTheAnswer::"
+               "test_a_probe_that_could_not_run_is_not_stopped",
+               f"{_OPENRC}::TestTheExitStatusIsTheAnswer::"
+               "test_an_unknown_service_is_not_stopped"),
+        reason="OpenRC exits 1 for a service it does not know and gives no code "
+               "at all when the probe never ran; reading either as stopped is "
+               "the mistake v0.17.1 had to undo four times",
+    ),
+    Mutation(
+        id="openrc/never-asked",
+        file="bob/checks/_run.py",
+        old="    return openrc_state(name, timeout=timeout)",
+        new="    return None",
+        kills=(f"{_OPENRC}::TestOneVocabularyForBothInitSystems::"
+               "test_unit_active_state_falls_through_to_openrc",),
+        reason="every service on Alpine, Gentoo and Devuan came back UNKNOWN "
+               "because systemd was the only thing ever asked",
+    ),
+    Mutation(
+        id="openrc/wrong-program-not-wrong-name",
+        file="bob/checks/_run.py",
+        old='        return f"sudo rc-service {unit} restart"',
+        new='        return f"sudo systemctl restart {unit}"',
+        kills=(f"{_OPENRC}::TestTheCommandMatchesTheInitSystem::"
+               "test_openrc_hosts_get_rc_service",),
+        reason="on Alpine there is no systemctl to run: the remediation names "
+               "a program the host does not have, not merely a misspelt unit",
+    ),
+    Mutation(
+        id="openrc/exit-status-dropped",
+        file="bob/checks/_run.py",
+        old="        return CommandResult(proc.stdout, proc.returncode == 0, proc.stderr,\n"
+            "                             proc.returncode)",
+        new="        return CommandResult(proc.stdout, proc.returncode == 0, proc.stderr)",
+        kills=(f"{_OPENRC}::TestTheExitStatusIsCarried",),
+        reason="without the code, \"exited 3\" and \"could not be started\" "
+               "collapse into the same False, and OpenRC answers in its exit "
+               "status",
     ),
 )

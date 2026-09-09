@@ -32,9 +32,16 @@ class TestTheStreamIsKept:
     def test_a_command_that_never_ran_leaves_it_empty(self):
         assert run_result("bob-no-such-binary").stderr == ""
 
-    def test_two_field_construction_still_compares_equal(self):
-        """Existing call sites build a CommandResult with two fields."""
-        assert run_result("echo", "ok") == CommandResult("ok\n", True)
+    def test_two_field_construction_is_still_valid(self):
+        """Existing call sites build a CommandResult with two fields.
+
+        v0.18.0 added a fourth field, `code`, so a real result no longer
+        compares equal to a two-field one — it carries an exit status where the
+        hand-built one carries the default. Both halves of the original intent
+        are asserted here rather than by one equality that hid them.
+        """
+        assert CommandResult("ok\n", True).code is None
+        assert run_result("echo", "ok") == CommandResult("ok\n", True, "", 0)
 
 
 def _snapshot(stdout: str, stderr: str):

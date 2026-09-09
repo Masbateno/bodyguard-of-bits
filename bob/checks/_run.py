@@ -85,11 +85,19 @@ class CommandResult(NamedTuple):
     reachable audit system holding no rules. It is untrusted text like any
     other subprocess output — match it against a known marker, never render it
     into a report.
+
+    ``code`` is the exit status, or None when the command never ran — an absent
+    binary, a timeout, an OSError. v0.18.0 added it because ``ok`` collapses
+    "exited 3" and "could not be started" into the same False, and OpenRC
+    answers *in* its exit status: 0 started, 3 stopped, 1 no such service.
+    Reading only ``ok`` there would make a failed probe indistinguishable from
+    a stopped daemon, which is the mistake this module keeps having to undo.
     """
 
     stdout: str
     ok:     bool
     stderr: str = ""
+    code:   "int | None" = None
 
 
 def run_result(
@@ -111,7 +119,8 @@ def run_result(
             list(args), capture_output=True, text=True, timeout=timeout,
             env=env if env is not None else _C_LOCALE_ENV,
         )
-        return CommandResult(proc.stdout, proc.returncode == 0, proc.stderr)
+        return CommandResult(proc.stdout, proc.returncode == 0, proc.stderr,
+                             proc.returncode)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         logger.debug("Command %r failed: %s (stderr=%r)", args, exc,
                      getattr(exc, "stderr", None))
@@ -362,10 +371,40 @@ def ssh_unit() -> str:
             out = run_result("systemctl", "list-unit-files", f"{name}.service",
                              "--no-legend").stdout
         except OSError:
-            return _SSH_UNIT_CANDIDATES[0]
+            out = ""
         if out.strip():
             return name
+    # v0.18.0: OpenRC hosts have no unit files at all. Alpine names the script
+    # `sshd`, and answering `ssh` there would be wrong twice over — wrong name,
+    # and a command for an init system the host does not run.
+    for name in _SSH_UNIT_CANDIDATES:
+        if path_exists(Path(f"{_OPENRC_INIT_D}/{name}")):
+            return name
     return _SSH_UNIT_CANDIDATES[0]
+
+
+def service_restart_cmd(unit: str) -> str:
+    """The command that restarts *unit*, in this host's own init system.
+
+    `systemctl restart sshd` is not merely the wrong spelling on Alpine, it is
+    the wrong program: there is no systemctl to run it. OpenRC takes the verb
+    last — `rc-service sshd restart` — which is why this cannot be done by
+    substituting a name into one template.
+    """
+    if openrc_available() and not _command_exists("systemctl"):
+        return f"sudo rc-service {unit} restart"
+    return f"sudo systemctl restart {unit}"
+
+
+def service_enable_cmd(unit: str) -> str:
+    """The command that starts *unit* now and at boot, per init system.
+
+    OpenRC splits what systemd's `enable --now` does into two verbs, so the
+    command is two commands.
+    """
+    if openrc_available() and not _command_exists("systemctl"):
+        return f"sudo rc-update add {unit} default && sudo rc-service {unit} start"
+    return f"sudo systemctl enable --now {unit}"
 
 
 def unit_config_applied_at(name: str, timeout: int = _CMD_TIMEOUT) -> "float | None":
@@ -411,6 +450,68 @@ def unit_config_applied_at(name: str, timeout: int = _CMD_TIMEOUT) -> "float | N
         return None
 
 
+#: OpenRC answers in its exit status, measured on Alpine Linux 3.22:
+#:   0 — the service is started
+#:   3 — the service is stopped
+#:   1 — there is no such service
+#: The init script settles existence independently, so a failure to *run*
+#: rc-service is never mistaken for a stopped daemon.
+_OPENRC_STARTED = 0
+_OPENRC_STOPPED = 3
+_OPENRC_INIT_D = "/etc/init.d"
+
+
+def openrc_available() -> bool:
+    """Whether this host is managed by OpenRC."""
+    return _command_exists("rc-service")
+
+
+def openrc_state(name: str, timeout: int = _CMD_TIMEOUT) -> "str | None":
+    """``"active"``, ``"inactive"``, or None when OpenRC has no answer.
+
+    Returns the same vocabulary as the systemd path, so callers do not learn
+    which init system replied — only what it said.
+
+    None covers three different silences, all of which mean the same thing to a
+    caller: OpenRC is not installed, it does not know this service, or the
+    probe itself failed. What None must never mean is "stopped": that is the
+    mistake v0.17.1 had to undo four times, most recently on this very
+    machine, where a running sshd was reported as not running because no
+    systemctl existed to say otherwise.
+    """
+    if not openrc_available():
+        return None
+    if not path_exists(Path(f"{_OPENRC_INIT_D}/{name}")):
+        return None
+    code = run_result("rc-service", name, "status", timeout=timeout).code
+    if code == _OPENRC_STARTED:
+        return "active"
+    if code == _OPENRC_STOPPED:
+        return "inactive"
+    return None
+
+
+def openrc_enabled(name: str, timeout: int = _CMD_TIMEOUT) -> "bool | None":
+    """Whether OpenRC starts *name* at boot, or None when it cannot say.
+
+    ``rc-update show`` lists one ``service | runlevel`` pair per line for every
+    service attached to a runlevel; absence from that list is the answer for a
+    service OpenRC knows about, and no answer at all for one it does not.
+    """
+    if not openrc_available():
+        return None
+    if not path_exists(Path(f"{_OPENRC_INIT_D}/{name}")):
+        return None
+    listing = run_result("rc-update", "show", timeout=timeout)
+    if not listing.ok:
+        return None
+    for line in listing.stdout.splitlines():
+        left, _, right = line.partition("|")
+        if left.strip() == name and right.strip():
+            return True
+    return False
+
+
 def unit_active_state(name: str, timeout: int = _CMD_TIMEOUT) -> "str | None":
     """Return the unit's reported state, or None when systemd could not be asked.
 
@@ -426,7 +527,12 @@ def unit_active_state(name: str, timeout: int = _CMD_TIMEOUT) -> "str | None":
     determine one, and writes its own failures to stderr.
     """
     state = run_result("systemctl", "is-active", name, timeout=timeout).stdout.strip().lower()
-    return state if state in _UNIT_STATES else None
+    if state in _UNIT_STATES:
+        return state
+    # v0.18.0: systemd had nothing to say. That is not the same as having
+    # nothing to report — Alpine, Gentoo and Devuan run OpenRC, and until now
+    # every service on them came back unknown.
+    return openrc_state(name, timeout=timeout)
 
 
 def split_ss_address(raw: str) -> "tuple[str | None, str | None, str]":

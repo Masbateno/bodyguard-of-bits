@@ -1,3 +1,24 @@
+bodyguard-of-bits (0.18.0-1) unstable; urgency=low
+
+  * BOB reads OpenRC. Until now every service on a host without systemd came
+    back UNKNOWN -- honest and useless, since Alpine, Gentoo and Devuan run
+    OpenRC. The contract is measured on Alpine Linux 3.22: rc-service status
+    exits 0 started, 3 stopped and 1 for a service it does not know, while
+    existence is settled by /etc/init.d/<name>, so a probe that could not run
+    is never read as a stopped daemon.
+  * CommandResult carries the exit status now. It had only ok, which collapses
+    "exited 3" and "could not be started" into the same False, and OpenRC
+    answers in its exit status. The field is fourth and defaulted, so the forty
+    existing construction sites are untouched.
+  * The remediation commands changed with it, and not by spelling: systemctl
+    restart sshd on Alpine names a program the host does not have. OpenRC hosts
+    get rc-service sshd restart, and enable --now becomes two verbs.
+  * BREAKING: services that reported UNKNOWN on OpenRC hosts now report real
+    states, which become verdicts and deductions. Baselines taken on Alpine,
+    Gentoo or Devuan before 0.18.0 will differ. Nothing changes under systemd.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 09 Sep 2026 20:00:00 +0000
+
 bodyguard-of-bits (0.17.1-1) unstable; urgency=low
 
   * A service BOB believed stopped removed its own port from the audit. Found

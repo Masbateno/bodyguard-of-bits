@@ -6,6 +6,54 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.18.0] — 09-09-2026
+
+**BOB lit OpenRC.**
+
+Jusqu'ici, tout service d'un hôte sans systemd revenait UNKNOWN. C'était honnête
+et inutile : Alpine, Gentoo et Devuan tournent sous OpenRC, et BOB n'avait rien
+à dire d'aucun démon sur ces machines — tout en disant beaucoup de leurs
+fichiers, de leur noyau et de leurs paquets.
+
+Le contrat est mesuré, sur Alpine Linux 3.22 :
+
+    rc-service sshd status        code 0    * status: started
+    rc-service crond status       code 3    * status: stopped
+    rc-service nexistepas status  code 1    (service inexistant)
+    rc-update show                sshd | default
+
+L'existence est tranchée par `/etc/init.d/<nom>`, jamais par le code de sortie :
+« la sonde n'a pas pu tourner » et « le démon est arrêté » restent deux réponses
+distinctes. C'est toute la raison pour laquelle ceci mérite une version : la
+v0.17.1 a dû défaire l'erreur inverse quatre fois, dont une sur cette machine.
+
+`CommandResult` porte désormais le code de sortie. Il n'avait que `ok`, qui
+confond « sorti en 3 » et « n'a pas pu démarrer » — et OpenRC répond *dans* son
+code de sortie. Le champ est quatrième et a une valeur par défaut : les quarante
+sites de construction existants sont intacts.
+
+`unit_active_state()` interroge systemd d'abord, OpenRC ensuite, dans un
+vocabulaire unique : les appelants n'apprennent jamais quel système d'init a
+répondu, seulement ce qu'il a dit. Un hôte portant les deux garde la réponse de
+systemd.
+
+**Les commandes changent aussi, et pas d'orthographe.** `systemctl restart sshd`
+sur Alpine nomme un programme que l'hôte n'a pas. OpenRC place le verbe en
+dernier (`rc-service sshd restart`) et scinde `enable --now` en deux
+(`rc-update add sshd default && rc-service sshd start`) : impossible d'y arriver
+en substituant un nom dans un gabarit. Vérifié en exécutant la commande résolue
+sur les deux types d'hôte : code 0 et service démarré sur Alpine, Kali
+inchangée.
+
+**C'est un changement BREAKING.** Les services qui rendaient UNKNOWN sur un hôte
+OpenRC rendent désormais de vrais états, qui deviennent des verdicts, donc des
+déductions. Une référence prise sur Alpine, Gentoo ou Devuan avant la v0.18.0
+différera. Rien ne change sur un hôte systemd.
+
+**Tests** 9528 → **9566**. **Mutations** 117 → **121**.
+
+---
+
 ## [v0.17.1] — 09-09-2026
 
 **Un service que BOB croyait arrêté retirait son propre port de l'audit.**

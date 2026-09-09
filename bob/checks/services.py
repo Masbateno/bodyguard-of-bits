@@ -34,6 +34,8 @@ from bob.checks._run import (
     path_is_file,
     _identity_t,
     _run,
+    openrc_enabled,
+    openrc_state,
     package_installed,
     path_exists,
 )
@@ -530,7 +532,31 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
         return ServiceState.INACTIVE_ENABLED
     if active in ("inactive", "failed", "activating"):
         return ServiceState.INACTIVE_DISABLED
-    return ServiceState.UNKNOWN
+
+    # v0.18.0: systemd said nothing. On Alpine, Gentoo and Devuan that is not
+    # ignorance about the host, only about the wrong init system — every
+    # service on them used to come back UNKNOWN. Asked last, so a systemd host
+    # that also happens to carry OpenRC scripts keeps systemd's answer.
+    return _openrc_unit_state(svc_name)
+
+
+def _openrc_unit_state(svc_name: str) -> ServiceState:
+    """The same four states, from OpenRC, or UNKNOWN when it has no answer.
+
+    Measured on Alpine Linux 3.22: `rc-service <name> status` exits 0 when
+    started and 3 when stopped, and `rc-update show` lists the services
+    attached to a runlevel. Existence is settled by the init script, so a
+    probe that could not run is never read as a stopped daemon.
+    """
+    state = openrc_state(svc_name)
+    if state is None:
+        return ServiceState.UNKNOWN
+    enabled = openrc_enabled(svc_name)
+    if state == "active":
+        return (ServiceState.ACTIVE_ENABLED if enabled
+                else ServiceState.ACTIVE_DISABLED)
+    return (ServiceState.INACTIVE_ENABLED if enabled
+            else ServiceState.INACTIVE_DISABLED)
 
 def _detect_state(service: Service) -> ServiceState:
     """

@@ -27,6 +27,7 @@ shape: the absence of a probe treated as a negative answer.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -43,16 +44,41 @@ class TestTheFieldDefaultsToNotKnowing:
             "the same value on any host without systemd"
         )
 
-    def test_the_flag_is_cleared_outside_the_systemctl_guard(self):
-        """Where the assignment sits is the whole defect."""
-        src = (_SRC / "checks" / "ssh" / "_snapshot.py").read_text(encoding="utf-8")
-        clear = src.index("snap.sshd_active_known = False")
-        guard = src.index('_command_exists("systemctl")')
-        assert clear < guard, (
-            "the flag is cleared inside the branch that requires systemd, so a "
-            "host without it keeps the optimistic default and BOB reports a "
-            "running daemon as stopped"
+    def test_a_host_where_nothing_answers_stays_unknown(self):
+        """Drives the collector, rather than reading the dataclass default.
+
+        The assignment before the probe loop is what protects a host neither
+        init system could answer for. A guard on `SSHSnapshot()` alone cannot
+        see it: the default and the assignment are two different lines, and
+        only the second one runs during an audit.
+        """
+        from bob.checks.ssh import _snapshot as mod
+        with patch.object(mod, "_command_exists", return_value=True), \
+             patch.object(mod, "unit_active_state", return_value=None), \
+             patch.object(mod, "path_exists", return_value=False):
+            snap = mod.SSHSnapshot.from_system()
+        assert snap.sshd_active_known is False, (
+            "nothing answered about this daemon, and the flag says BOB knows"
         )
+
+    def test_nothing_gates_the_probe_on_one_init_system(self):
+        """v0.17.1 moved the assignment out of the systemd branch.
+
+        v0.18.0 removed the branch: `unit_active_state` asks systemd and then
+        OpenRC, and answers None when neither could say — which is exactly what
+        the flag encodes. Testing for systemctl first made the OpenRC answer
+        unreachable, and on Alpine the panorama reported the daemon ACTIVE
+        while this check still called its state undetermined.
+        """
+        src = (_SRC / "checks" / "ssh" / "_snapshot.py").read_text(encoding="utf-8")
+        code = "\n".join(ln for ln in src.splitlines()
+                         if not ln.strip().startswith("#"))
+        assert '_command_exists("systemctl")' not in code, (
+            "the SSH snapshot decides for itself which init system exists, so "
+            "an OpenRC host cannot be measured no matter what the shared layer "
+            "learns to do"
+        )
+        assert "snap.sshd_active_known = False" in code
 
 
 class TestWhatTheCheckSays:

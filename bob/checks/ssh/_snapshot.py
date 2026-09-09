@@ -198,7 +198,13 @@ class SSHSnapshot:
         # the check withholds its verdict instead of warning that a running
         # sshd is stopped.
         snap.sshd_active_known = False
-        if snap.sshd_installed and _command_exists("systemctl"):
+        # v0.18.0: no init-system test here. `unit_active_state` asks systemd,
+        # then OpenRC, and answers None when neither could say — which is
+        # exactly the condition this flag encodes. Testing for systemctl first
+        # made the OpenRC answer unreachable, so on Alpine the panorama
+        # reported the daemon ACTIVE while this check still called its state
+        # undetermined: the two halves of one audit, disagreeing again.
+        if snap.sshd_installed:
             for unit in ("ssh", "sshd"):
                 state = unit_active_state(unit)
                 if state is None:

@@ -115,8 +115,8 @@ class TestNoCommandHardcodesTheDebianSpelling:
 
     def test_the_directive_templates_go_through_the_resolver(self):
         src = (_SRC / "checks" / "ssh" / "_directives.py").read_text(encoding="utf-8")
-        assert "@SSH_UNIT@" in src, "the templates lost their placeholder"
-        assert 'replace("@SSH_UNIT@", ssh_unit())' in src, (
+        assert "@SSH_RESTART@" in src, "the templates lost their placeholder"
+        assert '"@SSH_RESTART@", service_restart_cmd(ssh_unit())' in src, (
             "the placeholder is never substituted, so the literal token would "
             "reach the operator's terminal"
         )
@@ -129,7 +129,8 @@ class TestTheRenderedCommands:
         from bob.checks.ssh import _directives
         with _systemd_knows(unit):
             ssh_unit.cache_clear()
-            out = [r.cmd_template.replace("@SSH_UNIT@", ssh_unit())
+            out = [r.cmd_template.replace("@SSH_RESTART@",
+                                          f"sudo systemctl restart {ssh_unit()}")
                    for r in _directives._BAD_DIRECTIVES if r.cmd_template]
         return out
 
@@ -140,7 +141,7 @@ class TestTheRenderedCommands:
         for cmd in cmds:
             if "systemctl" in cmd:
                 assert f"systemctl restart {unit}" in cmd, cmd
-            assert "@SSH_UNIT@" not in cmd
+            assert "@SSH_RESTART@" not in cmd
 
 
 class TestTheProseAgreesWithTheCommand:

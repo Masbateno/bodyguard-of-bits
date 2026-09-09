@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.17.1
+Version:        0.18.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,18 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
+- BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,
+  which is honest and useless on Alpine, Gentoo and Devuan. rc-service status
+  exits 0 started, 3 stopped, 1 unknown; existence is settled by
+  /etc/init.d/<name> so a failed probe is never read as a stopped daemon.
+- CommandResult carries the exit status, because ok collapsed "exited 3" and
+  "could not be started" into the same False.
+- Remediation commands follow the init system: rc-service sshd restart rather
+  than systemctl, and a two-verb enable.
+- BREAKING: UNKNOWN becomes a real state on OpenRC hosts, so scores and
+  baselines move there. Nothing changes under systemd.
+
 * Wed Sep 02 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.15.5-1
 - "not installed" and "nothing could ask" were indistinguishable: with no
   package manager present, the microcode check asserted a missing package and
