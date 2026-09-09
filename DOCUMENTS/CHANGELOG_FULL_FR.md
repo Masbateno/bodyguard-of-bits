@@ -293,17 +293,51 @@ Ce qu'Arch a confirmé plutôt que cassé : les noms de paquets. `sudo pacman -S
 tous vers de vrais paquets — vérifiés avec `pacman -Ss` sur la machine. `aide`
 ne rend aucune commande, à raison : il n'existe que dans AUR.
 
-**Aucun de ces quatorze défauts n'est une régression de la v0.17.0.** Tous la
+**Alpine Linux a ensuite pris BOB à se contredire sur le même démon.**
+
+Alpine n'a pas systemd. OpenRC annonçait `sshd [started]` avec le pid 2351 en
+écoute, et l'audit disait, dans une même exécution :
+
+    ℹ Service installed, state undetermined          (panorama des services)
+    ⚠ SSH server is installed but not running        (check SSH)
+
+Le second n'avait rien demandé. La logique à trois états prévue pour ce cas
+précis — *installé, état indéterminé* — était déjà écrite, correcte, et
+inatteignable : `sshd_active_known` valait `True` par défaut, et seule la
+branche gardée par `_command_exists("systemctl")` le passait à `False`. Un hôte
+sans systemd n'entrait jamais dans cette branche, donc le drapeau restait à « je
+sais » pendant que l'état restait à « ne tourne pas ». Déplacer une affectation
+hors de la garde rend l'état intermédiaire atteignable ; le champ vaut
+désormais « je ne sais pas » par défaut.
+
+Vérifié sur les trois états, sur machines réelles : Alpine annonce *état
+indéterminé* avec sshd en marche sous OpenRC, Kali avec SSH arrêté avertit
+toujours, et Kali avec SSH en marche répond toujours OK.
+
+C'est la classe fermée par le correctif AppArmor plus tôt dans cette même
+version, dans la même forme : l'absence de sonde lue comme une réponse
+négative. Alpine portait aussi une troisième instance du défaut de nom d'unité
+— la commande attachée à ce constat est `systemctl enable --now`, que le
+premier balayage avait manquée en ne cherchant que `restart` et `reload`.
+
+**Ce qu'Alpine n'a pas cassé.** Aucune trace d'exception, aucun verdict
+inventé : la couche paquets a répondu via `apk`, le panorama des services a dit
+UNKNOWN plutôt que de deviner, et la section des ports en écoute a signalé
+qu'elle ne pouvait pas les déterminer — busybox ne livre pas `ss`. **BOB ne sait
+pas lire OpenRC du tout**, et le dit au lieu de faire semblant. Un vrai check
+OpenRC est reporté en v0.18.x, où change ce que BOB affirme des hôtes sans
+systemd.
+
+**Aucun de ces quinze défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
 
-Deux machines virtuelles réelles les ont tous trouvés sauf le dernier, remonté
-du terrain. Des conteneurs ne le pouvaient pas : ils partagent le noyau de
+Six machines réelles les ont tous trouvés sauf un, remonté du terrain. Des conteneurs ne le pouvaient pas : ils partagent le noyau de
 l'hôte, donc toute lecture sysctl est celle de l'hôte, et rien en eux n'est
 jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9508**. **Mutations** 87 → **115**.
+**Tests** 9240 → **9524**. **Mutations** 87 → **117**.
 
 ---
 

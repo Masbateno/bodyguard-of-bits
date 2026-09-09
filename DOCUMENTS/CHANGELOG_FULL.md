@@ -272,16 +272,49 @@ What Arch confirmed rather than broke: the package names. `sudo pacman -S
 resolve to real packages — checked against `pacman -Ss` on the machine. `aide`
 returns no command at all, correctly: it exists only in the AUR.
 
-**None of these fourteen defects is a v0.17.0 regression.** They all predate it
+**Alpine Linux then caught BOB contradicting itself about the same daemon.**
+
+Alpine has no systemd. OpenRC reported `sshd [started]` with pid 2351
+listening, and the audit said, in one run:
+
+    ℹ Service installed, state undetermined          (services panorama)
+    ⚠ SSH server is installed but not running        (SSH check)
+
+The second had asked nothing. The three-state logic for exactly this case —
+*installed, state undetermined* — was already written and correct, and
+unreachable: `sshd_active_known` defaulted to `True`, and only the branch
+guarded by `_command_exists("systemctl")` ever set it to `False`. A host with
+no systemd never entered that branch, so the flag stayed at "I know" while the
+state stayed at "not running". Moving one assignment out of the guard makes the
+middle state reachable; the field defaults to not-knowing now.
+
+Verified across the three states on real machines: Alpine reports *state
+undetermined* with sshd running under OpenRC, Kali with SSH stopped still
+warns, and Kali with SSH running still reports OK.
+
+This is the class the AppArmor fix closed earlier in this same release, in the
+same shape: the absence of a probe treated as a negative answer. Alpine also
+carried a third instance of the unit-name defect — the command attached to this
+finding is `systemctl enable --now`, which the first sweep missed by looking
+only for `restart` and `reload`.
+
+**What Alpine did not break.** No traceback, no invented verdict: the package
+layer answered through `apk`, the services panorama said UNKNOWN rather than
+guessing, and the listening-ports section reported that it could not determine
+them — busybox ships no `ss`. **BOB cannot read OpenRC at all**, and says so
+instead of pretending. A real OpenRC service check is deferred to v0.18.x,
+where changing what BOB claims about non-systemd hosts belongs.
+
+**None of these fifteen defects is a v0.17.0 regression.** They all predate it
 by many releases; v0.17.0 simply shipped hours before the machines that could
 see them existed. v0.17.0 is not yanked: it remains strictly better than
 v0.16.4.
 
-Two real virtual machines found all but the last, which came from the field.
+Six real machines found all but one, which came from the field.
 Containers could not have found them: they share the host kernel, so every
 sysctl reading is the host's, and nothing in them is ever mid-`dpkg`.
 
-**Tests** 9240 → **9508**. **Mutations** 87 → **115**.
+**Tests** 9240 → **9524**. **Mutations** 87 → **117**.
 
 ---
 
