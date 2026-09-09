@@ -164,10 +164,19 @@ def collect_system_info(version: str, lang: str):
     nft_match = re.search(r"v([\d.]+)", nft_raw)
     nftables_version = nft_match.group(1) if nft_match else ""
 
+    # v0.17.1: both from `os.uname()`, which is a syscall and cannot be
+    # missing, rather than from binaries that can be. Arch Linux ships no
+    # `hostname` command in its cloud image — systemd's `hostnamectl` replaces
+    # it — so `run("hostname")` returned the "N/A" sentinel and the report
+    # header read `Host : N/A`, on the one field that says which machine the
+    # report is about. Debian, Kali and openSUSE all carry the binary, which is
+    # why it took a fourth distribution to show. `uname -r` has the same shape
+    # and the same exposure, two lines from the defect, so it moves too.
+    _uname = os.uname()
     return SystemInfo(
         os_name=os_name,
-        hostname=_sanitize(run("hostname"), max_len=64),
-        kernel=_sanitize(run("uname", "-r"), max_len=64),
+        hostname=_sanitize(_uname.nodename, max_len=64),
+        kernel=_sanitize(_uname.release, max_len=64),
         ufw_version=ufw_version,
         iptables_version=iptables_version,
         nftables_version=nftables_version,

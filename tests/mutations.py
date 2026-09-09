@@ -56,6 +56,7 @@ _AAEMPTY = "tests/test_v0171_apparmor_empty_is_not_unreadable.py"
 _DORMANT = "tests/test_v0171_dormant_service_is_reported_not_scored.py"
 _WHOAMI = "tests/test_v0171_audit_user_is_measured.py"
 _SENTINEL = "tests/test_v0171_no_sentinel_reaches_the_header.py"
+_SSHUNIT = "tests/test_v0171_ssh_unit_is_resolved.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1224,5 +1225,38 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="with the source now empty, an unconditional version marker "
                "writes \"ufw v\" into the report file and the absence is not "
                "named at all",
+    ),
+    Mutation(
+        id="header/hostname-from-a-binary-again",
+        file="bob/sysinfo.py",
+        old="        hostname=_sanitize(_uname.nodename, max_len=64),",
+        new='        hostname=_sanitize(run("hostname"), max_len=64),',
+        kills=(f"{_SENTINEL}::TestTheMachineIdentifiesItselfWithoutHelperBinaries",),
+        reason="Arch Linux ships no `hostname` binary, so the report header read "
+               "\"Host : N/A\" \u2014 on the one field that says which machine "
+               "the report is about",
+    ),
+    Mutation(
+        id="sshunit/debian-spelling-hardcoded",
+        file="bob/checks/ssh/_directives.py",
+        old='        kwargs["cmd"] = rule.cmd_template.replace("@SSH_UNIT@", ssh_unit())',
+        new='        kwargs["cmd"] = rule.cmd_template.replace("@SSH_UNIT@", "ssh")',
+        kills=(f"{_SSHUNIT}::TestNoCommandHardcodesTheDebianSpelling::"
+               "test_the_directive_templates_go_through_the_resolver",
+               f"{_SSHUNIT}::TestTheRenderedCommands"),
+        reason="on Arch and openSUSE the unit is sshd, and Debian's spelling "
+               "gives \"Failed to restart ssh.service: Unit ssh.service not "
+               "found\" \u2014 the remediation for the most consequential "
+               "findings BOB reports, inert on most distributions",
+    ),
+    Mutation(
+        id="sshunit/resolver-stops-asking",
+        file="bob/checks/_run.py",
+        old="        if out.strip():\n            return name\n    return _SSH_UNIT_CANDIDATES[0]",
+        new="    return _SSH_UNIT_CANDIDATES[0]",
+        kills=(f"{_SSHUNIT}::TestItAsksSystemdRatherThanGuessing::"
+               "test_arch_and_opensuse_get_sshd",),
+        reason="no static name works on all five machines measured \u2014 Kali "
+               "has only ssh.service, Arch and openSUSE only sshd.service",
     ),
 )

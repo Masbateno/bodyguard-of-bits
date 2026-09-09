@@ -21,8 +21,10 @@ rows, Debian 13 still prints ``v0.36.2``.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -128,3 +130,34 @@ class TestOnlyTheUfwFieldWasAffected:
                 if ln.strip().startswith("ufw_version = ufw_match")]
         assert line, "the ufw version assignment moved — re-aim this guard"
         assert "N/A" not in line[0]
+
+
+class TestTheMachineIdentifiesItselfWithoutHelperBinaries:
+    """Arch Linux ships no `hostname`; a report saying `Host : N/A` names nothing."""
+
+    def test_hostname_and_kernel_come_from_the_syscall(self):
+        # Comment lines excluded: the comment explaining this fix names the
+        # call it removed, and a naive substring search reported the
+        # explanation as the defect — the third time that trap fired today.
+        src = "\n".join(ln for ln in (_SRC / "sysinfo.py")
+                         .read_text(encoding="utf-8").splitlines()
+                         if not ln.strip().startswith("#"))
+        assert 'run("hostname")' not in src, (
+            "the hostname is read from a binary that Arch Linux does not ship, "
+            "and the failure prints as the N/A sentinel in the header"
+        )
+        assert 'run("uname", "-r")' not in src, (
+            "the kernel version has the same exposure as the hostname did, two "
+            "lines away — it moved with it rather than waiting its turn"
+        )
+        assert "_uname = os.uname()" in src
+
+    def test_they_are_answered_even_with_no_binaries_at_all(self):
+        """`run()` returning its sentinel must not reach either field."""
+        from bob import sysinfo
+        with patch.object(sysinfo, "collect_system_info", sysinfo.collect_system_info):
+            with patch("subprocess.run", side_effect=FileNotFoundError("no binaries")):
+                info = sysinfo.collect_system_info("0.17.1", "en")
+        assert info.hostname == os.uname().nodename
+        assert info.kernel == os.uname().release
+        assert "N/A" not in (info.hostname + info.kernel)
