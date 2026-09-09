@@ -6,6 +6,63 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.17.1] — 09-09-2026
+
+**Un service que BOB croyait arrêté retirait son propre port de l'audit.**
+
+Trouvé quelques heures après la sortie de la v0.17.0, sur une VM Fedora réelle
+— la première machine de l'histoire de ce projet où un service *tournait*
+pendant que BOB le regardait. Les conteneurs n'ont pas d'init, tout verdict
+services y vaut « pas de systemctl » ; et la machine du mainteneur n'a rien
+d'installé sur quoi se tromper.
+
+Apache était actif, activé au démarrage et en écoute sur `*:80`. L'audit n'a
+produit aucun avertissement à son sujet. Deux défauts en série.
+
+**Les noms d'unités étaient ceux de Debian.** `services.json` déclarait l'unité
+systemd d'Apache comme `apache2` ; Fedora livre `httpd`. Le champ `packages`
+des mêmes enregistrements listait pourtant déjà les deux orthographes —
+`openssh-server` *et* `openssh` — le travail multi-distro avait donc été fait
+pour les paquets et jamais pour les unités. Mesuré avec `dnf repoquery -l`
+plutôt que récité : ssh est `sshd`, apache est `httpd`, mysql est `mysqld`,
+samba est `smb` et `nmb`, nfs est `nfs-server`. Le check annonçait « installé
+mais arrêté et désactivé, aucun risque immédiat » à propos d'un serveur web en
+marche.
+
+Le correctif est de la donnée, pas du code : `_detect_state` agrège déjà sur
+toutes les unités déclarées et retient l'état de plus haute priorité,
+précisément pour qu'une unité inactive n'en masque pas une active. Une unité
+absente de l'hôte répond UNKNOWN, la priorité la plus basse — déclarer un nom
+pour une distribution qu'on ne fait pas tourner coûte une requête et ne change
+rien.
+
+**Et le verdict faux supprimait le constat qui l'aurait contredit.** Le runner
+versait les ports de chaque service du registre dans `audited_ports` sans
+condition, et la section ports saute tout ce qui s'y trouve — « déjà traité par
+services ». Le port 80 d'Apache était donc porté au crédit d'un check qui
+venait de déclarer le service arrêté, et la section ports l'a laissé tomber.
+
+Ce second défaut n'a rien de propre à une distribution. Tout service que BOB
+juge inactif à tort, pour quelque raison que ce soit, masque son propre port.
+Il n'est désormais crédité que si le service a réellement été jugé actif — car
+un service qu'on croit arrêté et dont le port écoute est précisément le cas
+pour lequel la section ports existe. Ce peut être un verdict faux ou un autre
+processus sur le même port ; dans les deux cas l'opérateur doit le voir.
+
+Après correctif, sur la même machine : SSH et Apache rapportent tous deux
+`services.state.active_enabled`, et le port 80 apparaît comme exposition. Sur
+cet hôte de famille Debian, sur un conteneur Fedora et sur un conteneur Debian,
+rien ne bouge — le changement ne parle que là où il y a contradiction.
+
+**Aucun des deux défauts n'est une régression de la v0.17.0.** Tous deux la
+précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
+heures avant que n'existe la machine capable de les voir. Elle n'est pas
+retirée : elle reste strictement meilleure que la v0.16.4.
+
+**Tests** 9240 → **9270**. **Mutations** 87 → **91**.
+
+---
+
 ## [v0.17.0] — 09-09-2026
 
 **Sur toute la famille RPM, BOB répondait oui à tout paquet qu'on lui

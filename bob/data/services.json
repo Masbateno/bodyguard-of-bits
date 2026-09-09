@@ -7,7 +7,8 @@
       "openssh"
     ],
     "services": [
-      "ssh"
+      "ssh",
+      "sshd"
     ],
     "ports": [
       "22/tcp"
@@ -52,7 +53,9 @@
       "samba"
     ],
     "services": [
-      "smbd"
+      "smbd",
+      "smb",
+      "nmb"
     ],
     "ports": [
       "445/tcp",
@@ -102,7 +105,8 @@
       "apache"
     ],
     "services": [
-      "apache2"
+      "apache2",
+      "httpd"
     ],
     "ports": [
       "80/tcp",
@@ -160,7 +164,8 @@
     ],
     "services": [
       "mysql",
-      "mariadb"
+      "mariadb",
+      "mysqld"
     ],
     "ports": [
       "3306/tcp"
@@ -334,7 +339,8 @@
       "valkey"
     ],
     "services": [
-      "redis"
+      "redis",
+      "valkey"
     ],
     "ports": [
       "6379/tcp"
@@ -667,7 +673,8 @@
       "nfs-utils"
     ],
     "services": [
-      "nfs-kernel-server"
+      "nfs-kernel-server",
+      "nfs-server"
     ],
     "ports": [
       "2049/tcp",

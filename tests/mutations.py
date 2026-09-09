@@ -46,6 +46,7 @@ _PKGNAMES = "tests/test_v0170_package_names.py"
 _PATHS = "tests/test_v0170_distro_paths.py"
 _PI = "tests/test_v0170_raspberry_pi.py"
 _SWEEP = "tests/test_v0170_doc_counters_sweep.py"
+_UNITS = "tests/test_v0171_service_units_and_ports.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -676,6 +677,49 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the section count drifted in seven places the moment a section "
                "was added, and nothing was watching",
+    ),
+
+    # ---- a service believed stopped, and the port it swallowed --------------
+    Mutation(
+        id="services/port-credited-to-an-inactive-service",
+        file="bob/runner.py",
+        old="        if snap.is_active:\n            audited_ports.update(snap.ports)",
+        new="        if True:\n            audited_ports.update(snap.ports)",
+        kills=(f"{_UNITS}::TestAnInactiveServiceDoesNotSwallowItsPort::"
+               "test_the_runner_only_credits_ports_of_an_active_service",),
+        reason="a service wrongly believed stopped deletes its own exposure "
+               "finding — measured on Fedora 43, where a running Apache on "
+               "*:80 produced no warning anywhere in the audit",
+    ),
+    Mutation(
+        id="services/ports-check-stops-reporting-uncredited",
+        file="bob/checks/ports.py",
+        old="        if pp in audited_ports:\n            continue",
+        new="        if True:\n            continue",
+        kills=(f"{_UNITS}::TestAnInactiveServiceDoesNotSwallowItsPort::"
+               "test_the_ports_check_reports_what_is_not_credited",),
+        reason="the other half of the contract: a port nobody credited must be "
+               "reported, or the runner-side guard protects nothing",
+    ),
+    Mutation(
+        id="services/unit-names-are-debians-again",
+        file="bob/data/services.json",
+        old='"services": [\n      "apache2",\n      "httpd"\n    ],',
+        new='"services": [\n      "apache2"\n    ],',
+        kills=(f"{_UNITS}::TestUnitNamesAreNotOnlyDebians::"
+               "test_the_fedora_unit_is_declared[apache-httpd]",),
+        reason="Fedora ships httpd.service, so asking about apache2 answers "
+               "'stopped' about a running web server",
+    ),
+    Mutation(
+        id="services/wildcard-listener-not-global",
+        file="bob/checks/ports.py",
+        old=r'_ALL_INTERFACES = re.compile(r"^(0\.0\.0\.0|::|\*)$")',
+        new=r'_ALL_INTERFACES = re.compile(r"^(0\.0\.0\.0|::)$")',
+        kills=(f"{_UNITS}::TestAnInactiveServiceDoesNotSwallowItsPort::"
+               "test_a_wildcard_address_counts_as_every_interface",),
+        reason="ss renders Apache's bind as *:80, not 0.0.0.0:80; dropping the "
+               "wildcard makes an internet-facing listener read as local",
     ),
 
     # ---- what machine this is ----------------------------------------------

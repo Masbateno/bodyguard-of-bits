@@ -1,3 +1,28 @@
+bodyguard-of-bits (0.17.1-1) unstable; urgency=low
+
+  * A service BOB believed stopped removed its own port from the audit. Found
+    on a real Fedora VM hours after v0.17.0 shipped -- the first machine in
+    this project's history where a service was actually running while BOB
+    looked at it. Apache was active, enabled and listening on *:80, and the
+    audit warned about it nowhere.
+  * services.json declared systemd unit names for Debian only. Fedora ships
+    httpd, not apache2; sshd, not ssh. The packages field of the same records
+    already listed both spellings, so the cross-distro work had been done for
+    packages and never for units. Measured with dnf repoquery -l: ssh->sshd,
+    apache->httpd, mysql->mysqld, samba->smb/nmb, nfs->nfs-server. The fix is
+    data: _detect_state already keeps the highest-priority state across every
+    declared unit, and a unit absent from the host answers UNKNOWN.
+  * The wrong verdict deleted the finding that would have contradicted it. The
+    runner credited every registry service's ports as "already handled by
+    services" regardless of the verdict, and the ports check skips those. A
+    port is credited now only when the service was judged active. This half is
+    not distro-specific: any service misjudged as inactive hid its own port,
+    on any distribution.
+  * Neither defect is a v0.17.0 regression; both predate it by many releases.
+    v0.17.0 is not yanked.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 09 Sep 2026 15:30:00 +0200
+
 bodyguard-of-bits (0.17.0-1) unstable; urgency=low
 
   * On the whole RPM family, BOB answered yes to every package it was asked

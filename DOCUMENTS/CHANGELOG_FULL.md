@@ -6,6 +6,59 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.17.1] — 2026-09-09
+
+**A service BOB believed stopped removed its own port from the audit.**
+
+Found hours after v0.17.0 shipped, on a real Fedora VM — the first machine in
+this project's history where a service was actually *running* while BOB looked
+at it. Containers have no init, so every services verdict there is "no
+systemctl"; the maintainer's own host has nothing installed to be wrong about.
+
+Apache was active, enabled and listening on `*:80`. The audit produced no
+warning about it anywhere. Two defects in series.
+
+**The unit names were Debian's.** `services.json` declared Apache's systemd
+unit as `apache2`; Fedora ships `httpd`. The `packages` field of the same
+records already listed both spellings — `openssh-server` *and* `openssh` — so
+the cross-distro work had been done for packages and never for units. Measured
+with `dnf repoquery -l` rather than recalled: ssh is `sshd`, apache is `httpd`,
+mysql is `mysqld`, samba is `smb` and `nmb`, nfs is `nfs-server`. The check
+reported *"installed but stopped and disabled. No immediate risk"* about a
+running web server.
+
+The fix is data, not code: `_detect_state` already aggregates across every
+declared unit and keeps the highest-priority state, precisely so an inactive
+sibling cannot mask an active one. A unit that does not exist on this host
+answers UNKNOWN, the lowest priority — so declaring a name for a distribution
+you are not running costs one query and changes nothing.
+
+**And the wrong verdict deleted the finding that would have contradicted it.**
+The runner fed every registry service's ports into `audited_ports`
+unconditionally, and the ports check skips anything in that set — "already
+handled by services". So Apache's port 80 was credited as handled by a check
+that had just declared the service stopped, and the ports section dropped it.
+
+That second defect is not distro-specific. Any service BOB misjudges as
+inactive, for any reason, on any distribution, hides its own port. It is
+credited now only when the service was actually judged active — because a
+service believed stopped whose port is listening is exactly the case the ports
+section exists for. It may be a wrong verdict or another process on the same
+port; either way the operator needs to see it.
+
+After the fix, on the same machine: SSH and Apache both report
+`services.state.active_enabled`, and port 80 appears as an exposure. On this
+Debian-family host, on a Fedora container and on a Debian container, nothing
+moves at all — the change speaks only where there is a contradiction.
+
+**Neither defect is a v0.17.0 regression.** Both predate it by many releases;
+v0.17.0 simply shipped hours before the machine that could see them existed.
+v0.17.0 is not yanked: it remains strictly better than v0.16.4.
+
+**Tests** 9240 → **9270**. **Mutations** 87 → **91**.
+
+---
+
 ## [v0.17.0] — 2026-09-09
 
 **On the whole RPM family, BOB answered yes to every package it was asked

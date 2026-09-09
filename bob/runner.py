@@ -776,7 +776,26 @@ def run_checks(
             quiet=config.quiet, ufw_active=fw_status.active,
         )
         engine.apply(svc_result)
-        audited_ports.update(snap.ports)
+        # v0.17.1 — only a service BOB judged *active* has really had its ports
+        # accounted for. This used to run unconditionally, and the ports check
+        # skips anything in this set ("already handled by services"), so a
+        # service wrongly believed inactive silently removed its own port from
+        # the exposure analysis.
+        #
+        # Measured on a real Fedora 43: httpd active, enabled, listening on
+        # *:80. The registry declared Apache's unit as `apache2` — Debian's
+        # name — so BOB reported "installed but stopped and disabled, no
+        # immediate risk", added 80/tcp here anyway, and the ports section
+        # dropped it. A web server on every interface produced no warning
+        # anywhere in the audit.
+        #
+        # The gate is not about that naming bug, which is fixed separately: a
+        # service believed inactive whose port is nonetheless listening is the
+        # case the ports section exists for. It may be another process on the
+        # same port, or a wrong verdict — either way the operator needs to see
+        # it, and silence is the one answer that helps nobody.
+        if snap.is_active:
+            audited_ports.update(snap.ports)
 
     if not config.quiet:
         display_services_panorama(registry, ufw_numbered, loopback_only_ports,
