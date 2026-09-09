@@ -115,16 +115,62 @@ now. `unit_config_applied_at`'s own docstring had already written down what was
 at stake: "A guard that fires on people doing the right thing gets switched
 off."
 
-**None of these five defects is a v0.17.0 regression.** They all predate it
+**Advice BOB publishes gets followed twice, and none of it was safe twice.**
+
+Three runs of the rp_filter fix, three identical lines in
+`99-hardening.conf`. `echo X | sudo tee -a F` is what an operator types once;
+BOB hands it out as advice, and advice gets followed again — after a failed
+attempt, after a reboot, after the next audit repeats the same finding. Every
+append checks before it writes now, grouped so that "already done" exits 0
+rather than reporting failure for having had nothing to do.
+
+Pulling that thread found three more, all measured on the same machine.
+**Eleven filenames for the same settings**: every `cmd=` wrote
+`99-hardening.conf` while the `--explain` prose for those same settings taught
+`99-rp-filter.conf`, `99-network-security.conf`, `99-aslr.conf`, `99-ptrace.conf`
+and six others, so an operator who read the explanation and then applied the fix
+wrote the key into two files. **`sudo tee >> FILE`** in the log_martians prose —
+the redirection is performed by the calling shell, which is not root, which is
+the entire reason `sudo tee` exists; as an unprivileged user: `cannot create
+/etc/sysctl.d/99-preuve.conf: Permission denied`, and no file. And **the three
+samba fixes were no-ops**: smb.conf is section-scoped, appending puts the line
+in whatever section is last — `[print$]` on stock Debian 13, at line 224. With
+`min protocol = SMB3` appended, `testparm --section-name=global` still answered
+`SMB2_02` and samba rejected the line outright, *"Parameter min protocol unknown
+for section print$"*. All three are global-only parameters. BOB's own parser
+reads them from `[global]`, so the tool knew where they belonged while its
+advice did not. They are inserted under `[global]` now: verified on the VM,
+three runs, one occurrence at line 25, `testparm` answering `SMB3`.
+
+**`--install-completion` spoke English to everyone, including the line that
+mattered.**
+
+Reported from the field: `--test-email` did not complete. The option was in the
+completion script, and the installed copy was byte-identical to the
+repository's — the content was never the defect. A completion is loaded when a
+shell starts, and the command said so in one unmarked, untranslated trailer
+under two ticks. The module printed nine messages and translated none of them.
+All thirteen strings are localised now and the reload notice is marked as the
+next step rather than as a footnote.
+
+What the report did expose is that nothing checked the option lists at all. The
+v0.8.2 guards pinned `_SECTIONS` and `_EXPLAIN_KEYS` against their Python
+sources; the options — the part an operator actually presses TAB for — were
+unguarded. Swept on request: 61 long options and 21 short ones, all offered,
+nothing offered that the CLI would reject. One deliberate absence, now
+asserted: `--json-v1`, retired in v0.9.0, survives in the parser only to answer
+with an explanation.
+
+**None of these nine defects is a v0.17.0 regression.** They all predate it
 by many releases; v0.17.0 simply shipped hours before the machines that could
 see them existed. v0.17.0 is not yanked: it remains strictly better than
 v0.16.4.
 
-Two real virtual machines found all five. Containers could not have: they share
-the host kernel, so every sysctl reading is the host's, and nothing in them is
-ever mid-`dpkg`.
+Two real virtual machines found all but the last, which came from the field.
+Containers could not have found them: they share the host kernel, so every
+sysctl reading is the host's, and nothing in them is ever mid-`dpkg`.
 
-**Tests** 9240 → **9357**. **Mutations** 87 → **100**.
+**Tests** 9240 → **9401**. **Mutations** 87 → **104**.
 
 ---
 

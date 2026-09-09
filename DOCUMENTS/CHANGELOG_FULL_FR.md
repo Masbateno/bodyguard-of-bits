@@ -124,16 +124,68 @@ comme une contradiction. Les deux mêmes lignes existaient dans `ssh` et dans
 `unit_config_applied_at` avait déjà écrit l'enjeu : « une garde qui se
 déclenche sur les gens qui font ce qu'il faut finit désactivée ».
 
-**Aucun de ces cinq défauts n'est une régression de la v0.17.0.** Tous la
+**Les conseils que BOB publie sont suivis deux fois, et aucun n'était sûr deux
+fois.**
+
+Trois exécutions du correctif rp_filter, trois lignes identiques dans
+`99-hardening.conf`. `echo X | sudo tee -a F` est ce qu'un opérateur tape une
+fois ; BOB le distribue comme conseil, et un conseil est suivi à nouveau —
+après une tentative échouée, après un redémarrage, après que l'audit suivant
+répète le même constat. Chaque ajout vérifie désormais avant d'écrire, groupé
+pour que « déjà fait » sorte en 0 plutôt que de signaler un échec faute d'avoir
+eu quelque chose à faire.
+
+En tirant ce fil, trois autres, tous mesurés sur la même machine. **Onze noms de
+fichiers pour les mêmes réglages** : chaque `cmd=` écrivait dans
+`99-hardening.conf` pendant que la prose de `--explain` pour ces mêmes réglages
+enseignait `99-rp-filter.conf`, `99-network-security.conf`, `99-aslr.conf`,
+`99-ptrace.conf` et six autres — un opérateur qui lisait l'explication puis
+appliquait le correctif écrivait la clé dans deux fichiers. **`sudo tee >>
+FICHIER`** dans la prose log_martians — la redirection est faite par le shell
+appelant, qui n'est pas root, ce qui est toute la raison d'être de `sudo tee` ;
+en utilisateur non privilégié : `cannot create /etc/sysctl.d/99-preuve.conf:
+Permission denied`, et aucun fichier. Et **les trois correctifs samba ne
+faisaient rien** : smb.conf est découpé en sections, et appendre place la ligne
+dans la dernière section — `[print$]` sur une Debian 13 d'origine, ligne 224.
+Avec `min protocol = SMB3` ajouté, `testparm --section-name=global` répondait
+toujours `SMB2_02` et samba rejetait la ligne, *« Parameter min protocol unknown
+for section print$ »*. Les trois sont des paramètres globaux uniquement. Le
+propre analyseur de BOB les lit dans `[global]` : l'outil savait où ils
+allaient, son conseil non. Ils sont désormais insérés sous `[global]` — vérifié
+sur la VM : trois passages, une occurrence en ligne 25, `testparm` répondant
+`SMB3`.
+
+**`--install-completion` parlait anglais à tout le monde, y compris pour la
+ligne qui comptait.**
+
+Remonté du terrain : `--test-email` ne se complétait pas. L'option était bien
+dans le script de complétion, et la copie installée était identique octet pour
+octet à celle du dépôt — le contenu n'a jamais été le défaut. Une complétion
+est chargée au démarrage d'un shell, et la commande le disait dans une ligne
+finale sans marqueur et non traduite, sous deux coches. Le module affichait neuf
+messages et n'en traduisait aucun. Les treize chaînes sont localisées, et l'avis
+de rechargement est marqué comme l'étape suivante plutôt que comme une note de
+bas de page.
+
+Ce que le signalement a révélé, c'est que rien ne vérifiait les listes
+d'options. Les gardes de la v0.8.2 épinglaient `_SECTIONS` et `_EXPLAIN_KEYS`
+sur leurs sources Python ; les options — ce sur quoi un opérateur appuie
+réellement sur TAB — n'étaient gardées par rien. Balayage fait sur demande : 61
+options longues et 21 courtes, toutes proposées, rien de proposé que le CLI
+refuserait. Une absence délibérée, désormais affirmée : `--json-v1`, retirée en
+v0.9.0, ne survit dans le parseur que pour répondre par une explication.
+
+**Aucun de ces neuf défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
 
-Deux machines virtuelles réelles ont trouvé les cinq. Des conteneurs ne le
-pouvaient pas : ils partagent le noyau de l'hôte, donc toute lecture sysctl est
-celle de l'hôte, et rien en eux n'est jamais au milieu d'un `dpkg`.
+Deux machines virtuelles réelles les ont tous trouvés sauf le dernier, remonté
+du terrain. Des conteneurs ne le pouvaient pas : ils partagent le noyau de
+l'hôte, donc toute lecture sysctl est celle de l'hôte, et rien en eux n'est
+jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9357**. **Mutations** 87 → **100**.
+**Tests** 9240 → **9401**. **Mutations** 87 → **104**.
 
 ---
 
