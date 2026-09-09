@@ -185,7 +185,7 @@ du terrain. Des conteneurs ne le pouvaient pas : ils partagent le noyau de
 l'hôte, donc toute lecture sysctl est celle de l'hôte, et rien en eux n'est
 jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9401**. **Mutations** 87 → **104**.
+**Tests** 9240 → **9420**. **Mutations** 87 → **106**.
 
 ---
 

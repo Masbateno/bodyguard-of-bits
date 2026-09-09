@@ -170,7 +170,7 @@ Two real virtual machines found all but the last, which came from the field.
 Containers could not have found them: they share the host kernel, so every
 sysctl reading is the host's, and nothing in them is ever mid-`dpkg`.
 
-**Tests** 9240 → **9401**. **Mutations** 87 → **104**.
+**Tests** 9240 → **9420**. **Mutations** 87 → **106**.
 
 ---
 
