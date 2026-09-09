@@ -92,7 +92,10 @@ class MacPolicySnapshot:
                 # BOB run without sudo takes exactly this path. The kernel is
                 # asked instead, as in the no-tool branch below.
                 snap.apparmor_active = _apparmor_live_in_kernel()
-                snap.apparmor_profiles_readable = False
+                counts = _apparmor_profiles_from_kernel()
+                snap.apparmor_profiles_readable = counts is not None
+                if counts is not None:
+                    _, snap.apparmor_enforcing, snap.apparmor_complain = counts
             elif "module is loaded" in aa_out.lower():
                 snap.apparmor_active    = True
                 # aa-status succeeds *partially* without the privilege to read
@@ -105,12 +108,21 @@ class MacPolicySnapshot:
                 # A reachable profile set always yields a count line
                 # ("%zd profiles are loaded." is in the binary), so the absence
                 # of one is the discriminator.
-                snap.apparmor_profiles_readable = bool(
-                    _AA_COUNT_RE.search(aa_out)
-                    or _AA_LOADED_RE.search(aa_out)
-                )
-                snap.apparmor_enforcing = _parse_aa_count(aa_out, "enforce")
-                snap.apparmor_complain  = _parse_aa_count(aa_out, "complain")
+                if _AA_COUNT_RE.search(aa_out) or _AA_LOADED_RE.search(aa_out):
+                    snap.apparmor_profiles_readable = True
+                    snap.apparmor_enforcing = _parse_aa_count(aa_out, "enforce")
+                    snap.apparmor_complain  = _parse_aa_count(aa_out, "complain")
+                else:
+                    # No count line. Until v0.17.1 that ended here as "could
+                    # not be read", which conflated two different states: the
+                    # unprivileged run this branch was written for, and a root
+                    # run on a host with nothing loaded. Kali 2026.2 is the
+                    # second — aa-status says "Failed to get profiles: 2" while
+                    # the kernel answers cleanly with an empty set.
+                    counts = _apparmor_profiles_from_kernel()
+                    snap.apparmor_profiles_readable = counts is not None
+                    if counts is not None:
+                        _, snap.apparmor_enforcing, snap.apparmor_complain = counts
         elif Path("/sys/module/apparmor").is_dir():
             # Module loaded but aa-status not available (partial install).
             #
@@ -129,7 +141,12 @@ class MacPolicySnapshot:
             # a verdict about enforcement.
             snap.apparmor_installed = True
             snap.apparmor_active = _apparmor_live_in_kernel()
-            snap.apparmor_profiles_readable = False
+            # v0.17.1: the kernel does answer about the profile set when it is
+            # readable — the comment above predates the securityfs fallback.
+            counts = _apparmor_profiles_from_kernel()
+            snap.apparmor_profiles_readable = counts is not None
+            if counts is not None:
+                _, snap.apparmor_enforcing, snap.apparmor_complain = counts
 
         # --- SELinux --------------------------------------------------------
         if _command_exists("getenforce"):
@@ -348,6 +365,52 @@ def check_mac_policy(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+#: securityfs lists one profile per line as ``name (mode)``. Measured on a
+#: Debian 13 VM as root: 116 lines, modes ``unconfined``, ``enforce`` and
+#: ``complain``, agreeing exactly with ``aa-status`` (116 loaded, 15 enforce).
+_KERNEL_PROFILES = Path("/sys/kernel/security/apparmor/profiles")
+_KERNEL_PROFILE_RE = re.compile(r"\((\w+)\)\s*$")
+
+
+def _apparmor_profiles_from_kernel() -> "tuple[int, int, int] | None":
+    """``(loaded, enforce, complain)`` straight from securityfs, or None.
+
+    ``aa-status`` cannot distinguish "I was not allowed to look" from "there is
+    nothing there", and both come out as a missing count line. v0.15.5 chose to
+    call that unreadable, which was right for the case it was measured on — an
+    unprivileged run on a host carrying 120 enforcing profiles.
+
+    Kali 2026.2, running as root, is the other case: ``aa-status`` answers
+    *"Failed to get profiles: 2"* while the kernel file reads cleanly and
+    returns nothing at all. AppArmor is loaded and enforcing zero profiles —
+    a real finding, reported as "could not be read".
+
+    The kernel file separates them, because the failure modes differ where it
+    matters: unprivileged it raises ``PermissionError`` (measured on the
+    maintainer's Mint host — mode 444, and still denied), and with nothing
+    loaded it succeeds and yields an empty string.
+
+    Returns None only when the file cannot be read, which is the one case that
+    genuinely warrants "unknown".
+    """
+    try:
+        raw = _KERNEL_PROFILES.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    loaded = enforce = complain = 0
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        loaded += 1
+        m = _KERNEL_PROFILE_RE.search(line)
+        mode = m.group(1) if m else ""
+        if mode == "enforce":
+            enforce += 1
+        elif mode == "complain":
+            complain += 1
+    return loaded, enforce, complain
+
 
 def _apparmor_live_in_kernel() -> bool:
     """True when the kernel says AppArmor is enabled, without asking aa-status.

@@ -52,6 +52,7 @@ _UPGFIX = "tests/test_v0171_upgrade_fix_can_install_what_it_found.py"
 _DRIFT = "tests/test_v0171_config_drift_needs_more_than_a_millisecond.py"
 _TWICE = "tests/test_v0171_advice_is_safe_to_apply_twice.py"
 _COMPOPT = "tests/test_v0171_completion_covers_every_option.py"
+_AAEMPTY = "tests/test_v0171_apparmor_empty_is_not_unreadable.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1120,5 +1121,31 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=(f"{_COMPOPT}::TestInstallCompletionSpeaksTheOperatorsLanguage",),
         reason="the untranslated, unmarked trailer that made a correctly "
                "installed option look missing to a French operator",
+    ),
+    Mutation(
+        id="apparmor/empty-set-called-unreadable",
+        file="bob/checks/mac_policy.py",
+        old="                    counts = _apparmor_profiles_from_kernel()\n"
+            "                    snap.apparmor_profiles_readable = counts is not None",
+        new="                    counts = None\n"
+            "                    snap.apparmor_profiles_readable = counts is not None",
+        kills=(f"{_AAEMPTY}::TestTheSnapshotUsesIt::"
+               "test_kali_root_reports_zero_rather_than_unknown",),
+        reason="Kali 2026.2 as root: AppArmor loaded, zero profiles, and BOB "
+               "said the profile set could not be read \u2014 a framework "
+               "enforcing nothing reported as an absence of information",
+    ),
+    Mutation(
+        id="apparmor/no-privilege-called-zero",
+        file="bob/checks/mac_policy.py",
+        old="    except OSError:\n        return None\n    loaded = enforce = complain = 0",
+        new="    except OSError:\n        return (0, 0, 0)\n    loaded = enforce = complain = 0",
+        kills=(f"{_AAEMPTY}::TestTheSnapshotUsesIt::"
+               "test_unprivileged_still_says_it_does_not_know",
+               f"{_AAEMPTY}::TestTheKernelIsAsked::"
+               "test_only_an_unreadable_file_is_unknown"),
+        reason="the v0.15.5 defect in reverse \u2014 a host with 120 enforcing "
+               "profiles, read without privilege, told it had none, with a "
+               "WARN and a point attached",
     ),
 )
