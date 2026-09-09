@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, sysctl_fix_cmd
 from bob.scoring import CheckResult
 
 
@@ -199,7 +199,7 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
                 key="firewall_drivers.ip_forward_enabled",
                 message=_t("firewall_drivers.ip_forward_enabled"),
                 points=1,
-                cmd="sudo sysctl -w net.ipv4.ip_forward=0 && echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf",
+                cmd=sysctl_fix_cmd("net.ipv4.ip_forward=0"),
                 nature="improvement",
             )
             found_issue = True

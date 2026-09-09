@@ -1806,7 +1806,7 @@
       "rp_filter_disabled": {
         "title": "Filtrage par chemin inverse désactivé (rp_filter = 0)",
         "why": "Sans filtrage par chemin inverse, le noyau accepte des paquets provenant d'adresses IP sources qui ne peuvent pas avoir transité par l'interface réceptrice — signe classique d'usurpation d'IP. Cela permet des attaques par source usurpée et peut contourner les règles du pare-feu basées sur l'IP source.",
-        "how": "1. Activez immédiatement (prend effet maintenant) :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n2. Rendez le changement permanent :\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n3. Appliquez tous les paramètres sysctl :\n   sudo sysctl --system",
+        "how": "1. Activez immédiatement (prend effet maintenant) :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n2. Rendez le changement permanent :\n   grep -qxF 'net.ipv4.conf.all.rp_filter=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquez tous les paramètres sysctl :\n   sudo sysctl --system",
         "server": {
           "why": "Sur un serveur exposé, le filtrage par chemin inverse est une mesure fondamentale. Sans lui, un attaquant peut envoyer des paquets avec une IP source forgée, contournant potentiellement les contrôles d'accès basés sur IP ou permettant des attaques par amplification. Le correctif est sans coût et sans effet secondaire fonctionnel."
         },
@@ -1815,13 +1815,13 @@
         },
         "container": {
           "why": "Dans un container, les paramètres sysctl réseau sont contrôlés par le noyau hôte. Ce paramètre ne peut pas être modifié depuis un container standard. Appliquez le correctif sur le système hôte.",
-          "how": "Appliquer sur le système hôte (pas dans le container) :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte (pas dans le container) :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n   grep -qxF 'net.ipv4.conf.all.rp_filter=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "redirects_enabled": {
         "title": "Redirections ICMP acceptées (accept_redirects = 1)",
         "why": "Les messages de redirection ICMP peuvent ordonner au noyau de modifier ses tables de routage. Un attaquant sur le réseau local peut envoyer de fausses redirections ICMP pour réacheminer le trafic via une machine qu'il contrôle, permettant un détournement de routage ou une attaque de l'homme du milieu.",
-        "how": "1. Désactivez immédiatement (prend effet maintenant) :\n   sudo sysctl -w net.ipv4.conf.all.accept_redirects=0\n2. Rendez le changement permanent :\n   echo 'net.ipv4.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-redirects.conf\n3. Appliquez tous les paramètres sysctl :\n   sudo sysctl --system",
+        "how": "1. Désactivez immédiatement (prend effet maintenant) :\n   sudo sysctl -w net.ipv4.conf.all.accept_redirects=0\n2. Rendez le changement permanent :\n   grep -qxF 'net.ipv4.conf.all.accept_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquez tous les paramètres sysctl :\n   sudo sysctl --system",
         "server": {
           "why": "Les redirections ICMP peuvent être utilisées par un attaquant sur le réseau local pour empoisonner la table de routage d'un serveur, redirigeant son trafic vers une passerelle malveillante (MITM). Sur un serveur, l'acceptation des redirections ICMP doit toujours être désactivée."
         },
@@ -1830,13 +1830,13 @@
         },
         "container": {
           "why": "Les paramètres de redirection ICMP sont au niveau du noyau et contrôlés par l'hôte. Cette détection n'est pas réalisable depuis un container. Vérifiez et corrigez sur le système hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.accept_redirects=0\n   echo 'net.ipv4.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-redirects.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.accept_redirects=0\n   grep -qxF 'net.ipv4.conf.all.accept_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "log_martians_disabled": {
         "title": "Journalisation des paquets martiens désactivée (log_martians = 0)",
         "why": "Les paquets martiens ont des adresses sources impossibles selon la table de routage — indicateur fort d'usurpation d'IP, de paquets forgés ou de scan. Sans les journaliser, la reconnaissance précoce et les attaques par usurpation ne laissent aucune trace. Activer cette journalisation est peu coûteux et fournit des données forensiques précieuses.",
-        "how": "1. Activez immédiatement :\n   sudo sysctl -w net.ipv4.conf.all.log_martians=1\n   sudo sysctl -w net.ipv4.conf.default.log_martians=1\n2. Rendez le changement permanent :\n   echo 'net.ipv4.conf.all.log_martians=1' | sudo tee -a /etc/sysctl.d/99-network-security.conf\n   echo 'net.ipv4.conf.default.log_martians=1' | sudo tee >> /etc/sysctl.d/99-network-security.conf\n3. Appliquez :\n   sudo sysctl --system",
+        "how": "1. Activez immédiatement :\n   sudo sysctl -w net.ipv4.conf.all.log_martians=1\n   sudo sysctl -w net.ipv4.conf.default.log_martians=1\n2. Rendez le changement permanent :\n   grep -qxF 'net.ipv4.conf.all.log_martians=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.log_martians=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv4.conf.default.log_martians=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.default.log_martians=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquez :\n   sudo sysctl --system",
         "server": {
           "why": "La journalisation des paquets martiens sur un serveur est essentielle pour détecter l'usurpation IP et la reconnaissance réseau. Sans elle, les tentatives de scan et d'usurpation en phase préliminaire ne laissent aucune trace dans les logs, compliquant l'investigation d'incidents."
         },
@@ -1845,13 +1845,13 @@
         },
         "container": {
           "why": "Les paramètres sysctl de journalisation sont au niveau du noyau et non configurables depuis un container standard. Cette détection n'est pas réalisable dans un contexte conteneurisé. Appliquez sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.log_martians=1\n   sudo sysctl -w net.ipv4.conf.default.log_martians=1\n   echo 'net.ipv4.conf.all.log_martians=1' | sudo tee -a /etc/sysctl.d/99-network-security.conf\n   echo 'net.ipv4.conf.default.log_martians=1' | sudo tee -a /etc/sysctl.d/99-network-security.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.log_martians=1\n   sudo sysctl -w net.ipv4.conf.default.log_martians=1\n   grep -qxF 'net.ipv4.conf.all.log_martians=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.log_martians=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv4.conf.default.log_martians=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.default.log_martians=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "rp_filter_loose": {
         "title": "Filtrage par chemin inverse en mode permissif (rp_filter = 2)",
         "why": "Le mode permissif (rp_filter=2) accepte les paquets tant qu'il existe une route quelconque vers la source, pas nécessairement via l'interface réceptrice. Cela offre une protection plus faible que le mode strict (=1) contre l'usurpation d'IP et les attaques par routage source. Le mode strict rejette les paquets dont le chemin de retour ne correspond pas à l'interface d'arrivée.",
-        "how": "1. Passez en mode strict :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n2. Rendez le changement permanent :\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n3. Appliquez :\n   sudo sysctl --system\nNote : le mode strict peut perturber le routage asymétrique (serveurs multi-homés). Vérifiez la connectivité réseau après application.",
+        "how": "1. Passez en mode strict :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n2. Rendez le changement permanent :\n   grep -qxF 'net.ipv4.conf.all.rp_filter=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquez :\n   sudo sysctl --system\nNote : le mode strict peut perturber le routage asymétrique (serveurs multi-homés). Vérifiez la connectivité réseau après application.",
         "server": {
           "why": "Le mode lâche (rp_filter=2) offre une protection plus faible que le mode strict (=1) sur un serveur. Sur un serveur à interface unique, le mode strict est préférable car il rejette davantage de paquets usurpés. Le mode lâche ne se justifie que sur les serveurs multi-interfaces avec routage asymétrique."
         },
@@ -1860,13 +1860,13 @@
         },
         "container": {
           "why": "Identique à rp_filter_disabled — paramètre du noyau hôte non modifiable depuis un container standard. Appliquez sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n   echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-rp-filter.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.rp_filter=1\n   grep -qxF 'net.ipv4.conf.all.rp_filter=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.rp_filter=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "tcp_syncookies_disabled": {
         "title": "Protection SYN flood désactivée (tcp_syncookies = 0)",
         "why": "Sans SYN cookies, une attaque par SYN flood (un attaquant envoie un débit élevé de paquets SYN sans compléter la poignée de main) peut saturer la file de connexions du noyau et empêcher les clients légitimes de se connecter — un déni de service classique. Les SYN cookies permettent au noyau de répondre au SYN sans allouer d'état tant que la poignée de main n'est pas complète, neutralisant l'attaque. Le coût sur le trafic normal est négligeable.",
-        "how": "1. Activer immédiatement :\n   sudo sysctl -w net.ipv4.tcp_syncookies=1\n2. Rendre permanent :\n   echo 'net.ipv4.tcp_syncookies=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w net.ipv4.tcp_syncookies=1\n2. Rendre permanent :\n   grep -qxF 'net.ipv4.tcp_syncookies=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.tcp_syncookies=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
         "server": {
           "why": "Sur un serveur exposé, les SYN cookies sont essentiels — tout service TCP en écoute est une cible de SYN flood. Les scanners de masse et les scripts DoS sondent les serveurs en permanence ; sans SYN cookies, même un flood modéré peut mettre un service hors ligne. Le correctif n'a aucun coût fonctionnel."
         },
@@ -1875,13 +1875,13 @@
         },
         "container": {
           "why": "Paramètre sysctl réseau hôte — non configurable depuis un container standard. Appliquer sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.tcp_syncookies=1\n   echo 'net.ipv4.tcp_syncookies=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.tcp_syncookies=1\n   grep -qxF 'net.ipv4.tcp_syncookies=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.tcp_syncookies=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "accept_source_route_enabled": {
         "title": "Routage source IP accepté (accept_source_route = 1)",
         "why": "Le routage source permet à l'émetteur du paquet de spécifier le chemin que celui-ci doit emprunter sur le réseau. Accepter ces paquets ouvre la porte à l'usurpation d'IP et au contournement de routage : un attaquant peut forger l'IP source et forcer les réponses à transiter par un chemin qu'il contrôle, contournant ainsi les règles de pare-feu basées sur l'adresse source. Il n'y a quasiment aucun usage légitime du routage source sur les réseaux modernes.",
-        "how": "1. Désactiver immédiatement (IPv4) :\n   sudo sysctl -w net.ipv4.conf.all.accept_source_route=0\n   sudo sysctl -w net.ipv4.conf.default.accept_source_route=0\n2. Désactiver aussi pour IPv6 :\n   sudo sysctl -w net.ipv6.conf.all.accept_source_route=0\n   sudo sysctl -w net.ipv6.conf.default.accept_source_route=0\n3. Rendre permanent :\n   echo 'net.ipv4.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   echo 'net.ipv6.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n4. Appliquer :\n   sudo sysctl --system",
+        "how": "1. Désactiver immédiatement (IPv4) :\n   sudo sysctl -w net.ipv4.conf.all.accept_source_route=0\n   sudo sysctl -w net.ipv4.conf.default.accept_source_route=0\n2. Désactiver aussi pour IPv6 :\n   sudo sysctl -w net.ipv6.conf.all.accept_source_route=0\n   sudo sysctl -w net.ipv6.conf.default.accept_source_route=0\n3. Rendre permanent :\n   grep -qxF 'net.ipv4.conf.all.accept_source_route=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv6.conf.all.accept_source_route=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv6.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n4. Appliquer :\n   sudo sysctl --system",
         "server": {
           "why": "Sur un serveur, accepter les paquets source-routés permet aux attaquants de contourner les contrôles d'accès IP et de forger des réponses vers des sources usurpées. Les infrastructures standard n'ont jamais besoin de routage source — le désactiver n'a aucun impact fonctionnel et ferme un vecteur d'usurpation IP connu de longue date."
         },
@@ -1890,13 +1890,13 @@
         },
         "container": {
           "why": "Paramètre du noyau hôte — non configurable depuis un container standard.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.accept_source_route=0\n   echo 'net.ipv4.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.accept_source_route=0\n   grep -qxF 'net.ipv4.conf.all.accept_source_route=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.accept_source_route=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "accept_redirects_v6_enabled": {
         "title": "Redirections ICMP IPv6 acceptées (net.ipv6.conf.all.accept_redirects = 1)",
         "why": "Comme la variante IPv4 : un attaquant sur le réseau local peut envoyer des messages ICMPv6 redirect forgés pour modifier la table de routage IPv6 du noyau, déroutant le trafic via une machine qu'il contrôle (man-in-the-middle / hijack de routage). Avec le déploiement croissant d'IPv6, ce vecteur d'attaque s'applique désormais à la plupart des systèmes modernes. Les hôtes qui ne sont pas routeurs n'ont aucune raison d'accepter les redirections.",
-        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv6.conf.all.accept_redirects=0\n   sudo sysctl -w net.ipv6.conf.default.accept_redirects=0\n2. Rendre permanent :\n   echo 'net.ipv6.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   echo 'net.ipv6.conf.default.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv6.conf.all.accept_redirects=0\n   sudo sysctl -w net.ipv6.conf.default.accept_redirects=0\n2. Rendre permanent :\n   grep -qxF 'net.ipv6.conf.all.accept_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv6.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv6.conf.default.accept_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv6.conf.default.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
         "server": {
           "why": "Sur un serveur avec IPv6 activé, accepter les redirections ICMPv6 permet à un attaquant du segment local d'empoisonner la table de routage et de réaliser un MITM sur le trafic sortant. Les serveurs ne sont pas des routeurs — désactiver l'acceptation des redirections n'a aucun impact fonctionnel."
         },
@@ -1905,13 +1905,13 @@
         },
         "container": {
           "why": "Paramètre du noyau hôte — appliquer sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv6.conf.all.accept_redirects=0\n   echo 'net.ipv6.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv6.conf.all.accept_redirects=0\n   grep -qxF 'net.ipv6.conf.all.accept_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv6.conf.all.accept_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "send_redirects_enabled": {
         "title": "Redirections ICMP envoyées par l'hôte (send_redirects = 1)",
         "why": "Seuls les routeurs devraient envoyer des redirections ICMP (pour signaler aux hôtes une meilleure passerelle). Un hôte non-routeur qui en envoie fournit à un attaquant du segment local du matériel pour injecter des redirections forgées et dérouter le trafic des hôtes voisins via lui-même ou une passerelle contrôlée — un montage MITM. Désactiver send_redirects sur les systèmes non-routeurs ferme ce vecteur.",
-        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   sudo sysctl -w net.ipv4.conf.default.send_redirects=0\n2. Rendre permanent :\n   echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   echo 'net.ipv4.conf.default.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system\nNote : si cette machine est réellement un routeur (multi-interface, fait de l'IP forwarding), conservez send_redirects=1 — le désactiver empêcherait l'optimisation de routage légitime.",
+        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   sudo sysctl -w net.ipv4.conf.default.send_redirects=0\n2. Rendre permanent :\n   grep -qxF 'net.ipv4.conf.all.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv4.conf.default.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.default.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system\nNote : si cette machine est réellement un routeur (multi-interface, fait de l'IP forwarding), conservez send_redirects=1 — le désactiver empêcherait l'optimisation de routage légitime.",
         "server": {
           "why": "Un serveur standard n'est pas un routeur. Envoyer des redirections ICMP depuis celui-ci est inutile et offre à un attaquant du même LAN un pied dans la porte pour manipuler le routage. Désactivez sauf si la machine assure réellement des fonctions de routage."
         },
@@ -1920,13 +1920,13 @@
         },
         "container": {
           "why": "Paramètre du noyau hôte — non configurable depuis un container standard.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   grep -qxF 'net.ipv4.conf.all.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "protected_hardlinks_disabled": {
         "title": "Protection des liens durs désactivée (fs.protected_hardlinks = 0)",
         "why": "Sans protection des liens durs, un utilisateur non privilégié peut créer un hardlink vers tout fichier sur lequel il a un accès en lecture — y compris les binaires SUID ou les fichiers dans les répertoires privilégiés. Cela permet plusieurs schémas d'escalade de privilèges locale où une vulnérabilité dans un programme SUID peut être déclenchée contre un fichier sensible via un hardlink dans /tmp. Avec la protection activée, le noyau n'autorise les hardlinks que lorsque l'utilisateur possède la source ou y a un accès en écriture.",
-        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_hardlinks=1\n2. Rendre permanent :\n   echo 'fs.protected_hardlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_hardlinks=1\n2. Rendre permanent :\n   grep -qxF 'fs.protected_hardlinks=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_hardlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
         "server": {
           "why": "Sur un serveur avec plusieurs utilisateurs ou tout service non privilégié, la protection des liens durs bloque un schéma d'escalade de privilèges locale bien connu. Les distributions modernes l'activent par défaut — si elle est désactivée, c'est qu'on l'a explicitement éteinte."
         },
@@ -1935,13 +1935,13 @@
         },
         "container": {
           "why": "Paramètre du noyau hôte — s'applique à l'ensemble du système, pas au namespace du container. Appliquer sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w fs.protected_hardlinks=1\n   echo 'fs.protected_hardlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w fs.protected_hardlinks=1\n   grep -qxF 'fs.protected_hardlinks=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_hardlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       },
       "protected_symlinks_disabled": {
         "title": "Protection des liens symboliques désactivée (fs.protected_symlinks = 0)",
         "why": "Sans protection des symlinks, une attaque TOCTOU (time-of-check-to-time-of-use) classique devient faisable : un utilisateur non privilégié crée un symlink dans un répertoire world-writable (typiquement /tmp) pointant sur un fichier sensible, puis attend qu'un processus privilégié suive le symlink — écrasant ou lisant la cible avec les permissions du processus privilégié. Avec la protection activée, le noyau refuse de suivre les symlinks dans les répertoires sticky-bit sauf si le propriétaire du symlink correspond à celui du répertoire ou au propriétaire du processus.",
-        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_symlinks=1\n2. Rendre permanent :\n   echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_symlinks=1\n2. Rendre permanent :\n   grep -qxF 'fs.protected_symlinks=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
         "server": {
           "why": "Sur un serveur avec activité multi-utilisateurs ou tâches planifiées tournant en root, la protection des symlinks bloque la famille d'exploits TOCTOU sur /tmp (source récurrente de CVEs depuis vingt ans). Les distributions modernes l'activent par défaut."
         },
@@ -1950,7 +1950,7 @@
         },
         "container": {
           "why": "Paramètre du noyau hôte — s'applique au filesystem entier de l'hôte, pas au namespace du container. Appliquer sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w fs.protected_symlinks=1\n   echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w fs.protected_symlinks=1\n   grep -qxF 'fs.protected_symlinks=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
       }
     },
@@ -2790,32 +2790,32 @@
       "aslr_disabled": {
         "title": "L'ASLR (randomisation de l'espace d'adressage) est désactivée",
         "why": "L'ASLR randomise la disposition des adresses mémoire des processus, rendant beaucoup plus difficile l'exploitation de vulnérabilités de corruption mémoire (débordements de tampon, use-after-free). Sans ASLR, un attaquant peut prédire l'adresse exacte du shellcode, des gadgets ROP et des allocations tas.",
-        "how": "1. Activer l'ASLR de façon permanente :\n   sudo sysctl -w kernel.randomize_va_space=2\n   echo 'kernel.randomize_va_space = 2' | sudo tee /etc/sysctl.d/99-aslr.conf\n2. Vérifier :\n   cat /proc/sys/kernel/randomize_va_space  # doit retourner 2"
+        "how": "1. Activer l'ASLR de façon permanente :\n   sudo sysctl -w kernel.randomize_va_space=2\n   grep -qxF 'kernel.randomize_va_space = 2' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'kernel.randomize_va_space = 2' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Vérifier :\n   cat /proc/sys/kernel/randomize_va_space  # doit retourner 2"
       },
       "aslr_conservative": {
         "title": "ASLR en mode conservateur (randomize_va_space=1)",
         "why": "L'ASLR conservateur (valeur 1) randomise les allocations de pile et mmap() mais pas le tas. Les techniques d'exploitation basées sur le tas restent plus fiables contre une cible avec l'ASLR conservateur qu'avec l'ASLR complet (valeur 2).",
-        "how": "1. Activer l'ASLR complet :\n   sudo sysctl -w kernel.randomize_va_space=2\n   echo 'kernel.randomize_va_space = 2' | sudo tee /etc/sysctl.d/99-aslr.conf\n2. Vérifier :\n   cat /proc/sys/kernel/randomize_va_space  # doit retourner 2"
+        "how": "1. Activer l'ASLR complet :\n   sudo sysctl -w kernel.randomize_va_space=2\n   grep -qxF 'kernel.randomize_va_space = 2' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'kernel.randomize_va_space = 2' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Vérifier :\n   cat /proc/sys/kernel/randomize_va_space  # doit retourner 2"
       },
       "ptrace_unrestricted": {
         "title": "ptrace sans restriction (kernel.yama.ptrace_scope=0)",
         "why": "Avec ptrace sans restriction, tout processus peut s'attacher et lire/écrire la mémoire de tout autre processus appartenant au même utilisateur. Un attaquant avec un shell peu privilégié peut extraire des identifiants depuis des sessions navigateur, des agents SSH, gpg-agent et les caches d'identifiants sudo.",
-        "how": "1. Restreindre ptrace aux processus parents uniquement :\n   sudo sysctl -w kernel.yama.ptrace_scope=1\n   echo 'kernel.yama.ptrace_scope = 1' | sudo tee /etc/sysctl.d/99-ptrace.conf\n2. Pour des environnements plus stricts (admins uniquement) :\n   kernel.yama.ptrace_scope = 2\n3. Vérifier :\n   cat /proc/sys/kernel/yama/ptrace_scope"
+        "how": "1. Restreindre ptrace aux processus parents uniquement :\n   sudo sysctl -w kernel.yama.ptrace_scope=1\n   grep -qxF 'kernel.yama.ptrace_scope = 1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'kernel.yama.ptrace_scope = 1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Pour des environnements plus stricts (admins uniquement) :\n   kernel.yama.ptrace_scope = 2\n3. Vérifier :\n   cat /proc/sys/kernel/yama/ptrace_scope"
       },
       "dmesg_exposed": {
         "title": "Journal noyau (dmesg) accessible aux utilisateurs non privilégiés",
         "why": "Le tampon circulaire du noyau contient des adresses mémoire, des informations sur les pilotes, des noms de périphériques et parfois des identifiants passés comme paramètres noyau. L'accès non privilégié à dmesg aide significativement les attaquants à contourner l'ASLR et identifier la surface d'attaque.",
-        "how": "1. Restreindre dmesg au root :\n   sudo sysctl -w kernel.dmesg_restrict=1\n   echo 'kernel.dmesg_restrict = 1' | sudo tee /etc/sysctl.d/99-dmesg.conf\n2. Vérifier :\n   cat /proc/sys/kernel/dmesg_restrict  # doit retourner 1"
+        "how": "1. Restreindre dmesg au root :\n   sudo sysctl -w kernel.dmesg_restrict=1\n   grep -qxF 'kernel.dmesg_restrict = 1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'kernel.dmesg_restrict = 1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Vérifier :\n   cat /proc/sys/kernel/dmesg_restrict  # doit retourner 1"
       },
       "kptr_exposed": {
         "title": "Adresses de pointeurs noyau exposées aux utilisateurs non privilégiés (kptr_restrict=0)",
         "why": "Les adresses de pointeurs noyau dans /proc/kallsyms, /proc/modules et interfaces similaires aident les attaquants à localiser le code et les structures de données noyau lors d'une tentative d'exploitation. Leur exposition facilite le contournement de l'ASLR noyau.",
-        "how": "1. Restreindre l'exposition des pointeurs noyau :\n   sudo sysctl -w kernel.kptr_restrict=2\n   echo 'kernel.kptr_restrict = 2' | sudo tee /etc/sysctl.d/99-kptr.conf\n2. Vérifier :\n   cat /proc/sys/kernel/kptr_restrict  # doit retourner 1 ou 2"
+        "how": "1. Restreindre l'exposition des pointeurs noyau :\n   sudo sysctl -w kernel.kptr_restrict=2\n   grep -qxF 'kernel.kptr_restrict = 2' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'kernel.kptr_restrict = 2' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Vérifier :\n   cat /proc/sys/kernel/kptr_restrict  # doit retourner 1 ou 2"
       },
       "suid_dump_all": {
         "title": "Core dumps activés pour les processus SUID (fs.suid_dumpable=2)",
         "why": "Avec suid_dumpable à 2, les processus SUID peuvent produire des core dumps lisibles par tous les utilisateurs. Les core dumps de programmes SUID contiennent toute la mémoire du processus — y compris les secrets, clés ou données à privilèges élevés en mémoire au moment du crash.",
-        "how": "1. Désactiver les core dumps SUID :\n   sudo sysctl -w fs.suid_dumpable=0\n   echo 'fs.suid_dumpable = 0' | sudo tee /etc/sysctl.d/99-suid-dump.conf\n2. Vérifier :\n   cat /proc/sys/fs/suid_dumpable  # doit retourner 0"
+        "how": "1. Désactiver les core dumps SUID :\n   sudo sysctl -w fs.suid_dumpable=0\n   grep -qxF 'fs.suid_dumpable = 0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.suid_dumpable = 0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Vérifier :\n   cat /proc/sys/fs/suid_dumpable  # doit retourner 0"
       }
     },
     "suid_audit": {
@@ -3036,7 +3036,7 @@
         },
         "container": {
           "why": "ip_forward est un paramètre noyau hôte ; il ne peut pas être changé depuis un container par défaut. Appliquer sur l'hôte.",
-          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.ip_forward=0\n   echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.ip_forward=0\n   grep -qxF 'net.ipv4.ip_forward=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
         }
       }
     },
@@ -3592,5 +3592,20 @@
     "ipv6_missing": "Des règles UFW existent en IPv4 mais aucune règle IPv6 équivalente n'a été trouvée",
     "ufw_status_detail": "État UFW (verbose) :",
     "orphan_rule": "Règle UFW ouverte sans service en écoute : {port}"
+  },
+  "completion": {
+    "data_missing": "Fichier de données de complétion introuvable : {path}",
+    "dir_missing": "/etc/bash_completion.d introuvable — bash-completion est-il installé ?",
+    "installed": "Complétion bash installée : {path}",
+    "install_failed": "Échec de l'installation du script de complétion : {error}",
+    "symlink_created": "Lien symbolique créé : {dst} → {src}",
+    "symlink_failed": "Échec de la création du lien symbolique : {error}",
+    "symlink_skipped_missing": "Lien symbolique ignoré — bob introuvable dans ~/.local/bin (installation pipx ?)",
+    "symlink_skipped_no_sudo": "Lien symbolique ignoré — lancez via sudo pour détecter le binaire utilisateur",
+    "reload_title": "Pas encore active dans ce shell — la complétion est chargée au démarrage d'un shell.",
+    "reload_how": "Ouvrez un nouveau terminal, ou lancez : source /etc/bash_completion.d/bob",
+    "needs_root": "--install-completion exige les droits root.",
+    "needs_root_sudo_warning": "« sudo bob » ne fonctionnera pas — sudo utilise un PATH restreint qui n'inclut pas les binaires pipx.",
+    "needs_root_how": "Copiez et lancez exactement cette commande :"
   }
 }

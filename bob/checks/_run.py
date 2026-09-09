@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from datetime import datetime
@@ -289,6 +290,43 @@ def config_drifted(newest_mtime: float, applied: float) -> bool:
     it switched off.
     """
     return newest_mtime - applied >= _APPLIED_RESOLUTION
+
+
+#: The single file BOB persists sysctl settings to. Named once here because it
+#: used to be named eleven different ways between the fixes and the prose.
+SYSCTL_CONF = "/etc/sysctl.d/99-hardening.conf"
+
+
+def append_once(line: str, path: str) -> str:
+    """A shell command that adds *line* to *path* only if it is not there yet.
+
+    `echo X | sudo tee -a F` is what an operator types once. BOB hands it out
+    as advice that gets followed twice — after the first attempt fails, after
+    a reboot, after the next audit repeats the same finding. Measured on a
+    Debian 13 VM: three runs of the rp_filter fix, three identical lines in
+    `99-hardening.conf`. Same command, three times, three copies.
+
+    A fix BOB publishes has to be safe to apply twice, because it will be.
+    `grep -qxF` matches the exact line, so re-running the same advice is a
+    no-op; the braces around the caller's use of this group the fallback so
+    the whole thing still exits 0 when the line was already there, rather
+    than reporting failure for having had nothing to do.
+    """
+    return (f"grep -qxF {shlex.quote(line)} {path} 2>/dev/null || "
+            f"echo {shlex.quote(line)} | sudo tee -a {path}")
+
+
+def sysctl_fix_cmd(param: str, conf: str = SYSCTL_CONF) -> str:
+    """Apply a sysctl now and persist it once, in the one file BOB writes.
+
+    The persisted half used to name eleven different files across the tool —
+    `99-hardening.conf` in every `cmd=`, and `99-rp-filter.conf`,
+    `99-network-security.conf`, `99-redirects.conf`, `99-aslr.conf` and six
+    more in the `--explain` prose for the *same* settings. An operator who
+    read the explanation and then applied the fix wrote the same key into two
+    files. One name now, and it is the one that was already in the majority.
+    """
+    return f"sudo sysctl -w {param} && {{ {append_once(param, conf)}; }}"
 
 
 def unit_config_applied_at(name: str, timeout: int = _CMD_TIMEOUT) -> "float | None":

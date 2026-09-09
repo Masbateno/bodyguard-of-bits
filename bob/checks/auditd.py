@@ -29,6 +29,7 @@ from bob.checks._run import (
     _command_exists,
     _identity_t,
     _run,
+    append_once,
     install_fix,
     run_result,
     unit_active_state,
@@ -308,9 +309,12 @@ def _suggest_rules_cmd(missing_files: list[str]) -> str:
     Appends rules to /etc/audit/rules.d/99-sensitive.rules (survives reboot)
     and reloads via augenrules.
     """
+    rules = "/etc/audit/rules.d/99-sensitive.rules"
+    # v0.17.1: guarded, because this is advice that gets followed twice. The
+    # unguarded form appended a duplicate rule per run — measured on the sysctl
+    # twin of this pattern: three runs, three identical lines.
     parts = [
-        f"echo '-w {f} -p rwxa -k sensitive_files'"
-        f" | sudo tee -a /etc/audit/rules.d/99-sensitive.rules"
+        "{ " + append_once(f"-w {f} -p rwxa -k sensitive_files", rules) + "; }"
         for f in missing_files
     ]
     return " && ".join(parts) + " && sudo augenrules --load"

@@ -416,6 +416,13 @@ class TestFixCmd:
         assert "99-hardening.conf" in cmd
 
     def test_param_appears_in_both_parts(self):
-        """The parameter must appear in both the live sysctl and the conf line."""
+        """The parameter must appear in both the live sysctl and the conf line.
+
+        Asserted as two halves rather than as an occurrence count: the count
+        was 2 until the persisting half learned to check whether the line was
+        already there, which makes it 3 without changing what the test means.
+        """
         cmd = _fix_cmd("fs.suid_dumpable", 0)
-        assert cmd.count("fs.suid_dumpable=0") == 2
+        live, _, persist = cmd.partition("&&")
+        assert "fs.suid_dumpable=0" in live, "the live sysctl half lost the parameter"
+        assert "fs.suid_dumpable=0" in persist, "the persisted half lost the parameter"

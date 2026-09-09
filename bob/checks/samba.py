@@ -19,6 +19,8 @@ Usage:
 
 from __future__ import annotations
 
+import shlex
+
 import configparser
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +33,29 @@ from bob.scoring import CheckResult
 # ---------------------------------------------------------------------------
 
 _SMB_CONF_PATH = Path("/etc/samba/smb.conf")
+
+
+def _global_directive_cmd(directive: str) -> str:
+    """A command that puts *directive* in smb.conf's ``[global]`` section, once.
+
+    The three fixes below used to be `echo "X" | sudo tee -a /etc/samba/smb.conf`.
+    smb.conf is section-scoped, and appending puts the line in whatever section
+    happens to be last — on a stock Debian 13 that is `[print$]`, at line 224.
+    Measured on that machine: with `min protocol = SMB3` appended, `testparm
+    --section-name=global` still answered `SMB2_02`, and samba rejected the line
+    outright — *"Parameter min protocol unknown for section print$"*. All three
+    of these are global-only parameters, so all three fixes were no-ops. BOB's
+    own parser reads them from `[global]`, so the tool knew where they belonged
+    while its advice did not.
+
+    `sed` after the `[global]` header puts the line where samba will read it;
+    the `grep` in front makes re-running a no-op instead of a second copy.
+    Verified on the VM: three runs, one occurrence at line 25 directly under
+    `[global]`, and `testparm` answering `SMB3`.
+    """
+    return (f'grep -qxF {shlex.quote(directive)} {_SMB_CONF_PATH} || '
+            f"sudo sed -i '/^\\[global\\]/a {directive}' {_SMB_CONF_PATH}")
+
 
 # SMBv1 protocol identifiers (any of these → ALERT)
 # smb.conf uses "NT1" as the canonical name; "smb1" is a defensive alias
@@ -232,7 +257,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             points=2,
             nature="improvement",
             detail=_t("samba.smb1_enabled_detail"),
-            cmd='echo "min protocol = SMB2" | sudo tee -a /etc/samba/smb.conf',
+            cmd=_global_directive_cmd("min protocol = SMB2"),
         )
     else:
         result.ok(message=_t("samba.smb1_disabled"), key="samba.smb1_disabled")
@@ -256,7 +281,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("samba.server_signing_disabled"),
             points=1,
             detail=_t("samba.server_signing_disabled_detail"),
-            cmd='echo "server signing = mandatory" | sudo tee -a /etc/samba/smb.conf',
+            cmd=_global_directive_cmd("server signing = mandatory"),
             nature="action",
         )
     elif snapshot.server_signing == "mandatory":
@@ -278,7 +303,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("samba.map_to_guest"),
             points=1,
             detail=_t("samba.map_to_guest_detail"),
-            cmd='echo "map to guest = never" | sudo tee -a /etc/samba/smb.conf',
+            cmd=_global_directive_cmd("map to guest = never"),
             nature="action",
         )
 

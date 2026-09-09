@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import SYSCTL_CONF, TranslationFunc, _identity_t, sysctl_fix_cmd
 from bob.scoring import CheckResult
 
 
@@ -87,7 +87,9 @@ class KernelHardeningSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
-_SYSCTL_CONF = "/etc/sysctl.d/99-hardening.conf"
+#: Kept as the module's name for the shared constant so existing
+#: references and tests keep resolving.
+_SYSCTL_CONF = SYSCTL_CONF
 
 # Field name -> the sysctl an operator would look for, for the "not exposed"
 # message. Keeping the mapping here rather than inline keeps the check body
@@ -102,12 +104,12 @@ _SYSCTL_NAMES = {
 
 
 def _fix_cmd(sysctl_key: str, value: int) -> str:
-    """Return a sysctl fix command that applies immediately and persists across reboots."""
-    param = f"{sysctl_key}={value}"
-    return (
-        f"sudo sysctl -w {param} && "
-        f"echo '{param}' | sudo tee -a {_SYSCTL_CONF}"
-    )
+    """Return a sysctl fix command that applies immediately and persists across reboots.
+
+    The persisting half is shared with `hardening` now: it was written twice,
+    and both copies appended unconditionally.
+    """
+    return sysctl_fix_cmd(f"{sysctl_key}={value}")
 
 
 def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc | None = None) -> CheckResult:
