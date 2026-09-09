@@ -60,11 +60,52 @@ reports `Port 80/tcp (python3) listening on all interfaces` beside it. The two
 statements coexist now, which is the point: a stopped service and a busy port
 are not a contradiction to hide but one to show.
 
-**Neither defect is a v0.17.0 regression.** Both predate it by many releases;
-v0.17.0 simply shipped hours before the machine that could see them existed.
-v0.17.0 is not yanked: it remains strictly better than v0.16.4.
+**Then Debian 13 showed that `--fix --apply` could neither finish a fix nor
+report one honestly.**
 
-**Tests** 9240 → **9270**. **Mutations** 87 → **91**.
+BOB proposed `sudo apt-get upgrade -y` for two pending kernel security
+updates, ran it, and printed `✖ manual — apply the command manually
+(TimeoutExpired)` followed by `0 of 1 fix(es) applied.` Both lines were false.
+`subprocess.run(timeout=…)` kills the direct child and nothing under it, and
+the direct child was *sudo*: the VM still held pid 15962 `apt-get upgrade -y`
+with a `dpkg --status-fd 23 --configure` child and the apt lock, minutes after
+BOB had reported nothing applied and exited. The machine was left with packages
+unpacked but not configured. Fixes now run in their own session so the timeout
+signals the whole group — verified with real sudo on the VM: the old path left
+`sleep 300` orphaned, the new one leaves nothing. Package transactions get a
+budget of minutes rather than the thirty seconds that were sized for `ufw
+delete`, and a command BOB stopped waiting on is reported as *outcome unknown*
+rather than as *not applied* — telling an operator to "apply the command
+manually" over an unfinished package transaction is how the database got
+damaged in the first place.
+
+**And the fix it proposed for a kernel update could not have installed one.**
+
+With the timeout corrected, the same run printed `✔ Applied` and `1 of 1
+fix(es) applied.` — in six seconds, on a kernel upgrade. Nothing had happened:
+`0 upgraded, 0 newly installed`, the kernel `kept back`, `dpkg-query: no
+packages found matching linux-image-6.12.107+deb13-amd64`, and the next audit
+reported the identical two packages. BOB's own source describes the cause.
+Detection runs `apt-get -s dist-upgrade`, and the docstring beside it explains
+why: plain `upgrade` "refuses to upgrade any package that would require
+installing a new package … this hides every security update bundled with a
+kernel transition". BOB was looking with one command and repairing with a
+strictly weaker one, then reporting the weaker one's exit code as success. The
+fix is `--with-new-pkgs`, measured on the VM: it installs the kernel and, unlike
+`dist-upgrade`, removes nothing — the line an unattended fix must not cross.
+The kernel is installed on that VM now, `dpkg --audit` is clean, and the
+finding is gone.
+
+**None of these four defects is a v0.17.0 regression.** They all predate it
+by many releases; v0.17.0 simply shipped hours before the machines that could
+see them existed. v0.17.0 is not yanked: it remains strictly better than
+v0.16.4.
+
+Two real virtual machines found all four. Containers could not have: they share
+the host kernel, so every sysctl reading is the host's, and nothing in them is
+ever mid-`dpkg`.
+
+**Tests** 9240 → **9331**. **Mutations** 87 → **98**.
 
 ---
 

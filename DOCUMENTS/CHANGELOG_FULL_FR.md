@@ -64,12 +64,55 @@ strictement rien de l'écoute ; le correctif rapporte
 affirmations coexistent désormais, et c'est tout l'enjeu : un service arrêté et
 un port occupé ne sont pas une contradiction à cacher mais une à montrer.
 
-**Aucun des deux défauts n'est une régression de la v0.17.0.** Tous deux la
+**Puis la Debian 13 a montré que `--fix --apply` ne savait ni terminer une
+correction, ni en rendre compte honnêtement.**
+
+BOB proposait `sudo apt-get upgrade -y` pour deux mises à jour de sécurité du
+noyau, l'exécutait, et affichait `✖ manuel — appliquez la commande
+manuellement (TimeoutExpired)` puis `0 correction(s) sur 1 appliquée(s).` Les
+deux lignes étaient fausses. `subprocess.run(timeout=…)` tue le fils direct et
+rien en dessous, et le fils direct était *sudo* : la VM portait encore le pid
+15962 `apt-get upgrade -y` avec un fils `dpkg --status-fd 23 --configure` et le
+verrou apt, plusieurs minutes après que BOB eut annoncé qu'il n'avait rien
+appliqué et fut sorti. La machine est restée avec des paquets dépaquetés mais
+non configurés. Les corrections tournent désormais dans leur propre session,
+si bien que le délai signale tout le groupe — vérifié avec un vrai sudo sur la
+VM : l'ancien chemin laissait `sleep 300` orphelin, le nouveau ne laisse rien.
+Les transactions de paquets reçoivent un budget en minutes, et non les trente
+secondes taillées pour `ufw delete` ; et une commande que BOB a cessé
+d'attendre est rapportée comme *résultat inconnu*, non comme *non appliquée* —
+dire à un opérateur d'« appliquer la commande manuellement » par-dessus une
+transaction de paquets inachevée est précisément ce qui a abîmé la base.
+
+**Et la correction proposée pour une mise à jour noyau n'aurait pas pu en
+installer une.**
+
+Le délai corrigé, la même exécution affichait `✔ Appliqué` et `1 correction(s)
+sur 1 appliquée(s).` — en six secondes, sur une mise à jour de noyau. Rien ne
+s'était produit : `0 upgraded, 0 newly installed`, le noyau `kept back`,
+`dpkg-query: no packages found matching linux-image-6.12.107+deb13-amd64`, et
+l'audit suivant signalait les deux mêmes paquets. La cause est décrite dans le
+code de BOB lui-même. La détection lance `apt-get -s dist-upgrade`, et le
+docstring d'à côté explique pourquoi : `upgrade` simple « refuse de mettre à
+jour tout paquet qui exigerait d'installer un nouveau paquet … cela masque
+toute mise à jour de sécurité liée à une transition de noyau ». BOB regardait
+avec une commande et réparait avec une strictement plus faible, puis rendait
+le code de sortie de la plus faible comme un succès. Le correctif est
+`--with-new-pkgs`, mesuré sur la VM : il installe le noyau et, contrairement à
+`dist-upgrade`, ne supprime rien — la limite qu'une correction non surveillée
+ne doit pas franchir. Le noyau est installé sur cette VM, `dpkg --audit` est
+vide, et le constat a disparu.
+
+**Aucun de ces quatre défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
-heures avant que n'existe la machine capable de les voir. Elle n'est pas
+heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
 
-**Tests** 9240 → **9270**. **Mutations** 87 → **91**.
+Deux machines virtuelles réelles ont trouvé les quatre. Des conteneurs ne le
+pouvaient pas : ils partagent le noyau de l'hôte, donc toute lecture sysctl est
+celle de l'hôte, et rien en eux n'est jamais au milieu d'un `dpkg`.
+
+**Tests** 9240 → **9331**. **Mutations** 87 → **98**.
 
 ---
 
