@@ -96,16 +96,35 @@ fix is `--with-new-pkgs`, measured on the VM: it installs the kernel and, unlike
 The kernel is installed on that VM now, `dpkg --audit` is clean, and the
 finding is gone.
 
-**None of these four defects is a v0.17.0 regression.** They all predate it
+**And a caveat that mutes the whole SSH section fired on four milliseconds.**
+
+`/etc/ssh/sshd_config` had mtime `1788960328.004764624`; `systemctl show ssh -p
+StateChangeTimestamp --value --timestamp=unix` answered `@1788960328`. The
+administrator had edited the file and reloaded sshd — the correct sequence —
+and BOB announced *"sshd_config was modified at 15:25, after sshd last applied
+its configuration at 15:25 — the SSH findings below describe the file, not the
+running service"*: two identical timestamps, one declared to follow the other,
+and every SSH finding below demoted to a statement about a file. systemd
+answers in whole seconds and `st_mtime` does not, so the systemd side is always
+the floor of the real moment and a plain `>` is biased by up to a second,
+always towards announcing drift. A file is called newer now only when it clears
+the interval systemd rounded away, and the timestamps print to the second so
+the sentence can be read as an argument rather than as a contradiction. The
+same two lines existed in `ssh` and in `log_rotation`; they share one helper
+now. `unit_config_applied_at`'s own docstring had already written down what was
+at stake: "A guard that fires on people doing the right thing gets switched
+off."
+
+**None of these five defects is a v0.17.0 regression.** They all predate it
 by many releases; v0.17.0 simply shipped hours before the machines that could
 see them existed. v0.17.0 is not yanked: it remains strictly better than
 v0.16.4.
 
-Two real virtual machines found all four. Containers could not have: they share
+Two real virtual machines found all five. Containers could not have: they share
 the host kernel, so every sysctl reading is the host's, and nothing in them is
 ever mid-`dpkg`.
 
-**Tests** 9240 → **9331**. **Mutations** 87 → **98**.
+**Tests** 9240 → **9357**. **Mutations** 87 → **100**.
 
 ---
 

@@ -103,16 +103,37 @@ le code de sortie de la plus faible comme un succès. Le correctif est
 ne doit pas franchir. Le noyau est installé sur cette VM, `dpkg --audit` est
 vide, et le constat a disparu.
 
-**Aucun de ces quatre défauts n'est une régression de la v0.17.0.** Tous la
+**Et une réserve qui musèle toute la section SSH se déclenchait sur quatre
+millisecondes.**
+
+`/etc/ssh/sshd_config` avait un mtime de `1788960328.004764624` ; `systemctl
+show ssh -p StateChangeTimestamp --value --timestamp=unix` répondait
+`@1788960328`. L'administrateur avait modifié le fichier puis rechargé sshd —
+la bonne séquence — et BOB annonçait « sshd_config a été modifié à 15:25, après
+que sshd a appliqué sa configuration pour la dernière fois à 15:25 — les
+constats SSH ci-dessous décrivent le fichier, pas le service en cours » : deux
+horodatages identiques, dont l'un serait postérieur à l'autre, et tous les
+constats SSH en dessous rétrogradés au rang de description de fichier. systemd
+répond à la seconde entière, `st_mtime` non : le côté systemd est donc toujours
+le plancher du moment réel, et un `>` simple est biaisé d'une seconde au plus,
+toujours dans le sens de l'annonce d'une dérive. Un fichier n'est déclaré plus
+récent que s'il franchit l'intervalle que systemd a arrondi, et les horodatages
+s'affichent à la seconde pour que la phrase se lise comme un argument et non
+comme une contradiction. Les deux mêmes lignes existaient dans `ssh` et dans
+`log_rotation` ; elles partagent désormais un seul helper. Le docstring de
+`unit_config_applied_at` avait déjà écrit l'enjeu : « une garde qui se
+déclenche sur les gens qui font ce qu'il faut finit désactivée ».
+
+**Aucun de ces cinq défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
 
-Deux machines virtuelles réelles ont trouvé les quatre. Des conteneurs ne le
+Deux machines virtuelles réelles ont trouvé les cinq. Des conteneurs ne le
 pouvaient pas : ils partagent le noyau de l'hôte, donc toute lecture sysctl est
 celle de l'hôte, et rien en eux n'est jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9331**. **Mutations** 87 → **98**.
+**Tests** 9240 → **9357**. **Mutations** 87 → **100**.
 
 ---
 
