@@ -76,6 +76,45 @@ def chown_to_sudo_user(path: Path) -> None:
 # System info
 # ---------------------------------------------------------------------------
 
+def audit_user() -> str:
+    """Who is running this audit — measured, not believed.
+
+    Until v0.17.1 this read `SUDO_USER or USER` and printed "unknown" when
+    neither was set. Measured on three VMs through the same execution path, all
+    running as root: Debian 13 and Kali carry `USER=root` in the environment,
+    openSUSE Leap 15.6 carries nothing, and only there did the report header
+    say `User : unknown`. The process identity was the same on all three, and
+    the kernel would have answered on all three.
+
+    An environment variable is a claim; `geteuid()` is a measurement. Any
+    non-interactive context can arrive without `USER` — a systemd timer, a
+    guest agent, a minimal image — and the header goes into the written report,
+    so "unknown" outlives the run.
+
+    `SUDO_USER` stays first because it carries information the euid does not:
+    the human behind the sudo. It is validated against the password database
+    the same way :func:`get_user_home` validates it, so a spoofed value falls
+    through to the measurement instead of being printed.
+
+    Falls back to ``uid N`` — still a fact — when the uid has no passwd entry,
+    which happens in containers with a mapped user.
+    """
+    import pwd  # local, as in get_user_home above — the module is POSIX-only
+
+    sudo_user = os.environ.get("SUDO_USER", "")
+    if sudo_user and re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
+        try:
+            pwd.getpwnam(sudo_user)
+            return sudo_user
+        except KeyError:
+            _log.debug("SUDO_USER %r not in the password database", sudo_user)
+    euid = os.geteuid()
+    try:
+        return pwd.getpwuid(euid).pw_name
+    except KeyError:
+        return f"uid {euid}"
+
+
 def collect_system_info(version: str, lang: str):
     """Collect system information for the report header."""
     from bob.report import SystemInfo
@@ -108,7 +147,12 @@ def collect_system_info(version: str, lang: str):
     # UFW version
     ufw_ver_raw = run("ufw", "version")
     ufw_match = re.search(r"[\d.]+", ufw_ver_raw)
-    ufw_version = ufw_match.group(0) if ufw_match else "N/A"
+    # v0.17.1: empty, like iptables and nftables below. It used to be the
+    # sentinel "N/A", which three render sites then prefixed with a version
+    # marker — the header read `UFW : vN/A` on openSUSE Leap 15.6, where ufw
+    # is genuinely absent. A sentinel that reaches the screen is not a
+    # statement about the machine.
+    ufw_version = ufw_match.group(0) if ufw_match else ""
 
     # iptables version — empty string if not installed
     ipt_raw = run("iptables", "--version")
@@ -127,10 +171,7 @@ def collect_system_info(version: str, lang: str):
         ufw_version=ufw_version,
         iptables_version=iptables_version,
         nftables_version=nftables_version,
-        user=_sanitize(
-            os.environ.get("SUDO_USER") or os.environ.get("USER", "unknown"),
-            max_len=32,
-        ),
+        user=_sanitize(audit_user(), max_len=32),
         config_path=str(get_user_home() / ".config" / "bob" / "config.conf"),
         language=lang,
         version=version,
