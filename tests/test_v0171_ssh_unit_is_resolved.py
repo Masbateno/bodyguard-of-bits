@@ -104,7 +104,10 @@ class TestNoCommandHardcodesTheDebianSpelling:
     def test_the_source_names_no_unit_literally(self, rel):
         src = "\n".join(ln for ln in (_SRC / rel).read_text(encoding="utf-8").splitlines()
                         if not ln.strip().startswith("#"))
-        offenders = re.findall(r"systemctl (?:restart|reload) ssh\b(?!d)", src)
+        # `enable --now` too: the first sweep looked only for restart/reload
+        # and missed the command attached to "SSH installed but not running".
+        offenders = re.findall(
+            r"systemctl (?:restart|reload|start|enable(?: --now)?) ssh\b(?!d)", src)
         assert not offenders, (
             f"{rel} hardcodes Debian's unit name; on Arch this is "
             "'Unit ssh.service not found'"

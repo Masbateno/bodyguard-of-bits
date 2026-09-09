@@ -62,7 +62,7 @@ def check_ssh(snapshot: SSHSnapshot, t: TranslationFunc | None = None, ssh_expos
             message=_t("ssh.not_active"),
             detail=_t("ssh.not_active_detail"),
             nature="action",
-            cmd="sudo systemctl enable --now ssh",
+            cmd=f"sudo systemctl enable --now {ssh_unit()}",
             key="ssh.not_active",
         )
     else:

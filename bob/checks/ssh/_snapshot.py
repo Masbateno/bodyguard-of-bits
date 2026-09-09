@@ -130,7 +130,10 @@ class SSHSnapshot:
     """
     sshd_installed:          bool = False
     sshd_active:             bool = False
-    sshd_active_known:       bool = True
+    #: False until something actually answered. It defaulted to True, which
+    #: meant "not measured" and "not running" were the same value on any host
+    #: without systemd.
+    sshd_active_known:       bool = False
     sshd_config_readable:    bool = True
     sshd_config:             dict = field(default_factory=dict)
     # True when a parsed config file is newer than the moment systemd last
@@ -182,11 +185,20 @@ class SSHSnapshot:
             or path_exists(Path("/usr/sbin/sshd"))
             or path_exists(Path("/sbin/sshd"))
         )
+        # v0.17.1: outside the systemctl guard, not inside it. The field
+        # defaults to True, and on a host with no systemd the block below never
+        # ran — so `sshd_active` stayed False and the check warned "SSH server
+        # is installed but not running". Measured on Alpine Linux 3.22, where
+        # OpenRC reports `sshd [started]` and pid 2351 is listening: BOB said
+        # it was stopped, having asked nothing. The three-state logic was
+        # already written and correct; it was simply unreachable without
+        # systemd.
+        #
+        # A unit systemd never reported on leaves sshd_active_known False, so
+        # the check withholds its verdict instead of warning that a running
+        # sshd is stopped.
+        snap.sshd_active_known = False
         if snap.sshd_installed and _command_exists("systemctl"):
-            # A unit systemd never reported on leaves sshd_active_known False,
-            # so the check withholds its verdict instead of warning that a
-            # running sshd is stopped.
-            snap.sshd_active_known = False
             for unit in ("ssh", "sshd"):
                 state = unit_active_state(unit)
                 if state is None:

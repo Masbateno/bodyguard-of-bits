@@ -57,6 +57,7 @@ _DORMANT = "tests/test_v0171_dormant_service_is_reported_not_scored.py"
 _WHOAMI = "tests/test_v0171_audit_user_is_measured.py"
 _SENTINEL = "tests/test_v0171_no_sentinel_reaches_the_header.py"
 _SSHUNIT = "tests/test_v0171_ssh_unit_is_resolved.py"
+_NOSYSD = "tests/test_v0171_no_systemd_is_not_a_verdict.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1258,5 +1259,27 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "test_arch_and_opensuse_get_sshd",),
         reason="no static name works on all five machines measured \u2014 Kali "
                "has only ssh.service, Arch and openSUSE only sshd.service",
+    ),
+    Mutation(
+        id="nosystemd/absence-read-as-stopped",
+        file="bob/checks/ssh/_snapshot.py",
+        old="    sshd_active_known:       bool = False",
+        new="    sshd_active_known:       bool = True",
+        kills=(f"{_NOSYSD}::TestTheFieldDefaultsToNotKnowing::"
+               "test_a_fresh_snapshot_claims_nothing",),
+        reason="Alpine Linux 3.22 runs sshd under OpenRC \u2014 rc-status says "
+               "started, pid 2351 is listening \u2014 and BOB warned that it "
+               "was installed but not running, having asked nothing",
+    ),
+    Mutation(
+        id="nosystemd/flag-cleared-back-inside-the-guard",
+        file="bob/checks/ssh/_snapshot.py",
+        old="        snap.sshd_active_known = False\n        if snap.sshd_installed and _command_exists(\"systemctl\"):",
+        new="        if snap.sshd_installed and _command_exists(\"systemctl\"):\n            snap.sshd_active_known = False",
+        kills=(f"{_NOSYSD}::TestTheFieldDefaultsToNotKnowing::"
+               "test_the_flag_is_cleared_outside_the_systemctl_guard",),
+        reason="where the assignment sits is the whole defect: inside the "
+               "branch that requires systemd, a host without it never reaches "
+               "it and keeps the optimistic default",
     ),
 )

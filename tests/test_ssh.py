@@ -72,6 +72,12 @@ def base_snapshot(**kwargs) -> SSHSnapshot:
     defaults = dict(
         sshd_installed=True,
         sshd_active=True,
+        # v0.17.1: explicit. The field now defaults to False — "nothing
+        # answered" — because on a host without systemd the old default of
+        # True made "not measured" indistinguishable from "not running". A
+        # snapshot standing in for a normal systemd host has to say that it
+        # measured something.
+        sshd_active_known=True,
         sshd_config={},
         sudo_user="testuser",
         user_home=Path("/home/testuser"),
@@ -126,6 +132,19 @@ class TestSSHPresence:
         snap = base_snapshot()
         result = check_ssh(snap)
         assert _has_finding(result, "ssh.active", FindingLevel.OK)
+
+    def test_unmeasured_state_is_not_reported_as_stopped(self):
+        """Alpine Linux 3.22: OpenRC says `sshd [started]`, BOB said stopped.
+
+        The three-state logic was already here and correct; without systemd it
+        was unreachable, because the "known" flag defaulted to True and only
+        the systemctl branch ever set it to False.
+        """
+        snap = base_snapshot(sshd_active_known=False, sshd_active=False,
+                             ssh_dir_exists=False)
+        result = check_ssh(snap)
+        assert _has_finding(result, "ssh.active_unknown", FindingLevel.INFO)
+        assert not _has_finding(result, "ssh.not_active", FindingLevel.WARN)
 
 
 # ---------------------------------------------------------------------------
