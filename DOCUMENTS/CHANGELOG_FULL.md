@@ -132,7 +132,22 @@ caught the change the first time round, refusing five fixes the selection
 filter had just approved: the two disagreed, which is precisely what that
 barrier is there to make loud.
 
-**Tests** 9528 → **9670**. **Mutations** 117 → **129**.
+**Stress pass 1 — the same audit on six real machines.** No traceback, no
+section lost, no false SUID orphan, and Alpine reporting real service states
+through OpenRC. One defect, on three machines out of six.
+
+`/etc/crontab` does not exist on Alpine, Arch or openSUSE. BOB listed it as
+*unreadable*, which is not cosmetic: `cron.unreadable_files` is a visibility
+key, so it landed in `unverified`, which marks the whole score an upper bound
+and makes `--target` fail closed. Three audits were downgraded for the absence
+of a file their distribution never ships. The snapshot's own docstring already
+drew the line — *"Cron files that exist but could not be opened"* — and the
+code did not: `FileNotFoundError` is a subclass of `OSError`, and one
+`except OSError` caught both. Measured on Arch before and after: `unverified`
+went from `['cron.unreadable_files']` to empty, and `score_is_upper_bound` from
+True to False. With a directory put in the file's place, both come back.
+
+**Tests** 9528 → **9685**. **Mutations** 117 → **131**.
 
 ---
 

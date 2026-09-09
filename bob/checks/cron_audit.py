@@ -164,7 +164,22 @@ def _read_cron_file(path: Path, out: list[tuple[str, str]]) -> bool:
         return True
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
+    except FileNotFoundError:
+        # v0.18.0: a file that is not there hides nothing. `/etc/crontab` does
+        # not exist on Alpine, Arch or openSUSE, and reporting it as unreadable
+        # put `cron.unreadable_files` in `unverified` — which marks the whole
+        # score an upper bound and makes `--target` fail closed. Three of six
+        # machines had their audit downgraded for the absence of a file their
+        # distribution never ships.
+        #
+        # The directory loops above already guard with is_dir()/is_file();
+        # `_SYSTEM_CRONTABS` is read unguarded, which is where this surfaced.
+        # Caught here rather than there so no future caller can reintroduce it.
+        return True
     except OSError:
+        # Everything else — a permission denial, a directory in the file's
+        # place, an I/O error — is a real failure to look, and the finding it
+        # feeds says so.
         return False
     for line in text.splitlines():
         stripped = line.strip()

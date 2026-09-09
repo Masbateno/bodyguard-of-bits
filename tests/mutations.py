@@ -61,6 +61,7 @@ _NOSYSD = "tests/test_v0171_no_systemd_is_not_a_verdict.py"
 _OPENRC = "tests/test_v0180_openrc.py"
 _SUIDOWN = "tests/test_v0180_suid_ownership.py"
 _NATIVE = "tests/test_v0180_native_sysctl_apply.py"
+_ABSENT = "tests/test_v0180_absent_is_not_unreadable.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1413,5 +1414,32 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="threading it through warn but not info made check_hardening "
                "raise, fault isolation printed \"section not evaluated\", and "
                "the suite stayed green for an afternoon",
+    ),
+    Mutation(
+        id="cron/absence-read-as-unreadable",
+        file="bob/checks/cron_audit.py",
+        old="    except FileNotFoundError:",
+        new="    except RecursionError:",
+        kills=(f"{_ABSENT}::TestAbsenceIsNotAFailureToLook::"
+               "test_a_missing_file_is_not_unreadable",
+               f"{_ABSENT}::TestTheSnapshotAgreesWithItsOwnContract::"
+               "test_a_host_without_etc_crontab_reports_nothing_unreadable"),
+        reason="/etc/crontab does not exist on Alpine, Arch or openSUSE; calling "
+               "that unreadable put cron.unreadable_files into `unverified`, "
+               "which marks the score an upper bound and makes --target fail "
+               "closed \u2014 three of six machines downgraded for a file their "
+               "distribution never ships",
+    ),
+    Mutation(
+        id="cron/every-failure-swallowed",
+        file="bob/checks/cron_audit.py",
+        old="    except OSError:\n        # Everything else",
+        new="    except OSError:\n        return True\n        # Everything else",
+        kills=(f"{_ABSENT}::TestAbsenceIsNotAFailureToLook::"
+               "test_a_directory_in_its_place_is_unreadable",
+               f"{_ABSENT}::TestAbsenceIsNotAFailureToLook::"
+               "test_a_permission_denial_is_unreadable"),
+        reason="the polarity twin: separating absence from denial must not "
+               "silence the denial, which is the one this flag exists for",
     ),
 )

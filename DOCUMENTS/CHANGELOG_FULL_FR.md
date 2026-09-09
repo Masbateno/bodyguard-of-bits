@@ -137,7 +137,24 @@ d'exécution de la v0.16.4 a attrapé le changement du premier coup, refusant
 cinq corrections que le filtre de sélection venait d'approuver : les deux
 étaient en désaccord, ce qu'elle existe précisément pour rendre bruyant.
 
-**Tests** 9528 → **9670**. **Mutations** 117 → **129**.
+**Passe de stress 1 — le même audit sur six machines réelles.** Aucun
+traceback, aucune section perdue, aucun faux SUID orphelin, et Alpine qui
+rapporte de vrais états de services via OpenRC. Un défaut, sur trois machines
+sur six.
+
+`/etc/crontab` n'existe pas sur Alpine, Arch ni openSUSE. BOB le déclarait
+*illisible*, ce qui n'est pas cosmétique : `cron.unreadable_files` est une clé
+de visibilité, elle atterrissait donc dans `unverified`, qui marque tout le
+score comme borne supérieure et fait échouer `--target` en fermeture. Trois
+audits étaient dégradés pour l'absence d'un fichier que leur distribution ne
+livre pas. Le docstring du snapshot traçait déjà la ligne — « fichiers cron qui
+existent mais n'ont pas pu être ouverts » — le code non : `FileNotFoundError`
+est une sous-classe d'`OSError`, et un seul `except OSError` attrapait les deux.
+Mesuré sur Arch avant et après : `unverified` est passé de
+`['cron.unreadable_files']` à vide, et `score_is_upper_bound` de True à False.
+Avec un répertoire mis à la place du fichier, les deux reviennent.
+
+**Tests** 9528 → **9685**. **Mutations** 117 → **131**.
 
 ---
 
