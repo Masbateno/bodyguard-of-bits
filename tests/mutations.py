@@ -49,6 +49,7 @@ _SWEEP = "tests/test_v0170_doc_counters_sweep.py"
 _UNITS = "tests/test_v0171_service_units_and_ports.py"
 _FIXTMO = "tests/test_v0171_fix_timeout_stops_what_it_started.py"
 _UPGFIX = "tests/test_v0171_upgrade_fix_can_install_what_it_found.py"
+_DRIFT = "tests/test_v0171_config_drift_needs_more_than_a_millisecond.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1053,5 +1054,29 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="dist-upgrade would install the kernel, and would also remove "
                "packages with nobody watching \u2014 the line an auto-applied "
                "fix must not cross",
+    ),
+    Mutation(
+        id="drift/millisecond-counts-as-drift",
+        file="bob/checks/_run.py",
+        old="    return newest_mtime - applied >= _APPLIED_RESOLUTION",
+        new="    return newest_mtime > applied",
+        kills=(f"{_DRIFT}::TestTheMeasuredIncident::"
+               "test_the_exact_vm_numbers_are_not_drift",
+               f"{_DRIFT}::TestTheMeasuredIncident::"
+               "test_nothing_below_systemd_s_resolution_counts"),
+        reason="systemd answers in whole seconds and st_mtime does not, so a "
+               "correct edit-then-reload inside one second reads as drift and "
+               "mutes every SSH finding below it \u2014 measured on Debian 13, "
+               "four milliseconds",
+    ),
+    Mutation(
+        id="drift/timestamps-back-to-the-minute",
+        file="bob/checks/ssh/_snapshot.py",
+        old='strftime("%Y-%m-%d %H:%M:%S")\n    snap.sshd_config_applied_at',
+        new='strftime("%Y-%m-%d %H:%M")\n    snap.sshd_config_applied_at',
+        kills=(f"{_DRIFT}::TestTheSentenceShowsItsEvidence",),
+        reason="the sentence names two moments and says one follows the other; "
+               "rendered to the minute it prints them identical and reads as a "
+               "contradiction",
     ),
 )

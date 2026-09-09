@@ -20,6 +20,7 @@ from bob.checks._run import (
     _is_safe_user_path,
     path_exists,
     unit_active_state,
+    config_drifted,
     unit_config_applied_at,
 )
 
@@ -66,10 +67,13 @@ def _apply_config_drift(snap, seen: "set[str]", unit: str) -> None:
     if not newest_path:
         return
 
-    snap.sshd_config_drifted    = newest_mtime > applied
+    snap.sshd_config_drifted    = config_drifted(newest_mtime, applied)
     snap.sshd_config_drift_path = newest_path
-    snap.sshd_config_changed_at = datetime.fromtimestamp(newest_mtime).strftime("%Y-%m-%d %H:%M")
-    snap.sshd_config_applied_at = datetime.fromtimestamp(applied).strftime("%Y-%m-%d %H:%M")
+    # Seconds, not minutes: the sentence names two moments and says one is
+    # after the other, so it has to show enough of them to be readable as an
+    # argument rather than as a contradiction.
+    snap.sshd_config_changed_at = datetime.fromtimestamp(newest_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    snap.sshd_config_applied_at = datetime.fromtimestamp(applied).strftime("%Y-%m-%d %H:%M:%S")
 
 
 @dataclass

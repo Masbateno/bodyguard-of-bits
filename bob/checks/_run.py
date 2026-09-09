@@ -260,6 +260,37 @@ _UNIX_TS_RE = re.compile(r"^@(\d+)$")
 _TEXT_TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
+#: `systemctl show --timestamp=unix` answers in whole seconds — measured on a
+#: Debian 13 VM: `@1788960328`, no fractional part, from either the unix form
+#: or the C-locale text form parsed below. `st_mtime` carries sub-second
+#: precision. The systemd side is therefore always the *floor* of the real
+#: moment, so a direct `mtime > applied` is biased by up to a second, and
+#: always in the direction of announcing drift.
+_APPLIED_RESOLUTION = 1.0
+
+
+def config_drifted(newest_mtime: float, applied: float) -> bool:
+    """Whether a config file is provably newer than the applied configuration.
+
+    Found on a real Debian 13. `/etc/ssh/sshd_config` had mtime
+    `1788960328.004764624`; `systemctl show ssh -p StateChangeTimestamp` said
+    `@1788960328`. The administrator had edited the file and reloaded sshd —
+    the correct sequence — and BOB announced *"sshd_config was modified at
+    15:25, after sshd last applied its configuration at 15:25"*, muting every
+    SSH finding below it as a description of the file rather than the service.
+    Four milliseconds of measurement artefact, and both timestamps printed
+    identical on screen.
+
+    systemd told us a second, not a moment: the true apply time lies anywhere
+    in `[applied, applied + 1)`. A file is provably newer only when it clears
+    the whole interval. Nothing real is lost — a drift worth reporting is
+    minutes or hours old, never milliseconds — and the alternative is a caveat
+    that fires on people doing exactly the right thing, which is the way to get
+    it switched off.
+    """
+    return newest_mtime - applied >= _APPLIED_RESOLUTION
+
+
 def unit_config_applied_at(name: str, timeout: int = _CMD_TIMEOUT) -> "float | None":
     """Epoch seconds when systemd last (re)applied this unit's configuration.
 

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import TranslationFunc, config_drifted, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 
@@ -345,9 +345,9 @@ def _journald_conf_drift() -> "tuple[bool | None, str, str]":
         return None, "", ""
 
     return (
-        newest > applied,
-        datetime.fromtimestamp(newest).strftime("%Y-%m-%d %H:%M"),
-        datetime.fromtimestamp(applied).strftime("%Y-%m-%d %H:%M"),
+        config_drifted(newest, applied),
+        datetime.fromtimestamp(newest).strftime("%Y-%m-%d %H:%M:%S"),
+        datetime.fromtimestamp(applied).strftime("%Y-%m-%d %H:%M:%S"),
     )
 
 
