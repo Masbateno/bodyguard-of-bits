@@ -205,23 +205,35 @@ class TestInactiveDisabled:
         result = check_services([snap])
         assert has_level(result, "info")
 
-    def test_warn_for_critical_inactive_disabled(self):
-        """Critical service installed but disabled → WARN, not INFO."""
+    def test_critical_inactive_disabled_is_reported(self):
+        """Installed, stopped, disabled → INFO. Reported, not scored.
+
+        v0.8.0 made this a WARN with a point, reasoning that a dormant critical
+        *security service* is a real defensive gap. No such service is in this
+        registry: all 38 entries listen on the network, and fail2ban, clamav and
+        auditd carry their own inactive findings. v0.17.1 reports the three
+        measured facts and stops there — calling a stopped service an attack
+        vector needs a path BOB cannot see.
+
+        What must not change is that it stays visible.
+        """
         snap = make_snapshot(
             service=make_service(risk="critical"),
             state=ServiceState.INACTIVE_DISABLED,
         )
         result = check_services([snap])
-        assert has_level(result, "warn")
-        assert not has_level(result, "info")
+        assert has_level(result, "info")
+        assert not has_level(result, "warn")
+        assert result.findings, "the finding must still be reported, just not scored"
 
-    def test_warn_for_high_inactive_disabled(self):
+    def test_high_inactive_disabled_is_reported(self):
         snap = make_snapshot(
             service=make_service(risk="high"),
             state=ServiceState.INACTIVE_DISABLED,
         )
         result = check_services([snap])
-        assert has_level(result, "warn")
+        assert has_level(result, "info")
+        assert not has_level(result, "warn")
 
     def test_no_deduction_for_inactive(self):
         snap = make_snapshot(
@@ -231,17 +243,19 @@ class TestInactiveDisabled:
         result = check_services([snap])
         assert total_deductions(result) == 0
 
-    def test_one_pt_deduction_for_critical_inactive(self):
-        """v0.8.0 drift batch (Tier 3): critical service dormant = real
-        defensive gap, +1pt so the finding actually moves the score.
-        Pre-v0.8.0 behaviour was 0 deduction (warn-only); Tier 3 audit
-        concluded that was inconsistent with the warn level."""
+    def test_no_deduction_for_critical_inactive(self):
+        """Nothing is deducted for a service that is not running.
+
+        Measured on Kali 2026.2: seven of these fired at once and took the
+        domain to 3/10 for packages that were not running — more, in aggregate,
+        than a genuinely world-exposed critical service costs (2 pt).
+        """
         snap = make_snapshot(
             service=make_service(risk="critical"),
             state=ServiceState.INACTIVE_DISABLED,
         )
         result = check_services([snap])
-        assert total_deductions(result) == 1
+        assert total_deductions(result) == 0
 
     def test_no_port_check_for_inactive(self):
         """No port exposure findings for inactive_disabled services — early return for all risk levels."""
@@ -255,7 +269,7 @@ class TestInactiveDisabled:
         assert len(result.findings) == 1
 
     def test_no_port_check_for_critical_inactive(self):
-        """Critical inactive_disabled also early-returns — only 1 finding (the warn)."""
+        """Critical inactive_disabled also early-returns — only 1 finding (the info)."""
         snap = make_snapshot(
             service=make_service(risk="critical"),
             state=ServiceState.INACTIVE_DISABLED,

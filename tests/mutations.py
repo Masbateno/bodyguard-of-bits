@@ -53,6 +53,7 @@ _DRIFT = "tests/test_v0171_config_drift_needs_more_than_a_millisecond.py"
 _TWICE = "tests/test_v0171_advice_is_safe_to_apply_twice.py"
 _COMPOPT = "tests/test_v0171_completion_covers_every_option.py"
 _AAEMPTY = "tests/test_v0171_apparmor_empty_is_not_unreadable.py"
+_DORMANT = "tests/test_v0171_dormant_service_is_reported_not_scored.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1147,5 +1148,33 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="the v0.15.5 defect in reverse \u2014 a host with 120 enforcing "
                "profiles, read without privilege, told it had none, with a "
                "WARN and a point attached",
+    ),
+    Mutation(
+        id="dormant/scored-again-on-a-threat-model",
+        file="bob/checks/services.py",
+        old="            result.info(\n"
+            '                key="services.state.installed_inactive_critical",',
+        new="            result.warn_with_deduction(\n"
+            "                points=1,\n"
+            '                key="services.state.installed_inactive_critical",',
+        kills=(f"{_DORMANT}::TestReportedAndNotScored::test_it_costs_nothing",
+               f"{_DORMANT}::TestReportedAndNotScored::"
+               "test_a_dormant_service_never_outweighs_a_running_one"),
+        reason="seven stopped packages took the Kali domain to 3/10 \u2014 more "
+               "than a world-exposed critical service costs \u2014 for a state "
+               "whose only harm needs an attacker path BOB says it does not model",
+    ),
+    Mutation(
+        id="dormant/finding-dropped-entirely",
+        file="bob/checks/services.py",
+        old="            result.info(\n"
+            '                key="services.state.installed_inactive_critical",\n'
+            '                message=_t("services.state.installed_inactive_critical", label=snap.label),\n'
+            "            )",
+        new="            pass",
+        kills=(f"{_DORMANT}::TestReportedAndNotScored::"
+               "test_the_finding_is_still_emitted",),
+        reason="not scoring it must never become not showing it \u2014 the "
+               "operator still needs to know the package is there",
     ),
 )

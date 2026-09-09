@@ -185,7 +185,7 @@
       "active_enabled": "Service actif et démarré automatiquement au démarrage",
       "active_disabled": "{label} est actif en ce moment, mais ne redémarrera pas automatiquement.",
       "inactive_disabled": "{label} est installé mais arrêté et désactivé. Pas de risque immédiat.",
-      "installed_inactive_critical": "{label} est installé sur ce système — le service est arrêté, mais la présence de ce paquet constitue un vecteur d'attaque potentiel",
+      "installed_inactive_critical": "{label} est installé mais ne tourne pas et n'est pas activé au démarrage — rien n'écoute pour lui",
       "unknown": "Service installé, état indéterminé"
     },
     "exposure": {
@@ -2123,17 +2123,17 @@
           }
         },
         "installed_inactive_critical": {
-          "title": "Un service à criticité élevée est installé mais ni actif ni enabled",
-          "why": "Des paquets fournissant une protection à fort impact (fail2ban, auditd, clamav, apparmor, rkhunter…) sont installés sur le système mais ne tournent pas et ne démarreront pas au boot. Ils consomment de l'espace disque sans fournir de défense — le paquet est présent mais le service est dormant. La cause la plus fréquente est une installation avortée / un échec de first-run où l'unit systemd a été masqué ou disabled et jamais ré-enabled. La valeur défensive du paquet est nulle dans cet état.",
-          "how": "1. Vérifier pourquoi le service est inactif (le journal dit habituellement pourquoi il a échoué à démarrer) :\n   sudo systemctl status <service>\n   sudo journalctl -u <service> -b\n2. Si l'unit est masqué, unmask-le d'abord :\n   sudo systemctl unmask <service>\n3. Enable et démarrer :\n   sudo systemctl enable --now <service>\n4. Re-vérifier :\n   sudo systemctl status <service>\nNote : si le service ne démarre pas (erreur de config, fichier de données manquant, port déjà utilisé), corrigez la cause sous-jacente — le laisser disabled silencieusement est pire que désinstaller.",
+          "title": "Un service classé à risque élevé est installé, arrêté et désactivé",
+          "why": "BOB a mesuré trois choses : le paquet est installé, son unité ne tourne pas, et elle n'est pas activée au démarrage. Rien n'écoute pour lui.\n\nC'est rapporté et non compté. Qualifier de vecteur d'attaque un service arrêté suppose un chemin que BOB ne voit pas — quelqu'un qui le démarre, une mise à jour qui l'active, une compromission qui l'atteint. Énumérer des chemins d'attaque est précisément ce que BOB déclare ne pas faire, donc il ne déduit pas pour cela. Ce qui est mesurable est affirmé ; ce qu'il faudrait supposer vous est laissé.\n\nCela vaut d'être su pour autant. Un démon installé n'est qu'à un systemctl d'écouter, et chacun de ceux-là est à risque élevé dès qu'il le fait. Si vous ne l'utilisez pas, retirer le paquet retire la question.",
+          "how": "1. Vérifiez ce que BOB a mesuré :\n   systemctl is-active <service> ; systemctl is-enabled <service>\n   sudo ss -tulnp | grep -w <port>\n2. Si vous n'utilisez pas ce service, retirez-le plutôt que de le laisser dormant :\n   Debian / Ubuntu / Mint / Kali \u2192  sudo apt purge <paquet>\n   Fedora / RHEL                 \u2192  sudo dnf remove <paquet>\n   openSUSE                      \u2192  sudo zypper remove <paquet>\n   Arch                          \u2192  sudo pacman -Rs <paquet>\n3. Si vous l'utilisez, les constats d'exposition le concernant s'appliqueront dès qu'il tournera — démarrez-le délibérément puis ré-auditez :\n   sudo systemctl enable --now <service> && bob\nNote : BOB ne vous dira pas laquelle des deux options choisir. Savoir si cet hôte a besoin du service n'est pas une question à laquelle la machine peut répondre.",
           "server": {
-            "why": "Sur un serveur, un outil de sécurité installé mais dormant est une documentation trompeuse — il suggère que la protection existe alors qu'elle n'existe pas. Soit fixer l'activation, soit désinstaller le paquet et documenter le choix explicitement."
+            "why": "Sur un serveur, un démon à risque élevé arrêté relève de l'inventaire, pas de l'exposition. La question est de savoir s'il a sa place dans l'image : ceux que vous gardez seront audités pour de vrai dès qu'ils tourneront."
           },
           "desktop": {
-            "why": "Sur un desktop, un clamav ou apparmor dormant n'offre aucune protection. Re-activez, ou désinstallez si vous avez décidé de ne pas l'utiliser (et souvenez-vous pourquoi)."
+            "why": "Sur un poste de travail, ces paquets sont généralement tirés par autre chose. Il vaut de regarder ce qui les a demandés, pas de coûter un point."
           },
           "container": {
-            "why": "Les containers n'exécutent généralement pas plusieurs services à longue durée. Si un outil de sécurité est installé mais inactif dans un container, soit lancez-le en sidecar/init, soit supprimez le paquet."
+            "why": "Dans un conteneur, un service arrêté est le plus souvent un résidu d'image de base. Cela compte quand l'image est l'artefact que vous livrez."
           }
         }
       }

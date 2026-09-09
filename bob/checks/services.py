@@ -314,14 +314,30 @@ def _check_single_service(
     # Inactive and disabled
     if snap.state == ServiceState.INACTIVE_DISABLED:
         if snap.service.is_high_or_critical:
-            # v0.8.0 drift batch: dormant critical security service = no
-            # actual defence. +1pt to score so the finding actually moves
-            # the verdict (previously bare warn = visible but no impact).
-            result.warn_with_deduction(
+            # v0.8.0 attached a point here, reasoning that a "dormant critical
+            # security service = no actual defence". That reasoning describes
+            # fail2ban, clamav and auditd — and none of them is in this
+            # registry. All 38 entries are network-listening services, and the
+            # three defensive tools have their own inactive findings
+            # (fail2ban.service_inactive, clamav.clamd_inactive,
+            # auditd.service_inactive). The justification had no instance in
+            # the data it ran on.
+            #
+            # v0.17.1: reported, not scored. Three things are measured — the
+            # package is installed, the unit is not running, it is not enabled
+            # — and all three are stated. Deducting for them requires calling a
+            # stopped service an attack vector, which needs a path BOB cannot
+            # see: someone starting it, an upgrade enabling it. Enumerating
+            # attacker paths is what the README says BOB does not do.
+            #
+            # Measured on Kali 2026.2, where this mattered: seven of these fired
+            # at once and took the domain to 3/10 for packages that were not
+            # running, while the explain text told the operator to `systemctl
+            # enable --now` a VNC server the finding had just called an attack
+            # vector.
+            result.info(
                 key="services.state.installed_inactive_critical",
                 message=_t("services.state.installed_inactive_critical", label=snap.label),
-                points=1,
-                nature="improvement",
             )
         else:
             result.info(

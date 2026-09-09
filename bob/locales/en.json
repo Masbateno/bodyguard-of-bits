@@ -185,7 +185,7 @@
       "active_enabled": "Service active and set to start automatically at boot",
       "active_disabled": "{label} is currently active but will not restart automatically",
       "inactive_disabled": "{label} is installed but stopped and disabled. No immediate risk.",
-      "installed_inactive_critical": "{label} is installed on this system — service is currently stopped, but the presence of this package is a potential attack vector",
+      "installed_inactive_critical": "{label} is installed but not running and not enabled — nothing is listening for it",
       "unknown": "Service installed, state undetermined"
     },
     "exposure": {
@@ -2123,17 +2123,17 @@
           }
         },
         "installed_inactive_critical": {
-          "title": "A high-criticality service is installed but neither active nor enabled",
-          "why": "Packages providing high-impact protection (fail2ban, auditd, clamav, apparmor, rkhunter, …) are installed on the system but are not running and will not start at boot. They consume disk space without providing any defence — the package is present but the service is dormant. The most common cause is an aborted install / first-run failure where the systemd unit was masked or disabled and never re-enabled. The defensive value of the package is zero in this state.",
-          "how": "1. Check why the service is inactive (the journal usually says why it failed to start):\n   sudo systemctl status <service>\n   sudo journalctl -u <service> -b\n2. If the unit is masked, unmask it first:\n   sudo systemctl unmask <service>\n3. Enable and start:\n   sudo systemctl enable --now <service>\n4. Re-verify:\n   sudo systemctl status <service>\nNote: if the service won't start (config error, missing data file, port already used), fix the underlying issue — leaving it disabled silently is worse than uninstalling.",
+          "title": "A service the registry rates high-risk is installed, stopped and disabled",
+          "why": "BOB measured three things: the package is installed, its unit is not running, and it is not enabled at boot. Nothing is listening on its behalf.\n\nThat is reported and not scored. Calling a stopped service an attack vector requires a path BOB cannot see — someone starting it, an upgrade enabling it, a compromise reaching it. Enumerating attacker paths is what BOB says it does not do, so it does not deduct for one. What is measurable is stated; what would have to be assumed is left to you.\n\nIt is still worth knowing. An installed daemon is one systemctl away from listening, and every one of these is high-risk once it does. If you do not use it, removing the package removes the question.",
+          "how": "1. Confirm what BOB measured:\n   systemctl is-active <service> ; systemctl is-enabled <service>\n   sudo ss -tulnp | grep -w <port>\n2. If you do not use this service, remove it rather than leaving it dormant:\n   Debian / Ubuntu / Mint / Kali \u2192  sudo apt purge <package>\n   Fedora / RHEL                 \u2192  sudo dnf remove <package>\n   openSUSE                      \u2192  sudo zypper remove <package>\n   Arch                          \u2192  sudo pacman -Rs <package>\n3. If you do use it, the exposure findings for it apply once it runs — start it deliberately and re-audit:\n   sudo systemctl enable --now <service> && bob\nNote: BOB will not tell you which of the two to pick. Whether this host needs the service is not something the machine can answer.",
           "server": {
-            "why": "On a server, an installed but dormant security tool is misleading documentation — it suggests the protection exists when it does not. Either fix the activation or uninstall the package and document the choice explicitly."
+            "why": "On a server, a stopped high-risk daemon is inventory, not exposure. Decide whether it belongs in the image at all: the ones you keep will be audited for real once they run."
           },
           "desktop": {
-            "why": "On a desktop, a dormant clamav or apparmor offers no protection. Re-activate, or uninstall if you decided not to use it (and remember why)."
+            "why": "On a desktop, these packages are usually pulled in by something else. Worth a look at what asked for them, not worth a point off the score."
           },
           "container": {
-            "why": "Containers usually do not run multiple long-lived services. If a security tool is installed but inactive inside a container, either run it as a sidecar/init or remove the package."
+            "why": "In a container, a stopped service is usually a base-image leftover. It matters when the image is the artefact you ship."
           }
         }
       }

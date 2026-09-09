@@ -97,7 +97,6 @@ _MANUAL_BY_DESIGN = frozenset({
     "firewall_drivers.nftables_parallel",          # choice between UFW vs nftables, then purge other
     "services.exposure.open_local",              # LAN trust-level decision, multiple fix paths
     "services.state.active_disabled",            # service name is variable — `systemctl enable <SVC>`
-    "services.state.installed_inactive_critical", # idem — name varies, may need config fix first
     "samba.null_passwords",                      # smb.conf section to identify + auth-mode choice
     "samba.guest_writable",                      # per-share fix in smb.conf
     "samba.guest_readonly",                      # per-share fix in smb.conf
