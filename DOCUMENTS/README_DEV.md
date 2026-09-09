@@ -38,7 +38,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | Module | Role |
 |---|---|
 | `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~401 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (38 filterable + 10 always-on sections), `_section_enabled()` (~845 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (39 filterable + 10 always-on sections), `_section_enabled()` (~845 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `~/.config/bob/config.conf`, `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -162,7 +162,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, HTML email
-├── runner.py            # Audit execution engine — run_checks() with _sec section closure (38 filterable + 10 always-on)
+├── runner.py            # Audit execution engine — run_checks() with _sec section closure (39 filterable + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # --watch=N mode — re-run audit every N seconds

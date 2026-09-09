@@ -45,6 +45,7 @@ _MAIL = "tests/test_v0170_mail_transport.py"
 _PKGNAMES = "tests/test_v0170_package_names.py"
 _PATHS = "tests/test_v0170_distro_paths.py"
 _PI = "tests/test_v0170_raspberry_pi.py"
+_SWEEP = "tests/test_v0170_doc_counters_sweep.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -655,6 +656,26 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="aideinit, pam-auth-update and dpkg-reconfigure are Debian's own "
                "tools; appending them to a dnf command hands out a remedy whose "
                "second half cannot run",
+    ),
+
+    Mutation(
+        id="docs/counter-sweep-goes-blind",
+        file="tests/test_v0170_doc_counters_sweep.py",
+        old='    "filterable": "sections", "sections filtrables": "sections",',
+        new="",
+        kills=(f"{_SWEEP}::test_the_vocabulary_covers_the_phrasings_actually_used",),
+        reason="dropping a counted noun is how the v0.13.3 guard went blind to "
+               "the four spellings SNAPSHOT actually uses, leaving seven "
+               "counters stale across six releases",
+    ),
+    Mutation(
+        id="docs/section-count-stale-again",
+        file="DOCUMENTS/SNAPSHOT.md",
+        old="the 39 filterable + 10 always-on section names",
+        new="the 38 filterable + 10 always-on section names",
+        kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
+        reason="the section count drifted in seven places the moment a section "
+               "was added, and nothing was watching",
     ),
 
     # ---- what machine this is ----------------------------------------------

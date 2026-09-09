@@ -264,6 +264,17 @@ _CLAIMS: list[tuple[str, str]] = [
     (r"(\d+) clés canoniques",                  "explain_keys"),
     (r"EXPLAIN_KEYS — (\d+) keys",              "explain_keys"),
     (r"EXPLAIN_KEYS — (\d+) clés",              "explain_keys"),
+    # v0.17.0 — SNAPSHOT.md writes the same figure four other ways, and this
+    # list knew none of them: "EXPLAIN_KEYS (187 keys, 49 prefixes)",
+    # "← 187 keys / 49 prefixes", "(187 keys, 49 prefixes)",
+    # "EXPLAIN_KEYS | 169 (in 49 prefixes)". Seven counters sat stale across
+    # six releases while this guard reported the document clean, because a
+    # guard pinned to four spellings protects four spellings and not the
+    # figure. Matched by shape now — a number immediately before "keys" or
+    # "clés" — rather than by phrasing.
+    (r"(\d+) keys?[,/]",                        "explain_keys"),
+    (r"(\d+) clés? ?[,/]",                      "explain_keys"),
+    (r"(\d+) \(in \d+ prefixes\)",             "explain_keys"),
     (r"(\d+) known services",                   "services"),
     (r"(\d+) services connus",                  "services"),
     (r"(\d+) CIS references",                   "cis_refs"),

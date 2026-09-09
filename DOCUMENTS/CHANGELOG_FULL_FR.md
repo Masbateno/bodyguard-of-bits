@@ -82,7 +82,9 @@ La v0.15.2 avait remplacé « tout absent hors Debian » par la même faute
 inversée pour la famille rpm, et rien ne l'a remarqué, parce que ce mode de
 défaillance est le silence : un check qui croit un paquet présent cesse
 simplement de demander. L'audit d'un conteneur Fedora passe de 137 findings à
-60 — les 77 manquants portaient sur des services qui n'étaient pas installés.
+60. Mesuré, pas arrondi : 76 des 77 disparus étaient des lignes `services.*`
+portant sur des services jamais installés, et la soixante-dix-septième était la
+fausse déduction de politique de mots de passe fermée plus bas.
 Le verdict microcode disait **OK** sans avoir rien vérifié ; il dit désormais
 `missing`, correctement, et coûte son point.
 
@@ -351,7 +353,7 @@ vrai wizard derrière un pty l'a trouvée du premier coup, et la garde qui l'a
 remplacée pilote la fonction contre un écran enregistreur en exigeant que
 chaque mot de l'avis atterrisse sur une ligne.
 
-**Tests** 8951 → **9213**. **Mutations** 56 → **84**.
+**Tests** 8951 → **9233**. **Mutations** 56 → **86**.
 
 ---
 

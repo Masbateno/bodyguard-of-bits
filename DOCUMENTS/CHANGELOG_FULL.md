@@ -78,8 +78,10 @@ spot too.
 v0.15.2 had replaced "everything absent outside Debian" with the same fault
 inverted for the rpm family, and nothing noticed, because this failure mode is
 silence: a check that believes a package is present simply stops asking. The
-audit of a Fedora container went from 137 findings to 60 — the missing 77 were
-about services that were not installed. The microcode verdict said **OK**
+audit of a Fedora container went from 137 findings to 60. Measured, not
+rounded: 76 of the 77 that went were `services.*` rows about services that were
+never installed, and the seventy-seventh was the false password-policy
+deduction closed further down. The microcode verdict said **OK**
 having checked nothing; it says `missing` now, correctly, and costs its point.
 
 rpm is asked with `--quiet` and judged by its exit status. pacman and apk keep
@@ -332,7 +334,7 @@ of the real wizard found it in one pass, and the guard that replaced it drives
 the function against a recording screen and requires every word of the notice
 to land on a row.
 
-**Tests** 8951 → **9213**. **Mutations** 56 → **84**.
+**Tests** 8951 → **9233**. **Mutations** 56 → **86**.
 
 ---
 

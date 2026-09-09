@@ -4,8 +4,10 @@ bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
     about, including names that exist nowhere. "rpm -q nosuchpackage" prints
     its error on stdout and exits 1, and the query table counted any output as
     proof of installation -- a claim written for rpm and true only of pacman
-    and apk. A Fedora container's audit went from 137 findings to 60: the
-    missing 77 were about services that were not installed. rpm is asked with
+    and apk. A Fedora container's audit went from 137 findings to 60: 76 of
+    the 77 that went were services.* rows about services that were never
+    installed, and the seventy-seventh was a false password-policy deduction
+    closed elsewhere in this release. rpm is asked with
     --quiet and judged by its exit status now.
   * Remediation commands follow the host's package manager, built from one
     table whose names were measured in containers rather than recalled:

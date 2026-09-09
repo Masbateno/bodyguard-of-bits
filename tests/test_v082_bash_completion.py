@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 
 
+_ROOT = Path(__file__).resolve().parent.parent
 _COMPLETION_FILE = Path(__file__).resolve().parent.parent / "bob" / "data" / "bob.bash-completion"
 
 
@@ -108,23 +109,60 @@ class TestExplainKeysListInSync:
 # ===========================================================================
 
 class TestLongOptsPresence:
+    """Every option the parser accepts must be completable.
 
-    @pytest.mark.parametrize("opt", [
-        "--unignore=",        # v0.8.1 T57
-        # v0.9.0 F-3: --json-v1 retired with the v0.6.x legacy schema.
-        "--check=",
-        "--skip=",
-        "--ignore=",
-        "--profile=",
-        "--explain",
-        "--breakdown",
-    ])
-    def test_opt_present_in_long_opts(self, opt):
+    This was a list of eight names until v0.17.0, and a list protects the names
+    on it. ``--test-email`` shipped without ever reaching the completion file
+    because nobody thought to add a ninth line — the same shape as the doc
+    counters that sat stale for six releases behind a guard pinned to four
+    spellings. Read from the parser now, so an option added anywhere is covered
+    the moment it exists.
+    """
+
+    #: Options the parser knows *in order to reject them*. They must not be
+    #: offered for completion: suggesting a retired flag is worse than not
+    #: suggesting it.
+    _RETIRED = {
+        # v0.9.0 F-3 retired the v0.6.x legacy schema; v0.9.1 kept the branch
+        # so `bob --json-v1` explains itself instead of "unknown option".
+        "--json-v1",
+    }
+
+    @staticmethod
+    def _parser_options() -> set:
+        src = (_ROOT / "bob" / "cli.py").read_text(encoding="utf-8")
+        exact = set(re.findall(r'arg == "(--[a-z0-9-]+)"', src))
+        valued = {f"{o}=" for o in re.findall(r'arg\.startswith\("(--[a-z0-9-]+)=', src)}
+        return exact | valued
+
+    def test_every_parser_option_is_completable(self):
         src = _COMPLETION_FILE.read_text(encoding="utf-8")
         m = re.search(r'local long_opts="([^"]+)"', src)
-        assert m
-        long_opts = m.group(1).split()
-        assert opt in long_opts
+        assert m, "long_opts is gone or reshaped"
+        long_opts = set(m.group(1).split())
+        # A valued option may be listed either bare or with its `=`.
+        offered = long_opts | {o.rstrip("=") for o in long_opts}
+        missing = sorted(
+            o for o in self._parser_options()
+            if o not in self._RETIRED and o.rstrip("=") not in offered
+        )
+        assert not missing, (
+            f"the parser accepts these but the completion never offers them: {missing}"
+        )
+
+    def test_no_retired_option_is_offered(self):
+        src = _COMPLETION_FILE.read_text(encoding="utf-8")
+        m = re.search(r'local long_opts="([^"]+)"', src)
+        long_opts = set(m.group(1).split())
+        offered = long_opts | {o.rstrip("=") for o in long_opts}
+        bad = sorted(o for o in self._RETIRED if o in offered)
+        assert not bad, f"the completion offers retired options: {bad}"
+
+    def test_the_scrape_finds_options_at_all(self):
+        """A scraper that matched nothing would satisfy both tests above."""
+        found = self._parser_options()
+        assert len(found) > 20, f"the cli.py option scrape broke: {sorted(found)}"
+        assert "--test-email" in found and "--check=" in found
 
 
 # ===========================================================================
