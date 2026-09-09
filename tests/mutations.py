@@ -50,6 +50,8 @@ _UNITS = "tests/test_v0171_service_units_and_ports.py"
 _FIXTMO = "tests/test_v0171_fix_timeout_stops_what_it_started.py"
 _UPGFIX = "tests/test_v0171_upgrade_fix_can_install_what_it_found.py"
 _DRIFT = "tests/test_v0171_config_drift_needs_more_than_a_millisecond.py"
+_TWICE = "tests/test_v0171_advice_is_safe_to_apply_twice.py"
+_COMPOPT = "tests/test_v0171_completion_covers_every_option.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1078,5 +1080,45 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="the sentence names two moments and says one follows the other; "
                "rendered to the minute it prints them identical and reads as a "
                "contradiction",
+    ),
+    Mutation(
+        id="advice/append-without-looking",
+        file="bob/checks/_run.py",
+        old='return (f"grep -qxF {shlex.quote(line)} {path} 2>/dev/null || "',
+        new='return (f"true {shlex.quote(line)} {path} 2>/dev/null || "',
+        kills=(f"{_TWICE}::TestTheGeneratedCommandsAreIdempotent",),
+        reason="three runs of the rp_filter fix left three identical lines in "
+               "99-hardening.conf on a Debian 13 VM \u2014 advice gets followed "
+               "twice, so it has to be safe twice",
+    ),
+    Mutation(
+        id="advice/samba-back-to-the-end-of-the-file",
+        file="bob/checks/samba.py",
+        old="sudo sed -i '/^\\\\[global\\\\]/a {directive}' {_SMB_CONF_PATH}",
+        new="sudo tee -a {_SMB_CONF_PATH}",
+        kills=(f"{_TWICE}::TestTheSambaFixReachesGlobal",),
+        reason="appending puts the directive in whatever section is last \u2014 "
+               "[print$] on stock Debian 13, where testparm still answered "
+               "SMB2_02 and samba rejected the line as unknown for that section",
+    ),
+    Mutation(
+        id="completion/option-dropped-from-the-list",
+        file="bob/data/bob.bash-completion",
+        old="--test-email --test-webhook",
+        new="--test-webhook",
+        kills=(f"{_COMPOPT}::TestEveryOptionIsOffered::"
+               "test_no_long_option_is_missing",
+               f"{_COMPOPT}::TestTheReportedOption"),
+        reason="an option accepted by the CLI and never offered on TAB \u2014 "
+               "nothing checked the option lists at all before this guard",
+    ),
+    Mutation(
+        id="completion/reload-notice-back-to-english",
+        file="bob/completion.py",
+        old='print("⚠  " + i18n.t("completion.reload_title"))',
+        new='print("  Open a new shell or run: source /etc/bash_completion.d/bob")',
+        kills=(f"{_COMPOPT}::TestInstallCompletionSpeaksTheOperatorsLanguage",),
+        reason="the untranslated, unmarked trailer that made a correctly "
+               "installed option look missing to a French operator",
     ),
 )

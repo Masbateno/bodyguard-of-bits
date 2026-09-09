@@ -1,4 +1,10 @@
-"""Bash completion install helper."""
+"""Bash completion install helper.
+
+v0.17.1: this module printed nine messages and translated none of them. A
+French operator ran ``--install-completion`` and got English, including the one
+line that says the completion is not active until a new shell — which is why an
+option that *was* in the installed file looked missing.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,8 @@ import os
 import shutil
 import sys
 from pathlib import Path
+
+from bob import i18n
 
 
 def install_completion() -> int:
@@ -15,18 +23,17 @@ def install_completion() -> int:
     src      = Path(__file__).parent / "data" / "bob.bash-completion"
     dst_comp = Path("/etc/bash_completion.d/bob")
     if not src.exists():
-        print(f"✖ Completion data file not found: {src}", file=sys.stderr)
+        print("✖ " + i18n.t("completion.data_missing", path=str(src)), file=sys.stderr)
         ok = False
     elif not dst_comp.parent.exists():
-        print("✖ /etc/bash_completion.d not found — is bash-completion installed?",
-              file=sys.stderr)
+        print("✖ " + i18n.t("completion.dir_missing"), file=sys.stderr)
         ok = False
     else:
         try:
             shutil.copy2(src, dst_comp)
-            print(f"✔ Bash completion installed: {dst_comp}")
+            print("✔ " + i18n.t("completion.installed", path=str(dst_comp)))
         except OSError as exc:
-            print(f"✖ Failed to install completion script: {exc}", file=sys.stderr)
+            print("✖ " + i18n.t("completion.install_failed", error=str(exc)), file=sys.stderr)
             ok = False
 
     dst_bin   = Path("/usr/local/bin/bob")
@@ -60,15 +67,20 @@ def install_completion() -> int:
             if dst_bin.is_symlink() or dst_bin.exists():
                 dst_bin.unlink()
             dst_bin.symlink_to(bin_src)
-            print(f"✔ Symlink created: {dst_bin} → {bin_src}")
+            print("✔ " + i18n.t("completion.symlink_created", dst=str(dst_bin), src=str(bin_src)))
         except OSError as exc:
-            print(f"✖ Failed to create symlink: {exc}", file=sys.stderr)
+            print("✖ " + i18n.t("completion.symlink_failed", error=str(exc)), file=sys.stderr)
             ok = False
     elif sudo_user:
-        print("ℹ  Symlink skipped — bob not found in ~/.local/bin (pipx install?)")
+        print("ℹ  " + i18n.t("completion.symlink_skipped_missing"))
     else:
-        print("ℹ  Symlink skipped — run via sudo to detect user binary")
+        print("ℹ  " + i18n.t("completion.symlink_skipped_no_sudo"))
 
     if ok:
-        print("  Open a new shell or run: source /etc/bash_completion.d/bob")
+        # The line that matters. It used to be an unmarked, untranslated
+        # trailer under two ✔ lines, and it is the only thing standing between
+        # a correct install and an operator concluding an option is missing.
+        print()
+        print("⚠  " + i18n.t("completion.reload_title"))
+        print("   " + i18n.t("completion.reload_how"))
     return 0 if ok else 3
