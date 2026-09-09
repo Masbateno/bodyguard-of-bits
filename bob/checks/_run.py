@@ -12,6 +12,7 @@ import re
 import shlex
 import shutil
 import subprocess
+from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, NamedTuple
@@ -327,6 +328,44 @@ def sysctl_fix_cmd(param: str, conf: str = SYSCTL_CONF) -> str:
     files. One name now, and it is the one that was already in the majority.
     """
     return f"sudo sysctl -w {param} && {{ {append_once(param, conf)}; }}"
+
+
+#: The SSH server unit, spelled differently depending on who packaged it.
+#: Measured on five machines: Kali has only `ssh.service`, Arch and openSUSE
+#: only `sshd.service`, Debian 13 has both (it ships `ssh.service` with an
+#: `sshd.service` alias, which only materialises once the unit is enabled —
+#: which is why Kali, a Debian derivative with SSH disabled, has just the one).
+#: No static name works everywhere.
+_SSH_UNIT_CANDIDATES = ("ssh", "sshd")
+
+
+@lru_cache(maxsize=1)
+def ssh_unit() -> str:
+    """The name systemd knows the SSH server by, on this host.
+
+    Every SSH fix command used to end in `sudo systemctl restart ssh`, which is
+    Debian's spelling. Measured on Arch Linux: `Failed to restart ssh.service:
+    Unit ssh.service not found.` The same failure applies to openSUSE, and to
+    Fedora and RHEL, which package it as `sshd` — so the remediation for the
+    most consequential findings BOB reports was silently inert on most of the
+    distributions it supports.
+
+    Cached: an audit builds a dozen of these commands and the answer cannot
+    change during a run. Tests that stub the systemctl layer must call
+    ``ssh_unit.cache_clear()``.
+
+    Falls back to the first candidate when systemd cannot answer at all, which
+    is a host where the command was moot anyway.
+    """
+    for name in _SSH_UNIT_CANDIDATES:
+        try:
+            out = run_result("systemctl", "list-unit-files", f"{name}.service",
+                             "--no-legend").stdout
+        except OSError:
+            return _SSH_UNIT_CANDIDATES[0]
+        if out.strip():
+            return name
+    return _SSH_UNIT_CANDIDATES[0]
 
 
 def unit_config_applied_at(name: str, timeout: int = _CMD_TIMEOUT) -> "float | None":

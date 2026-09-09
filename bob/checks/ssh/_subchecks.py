@@ -10,7 +10,7 @@ from __future__ import annotations
 import shlex
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _identity_t, ssh_unit
 from bob.scoring import CheckResult, FindingLevel
 
 from ._directives import (
@@ -121,7 +121,7 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 reason=_t("ssh.host_key_dsa_reason", name=name),
                 points=1,
                 detail=_t("ssh.host_key_dsa_detail"),
-                cmd=f"sudo rm {shlex.quote(str(hk.path))} {shlex.quote(str(hk.path) + '.pub')} && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && sudo systemctl restart ssh",
+                cmd=f"sudo rm {shlex.quote(str(hk.path))} {shlex.quote(str(hk.path) + '.pub')} && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && sudo systemctl restart {ssh_unit()}",
                 template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
             )
 
@@ -129,7 +129,7 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
             result.info(
                 message=_t("ssh.host_key_rsa_short", name=name, bits=hk.rsa_bits),
                 detail=_t("ssh.host_key_rsa_short_detail"),
-                cmd="sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N '' && sudo systemctl restart ssh",
+                cmd=f"sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N '' && sudo systemctl restart {ssh_unit()}",
                 cmd_type="fix",
                 key="ssh.host_key_rsa_short",
                 template_vars={"name": name, "bits": hk.rsa_bits},  # pilot v0.4.1
@@ -189,7 +189,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             points=3,
             nature="improvement",
             detail=_t("ssh.permit_root_login_detail"),
-            cmd="sudo sed -i 's/^#*PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+            cmd=f"sudo sed -i 's/^#*PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && sudo systemctl restart {ssh_unit()}",
         )
         found_issue = True
     elif prl == "no":
@@ -222,7 +222,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
                 message=_t("ssh.password_auth"),
                 points=2,
                 detail=_t("ssh.password_auth_detail"),
-                cmd="sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+                cmd=f"sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart {ssh_unit()}",
                 nature="action",
             )
             found_issue = True
@@ -255,7 +255,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             key="ssh.max_auth_tries",
             message=_t("ssh.max_auth_tries", value=max_tries),
             points=1,
-            cmd="sudo sed -i 's/^#*MaxAuthTries .*/MaxAuthTries 3/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+            cmd=f"sudo sed -i 's/^#*MaxAuthTries .*/MaxAuthTries 3/' /etc/ssh/sshd_config && sudo systemctl restart {ssh_unit()}",
             nature="improvement",
         )
         found_issue = True
@@ -370,7 +370,7 @@ def _check_private_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 points=2,
                 nature="improvement",
                 detail=_t("ssh.dsa_key_detail"),
-                cmd=f"sudo rm -f {shlex.quote(str(ki.path))} {shlex.quote(str(ki.path) + '.pub')} && sudo systemctl restart ssh",
+                cmd=f"sudo rm -f {shlex.quote(str(ki.path))} {shlex.quote(str(ki.path) + '.pub')} && sudo systemctl restart {ssh_unit()}",
             )
         elif ki.key_type == "rsa" and ki.rsa_bits is not None and ki.rsa_bits < 2048:
             result.warn_with_deduction(

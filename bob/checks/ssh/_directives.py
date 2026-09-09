@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bob.checks._run import ssh_unit
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         bad_values=("yes",),
         level="alert", key="ssh.permit_empty_passwords",
         points=5, nature="improvement",
-        cmd_template="sudo sed -i 's/^#*PermitEmptyPasswords yes/PermitEmptyPasswords no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*PermitEmptyPasswords yes/PermitEmptyPasswords no/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
     _BadDirective(
         name="x11forwarding", default="no",
@@ -115,35 +116,35 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         # ``.client`` via the ``ssh.x11.forwarding.*`` glob).
         level="warn", key="ssh.x11.forwarding.server",
         points=1,
-        cmd_template="sudo sed -i 's/^#*X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
     _BadDirective(
         name="ignorerhosts", default="yes",
         bad_values=("no",),
         level="warn", key="ssh.ignore_rhosts_disabled",
         points=2,
-        cmd_template="sudo sed -i 's/^#*IgnoreRhosts no/IgnoreRhosts yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*IgnoreRhosts no/IgnoreRhosts yes/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
     _BadDirective(
         name="hostbasedauthentication", default="no",
         bad_values=("yes",),
         level="alert", key="ssh.host_based_auth",
         points=3, nature="improvement",
-        cmd_template="sudo sed -i 's/^#*HostbasedAuthentication yes/HostbasedAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*HostbasedAuthentication yes/HostbasedAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
     _BadDirective(
         name="permituserenvironment", default="no",
         bad_values=("yes",),
         level="warn", key="ssh.permit_user_env",
         points=1,
-        cmd_template="sudo sed -i 's/^#*PermitUserEnvironment yes/PermitUserEnvironment no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*PermitUserEnvironment yes/PermitUserEnvironment no/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
     _BadDirective(
         name="strictmodes", default="yes",
         bad_values=("no",),
         level="warn", key="ssh.strict_modes_disabled",
         points=2,
-        cmd_template="sudo sed -i 's/^#*StrictModes no/StrictModes yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*StrictModes no/StrictModes yes/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
     _BadDirective(
         # "local" is acceptable (more restrictive than "yes", documented in
@@ -152,7 +153,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         safe_values=("no", "local"),
         level="warn", key="ssh.allow_tcp_forwarding",
         points=1, detail_key="ssh.allow_tcp_forwarding_detail",
-        cmd_template="sudo sed -i 's/^#*AllowTcpForwarding yes/AllowTcpForwarding no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*AllowTcpForwarding yes/AllowTcpForwarding no/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
     _BadDirective(
         name="pubkeyauthentication", default="yes",
@@ -160,7 +161,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         level="alert", key="ssh.pubkey_auth_disabled",
         points=3, nature="improvement",
         detail_key="ssh.pubkey_auth_disabled_detail",
-        cmd_template="sudo sed -i 's/^#*PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+        cmd_template="sudo sed -i 's/^#*PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config && sudo systemctl restart @SSH_UNIT@",
     ),
 )
 
@@ -194,7 +195,10 @@ def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t
     # has something to run for the 8 sshd_config directives covered by
     # this table. Empty cmd_template intentionally omits cmd=.
     if rule.cmd_template:
-        kwargs["cmd"] = rule.cmd_template
+        # v0.17.1: the unit is spelled `ssh` on Debian and `sshd` on Arch,
+        # openSUSE, Fedora and RHEL. A literal token rather than a format
+        # placeholder because these templates carry sed expressions.
+        kwargs["cmd"] = rule.cmd_template.replace("@SSH_UNIT@", ssh_unit())
     if rule.level == "alert":
         result.alert_with_deduction(**kwargs, nature=nature)
     else:
