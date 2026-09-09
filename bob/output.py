@@ -640,7 +640,7 @@ def print_banner(
         (labels.get("system",   "System"),   system),
         (labels.get("host",     "Host"),     host),
         (labels.get("kernel",   "Kernel"),   kernel),
-        (labels.get("ufw",      "UFW"),      f"v{ufw_version}"),
+        (labels.get("ufw",      "UFW"),      ufw_version),
         (labels.get("iptables", "iptables"), iptables),
         (labels.get("nftables", "nftables"), nftables),
         (labels.get("user",     "User"),     user),

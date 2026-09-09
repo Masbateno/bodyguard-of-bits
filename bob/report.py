@@ -275,7 +275,9 @@ class AuditReport:
         self._writeln(f"{_L.get('system',      'System'     ):<12}: {info.os_name}")
         self._writeln(f"{_L.get('host',        'Host'       ):<12}: {info.hostname}")
         self._writeln(f"{_L.get('kernel',      'Kernel'     ):<12}: {info.kernel}")
-        self._writeln(f"{_L.get('firewall',    'Firewall'   ):<12}: ufw {info.ufw_version}")
+        _ufw = (f"ufw v{info.ufw_version}" if info.ufw_version
+                else _L.get("not_installed", "not installed"))
+        self._writeln(f"{_L.get('firewall',    'Firewall'   ):<12}: {_ufw}")
         self._writeln(f"{_L.get('user',        'User'       ):<12}: {info.user}")
         self._writeln(f"{_L.get('language',    'Language'   ):<12}: {info.language}")
         self._writeln(f"{_L.get('port_config', 'Port config'):<12}: {info.config_path}")

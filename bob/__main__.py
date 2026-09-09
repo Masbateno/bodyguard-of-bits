@@ -575,6 +575,7 @@ def _run(argv=None) -> int:
                 "user":               t("banner.user"),
                 "language":           t("banner.language"),
                 "port_config":        t("banner.port_config"),
+                "not_installed":      t("banner.not_installed"),
             })
 
             if not config.quiet:
@@ -585,7 +586,8 @@ def _run(argv=None) -> int:
                     system=sys_info.os_name,
                     host=sys_info.hostname,
                     kernel=sys_info.kernel,
-                    ufw_version=sys_info.ufw_version,
+                    ufw_version=(f"v{sys_info.ufw_version}"
+                                 if sys_info.ufw_version else not_installed),
                     iptables=sys_info.iptables_version or not_installed,
                     nftables=sys_info.nftables_version or not_installed,
                     user=sys_info.user,

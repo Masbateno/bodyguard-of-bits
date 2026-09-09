@@ -54,6 +54,8 @@ _TWICE = "tests/test_v0171_advice_is_safe_to_apply_twice.py"
 _COMPOPT = "tests/test_v0171_completion_covers_every_option.py"
 _AAEMPTY = "tests/test_v0171_apparmor_empty_is_not_unreadable.py"
 _DORMANT = "tests/test_v0171_dormant_service_is_reported_not_scored.py"
+_WHOAMI = "tests/test_v0171_audit_user_is_measured.py"
+_SENTINEL = "tests/test_v0171_no_sentinel_reaches_the_header.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1176,5 +1178,51 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "test_the_finding_is_still_emitted",),
         reason="not scoring it must never become not showing it \u2014 the "
                "operator still needs to know the package is there",
+    ),
+    Mutation(
+        id="identity/back-to-believing-the-environment",
+        file="bob/sysinfo.py",
+        old="    euid = os.geteuid()\n    try:\n        return pwd.getpwuid(euid).pw_name",
+        new='    euid = os.geteuid()\n    try:\n        return os.environ.get("USER", "unknown")',
+        kills=(f"{_WHOAMI}::TestTheEnvironmentIsNotTheSource",),
+        reason="openSUSE Leap 15.6 arrives with no USER in the environment and "
+               "the header said \"User : unknown\" about a process the kernel "
+               "identifies as root \u2014 and that header is written into the "
+               "report file",
+    ),
+    Mutation(
+        id="identity/unvalidated-sudo-user",
+        file="bob/sysinfo.py",
+        old="            pwd.getpwnam(sudo_user)\n            return sudo_user",
+        new="            return sudo_user",
+        kills=(f"{_WHOAMI}::TestSudoUserKeepsItsPlace::"
+               "test_a_sudo_user_naming_nobody_falls_through",),
+        reason="an environment variable naming nobody would be printed as the "
+               "operator's identity instead of falling through to what was "
+               "measured",
+    ),
+    Mutation(
+        id="header/ufw-placeholder-returns",
+        file="bob/sysinfo.py",
+        old="    ufw_version = ufw_match.group(0) if ufw_match else \"\"",
+        new="    ufw_version = ufw_match.group(0) if ufw_match else \"N/A\"",
+        kills=(f"{_SENTINEL}::TestTheSourceReportsAbsenceLikeItsNeighbours::"
+               "test_a_missing_ufw_is_empty_not_a_placeholder",
+               f"{_SENTINEL}::TestOnlyTheUfwFieldWasAffected"),
+        reason="the header read \"UFW : vN/A\" on openSUSE Leap 15.6 while its "
+               "two neighbours read \"not installed\" about the same kind of "
+               "absence \u2014 a placeholder printed as a fact about the host",
+    ),
+    Mutation(
+        id="header/absent-firewall-renders-blank",
+        file="bob/report.py",
+        old='        _ufw = (f"ufw v{info.ufw_version}" if info.ufw_version\n'
+            '                else _L.get("not_installed", "not installed"))',
+        new='        _ufw = f"ufw v{info.ufw_version}"',
+        kills=(f"{_SENTINEL}::TestWhatTheWritersActuallyProduce::"
+               "test_absent_ufw_is_named_in_the_text_report",),
+        reason="with the source now empty, an unconditional version marker "
+               "writes \"ufw v\" into the report file and the absence is not "
+               "named at all",
     ),
 )
