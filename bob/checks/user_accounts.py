@@ -28,6 +28,7 @@ from typing import Dict
 
 from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -110,7 +111,7 @@ class UserAccountsSnapshot:
         uids:         dict[str, int] = {}  # username → uid
         snap.passwd_readable = False
         try:
-            for line in _PASSWD_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+            for line in read_text_capped(_PASSWD_PATH, encoding="utf-8", errors="replace").splitlines():
                 parts = line.split(":")
                 if len(parts) < 7:
                     continue
@@ -130,7 +131,7 @@ class UserAccountsSnapshot:
 
         # ---- /etc/shadow — password and expiry checks (requires root) -------
         try:
-            shadow_text = _SHADOW_PATH.read_text(encoding="utf-8", errors="replace")
+            shadow_text = read_text_capped(_SHADOW_PATH, encoding="utf-8", errors="replace")
         except OSError:
             return snap
 

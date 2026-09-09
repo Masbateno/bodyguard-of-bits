@@ -52,13 +52,20 @@ class TestAbsenceIsNotAFailureToLook:
         assert _read_cron_file(d, out) is False
 
     def test_a_permission_denial_is_unreadable(self, tmp_path, monkeypatch):
+        """The seam is `read_text_capped` now, not `Path.read_text`.
+
+        v0.18.0 pointed the cron reader at the capped reader, so a test that
+        patches the bare method never intercepts anything and passes on a file
+        it never made unreadable.
+        """
+        from bob.checks import cron_audit as mod
         f = tmp_path / "crontab"
         f.write_text("x\n")
 
         def denied(*a, **k):
             raise PermissionError(13, "Permission denied")
 
-        monkeypatch.setattr(Path, "read_text", denied)
+        monkeypatch.setattr(mod, "read_text_capped", denied)
         out: list = []
         assert _read_cron_file(f, out) is False, (
             "a file BOB was refused is exactly what this flag is for"

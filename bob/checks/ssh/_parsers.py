@@ -19,6 +19,7 @@ import stat
 import struct
 from pathlib import Path
 
+from bob._atomic import read_text_capped
 from bob.checks._run import _command_exists
 
 from ._snapshot import (
@@ -49,7 +50,7 @@ def _parse_config_file(
     seen.add(canonical)
 
     try:
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        lines = read_text_capped(path, encoding="utf-8", errors="ignore").splitlines()
     except OSError:
         return
 
@@ -190,7 +191,7 @@ def _detect_private_key_type(path: Path, header: str) -> str:
     pub = path.parent / (path.name + _PUB_SUFFIX)
     if pub.is_file():
         try:
-            first = pub.read_text(encoding="utf-8", errors="ignore").split()
+            first = read_text_capped(pub, encoding="utf-8", errors="ignore").split()
             if first:
                 return _key_type_from_algo(first[0])
         except OSError:
@@ -214,7 +215,7 @@ def _key_type_from_algo(algo: str) -> str:
 def _rsa_bits_from_pub_file(pub_path: Path) -> int | None:
     """Extract RSA key size in bits from a .pub file."""
     try:
-        parts = pub_path.read_text(encoding="utf-8", errors="ignore").split()
+        parts = read_text_capped(pub_path, encoding="utf-8", errors="ignore").split()
     except OSError:
         return None
     if len(parts) < 2:
@@ -314,7 +315,7 @@ def _parse_authorized_keys(path: Path) -> list[AuthorizedKeyEntry]:
     """Parse authorized_keys, return one AuthorizedKeyEntry per valid key line."""
     entries: list[AuthorizedKeyEntry] = []
     try:
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        lines = read_text_capped(path, encoding="utf-8", errors="ignore").splitlines()
     except OSError:
         return entries
 
@@ -359,7 +360,7 @@ def _parse_client_config(path: Path) -> list[ClientConfigEntry]:
     """Parse ~/.ssh/config into ClientConfigEntry list."""
     entries: list[ClientConfigEntry] = []
     try:
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        lines = read_text_capped(path, encoding="utf-8", errors="ignore").splitlines()
     except OSError:
         return entries
 
@@ -387,7 +388,7 @@ def _parse_known_hosts(path: Path) -> list[KnownHostEntry]:
     """Parse known_hosts into KnownHostEntry list."""
     entries: list[KnownHostEntry] = []
     try:
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        lines = read_text_capped(path, encoding="utf-8", errors="ignore").splitlines()
     except OSError:
         return entries
 
@@ -426,7 +427,7 @@ def _collect_host_keys() -> list[HostKeyInfo]:
         # Private key path (same name without .pub)
         priv = pub.with_suffix("")
         try:
-            parts = pub.read_text(encoding="utf-8", errors="ignore").split()
+            parts = read_text_capped(pub, encoding="utf-8", errors="ignore").split()
         except OSError:
             continue
         if len(parts) < 2:

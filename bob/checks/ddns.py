@@ -33,6 +33,7 @@ from bob.checks._run import (
     path_exists,
 )
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # ---------------------------------------------------------------------------
 # DDNS client registry
@@ -342,7 +343,7 @@ def _extract_domain(client_def: DdnsClientDef) -> str | None:
         if not _config_present(path):
             continue
         try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
+            content = read_text_capped(path, encoding="utf-8", errors="ignore")
         except OSError:
             continue
 

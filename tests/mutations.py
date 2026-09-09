@@ -62,6 +62,7 @@ _OPENRC = "tests/test_v0180_openrc.py"
 _SUIDOWN = "tests/test_v0180_suid_ownership.py"
 _NATIVE = "tests/test_v0180_native_sysctl_apply.py"
 _ABSENT = "tests/test_v0180_absent_is_not_unreadable.py"
+_CAPPED = "tests/test_v0180_capped_reads.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1441,5 +1442,49 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "test_a_permission_denial_is_unreadable"),
         reason="the polarity twin: separating absence from denial must not "
                "silence the denial, which is the one this flag exists for",
+    ),
+    Mutation(
+        id="capped/one-big-read-again",
+        file="bob/_atomic.py",
+        old="            chunk = fh.read(min(remaining, _READ_CHUNK))",
+        new="            chunk = fh.read(remaining)",
+        kills=(f"{_CAPPED}::TestItReadsPseudoFilesystems::"
+               "test_a_file_that_refuses_a_large_read_is_still_read",),
+        reason="procfs allocates a buffer the size of the request and refuses "
+               "a large one: read(8388609) on a sysctl raises ENOMEM, so the "
+               "reader written to prevent an OOM could not read a single knob",
+    ),
+    Mutation(
+        id="capped/chunk-as-large-as-the-cap",
+        file="bob/_atomic.py",
+        old="_READ_CHUNK = 256 * 1024",
+        new="_READ_CHUNK = 8 * 1024 * 1024",
+        kills=(f"{_CAPPED}::TestItReadsPseudoFilesystems::"
+               "test_no_single_read_asks_for_the_whole_cap",),
+        reason="the chunk has to stay under what procfs will allocate; 1 MiB "
+               "is the largest request measured to succeed",
+    ),
+    Mutation(
+        id="capped/shadow-read-unbounded-again",
+        file="bob/checks/user_accounts.py",
+        old="        shadow_text = read_text_capped(_SHADOW_PATH, ",
+        new="        shadow_text = _SHADOW_PATH.read_text(",
+        kills=(f"{_CAPPED}::TestTheChecksThatReadRealPathsAreCapped::"
+               "test_it_uses_the_capped_reader",
+               f"{_CAPPED}::TestTheChecksThatReadRealPathsAreCapped::"
+               "test_shadow_and_passwd_are_among_them"),
+        reason="/etc/shadow symlinked to /dev/zero took peak RSS from 113 MB to "
+               "2.6 GB, and the kernel OOM-killed python3 at 7.3 GB under "
+               "memory pressure",
+    ),
+    Mutation(
+        id="capped/chunks-not-reassembled",
+        file="bob/_atomic.py",
+        old='    data = "".join(data_parts)',
+        new="    data = data_parts[0] if data_parts else \"\"",
+        kills=(f"{_CAPPED}::TestItStillRefusesWhatItWasWrittenFor::"
+               "test_a_file_spanning_several_chunks_is_whole",),
+        reason="reading in chunks must reassemble the file; truncating at the "
+               "first chunk would silently shorten every config over 256 KiB",
     ),
 )

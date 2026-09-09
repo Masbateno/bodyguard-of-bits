@@ -22,6 +22,7 @@ from pathlib import Path
 
 from bob.checks._run import install_fix, package_installed, _command_exists, _identity_t, _run, is_unit_active, path_exists
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # Age threshold (in seconds) above which the APT cache is considered stale.
 # 7 days mirrors the typical unattended-upgrades refresh window; beyond this
@@ -230,7 +231,7 @@ def _check_unattended() -> tuple[bool, bool]:
     if path_exists(apt_conf):
         try:
             content = _strip_apt_comments(
-                apt_conf.read_text(encoding="utf-8", errors="ignore")
+                read_text_capped(apt_conf, encoding="utf-8", errors="ignore")
             )
             if re.search(r'APT::Periodic::Unattended-Upgrade\s+"1"', content):
                 return True, True

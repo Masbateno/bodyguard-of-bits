@@ -40,6 +40,7 @@ from bob.checks._run import (
     path_exists,
 )
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 _WARN_DAYS      = 30
 _ALERT_DAYS     = 7
@@ -119,7 +120,7 @@ class SslCertsSnapshot:
         postfix_cf = Path("/etc/postfix/main.cf")
         if path_exists(postfix_cf):
             try:
-                content = postfix_cf.read_text(encoding="utf-8", errors="ignore")
+                content = read_text_capped(postfix_cf, encoding="utf-8", errors="ignore")
                 for m in _POSTFIX_RE.finditer(content):
                     _add_path(Path(m.group(1).strip()), paths)
             except OSError:
@@ -290,7 +291,7 @@ def _collect_from_configs(conf_dir: Path, pattern: re.Pattern, paths: set[str],
             if conf.stat().st_size > _MAX_CONF_SIZE:
                 continue
             scanned += 1
-            content = conf.read_text(encoding="utf-8", errors="ignore")
+            content = read_text_capped(conf, encoding="utf-8", errors="ignore")
             for m in pattern.finditer(content):
                 _add_path(Path(m.group(1).strip().strip("'\"")), paths)
         except OSError:

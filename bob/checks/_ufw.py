@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from bob._atomic import read_text_capped
 
 # `[ N] <To column> <ACTION> <From column>`
 _NUMBERED_RE = re.compile(r"^\s*\[\s*\d+\]\s*(.*)$")
@@ -89,7 +90,7 @@ def read_app_profiles(directory: "Path | None" = None) -> "dict[str, list[str]]"
         try:
             if not path.is_file():
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = read_text_capped(path, encoding="utf-8", errors="replace")
         except OSError:
             continue
         name: str | None = None

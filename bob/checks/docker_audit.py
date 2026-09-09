@@ -24,6 +24,7 @@ from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 
 _DAEMON_JSON = Path("/etc/docker/daemon.json")
@@ -289,7 +290,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
 def _read_userns_remap() -> bool:
     """Return True if userns-remap is set in /etc/docker/daemon.json."""
     try:
-        config = json.loads(_DAEMON_JSON.read_text(encoding="utf-8", errors="replace"))
+        config = json.loads(read_text_capped(_DAEMON_JSON, encoding="utf-8", errors="replace"))
     except (OSError, json.JSONDecodeError):
         return False
     # `[]`, `"text"` and `null` are valid JSON without a .get(); catching only

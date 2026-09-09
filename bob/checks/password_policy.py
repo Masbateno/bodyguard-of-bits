@@ -35,6 +35,7 @@ from bob.checks._run import (
     read_pam_stack,
 )
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -154,7 +155,7 @@ class PasswordPolicySnapshot:
 
         # ---- /etc/login.defs ------------------------------------------------
         try:
-            login_defs_text = _LOGIN_DEFS_PATH.read_text(encoding="utf-8", errors="replace")
+            login_defs_text = read_text_capped(_LOGIN_DEFS_PATH, encoding="utf-8", errors="replace")
             snap.login_defs_readable = True
 
             v = _last_int(_PASS_MAX_DAYS_RE, login_defs_text)
@@ -203,7 +204,7 @@ class PasswordPolicySnapshot:
         for path in _pwquality_files():
             try:
                 v = _last_int(_PWQUALITY_MINLEN_RE,
-                              path.read_text(encoding="utf-8", errors="replace"))
+                              read_text_capped(path, encoding="utf-8", errors="replace"))
             except OSError:
                 continue
             if v is not None:

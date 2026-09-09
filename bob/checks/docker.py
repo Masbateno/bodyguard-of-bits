@@ -30,6 +30,7 @@ from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +236,7 @@ def _check_daemon_json() -> tuple[bool, bool]:
         Tuple of (file_exists: bool, iptables_disabled: bool).
     """
     try:
-        content = DAEMON_JSON_PATH.read_text(encoding="utf-8", errors="replace")
+        content = read_text_capped(DAEMON_JSON_PATH, encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return False, False
     except OSError as exc:

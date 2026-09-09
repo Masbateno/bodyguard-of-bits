@@ -27,6 +27,7 @@ from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, pipes_into_shell
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # ---------------------------------------------------------------------------
 # Patterns for risky cron content
@@ -163,7 +164,7 @@ def _read_cron_file(path: Path, out: list[tuple[str, str]]) -> bool:
         # A deliberate security skip, not a read failure — see the docstring.
         return True
     try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        text = read_text_capped(path, encoding="utf-8", errors="ignore")
     except FileNotFoundError:
         # v0.18.0: a file that is not there hides nothing. `/etc/crontab` does
         # not exist on Alpine, Arch or openSUSE, and reporting it as unreadable

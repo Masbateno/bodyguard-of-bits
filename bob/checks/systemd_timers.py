@@ -35,6 +35,7 @@ from bob.checks._run import (
     path_exists,
 )
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # ---------------------------------------------------------------------------
 # Patterns
@@ -287,7 +288,7 @@ def _parse_service_file(path: Path) -> tuple[list[str], bool]:
     has_user_directive: True if a non-empty User= line is present.
     """
     try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        text = read_text_capped(path, encoding="utf-8", errors="ignore")
     except OSError:
         return [], False
     exec_starts = [m.group(1).strip().lstrip("-@") for m in _EXEC_START_RE.finditer(text)]

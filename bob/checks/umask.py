@@ -22,6 +22,7 @@ from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _identity_t, pam_stack_paths, path_exists
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 _UMASK_RE = re.compile(r"^(?!\s*#)\s*(?:umask|UMASK)\s+([0-7]{3,4})\b", re.MULTILINE)
 _LOGIN_DEFS_RE = re.compile(r"^UMASK\s+([0-7]{3,4})", re.MULTILINE | re.IGNORECASE)
@@ -74,7 +75,7 @@ def _scan(path: Path, regex) -> str | None:
     direction is the one that matters.
     """
     try:
-        content = path.read_text(encoding="utf-8", errors="ignore")
+        content = read_text_capped(path, encoding="utf-8", errors="ignore")
         last = None
         for m in regex.finditer(content):
             last = m
@@ -183,7 +184,7 @@ class UmaskSnapshot:
         # Common on Debian 13+ where UMASK is commented out in login.defs
         for _pam_path in _pam_sessions:
             try:
-                pam_content = _pam_path.read_text(encoding="utf-8", errors="ignore")
+                pam_content = read_text_capped(_pam_path, encoding="utf-8", errors="ignore")
             except OSError:
                 continue
             if _PAM_UMASK_NOARG_RE.search(pam_content):

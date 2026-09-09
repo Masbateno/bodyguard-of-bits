@@ -44,6 +44,7 @@ from pathlib import Path
 
 from bob.checks._run import _command_exists, install_fix, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # ---------------------------------------------------------------------------
 # Config artefact paths (checked for root-run backups; no user enumeration)
@@ -302,7 +303,7 @@ def _scheduled_evidence() -> list[str]:
 
     for path in candidates:
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            text = read_text_capped(path, encoding="utf-8", errors="ignore")
         except OSError:
             continue
         for line in text.splitlines():

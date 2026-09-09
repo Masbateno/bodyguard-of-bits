@@ -31,6 +31,8 @@ from pathlib import Path
 # meant to approach it (history.jsonl is rotation-capped, a baseline is tens of
 # KB); it exists so a read can never run away.
 _DEFAULT_READ_CAP = 8 * 1024 * 1024  # 8 MB
+#: One read(2) at a time. Sized under what procfs will allocate.
+_READ_CHUNK = 256 * 1024
 
 
 def read_text_capped(
@@ -71,8 +73,24 @@ def read_text_capped(
         raise FileNotFoundError(errno.ENOENT, "no such file", str(path))
     if not path.is_file():
         raise OSError(errno.EINVAL, "not a regular file", str(path))
+    # v0.18.0: read in chunks rather than asking for the whole cap at once.
+    # procfs allocates a buffer the size of the request, and refuses a large
+    # one: on /proc/sys/net/ipv4/conf/all/rp_filter, read(8388609) raises
+    # OSError errno 12 while read(1048576) returns the two bytes that are
+    # actually there. The cap was 8 MB, so this reader — written to keep BOB
+    # from reading a device until it died — could not read a single sysctl.
+    # Latent since v0.14.1 because its callers were all state files; found by
+    # pointing it at /proc.
+    data_parts: "list[str]" = []
+    remaining = max_bytes + 1
     with path.open(encoding=encoding, errors=errors) as fh:
-        data = fh.read(max_bytes + 1)
+        while remaining > 0:
+            chunk = fh.read(min(remaining, _READ_CHUNK))
+            if not chunk:
+                break
+            data_parts.append(chunk)
+            remaining -= len(chunk)
+    data = "".join(data_parts)
     if len(data) > max_bytes:
         raise OSError(errno.EFBIG, f"file exceeds {max_bytes} bytes", str(path))
     return data

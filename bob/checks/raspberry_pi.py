@@ -39,6 +39,7 @@ from bob.platform import (
     raspberry_pi_model,
 )
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 #: `userconf.txt` is `username:crypt-hash`. The prefix identifies the scheme —
 #: `$6$` SHA-512, `$5$` SHA-256, `$y$` yescrypt (Bookworm's default).
@@ -107,7 +108,7 @@ class RaspberryPiSnapshot:
         if snap.boot_dir is not None:
             userconf = snap.boot_dir / "userconf.txt"
             try:
-                text = userconf.read_text(encoding="utf-8", errors="replace")
+                text = read_text_capped(userconf, encoding="utf-8", errors="replace")
             except OSError:
                 text = ""
             for line in text.splitlines():
@@ -136,7 +137,7 @@ def _legacy_account_state(passwd: Path, shadow: Path) -> "tuple[bool, bool]":
     password will ever match, which is how a disabled account is spelled.
     """
     try:
-        entries = passwd.read_text(encoding="utf-8", errors="replace").splitlines()
+        entries = read_text_capped(passwd, encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return False, True
     shells = {}
@@ -150,7 +151,7 @@ def _legacy_account_state(passwd: Path, shadow: Path) -> "tuple[bool, bool]":
         return False, True
 
     try:
-        shadow_lines = shadow.read_text(encoding="utf-8", errors="replace").splitlines()
+        shadow_lines = read_text_capped(shadow, encoding="utf-8", errors="replace").splitlines()
     except OSError:
         # Unreadable is not "no password": say the answer was not established.
         return False, False

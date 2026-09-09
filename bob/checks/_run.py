@@ -16,6 +16,7 @@ from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, NamedTuple
+from bob._atomic import read_text_capped
 
 _CMD_TIMEOUT = 10  # seconds — default for short commands (ss, ufw, iptables, etc.)
 
@@ -1075,7 +1076,7 @@ def read_pam_stack(concern: str,
     established = False
     for path in (paths if paths is not None else pam_stack_paths(concern)):
         try:
-            chunks.append(path.read_text(encoding="utf-8", errors="replace"))
+            chunks.append(read_text_capped(path, encoding="utf-8", errors="replace"))
             established = True
         except OSError:
             continue

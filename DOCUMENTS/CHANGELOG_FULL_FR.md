@@ -154,7 +154,44 @@ Mesuré sur Arch avant et après : `unverified` est passé de
 `['cron.unreadable_files']` à vide, et `score_is_upper_bound` de True à False.
 Avec un répertoire mis à la place du fichier, les deux reviennent.
 
-**Tests** 9528 → **9685**. **Mutations** 117 → **131**.
+**Passe de stress 2 — un `/etc` fabriqué, bind-monté par-dessus le vrai.**
+Chaque élément hostile passait fonctionnellement. C'est le pic de mémoire
+résidente qui a trahi :
+
+    /etc sain                           113 Mo
+    /etc hostile (complet)             2683 Mo
+    /etc/shadow -> /dev/zero seul      2621 Mo
+
+`user_accounts` lisait `/etc/shadow` par un `Path.read_text()` nu, sans plafond.
+Pointé sur un périphérique caractère, il lit des octets NUL aussi longtemps
+qu'on le laisse faire — sur la machine du mainteneur, sous pression mémoire, le
+noyau a tué python3 à 7,3 Go de RSS.
+
+`bob/_atomic.read_text_capped` existe exactement pour cela, et son docstring le
+dit : la v0.14.1 avait mesuré la même défaillance et l'avait corrigée **pour les
+fichiers d'état**. La leçon n'a jamais été généralisée : 42 lectures nues
+subsistaient dans les checks.
+
+Les convertir a révélé un second défaut, latent depuis la v0.14.1. Le lecteur
+plafonné demandait tout son plafond en un seul appel, et procfs alloue un
+tampon de la taille demandée :
+
+    read(8388609) -> OSError errno 12
+    read(1048576) -> "2\n"
+
+Le lecteur écrit pour empêcher BOB de lire un périphérique jusqu'à en mourir ne
+savait pas lire un seul paramètre `/proc/sys`. Il lit désormais par blocs de
+256 Kio.
+
+Les checks qui lisent `/proc` et `/sys` gardent délibérément le lecteur nu : ces
+chemins sont générés par le noyau, bornés, et ne peuvent pas être un lien vers
+un périphérique. Les plafonner n'apportait rien et cassait toutes les sondes
+sysctl — la suite l'a attrapé en vingt tests, ce pourquoi le périmètre est ce
+qui a été mesuré et non ce qui paraissait net.
+
+Après : 113 Mo dans les trois cas, sain comme hostile.
+
+**Tests** 9528 → **9724**. **Mutations** 117 → **135**.
 
 ---
 

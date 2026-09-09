@@ -147,7 +147,41 @@ code did not: `FileNotFoundError` is a subclass of `OSError`, and one
 went from `['cron.unreadable_files']` to empty, and `score_is_upper_bound` from
 True to False. With a directory put in the file's place, both come back.
 
-**Tests** 9528 → **9685**. **Mutations** 117 → **131**.
+**Stress pass 2 — a fabricated `/etc` bind-mounted over the real one.** Every
+hostile element passed functionally. The peak resident set gave it away:
+
+    /etc healthy                        113 MB
+    /etc hostile (full)                2683 MB
+    /etc/shadow -> /dev/zero alone     2621 MB
+
+`user_accounts` read `/etc/shadow` with a bare `Path.read_text()`, which is
+unbounded. Pointed at a character device it reads NUL bytes for as long as it
+is allowed to — on the maintainer's host, under memory pressure, the kernel
+OOM-killed python3 at 7.3 GB RSS.
+
+`bob/_atomic.read_text_capped` exists for exactly this, and its docstring says
+so: v0.14.1 measured the same failure and fixed it *for state files*. The
+lesson was never generalised, and 42 bare reads remained in the checks.
+
+Converting them exposed a second defect, latent since v0.14.1. The capped
+reader asked for its whole cap in one call, and procfs allocates a buffer the
+size of the request:
+
+    read(8388609) -> OSError errno 12
+    read(1048576) -> "2\n"
+
+The reader written to keep BOB from reading a device until it died could not
+read a single `/proc/sys` knob. It reads in 256 KiB chunks now.
+
+The checks that read `/proc` and `/sys` deliberately keep the bare reader:
+those paths are kernel-generated, bounded, and cannot be a symlink to a device.
+Capping them bought nothing and broke every sysctl probe — the suite caught
+that in twenty tests, which is why the scope is what was measured rather than
+what looked tidy.
+
+After: 113 MB on all three, healthy and hostile alike.
+
+**Tests** 9528 → **9724**. **Mutations** 117 → **135**.
 
 ---
 

@@ -24,6 +24,7 @@ from typing import NamedTuple, Tuple
 
 from bob.checks._run import TranslationFunc, _identity_t, join_continuations, path_exists
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 # ---------------------------------------------------------------------------
 # Sensitive files specification
@@ -171,7 +172,7 @@ def _collect_nopasswd_entries() -> "tuple[list[str], list[str], bool]":
     readable = True
     for p in paths:
         try:
-            text = p.read_text(encoding="utf-8", errors="replace")
+            text = read_text_capped(p, encoding="utf-8", errors="replace")
         except OSError:
             readable = False
             continue

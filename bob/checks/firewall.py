@@ -27,6 +27,7 @@ from pathlib import Path
 from bob.checks import _ufw
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, install_fix
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 _OPEN_ANY_RE = re.compile(
     r"Anywhere(?:/\w+)?(?:\s+\(v6\))?\s+ALLOW\s+IN\s+Anywhere(?:/\w+)?(?:\s+\(v6\))?\s*$",
@@ -473,7 +474,7 @@ def _read_logging_level(ufw_output: str, ufw_conf: Path = Path("/etc/ufw/ufw.con
 
     # Fallback: read /etc/ufw/ufw.conf
     try:
-        content = ufw_conf.read_text(encoding="utf-8", errors="ignore")
+        content = read_text_capped(ufw_conf, encoding="utf-8", errors="ignore")
         mc = re.search(r"^LOGLEVEL\s*=\s*(\S+)", content, re.MULTILINE | re.IGNORECASE)
         if mc:
             level = mc.group(1).lower().strip('"\'')

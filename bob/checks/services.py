@@ -42,6 +42,7 @@ from bob.checks._run import (
 from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
 from bob.sysinfo import _is_private_or_loopback_ipv4, _is_private_or_loopback_ipv6
+from bob._atomic import read_text_capped
 
 logger = logging.getLogger(__name__)
 
@@ -652,7 +653,7 @@ def _auto_detect_ports(service: Service) -> "list[str]":
         if not path_exists(path) or not _is_safe_service_config(path, declared):
             continue
         try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
+            content = read_text_capped(path, encoding="utf-8", errors="ignore")
         except OSError:
             continue
 

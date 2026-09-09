@@ -20,6 +20,7 @@ from pathlib import Path
 
 from bob.checks._run import TranslationFunc, config_drifted, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 
 _JOURNALD_CONF   = Path("/etc/systemd/journald.conf")
@@ -379,7 +380,7 @@ def _read_journald_conf() -> tuple[str, str, str]:
     readable = True
     for conf in [_JOURNALD_CONF]:
         try:
-            _parse(conf.read_text(encoding="utf-8", errors="replace"))
+            _parse(read_text_capped(conf, encoding="utf-8", errors="replace"))
         except OSError:
             if path_exists(conf):
                 readable = False
@@ -388,7 +389,7 @@ def _read_journald_conf() -> tuple[str, str, str]:
     try:
         for drop in sorted(_JOURNALD_CONF_D.glob("*.conf")):
             try:
-                _parse(drop.read_text(encoding="utf-8", errors="replace"))
+                _parse(read_text_capped(drop, encoding="utf-8", errors="replace"))
             except OSError:
                 pass
     except OSError:
@@ -409,13 +410,13 @@ def _detect_remote_syslog() -> tuple[str, bool]:
         texts: list[str] = []
         for p in [_RSYSLOG_CONF]:
             try:
-                texts.append(p.read_text(encoding="utf-8", errors="replace"))
+                texts.append(read_text_capped(p, encoding="utf-8", errors="replace"))
             except OSError:
                 pass
         try:
             for drop in sorted(_RSYSLOG_CONF_D.glob("*.conf")):
                 try:
-                    texts.append(drop.read_text(encoding="utf-8", errors="replace"))
+                    texts.append(read_text_capped(drop, encoding="utf-8", errors="replace"))
                 except OSError:
                     pass
         except OSError:
@@ -427,7 +428,7 @@ def _detect_remote_syslog() -> tuple[str, bool]:
     # syslog-ng
     if _command_exists("syslog-ng"):
         try:
-            text = _SYSLOG_NG_CONF.read_text(encoding="utf-8", errors="replace")
+            text = read_text_capped(_SYSLOG_NG_CONF, encoding="utf-8", errors="replace")
             has_remote = bool(_SYSLOGNG_REMOTE_RE.search(text))
         except OSError:
             has_remote = False

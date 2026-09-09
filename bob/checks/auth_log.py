@@ -23,6 +23,7 @@ from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _identity_t, path_exists
 from bob.scoring import CheckResult
+from bob._atomic import read_text_capped
 
 _LOG_PATHS: list[Path] = [
     Path("/var/log/auth.log"),
@@ -169,7 +170,7 @@ class AuthLogSnapshot:
             if not path_exists(path):
                 continue
             try:
-                text = path.read_text(encoding="utf-8", errors="replace")
+                text = read_text_capped(path, encoding="utf-8", errors="replace")
                 lines_read.extend(text.splitlines())
                 snap.log_available = True
                 if len(lines_read) >= max_lines:
