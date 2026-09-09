@@ -60,6 +60,7 @@ _SSHUNIT = "tests/test_v0171_ssh_unit_is_resolved.py"
 _NOSYSD = "tests/test_v0171_no_systemd_is_not_a_verdict.py"
 _OPENRC = "tests/test_v0180_openrc.py"
 _SUIDOWN = "tests/test_v0180_suid_ownership.py"
+_NATIVE = "tests/test_v0180_native_sysctl_apply.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -427,8 +428,9 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         id="apply/executes-a-diagnostic",
         file="bob/fixes.py",
         old='                    if f.cmd and f.cmd_type == "fix"\n'
-            "                    and _can_apply_unattended(f.cmd)]",
-        new="                    if f.cmd and _can_apply_unattended(f.cmd)]",
+            "                    and (f.fix_action or _can_apply_unattended(f.cmd))]",
+        new="                    if f.cmd\n"
+            "                    and (f.fix_action or _can_apply_unattended(f.cmd))]",
         kills=("tests/test_v0164_apply_reads_cmd_type.py::TestADiagnosticIsNeverApplied",),
         reason="the exact v0.16.3 behaviour: `smartctl -a` on a dying disk "
                "reported as '✔ Applied', and the operator told it was fixed",
@@ -447,9 +449,9 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         id="apply/a-real-fix-stops-being-applied",
         file="bob/fixes.py",
         old='                    if f.cmd and f.cmd_type == "fix"\n'
-            "                    and _can_apply_unattended(f.cmd)]",
+            "                    and (f.fix_action or _can_apply_unattended(f.cmd))]",
         new='                    if f.cmd and f.cmd_type == "never"\n'
-            "                    and _can_apply_unattended(f.cmd)]",
+            "                    and (f.fix_action or _can_apply_unattended(f.cmd))]",
         kills=("tests/test_v0164_apply_reads_cmd_type.py::TestADiagnosticIsNeverApplied",),
         reason="the polarity twin: excluding diagnostics must not exclude fixes",
     ),
@@ -457,7 +459,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="apply/counts-a-fix-it-cannot-run",
         file="bob/fixes.py",
-        old="                    and _can_apply_unattended(f.cmd)]",
+        old="                    and (f.fix_action or _can_apply_unattended(f.cmd))]",
         new="                    ]",
         kills=("tests/test_v0164_apply_reads_cmd_type.py::TestTheCountIsAPromiseBobCanKeep",),
         reason="twelve findings with shell operators announced as automatic "
@@ -1360,5 +1362,56 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="Kali drowns one planted SUID root binary among fifteen the "
                "distribution ships; without the split the signal is a line in "
                "a list of sixteen",
+    ),
+    Mutation(
+        id="native/success-claimed-without-reading-back",
+        file="bob/_sysctl_apply.py",
+        old="    if live.split() != value.split():\n        return SysctlResult(False, False, f\"kernel holds {live!r}, not {value!r}\")",
+        new="    pass",
+        kills=(f"{_NATIVE}::TestItReadsBackBeforeClaimingAnything::"
+               "test_a_kernel_holding_another_value_is_not_success",),
+        reason="a kernel can accept the write and hold something else \u2014 a "
+               "clamped range, an aliased key; only the read-back settles it, "
+               "and v0.17.1 was a whole release about fixes reporting success "
+               "without having succeeded",
+    ),
+    Mutation(
+        id="native/live-but-unpersisted-called-applied",
+        file="bob/_sysctl_apply.py",
+        old="        return SysctlResult(True, False, reason)",
+        new="        return SysctlResult(True, True, reason)",
+        kills=(f"{_NATIVE}::TestLiveButNotPersistedIsReported",),
+        reason="live but not persisted reverts at the next reboot while the "
+               "audit reports OK \u2014 the state the shell one-liner could "
+               "reach silently, which is why it moved into code",
+    ),
+    Mutation(
+        id="native/persist-appends-instead-of-replacing",
+        file="bob/_sysctl_apply.py",
+        old="    kept = [ln for ln in existing if not setter.match(ln)]",
+        new="    kept = list(existing)",
+        kills=(f"{_NATIVE}::TestPersistingIsIdempotentByConstruction",),
+        reason="applying twice would leave two lines for one key \u2014 the "
+               "defect v0.17.1 fixed in the advice, reintroduced in the code "
+               "that replaced it",
+    ),
+    Mutation(
+        id="native/parameter-reaches-argv-unchecked",
+        file="bob/_sysctl_apply.py",
+        old="    m = _PARAM_RE.match(param.strip())\n    return (m.group(1), m.group(2).strip()) if m else None",
+        new="    key, _, value = param.partition(\"=\")\n    return (key.strip(), value.strip())",
+        kills=(f"{_NATIVE}::TestNothingButAnAssignmentIsAccepted",),
+        reason="the parameter reaches argv; the table it comes from is exactly "
+               "the kind of thing that grows an entry from somewhere else",
+    ),
+    Mutation(
+        id="native/action-dropped-by-a-wrapper",
+        file="bob/scoring.py",
+        old="        self.add_finding(FindingLevel.INFO, message, detail, cmd=cmd, cmd_type=cmd_type,\n                         key=key, template_vars=template_vars, fix_action=fix_action)",
+        new="        self.add_finding(FindingLevel.INFO, message, detail, cmd=cmd, cmd_type=cmd_type,\n                         key=key, template_vars=template_vars)",
+        kills=(f"{_NATIVE}::TestEveryFindingWrapperCarriesTheAction",),
+        reason="threading it through warn but not info made check_hardening "
+               "raise, fault isolation printed \"section not evaluated\", and "
+               "the suite stayed green for an afternoon",
     ),
 )

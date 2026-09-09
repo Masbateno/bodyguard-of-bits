@@ -88,7 +88,51 @@ The wording refuses to accuse: locally compiled software, vendor installers and
 a deliberate `chmod u+s` all produce binaries no package owns. BOB reports the
 fact and leaves the judgement where the knowledge is.
 
-**Tests** 9528 → **9618**. **Mutations** 117 → **124**.
+**And the sysctl fixes are applied by BOB's own code, not by a shell.**
+
+Thirteen of the fixes BOB proposes read like this:
+
+    sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && { grep -qxF … || echo … | sudo tee -a … ; }
+
+`--fix --apply` refused every one of them, and was right to. A pipeline hides
+its left-hand failure — `/bin/sh` is dash, `pipefail` is off, `false | true`
+exits 0 — and `A && B` can leave a state neither half describes: the value live
+but not persisted, which reverts at the next boot while the audit reports OK.
+
+The command is unchanged, because a one-liner is what a human reads and pastes.
+The same change now also travels as data on the finding — `{"kind": "sysctl",
+"param": "net.ipv4.conf.all.rp_filter=1"}` — and `bob/_sysctl_apply.py` carries
+it out: set the value, persist it through the atomic writer, then **read it
+back**. A kernel can accept a write and hold something else, and only the
+read-back settles that. A parameter that is not an assignment never reaches
+argv: the regex refuses it, because the table it comes from is exactly the kind
+of thing that grows an entry from somewhere else.
+
+Persisting is idempotent by construction. The file is rebuilt with exactly one
+line for the key, so applying twice leaves one line — the defect v0.17.1 fixed
+in the *advice*, made structural in the code that now replaces it. And "live
+but not persisted" reports as a failure with its reason attached, rather than
+being rounded up to success.
+
+Measured end to end on a Debian 13 VM with three settings broken:
+
+    before      0 0 1     no /etc/sysctl.d/99-hardening.conf
+    --fix       2 automatic fixes → 5
+    --apply     5 of 5 fix(es) applied.
+    after       1 1 0     five lines in the file, one per key
+    twice more  still five lines, still one rp_filter
+    re-audit    ✔ Reverse path filtering enabled in strict mode (rp_filter=1)
+
+Two things went wrong on the way and are worth recording. Threading the new
+field through `warn` but not `info` made `check_hardening` raise, and BOB's
+fault isolation did exactly its job — *"Section not evaluated — an internal
+error prevented this check from running"* — which hid the defect from a green
+suite for an afternoon. And the execution-time shell barrier from v0.16.4
+caught the change the first time round, refusing five fixes the selection
+filter had just approved: the two disagreed, which is precisely what that
+barrier is there to make loud.
+
+**Tests** 9528 → **9670**. **Mutations** 117 → **129**.
 
 ---
 

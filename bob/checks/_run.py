@@ -339,6 +339,25 @@ def sysctl_fix_cmd(param: str, conf: str = SYSCTL_CONF) -> str:
     return f"sudo sysctl -w {param} && {{ {append_once(param, conf)}; }}"
 
 
+def sysctl_fix(param: str, conf: str = SYSCTL_CONF) -> dict:
+    """Both halves of a sysctl remediation: what to show, and what to run.
+
+    The command is for a human to read and paste. The action is the same change
+    as data, which `--fix --apply` can carry out through `bob/_sysctl_apply.py`
+    without a shell — see the `fix_action` field on `Finding`. Returned as
+    keyword arguments so a check states the parameter once, spreading them into
+    whichever finding it raises::
+
+        **sysctl_fix("net.ipv4.ip_forward=0")
+
+    (written without the surrounding call: the T31 nature-coverage scanner
+    reads docstrings too, and a warn/alert spelled out here would look like a
+    call site missing its `nature=`.)
+    """
+    return {"cmd": sysctl_fix_cmd(param, conf),
+            "fix_action": {"kind": "sysctl", "param": param, "conf": conf}}
+
+
 #: The SSH server unit, spelled differently depending on who packaged it.
 #: Measured on five machines: Kali has only `ssh.service`, Arch and openSUSE
 #: only `sshd.service`, Debian 13 has both (it ships `ssh.service` with an

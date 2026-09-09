@@ -18,7 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import SYSCTL_CONF, TranslationFunc, _identity_t, sysctl_fix_cmd
+from bob.checks._run import (SYSCTL_CONF, TranslationFunc, _identity_t, sysctl_fix,
+                             sysctl_fix_cmd)
 from bob.scoring import CheckResult
 
 
@@ -103,6 +104,11 @@ _SYSCTL_NAMES = {
 }
 
 
+def _fix(sysctl_key: str, value: int) -> dict:
+    """Command and native action for one kernel sysctl. See `sysctl_fix`."""
+    return sysctl_fix(f"{sysctl_key}={value}")
+
+
 def _fix_cmd(sysctl_key: str, value: int) -> str:
     """Return a sysctl fix command that applies immediately and persists across reboots.
 
@@ -145,7 +151,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
     elif snapshot.aslr == 1:
         result.info(
             message=_t("kernel_hardening.aslr_conservative"),
-            cmd=_fix_cmd("kernel.randomize_va_space", 2),
+            **_fix("kernel.randomize_va_space", 2),
             key="kernel_hardening.aslr_conservative",
         )
     else:
@@ -153,7 +159,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             key="kernel_hardening.aslr_disabled",
             message=_t("kernel_hardening.aslr_disabled"),
             points=1,
-            cmd=_fix_cmd("kernel.randomize_va_space", 2),
+            **_fix("kernel.randomize_va_space", 2),
             nature="action",
         )
 
@@ -170,7 +176,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             key="kernel_hardening.ptrace_unrestricted",
             message=_t("kernel_hardening.ptrace_unrestricted"),
             points=1,
-            cmd=_fix_cmd("kernel.yama.ptrace_scope", 1),
+            **_fix("kernel.yama.ptrace_scope", 1),
             nature="action",
         )
 
@@ -186,7 +192,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
         result.info(
             message=_t("kernel_hardening.suid_dump_root"),
             detail=_t("kernel_hardening.suid_dump_root_detail"),
-            cmd=_fix_cmd("fs.suid_dumpable", 0),
+            **_fix("fs.suid_dumpable", 0),
             key="kernel_hardening.suid_dump_root",
         )
     else:
@@ -195,7 +201,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             message=_t("kernel_hardening.suid_dump_all"),
             points=1,
             detail=_t("kernel_hardening.suid_dump_all_detail"),
-            cmd=_fix_cmd("fs.suid_dumpable", 0),
+            **_fix("fs.suid_dumpable", 0),
             nature="action",
         )
 
@@ -211,7 +217,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
         result.info(
             message=_t("kernel_hardening.kptr_exposed"),
             detail=_t("kernel_hardening.kptr_exposed_detail"),
-            cmd=_fix_cmd("kernel.kptr_restrict", 1),
+            **_fix("kernel.kptr_restrict", 1),
             key="kernel_hardening.kptr_exposed",
         )
 
@@ -227,7 +233,7 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
         result.info(
             message=_t("kernel_hardening.dmesg_exposed"),
             detail=_t("kernel_hardening.dmesg_exposed_detail"),
-            cmd=_fix_cmd("kernel.dmesg_restrict", 1),
+            **_fix("kernel.dmesg_restrict", 1),
             key="kernel_hardening.dmesg_exposed",
         )
 

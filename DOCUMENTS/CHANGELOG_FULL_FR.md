@@ -91,7 +91,53 @@ Le texte refuse d'accuser : un logiciel compilé localement, l'installeur d'un
 propriétaire. BOB rapporte le fait et laisse le jugement là où est la
 connaissance.
 
-**Tests** 9528 → **9618**. **Mutations** 117 → **124**.
+**Et les correctifs sysctl sont appliqués par le code de BOB, pas par un
+shell.**
+
+Treize des corrections que BOB propose se lisent ainsi :
+
+    sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && { grep -qxF … || echo … | sudo tee -a … ; }
+
+`--fix --apply` les refusait toutes, et avait raison. Un tuyau masque l'échec de
+sa partie gauche — `/bin/sh` est dash, `pipefail` est désactivé, `false | true`
+sort en 0 — et `A && B` peut laisser un état qu'aucune des deux moitiés ne
+décrit : la valeur vivante mais non persistée, qui revient au prochain
+démarrage pendant que l'audit annonce OK.
+
+La commande est inchangée : un one-liner est ce qu'un humain lit et colle. Le
+même changement voyage désormais aussi comme donnée sur le constat — `{"kind":
+"sysctl", "param": "net.ipv4.conf.all.rp_filter=1"}` — et `bob/_sysctl_apply.py`
+l'exécute : poser la valeur, la persister via l'écrivain atomique, puis **la
+relire**. Un noyau peut accepter une écriture et retenir autre chose ; seule la
+relecture tranche. Un paramètre qui n'est pas une affectation n'atteint jamais
+argv : l'expression régulière le refuse, car la table d'où il vient est
+exactement le genre de chose qui gagne une entrée venue d'ailleurs.
+
+La persistance est idempotente par construction. Le fichier est reconstruit avec
+exactement une ligne par clé : appliquer deux fois en laisse une — le défaut que
+la v0.17.1 a corrigé dans le *conseil*, rendu structurel dans le code qui le
+remplace. Et « vivant mais non persisté » est rapporté comme un échec avec sa
+raison, au lieu d'être arrondi en succès.
+
+Mesuré de bout en bout sur une VM Debian 13, trois réglages cassés :
+
+    avant       0 0 1     pas de /etc/sysctl.d/99-hardening.conf
+    --fix       2 corrections applicables → 5
+    --apply     5 corrections sur 5 appliquées.
+    après       1 1 0     cinq lignes dans le fichier, une par clé
+    deux fois   toujours cinq lignes, toujours une seule rp_filter
+    ré-audit    ✔ Reverse path filtering enabled in strict mode (rp_filter=1)
+
+Deux choses ont mal tourné en chemin et méritent d'être notées. Passer le
+nouveau champ dans `warn` mais pas dans `info` a fait lever `check_hardening`,
+et l'isolation de fautes de BOB a fait exactement son travail — « Section non
+évaluée — une erreur interne a empêché ce check de tourner » — ce qui a masqué
+le défaut derrière une suite verte pendant un après-midi. Et la barrière shell
+d'exécution de la v0.16.4 a attrapé le changement du premier coup, refusant
+cinq corrections que le filtre de sélection venait d'approuver : les deux
+étaient en désaccord, ce qu'elle existe précisément pour rendre bruyant.
+
+**Tests** 9528 → **9670**. **Mutations** 117 → **129**.
 
 ---
 

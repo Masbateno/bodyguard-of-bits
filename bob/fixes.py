@@ -12,6 +12,7 @@ import re
 import shlex
 import signal
 import subprocess
+from pathlib import Path
 
 from bob import output as _output
 from bob._tty import safe_input
@@ -153,6 +154,27 @@ def _run_fix_command(argv, timeout):
     return ("ok" if proc.returncode == 0 else "failed"), proc.returncode, stderr
 
 
+def _apply_native(action: dict):
+    """Carry out a structured fix in BOB's own code, and report it like a run.
+
+    Returns the same ``(status, code, stderr)`` triple the subprocess path
+    does, so the loop that prints the outcome does not need to know which path
+    ran. A fix that took effect but could not be persisted reports as failed
+    with the reason attached: live-but-not-persisted reverts at the next boot,
+    and calling it applied would be the exact class of lie v0.17.1 spent a
+    release removing.
+    """
+    from bob._sysctl_apply import apply_sysctl
+
+    if action.get("kind") != "sysctl":
+        return "failed", None, b"unknown fix action"
+    result = apply_sysctl(action.get("param", ""),
+                          Path(action.get("conf", "/etc/sysctl.d/99-hardening.conf")))
+    if result.applied and result.persisted:
+        return "ok", 0, b""
+    return "failed", None, result.reason.encode()
+
+
 def run_fixes(engine, config, t) -> None:
     """Display and optionally apply automatic fixes.
 
@@ -178,12 +200,17 @@ def run_fixes(engine, config, t) -> None:
     would have been worse.
     """
     actionable   = [f for f in engine.findings if f.nature == "action"]
-    auto_items   = [(f.message, f.cmd) for f in actionable
+    # v0.18.0: a finding carrying a `fix_action` is applicable whatever its
+    # displayed command looks like. The thirteen sysctl fixes read as shell
+    # one-liners because that is how a human writes a two-step change; BOB
+    # applies them through its own code instead — see bob/_sysctl_apply.py.
+    auto_items   = [(f.message, f.cmd, f.fix_action) for f in actionable
                     if f.cmd and f.cmd_type == "fix"
-                    and _can_apply_unattended(f.cmd)]
+                    and (f.fix_action or _can_apply_unattended(f.cmd))]
     diag_items   = [(f.message, f.cmd) for f in actionable
                     if f.cmd and not (f.cmd_type == "fix"
-                                      and _can_apply_unattended(f.cmd))]
+                                      and (f.fix_action
+                                           or _can_apply_unattended(f.cmd)))]
     manual_items = [f.message for f in actionable if not f.cmd]
 
     _c = _output._c
@@ -219,8 +246,8 @@ def run_fixes(engine, config, t) -> None:
 
     # Sort ufw delete commands descending to avoid renumbering
     _UFW_DELETE_RE = re.compile(r"^(?:sudo\s+)?ufw\s+.*--force\s+delete\s+\d+$")
-    ufw_deletes = [(m, c) for m, c in auto_items if _UFW_DELETE_RE.search(c)]
-    others      = [(m, c) for m, c in auto_items if not _UFW_DELETE_RE.search(c)]
+    ufw_deletes = [it for it in auto_items if _UFW_DELETE_RE.search(it[1])]
+    others      = [it for it in auto_items if not _UFW_DELETE_RE.search(it[1])]
 
     def sort_key(item):
         match = re.search(r"delete (\d+)$", item[1])
@@ -234,7 +261,7 @@ def run_fixes(engine, config, t) -> None:
         _output.print_dim(t('fixes.dry_run_hint',
                             cmd=_output.command('--fix --apply')))
         print()
-        for msg, cmd in sorted_items:
+        for msg, cmd, _action in sorted_items:
             safe_cmd = cmd.replace("\n", " ").strip()
             print(f"  ✖  {msg}")
             # The whole point of this screen is the commands; they are the
@@ -256,7 +283,7 @@ def run_fixes(engine, config, t) -> None:
     skipped_cmds = 0
 
     print()
-    for msg, cmd in sorted_items:
+    for msg, cmd, action in sorted_items:
         safe_cmd = cmd.replace("\n", " ").strip()
         print(f"  ✖  {msg}")
         print(f"  → {_output.command(safe_cmd)}")
@@ -266,15 +293,24 @@ def run_fixes(engine, config, t) -> None:
             answer = safe_input(f"  {t('fixes.apply_prompt')} ").strip().lower()
 
         if answer == "y":
-            if _has_shell_ops(cmd):
+            # v0.18.0: the native path runs no command, so the shell-operator
+            # barrier below does not apply to it. That barrier stays exactly
+            # where it is for everything else — v0.16.4 put it there so that a
+            # command reaching execution after the selection filter let it
+            # through is a disagreement worth failing on, and it caught this
+            # very change the first time round.
+            if _has_shell_ops(cmd) and not action:
                 print(f"  ✖ {t('fixes.manual')} ({t('fixes.skipped_unsafe_shell')})")
                 skipped_cmds += 1
                 print()
                 continue
             try:
-                argv = shlex.split(cmd)
-                timeout = _timeout_for(argv)
-                status, rc, err = _run_fix_command(argv, timeout)
+                if action:
+                    status, rc, err = _apply_native(action)
+                else:
+                    argv = shlex.split(cmd)
+                    timeout = _timeout_for(argv)
+                    status, rc, err = _run_fix_command(argv, timeout)
                 if status == "ok":
                     print(f"  ✔ {t('fixes.applied')}")
                     applied_cmds.append(cmd)

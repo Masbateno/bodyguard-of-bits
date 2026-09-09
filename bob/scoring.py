@@ -157,6 +157,19 @@ class Finding:
     note:          str = ""
     key:           str = ""
     template_vars: dict = field(default_factory=dict)
+    #: v0.18.0 — how BOB can apply this fix itself, without a shell.
+    #:
+    #: ``cmd`` is what an operator reads and may paste; it carries `&&` and `|`
+    #: because that is how a human writes a two-step change. Those operators
+    #: are why `--fix --apply` refuses it: a pipeline hides its left-hand
+    #: failure, and `A && B` can leave a state neither half describes. This
+    #: field is the same change expressed as data — ``{"kind": "sysctl",
+    #: "param": "net.ipv4.conf.all.rp_filter=1"}`` — which BOB applies through
+    #: its own code, idempotently, and reads back afterwards.
+    #:
+    #: A dict rather than a callable: findings are serialised to JSON, CSV,
+    #: Markdown and HTML.
+    fix_action: dict = field(default_factory=dict)
     # Keys of findings from this same audit that qualify this one — "the
     # directives below describe the file, not the running service", say.
     #
@@ -279,6 +292,7 @@ class CheckResult:
         note: str = "",
         key: str = "",
         template_vars: "dict | None" = None,
+        fix_action: "dict | None" = None,
     ) -> None:
         """Convenience method to append a finding. See Finding docstring for template_vars contract."""
         # Contract guard: cmd_type is rendered by display.py as either the "→"
@@ -314,6 +328,7 @@ class CheckResult:
                 level=level, message=message, detail=detail,
                 nature=nature, cmd=cmd, cmd_type=cmd_type, note=note, key=key,
                 template_vars=dict(template_vars) if template_vars else {},
+                fix_action=dict(fix_action) if fix_action else {},
             )
         )
 
@@ -341,24 +356,27 @@ class CheckResult:
         self.add_finding(FindingLevel.OK, message, detail, key=key, template_vars=template_vars)
 
     def info(self, message: str, detail: str = "", cmd: str = "", cmd_type: str = "fix",
-             key: str = "", template_vars: "dict | None" = None) -> None:
+             key: str = "", template_vars: "dict | None" = None,
+             fix_action: "dict | None" = None) -> None:
         """Shorthand for adding an INFO finding."""
         self.add_finding(FindingLevel.INFO, message, detail, cmd=cmd, cmd_type=cmd_type,
-                         key=key, template_vars=template_vars)
+                         key=key, template_vars=template_vars, fix_action=fix_action)
 
     def warn(self, message: str, detail: str = "", nature: str = "improvement", cmd: str = "",
              cmd_type: str = "fix", note: str = "", key: str = "",
-             template_vars: "dict | None" = None) -> None:
+             template_vars: "dict | None" = None,
+             fix_action: "dict | None" = None) -> None:
         """Shorthand for adding a WARN finding."""
         self.add_finding(FindingLevel.WARN, message, detail, nature, cmd, cmd_type, note,
-                         key=key, template_vars=template_vars)
+                         key=key, template_vars=template_vars, fix_action=fix_action)
 
     def alert(self, message: str, detail: str = "", nature: str = "action", cmd: str = "",
               cmd_type: str = "fix", note: str = "", key: str = "",
-              template_vars: "dict | None" = None) -> None:
+              template_vars: "dict | None" = None,
+              fix_action: "dict | None" = None) -> None:
         """Shorthand for adding an ALERT finding."""
         self.add_finding(FindingLevel.ALERT, message, detail, nature, cmd, cmd_type, note,
-                         key=key, template_vars=template_vars)
+                         key=key, template_vars=template_vars, fix_action=fix_action)
 
     def warn_with_deduction(
         self,
@@ -374,6 +392,7 @@ class CheckResult:
         cmd_type: str = "fix",
         note: str = "",
         template_vars: "dict | None" = None,
+        fix_action: "dict | None" = None,
     ) -> None:
         """Add a WARN finding and a matching deduction in one call.
 
@@ -388,7 +407,7 @@ class CheckResult:
         self.warn(
             message=message, detail=detail, nature=nature,
             cmd=cmd, cmd_type=cmd_type, note=note,
-            key=key, template_vars=template_vars,
+            key=key, template_vars=template_vars, fix_action=fix_action,
         )
         self.add_deduction(
             reason=reason if reason is not None else message,
@@ -410,6 +429,7 @@ class CheckResult:
         cmd_type: str = "fix",
         note: str = "",
         template_vars: "dict | None" = None,
+        fix_action: "dict | None" = None,
     ) -> None:
         """Add an ALERT finding and a matching deduction in one call.
 
@@ -418,7 +438,7 @@ class CheckResult:
         self.alert(
             message=message, detail=detail, nature=nature,
             cmd=cmd, cmd_type=cmd_type, note=note,
-            key=key, template_vars=template_vars,
+            key=key, template_vars=template_vars, fix_action=fix_action,
         )
         self.add_deduction(
             reason=reason if reason is not None else message,
