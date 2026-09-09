@@ -141,3 +141,48 @@ class TestTheRenderedCommands:
             if "systemctl" in cmd:
                 assert f"systemctl restart {unit}" in cmd, cmd
             assert "@SSH_UNIT@" not in cmd
+
+
+class TestTheProseAgreesWithTheCommand:
+    """The fix command resolves the unit; the explanation must not contradict it.
+
+    v0.17.0 closed this class for package managers — an explain block saying
+    `apt` beside a `cmd` built for `dnf`. Resolving the SSH unit reopened it in
+    the other direction: on Arch the command says `sshd` while 27 locale
+    strings still said `ssh`.
+    """
+
+    @pytest.mark.parametrize("locale", ["en", "fr"])
+    def test_no_unit_is_named_without_its_alternative(self, locale):
+        import json
+        data = json.loads((_SRC / "locales" / f"{locale}.json")
+                          .read_text(encoding="utf-8"))
+
+        def walk(node, path=""):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    yield from walk(v, f"{path}.{k}")
+            elif isinstance(node, str):
+                yield path.strip("."), node
+
+        bare = []
+        for key, text in walk(data):
+            for m in re.finditer(
+                    r"systemctl (?:restart|reload|status|is-active|start|"
+                    r"enable --now) ssh(?!d)(?![-\w])(.{0,40})", text):
+                if "sshd" not in m.group(1):
+                    bare.append(key)
+        assert not bare, (
+            f"{locale}: prose names Debian's unit with no mention of the other "
+            f"spelling, while the command beside it resolves to sshd on Arch, "
+            f"Fedora, RHEL and openSUSE: {sorted(set(bare))}"
+        )
+
+    @pytest.mark.parametrize("locale", ["en", "fr"])
+    def test_the_alternative_names_the_distributions(self, locale):
+        import json
+        text = (_SRC / "locales" / f"{locale}.json").read_text(encoding="utf-8")
+        assert "sshd" in text and "Arch" in text, (
+            "the note must say which distributions use the other spelling, not "
+            "merely that another exists"
+        )

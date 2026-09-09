@@ -305,7 +305,7 @@ them — busybox ships no `ss`. **BOB cannot read OpenRC at all**, and says so
 instead of pretending. A real OpenRC service check is deferred to v0.18.x,
 where changing what BOB claims about non-systemd hosts belongs.
 
-**None of these fifteen defects is a v0.17.0 regression.** They all predate it
+**None of these defects is a v0.17.0 regression.** They all predate it
 by many releases; v0.17.0 simply shipped hours before the machines that could
 see them existed. v0.17.0 is not yanked: it remains strictly better than
 v0.16.4.
@@ -314,7 +314,7 @@ Six real machines found all but one, which came from the field.
 Containers could not have found them: they share the host kernel, so every
 sysctl reading is the host's, and nothing in them is ever mid-`dpkg`.
 
-**Tests** 9240 → **9524**. **Mutations** 87 → **117**.
+**Tests** 9240 → **9528**. **Mutations** 87 → **117**.
 
 ---
 

@@ -1111,17 +1111,17 @@
   "ssh": {
     "config_unreadable": "sshd_config exists but could not be read",
     "config_newer_than_service": "{path} was modified at {changed}, after sshd last applied its configuration at {applied} — the SSH findings below describe the file, not the running service",
-    "config_newer_than_service_detail": "sshd reads its configuration when it starts and when it is reloaded. An edit that has not been applied is an intention, not a behaviour, and this cuts both ways: a directive that still looks wrong here may already be fixed, and — the case that matters — a file you have just hardened does not protect the daemon still answering on the port. Apply it and re-run: sudo systemctl reload ssh",
+    "config_newer_than_service_detail": "sshd reads its configuration when it starts and when it is reloaded. An edit that has not been applied is an intention, not a behaviour, and this cuts both ways: a directive that still looks wrong here may already be fixed, and — the case that matters — a file you have just hardened does not protect the daemon still answering on the port. Apply it and re-run: sudo systemctl reload ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE",
     "config_unreadable_detail": "Every directive below would fall back to OpenSSH's compiled-in default rather than to this host's setting, so a config holding `PermitRootLogin yes` would be reported as restricted. BOB analyses no directive at all instead. Check with: sudo sshd -T",
     "not_installed": "SSH server (sshd) is not installed",
     "not_installed_detail": "If SSH access is needed: {cmd}",
         "active_unknown": "SSH server state could not be determined",
-    "active_unknown_detail": "systemd did not report a state for the ssh/sshd unit \u2014 `systemctl is-active` returned nothing usable, so the daemon may well be running. BOB withholds the verdict rather than warning that a running sshd is stopped. Check with: systemctl is-active ssh",
+    "active_unknown_detail": "systemd did not report a state for the ssh/sshd unit \u2014 `systemctl is-active` returned nothing usable, so the daemon may well be running. BOB withholds the verdict rather than warning that a running sshd is stopped. Check with: systemctl is-active ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE",
 "not_active": "SSH server is installed but not running",
     "not_active_detail": "The service is disabled — enable it if SSH access is needed.",
     "active": "SSH server is active",
     "permit_root_login": "Root login via SSH is permitted (PermitRootLogin = {value})",
-    "permit_root_login_detail": "Set PermitRootLogin no in /etc/ssh/sshd_config, then: sudo systemctl restart ssh",
+    "permit_root_login_detail": "Set PermitRootLogin no in /etc/ssh/sshd_config, then: sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE",
     "permit_root_login_disabled": "Root login disabled (PermitRootLogin = no)",
     "permit_root_login_restricted": "Root login restricted to key-based auth (PermitRootLogin = {value})",
     "password_auth": "Password authentication is enabled (PasswordAuthentication = yes)",
@@ -1436,32 +1436,32 @@
       "password_auth": {
         "title": "Password authentication enabled (PasswordAuthentication yes)",
         "why": "Allows anyone to attempt to guess passwords via brute force. Millions of bots scan the internet 24/7 trying common passwords against SSH port 22. A weak or reused password is all it takes for a full compromise.",
-        "how": "1. Generate a key pair if you don't have one:\n   ssh-keygen -t ed25519\n2. Copy your public key to the server:\n   ssh-copy-id user@server\n3. Disable password auth:\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Generate a key pair if you don't have one:\n   ssh-keygen -t ed25519\n2. Copy your public key to the server:\n   ssh-copy-id user@server\n3. Disable password auth:\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "permit_root_login": {
         "title": "Root SSH login permitted (PermitRootLogin)",
         "why": "Direct root login bypasses audit trails and gives full system access from the first connection. If an attacker guesses or steals the root credential, no further privilege escalation is needed — the server is fully compromised immediately.",
-        "how": "1. Ensure a regular user with sudo rights exists\n2. Disable root login:\n   sudo nano /etc/ssh/sshd_config  →  PermitRootLogin no\n3. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Ensure a regular user with sudo rights exists\n2. Disable root login:\n   sudo nano /etc/ssh/sshd_config  →  PermitRootLogin no\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "permit_empty_passwords": {
         "title": "Empty passwords allowed (PermitEmptyPasswords yes)",
         "why": "Any account without a password is directly accessible over SSH with a blank password. This is an immediate full-access vulnerability requiring zero effort from an attacker.",
-        "how": "1. Disable empty passwords:\n   sudo nano /etc/ssh/sshd_config  →  PermitEmptyPasswords no\n2. Lock accounts with empty passwords:\n   sudo passwd -l <username>\n3. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Disable empty passwords:\n   sudo nano /etc/ssh/sshd_config  →  PermitEmptyPasswords no\n2. Lock accounts with empty passwords:\n   sudo passwd -l <username>\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "allow_tcp_forwarding": {
         "title": "TCP forwarding enabled (AllowTcpForwarding yes)",
         "why": "TCP forwarding lets any authenticated user tunnel arbitrary TCP traffic through SSH. An attacker with a valid account can pivot to internal services that are not directly reachable from the internet.",
-        "how": "1. Disable TCP forwarding:\n   sudo nano /etc/ssh/sshd_config  →  AllowTcpForwarding no\n2. If specific users need port forwarding, use:\n   AllowTcpForwarding local\n3. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Disable TCP forwarding:\n   sudo nano /etc/ssh/sshd_config  →  AllowTcpForwarding no\n2. If specific users need port forwarding, use:\n   AllowTcpForwarding local\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "pubkey_auth_disabled": {
         "title": "Public key authentication disabled (PubkeyAuthentication no)",
         "why": "Disabling public key authentication forces all users onto password login. This removes the strongest authentication mechanism available and makes the server entirely dependent on password strength.",
-        "how": "1. Enable key-based authentication:\n   sudo nano /etc/ssh/sshd_config  →  PubkeyAuthentication yes\n2. Generate a key pair:\n   ssh-keygen -t ed25519\n3. Copy the key to the server:\n   ssh-copy-id user@server\n4. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Enable key-based authentication:\n   sudo nano /etc/ssh/sshd_config  →  PubkeyAuthentication yes\n2. Generate a key pair:\n   ssh-keygen -t ed25519\n3. Copy the key to the server:\n   ssh-copy-id user@server\n4. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "dsa_key": {
         "title": "DSA host key in use",
         "why": "DSA keys are cryptographically broken and deprecated in OpenSSH 7.0+. The algorithm offers only 1024-bit security and is vulnerable to attacks when the random number generator produces weak values.",
-        "how": "1. Remove the DSA host key:\n   sudo rm /etc/ssh/ssh_host_dsa_key*\n2. Regenerate all host keys:\n   sudo ssh-keygen -A\n3. Restart SSH:\n   sudo systemctl restart ssh\n4. Remove old fingerprints from clients:\n   ssh-keygen -R <hostname>"
+        "how": "1. Remove the DSA host key:\n   sudo rm /etc/ssh/ssh_host_dsa_key*\n2. Regenerate all host keys:\n   sudo ssh-keygen -A\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE\n4. Remove old fingerprints from clients:\n   ssh-keygen -R <hostname>"
       },
       "no_passphrase": {
         "title": "Private key without passphrase",
@@ -1476,57 +1476,57 @@
       "ignore_rhosts_disabled": {
         "title": "IgnoreRhosts disabled — .rhosts files trusted",
         "why": ".rhosts files allow passwordless login based on hostname alone. Hostnames can be spoofed, making this a trivial authentication bypass that has been obsolete for decades.",
-        "how": "1. Enable IgnoreRhosts (the default):\n   sudo nano /etc/ssh/sshd_config  →  IgnoreRhosts yes\n2. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Enable IgnoreRhosts (the default):\n   sudo nano /etc/ssh/sshd_config  →  IgnoreRhosts yes\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "host_based_auth": {
         "title": "Host-based authentication enabled",
         "why": "Host-based authentication trusts the identity of a remote host rather than a user credential. If the trusted host is compromised, attackers automatically gain access to this server without any further authentication.",
-        "how": "1. Disable host-based authentication (the default):\n   sudo nano /etc/ssh/sshd_config  →  HostbasedAuthentication no\n2. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Disable host-based authentication (the default):\n   sudo nano /etc/ssh/sshd_config  →  HostbasedAuthentication no\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "strict_modes_disabled": {
         "title": "SSH StrictModes disabled",
         "why": "Without StrictModes, sshd skips permission checks on ~/.ssh and key files. World-readable private keys or group-writable home directories are silently accepted, effectively nullifying file permission security.",
-        "how": "1. Enable StrictModes (the default):\n   sudo nano /etc/ssh/sshd_config  →  StrictModes yes\n2. Fix file permissions:\n   chmod 700 ~/.ssh\n   chmod 600 ~/.ssh/authorized_keys\n3. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Enable StrictModes (the default):\n   sudo nano /etc/ssh/sshd_config  →  StrictModes yes\n2. Fix file permissions:\n   chmod 700 ~/.ssh\n   chmod 600 ~/.ssh/authorized_keys\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "max_auth_tries": {
         "title": "Too many authentication attempts allowed (MaxAuthTries > 3)",
         "why": "Each failed SSH attempt can probe valid usernames and test credentials. With the default of 6 attempts, an automated attack can test many passwords per connection before being disconnected. Reducing to 3 limits the credential surface per connection and makes brute-force campaigns significantly slower.",
-        "how": "1. Reduce MaxAuthTries:\n   sudo nano /etc/ssh/sshd_config  →  MaxAuthTries 3\n2. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Reduce MaxAuthTries:\n   sudo nano /etc/ssh/sshd_config  →  MaxAuthTries 3\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "permit_user_env": {
         "title": "User environment variables allowed (PermitUserEnvironment yes)",
         "why": "Allowing users to set environment variables via ~/.ssh/environment or authorized_keys options enables privilege escalation through environment manipulation: LD_PRELOAD, PATH, or PYTHONPATH overrides can redirect execution to attacker-controlled code even when the binary is trusted.",
-        "how": "1. Disable user environment:\n   sudo nano /etc/ssh/sshd_config  →  PermitUserEnvironment no\n2. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Disable user environment:\n   sudo nano /etc/ssh/sshd_config  →  PermitUserEnvironment no\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "weak_ciphers": {
         "title": "Weak SSH cipher suites in use",
         "why": "Legacy ciphers (3DES-CBC, arcfour/RC4, blowfish-CBC, CBC-mode AES) are cryptographically weak or broken. CBC-mode ciphers are vulnerable to BEAST and Lucky13 attacks. RC4 has statistical biases exploitable with enough traffic. An attacker recording sessions could later decrypt them.",
-        "how": "1. Restrict to strong ciphers:\n   sudo nano /etc/ssh/sshd_config\n   Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr\n2. Restart SSH:\n   sudo systemctl restart ssh\n3. Test your client still connects:\n   ssh -Q cipher  # lists supported ciphers"
+        "how": "1. Restrict to strong ciphers:\n   sudo nano /etc/ssh/sshd_config\n   Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE\n3. Test your client still connects:\n   ssh -Q cipher  # lists supported ciphers"
       },
       "weak_macs": {
         "title": "Weak SSH MAC algorithms in use",
         "why": "Weak MACs (hmac-md5, hmac-sha1, umac-64) are vulnerable to collision attacks. A compromised MAC means message integrity cannot be guaranteed — an attacker in a man-in-the-middle position could tamper with session data in transit without detection. MD5 and SHA-1 are no longer collision-resistant.",
-        "how": "1. Restrict to strong MACs:\n   sudo nano /etc/ssh/sshd_config\n   MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com\n2. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Restrict to strong MACs:\n   sudo nano /etc/ssh/sshd_config\n   MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "weak_kex": {
         "title": "Weak SSH key exchange algorithms in use",
         "why": "Weak KEX algorithms (diffie-hellman-group1-sha1 uses a 1024-bit group; diffie-hellman-group14-sha1 uses deprecated SHA-1) offer insufficient forward secrecy. Nation-state actors have demonstrated precomputation attacks against standard 1024-bit DH groups (Logjam). Compromised KEX means the session key can be recovered after the fact.",
-        "how": "1. Restrict to strong KEX:\n   sudo nano /etc/ssh/sshd_config\n   KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512\n2. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Restrict to strong KEX:\n   sudo nano /etc/ssh/sshd_config\n   KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "rsa_weak": {
         "title": "RSA host key too short (< 4096 bits)",
         "why": "RSA keys shorter than 4096 bits are considered weak by modern cryptographic standards. As computing power increases and factorisation attacks improve, short keys become feasible to break. Keys under 2048 bits are practically broken today.",
-        "how": "1. Generate a new 4096-bit RSA host key:\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Or prefer Ed25519 (shorter but stronger):\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n3. Restart SSH:\n   sudo systemctl restart ssh\n4. Remove old host fingerprints on clients:\n   ssh-keygen -R <hostname>"
+        "how": "1. Generate a new 4096-bit RSA host key:\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Or prefer Ed25519 (shorter but stronger):\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE\n4. Remove old host fingerprints on clients:\n   ssh-keygen -R <hostname>"
       },
       "login_grace_time": {
         "title": "LoginGraceTime too long (> 60s)",
         "why": "A long grace period keeps unauthenticated TCP connections open for longer than necessary. An attacker can hold open many parallel SSH connections without completing authentication, potentially exhausting connection limits and degrading service for legitimate users.",
-        "how": "1. Reduce LoginGraceTime:\n   sudo nano /etc/ssh/sshd_config  →  LoginGraceTime 30\n2. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Reduce LoginGraceTime:\n   sudo nano /etc/ssh/sshd_config  →  LoginGraceTime 30\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "no_allow_users": {
         "title": "No AllowUsers / AllowGroups restriction in SSH config",
         "why": "Without AllowUsers or AllowGroups, every system account with a valid credential can attempt SSH login — including service accounts, daemon users, and legacy accounts not intended for remote access. Restricting SSH to specific users dramatically reduces the attack surface.",
-        "how": "1. Decide which users or groups need SSH access\n2. Add an AllowUsers directive:\n   sudo nano /etc/ssh/sshd_config  →  AllowUsers alice bob deploy\n3. Or restrict by group:\n   AllowGroups sshusers\n   sudo addgroup sshusers && sudo adduser alice sshusers\n4. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Decide which users or groups need SSH access\n2. Add an AllowUsers directive:\n   sudo nano /etc/ssh/sshd_config  →  AllowUsers alice bob deploy\n3. Or restrict by group:\n   AllowGroups sshusers\n   sudo addgroup sshusers && sudo adduser alice sshusers\n4. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "private_key_perms": {
         "title": "SSH private key file permissions too open",
@@ -1586,7 +1586,7 @@
       "host_key_dsa": {
         "title": "SSH host key uses DSA (deprecated and considered insecure)",
         "why": "DSA host keys are limited to 1024 bits and use a signature algorithm vulnerable to nonce-reuse attacks. OpenSSH dropped support for DSA host keys by default in version 7.0 (2015) — modern clients refuse to connect to a server presenting only a DSA host key. The key being present means the host was either upgraded from a very old install or somebody intentionally re-enabled DSA. Either way, the cryptographic posture is weak.",
-        "how": "1. Generate a modern host key (ed25519, the recommended choice for new keys):\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n2. Ensure sshd_config does NOT include the DSA key (remove or comment out):\n   HostKey /etc/ssh/ssh_host_dsa_key   # <-- remove this line\n3. Remove the DSA key files:\n   sudo rm /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub\n4. Restart sshd:\n   sudo systemctl restart ssh\nNote: existing SSH clients will see a 'host key changed' warning the first time after key removal. Communicate the change to legitimate users.",
+        "how": "1. Generate a modern host key (ed25519, the recommended choice for new keys):\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n2. Ensure sshd_config does NOT include the DSA key (remove or comment out):\n   HostKey /etc/ssh/ssh_host_dsa_key   # <-- remove this line\n3. Remove the DSA key files:\n   sudo rm /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub\n4. Restart sshd:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE\nNote: existing SSH clients will see a 'host key changed' warning the first time after key removal. Communicate the change to legitimate users.",
         "server": {
           "why": "On any server, DSA host keys should not exist in 2026. Generate ed25519 (and optionally RSA-4096 for legacy client compatibility), remove DSA, restart sshd."
         },
@@ -1600,7 +1600,7 @@
       "not_active": {
         "title": "SSH server is installed but the sshd service is not running",
         "why": "The openssh-server package is installed but sshd is not active — operators cannot connect via SSH. Whether this is a problem depends on intent. On a server, SSH is typically the primary administration channel — having it dormant after a reboot means a console drive is required to recover access. On a desktop without remote management, an inactive sshd is the safe state and the package could simply be uninstalled.",
-        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nIf SSH IS wanted (typical for servers):\n1. Start and enable the service:\n   sudo systemctl enable --now ssh\n2. Verify it is listening:\n   ss -tlnp | grep :22\n3. Confirm authentication works from a known-good client.\nIf SSH is NOT wanted (typical for non-administered desktops):\n1. Stop and disable cleanly:\n   sudo systemctl disable --now ssh\n2. Optional — remove the package entirely:\n   sudo apt remove --purge openssh-server",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nIf SSH IS wanted (typical for servers):\n1. Start and enable the service:\n   sudo systemctl enable --now ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE\n2. Verify it is listening:\n   ss -tlnp | grep :22\n3. Confirm authentication works from a known-good client.\nIf SSH is NOT wanted (typical for non-administered desktops):\n1. Stop and disable cleanly:\n   sudo systemctl disable --now ssh\n2. Optional — remove the package entirely:\n   sudo apt remove --purge openssh-server",
         "server": {
           "why": "On a server, an inactive sshd typically means a maintenance session was not reversed. Re-enable; without SSH, the next remote intervention requires hardware console access."
         },
@@ -1616,7 +1616,7 @@
           "server": {
             "title": "X11 forwarding enabled (X11Forwarding yes)",
             "why": "X11 forwarding exposes your local X11 display to a remote server. A malicious or compromised remote host could capture keystrokes and screen contents from your X session.",
-            "how": "1. Disable X11 forwarding:\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. If genuinely needed, ensure X11UseLocalhost yes is also set\n3. Restart SSH:\n   sudo systemctl restart ssh"
+            "how": "1. Disable X11 forwarding:\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. If genuinely needed, ensure X11UseLocalhost yes is also set\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
           },
           "client": {
             "title": "Client X11 forwarding enabled (ForwardX11 yes)",
@@ -1645,7 +1645,7 @@
       "ssh_host_key_perms": {
         "title": "SSH host key permissions too open",
         "why": "SSH host private keys must be readable only by root. If a non-root user can read the host key, they can impersonate this server to any client — enabling a man-in-the-middle attack on future SSH connections.",
-        "how": "1. Restrict permissions:\n   sudo chmod 600 <path>\n2. Verify root ownership:\n   sudo chown root:root <path>\n3. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "1. Restrict permissions:\n   sudo chmod 600 <path>\n2. Verify root ownership:\n   sudo chown root:root <path>\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       }
     },
     "updates": {
@@ -1742,7 +1742,7 @@
       "blocked_repeat_public": {
         "title": "Repeated blocked connection attempts from one source",
         "why": "UFW logged more than ten separate connection attempts from one public address to one port within a minute, and dropped every one of them. That is what was measured, and it is worth knowing: something is probing a port on this host persistently. What it does *not* establish is a brute-force attack. A UFW BLOCK is a packet the firewall discarded — it never reached a service, so no credential was ever offered, and repeated credential guessing cannot be read from dropped packets. This finding used to say \"Bruteforce attempts\" anyway, and it counted packets rather than attempts, so one client the kernel was retrying could cross the threshold on its own. It now counts distinct source ports, which separates a retransmission from a new attempt, and traffic from the local network or over UDP is reported without a deduction because neither can be an authentication attack.",
-        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nLayered response:\n1. Install fail2ban if not present and enable the jail for the targeted service (sshd is the most common):\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # ensure the relevant jail has enabled=true\n2. Restrict the service to known IPs at the firewall layer:\n   sudo ufw allow from <trusted-ip> to any port 22\n   sudo ufw delete allow 22   # if a broader rule existed\n3. For SSH specifically, disable password auth (force pubkey only):\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh",
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\nLayered response:\n1. Install fail2ban if not present and enable the jail for the targeted service (sshd is the most common):\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # ensure the relevant jail has enabled=true\n2. Restrict the service to known IPs at the firewall layer:\n   sudo ufw allow from <trusted-ip> to any port 22\n   sudo ufw delete allow 22   # if a broader rule existed\n3. For SSH specifically, disable password auth (force pubkey only):\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE",
         "server": {
           "why": "On a public-facing server, brute force attempts are constant. fail2ban + key-only SSH is the baseline. Without either, account compromise is a matter of time."
         },
@@ -2622,7 +2622,7 @@
       "legacy_account": {
         "title": "Raspberry Pi's default account can still log in",
         "why": "Raspberry Pi OS shipped a `pi` account until 2022, and every tutorial written before then still tells people to use it. Half of a credential is the username, and this one is known to everyone — including every scanner that has ever probed port 22.\n\nAn account whose name an attacker already has is one guess away from a login attempt that costs them nothing. Combined with password authentication over SSH and a Pi reachable from the internet, that is the single most common way these boards are taken over.\n\nBOB reports that the account exists, has a password set and has a login shell. It deliberately does not test whether the password is still the distribution's historical default: that requires a crypt implementation, and `crypt` was removed from the Python standard library in 3.13, which BOB supports. A check that works on three interpreter versions and stops working on the next would be worse than saying so.",
-        "how": "1. Establish whether the account is still in use:\n   sudo lastlog -u pi\n   sudo grep -rn '\\bpi\\b' /etc/cron* /etc/sudoers /etc/sudoers.d /etc/systemd/system 2>/dev/null\n2. If nothing depends on it, create your own account and remove this one:\n   sudo adduser <yourname>\n   sudo usermod -aG sudo <yourname>\n   (log in as the new account, verify sudo works, then:)\n   sudo deluser --remove-home pi\n3. If something does depend on it, lock the login instead of deleting:\n   sudo passwd -l pi\n   sudo usermod -s /usr/sbin/nologin pi\n4. Whatever you choose, turn off SSH password authentication and use a key:\n   sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh"
+        "how": "1. Establish whether the account is still in use:\n   sudo lastlog -u pi\n   sudo grep -rn '\\bpi\\b' /etc/cron* /etc/sudoers /etc/sudoers.d /etc/systemd/system 2>/dev/null\n2. If nothing depends on it, create your own account and remove this one:\n   sudo adduser <yourname>\n   sudo usermod -aG sudo <yourname>\n   (log in as the new account, verify sudo works, then:)\n   sudo deluser --remove-home pi\n3. If something does depend on it, lock the login instead of deleting:\n   sudo passwd -l pi\n   sudo usermod -s /usr/sbin/nologin pi\n4. Whatever you choose, turn off SSH password authentication and use a key:\n   sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       }
     },
     "secure_boot": {
@@ -2691,7 +2691,7 @@
       "brute_force": {
         "title": "Brute-force attacks detected in authentication logs",
         "why": "Repeated failed login attempts indicate active automated attacks against this machine. If password authentication or weak credentials are in use, persistent brute-force campaigns will eventually succeed. Even with strong passwords, flood attacks consume CPU and lock out legitimate users.",
-        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install and configure fail2ban:\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Verify the SSH jail is active:\n   sudo fail2ban-client status sshd\n3. Disable password authentication (use keys only):\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Reduce MaxAuthTries:\n   MaxAuthTries 3\n5. Restart SSH:\n   sudo systemctl restart ssh"
+        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install and configure fail2ban:\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Verify the SSH jail is active:\n   sudo fail2ban-client status sshd\n3. Disable password authentication (use keys only):\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Reduce MaxAuthTries:\n   MaxAuthTries 3\n5. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch, Fedora, RHEL, openSUSE"
       },
       "public_login": {
         "title": "Successful logins from public IP addresses detected",

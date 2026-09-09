@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 9524 unit tests · 21 doc files · 5+ distros field-tested │
+│                 9528 unit tests · 21 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -296,7 +296,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 250 test files, ~6032 functions, 9524 collected (v0.17.1)
+├── tests/                     ← 250 test files, ~6034 functions, 9528 collected (v0.17.1)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -342,7 +342,7 @@ bodyguard-of-bits/
 | `recurrence.py` | 102 | Recurring finding tracker: consecutive-audit counters |
 | `history.py` | 191 | `--history` sparkline, JSONL append at `~/.config/bob/history.jsonl`, rotate@1000 |
 | `ignore.py` | 201 | Persistent ignore list `~/.config/bob/ignore.yml`; canonical key regex validation (v0.7.1 M-3); `--unignore` symmetric helper (v0.8.1 T57). v0.10.0 D-4 back-compat for legacy umbrella entries is centralised in `scoring.py::ScoreEngine.apply`, not here. |
-| `fixes.py` | 148 | `--fix` interactive UI with [y/N] prompts |
+| `fixes.py` | 148 | `--fix` interactive UI with [y/N] prompts; `_run_fix_command()` runs each fix in its own session so a timeout stops the whole tree (v0.17.1), `_timeout_for()` gives package transactions minutes rather than seconds |
 | `cron/` (package) | **1628** | Split in v0.6.0 from 1204 L monolith. `__init__.py` (112) re-exports the public surface incl. `datetime` + `_EMAIL_RE` · `_parse.py` (369) CronEntry + parsing + validators + MTA detection + day helpers · `_io.py` (193) delegates to `bob/_atomic.py` (v0.6.1) + `build_script_content(notify_email, log_dir, audit_options="")` + `apply_cron_schedule` / `apply_cron_email` · `_options.py` (94) **v0.16.1** `CRON_PROFILES` / `CRON_LANGS` / `build_audit_options` / `default_dimensions` — the profile, language and network dimensions a scheduled audit pins, built from closed sets only because the result lands in a root-owned script · `_install.py` (408) prompt_emails/prompt_email + `_prompt_choice` + plain wizard + `run_install_cron` · `_manage.py` (452) `_manage_email_store` + edit_cron_email/schedule + plain wizard + `run_manage_cron` |
 | `tui/_keys.py` | 205 | **v0.16.3** the key contract every curses screen obeys. Action constants (`MOVE`/`PAGE`/`EDGE`/`SELECT`/`BACK`/`QUIT`/`LANG` + per-screen ones), `NAVIGATION` (the floor every list gets), `LANDING_EXIT` vs `NESTED_EXIT`, `resolve()` / `direction()` / `is_top()` for the dispatch, `footer_lines()` which composes the translated hint line and wraps it rather than truncating, `conflicts()`, and `toggle_language()`. A screen declares its actions once and both the footer and the dispatch derive from that, so the line and the bindings cannot drift apart. Never imports curses — the constants are resolved against a module passed in — so `bob-core` stays importable. **Do not spell key hints out anywhere else**; a guard rejects it |
 | `tui/_palette.py` | 102 | **v0.16.1** the five curses colour pairs, defined once. `SELECTION` / `ACCENT` / `NORMAL` / `NOTICE` / `BANNER` + `init_palette(curses, notice=)` + `selection_background(curses)`. Before it, `explain.py`, `manage_logs.py` and `tui/cron.py` each called `init_pair` themselves with the same chart — they agreed, which is why the cursor row and the banner shared a cyan background on all three screens. Selection is now orange (xterm-256 index 208, falling back to `COLOR_YELLOW` on an 8-colour terminal). `notice` is the one per-screen slot: red for a warning list, cyan for `--explain`'s detail heading. **Do not call `init_pair` outside this module** — a guard rejects it. **v0.16.3** adds `marked_attr(curses, has_color)`: a row toggled with Space reads red bold, or underlined without colour, on every screen — it was red in `--manage-logs`, yellow in `--manage-cron` and uncoloured in both e-mail screens. **v0.16.3** also adds three pairs: `PROFILE` (the `[ profile ]` heading in `--explain`), `FOOTER` (white on orange — the key banner) and `CONTEXT` (white on black — the line reserved above it). All three take their orange from the same `selection_background()` call as the cursor row, so the chart cannot disagree with itself |
@@ -361,7 +361,7 @@ bodyguard-of-bits/
 | `csv_output.py` | 112 | `--format csv` formatter; **BREAKING v0.7.3 I-3**: column renamed `section` → `nature` to match the Finding field it actually carries |
 | `html_output.py` | 289 | `build_html_output()` standalone HTML (no JS, XSS-safe); i18n via `t` (v0.7.2 M-4); section descriptions (v0.8.2 T39); uses `_i18n_safe.make_fallback_t` |
 | `markdown_output.py` | 246 | `--format markdown` formatter; i18n via `t` + level emoji prefixes (v0.7.2 M-4); uses `_i18n_safe.make_fallback_t` |
-| `sysinfo.py` | 286 | `collect_system_info()`, `detect_network_context()`, `get_user_home()` (sudo-aware); `_is_private_or_loopback_ipv4/_ipv6` single source of truth since v0.5.x |
+| `sysinfo.py` | 286 | `collect_system_info()`, `detect_network_context()`, `get_user_home()` (sudo-aware), `audit_user()` (v0.17.1 — measured from `geteuid()`, not read from `$USER`); hostname and kernel come from `os.uname()`; `_is_private_or_loopback_ipv4/_ipv6` single source of truth since v0.5.x |
 | `_paths.py` | 53 | `resolve_share_dir()`: BOB_SHARE only — `UFW_AUDIT_SHARE` legacy alias **removed in v0.6.0** after the v0.4.2 → v0.5.4 deprecation chain |
 | `_tty.py` | 137 | `safe_input(prompt)` thin EOFError-swallowing wrapper around `input()` (v0.6.1 I-2), `read_line(prompt) → str|None`, Esc returns None, TTY fallback; `prompt_wizard()` helper added v0.5.x |
 
@@ -391,7 +391,7 @@ bodyguard-of-bits/
 | `hardening.py` | 275 | hardening | sysctl net.* / fs.* (rp_filter, send_redirects, syncookies…) |
 | `kernel_hardening.py` | 193 | hardening | sysctl kernel.* (ASLR, ptrace_scope, kptr_restrict…) |
 | `kernel_modules.py` | 487 | hardening | risky modules + apt kernel updates + installed listing (dpkg `ii` filter since v0.4.6) |
-| `mac_policy.py` | 297 | hardening | AppArmor / SELinux state, 0-profile case |
+| `mac_policy.py` | 297 | hardening | AppArmor / SELinux state; the 0-profile case is read from securityfs (v0.17.1), because `aa-status` cannot tell "not allowed to look" from "nothing loaded" |
 | `updates.py` | 363 | updates | `apt-get -s dist-upgrade`, stale cache, cross-check (since v0.4.4); cache-age INFO option C when no security/regular finding (v0.5.3+) |
 | `ssh/` (package) | **1524** | ssh | **Split in v0.6.0** from 1296 L monolith. `__init__.py` (64) re-exports for backwards-compat · `_directives.py` (202) `_BadDirective` + `_BAD_DIRECTIVES` + `_apply_bad_directive` + `_WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX` · `_snapshot.py` (207) 5 dataclasses (HostKeyInfo, PrivateKeyInfo, AuthorizedKeyEntry, KnownHostEntry, ClientConfigEntry) + SSHSnapshot · `_parsers.py` (446) pure parsers + RSA-bits + collect_host_keys + install probe · `_subchecks.py` (605) `check_ssh` + all `_check_*` helpers + v0.10.1 D-4 Rank 1 client-side `ForwardX11` detection (`ssh.x11.forwarding.client`) |
 | `file_perms.py` | 303 | file_perms | /etc/passwd, /etc/shadow, sudoers, SSH host keys |
@@ -554,7 +554,7 @@ def check_xxx(snapshot: XxxSnapshot, t: TranslationFunc | None = None) -> CheckR
 >
 > Note (v0.5.x): `CheckResult.warn_with_deduction()` and `.alert_with_deduction()` fuse the two-step `warn/alert(...) + add_deduction(...)` pattern into a single call. ~120 sites in `bob/checks/*.py` were migrated during the v0.5.0–v0.5.4 refactor (net −519 LoC). The two-step pattern still works (additive change), but new code should use the fused helpers.
 
-**Why it matters**: pulls the I/O side effects to a single function (`from_system`), making `check_xxx` deterministic for unit tests. **Do not break this contract during refactoring** — it's the foundation for the ~9524-test suite running with no mocks.
+**Why it matters**: pulls the I/O side effects to a single function (`from_system`), making `check_xxx` deterministic for unit tests. **Do not break this contract during refactoring** — it's the foundation for the ~9528-test suite running with no mocks.
 
 ### 2. Subprocess via `_run()` helper (every check *module* uses this)
 
@@ -901,7 +901,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 250 test files, ~6032 functions, **9524 collected** (v0.17.1) | `pytest --collect-only -q` |
+| Tests | 250 test files, ~6034 functions, **9528 collected** (v0.17.1) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

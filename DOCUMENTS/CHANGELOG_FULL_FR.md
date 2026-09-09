@@ -328,7 +328,7 @@ pas lire OpenRC du tout**, et le dit au lieu de faire semblant. Un vrai check
 OpenRC est reporté en v0.18.x, où change ce que BOB affirme des hôtes sans
 systemd.
 
-**Aucun de ces quinze défauts n'est une régression de la v0.17.0.** Tous la
+**Aucun de ces défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
@@ -337,7 +337,7 @@ Six machines réelles les ont tous trouvés sauf un, remonté du terrain. Des co
 l'hôte, donc toute lecture sysctl est celle de l'hôte, et rien en eux n'est
 jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9524**. **Mutations** 87 → **117**.
+**Tests** 9240 → **9528**. **Mutations** 87 → **117**.
 
 ---
 

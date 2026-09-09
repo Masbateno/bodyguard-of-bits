@@ -187,7 +187,16 @@ bob/
 │   │                       #   ou apk ; dpkg seul lisait tout service comme
 │   │                       #   absent sur 4 distros sur 5 (v0.15.2),
 │   │                       #   join_continuations(), strip_unit_glyph(),
-│   │                       #   pipes_into_shell() — une seule copie par règle
+│   │                       #   pipes_into_shell() — une seule copie par règle,
+│   │                       #   config_drifted() — systemd répond à la seconde
+│   │                       #   entière, st_mtime non ; quatre ms d'artefact
+│   │                       #   muselaient une section entière (v0.17.1),
+│   │                       #   append_once(), sysctl_fix_cmd() — un conseil
+│   │                       #   applicable deux fois sans dégât, et un seul
+│   │                       #   fichier par réglage (v0.17.1),
+│   │                       #   ssh_unit() — l'unité est `ssh` sur Debian et
+│   │                       #   `sshd` sur Arch, Fedora, RHEL, openSUSE ;
+│   │                       #   aucun nom statique ne convient (v0.17.1)
 │   ├── _ufw.py             # Grammaire `ufw status numbered`, partagée par ports,
 │   │                       #   services, ipv6, ddns et firewall (v0.15.1)
 │   ├── firewall.py         # FirewallStatus + check_firewall() + check_rules()
