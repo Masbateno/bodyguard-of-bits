@@ -203,7 +203,39 @@ This is a scoring change. Scores rise on hosts carrying dormant high-risk
 packages, and a baseline taken before v0.17.1 will show these findings moving
 from warning to info.
 
-**None of these ten defects is a v0.17.0 regression.** They all predate it
+**openSUSE Leap 15.6 then showed BOB two things it could measure and did
+not.**
+
+`User : unknown` in the report header. Measured on three VMs through the same
+execution path, all running as root: Debian 13 and Kali carry `USER=root` in
+the environment, openSUSE carries nothing, and only there did BOB give up — it
+read `SUDO_USER or USER` and printed "unknown" when neither was set. The
+process identity was the same on all three, and the kernel would have answered
+on all three. An environment variable is a claim; `geteuid()` is a
+measurement. Any non-interactive context can arrive without `USER` — a systemd
+timer, a guest agent, a minimal image — and this header is written into the
+report file, so "unknown" outlives the run. `SUDO_USER` stays first because it
+names the human behind the sudo, which the euid cannot, and it is validated
+against the password database so a value naming nobody falls through to the
+measurement instead of being printed as fact.
+
+And three firewalls in one header, with only one of them leaking a sentinel:
+
+    ║  UFW           : vN/A            ║
+    ║  iptables      : not installed   ║
+    ║  nftables      : not installed   ║
+
+Same fact about the machine, two ways of saying it, and the third is not a
+sentence at all. `collect_system_info` returned the string `"N/A"` for a
+missing ufw while returning `""` for its neighbours, and three render sites —
+terminal banner, text report, Markdown report — prefixed a version marker to
+whatever came back. The absence is decided once now, in the same shape as the
+other two, and the marker is added only when there is a version to mark.
+
+Neither is a distribution-specific bug: openSUSE is simply where a minimal
+image with no `USER` and no firewall made both visible.
+
+**None of these twelve defects is a v0.17.0 regression.** They all predate it
 by many releases; v0.17.0 simply shipped hours before the machines that could
 see them existed. v0.17.0 is not yanked: it remains strictly better than
 v0.16.4.
@@ -212,7 +244,7 @@ Two real virtual machines found all but the last, which came from the field.
 Containers could not have found them: they share the host kernel, so every
 sysctl reading is the host's, and nothing in them is ever mid-`dpkg`.
 
-**Tests** 9240 → **9443**. **Mutations** 87 → **108**.
+**Tests** 9240 → **9483**. **Mutations** 87 → **112**.
 
 ---
 

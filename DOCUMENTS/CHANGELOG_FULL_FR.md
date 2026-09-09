@@ -220,7 +220,42 @@ C'est un changement de score. Les scores montent sur les hôtes portant des
 paquets dormants à risque élevé, et une référence prise avant la v0.17.1
 montrera ces constats passer d'avertissement à information.
 
-**Aucun de ces dix défauts n'est une régression de la v0.17.0.** Tous la
+**Puis openSUSE Leap 15.6 a montré deux choses que BOB pouvait mesurer et ne
+mesurait pas.**
+
+`User : unknown` dans l'en-tête du rapport. Mesuré sur trois VM par le même
+chemin d'exécution, toutes en root : Debian 13 et Kali portent `USER=root` dans
+l'environnement, openSUSE ne porte rien, et seule là BOB renonçait — il lisait
+`SUDO_USER or USER` et affichait « unknown » quand ni l'un ni l'autre n'était
+défini. L'identité du processus était la même sur les trois, et le noyau aurait
+répondu sur les trois. Une variable d'environnement est une affirmation ;
+`geteuid()` est une mesure. Tout contexte non interactif peut arriver sans
+`USER` — un timer systemd, un agent invité, une image minimale — et cet en-tête
+est écrit dans le fichier de rapport, donc « unknown » survit à l'exécution qui
+l'a produit. `SUDO_USER` reste prioritaire car il nomme l'humain derrière le
+sudo, ce que l'euid ne peut pas faire, et il est validé contre la base des
+comptes : une valeur ne nommant personne retombe sur la mesure au lieu d'être
+affichée comme un fait.
+
+Et trois pare-feux dans un même en-tête, dont un seul laissait fuir une
+sentinelle :
+
+    ║  UFW           : vN/A            ║
+    ║  iptables      : not installed   ║
+    ║  nftables      : not installed   ║
+
+Le même fait sur la machine, deux façons de le dire, et la troisième n'est pas
+une phrase. `collect_system_info` rendait la chaîne `"N/A"` pour un ufw absent
+là où il rendait `""` pour ses voisins, et trois sites de rendu — bannière du
+terminal, rapport texte, rapport Markdown — préfixaient un marqueur de version
+à ce qui arrivait. L'absence est décidée une fois, dans la même forme que les
+deux autres, et le marqueur n'est ajouté que s'il y a une version à marquer.
+
+Aucun des deux n'est un défaut propre à une distribution : openSUSE est
+simplement l'endroit où une image minimale sans `USER` et sans pare-feu les a
+rendus visibles.
+
+**Aucun de ces douze défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
@@ -230,7 +265,7 @@ du terrain. Des conteneurs ne le pouvaient pas : ils partagent le noyau de
 l'hôte, donc toute lecture sysctl est celle de l'hôte, et rien en eux n'est
 jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9443**. **Mutations** 87 → **108**.
+**Tests** 9240 → **9483**. **Mutations** 87 → **112**.
 
 ---
 
