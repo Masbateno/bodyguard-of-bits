@@ -54,6 +54,16 @@ Après correctif, sur la même machine : SSH et Apache rapportent tous deux
 cet hôte de famille Debian, sur un conteneur Fedora et sur un conteneur Debian,
 rien ne bouge — le changement ne parle que là où il y a contradiction.
 
+**Reproduit sur Debian 13**, où les noms d'unités sont pourtant justes : la
+phrase ci-dessus est donc mesurée et non plaidée. Apache installé, arrêté et
+désactivé — un verdict que BOB rendait parfaitement — avec un
+`python3 -m http.server` sans rapport tenant le port 80. La v0.17.0 annonçait
+« Apache installé mais arrêté et désactivé, aucun risque immédiat » et ne disait
+strictement rien de l'écoute ; le correctif rapporte
+`Port 80/tcp (python3) listening on all interfaces` à côté. Les deux
+affirmations coexistent désormais, et c'est tout l'enjeu : un service arrêté et
+un port occupé ne sont pas une contradiction à cacher mais une à montrer.
+
 **Aucun des deux défauts n'est une régression de la v0.17.0.** Tous deux la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant que n'existe la machine capable de les voir. Elle n'est pas

@@ -51,6 +51,15 @@ After the fix, on the same machine: SSH and Apache both report
 Debian-family host, on a Fedora container and on a Debian container, nothing
 moves at all — the change speaks only where there is a contradiction.
 
+**Reproduced on Debian 13**, where the unit names are right, so the claim above
+is measured rather than argued. Apache installed, stopped and disabled — a
+verdict BOB got entirely correct — with an unrelated `python3 -m http.server`
+holding port 80. v0.17.0 reported *"Apache installed but stopped and disabled.
+No immediate risk"* and said nothing whatever about the listener; the fix
+reports `Port 80/tcp (python3) listening on all interfaces` beside it. The two
+statements coexist now, which is the point: a stopped service and a busy port
+are not a contradiction to hide but one to show.
+
 **Neither defect is a v0.17.0 regression.** Both predate it by many releases;
 v0.17.0 simply shipped hours before the machine that could see them existed.
 v0.17.0 is not yanked: it remains strictly better than v0.16.4.
