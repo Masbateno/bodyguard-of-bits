@@ -235,7 +235,44 @@ other two, and the marker is added only when there is a version to mark.
 Neither is a distribution-specific bug: openSUSE is simply where a minimal
 image with no `USER` and no firewall made both visible.
 
-**None of these twelve defects is a v0.17.0 regression.** They all predate it
+**Arch Linux then broke the remediation for the findings that matter most.**
+
+Every SSH fix BOB emits ended in `sudo systemctl restart ssh`, which is
+Debian's spelling. On Arch: *"Failed to restart ssh.service: Unit ssh.service
+not found."* Asked of systemd on five machines:
+
+    fedora43     ssh.service 0   sshd.service 0    (no server installed)
+    debian13     ssh.service 1   sshd.service 1
+    kali         ssh.service 1   sshd.service 0
+    opensuse15   ssh.service 0   sshd.service 1
+    archbob      ssh.service 0   sshd.service 1
+
+No static name works everywhere, and picking the other one would not have
+helped: Debian ships `ssh.service` carrying an `sshd.service` alias, and the
+alias only materialises once the unit is enabled — which is why Kali, a Debian
+derivative with SSH disabled, has just the one. The unit is resolved from
+systemd now, once per run. Verified by running the resolved command on both:
+`systemctl restart sshd` on Arch, `systemctl restart ssh` on Kali, exit 0 and
+the service active on each.
+
+This is the class v0.17.1 closed for the service registry — Fedora calling
+Apache `httpd` — met again in the fix commands, which the registry work did not
+touch.
+
+**And the header could not name the machine the report was about.** Arch ships
+no `hostname` binary in its cloud image; systemd's `hostnamectl` replaces it.
+BOB shelled out to it and printed `Host : N/A` — the one field that says which
+host an archived report describes. Debian, Kali and openSUSE all carry the
+binary, which is why it took a fourth distribution to show. Both the hostname
+and the kernel version come from `os.uname()` now: a syscall cannot be
+uninstalled.
+
+What Arch confirmed rather than broke: the package names. `sudo pacman -S
+--noconfirm audit` for auditd, and ufw, fail2ban, clamav and rkhunter all
+resolve to real packages — checked against `pacman -Ss` on the machine. `aide`
+returns no command at all, correctly: it exists only in the AUR.
+
+**None of these fourteen defects is a v0.17.0 regression.** They all predate it
 by many releases; v0.17.0 simply shipped hours before the machines that could
 see them existed. v0.17.0 is not yanked: it remains strictly better than
 v0.16.4.
@@ -244,7 +281,7 @@ Two real virtual machines found all but the last, which came from the field.
 Containers could not have found them: they share the host kernel, so every
 sysctl reading is the host's, and nothing in them is ever mid-`dpkg`.
 
-**Tests** 9240 → **9483**. **Mutations** 87 → **112**.
+**Tests** 9240 → **9508**. **Mutations** 87 → **115**.
 
 ---
 

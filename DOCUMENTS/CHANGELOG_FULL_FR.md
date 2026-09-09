@@ -255,7 +255,45 @@ Aucun des deux n'est un défaut propre à une distribution : openSUSE est
 simplement l'endroit où une image minimale sans `USER` et sans pare-feu les a
 rendus visibles.
 
-**Aucun de ces douze défauts n'est une régression de la v0.17.0.** Tous la
+**Arch Linux a ensuite cassé la remédiation des constats qui comptent le
+plus.**
+
+Toutes les corrections SSH de BOB finissaient par `sudo systemctl restart ssh`,
+l'orthographe de Debian. Sur Arch : « Failed to restart ssh.service: Unit
+ssh.service not found. » Question posée à systemd sur cinq machines :
+
+    fedora43     ssh.service 0   sshd.service 0    (pas de serveur installé)
+    debian13     ssh.service 1   sshd.service 1
+    kali         ssh.service 1   sshd.service 0
+    opensuse15   ssh.service 0   sshd.service 1
+    archbob      ssh.service 0   sshd.service 1
+
+Aucun nom statique ne fonctionne partout, et prendre l'autre n'aurait pas aidé :
+Debian livre `ssh.service` porteur d'un alias `sshd.service`, et cet alias
+n'apparaît qu'une fois l'unité activée — ce pourquoi Kali, dérivée de Debian
+avec SSH désactivé, n'en a qu'un. L'unité est désormais résolue auprès de
+systemd, une fois par exécution. Vérifié en exécutant la commande résolue sur
+les deux : `systemctl restart sshd` sur Arch, `systemctl restart ssh` sur Kali,
+code 0 et service actif dans les deux cas.
+
+C'est la classe fermée en v0.17.1 pour le registre des services — Fedora
+appelant Apache `httpd` — rencontrée de nouveau dans les commandes de
+correction, que ce travail n'avait pas touchées.
+
+**Et l'en-tête ne savait plus nommer la machine dont parlait le rapport.** Arch
+ne livre pas de binaire `hostname` dans son image cloud ; `hostnamectl` de
+systemd le remplace. BOB l'appelait en sous-processus et affichait `Host : N/A`
+— le seul champ qui dit de quelle machine parle un rapport archivé. Debian,
+Kali et openSUSE portent toutes ce binaire, ce pourquoi il a fallu une
+quatrième distribution pour le voir. Le nom d'hôte et la version du noyau
+viennent désormais d'`os.uname()` : un appel système ne se désinstalle pas.
+
+Ce qu'Arch a confirmé plutôt que cassé : les noms de paquets. `sudo pacman -S
+--noconfirm audit` pour auditd, et ufw, fail2ban, clamav et rkhunter renvoient
+tous vers de vrais paquets — vérifiés avec `pacman -Ss` sur la machine. `aide`
+ne rend aucune commande, à raison : il n'existe que dans AUR.
+
+**Aucun de ces quatorze défauts n'est une régression de la v0.17.0.** Tous la
 précèdent de nombreuses versions ; la v0.17.0 est simplement sortie quelques
 heures avant qu'existent les machines capables de les voir. Elle n'est pas
 retirée : elle reste strictement meilleure que la v0.16.4.
@@ -265,7 +303,7 @@ du terrain. Des conteneurs ne le pouvaient pas : ils partagent le noyau de
 l'hôte, donc toute lecture sysctl est celle de l'hôte, et rien en eux n'est
 jamais au milieu d'un `dpkg`.
 
-**Tests** 9240 → **9483**. **Mutations** 87 → **112**.
+**Tests** 9240 → **9508**. **Mutations** 87 → **115**.
 
 ---
 
