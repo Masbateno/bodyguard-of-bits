@@ -34,6 +34,12 @@ en 0 signifie que le MTA a mis le message en file, et un relais ou un filtre
 anti-spam peut encore le jeter. La commande dit *accepté*, et dit qu'accepté
 n'est pas délivré.
 
+Éprouvée de bout en bout sur une machine réelle avant la sortie : sendmail a
+accepté, et le message est arrivé avec son sujet et son corps intacts après
+avoir traversé un Postfix, un relais et le filtre anti-spam d'un fournisseur.
+Les deux moitiés de la distinction que trace la commande ont été exercées, pas
+seulement celle qu'elle peut prouver elle-même.
+
 ### Les verdicts étaient portables. Les remèdes attachés ne l'étaient pas.
 
 La v0.15.2 avait appris à l'interrogation de paquets à questionner cinq

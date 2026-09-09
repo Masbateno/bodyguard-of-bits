@@ -33,6 +33,11 @@ It also stops short of the same mistake at the other end: sendmail exiting 0
 means the MTA queued the message, and a relay or a spam filter can still drop
 it. The command says *accepted*, and says that accepted is not delivered.
 
+Field tested end to end on a real host before release: sendmail accepted, and
+the message arrived with its subject and body intact after crossing a Postfix,
+a relay and a provider's spam filter. Both halves of the distinction the
+command draws were exercised, not just the one it can prove itself.
+
 ### The verdicts were portable. The remedies attached to them were not.
 
 v0.15.2 taught the package query to ask five managers instead of dpkg alone,
