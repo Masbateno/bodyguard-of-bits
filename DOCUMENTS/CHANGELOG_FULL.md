@@ -232,6 +232,35 @@ the environment — the v0.15.0 lesson from `importorskip` at module scope.
 With that in place the whole suite exits 0 on aarch64, as an ordinary user,
 with no failures and no errors.
 
+### An arm64 job, and what it refuses to do
+
+`ci/arm64_smoke.sh` runs on every PR, driven from `integration.yml` through
+`docker/setup-qemu-action`. GitHub's `container:` key runs on the runner's own
+architecture and takes no platform, so the whole run lives inside one
+`docker run --platform linux/arm64`.
+
+Its first assertion is that `uname -m` really answers `aarch64`. If binfmt
+registration fails or the platform flag is ignored, the container is x86_64 and
+every later assertion would pass for the wrong reason — a green job that never
+ran on ARM is worse than no job at all. Both negative controls were verified
+locally before the job was written: forcing `--platform linux/amd64` fails on
+the architecture guard, and re-introducing `Legacy BIOS detected` into the
+locale fails on the claim guard.
+
+After that it holds ARM to the same contract as the other distributions — the
+audit exits within range, no locale sentinels, no traceback — and then to three
+things a same-architecture job cannot assert: microcode degrades rather than
+deducting, absent UEFI is not announced as a BIOS, and the Raspberry Pi section
+fires on a simulated board.
+
+The full test suite is deliberately not run there. It is roughly fifteen times
+slower under emulation, and the architecture-sensitive part of it is what these
+assertions cover directly.
+
+That moves Debian Bookworm arm64 into Tier 2. **Raspberry Pi OS stays Tier 3**,
+and the distinction is now exact: the *section* is covered by CI, the *board*
+has never been audited on physical hardware.
+
 On a machine that is not a Pi the section emits nothing at all, and the A/B
 against v0.16.4 on this x86 host shows the same score, the same 93 findings and
 the same deductions.

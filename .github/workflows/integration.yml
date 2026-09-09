@@ -220,3 +220,40 @@ jobs:
           name: audit-${{ strategy.job-index }}-${{ matrix.family }}
           path: audit.txt
           retention-days: 7
+
+  arm64:
+    name: debian:bookworm-slim (arm64, emulated)
+    runs-on: ubuntu-latest
+
+    # Separate from the `smoke` matrix above because GitHub's `container:`
+    # key runs on the runner's own architecture and takes no platform. ARM
+    # needs binfmt registration plus an explicit `docker run --platform`, so
+    # the whole run lives inside one step.
+    #
+    # What this gate is for: BOB reasoned entirely about software until
+    # v0.17.0 and stated x86 facts on boards that have no x86 in them —
+    # absent UEFI was announced as "Legacy BIOS detected", which a Raspberry
+    # Pi does not have either. Those are the assertions below that a
+    # same-architecture job cannot make.
+    #
+    # Emulation is not hardware and is not silently equivalent to it:
+    # setrlimit(RLIMIT_AS) returns success and applies nothing under
+    # qemu-user, which is how the plugin sandbox was caught claiming a memory
+    # cap it never got. The full test suite is deliberately NOT run here —
+    # it takes roughly fifteen times as long under emulation, and the
+    # architecture-sensitive part of it is what this job asserts directly.
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Register QEMU binfmt handlers
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Smoke + offline audit + Raspberry Pi section on arm64
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD:/src:ro" \
+            debian:bookworm-slim \
+            sh -c 'mkdir -p /work && cp -r /src/. /work/ && cd /work && sh ci/arm64_smoke.sh'

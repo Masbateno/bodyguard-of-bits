@@ -38,6 +38,13 @@ bodyguard-of-bits (0.17.0-1) UNRELEASED; urgency=low
     while its own docstring said that cap defends against memory bombs. The
     limit is read back now and a refused cap is logged; it stays defence in
     depth rather than a boundary, so a plugin still runs.
+  * New arm64 CI job (ci/arm64_smoke.sh via docker/setup-qemu-action). It
+    refuses to pass unless uname -m really answers aarch64 -- a green job that
+    never ran on ARM is worse than no job -- then holds ARM to the same smoke
+    contract as the other distributions plus three assertions only it can
+    make: microcode degrades, absent UEFI is not announced as a BIOS, and the
+    Raspberry Pi section fires. Debian Bookworm arm64 becomes Tier 2;
+    Raspberry Pi OS stays Tier 3, since no physical board has been audited.
   * The cron wizard promised delivery it had never established. "sendmail
     available — notifications will be delivered" was decided by
     shutil.which("sendmail"), which a Postfix installed and never configured

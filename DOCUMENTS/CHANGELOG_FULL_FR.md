@@ -246,6 +246,36 @@ que la v0.15.0 a tirée d'`importorskip` au niveau module.
 Cela fait, la suite complète sort en 0 sur aarch64, en utilisateur ordinaire,
 sans aucun échec ni erreur.
 
+### Un job arm64, et ce qu'il refuse de faire
+
+`ci/arm64_smoke.sh` tourne sur chaque PR, piloté depuis `integration.yml` via
+`docker/setup-qemu-action`. La clé `container:` de GitHub s'exécute sur
+l'architecture du runner et ne prend pas de plateforme : toute l'exécution tient
+donc dans un seul `docker run --platform linux/arm64`.
+
+Sa première assertion est que `uname -m` répond réellement `aarch64`. Si
+l'enregistrement binfmt échoue ou que le drapeau de plateforme est ignoré, le
+conteneur est en x86_64 et toutes les assertions suivantes passeraient pour la
+mauvaise raison — un job vert qui n'a jamais tourné sur ARM est pire que pas de
+job du tout. Les deux contrôles négatifs ont été vérifiés localement avant
+d'écrire le job : forcer `--platform linux/amd64` échoue sur la garde
+d'architecture, et réintroduire `Legacy BIOS detected` dans la locale échoue sur
+la garde d'affirmation.
+
+Ensuite il tient ARM au même contrat que les autres distributions — l'audit sort
+dans la plage attendue, pas de sentinelle de locale, pas de traceback — puis à
+trois choses qu'un job de même architecture ne peut pas affirmer : le microcode
+dégrade au lieu de déduire, un UEFI absent n'est pas annoncé comme un BIOS, et
+la section Raspberry Pi se déclenche sur une carte simulée.
+
+La suite de tests complète n'y est délibérément pas lancée. Elle est environ
+quinze fois plus lente sous émulation, et la partie sensible à l'architecture
+est précisément ce que ces assertions couvrent directement.
+
+Cela fait passer Debian Bookworm arm64 en Tier 2. **Raspberry Pi OS reste en
+Tier 3**, et la distinction est maintenant exacte : la *section* est couverte par
+la CI, la *carte* n'a jamais été auditée sur du matériel physique.
+
 Sur une machine qui n'est pas un Pi la section n'émet rien, et l'A/B contre la
 v0.16.4 sur cet hôte x86 donne le même score, les mêmes 93 constats et les
 mêmes déductions.
