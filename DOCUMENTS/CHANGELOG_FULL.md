@@ -181,7 +181,45 @@ what looked tidy.
 
 After: 113 MB on all three, healthy and hostile alike.
 
-**Tests** 9528 → **9724**. **Mutations** 117 → **135**.
+**Stress pass 3 — polarity pairs on everything v0.18.0 added.** OpenRC's four
+state combinations map correctly, and so do its adversarial ones: `rc-update`
+renamed away, an init script with no execute bit, `rc-service` exiting 2, and
+service names carrying `../`, a space or a `;` all answer *unknown* rather than
+*stopped*. The package-ownership polarity holds where it matters most — with
+`dpkg` moved aside, and again with its database overwritten by random bytes,
+`package_owning` reports `known=False` and **nothing is accused**. The native
+sysctl applier refuses a key that does not exist, reports *live but not
+persisted* when the file is read-only or replaced by a directory, creates
+`/etc/sysctl.d` when it is missing, and collapses conflicting pre-existing
+lines to one. Applying three broken settings and re-applying twice leaves three
+lines and one `rp_filter`.
+
+One defect, and it came from testing the rendered audit rather than the
+helpers. Stopping sshd on Alpine made the service state disappear from the
+output entirely. Driven deterministically afterwards, every member of
+`ServiceState` produced a `services.state.*` finding except one:
+
+    active_enabled       -> services.state.active_enabled
+    active_disabled      -> services.state.active_disabled
+    inactive_enabled     -> (nothing)
+    inactive_disabled    -> services.state.installed_inactive_critical
+    unknown              -> services.state.unknown
+
+`_STATE_PRIORITY` ranked INACTIVE_ENABLED, `_detect_state` returned it, and no
+branch consumed it — declared and never consumed. The port-exposure finding
+still fired, so the service sat in the panorama with no verdict on its state
+beside it.
+
+It is the state that says *the machine was told to run this and it is not
+running*: a crash, a start that failed on a bad config, a dependency that never
+came up. It is the mirror of *running but not enabled*, which BOB has warned
+about and scored since v0.8.0 for the same kind of reason — a measured
+disagreement between configured intent and running reality — and it is treated
+the same way. No command is offered, deliberately: restarting it unattended
+would paper over the first three causes and undo the fourth, and BOB cannot
+tell them apart.
+
+**Tests** 9528 → **9754**. **Mutations** 117 → **137**.
 
 ---
 

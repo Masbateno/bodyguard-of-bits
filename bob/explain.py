@@ -164,6 +164,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "services.exposure.open_local",
         "services.state.active_disabled",
         "services.state.installed_inactive_critical",
+        "services.state.inactive_enabled",
     ]),
     ("Rootkit detection", [
         "rootkit.db_outdated",

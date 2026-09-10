@@ -245,7 +245,9 @@ class TestExplainAuditInvariants:
         # the distribution ships from one no package owns — Kali carries
         # fifteen of the first kind, and the second is what an operator needs
         # woken for.
-        assert len(EXPLAIN_KEYS) == 190, (
+        # v0.18.0 → 191: services.state.inactive_enabled — the one state in
+        # the enum that rendered nothing, found on Alpine by stopping sshd.
+        assert len(EXPLAIN_KEYS) == 191, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

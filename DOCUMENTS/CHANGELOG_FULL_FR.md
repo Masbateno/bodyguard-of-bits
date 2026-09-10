@@ -191,7 +191,46 @@ qui a été mesuré et non ce qui paraissait net.
 
 Après : 113 Mo dans les trois cas, sain comme hostile.
 
-**Tests** 9528 → **9724**. **Mutations** 117 → **135**.
+**Passe de stress 3 — paires de polarité sur tout ce qu'apporte la v0.18.0.**
+Les quatre combinaisons d'état OpenRC se rendent correctement, et les cas
+adverses aussi : `rc-update` renommé, un script init sans bit d'exécution,
+`rc-service` sortant en 2, et des noms de service portant `../`, une espace ou
+un `;` répondent tous *inconnu* plutôt qu'*arrêté*. La polarité de la propriété
+des paquets tient là où c'est le plus important — `dpkg` écarté, puis sa base
+écrasée par des octets aléatoires, `package_owning` rend `known=False` et
+**personne n'est accusé**. L'applicateur sysctl natif refuse une clé
+inexistante, rapporte *vivant mais non persisté* quand le fichier est en
+lecture seule ou remplacé par un répertoire, crée `/etc/sysctl.d` s'il manque,
+et réduit à une seule ligne les doublons préexistants. Trois réglages cassés
+appliqués puis réappliqués deux fois laissent trois lignes et une seule
+`rp_filter`.
+
+Un défaut, et il vient d'avoir testé l'audit **rendu** plutôt que les helpers.
+Arrêter sshd sur Alpine faisait disparaître l'état du service de la sortie.
+Piloté ensuite de façon déterministe, chaque membre de `ServiceState` produisait
+un constat `services.state.*` sauf un :
+
+    active_enabled       -> services.state.active_enabled
+    active_disabled      -> services.state.active_disabled
+    inactive_enabled     -> (rien)
+    inactive_disabled    -> services.state.installed_inactive_critical
+    unknown              -> services.state.unknown
+
+`_STATE_PRIORITY` le classait, `_detect_state` le renvoyait, aucune branche ne
+le consommait — déclaré et jamais consommé. Le constat d'exposition de port se
+déclenchait quand même : le service siégeait dans le panorama sans aucun verdict
+d'état à côté.
+
+C'est l'état qui dit *la machine a reçu l'ordre de lancer ceci et ne le lance
+pas* : un plantage, un démarrage échoué sur une configuration fautive, une
+dépendance jamais montée. C'est l'image miroir de *tourne mais n'est pas
+activé*, que BOB signale et compte depuis la v0.8.0 pour la même raison — un
+désaccord mesuré entre l'intention configurée et la réalité en cours — et il est
+traité de même. Aucune commande n'est proposée, délibérément : le relancer sans
+surveillance masquerait les trois premières causes et défairait la quatrième, et
+BOB ne sait pas les distinguer.
+
+**Tests** 9528 → **9754**. **Mutations** 117 → **137**.
 
 ---
 

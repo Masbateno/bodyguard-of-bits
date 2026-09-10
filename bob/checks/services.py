@@ -360,6 +360,27 @@ def _check_single_service(
             nature="improvement",
         )
 
+    # v0.18.0: enabled at boot, and not running. The mirror image of
+    # ACTIVE_DISABLED above, and until now the only state in the enum that
+    # rendered nothing at all — `_STATE_PRIORITY` ranked it, `_detect_state`
+    # returned it, and no branch consumed it. A service in this state still
+    # produced its port-exposure finding, so it appeared in the panorama with
+    # no verdict on its state beside it.
+    #
+    # Scored the same as its mirror, and for the same reason: both are a
+    # measured disagreement between what the machine was configured to do and
+    # what it is doing. ACTIVE_DISABLED will lose the service at the next
+    # reboot; this one has already lost it — a crash, a failed start, or a
+    # hand stop nobody undid. Neither needs a threat model to state.
+    if snap.state == ServiceState.INACTIVE_ENABLED:
+        result.warn_with_deduction(
+            key="services.state.inactive_enabled",
+            message=_t("services.state.inactive_enabled", label=snap.label),
+            detail=_t("services.state.inactive_enabled_detail"),
+            points=1,
+            nature="improvement",
+        )
+
     # Active and enabled — OK
     if snap.state == ServiceState.ACTIVE_ENABLED:
         result.ok(

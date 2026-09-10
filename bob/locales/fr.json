@@ -185,6 +185,8 @@
       "active_enabled": "Service actif et démarré automatiquement au démarrage",
       "active_disabled": "{label} est actif en ce moment, mais ne redémarrera pas automatiquement.",
       "inactive_disabled": "{label} est installé mais arrêté et désactivé. Pas de risque immédiat.",
+      "inactive_enabled": "{label} est activé au démarrage mais ne tourne pas",
+      "inactive_enabled_detail": "La machine a été configurée pour lancer ce service et il n'est pas lancé. Rien ici ne dit pourquoi : un plantage, un démarrage échoué sur une configuration fautive, un arrêt manuel que personne n'a défait, ou une dépendance qui n'est jamais montée. Vus de l'extérieur ces cas se ressemblent tous, et tous signifient que le service manquera jusqu'à ce que quelqu'un regarde. Demandez au gestionnaire de services ce qu'il en dit : systemctl status <unité> — ou, sur un hôte OpenRC, rc-service <nom> status",
       "installed_inactive_critical": "{label} est installé mais ne tourne pas et n'est pas activé au démarrage — rien n'écoute pour lui",
       "unknown": "Service installé, état indéterminé"
     },
@@ -2138,7 +2140,12 @@
           "container": {
             "why": "Dans un conteneur, un service arrêté est le plus souvent un résidu d'image de base. Cela compte quand l'image est l'artefact que vous livrez."
           }
-        }
+        },
+        "inactive_enabled": {
+                  "title": "Un service prévu au démarrage ne tourne pas",
+                  "why": "Deux faits, tous deux lus auprès du gestionnaire de services : la machine est configurée pour lancer ce service, et le service n'est pas lancé.\n\nCe désaccord est le constat. Rien ici ne dit pourquoi — un plantage, un démarrage échoué sur un fichier de configuration fautif, une dépendance qui n'est jamais montée, ou quelqu'un qui l'a arrêté à la main sans le défaire. Vus de l'extérieur ces cas sont identiques, et chacun signifie que le service restera absent jusqu'à ce qu'une personne regarde.\n\nC'est l'image miroir de *tourne mais n'est pas activé*, que BOB rapporte à côté : celui-là perdra le service au prochain redémarrage, celui-ci l'a déjà perdu. Savoir si cela compte vous revient — un service arrêté volontairement pendant une maintenance ressemble exactement à un service mort.",
+                  "how": "1. Demandez au gestionnaire de services. Il s'explique en général lui-même :\n   systemd  →  systemctl status <unité> ; journalctl -u <unité> -b\n   OpenRC   →  rc-service <nom> status\n2. S'il a échoué au démarrage, corrigez cela avant de le relancer — un service qui meurt au boot mourra de nouveau.\n3. S'il doit tourner, lancez-le et vérifiez qu'il tient :\n   systemd  →  sudo systemctl start <unité>\n   OpenRC   →  sudo rc-service <nom> start\n4. S'il ne doit pas tourner, dites-le, pour que ce ne soit plus une surprise à chaque audit :\n   systemd  →  sudo systemctl disable <unité>\n   OpenRC   →  sudo rc-update del <nom> default"
+                }
       }
     },
     "rootkit": {

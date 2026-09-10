@@ -63,6 +63,7 @@ _SUIDOWN = "tests/test_v0180_suid_ownership.py"
 _NATIVE = "tests/test_v0180_native_sysctl_apply.py"
 _ABSENT = "tests/test_v0180_absent_is_not_unreadable.py"
 _CAPPED = "tests/test_v0180_capped_reads.py"
+_STATES = "tests/test_v0180_every_service_state_speaks.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -268,7 +269,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="195 entries (109 formal CIS",
+        old="196 entries (109 formal CIS",
         new="174 entries (107 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -1486,5 +1487,35 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "test_a_file_spanning_several_chunks_is_whole",),
         reason="reading in chunks must reassemble the file; truncating at the "
                "first chunk would silently shorten every config over 256 KiB",
+    ),
+    Mutation(
+        id="states/enabled-but-down-goes-silent",
+        file="bob/checks/services.py",
+        old="    if snap.state == ServiceState.INACTIVE_ENABLED:",
+        new="    if False and snap.state == ServiceState.INACTIVE_ENABLED:",
+        kills=(f"{_STATES}::TestNoStateIsSilent::"
+               "test_every_state_renders_a_verdict",
+               f"{_STATES}::TestEnabledButDown::test_it_has_its_own_key"),
+        reason="the one state in the enum that rendered nothing: the machine "
+               "was told to run the service and it is not running \u2014 a "
+               "crash, a failed start \u2014 while its port exposure still "
+               "fired, so it sat in the panorama with no verdict beside it",
+    ),
+    Mutation(
+        id="states/enabled-but-down-costs-nothing",
+        file="bob/checks/services.py",
+        old='            key="services.state.inactive_enabled",\n'
+            '            message=_t("services.state.inactive_enabled", label=snap.label),\n'
+            '            detail=_t("services.state.inactive_enabled_detail"),\n'
+            "            points=1,",
+        new='            key="services.state.inactive_enabled",\n'
+            '            message=_t("services.state.inactive_enabled", label=snap.label),\n'
+            '            detail=_t("services.state.inactive_enabled_detail"),\n'
+            "            points=0,",
+        kills=(f"{_STATES}::TestEnabledButDown::test_it_is_scored_like_its_mirror",),
+        reason="its mirror \u2014 running but not enabled \u2014 has cost a "
+               "point since v0.8.0 for the same kind of fact; one of the two "
+               "directions counting and not the other is the asymmetry that "
+               "hid this state for ten releases",
     ),
 )

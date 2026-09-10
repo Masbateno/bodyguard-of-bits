@@ -185,6 +185,8 @@
       "active_enabled": "Service active and set to start automatically at boot",
       "active_disabled": "{label} is currently active but will not restart automatically",
       "inactive_disabled": "{label} is installed but stopped and disabled. No immediate risk.",
+      "inactive_enabled": "{label} is enabled at boot but is not running",
+      "inactive_enabled_detail": "The machine was configured to start this service and it is not started. Nothing here says why: a crash, a start that failed on a bad config, a hand stop nobody undid, or a dependency that never came up. All of them look the same from outside, and all of them mean the service will be missing until someone looks. Ask the service manager what it says: systemctl status <unit> — or, on an OpenRC host, rc-service <name> status",
       "installed_inactive_critical": "{label} is installed but not running and not enabled — nothing is listening for it",
       "unknown": "Service installed, state undetermined"
     },
@@ -2138,7 +2140,12 @@
           "container": {
             "why": "In a container, a stopped service is usually a base-image leftover. It matters when the image is the artefact you ship."
           }
-        }
+        },
+        "inactive_enabled": {
+                  "title": "A service set to start at boot is not running",
+                  "why": "Two facts, both read from the service manager: the machine is configured to start this service, and the service is not started.\n\nThat disagreement is the finding. Nothing here says why it happened — a crash, a start that failed on a bad config file, a dependency that never came up, or someone stopping it by hand and not undoing it. From outside they look identical, and every one of them means the service will stay missing until a person looks.\n\nIt is the mirror of *running but not enabled*, which BOB reports beside it: that one loses the service at the next reboot, this one has lost it already. Whether it matters is yours to judge — a service stopped deliberately during maintenance looks exactly the same as one that died.",
+                  "how": "1. Ask the service manager what it says. It usually explains itself:\n   systemd  →  systemctl status <unit> ; journalctl -u <unit> -b\n   OpenRC   →  rc-service <name> status\n2. If it failed to start, fix that before restarting it — a service that dies on boot will die again.\n3. If it should be running, start it and check it stays up:\n   systemd  →  sudo systemctl start <unit>\n   OpenRC   →  sudo rc-service <name> start\n4. If it should not be running, say so, so this stops being a surprise every audit:\n   systemd  →  sudo systemctl disable <unit>\n   OpenRC   →  sudo rc-update del <name> default"
+                }
       }
     },
     "rootkit": {

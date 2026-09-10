@@ -515,6 +515,7 @@
     "ref_fr": "Bonne pratique — Activer ou retirer les outils de sécurité installés plutôt que de les laisser dormants",
     "code": null
   },
+  "services.state.inactive_enabled": {"ref": "Best practice — A service enabled at boot and not running is a silent gap between configured intent and running reality", "ref_fr": "Bonne pratique — Un service activé au démarrage et non lancé est un écart silencieux entre l'intention configurée et la réalité en cours", "code": null},
   "services_health.service_inactive": {
     "ref": "Best practice — Ensure security services remain enabled and active after reboot",
     "ref_fr": "Bonne pratique — S'assurer que les services de sécurité restent activés et actifs après redémarrage",

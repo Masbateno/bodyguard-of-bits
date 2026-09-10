@@ -62,6 +62,13 @@ _ACTIONABLE_METHODS = frozenset({
 # shell command. Each entry needs a one-line rationale (inline comment)
 # explaining WHY operating-system-level automation is inappropriate.
 _MANUAL_BY_DESIGN = frozenset({
+    # v0.18.0 — a service enabled at boot and not running. There is no one-line
+    # remediation because the finding does not know why it is down: a crash, a
+    # start that failed on a bad config, a dependency that never came up, or a
+    # hand stop during maintenance. Restarting it unattended would paper over
+    # the first three and undo the fourth. The detail says to ask the service
+    # manager, which is the step that distinguishes them.
+    "services.state.inactive_enabled",
     # v0.17.0 — a default account on a Raspberry Pi. There is no safe one-line
     # remediation: `userdel pi` destroys a home directory that may hold the
     # only copy of something, and `usermod -l` renames an account that services,
