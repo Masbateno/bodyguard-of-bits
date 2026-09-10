@@ -873,6 +873,7 @@
       "not_found": "Baseline file not found: {path} — check the path and that the file exists on this machine.",
       "invalid_json": "Baseline file {path} could not be read or parsed as JSON: {error}",
       "v1_schema": "Baseline file {path} carries the legacy v0.6.x schema (schema_version=\"1\") which was retired in v0.9.0 F-3. Re-generate the baseline on a v0.9.0+ host.",
+      "not_a_baseline": "File {path} parsed as JSON but is not a BOB baseline (no 'timestamp' and 'score' fields) — point --diff at a file written by a previous audit.",
       "bad_shape": "Baseline file {path} has unexpected shape: {error}"
     }
   },

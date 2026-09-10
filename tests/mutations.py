@@ -66,6 +66,7 @@ _CAPPED = "tests/test_v0180_capped_reads.py"
 _STATES = "tests/test_v0180_every_service_state_speaks.py"
 _LOCKOUT = "tests/test_v0180_no_fix_locks_you_out.py"
 _PROFSRCH = "tests/test_v0180_profile_search_is_not_absence.py"
+_STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1595,5 +1596,38 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "BOB was refused entry to may hold the very profile the "
                "operator configured; running the built-in instead without a "
                "word makes the audit header name a profile that was never read",
+    ),
+    Mutation(
+        id="baseline/any-json-loads-as-a-baseline-of-zero",
+        file="bob/compare.py",
+        old='    if not isinstance(raw, dict) or not all(k in raw for k in ("timestamp", "score")):',
+        new='    if False:',
+        kills=(f"{_STRANGER}::test_a_stranger_is_refused_out_loud[unrelated-object]",
+               f"{_STRANGER}::test_a_stranger_is_refused_quietly_too[empty-object]"),
+        reason="measured locally: --diff against {\"unrelated\": 1} announced "
+               "\"Score improved by 72 point(s)\", two newly opened ports and "
+               "two newly active services, above a blank \"Previous audit:\" "
+               "line — the current audit read back against a document that "
+               "had recorded nothing",
+    ),
+    Mutation(
+        id="baseline/a-score-of-zero-is-mistaken-for-a-missing-field",
+        file="bob/compare.py",
+        old='    if not isinstance(raw, dict) or not all(k in raw for k in ("timestamp", "score")):',
+        new='    if not isinstance(raw, dict) or not all(raw.get(k) for k in ("timestamp", "score")):',
+        kills=(f"{_STRANGER}::test_a_baseline_with_a_zero_score_is_still_a_baseline",),
+        reason="a machine that scored 0 has a measurement, not a missing "
+               "field; a truthiness test would throw away the baseline of "
+               "exactly the host that most needs its diff",
+    ),
+    Mutation(
+        id="baseline/refusal-shares-the-invalid-json-sentence",
+        file="bob/locales/en.json",
+        old='"not_a_baseline": "File {path} parsed as JSON but is not a BOB baseline',
+        new='"not_a_baseline": "Baseline file {path} could not be read or parsed as JSON: {error}", "unused_not_a_baseline": "File {path} parsed as JSON but is not a BOB baseline',
+        kills=(f"{_STRANGER}::test_both_locales_carry_the_refusal",),
+        reason="\"not JSON at all\" and \"JSON, but not ours\" send the "
+               "operator to different places; collapsing them hides which "
+               "one happened",
     ),
 )

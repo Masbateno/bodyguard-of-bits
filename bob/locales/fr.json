@@ -873,6 +873,7 @@
       "not_found": "Baseline introuvable : {path} — vérifie le chemin et que le fichier existe sur cette machine.",
       "invalid_json": "Le fichier baseline {path} n'a pas pu être lu ou parsé comme JSON : {error}",
       "v1_schema": "Le fichier baseline {path} porte le schéma legacy v0.6.x (schema_version=\"1\") qui a été retiré en v0.9.0 F-3. Régénère le baseline sur un host v0.9.0+.",
+      "not_a_baseline": "Le fichier {path} est du JSON valide mais n'est pas une baseline BOB (champs 'timestamp' et 'score' absents) — indique à --diff un fichier écrit par un audit précédent.",
       "bad_shape": "Le fichier baseline {path} a une forme inattendue : {error}"
     }
   },

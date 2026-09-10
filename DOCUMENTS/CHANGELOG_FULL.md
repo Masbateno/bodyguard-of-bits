@@ -252,7 +252,7 @@ into them — the loopback rule sits in `ufw-before-input`, unreachable. That is
 not BOB's defect, and BOB detects the result. What was BOB's is applying a
 default-deny policy unattended in the first place.
 
-**Tests** 9528 → **9781**. **Mutations** 117 → **140**.
+**Tests** 9528 → **9832**. **Mutations** 117 → **147**.
 
 ---
 

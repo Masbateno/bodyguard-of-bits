@@ -301,6 +301,28 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
         logger.warning("load_baseline: %s", msg)
         return None
 
+    # v0.18.0: a JSON document that carries none of a baseline's fields is
+    # not a baseline. Every baseline BOB has written since v0.3.0 goes
+    # through ``asdict(AuditBaseline)``, so ``timestamp`` and ``score`` are
+    # always present — their absence means this file was never one of ours.
+    #
+    # Without this gate ``{"unrelated": {"nested": 1}}`` loaded as a baseline
+    # of zero, and the diff then announced "Score improved by 72 point(s)",
+    # two newly opened ports and two newly active services. Not one of those
+    # claims was measured against anything: they were the current audit read
+    # back against a document that had recorded nothing.
+    if not isinstance(raw, dict) or not all(k in raw for k in ("timestamp", "score")):
+        msg = t_or_hardcoded(
+            "compare.baseline_load.not_a_baseline",
+            f"File {src} parsed as JSON but is not a BOB baseline "
+            f"(no 'timestamp' and 'score' fields) — point --diff at a file "
+            f"written by a previous audit.",
+        ).format(path=src)
+        if strict:
+            raise BaselineLoadError(msg)
+        logger.warning("load_baseline: %s", msg)
+        return None
+
     try:
         # v0.9.2: cross-version baseline migration shim. When a baseline
         # written by v0.7.x / v0.8.x carries finding keys with prefixes
