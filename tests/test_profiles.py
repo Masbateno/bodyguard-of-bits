@@ -24,6 +24,8 @@ from bob.profiles import (
     _DEFAULT_PROFILE,
     _find_profile_file,
     _load_from_path,
+    lookup_profile_file,
+    lookup_profile_file,
     apply_profile,
     load_profile,
 )
@@ -37,9 +39,9 @@ from tests.helpers import _t
 
 @pytest.fixture(autouse=True)
 def _clear_profile_cache():
-    _find_profile_file.cache_clear()
+    lookup_profile_file.cache_clear()
     yield
-    _find_profile_file.cache_clear()
+    lookup_profile_file.cache_clear()
 
 
 # ---------------------------------------------------------------------------

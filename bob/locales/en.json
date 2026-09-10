@@ -1095,6 +1095,8 @@
     "starting": "Starting audit",
     "audit_profile": "Audit profile: {profile}",
     "profile_not_found": "Profile '{profile}' not found — using default (server)",
+    "profile_search_blocked": "Profile '{profile}' could not be looked for — {dirs} unreadable — using default (server)",
+    "profile_shadow_unchecked": "Profile '{profile}' read from {path} — {dirs} could not be searched and may hold a profile of the same name",
     "report_saved": "Detailed report: {path}",
     "running_checks": "Active checks: {checks}"
   },

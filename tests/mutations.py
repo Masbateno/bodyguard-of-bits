@@ -65,6 +65,7 @@ _ABSENT = "tests/test_v0180_absent_is_not_unreadable.py"
 _CAPPED = "tests/test_v0180_capped_reads.py"
 _STATES = "tests/test_v0180_every_service_state_speaks.py"
 _LOCKOUT = "tests/test_v0180_no_fix_locks_you_out.py"
+_PROFSRCH = "tests/test_v0180_profile_search_is_not_absence.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1551,5 +1552,48 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "test_it_is_refused",),
         reason="ip6tables cuts IPv6 access exactly as iptables cuts IPv4; the "
                "family in the binary's name is not the point",
+    ),
+    Mutation(
+        id="profile/blocked-search-reported-as-absence",
+        file="bob/profiles.py",
+        old='            unreadable.append(str(directory))',
+        new='            continue',
+        kills=(f"{_PROFSRCH}::test_unreadable_directory_is_recorded_not_swallowed",
+               f"{_PROFSRCH}::test_load_profile_names_the_blocked_directory_in_its_warning"),
+        reason="a profile directory created by root under sudo refuses the "
+               "invoking user; the profile is sitting in it, and BOB answered "
+               "\"not found\" for a question it never got to ask",
+    ),
+    Mutation(
+        id="profile/kernel-refused-name-escapes-as-a-crash",
+        file="bob/profiles.py",
+        old="        except OSError:\n            # The kernel refused the name itself",
+        new="        except ValueError:\n            # The kernel refused the name itself",
+        kills=(f"{_PROFSRCH}::test_a_name_the_kernel_refuses_is_a_genuine_absence",
+               f"{_PROFSRCH}::test_load_profile_survives_a_name_the_kernel_refuses"),
+        reason="measured locally: `bob --profile <300 chars>` printed "
+               "\"Fatal error: [Errno 36] File name too long\" instead of the "
+               "profile-not-found verdict its one-character-shorter sibling gets",
+    ),
+    Mutation(
+        id="profile/both-outcomes-share-one-sentence",
+        file="bob/locales/en.json",
+        old='"profile_search_blocked": "Profile \'{profile}\' could not be looked for \u2014 {dirs} unreadable \u2014 using default (server)"',
+        new='"profile_search_blocked": "Profile \'{profile}\' not found \u2014 using default (server)"',
+        kills=(f"{_PROFSRCH}::test_both_outcomes_have_their_own_sentence_in_both_locales",),
+        reason="the distinction is only worth making if the operator can read "
+               "it; two keys rendering one sentence is the old defect wearing "
+               "a second name",
+    ),
+    Mutation(
+        id="profile/shadowed-builtin-passed-off-as-the-operators",
+        file="bob/profiles.py",
+        old="    if lookup.unreadable:\n        # The search stops at the first hit",
+        new="    if False:\n        # The search stops at the first hit",
+        kills=(f"{_PROFSRCH}::test_a_resolved_profile_still_names_the_door_that_stayed_shut",),
+        reason="the user profile directory is searched first, so a directory "
+               "BOB was refused entry to may hold the very profile the "
+               "operator configured; running the built-in instead without a "
+               "word makes the audit header name a profile that was never read",
     ),
 )

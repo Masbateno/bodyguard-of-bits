@@ -1095,6 +1095,8 @@
     "starting": "Démarrage de l'audit",
     "audit_profile": "Profil d'audit : {profile}",
     "profile_not_found": "Profil '{profile}' introuvable — utilisation du profil par défaut (server)",
+    "profile_search_blocked": "Profil '{profile}' impossible à chercher — {dirs} illisible — utilisation du profil par défaut (server)",
+    "profile_shadow_unchecked": "Profil '{profile}' lu depuis {path} — {dirs} n'a pas pu être parcouru et pourrait contenir un profil du même nom",
     "report_saved": "Rapport détaillé : {path}",
     "running_checks": "Checks actifs : {checks}"
   },

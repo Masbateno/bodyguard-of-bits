@@ -474,10 +474,15 @@ def _run(argv=None) -> int:
     # before the operator learns the name was wrong.
     _profile_prewarned = False
     if config.profile and config.profile not in ("", "default", "server"):
-        from bob.profiles import _find_profile_file
-        if _find_profile_file(config.profile) is None:
+        from bob.profiles import lookup_profile_file
+        _lookup = lookup_profile_file(config.profile)
+        if _lookup.path is None:
+            # A search BOB was refused entry to is not an absent profile.
+            _key = ("audit.profile_search_blocked" if _lookup.unreadable
+                    else "audit.profile_not_found")
             print(f"{t('cli.error.warning_prefix')}"
-                  + t("audit.profile_not_found", profile=config.profile),
+                  + t(_key, profile=config.profile,
+                      dirs=", ".join(_lookup.unreadable)),
                   file=sys.stderr)
             _profile_prewarned = True
 
@@ -518,6 +523,15 @@ def _run(argv=None) -> int:
             # Resolve audit profile: CLI flag > saved config > default
             profile_name = config.profile or user_config.get_profile() or "server"
             active_profile = load_profile(profile_name)
+            if profile_name not in ("", "default", "server"):
+                from bob.profiles import lookup_profile_file
+                _shadow = lookup_profile_file(profile_name)
+                if _shadow.path is not None and _shadow.unreadable:
+                    output.print_warn(t(
+                        "audit.profile_shadow_unchecked",
+                        profile=profile_name, path=str(_shadow.path),
+                        dirs=", ".join(_shadow.unreadable),
+                    ))
             _profile_not_found = (
                 profile_name not in ("", "default", "server")
                 and active_profile.name != profile_name
@@ -529,7 +543,13 @@ def _run(argv=None) -> int:
             if config.profile and not _profile_not_found:
                 user_config.set_profile(config.profile)
             if _profile_not_found and not _profile_prewarned:
-                output.print_warn(t("audit.profile_not_found", profile=profile_name))
+                from bob.profiles import lookup_profile_file
+                _blocked = lookup_profile_file(profile_name).unreadable
+                output.print_warn(t(
+                    "audit.profile_search_blocked" if _blocked
+                    else "audit.profile_not_found",
+                    profile=profile_name, dirs=", ".join(_blocked),
+                ))
 
             if config.watch_mode:
                 from bob.watch import run_watch

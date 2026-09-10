@@ -47,6 +47,7 @@ import functools
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple
 
 from bob.scoring import CheckResult, FindingLevel
 from bob.sysinfo import get_user_home
@@ -138,10 +139,29 @@ def load_profile(name: str) -> AuditProfile:
     # mac_policy.apparmor_no_enforce / file_integrity stays INFO.
     # See CHANGELOG v0.8.1 for migration.
 
-    path = _find_profile_file(name)
+    lookup = lookup_profile_file(name)
+    path = lookup.path
     if path is None:
-        logger.warning("Profile %r not found — using default (server)", name)
+        if lookup.unreadable:
+            logger.warning(
+                "Profile %r could not be looked for (%s unreadable) — using default (server)",
+                name, ", ".join(lookup.unreadable),
+            )
+        else:
+            logger.warning("Profile %r not found — using default (server)", name)
         return _DEFAULT_PROFILE
+
+    if lookup.unreadable:
+        # The search stops at the first hit, so every recorded directory was
+        # searched *before* this one — each could hold a same-named profile
+        # that would have taken priority. BOB used what it could reach and
+        # says which door was shut rather than passing the result off as
+        # the operator's configured profile.
+        logger.warning(
+            "Profile %r resolved from %s, but %s could not be searched and "
+            "may hold a profile of the same name",
+            name, path, ", ".join(lookup.unreadable),
+        )
 
     try:
         return _load_from_path(path, depth=0)
@@ -249,21 +269,51 @@ def _recognised_override_keys() -> set[str] | None:
     return recognised
 
 
+class ProfileLookup(NamedTuple):
+    """What the search for a profile file actually established.
+
+    ``path`` is the profile found, or None. ``unreadable`` names the
+    directories BOB was refused entry to — a non-empty tuple with a None
+    path means BOB could not look, which is not the same claim as the
+    profile not existing.
+    """
+
+    path: Path | None
+    unreadable: tuple[str, ...]
+
+
 @functools.lru_cache(maxsize=32)
-def _find_profile_file(name: str) -> Path | None:
-    """Return the .conf path for a named profile, user dir takes priority.
+def lookup_profile_file(name: str) -> ProfileLookup:
+    """Search the user then built-in profile directories for ``name``.conf.
 
     Results are cached — deep extends chains pay disk cost only once per name.
+
+    A directory BOB is refused entry to is recorded rather than skipped: the
+    caller must be able to tell "no such profile" from "could not look". A
+    candidate the kernel rejects outright (a name too long to be a filename,
+    for instance) is a genuine absence — no file of that name can exist there
+    — so it is passed over without being recorded.
     """
+    unreadable: list[str] = []
     for directory in (_USER_PROFILES_DIR, _BUILTIN_PROFILES_DIR):
         candidate = directory / f"{name}.conf"
         try:
             if candidate.is_file():
-                return candidate
+                return ProfileLookup(candidate, tuple(unreadable))
         except PermissionError:
-            # Directory unreadable (e.g. created by root via sudo) — skip silently.
+            # Directory unreadable (e.g. created by root via sudo) — BOB did
+            # not get to look here, and says so rather than staying silent.
+            unreadable.append(str(directory))
+        except OSError:
+            # The kernel refused the name itself (ENAMETOOLONG, ELOOP…).
+            # No file by that name can exist in this directory.
             continue
-    return None
+    return ProfileLookup(None, tuple(unreadable))
+
+
+def _find_profile_file(name: str) -> Path | None:
+    """The path alone, for callers with nothing to say about a blocked search."""
+    return lookup_profile_file(name).path
 
 
 def _load_from_path(path: Path, depth: int) -> AuditProfile:
