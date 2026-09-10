@@ -219,7 +219,40 @@ the same way. No command is offered, deliberately: restarting it unattended
 would paper over the first three causes and undo the fourth, and BOB cannot
 tell them apart.
 
-**Tests** 9528 → **9754**. **Mutations** 117 → **137**.
+**Stress pass 4 — `--fix --apply` on each distribution, with a check that
+crosses what BOB claims against what the next audit finds.** On Debian 13: three
+claimed, three findings actually gone. On Arch: eight claimed, eight gone — and
+three new negative findings that were not there before.
+
+Two of those were legitimate (installing UFW reveals that it is not enabled).
+The third was BOB breaking the machine it was auditing:
+
+    sudo iptables -P INPUT DROP     ->  loopback broken, outbound broken
+
+and in the same audit, `firewall_iptables.no_loopback` and
+`firewall_iptables.no_conntrack` — BOB applied a policy whose prerequisites it
+reports as missing. On a remote host that policy ends the session that started
+it. It is refused unattended now, in every spelling: `iptables`, `ip6tables`,
+the `-nft` and `-legacy` variants, and `nft … policy drop`. The command stays
+on screen with its explanation.
+
+The same run offered, in this order, with sshd listening on 22:
+
+    sudo ufw enable
+    sudo ufw allow 22
+
+Applied unattended on a remote host, the first line removes the way back in and
+the second never reaches anyone. BOB already knew to open the port — it did it
+second. A fix that grants access now runs before one that withdraws it, and the
+UFW delete ordering from v0.16.x still runs first and high-to-low.
+
+What broke the Arch host's loopback turned out to be UFW's own doing there:
+`ufw enable` sets `-P INPUT DROP`, creates its chains, and never wires INPUT
+into them — the loopback rule sits in `ufw-before-input`, unreachable. That is
+not BOB's defect, and BOB detects the result. What was BOB's is applying a
+default-deny policy unattended in the first place.
+
+**Tests** 9528 → **9781**. **Mutations** 117 → **140**.
 
 ---
 

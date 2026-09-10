@@ -52,6 +52,35 @@ def _print_unapplied(diag_items, manual_items, t, _c) -> None:
 _INTERACTIVE = ("nano", "vim", "vi", "emacs", "editor", "$EDITOR")
 
 
+#: Commands that can cut the operator off from the machine they are auditing.
+#:
+#: Measured on an Arch VM, v0.18.0 stress pass 4. `--fix --apply --yes` ran
+#: `iptables -P INPUT DROP` and left the host with loopback broken and outbound
+#: broken — and BOB then reported, in the same audit, that the loopback and
+#: conntrack rules it needs were missing. It applied a policy whose
+#: prerequisites it knows about and does not install.
+#:
+#: A default-deny policy is correct hardening and the wrong thing to do
+#: unattended: on a remote host it ends the session that started it. The
+#: command stays on screen with its explanation; BOB does not run it.
+#: A rule that opens a port, and a command that turns a default-deny firewall
+#: on. The first has to run before the second, or the second removes the
+#: operator's way back in before the first can be typed.
+_GRANTS_ACCESS = re.compile(r"(?<![\w-])ufw\s+(?:--force\s+)?allow(?![\w-])",
+                            re.IGNORECASE)
+_WITHDRAWS_ACCESS = re.compile(
+    r"(?<![\w-])ufw\s+(?:--force\s+)?(?:enable|default\s+deny)(?![\w-])",
+    re.IGNORECASE)
+
+_LOCKOUT_COMMANDS = re.compile(
+    # ip6tables and the -nft/-legacy variants cut the same access; the family
+    # in the binary's name is not the point.
+    r"(?<![\w-])ip6?tables(?:-nft|-legacy)?\s+.*-P\s+(?:INPUT|FORWARD)\s+DROP"
+    r"|(?<![\w-])nft\s+.*policy\s+drop",
+    re.IGNORECASE,
+)
+
+
 def _can_apply_unattended(cmd: str) -> bool:
     """Whether BOB can actually run *cmd* itself, with nobody watching.
 
@@ -66,6 +95,8 @@ def _can_apply_unattended(cmd: str) -> bool:
     execution-time refusal stays as a second barrier — a command reaching it
     now means these two disagree, which is worth failing on.
     """
+    if _LOCKOUT_COMMANDS.search(cmd):
+        return False
     if _has_shell_ops(cmd):
         return False
     try:
@@ -253,6 +284,20 @@ def run_fixes(engine, config, t) -> None:
         match = re.search(r"delete (\d+)$", item[1])
         return int(match.group(1)) if match else 0
 
+    # v0.18.0: a rule that grants access runs before one that withdraws it.
+    # Measured on an Arch VM with sshd listening, BOB offered — in this order —
+    # `ufw enable`, `ufw allow 22`, `ufw enable`. Applied unattended on a
+    # remote host, the first line ends the session and the second never reaches
+    # anyone. BOB already knew to allow the port; it simply did it second.
+    def access_phase(item) -> int:
+        cmd = item[1]
+        if _GRANTS_ACCESS.search(cmd):
+            return 0
+        if _WITHDRAWS_ACCESS.search(cmd):
+            return 2
+        return 1
+
+    others = sorted(others, key=access_phase)
     sorted_items = sorted(ufw_deletes, key=sort_key, reverse=True) + others
 
     # ── Dry-run preview (--fix without --apply) ─────────────────────────────

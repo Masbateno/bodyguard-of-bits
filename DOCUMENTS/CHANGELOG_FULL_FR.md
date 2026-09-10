@@ -230,7 +230,44 @@ traité de même. Aucune commande n'est proposée, délibérément : le relancer
 surveillance masquerait les trois premières causes et défairait la quatrième, et
 BOB ne sait pas les distinguer.
 
-**Tests** 9528 → **9754**. **Mutations** 117 → **137**.
+**Passe de stress 4 — `--fix --apply` sur chaque distribution, avec un
+vérificateur qui croise ce que BOB annonce et ce que l'audit suivant
+constate.** Sur Debian 13 : trois annoncées, trois constats réellement partis.
+Sur Arch : huit annoncées, huit partis — et trois nouveaux constats négatifs
+qui n'étaient pas là avant.
+
+Deux étaient légitimes (installer UFW révèle qu'il n'est pas activé). Le
+troisième était BOB cassant la machine qu'il auditait :
+
+    sudo iptables -P INPUT DROP     ->  loopback cassé, sortie cassée
+
+et dans le même audit, `firewall_iptables.no_loopback` et
+`firewall_iptables.no_conntrack` — BOB a appliqué une politique dont il signale
+les prérequis comme manquants. Sur une machine distante, cette politique met fin
+à la session qui l'a lancée. Elle est désormais refusée sans surveillance, dans
+toutes ses orthographes : `iptables`, `ip6tables`, les variantes `-nft` et
+`-legacy`, et `nft … policy drop`. La commande reste affichée avec son
+explication.
+
+La même exécution proposait, dans cet ordre, avec sshd en écoute sur 22 :
+
+    sudo ufw enable
+    sudo ufw allow 22
+
+Appliqué sans surveillance sur une machine distante, la première ligne supprime
+le chemin du retour et la seconde ne parvient à personne. BOB savait qu'il
+fallait ouvrir le port — il le faisait en second. Une correction qui **donne**
+un accès s'exécute désormais avant une qui le **retire**, et l'ordre des
+suppressions UFW de la v0.16.x passe toujours en premier, du plus grand numéro
+au plus petit.
+
+Ce qui a cassé le loopback de l'Arch venait d'UFW lui-même : `ufw enable` y pose
+`-P INPUT DROP`, crée ses chaînes, et ne branche jamais INPUT dessus — la règle
+de loopback siège dans `ufw-before-input`, inatteignable. Ce n'est pas un défaut
+de BOB, et BOB en détecte le résultat. Ce qui était de BOB, c'est d'appliquer
+une politique de refus par défaut sans surveillance.
+
+**Tests** 9528 → **9781**. **Mutations** 117 → **140**.
 
 ---
 

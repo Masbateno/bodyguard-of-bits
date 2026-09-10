@@ -64,6 +64,7 @@ _NATIVE = "tests/test_v0180_native_sysctl_apply.py"
 _ABSENT = "tests/test_v0180_absent_is_not_unreadable.py"
 _CAPPED = "tests/test_v0180_capped_reads.py"
 _STATES = "tests/test_v0180_every_service_state_speaks.py"
+_LOCKOUT = "tests/test_v0180_no_fix_locks_you_out.py"
 
 
 MUTATIONS: "tuple[Mutation, ...]" = (
@@ -1517,5 +1518,38 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "point since v0.8.0 for the same kind of fact; one of the two "
                "directions counting and not the other is the asymmetry that "
                "hid this state for ten releases",
+    ),
+    Mutation(
+        id="lockout/default-deny-applied-unattended",
+        file="bob/fixes.py",
+        old="    if _LOCKOUT_COMMANDS.search(cmd):\n        return False",
+        new="    if False:\n        return False",
+        kills=(f"{_LOCKOUT}::TestADefaultDenyPolicyIsNeverRunUnattended::"
+               "test_it_is_refused",),
+        reason="measured on an Arch VM: --fix --apply --yes ran `iptables -P "
+               "INPUT DROP` and left the host with loopback and outbound "
+               "broken, while the same audit reported the loopback and "
+               "conntrack rules it needs as missing",
+    ),
+    Mutation(
+        id="lockout/firewall-enabled-before-the-port-is-open",
+        file="bob/fixes.py",
+        old="    others = sorted(others, key=access_phase)",
+        new="    others = list(others)",
+        kills=(f"{_LOCKOUT}::TestAccessIsGrantedBeforeItIsWithdrawn::"
+               "test_the_measured_arch_case",),
+        reason="BOB offered `ufw enable` then `ufw allow 22` with sshd "
+               "listening; unattended on a remote host the first line ends the "
+               "session and the second never reaches anyone",
+    ),
+    Mutation(
+        id="lockout/ipv6-variant-slips-through",
+        file="bob/fixes.py",
+        old='r"(?<![\\w-])ip6?tables(?:-nft|-legacy)?\\s+.*-P\\s+(?:INPUT|FORWARD)\\s+DROP"',
+        new='r"(?<![\\w-])iptables\\s+.*-P\\s+(?:INPUT|FORWARD)\\s+DROP"',
+        kills=(f"{_LOCKOUT}::TestADefaultDenyPolicyIsNeverRunUnattended::"
+               "test_it_is_refused",),
+        reason="ip6tables cuts IPv6 access exactly as iptables cuts IPv4; the "
+               "family in the binary's name is not the point",
     ),
 )
