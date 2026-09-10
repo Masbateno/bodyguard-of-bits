@@ -267,7 +267,7 @@ de loopback siège dans `ufw-before-input`, inatteignable. Ce n'est pas un défa
 de BOB, et BOB en détecte le résultat. Ce qui était de BOB, c'est d'appliquer
 une politique de refus par défaut sans surveillance.
 
-**Tests** 9528 → **9872**. **Mutations** 117 → **152**.
+**Tests** 9528 → **9894**. **Mutations** 117 → **155**.
 
 ---
 

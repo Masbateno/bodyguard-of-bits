@@ -280,6 +280,21 @@ sudo bob --format=markdown > /tmp/audit.md  # human-readable .md (stdout)
 sudo bob --format=html     > /tmp/audit.html # HTML report (stdout)
 ```
 
+The CSV carries one row per finding, and since v0.18.0 its last column is
+`key` — the same identifier `--explain` and `--ignore` take, and the one a
+baseline is keyed on. Use it rather than `message`, which is translated
+prose and changes with the locale and with rewordings:
+
+```bash
+sudo bob --format=csv | awk -F, 'NR>1 && $10=="alert" {print $NF}'
+```
+
+That `awk` holds because `level` sits before every free-text column and a
+finding key never contains a comma — for anything touching `message` or
+`detail`, use a real CSV reader. The fifteen columns that preceded `key`
+keep their positions, so a consumer written against v0.17.1 is unaffected.
+
+
 `-J` and `-j` are shorthands for `--format=json-full` / `--format=json`. Combine with `--min-level=warn` to filter.
 
 Two JSON fields are worth knowing if you pipe this anywhere (both since v0.14.1):

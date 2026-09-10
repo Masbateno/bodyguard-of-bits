@@ -47,6 +47,19 @@ _HEADERS = [
     "detail",
     "fix_cmd",
     "note",
+    # v0.18.0: the third field CSV dropped while the other five sinks carried
+    # it, after ``detail`` in v0.8.1 (T11). ``key`` is the heaviest of the
+    # three because it is not description but *identity*: it is what
+    # ``--explain`` and ``--ignore`` take as input, what a baseline is keyed
+    # on, and what ``unverified`` lists. ``message`` cannot stand in for it —
+    # that is translated prose, so the same finding exported under --french
+    # and under English shared no common column, and a message reworded in a
+    # release broke the join silently.
+    #
+    # Appended rather than inserted: T11 put ``detail`` mid-list and made
+    # column-by-index readers re-index. There is nothing to gain by doing
+    # that again for a lookup field nobody reads in sequence.
+    "key",
 ]
 
 
@@ -106,7 +119,7 @@ def build_csv_output(
 
     if not engine.findings:
         writer.writerow({**meta, "level": "", "nature": "", "message": "",
-                         "detail": "", "fix_cmd": "", "note": ""})
+                         "detail": "", "fix_cmd": "", "note": "", "key": ""})
     else:
         for f in engine.findings:
             writer.writerow({
@@ -117,6 +130,7 @@ def build_csv_output(
                 "detail":  _csv_safe(f.detail  or ""),
                 "fix_cmd": _csv_safe(f.cmd     or ""),
                 "note":    _csv_safe(f.note    or ""),
+                "key":     _csv_safe(f.key     or ""),
             })
 
     return buf.getvalue()

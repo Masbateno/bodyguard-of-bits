@@ -282,6 +282,23 @@ sudo bob --format=markdown > /tmp/audit.md  # .md humain-lisible (stdout)
 sudo bob --format=html     > /tmp/audit.html # rapport HTML (stdout)
 ```
 
+Le CSV porte une ligne par constat et, depuis la v0.18.0, sa dernière
+colonne est `key` — le même identifiant que prennent `--explain` et
+`--ignore`, et celui sur lequel une baseline est indexée. Utilise-la plutôt
+que `message`, qui est de la prose traduite : elle change avec la langue et
+avec les reformulations.
+
+```bash
+sudo bob --format=csv | awk -F, 'NR>1 && $10=="alert" {print $NF}'
+```
+
+Cet `awk` tient parce que `level` se trouve avant toute colonne de texte
+libre et qu'une clé de constat ne contient jamais de virgule — dès que tu
+touches à `message` ou `detail`, passe par un vrai lecteur CSV. Les quinze
+colonnes qui précèdent `key` gardent leur position : un consommateur écrit
+pour la v0.17.1 n'est pas affecté.
+
+
 `-J` et `-j` sont des raccourcis pour `--format=json-full` / `--format=json`. Combine avec `--min-level=warn` pour filtrer.
 
 Deux champs JSON valent d'être connus si tu rediriges la sortie quelque part (tous deux depuis la v0.14.1) :

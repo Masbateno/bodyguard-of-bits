@@ -67,6 +67,7 @@ _STATES = "tests/test_v0180_every_service_state_speaks.py"
 _LOCKOUT = "tests/test_v0180_no_fix_locks_you_out.py"
 _PROFSRCH = "tests/test_v0180_profile_search_is_not_absence.py"
 _HISTREAD = "tests/test_v0180_history_reads_only_what_it_wrote.py"
+_SINKKEY  = "tests/test_v0180_every_sink_carries_the_key.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1681,5 +1682,35 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="`.get(k, \"\")` returns None when the key is present holding "
                "null, and None formats as the word None in the risk-level "
                "column",
+    ),
+    Mutation(
+        id="sinks/csv-drops-the-finding-key",
+        file="bob/csv_output.py",
+        old='                "key":     _csv_safe(f.key     or ""),',
+        new='                "key":     "",',
+        kills=(f"{_SINKKEY}::test_csv_names_the_key_of_every_finding",),
+        reason="the column would exist and be empty, which is worse than "
+               "absent: a consumer joins on it and gets nothing back, with "
+               "no error to say why",
+    ),
+    Mutation(
+        id="sinks/csv-key-column-moves-mid-list",
+        file="bob/csv_output.py",
+        old='    "fix_cmd",\n    "note",',
+        new='    "key",\n    "fix_cmd",\n    "note",',
+        kills=(f"{_SINKKEY}::test_csv_key_column_is_appended_not_inserted",),
+        reason="T11 inserted `detail` mid-list in v0.8.1 and every "
+               "column-by-index consumer had to re-index; a lookup field "
+               "nobody reads in sequence has no reason to cost that again",
+    ),
+    Mutation(
+        id="sinks/fix-action-leaks-into-the-report",
+        file="bob/csv_output.py",
+        old='                "note":    _csv_safe(f.note    or ""),',
+        new='                "note":    _csv_safe(str(f.fix_action)),',
+        kills=(f"{_SINKKEY}::test_fix_action_stays_out_of_every_sink",),
+        reason="`fix_action` tells BOB how to apply a fix; it is an "
+               "instruction, not a measurement, and a sink that prints it "
+               "presents machinery as a fact about the host",
     ),
 )
