@@ -66,6 +66,7 @@ _CAPPED = "tests/test_v0180_capped_reads.py"
 _STATES = "tests/test_v0180_every_service_state_speaks.py"
 _LOCKOUT = "tests/test_v0180_no_fix_locks_you_out.py"
 _PROFSRCH = "tests/test_v0180_profile_search_is_not_absence.py"
+_HISTREAD = "tests/test_v0180_history_reads_only_what_it_wrote.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1629,5 +1630,56 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="\"not JSON at all\" and \"JSON, but not ours\" send the "
                "operator to different places; collapsing them hides which "
                "one happened",
+    ),
+    Mutation(
+        id="history/an-unreadable-score-is-repaired-into-zero",
+        file="bob/history.py",
+        old="        return None\n    if not 0 <= score <= 10:",
+        new="        e[\"score\"] = 0\n        return e\n    if not 0 <= score <= 10:",
+        kills=(f"{_HISTREAD}::test_a_lost_score_no_longer_invents_a_collapse",),
+        reason="the repaired figure does not merely sit in the table \u2014 it "
+               "feeds the trend arrows: three audits of 8/10 with one score "
+               "field lost rendered 8 \u2192 0 \u2193 then 0 \u2192 8 \u2191, "
+               "a collapse and a recovery that never happened",
+    ),
+    Mutation(
+        id="history/out-of-scale-score-is-kept",
+        file="bob/history.py",
+        old="    if not 0 <= score <= 10:\n        return None",
+        new="    if False:\n        return None",
+        kills=(f"{_HISTREAD}::test_a_score_bob_never_wrote_is_skipped[999]",
+               f"{_HISTREAD}::test_a_score_bob_never_wrote_is_skipped[-5]"),
+        reason="BOB writes 0\u201310 and nothing else; a 999 clamped to a "
+               "perfect 10 is a posture it never measured",
+    ),
+    Mutation(
+        id="history/a-timestamp-that-is-not-one-reaches-the-renderer",
+        file="bob/history.py",
+        old="    if not isinstance(ts, str) or not ts:\n        return None",
+        new="    if False:\n        return None",
+        kills=(f"{_HISTREAD}::test_a_timestamp_that_is_not_one_is_skipped[null]",
+               f"{_HISTREAD}::test_a_timestamp_that_is_not_one_is_skipped[12345]"),
+        reason="`bob --history` died with TypeError: 'NoneType' object is not "
+               "subscriptable \u2014 the v0.14.1 fix checked the shape of the "
+               "line and never the shape of its fields",
+    ),
+    Mutation(
+        id="history/true-passes-for-a-score-of-one",
+        file="bob/history.py",
+        old="    if isinstance(score, bool) or not isinstance(score, int):",
+        new="    if not isinstance(score, int):",
+        kills=(f"{_HISTREAD}::test_a_score_bob_never_wrote_is_skipped[True]",),
+        reason="bool is an int in Python, so `\"score\": true` would enter the "
+               "table as a posture of 1/10",
+    ),
+    Mutation(
+        id="history/null-level-prints-the-word-none",
+        file="bob/history.py",
+        old='        level = e.get("level") or ""',
+        new='        level = e.get("level", "")',
+        kills=(f"{_HISTREAD}::test_a_null_level_does_not_print_the_word_none",),
+        reason="`.get(k, \"\")` returns None when the key is present holding "
+               "null, and None formats as the word None in the risk-level "
+               "column",
     ),
 )

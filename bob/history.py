@@ -35,13 +35,38 @@ def _score_to_spark(score: int) -> str:
     return _SPARK_CHARS[idx]
 
 
-def _clamp_entry(e: dict) -> dict:
-    """Return entry with score clamped to [0, 10]. Mutates and returns e."""
-    raw = e.get("score", 0)
-    try:
-        e["score"] = max(0, min(10, int(raw)))
-    except (TypeError, ValueError):
-        e["score"] = 0
+def _readable_entry(e: dict) -> dict | None:
+    """Return *e* if it carries the shape ``save_score`` writes, else None.
+
+    v0.18.0. This used to be ``_clamp_entry``, which repaired what it could
+    not read: a score that was null, absent, a string or out of range became
+    ``0``, and an unreadable timestamp was left to crash the renderer.
+
+    Neither is a value BOB measured. The substituted score is the worse of
+    the two because it does not merely sit in a table — it feeds the trend
+    arrows. Measured on three audits of 8/10 with the middle line's score
+    field lost::
+
+        8/10  →
+        0/10  ↓      the collapse that never happened
+        8/10  ↑      the recovery that never happened
+
+    A line BOB cannot read is not a record of a past audit, so it is skipped
+    exactly as a line that is not a JSON object is skipped. The sparkline and
+    the arrows then describe audits that actually ran, and nothing else.
+
+    ``level`` is deliberately not required: it has been written since v0.7.0
+    but older lines predate it, and its absence costs a label, not a fact.
+    """
+    ts = e.get("ts")
+    if not isinstance(ts, str) or not ts:
+        return None
+    score = e.get("score")
+    # bool is an int in Python, and ``True`` is not a score.
+    if isinstance(score, bool) or not isinstance(score, int):
+        return None
+    if not 0 <= score <= 10:
+        return None
     return e
 
 
@@ -128,7 +153,10 @@ def load_history(max_entries: int = 50) -> list[dict]:
             # for every malformed shape, not just unparseable ones.
             if not isinstance(parsed, dict):
                 continue
-            entries.append(_clamp_entry(parsed))
+            readable = _readable_entry(parsed)
+            if readable is None:
+                continue
+            entries.append(readable)
     except OSError:
         return []
     return entries[-max_entries:]
@@ -170,14 +198,20 @@ def render_history(entries: list[dict], t: TranslationFunc | None = None) -> lis
     recent = entries[-10:]
     for i, e in enumerate(reversed(recent)):
         orig_idx = len(entries) - 1 - i
-        ts_raw = e.get("ts", "")
+        # Same trap as ``level`` below: an explicit null answers .get()
+        # with None, and the except branch would subscript it.
+        ts_raw = e.get("ts") or ""
+        if not isinstance(ts_raw, str):
+            ts_raw = ""
         try:
             dt     = datetime.fromisoformat(ts_raw)
             ts_str = dt.strftime("%Y-%m-%d %H:%M")
         except (ValueError, TypeError):
             ts_str = ts_raw[:16]
         score = e.get("score", "?")
-        level = e.get("level", "")
+        # ``.get(k, "")`` returns None when the key exists holding null,
+        # which formats as the string "None" on the operator's screen.
+        level = e.get("level") or ""
         trend = _trend(entries, orig_idx)
         lines.append(f"  {ts_str}   {score}/10  {trend}  {level}")
 

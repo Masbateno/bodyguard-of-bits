@@ -104,26 +104,27 @@ class TestSaveLoadHistory:
         assert len(entries) == 3
         assert entries[-1]["score"] == 8
 
-    def test_load_clamps_score_overflow(self, tmp_path, monkeypatch):
+    # v0.18.0: these three used to assert that an unreadable score was
+    # repaired — 999 became 10, -5 became 0, "bad" became 0. BOB never wrote
+    # any of those values, so the repaired figure was a measurement it had
+    # not made, and it drove the trend arrows. The line is skipped now.
+    def test_load_skips_score_above_the_scale(self, tmp_path, monkeypatch):
         hf = tmp_path / "history.jsonl"
         hf.write_text('{"ts":"2026-01-01T00:00:00+00:00","score":999,"level":"low"}\n')
         monkeypatch.setattr("bob.history._HISTORY_FILE", hf)
-        entries = load_history()
-        assert entries[0]["score"] == 10
+        assert load_history() == []
 
-    def test_load_clamps_score_negative(self, tmp_path, monkeypatch):
+    def test_load_skips_score_below_the_scale(self, tmp_path, monkeypatch):
         hf = tmp_path / "history.jsonl"
         hf.write_text('{"ts":"2026-01-01T00:00:00+00:00","score":-5,"level":"low"}\n')
         monkeypatch.setattr("bob.history._HISTORY_FILE", hf)
-        entries = load_history()
-        assert entries[0]["score"] == 0
+        assert load_history() == []
 
-    def test_load_clamps_score_invalid_type(self, tmp_path, monkeypatch):
+    def test_load_skips_a_score_that_is_not_a_number(self, tmp_path, monkeypatch):
         hf = tmp_path / "history.jsonl"
         hf.write_text('{"ts":"2026-01-01T00:00:00+00:00","score":"bad","level":"low"}\n')
         monkeypatch.setattr("bob.history._HISTORY_FILE", hf)
-        entries = load_history()
-        assert entries[0]["score"] == 0
+        assert load_history() == []
 
     def test_rotation_truncates_old_entries(self, tmp_path, monkeypatch):
         hf = tmp_path / "history.jsonl"
