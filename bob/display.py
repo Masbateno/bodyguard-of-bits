@@ -128,12 +128,23 @@ def display_result(
 
     for finding in result.findings:
         if quiet:
-            report.write_finding(finding.level.value.upper(), finding.message)
+            # Quiet silences the *screen*, never the archive: -q -d is how a
+            # cron job asks for a file and no output, and a file stripped of
+            # its remediation is the one nobody can act on later.
+            report.write_finding(
+                finding.level.value.upper(), finding.message,
+                detail=finding.detail, cmd=finding.cmd,
+                cmd_type=finding.cmd_type, key=finding.key,
+            )
             continue
         traits = dispatch.get(finding.level)
         if traits is None:
             continue
-        report.write_finding(traits.report_label, finding.message)
+        report.write_finding(
+            traits.report_label, finding.message,
+            detail=finding.detail, cmd=finding.cmd,
+            cmd_type=finding.cmd_type, key=finding.key,
+        )
         if not _passes_threshold(traits.threshold_key):
             continue
         traits.print_fn(finding.message)

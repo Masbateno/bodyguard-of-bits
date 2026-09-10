@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.18.0] — 09-09-2026
+## [v0.18.0] — 11-09-2026
 
 **BOB lit OpenRC.**
 
@@ -267,7 +267,7 @@ de loopback siège dans `ufw-before-input`, inatteignable. Ce n'est pas un défa
 de BOB, et BOB en détecte le résultat. Ce qui était de BOB, c'est d'appliquer
 une politique de refus par défaut sans surveillance.
 
-**Tests** 9528 → **9894**. **Mutations** 117 → **155**.
+**Tests** 9528 → **9916**. **Mutations** 117 → **159**.
 
 ---
 

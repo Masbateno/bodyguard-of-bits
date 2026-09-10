@@ -68,6 +68,7 @@ _LOCKOUT = "tests/test_v0180_no_fix_locks_you_out.py"
 _PROFSRCH = "tests/test_v0180_profile_search_is_not_absence.py"
 _HISTREAD = "tests/test_v0180_history_reads_only_what_it_wrote.py"
 _SINKKEY  = "tests/test_v0180_every_sink_carries_the_key.py"
+_ARCHIVE  = "tests/test_v0180_the_archive_keeps_the_remedy.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1712,5 +1713,45 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="`fix_action` tells BOB how to apply a fix; it is an "
                "instruction, not a measurement, and a sink that prints it "
                "presents machinery as a fact about the host",
+    ),
+    Mutation(
+        id="archive/the-log-drops-the-command-again",
+        file="bob/display.py",
+        old="            detail=finding.detail, cmd=finding.cmd,\n            cmd_type=finding.cmd_type, key=finding.key,\n        )",
+        new="        )",
+        kills=(f"{_ARCHIVE}::test_the_log_carries_the_command_it_showed_on_screen",
+               f"{_ARCHIVE}::test_the_log_names_the_finding"),
+        reason="`write_finding` accepted `detail` from the day it was written "
+               "and no caller ever passed it, which is how the .log came to "
+               "hold the accusation and none of the remedy for ten releases",
+    ),
+    Mutation(
+        id="archive/quiet-strips-the-file-too",
+        file="bob/display.py",
+        old="                detail=finding.detail, cmd=finding.cmd,\n                cmd_type=finding.cmd_type, key=finding.key,\n            )",
+        new="            )",
+        kills=(f"{_ARCHIVE}::test_quiet_silences_the_screen_and_not_the_archive",),
+        reason="`-q -d` is a cron job asking for a file and no output; quiet "
+               "is about the terminal, and a file written under it that has "
+               "no remediation is the one nobody can act on months later",
+    ),
+    Mutation(
+        id="archive/a-check-is-rendered-as-a-fix",
+        file="bob/report.py",
+        old='        marker = "?" if cmd_type == "check" else "\u2192"',
+        new='        marker = "\u2192"',
+        kills=(f"{_ARCHIVE}::test_a_check_command_is_not_marked_as_a_fix",),
+        reason="the arrow means BOB is telling you to change something; a "
+               "command that only looks must not wear it, in the archive any "
+               "more than on the screen",
+    ),
+    Mutation(
+        id="archive/empty-body-writes-blank-lines",
+        file="bob/report.py",
+        old="        for line in detail.splitlines():\n            if line.strip():",
+        new="        for line in detail.splitlines() or [\"\"]:\n            if True:",
+        kills=(f"{_ARCHIVE}::test_a_finding_with_no_body_adds_no_empty_lines",),
+        reason="a finding with nothing to add would gain an indented blank "
+               "line, and an OK-heavy audit would double the file with them",
     ),
 )

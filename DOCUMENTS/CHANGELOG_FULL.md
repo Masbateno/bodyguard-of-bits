@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.18.0] — 2026-09-09
+## [v0.18.0] — 2026-09-11
 
 **BOB reads OpenRC.**
 
@@ -252,7 +252,7 @@ into them — the loopback rule sits in `ufw-before-input`, unreachable. That is
 not BOB's defect, and BOB detects the result. What was BOB's is applying a
 default-deny policy unattended in the first place.
 
-**Tests** 9528 → **9894**. **Mutations** 117 → **155**.
+**Tests** 9528 → **9916**. **Mutations** 117 → **159**.
 
 ---
 

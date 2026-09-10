@@ -65,7 +65,9 @@ class Report(Protocol):
     def write_header(self, info: "SystemInfo", labels: dict[str, str] | None = None) -> None: ...
     def write_group(self, title: str) -> None: ...
     def write_section(self, title: str) -> None: ...
-    def write_finding(self, level: str, message: str, detail: str = "") -> None: ...
+    def write_finding(self, level: str, message: str, detail: str = "",
+                      cmd: str = "", cmd_type: str = "fix",
+                      key: str = "") -> None: ...
     def write_raw(self, text: str) -> None: ...
     def write_indented(self, text: str, indent: int = 4) -> None: ...
     def write_separator(self, thin: bool = False) -> None: ...
@@ -298,19 +300,47 @@ class AuditReport:
         level: str,
         message: str,
         detail: str = "",
+        cmd: str = "",
+        cmd_type: str = "fix",
+        key: str = "",
     ) -> None:
         """
-        Write a single timestamped finding line.
+        Write a single timestamped finding, with the body the screen showed.
+
+        v0.18.0: ``detail`` had been accepted here since the file was written
+        and was never passed; ``cmd`` and ``key`` did not exist. So the .log
+        held a level and a message, while the terminal that produced it had
+        also printed the remediation — on an ALERT about a SUID binary the
+        screen gave ``sudo chmod u-s /usr/local/bin/oddbin`` and the archive
+        kept none of it, though ``-d`` is documented as the *detailed* report
+        and README_TECH promises "findings, and recommendations".
+
+        The archive is the output that outlives the run. It carries the body
+        unconditionally, not gated on the screen's verbosity: an operator
+        reading a six-month-old .log cannot go back and re-run it with -v.
 
         Args:
-            level:   "OK" | "WARN" | "ALERT" | "INFO"
-            message: Main finding message.
-            detail:  Optional detail appended on the next line.
+            level:    "OK" | "WARN" | "ALERT" | "INFO"
+            message:  Main finding message.
+            detail:   Optional explanation, one indented line each.
+            cmd:      Optional remediation, marked → to fix and ? to check,
+                      matching the arrows the terminal uses.
+            cmd_type: "fix" (→) or "check" (?).
+            key:      The finding's stable identifier — what ``--explain``
+                      and ``--ignore`` take, and the only field that survives
+                      a reworded message or a change of locale.
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._writeln(f"{now} [{level}] {message}")
-        if detail:
-            self._writeln(f"    {detail}")
+        for line in detail.splitlines():
+            if line.strip():
+                self._writeln(f"    {line}")
+        marker = "?" if cmd_type == "check" else "→"
+        for line in cmd.splitlines():
+            if line.strip():
+                self._writeln(f"    {marker} {line}")
+        if key:
+            self._writeln(f"    [{key}]")
 
     def write_raw(self, text: str) -> None:
         """Write a raw text line without timestamp or level prefix."""
