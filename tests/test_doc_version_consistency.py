@@ -88,6 +88,11 @@ def test_man_page_version_matches_pyproject(rel_path: str, pattern: str):
 _SHIELDS_FILES = [
     "DOCUMENTS/README_TECH.md",
     "DOCUMENTS/README_TECH_FR.md",
+    # v0.18.0: the badge block moved onto the public READMEs too. Every file
+    # that carries the version badge has to be watched, or the drift this
+    # guard exists to catch simply relocates to the unwatched copy.
+    "README.md",
+    "README_FR.md",
 ]
 
 

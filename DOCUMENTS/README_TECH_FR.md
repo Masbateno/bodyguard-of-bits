@@ -4,10 +4,13 @@
 
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Release](https://img.shields.io/badge/version-v0.18.0-brightgreen)
+![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
+![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
-![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
-![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
+![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20Arch%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
+![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
 BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 39 sections de vérification sur 7 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
@@ -152,7 +155,11 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ## Prérequis
 
-- Linux — utilisé au quotidien sur Linux Mint 22.3 + Debian 13.4.0 ; validé en CI sur Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+- Linux — le badge de plateformes couvre neuf noms, sur trois natures de preuve différentes :
+  - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
+  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+  - **validé sur machines virtuelles réelles** (tests terrain v0.17.1 et v0.18.0) : Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine étant la seule machine sans systemd, celle contre laquelle le support OpenRC a été écrit
+  - **Raspberry Pi** : la section existe et toutes ses branches ont été parcourues via les vrais chemins de collecte, mais **aucun test n'a encore tourné sur le matériel lui-même** — ce nom-là est à considérer comme non testé tant que ce ne sera pas fait
 - Python 3.10+
 - `ss` recommandé (paquet `iproute2`) — disponible par défaut sur les systèmes modernes
 - `python3-geoip2` + base GeoLite2 recommandés pour la géolocalisation IP (optionnel) : `sudo apt install python3-geoip2 geoip-database`
@@ -164,7 +171,11 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Prérequis
 
-- Linux — utilisé au quotidien sur Linux Mint 22.3 + Debian 13.4.0 ; validé en CI sur Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+- Linux — le badge de plateformes couvre neuf noms, sur trois natures de preuve différentes :
+  - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
+  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+  - **validé sur machines virtuelles réelles** (tests terrain v0.17.1 et v0.18.0) : Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine étant la seule machine sans systemd, celle contre laquelle le support OpenRC a été écrit
+  - **Raspberry Pi** : la section existe et toutes ses branches ont été parcourues via les vrais chemins de collecte, mais **aucun test n'a encore tourné sur le matériel lui-même** — ce nom-là est à considérer comme non testé tant que ce ne sera pas fait
 - pipx *(installateur d'applications Python isolées)* :
 
 ```bash

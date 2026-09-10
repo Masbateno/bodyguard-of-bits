@@ -2,6 +2,16 @@
 
 # BOB — Bodyguard Of Bits
 
+![License](https://img.shields.io/badge/license-MIT-green)
+![Release](https://img.shields.io/badge/version-v0.18.0-brightgreen)
+![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
+![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
+![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
+![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
+![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20Arch%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
+![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
+
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
 BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 39 sections de vérification sur 7 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
@@ -311,7 +321,7 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 | Niveau | Distros | État |
 |--------|---------|------|
 | **Tier 1** (production quotidienne) | Linux Mint 22.x, Debian 13 | Fonctionnalités complètes, validé sur matériel de production |
-| **Tier 2** (validé par la CI) | Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · **Debian Bookworm arm64** (émulé) | Smoke + audit hors ligne sur chaque PR ; pas de sentinelles locale, pas de traceback Python. Le job arm64 vérifie en plus que les concepts firmware x86 dégradent et que la section Raspberry Pi se déclenche |
+| **Tier 2** (validé, de deux façons) | *En CI, à chaque PR :* Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · **Debian Bookworm arm64** (émulé). *Sur machines virtuelles réelles, à chaque release :* Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 | La CI lance un smoke + un audit hors ligne à chaque PR ; pas de sentinelles locale, pas de traceback Python, et le job arm64 vérifie en plus que les concepts firmware x86 dégradent et que la section Raspberry Pi se déclenche. La passe VM est un audit complet conduit à la main avant une release — c'est là que les défauts de v0.17.1 et v0.18.0 ont été trouvés, et Alpine est la seule de ces machines sans systemd |
 | **Tier 3** (fonctionne, non validé sur matériel) | Autres Debian / RHEL / SUSE / Arch-family · **Raspberry Pi OS** (Bookworm, arm64) | Best-effort ; les vérifications dégradent proprement. La *section* Raspberry Pi est couverte par le job CI arm64 ci-dessus ; la *carte* n'a jamais été auditée sur du matériel physique — voir ci-dessous |
 
 **Le Raspberry Pi** est reconnu depuis la v0.17.0. BOB lit le nom de la carte dans le device tree et rapporte ce qu'un PC n'a pas : le `userconf.txt` de l'Imager laissé sur la partition FAT de boot — un hash de mot de passe sur un système de fichiers sans notion de propriétaire, et qui protège encore généralement le compte vivant — le marqueur `ssh` de premier démarrage, et le compte `pi` historique de la distribution quand il peut réellement se connecter. Les concepts firmware x86 dégradent au lieu de déduire : le microcode ne s'applique pas, et Secure Boot rapporte qu'aucun UEFI n'a été trouvé plutôt que d'affirmer un BIOS que la carte n'a pas. BOB ne teste **pas** si le compte `pi` a gardé le mot de passe par défaut : il faudrait `crypt`, que Python a retiré de la bibliothèque standard en 3.13. La section a été testée sur `aarch64` émulé (qemu-user) : la carte y est lue dans le device tree, la partition de boot se résout en `/boot/firmware` (chemin Bookworm), le hash yescrypt de l'imager est reconnu et le round trip `--fix --apply` supprime le fichier et efface le constat. L'émulation n'est pas du matériel, et elle n'y est pas non plus silencieusement équivalente : `setrlimit(RLIMIT_AS)` y retourne un succès sans rien appliquer, ce qui est précisément ainsi qu'on a surpris le bac à sable des plugins à revendiquer un plafond mémoire jamais obtenu. Un job arm64 tourne sur chaque PR : il refuse de passer si `uname -m` ne répond pas réellement `aarch64`, puis vérifie que l'audit sort proprement, que le microcode dégrade, qu'un UEFI absent n'est pas annoncé comme un BIOS, et que la section Raspberry Pi se déclenche sur une carte simulée. **Ce qu'aucune CI ne peut donner, c'est un Pi physique. Si vous en faites tourner un, le compte rendu de ce qu'il a vu juste et faux vaut plus que n'importe quel nombre d'exécutions émulées.**

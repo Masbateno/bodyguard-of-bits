@@ -2,6 +2,16 @@
 
 # BOB — Bodyguard Of Bits
 
+![License](https://img.shields.io/badge/license-MIT-green)
+![Release](https://img.shields.io/badge/version-v0.18.0-brightgreen)
+![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
+![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
+![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
+![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
+![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20Arch%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
+![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
+
 **Linux hardening auditor for sysadmins who read the output.**
 
 BOB is a CLI security audit and hardening tool for Linux systems. It runs 39 check sections across 7 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
@@ -311,7 +321,7 @@ Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
 | Tier | Distros | Status |
 |------|---------|--------|
 | **Tier 1** (daily-driven) | Linux Mint 22.x, Debian 13 | Full feature set, validated on production hardware |
-| **Tier 2** (CI-validated) | Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · **Debian Bookworm arm64** (emulated) | Smoke + offline audit run on every PR; no locale sentinels, no Python tracebacks. The arm64 job additionally asserts that x86 firmware concepts degrade and that the Raspberry Pi section fires |
+| **Tier 2** (validated, two ways) | *In CI, every PR:* Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · **Debian Bookworm arm64** (emulated). *On real virtual machines, per release:* Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 | CI runs a smoke + offline audit on every PR; no locale sentinels, no Python tracebacks, and the arm64 job additionally asserts that x86 firmware concepts degrade and that the Raspberry Pi section fires. The VM pass is a full audit driven by hand before a release — it is where the v0.17.1 and v0.18.0 defects were found, and Alpine is the only host among them without systemd |
 | **Tier 3** (works, not validated on hardware) | Other Debian/RHEL/SUSE/Arch-family Linux · **Raspberry Pi OS** (Bookworm, arm64) | Best-effort; checks degrade gracefully. The Raspberry Pi *section* is covered by the arm64 CI job above; the *board* has never been audited on physical hardware — see below |
 
 **Raspberry Pi** is recognised as of v0.17.0. BOB reads the board name from the device tree and reports what a PC does not have: the Imager's `userconf.txt` left on the FAT boot partition — a password hash on a filesystem that carries no ownership of its own, and which usually still guards the live account — the first-boot `ssh` marker, and the distribution's historical `pi` account when it can actually log in. x86 firmware concepts degrade instead of deducting: microcode is not applicable, and Secure Boot reports that no UEFI was found rather than claiming a BIOS the board does not have. BOB does **not** test whether the `pi` account still has the default password: that needs `crypt`, which Python removed from the standard library in 3.13. The section was field tested on emulated `aarch64` (qemu-user): the board is read from the device tree, the boot partition resolves to Bookworm's `/boot/firmware`, the imager's yescrypt hash is recognised, and the `--fix --apply` round trip removes the file and clears the finding. Emulation is not hardware, and it is not silently equivalent either — `setrlimit(RLIMIT_AS)` returns success and applies nothing under qemu-user, which is how the plugin sandbox was caught claiming a memory cap it never got. An arm64 job runs on every PR: it refuses to pass unless `uname -m` really says `aarch64`, then asserts the audit exits cleanly, that microcode degrades, that no UEFI is not announced as a BIOS, and that the Raspberry Pi section fires on a simulated board. **What no CI can give is a physical Pi. If you run BOB on one, the report of what it got right and wrong is worth more than any number of emulated runs.**

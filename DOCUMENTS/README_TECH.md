@@ -4,10 +4,13 @@
 
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Release](https://img.shields.io/badge/version-v0.18.0-brightgreen)
+![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
+![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
-![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora-informational)
-![Language](https://img.shields.io/badge/language-Python%203.10%2B-yellow)
+![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20Arch%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
+![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
 BOB is a Linux hardening auditor for sysadmins and power users. It runs 39 check sections across 7 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
 
@@ -152,7 +155,11 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 39 check
 
 ## Requirements
 
-- Linux — daily-driven on Linux Mint 22.3 + Debian 13.4.0; CI-validated on Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+- Linux — the platform badge covers nine names, on three different kinds of evidence:
+  - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
+  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+  - **validated on real virtual machines** (v0.17.1 and v0.18.0 field tests): Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine being the one host without systemd, which is what the OpenRC support was written against
+  - **Raspberry Pi**: the section exists and every branch was driven through the real collection paths, but **no test has yet run on the hardware itself** — treat that one name as untested until it is
 - Python 3.10+
 - `ss` recommended (`iproute2` package) — available by default on modern systems
 - `python3-geoip2` + GeoLite2 database recommended for IP geolocation (optional): `sudo apt install python3-geoip2 geoip-database`
@@ -164,7 +171,11 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 39 check
 
 ### Prerequisites
 
-- Linux — daily-driven on Linux Mint 22.3 + Debian 13.4.0; CI-validated on Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+- Linux — the platform badge covers nine names, on three different kinds of evidence:
+  - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
+  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
+  - **validated on real virtual machines** (v0.17.1 and v0.18.0 field tests): Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine being the one host without systemd, which is what the OpenRC support was written against
+  - **Raspberry Pi**: the section exists and every branch was driven through the real collection paths, but **no test has yet run on the hardware itself** — treat that one name as untested until it is
 - pipx *(isolated Python app installer)*:
 
 ```bash
