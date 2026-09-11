@@ -6,6 +6,45 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.18.1] — 2026-09-11
+
+**BOB's SSH brute-force detection was blind on every recent distribution.**
+
+The first audit on real Raspberry Pi hardware — a Pi Zero W running Raspbian 13
+(trixie) and OpenSSH 10.0 — found that BOB counted no SSH authentication at all.
+OpenSSH 9.8 moved per-connection work out of `sshd` into `sshd-session`, and
+from then on "Accepted", "Failed password" and "Invalid user" are written under
+that identifier. BOB asked `journalctl -t sshd` and matched `sshd[pid]:`, so it
+read the listener's penalty drops and nothing else. On the same journal, in the
+same minute:
+
+    journal:      71 failed attempts, 29 accepted logins
+    BOB 0.18.0:   ✔ OK  No successful SSH logins recorded
+    fixed:        ⚠ 71 failed SSH login attempt(s) — consider installing fail2ban
+                  ℹ 29 successful SSH login(s) — top sources: 192.168.1.10 (29)
+
+In the middle of an attack it answered with nothing, and it answered *OK*.
+This is not a Raspberry Pi defect: Debian 13, Ubuntu 25.04, Fedora 41+ and Arch
+all ship OpenSSH ≥ 9.8, and the regex rejected `sshd-session[` in a classic
+`/var/log/auth.log` too. Only hosts on OpenSSH < 9.8 — Debian 12, Ubuntu 24.04,
+the ones the CI runs — were read correctly, which is why nothing caught it. The
+virtual machines of v0.17.1 and v0.18.0 were driven through their guest agents,
+never over SSH, so their journals held no SSH logins to miss.
+
+Every identifier was measured before being written down: on OpenSSH 10.0p2 all
+21 accepted logins, 44 invalid users and 3 wrong passwords carried
+`sshd-session`. `sshd-auth`, the upstream name of the authentication binary
+OpenSSH 10.0 split out, wrote nothing on Debian; it is queried anyway, because a
+distribution that lets it log would reopen the same blind spot.
+
+The command offered beside a login from a public address pointed at
+`/var/log/auth.log` whatever BOB had read. On a journald-only host that file
+does not exist; the command now reads the journal when BOB did.
+
+**Tests** 9959 → **9988**. **Mutations** 166 → **170**.
+
+---
+
 ## [v0.18.0] — 2026-09-11
 
 **BOB reads OpenRC.**
@@ -2556,7 +2595,7 @@ function name simply stops matching, leaving either a real dispatch site
 unregistered or an obsolete exemption in place. A second guard now checks that
 every registry entry names a file that exists and a function defined in it.
 
-**Tests** 7958 → **8134**.
+**Tests** 7958 → **8089**.
 
 ---
 

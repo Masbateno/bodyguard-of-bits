@@ -6,6 +6,48 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.18.1] — 11-09-2026
+
+**La détection de force brute SSH de BOB était aveugle sur toutes les distributions récentes.**
+
+Le premier audit sur un vrai Raspberry Pi — un Pi Zero W sous Raspbian 13
+(trixie) et OpenSSH 10.0 — a montré que BOB ne comptait aucune authentification
+SSH. OpenSSH 9.8 a déplacé le travail par connexion de `sshd` vers
+`sshd-session`, et depuis, « Accepted », « Failed password » et « Invalid user »
+sont écrits sous cet identifiant. BOB interrogeait `journalctl -t sshd` et
+cherchait `sshd[pid]:` : il lisait les coupures pour pénalité du processus
+d'écoute, et rien d'autre. Sur le même journal, à la même minute :
+
+    journal :     71 tentatives échouées, 29 connexions acceptées
+    BOB 0.18.0 :  ✔ OK  No successful SSH logins recorded
+    corrigé :     ⚠ 71 failed SSH login attempt(s) — consider installing fail2ban
+                  ℹ 29 successful SSH login(s) — top sources: 192.168.1.10 (29)
+
+En pleine attaque, il ne signalait rien, et il répondait *OK*. Ce n'est pas un
+défaut propre au Raspberry Pi : Debian 13, Ubuntu 25.04, Fedora 41+ et Arch
+livrent tous OpenSSH ≥ 9.8, et la regex rejetait aussi `sshd-session[` dans un
+`/var/log/auth.log` classique. Seuls les hôtes sous OpenSSH < 9.8 — Debian 12,
+Ubuntu 24.04, ceux que teste la CI — étaient lus correctement, d'où le silence.
+Les machines virtuelles de v0.17.1 et v0.18.0 étaient pilotées par leur agent
+invité, jamais par SSH : leurs journaux ne contenaient aucune connexion SSH à
+manquer.
+
+Chaque identifiant a été mesuré avant d'être écrit : sous OpenSSH 10.0p2, les 21
+connexions acceptées, les 44 utilisateurs invalides et les 3 mauvais mots de
+passe portaient tous `sshd-session`. `sshd-auth`, le nom amont du binaire
+d'authentification séparé par OpenSSH 10.0, n'a rien écrit sous Debian ; il est
+interrogé quand même, car une distribution qui le laisserait journaliser
+rouvrirait le même angle mort.
+
+La commande proposée à côté d'une connexion depuis une adresse publique pointait
+vers `/var/log/auth.log` quelle que soit la source lue par BOB. Sur un hôte
+journald seul, ce fichier n'existe pas ; la commande lit désormais le journal
+quand c'est ce que BOB a lu.
+
+**Tests** 9959 → **9988**. **Mutations** 166 → **170**.
+
+---
+
 ## [v0.18.0] — 11-09-2026
 
 **BOB lit OpenRC.**
@@ -2744,7 +2786,7 @@ vrai site non enregistré, soit une exemption obsolète en place. Une seconde
 garde vérifie maintenant que chaque entrée du registre nomme un fichier
 existant et une fonction qui y est définie.
 
-**Tests** 7958 → **8134**.
+**Tests** 7958 → **8089**.
 
 ---
 

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.18.0
+Version:        0.18.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,11 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Sep 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.1-1
+- SSH brute-force detection was blind on OpenSSH >= 9.8: authentication is
+  logged by sshd-session, and BOB read sshd only. Measured on a Raspberry Pi
+  Zero W: 71 failed attempts and 29 logins in the journal, BOB answered OK.
+
 * Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
 - BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,
   which is honest and useless on Alpine, Gentoo and Devuan. rc-service status

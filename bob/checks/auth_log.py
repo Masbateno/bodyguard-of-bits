@@ -32,20 +32,39 @@ _LOG_PATHS: list[Path] = [
     Path("/var/log/secure.1"),
 ]
 
-# Matches: "Apr 18 10:23:45 host sshd[pid]: Accepted publickey for user from 1.2.3.4 port 12345 ssh2"
+# The programs OpenSSH logs authentication under. Until 9.7 that was `sshd`
+# alone. OpenSSH 9.8 moved the per-connection work into `sshd-session`, and
+# from then on "Accepted", "Failed password" and "Invalid user" are all
+# written by it — measured on OpenSSH 10.0p2 (Raspbian 13): every one of 21
+# accepted logins, 44 invalid-user attempts and 3 wrong passwords carried the
+# identifier `sshd-session`, while `sshd` itself wrote only its per-source
+# penalty drops. Querying `sshd` alone left BOB counting zero of each.
+#
+# `sshd-auth` is the upstream name of the authentication binary OpenSSH 10.0
+# split out. It wrote nothing on Debian's 10.0p2; it is listed because a
+# distribution that lets it log would otherwise reopen the same blind spot.
+_SSHD_IDENTIFIERS = ("sshd", "sshd-session", "sshd-auth")
+_SSHD_TAG = r"sshd(?:-session|-auth)?\[\d+\]:"
+
+# Matches: "Apr 18 10:23:45 host sshd-session[pid]: Accepted publickey for user from 1.2.3.4 port 12345 ssh2"
 _ACCEPTED_RE = re.compile(
-    r"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+sshd\[\d+\]:\s+"
+    r"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+" + _SSHD_TAG + r"\s+"
     r"Accepted\s+(\S+)\s+for\s+(\S+)\s+from\s+(\S+)\s+port\s+\d+",
     re.MULTILINE,
 )
 _FAILED_RE = re.compile(
-    r"^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+sshd\[\d+\]:\s+"
+    r"^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+" + _SSHD_TAG + r"\s+"
     r"(?:Failed\s+\S+\s+for(?:\s+invalid\s+user)?\s+\S+\s+from"
     r"|\bInvalid\s+user\s+\S+\s+from)",
     re.MULTILINE,
 )
 
 _BRUTE_FORCE_THRESHOLD = 50
+
+_JOURNAL_ACCEPTED_CMD = (
+    "sudo journalctl " + " ".join(f"-t {i}" for i in _SSHD_IDENTIFIERS)
+    + " --no-pager | grep 'Accepted' | tail -20"
+)
 
 _PRIVATE_NETWORKS = (
     ipaddress.ip_network("10.0.0.0/8"),
@@ -76,7 +95,8 @@ def _read_auth_from_journald(max_days: int = 90) -> str:
     try:
         result = subprocess.run(
             [
-                "journalctl", "-t", "sshd",
+                "journalctl",
+                *(arg for ident in _SSHD_IDENTIFIERS for arg in ("-t", ident)),
                 "--no-pager",
                 "--output=short",
                 f"--since={max_days} days ago",
@@ -138,6 +158,9 @@ class AuthLogSnapshot:
     log_available: bool = False
     days_analysed: int  = 0
     failed_count:  int  = 0
+    # "auth.log" or "journald" — the command BOB offers has to read the same
+    # place it did: /var/log/auth.log does not exist on a journald-only host.
+    source:        str  = "auth.log"
 
     @classmethod
     def from_text(cls, text: str) -> AuthLogSnapshot:
@@ -182,7 +205,9 @@ class AuthLogSnapshot:
             # Fallback: journald (Debian 13+ without /var/log/auth.log)
             journald_text = _read_auth_from_journald()
             if journald_text.strip():
-                return cls.from_text(journald_text)
+                snap = cls.from_text(journald_text)
+                snap.source = "journald"
+                return snap
             return snap
 
         combined = "\n".join(lines_read[-max_lines:])
@@ -267,7 +292,8 @@ def check_auth_log(snapshot: AuthLogSnapshot, t: TranslationFunc | None = None) 
                        ips=", ".join(public_ips),
                        count=len(public_entries)),
             nature="improvement",
-            cmd="sudo grep 'Accepted' /var/log/auth.log | tail -20",
+            cmd=(_JOURNAL_ACCEPTED_CMD if snapshot.source == "journald"
+                 else "sudo grep 'Accepted' /var/log/auth.log | tail -20"),
             cmd_type="check",
             key="auth_log.public_login",
         )

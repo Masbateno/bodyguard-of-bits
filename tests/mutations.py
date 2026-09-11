@@ -72,6 +72,8 @@ _ARCHIVE  = "tests/test_v0180_the_archive_keeps_the_remedy.py"
 _SNAPMAP  = "tests/test_v0180_snapshot_maps_every_module.py"
 _NATIVEALL = "tests/test_v0180_every_sysctl_fix_is_native.py"
 _PY314 = "tests/test_v0180_python314_denial_is_not_absence.py"
+_SSHDSESS = "tests/test_v0181_sshd_session_is_read.py"
+_TESTTAB = "tests/test_v0181_testing_table_matches_changelog.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1825,5 +1827,45 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="a strict predicate that swallows the denial is Path.is_file() "
                "on 3.14 under another name, and every call site above goes "
                "back to reading 'not allowed' as 'not there'",
+    ),
+    Mutation(
+        id="sshd-session/the-regex-knows-only-sshd",
+        file="bob/checks/auth_log.py",
+        old='_SSHD_TAG = r"sshd(?:-session|-auth)?\\[\\d+\\]:"',
+        new='_SSHD_TAG = r"sshd\\[\\d+\\]:"',
+        kills=(f"{_SSHDSESS}::test_an_attack_logged_by_sshd_session_raises_the_brute_force_warning",
+               f"{_SSHDSESS}::test_accepted_logins_from_sshd_session_are_counted"),
+        reason="measured on a Raspberry Pi Zero W with OpenSSH 10.0p2: 71 failed "
+               "attempts and 29 logins in the journal, all under sshd-session, "
+               "and BOB 0.18.0 answered OK — no logins, no brute force",
+    ),
+    Mutation(
+        id="sshd-session/the-journal-is-asked-for-sshd-only",
+        file="bob/checks/auth_log.py",
+        old='_SSHD_IDENTIFIERS = ("sshd", "sshd-session", "sshd-auth")',
+        new='_SSHD_IDENTIFIERS = ("sshd",)',
+        kills=(f"{_SSHDSESS}::test_the_journal_is_asked_for_sshd_session",),
+        reason="a regex that knows sshd-session reads nothing if journalctl was "
+               "never asked for it; on a journald-only host that query is the "
+               "only source there is",
+    ),
+    Mutation(
+        id="sshd-session/the-command-reads-a-file-that-is-not-there",
+        file="bob/checks/auth_log.py",
+        old='cmd=(_JOURNAL_ACCEPTED_CMD if snapshot.source == "journald"',
+        new='cmd=(_JOURNAL_ACCEPTED_CMD if False',
+        kills=(f"{_SSHDSESS}::test_the_offered_command_reads_where_bob_read",),
+        reason="BOB told the operator to grep /var/log/auth.log on hosts where "
+               "it had read the journal because that file does not exist",
+    ),
+    Mutation(
+        id="testing-table/the-published-v0180-figure-returns",
+        file="DOCUMENTS/TESTING.md",
+        old="| v0.18.0 | 9959 |",
+        new="| v0.18.0 | 9832 |",
+        kills=(f"{_TESTTAB}::test_every_row_matches_its_changelog",),
+        reason="v0.18.0 was published with this row reading 9832 \u2014 a count "
+               "taken eight commits before the release \u2014 and no guard read "
+               "the table",
     ),
 )

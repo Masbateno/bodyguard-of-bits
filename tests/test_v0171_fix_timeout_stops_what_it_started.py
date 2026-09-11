@@ -56,6 +56,29 @@ def _alive(pid: int) -> bool:
     return state not in ("Z", "X")
 
 
+def _describe(pid: int) -> str:
+    """What the survivor is, captured at the moment the assertion fails.
+
+    This test failed twice in full-suite runs and never in isolation. The
+    first time nothing was recorded, so the cause could only be guessed at;
+    the process's own view of itself is what tells a stray signal mask from
+    a missed group, a zombie from a runner.
+    """
+    out = [f"survivor {pid}:"]
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
+            fields = fh.read().rsplit(")", 1)[1].split()
+        out.append(f"  state={fields[0]} ppid={fields[1]} pgrp={fields[2]} session={fields[3]}")
+        with open(f"/proc/{pid}/status", encoding="ascii") as fh:
+            out += [f"  {ln.strip()}" for ln in fh
+                    if ln.startswith(("SigBlk", "SigIgn", "SigCgt", "PPid"))]
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            out.append("  cmdline=" + fh.read().replace(b"\0", b" ").decode(errors="replace")[:160])
+    except OSError as exc:
+        out.append(f"  /proc unreadable: {exc}")
+    return "\n".join(out)
+
+
 class TestTheTimeoutStopsTheWholeTree:
     """The exact shape of the incident: a wrapper with a child under it."""
 
@@ -82,6 +105,7 @@ class TestTheTimeoutStopsTheWholeTree:
         while time.time() < deadline and _alive(pid):
             time.sleep(0.1)
         assert not _alive(pid), (
+            f"{_describe(pid)}\n"
             f"pid {pid} outlived the timeout that claimed to stop it — "
             "this is the apt-get that kept running while BOB reported "
             "0 of 1 fix(es) applied"

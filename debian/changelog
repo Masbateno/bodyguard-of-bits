@@ -1,3 +1,15 @@
+bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
+
+  * SSH brute-force detection was blind on OpenSSH >= 9.8. Authentication is
+    logged by sshd-session since OpenSSH 9.8; BOB queried journalctl -t sshd
+    and matched sshd[pid]: only, so on Debian 13, Ubuntu 25.04, Fedora 41+,
+    Arch and Raspberry Pi OS trixie it counted no failed attempt and no login.
+    Measured on a Raspberry Pi Zero W (OpenSSH 10.0p2): 71 failed attempts and
+    29 logins in the journal, BOB 0.18.0 answered OK. Now read, and the
+    command offered for a public-address login follows the source BOB read.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
+
 bodyguard-of-bits (0.18.0-1) unstable; urgency=low
 
   * BOB reads OpenRC. Until now every service on a host without systemd came
