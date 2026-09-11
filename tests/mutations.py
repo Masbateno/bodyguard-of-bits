@@ -1460,6 +1460,15 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "silence the denial, which is the one this flag exists for",
     ),
     Mutation(
+        id="manage-logs/forget-does-not-drop-the-dir",
+        file="bob/manage_logs.py",
+        old="    extras = [d for d in _get_extra_dirs(user_config) if d != path]\n    _set_extra_dirs(user_config, extras)",
+        new="    extras = _get_extra_dirs(user_config)\n    _set_extra_dirs(user_config, extras)",
+        kills=("tests/test_manage_logs.py::TestExtraDirectoriesDisplay::test_forget_drops_a_tracked_dir_but_not_the_current",),
+        reason="forgetting a tracked directory must actually drop it — a "
+               "declared directory is otherwise kept forever with no way to remove it",
+    ),
+    Mutation(
         id="cron/email-column-not-aligned",
         file="bob/tui/cron.py",
         old="    return [p.ljust(width) for p in parts]",

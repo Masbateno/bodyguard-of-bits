@@ -216,6 +216,32 @@ def _add_extra_dir(user_config, path: Path) -> None:
         _set_extra_dirs(user_config, extras)
 
 
+def _declared_dirs(user_config) -> list[Path]:
+    """Every log directory BOB tracks: the current one first, then the
+    previously-declared ones, in order, de-duplicated.
+
+    A directory is kept here until the user explicitly forgets it — one that is
+    empty, or temporarily missing (an unmounted disk), still appears, so logs
+    are never silently dropped from view. This is the opposite of the old
+    behaviour, which pruned any extra that was empty or gone.
+    """
+    dirs: list[Path] = []
+    current = user_config.get("log_dir")
+    if current:
+        dirs.append(Path(current))
+    for extra in _get_extra_dirs(user_config):
+        if extra not in dirs:
+            dirs.append(extra)
+    return dirs
+
+
+def _forget_dir(user_config, path: Path) -> None:
+    """Drop *path* from the tracked extras. The current directory is never in
+    the extras list, so it cannot be forgotten this way. Files are untouched."""
+    extras = [d for d in _get_extra_dirs(user_config) if d != path]
+    _set_extra_dirs(user_config, extras)
+
+
 # ---------------------------------------------------------------------------
 # Selection parser
 # ---------------------------------------------------------------------------
@@ -272,11 +298,11 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
 
         cur_logs = sorted(log_dir.glob("bob_*.log"), reverse=True)
 
-        # Collect extra (previous) directories that still contain logs;
-        # auto-drop those that are empty or no longer exist.
+        # Show previous directories that still contain logs. They are kept in
+        # the tracked list until the user forgets one from the wizard — an
+        # empty or temporarily-missing directory is not silently pruned here.
         extra_dirs = _get_extra_dirs(user_config)
         extra_sections: list[tuple[Path, list[Path]]] = []
-        live_extras: list[Path] = []
         for extra in extra_dirs:
             if extra == log_dir:
                 continue
@@ -284,9 +310,6 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                 ex_logs = sorted(extra.glob("bob_*.log"), reverse=True)
                 if ex_logs:
                     extra_sections.append((extra, ex_logs))
-                    live_extras.append(extra)
-        if live_extras != extra_dirs:
-            _set_extra_dirs(user_config, live_extras)
 
         # Flat list for unified index (current dir first, then extras in order)
         all_logs: list[Path] = list(cur_logs)
@@ -691,203 +714,286 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
 #: language here, and nowhere deeper. UNMARK only appears once something is
 #: marked — an action with nothing to act on is noise on the one line an
 #: operator reads to learn the screen.
-_LIST_KEYS = _keys.NAVIGATION + (
-    _keys.SELECT, _keys.TOGGLE, _keys.ALL, _keys.DELETE, _keys.CHANGE,
+_DIR_FOLDER = "\U0001F4C1"
+
+#: The directory picker is the landing screen: q exits, l switches language.
+#: Enter browses the selected directory, c changes/adds the write directory,
+#: d forgets a tracked (non-current) directory (its files are kept).
+_DIR_KEYS = _keys.NAVIGATION + (
+    _keys.SELECT, _keys.CHANGE, _keys.DELETE,
 ) + _keys.LANDING_EXIT
+
+#: The per-directory report list is nested: Esc goes back to the picker.
+_LIST_KEYS = _keys.NAVIGATION + (
+    _keys.SELECT, _keys.TOGGLE, _keys.ALL, _keys.DELETE,
+) + _keys.NESTED_EXIT
 _MARKED_KEYS = _keys.NAVIGATION + (
     _keys.TOGGLE, _keys.DELETE, _keys.UNMARK,
-) + _keys.LANDING_EXIT
+) + _keys.NESTED_EXIT
 
 
-def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
-    """Curses interactive file manager for --manage-logs."""
+def _dir_report_label(path: Path, t) -> str:
+    """A short description of what a tracked directory holds right now."""
+    if not path.exists():
+        return t("manage_logs.dir_missing")
+    try:
+        logs = sorted(path.glob("bob_*.log"))
+    except OSError:
+        return t("manage_logs.dir_missing")
+    if not logs:
+        return t("manage_logs.dir_empty")
+    return t("manage_logs.dir_reports", count=len(logs))
+
+
+def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
+    """The landing screen: one folder row per tracked log directory.
+
+    Returns ``("select", dir)`` when the operator opens a directory, or
+    ``("quit", None)``. Changing the write directory (``c``) and forgetting a
+    tracked directory (``d``) are handled here and loop; language toggles here
+    too, so nothing deeper redraws in another language.
+    """
     import curses
 
     try:
         curses.curs_set(0)
     except curses.error:
         pass
+    has_color = _init_colors_ml()
 
+    cursor = 0
+    scroll = 0
+    status = ""
+
+    while True:
+        dirs = _declared_dirs(user_config)
+        current = dirs[0] if dirs else None
+        n = len(dirs)
+        if n == 0:
+            return ("quit", None)
+        cursor = max(0, min(cursor, n - 1))
+
+        h, w = stdscr.getmaxyx()
+        from bob.tui import _chrome as _ch
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _DIR_KEYS, w))
+        if cursor - scroll >= body_h:
+            scroll = cursor - body_h + 1
+        if cursor < scroll:
+            scroll = cursor
+        scroll = max(0, scroll)
+
+        stdscr.erase()
+        header = ("  bob --manage-logs    "
+                  + t("manage_logs.dir_picker_header", count=n))
+        _ch.draw_header(stdscr, curses, header, has_color)
+
+        cur_lbl = t("manage_logs.current_label")
+        for row in range(body_h):
+            idx = scroll + row
+            if idx >= n:
+                break
+            path = dirs[idx]
+            tag = f"  [{cur_lbl}]" if path == current else ""
+            line = f"  {_DIR_FOLDER} {path}  ({_dir_report_label(path, t)}){tag}"
+            if idx == cursor:
+                attr = (curses.color_pair(1) | curses.A_BOLD) if has_color else curses.A_REVERSE
+                try:
+                    stdscr.addstr(row + 1, 0, line[:w - 1].ljust(w - 1), attr)
+                except curses.error:
+                    pass
+            else:
+                attr = (curses.color_pair(2) | curses.A_BOLD) if has_color else curses.A_BOLD
+                try:
+                    stdscr.addstr(row + 1, 0, line[:w - 1], attr)
+                except curses.error:
+                    pass
+
+        _transient = f"  {status}" if status else ""
+        status = ""
+        _ch.draw(stdscr, curses, t, _DIR_KEYS, has_color, context=_transient)
+        stdscr.refresh()
+
+        ch = stdscr.getch()
+        act = _keys.resolve(curses, ch, _DIR_KEYS)
+
+        if act == _keys.QUIT:
+            return ("quit", None)
+        elif act == _keys.LANG:
+            _keys.toggle_language(config)
+        elif act == _keys.MOVE:
+            cursor = max(0, min(n - 1, cursor + _keys.direction(curses, ch)))
+        elif act == _keys.PAGE:
+            cursor = max(0, min(n - 1, cursor + body_h * _keys.direction(curses, ch)))
+        elif act == _keys.EDGE:
+            cursor = 0 if _keys.is_top(ch) else n - 1
+        elif act == _keys.SELECT:
+            return ("select", dirs[cursor])
+        elif act == _keys.CHANGE:
+            _change_log_dir(stdscr, user_config, t, current, has_color)
+            cursor = 0
+        elif act == _keys.DELETE:
+            chosen = dirs[cursor]
+            if chosen == current:
+                status = t("manage_logs.forget_current_blocked")
+            elif _confirm_inline(stdscr, t("manage_logs.forget_confirm"), h, w):
+                _forget_dir(user_config, chosen)
+                status = t("manage_logs.forgot", path=str(chosen))
+                cursor = max(0, cursor - 1)
+
+
+def _confirm_inline(stdscr, prompt: str, h: int, w: int) -> bool:
+    """A one-line y/n confirmation drawn on the bottom row. y confirms."""
+    import curses
+    try:
+        stdscr.move(h - 1, 0)
+        stdscr.clrtoeol()
+        stdscr.addstr(h - 1, 0, f"  {prompt}"[:w - 1], curses.A_BOLD)
+    except curses.error:
+        pass
+    stdscr.refresh()
+    return stdscr.getch() in (ord("y"), ord("Y"))
+
+
+def _change_log_dir(stdscr, user_config, t, log_dir, has_color) -> None:
+    """Ask for a new write directory, remember the old one, optionally move
+    its reports across. Shared by the picker's ``c`` action."""
+    import curses
+    h, w = stdscr.getmaxyx()
+    from bob.tui import _chrome as _ch2
+    new_path_str = _curses_input(
+        stdscr, _ch2.context_row(t, _DIR_KEYS, h, w), w,
+        t("manage_logs.change_prompt"),
+        str(log_dir) if log_dir else "",
+    )
+    if new_path_str is None:
+        return
+    chosen = _resolve_path(new_path_str.strip(), log_dir or Path.cwd())
+    try:
+        chosen.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    if log_dir is not None and chosen != log_dir:
+        cur_logs = sorted(log_dir.glob("bob_*.log")) if log_dir.exists() else []
+        if cur_logs:
+            move_prompt = (f"  {t('manage_logs.move_logs_prompt', count=len(cur_logs))}"
+                           "  [y/N]")
+            try:
+                stdscr.move(h - 1, 0)
+                stdscr.clrtoeol()
+                stdscr.addstr(h - 1, 0, move_prompt[:w - 1], curses.A_BOLD)
+            except curses.error:
+                pass
+            stdscr.refresh()
+            if stdscr.getch() in (ord("y"), ord("Y")):
+                import shutil as _shutil
+                for fp in cur_logs:
+                    try:
+                        _shutil.move(str(fp), str(chosen / fp.name))
+                    except OSError:
+                        pass
+        _add_extra_dir(user_config, log_dir)
+    user_config.set("log_dir", str(chosen))
+
+
+def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
+    """The report list of a single directory. Nested: Esc returns to the
+    picker. Mark (Spc), select all (a), delete (d), and Enter previews."""
+    import curses
+
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
     has_color = _init_colors_ml()
     size_label = t("manage_logs.size_label")
 
-    cursor          = 0             # position in file_indices
-    scroll          = 0             # first visible item index in items list
-    marked: set[int] = set()        # 0-based indices into all_logs
-    status          = ""            # one-shot footer message
-    confirm_delete  = False         # True = waiting for y/n
-    pending_delete: list[int] = []  # log indices to delete on confirmation
+    cursor = 0
+    scroll = 0
+    marked: set[int] = set()
+    status = ""
+    confirm_delete = False
+    pending_delete: list[int] = []
 
     while True:
-        # ── Refresh file list ─────────────────────────────────────────────
-        log_dir_str = user_config.get("log_dir") or ""
-        if not log_dir_str:
-            return 0
-
-        log_dir = Path(log_dir_str)
-        if not log_dir.exists():
-            try:
-                log_dir.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                pass
-
-        cur_logs = sorted(log_dir.glob("bob_*.log"), reverse=True)
-        extra_dirs = _get_extra_dirs(user_config)
-        extra_sections: list[tuple[Path, list[Path]]] = []
-        live_extras: list[Path] = []
-        for extra in extra_dirs:
-            if extra == log_dir:
-                continue
-            if extra.exists():
-                ex_logs = sorted(extra.glob("bob_*.log"), reverse=True)
-                if ex_logs:
-                    extra_sections.append((extra, ex_logs))
-                    live_extras.append(extra)
-        if live_extras != extra_dirs:
-            _set_extra_dirs(user_config, live_extras)
-
-        all_logs: list[Path] = list(cur_logs)
-        for _, ex_logs in extra_sections:
-            all_logs.extend(ex_logs)
-
-        marked = {m for m in marked if m < len(all_logs)}
-
-        # ── Build display items ───────────────────────────────────────────
-        # item types: ("dir_header", path, is_current)
-        #             ("file",       log_index)
-        #             ("empty",      path)
-        items: list[tuple] = []
-        file_indices: list[int] = []   # positions of "file" items in items[]
-        log_idx = 0
-
-        items.append(("dir_header", log_dir, True))
-        if not cur_logs:
-            items.append(("empty", log_dir))
-        for _ in cur_logs:
-            file_indices.append(len(items))
-            items.append(("file", log_idx))
-            log_idx += 1
-        for extra_path, ex_logs in extra_sections:
-            items.append(("dir_header", extra_path, False))
-            for _ in ex_logs:
-                file_indices.append(len(items))
-                items.append(("file", log_idx))
-                log_idx += 1
-
-        # ── Clamp cursor / scroll ─────────────────────────────────────────
-        if file_indices:
-            cursor = max(0, min(cursor, len(file_indices) - 1))
-            cur_item_pos = file_indices[cursor]
+        if browse_dir.exists():
+            logs = sorted(browse_dir.glob("bob_*.log"), reverse=True)
         else:
-            cursor = 0
-            cur_item_pos = 0
+            logs = []
+        marked = {m for m in marked if m < len(logs)}
+        n = len(logs)
 
         h, w = stdscr.getmaxyx()
-        # Widest case: the marked variant, so the list does not change
-        # height the moment an entry is toggled.
         from bob.tui import _chrome as _ch
         body_h = max(1, h - 1 - _ch.chrome_height(t, _MARKED_KEYS, w))
-
-        if file_indices:
-            if cur_item_pos - scroll >= body_h:
-                scroll = cur_item_pos - body_h + 1
-            if cur_item_pos < scroll:
-                scroll = cur_item_pos
-                if scroll > 0 and items[scroll - 1][0] == "dir_header":
-                    scroll = max(0, scroll - 1)
+        _last = max(0, n - 1)
+        cursor = max(0, min(cursor, _last))
+        if cursor - scroll >= body_h:
+            scroll = cursor - body_h + 1
+        if cursor < scroll:
+            scroll = cursor
         scroll = max(0, scroll)
 
-        # ── Render ────────────────────────────────────────────────────────
         stdscr.erase()
-
-        # Header
         n_sel = len(marked)
         if confirm_delete:
             header = f"  bob --manage-logs    {t('tui.confirm_below')}"
         elif n_sel:
-            # v0.16.3 — the banner names the screen and its state; the keys
-            # are composed in the footer from the actions this screen declares,
-            # so the line and the bindings cannot say different things.
             header = ("  bob --manage-logs    "
-                      + t("manage_logs.banner_selected",
-                          count=n_sel, total=len(all_logs)))
+                      + t("manage_logs.banner_selected", count=n_sel, total=n))
         else:
             header = ("  bob --manage-logs    "
-                      + t("manage_logs.banner_total", total=len(all_logs)))
-        from bob.tui import _chrome
-        _chrome.draw_header(stdscr, curses, header, has_color)
+                      + t("manage_logs.banner_total", total=n))
+        _ch.draw_header(stdscr, curses, header, has_color)
 
-        # Body
-        for row in range(body_h):
-            item_idx = scroll + row
-            if item_idx >= len(items):
-                break
-            item = items[item_idx]
-            y = row + 1
+        # A dim path line under the banner names the directory being browsed.
+        try:
+            stdscr.addstr(1, 0, f"  {t('manage_logs.stored_in', path=str(browse_dir))}"[:w - 1],
+                          curses.A_DIM)
+        except curses.error:
+            pass
 
-            if item[0] == "dir_header":
-                _, path, is_current = item
-                cur_lbl  = t("manage_logs.current_label")
-                prev_lbl = t("manage_logs.previous_label")
-                if is_current:
-                    line = f"  {t('manage_logs.stored_in', path=str(path))}  [{cur_lbl}]"
-                else:
-                    line = f"  ─── {prev_lbl}: {path} ───"
-                attr = (curses.color_pair(2) | curses.A_BOLD) if has_color else curses.A_BOLD
-                try:
-                    stdscr.addstr(y, 0, line[:w - 1], attr)
-                except curses.error:
-                    pass
-
-            elif item[0] == "empty":
-                _, path = item
-                line = f"    ℹ {t('manage_logs.no_logs', path=str(path))}"
-                try:
-                    stdscr.addstr(y, 0, line[:w - 1], curses.A_DIM)
-                except curses.error:
-                    pass
-
-            elif item[0] == "file":
-                _, log_i = item
-                f = all_logs[log_i]
+        if n == 0:
+            try:
+                stdscr.addstr(3, 2, t("manage_logs.no_logs", path=str(browse_dir))[:w - 3],
+                              curses.A_DIM)
+            except curses.error:
+                pass
+        else:
+            for row in range(body_h - 1):
+                idx = scroll + row
+                if idx >= n:
+                    break
+                f = logs[idx]
                 try:
                     size_kb = max(1, f.stat().st_size // 1024)
-                    mtime   = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                    mtime = _dt.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
                 except OSError:
                     size_kb, mtime = 0, "?"
-
-                is_cursor = bool(file_indices) and file_indices[cursor] == item_idx
-                is_marked = log_i in marked
-
+                is_cursor = (idx == cursor)
+                is_marked = idx in marked
                 ind = ("→✓" if (is_cursor and is_marked) else
                        "→ " if is_cursor else
                        " ✓" if is_marked else
                        "  ")
-
-                num_col  = f"[{log_i + 1:2}]"
-                suffix   = f"  {size_kb:4} {size_label}  {mtime}"
+                num_col = f"[{idx + 1:2}]"
+                suffix = f"  {size_kb:4} {size_label}  {mtime}"
                 max_name = max(8, w - 2 - len(ind) - 1 - len(num_col) - 2 - len(suffix) - 1)
                 name_str = f.name[:max_name].ljust(max_name)
-                line     = f" {ind} {num_col}  {name_str}{suffix}"
-
+                line = f" {ind} {num_col}  {name_str}{suffix}"
                 if is_cursor:
                     attr = (curses.color_pair(1) | curses.A_BOLD) if has_color else curses.A_REVERSE
                 elif is_marked:
                     attr = marked_attr(curses, has_color)
                 else:
                     attr = curses.color_pair(3) if has_color else 0
-
                 try:
                     if is_cursor:
-                        stdscr.addstr(y, 0, line[:w - 1].ljust(w - 1)[:w - 1], attr)
+                        stdscr.addstr(row + 2, 0, line[:w - 1].ljust(w - 1)[:w - 1], attr)
                     else:
-                        stdscr.addstr(y, 0, line[:w - 1], attr)
+                        stdscr.addstr(row + 2, 0, line[:w - 1], attr)
                 except curses.error:
                     pass
 
-        # Footer — v0.16.3: a transient message when there is one, otherwise
-        # the shared key line, composed from the actions this screen declares.
-        # The report count moved to the banner: it is context, not a key.
         if confirm_delete:
             _transient = f"  {t('manage_logs.confirm_prompt', count=len(pending_delete))}"
         elif status:
@@ -895,30 +1001,22 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
             status = ""
         else:
             _transient = ""
-
-        # The confirmation used to *replace* the key line, so the operator was
-        # asked to confirm a destructive action on a screen that had just
-        # hidden every key, including the one to cancel. It sits on the
-        # reserved line above the banner now, and the keys stay visible.
         _actions = _MARKED_KEYS if n_sel else _LIST_KEYS
-        from bob.tui import _chrome
-        _chrome.draw(stdscr, curses, t, _actions, has_color, context=_transient)
-
+        _ch.draw(stdscr, curses, t, _actions, has_color, context=_transient)
         stdscr.refresh()
 
-        # ── Input ─────────────────────────────────────────────────────────
         ch = stdscr.getch()
 
         if confirm_delete:
             confirm_delete = False
             if ch in (ord("y"), ord("Y")):
                 deleted = 0
-                deleted_name = None  # M-1 (v0.5.7): track which file actually succeeded
-                deleted_before_cursor = 0  # M-2 (v0.5.8): only shift for items <= cursor
+                deleted_name = None
+                deleted_before_cursor = 0
                 for li in sorted(pending_delete, reverse=True):
                     try:
-                        name = all_logs[li].name
-                        all_logs[li].unlink()
+                        name = logs[li].name
+                        logs[li].unlink()
                         deleted += 1
                         if li <= cursor:
                             deleted_before_cursor += 1
@@ -938,102 +1036,47 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
             continue
 
         _act = _keys.resolve(curses, ch, _MARKED_KEYS if n_sel else _LIST_KEYS)
-        _last = max(0, len(file_indices) - 1)
 
-        if _act == _keys.QUIT:                      # landing screen: q exits
-            return 0
-
-        elif _act == _keys.LANG:                    # landing screen: l switches
-            _keys.toggle_language(config)
-
+        if _act == _keys.BACK:                      # nested screen: Esc goes back
+            return
         elif _act == _keys.MOVE:
             cursor = max(0, min(_last, cursor + _keys.direction(curses, ch)))
-
         elif _act == _keys.PAGE:
             cursor = max(0, min(_last, cursor + body_h * _keys.direction(curses, ch)))
-
         elif _act == _keys.EDGE:
             cursor = 0 if _keys.is_top(ch) else _last
-
         elif _act == _keys.TOGGLE:
-            if file_indices:
-                log_i = items[file_indices[cursor]][1]
-                if log_i in marked:
-                    marked.discard(log_i)
-                else:
-                    marked.add(log_i)
-
+            if n:
+                marked.discard(cursor) if cursor in marked else marked.add(cursor)
         elif _act == _keys.ALL:
-            marked = set(range(len(all_logs)))
-
+            marked = set(range(n))
         elif _act == _keys.UNMARK:
             marked.clear()
-
         elif _act == _keys.DELETE:
-            if all_logs:
-                if marked:
-                    pending_delete = sorted(marked)
-                elif file_indices:
-                    pending_delete = [items[file_indices[cursor]][1]]
+            if n:
+                pending_delete = sorted(marked) if marked else [cursor]
                 if pending_delete:
                     confirm_delete = True
-
         elif _act == _keys.SELECT:
-            if file_indices and not n_sel:
-                log_i = items[file_indices[cursor]][1]
-                _curses_preview_log(stdscr, all_logs[log_i], t)
+            if n and not n_sel:
+                _curses_preview_log(stdscr, logs[cursor], t)
 
-        elif _act == _keys.CHANGE:
-            # Inline path input — stays fully inside curses
-            from bob.tui import _chrome as _ch2
-            new_path_str = _curses_input(
-                stdscr, _ch2.context_row(t, _actions, h, w), w,
-                t("manage_logs.change_prompt"),
-                str(log_dir),
-            )
-            if new_path_str is None:
-                status = t("manage_logs.cancelled")
-            else:
-                raw = new_path_str.strip()
-                chosen = _resolve_path(raw, log_dir)
-                try:
-                    chosen.mkdir(parents=True, exist_ok=True)
-                except OSError as exc:
-                    status = f"✖ {exc}"
-                else:
-                    do_move = False
-                    if all_logs and chosen != log_dir:
-                        move_prompt = (
-                            f"  {t('manage_logs.move_logs_prompt', count=len(all_logs))}"
-                            "  [y/N]"
-                        )
-                        try:
-                            stdscr.move(h - 1, 0)
-                            stdscr.clrtoeol()
-                            stdscr.addstr(h - 1, 0, move_prompt[:w - 1], curses.A_BOLD)
-                        except curses.error:
-                            pass
-                        stdscr.refresh()
-                        mv_ch = stdscr.getch()
-                        do_move = mv_ch in (ord("y"), ord("Y"))
-                    if do_move:
-                        import shutil as _shutil
-                        moved = 0
-                        for fp in all_logs:
-                            try:
-                                _shutil.move(str(fp), str(chosen / fp.name))
-                                moved += 1
-                            except OSError:
-                                pass
-                        status = t("manage_logs.move_logs_done", count=moved)
-                    if chosen != log_dir:
-                        _add_extra_dir(user_config, log_dir)
-                    user_config.set("log_dir", str(chosen))
-                    marked.clear()
-                    cursor = 0
-                    scroll = 0
-                    if not do_move:
-                        status = t("manage_logs.location_updated", path=str(chosen))
+
+def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
+    """Curses --manage-logs: pick a tracked directory, then browse its reports.
+
+    The directory picker is the landing screen; a directory opens into its own
+    report list. Tracked directories persist until the operator forgets one, so
+    changing where reports are written never loses sight of the old ones.
+    """
+    if not user_config.get("log_dir"):
+        return 0
+    while True:
+        action, chosen = _dir_picker(stdscr, user_config, config, t)
+        if action == "quit":
+            return 0
+        if action == "select" and chosen is not None:
+            _browse_dir(stdscr, chosen, user_config, config, t)
 
 
 # ---------------------------------------------------------------------------

@@ -250,9 +250,29 @@ intacte, pas une référence fabriquée. `bob --explain <clé>` lit directement 
 l'écran que `hardening.rp_filter_disabled` est 3.3.7 dans CIS Ubuntu 22.04,
 3.3.7 dans Debian 12 et Ubuntu 24.04, et 3.3.1.12 dans Debian 13.
 
+**`--manage-logs` garde chaque répertoire de logs jusqu'à ce qu'on l'oublie, et
+s'ouvre sur un sélecteur de dossiers.** Changer l'emplacement d'écriture des
+rapports risquait de perdre de vue les anciens : l'ancien emplacement était
+suivi, mais un répertoire supplémentaire vide ou temporairement absent (un
+disque démonté) était silencieusement retiré de la liste. Les répertoires suivis
+persistent désormais jusqu'à ce que l'opérateur en oublie un explicitement (`d`,
+avec une confirmation qui précise que les fichiers sont conservés). Le wizard
+s'ouvre sur un écran de dossiers — un 📁 par répertoire suivi, l'actuel étiqueté,
+chacun affichant son nombre de rapports / *vide* / *introuvable* — et Entrée
+ouvre un répertoire dans sa propre liste de rapports (marquer, supprimer,
+prévisualiser comme avant) ; `c` change le répertoire d'écriture et mémorise
+l'ancien. Le mode texte de repli ne purge plus la liste suivie non plus.
+
+**`--manage-cron` aligne la colonne des e-mails quelle que soit la longueur de
+la fréquence.** Un job planifié « the 1st, 15th of every month at 12:03 »
+poussait ses adresses à droite des jobs « every day at 18:56 », car la colonne
+de la fréquence était calée sur une largeur fixe qu'une longue fréquence
+dépassait. La colonne nom+fréquence est désormais mesurée sur tous les jobs et
+calée sur la plus large, pour que les adresses commencent à une seule colonne.
+
 **Références** 199 primaires (107 CIS Ubuntu 22.04 + 84 bonnes pratiques + 7 CIS
 Docker 1.6 + 1 CIS Red Hat 8/9) + 163 citations inter-benchmarks sur 58 clés.
-**Tests** 9959 → **10291**. **Mutations** 166 → **205**.
+**Tests** 9959 → **10314**. **Mutations** 166 → **207**.
 
 ---
 

@@ -334,8 +334,10 @@ class TestExtraDirectoriesDisplay:
         assert "───" in out
         assert str(extra_dir) in out
 
-    def test_empty_extra_dir_auto_removed(self, tmp_path):
-        """Extra dir that is empty should be dropped from the list."""
+    def test_empty_extra_dir_kept_until_forgotten(self, tmp_path):
+        """v0.18.1: a tracked directory is kept even when empty — it is dropped
+        only when the operator explicitly forgets it, so logs are never lost by
+        a directory silently disappearing from the list."""
         cur_dir = tmp_path / "current"
         extra_dir = tmp_path / "empty_extra"
         cur_dir.mkdir()
@@ -349,12 +351,12 @@ class TestExtraDirectoriesDisplay:
             run_manage_logs(uc, _make_config(), _t)
 
         from bob.manage_logs import _get_extra_dirs
-        assert _get_extra_dirs(uc) == []
+        assert _get_extra_dirs(uc) == [extra_dir]
 
-    def test_nonexistent_extra_dir_auto_removed(self, tmp_path):
+    def test_nonexistent_extra_dir_kept_until_forgotten(self, tmp_path):
         cur_dir = tmp_path / "current"
         cur_dir.mkdir()
-        ghost = tmp_path / "ghost"  # does not exist
+        ghost = tmp_path / "ghost"  # does not exist (e.g. an unmounted disk)
 
         uc, _ = _make_user_config(str(cur_dir), extra_dirs=[str(ghost)])
         inputs = iter(["q"])
@@ -364,7 +366,35 @@ class TestExtraDirectoriesDisplay:
             run_manage_logs(uc, _make_config(), _t)
 
         from bob.manage_logs import _get_extra_dirs
-        assert _get_extra_dirs(uc) == []
+        assert _get_extra_dirs(uc) == [ghost]
+
+    def test_forget_drops_a_tracked_dir_but_not_the_current(self, tmp_path):
+        """_forget_dir removes an extra; the current dir is never in extras."""
+        from bob.manage_logs import _forget_dir, _get_extra_dirs, _declared_dirs
+        cur_dir = tmp_path / "current"
+        keep = tmp_path / "keep"
+        drop = tmp_path / "drop"
+        for d in (cur_dir, keep, drop):
+            d.mkdir()
+        uc, _ = _make_user_config(str(cur_dir), extra_dirs=[str(keep), str(drop)])
+        _forget_dir(uc, drop)
+        assert _get_extra_dirs(uc) == [keep]
+        # current is always first, extras follow, deduplicated
+        assert _declared_dirs(uc) == [cur_dir, keep]
+
+    def test_dir_report_label_reports_count_empty_or_missing(self, tmp_path):
+        """The picker's per-folder label distinguishes reports / empty / missing."""
+        from bob.manage_logs import _dir_report_label
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        withlogs = tmp_path / "withlogs"
+        withlogs.mkdir()
+        (withlogs / "bob_2026-09-12_10-00-00.log").write_text("Score: 8/10\n")
+        missing = tmp_path / "gone"  # never created
+
+        assert _dir_report_label(missing, _t) == _t("manage_logs.dir_missing")
+        assert _dir_report_label(empty, _t) == _t("manage_logs.dir_empty")
+        assert _dir_report_label(withlogs, _t) == _t("manage_logs.dir_reports", count=1)
 
     def test_flat_index_spans_all_dirs(self, tmp_path):
         """Index numbers must be contiguous across current + extra dirs."""

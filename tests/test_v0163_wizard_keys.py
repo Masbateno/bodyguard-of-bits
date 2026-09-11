@@ -211,8 +211,7 @@ class TestAnAdvertisedKeyDoesSomething:
 #: without any test noticing. Adding a screen means classifying it here.
 _LANDING = {
     "bob.explain._FAMILY_KEYS",
-    "bob.manage_logs._LIST_KEYS",
-    "bob.manage_logs._MARKED_KEYS",
+    "bob.manage_logs._DIR_KEYS",
     "bob.tui.cron._LANDING_KEYS",
     "bob.tui.cron._MANAGE_KEYS",
 }
@@ -220,6 +219,8 @@ _NESTED = {
     "bob.explain._DETAIL_KEYS",
     "bob.explain._VERSION_KEYS",
     "bob.explain._KEY_PICKER_KEYS",
+    "bob.manage_logs._LIST_KEYS",
+    "bob.manage_logs._MARKED_KEYS",
     "bob.manage_logs._PREVIEW_KEYS",
     "bob.tui.cron._SCHEDULE_KEYS",
     "bob.tui.cron._CONFIRM_KEYS",
@@ -300,7 +301,8 @@ _SCREEN_OF = {
     "bob/tui/cron.py::_run_manage_cron_curses":   "bob.tui.cron._MANAGE_KEYS",
     "bob/tui/cron.py::_curses_email_list_sub":    "bob.tui.cron._EMAIL_KEYS",
     "bob/tui/cron.py::_curses_email_store_sub":   "bob.tui.cron._STORE_KEYS",
-    "bob/manage_logs.py::_run_manage_logs_curses": "bob.manage_logs._LIST_KEYS",
+    "bob/manage_logs.py::_dir_picker":            "bob.manage_logs._DIR_KEYS",
+    "bob/manage_logs.py::_browse_dir":            "bob.manage_logs._LIST_KEYS",
     "bob/manage_logs.py::_curses_preview_log":    "bob.manage_logs._PREVIEW_KEYS",
     "bob/explain.py::_family_picker":              "bob.explain._FAMILY_KEYS",
     "bob/explain.py::_version_picker":             "bob.explain._VERSION_KEYS",

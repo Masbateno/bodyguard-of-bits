@@ -232,9 +232,27 @@ untouched, not a fabricated one. `bob --explain <key>` reads straight off the
 screen that `hardening.rp_filter_disabled` is 3.3.7 in CIS Ubuntu 22.04, 3.3.7
 in Debian 12 and Ubuntu 24.04, and 3.3.1.12 in Debian 13.
 
+**`--manage-logs` keeps every log directory until you forget it, and opens on a
+folder picker.** Changing where reports are written used to risk losing sight of
+the old ones: the previous location was tracked, but an extra directory that was
+empty or temporarily missing (an unmounted disk) was silently pruned from the
+list. Tracked directories now persist until the operator explicitly forgets one
+(`d`, with a confirmation that says the files are kept). The wizard opens on a
+folder screen — one 📁 per tracked directory, the current one tagged, each
+showing its report count / *empty* / *missing* — and Enter opens a directory
+into its own report list (mark, delete, preview as before); `c` changes the
+write directory and remembers the old one. The text-mode fallback no longer
+prunes the tracked list either.
+
+**`--manage-cron` aligns the e-mail column regardless of schedule length.** A
+job scheduled "the 1st, 15th of every month at 12:03" pushed its addresses right
+of the "every day at 18:56" jobs, because the schedule column was padded to a
+fixed width a long schedule overran. The name+schedule column is now measured
+across every job and padded to the widest, so the addresses start at one column.
+
 **References** 199 primary (107 CIS Ubuntu 22.04 + 84 best-practice + 7 CIS
 Docker 1.6 + 1 CIS Red Hat 8/9) + 163 cross-benchmark citations on 58 keys.
-**Tests** 9959 → **10291**. **Mutations** 166 → **205**.
+**Tests** 9959 → **10314**. **Mutations** 166 → **207**.
 
 ---
 

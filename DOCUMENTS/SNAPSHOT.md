@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 10291 unit tests · 23 doc files · 5+ distros field-tested │
+│                 10314 unit tests · 23 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -299,7 +299,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 277 test files, ~6267 functions, 10249 collected (v0.18.1)
+├── tests/                     ← 278 test files, ~6267 functions, 10314 collected (v0.18.1)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -353,7 +353,7 @@ bodyguard-of-bits/
 | `tui/_palette.py` | 102 | **v0.16.1** the five curses colour pairs, defined once. `SELECTION` / `ACCENT` / `NORMAL` / `NOTICE` / `BANNER` + `init_palette(curses, notice=)` + `selection_background(curses)`. Before it, `explain.py`, `manage_logs.py` and `tui/cron.py` each called `init_pair` themselves with the same chart — they agreed, which is why the cursor row and the banner shared a cyan background on all three screens. Selection is now orange (xterm-256 index 208, falling back to `COLOR_YELLOW` on an 8-colour terminal). `notice` is the one per-screen slot: red for a warning list, cyan for `--explain`'s detail heading. **Do not call `init_pair` outside this module** — a guard rejects it. **v0.16.3** adds `marked_attr(curses, has_color)`: a row toggled with Space reads red bold, or underlined without colour, on every screen — it was red in `--manage-logs`, yellow in `--manage-cron` and uncoloured in both e-mail screens. **v0.16.3** also adds three pairs: `PROFILE` (the `[ profile ]` heading in `--explain`), `FOOTER` (white on orange — the key banner) and `CONTEXT` (white on black — the line reserved above it). All three take their orange from the same `selection_background()` call as the cursor row, so the chart cannot disagree with itself |
 | `tui/_chrome.py` | 81 | **v0.16.3** the bottom of every wizard, drawn once. `chrome_height()` sizes a screen's body; `context_row()` says where a prompt belongs; `draw()` paints the reserved line and the orange key banner under it. Before it, the hints were accent-coloured text on the last row and two screens painted over that row: `--manage-logs` replaced the whole key line with its delete confirmation — asking for a destructive confirmation on a screen that had just hidden the cancel key — and the cron wizards drew seven text prompts at `h - 1`, on top of the footer they had just drawn. Every screen also sized its body `h - 2`, one short whenever the hints wrapped, so the second banner row landed on the body's last entry. The banner takes a second row rather than truncating: at 80 columns five screens overflow in French, and a `[:w]` slice cuts from the right, where the exit hint sits. Never imports curses |
 | `tui/cron.py` | 1056 | Curses TUI for `--install-cron` / `--manage-cron`; `_Schedule(IntEnum)` (DAILY/WEEKDAYS/MONTHDAYS/CUSTOM) + `_is_printable_input_char` helper (v0.5.x) + `_curses_choice_screen` (v0.16.1, the three audit-dimension screens). `_WizardEntry` carries `time_simple` since v0.16.1 — its absence crashed every interactive `--install-cron` from v0.7.0 to v0.16.0 |
-| `manage_logs.py` | 1037 | `--manage-logs` curses TUI with score history chart; `_is_finding_continuation` helper + 3 bare `input()` now catch EOFError (v0.5.x) |
+| `manage_logs.py` | 1103 | `--manage-logs` curses TUI with score history chart; **v0.18.1** opens on a folder picker (`_dir_picker`) of tracked log directories (`_declared_dirs` / `_forget_dir` — kept until explicitly forgotten), Enter browses one (`_browse_dir`, nested); `_is_finding_continuation` helper + 3 bare `input()` now catch EOFError (v0.5.x) |
 | `completion.py` | 74 | `--install-completion` → writes `/etc/bash_completion.d/bob`; v0.8.2 bash completion sync + v0.9.0 `cur="="` companion fix |
 | `webhook.py` | 455 | Generic JSON / Slack payload + send (10s timeout); HTTPS-only + `BOB_WEBHOOK_ALLOW_INSECURE=1` escape hatch (v0.7.1 I-4; HTTPS:// prefix tolerance v0.7.3); URL credential redaction (v0.8.1 T74); `--test-webhook` smoke entry point (v0.8.2). Uses `_i18n_safe.make_fallback_t`. |
 | `visibility.py` | 93 | **v0.16.0** the keys that mean BOB could not see part of the host: `VISIBILITY_KEYS`, `NOT_A_VISIBILITY_LIMIT`, `section_of()`. A key here makes `ScoreEngine.score_is_upper_bound` true, so the score renders as `≤ N/10` and `--diff` stops comparing like for like. **v0.16.2** also adds `is_visibility_key()` — a predicate, because `_sec`'s `<section>.unavailable` is generated per section and cannot be enumerated; without it a section that *raised* counted as more verified than one that degraded honestly. And: a key here no longer implies a *ceiling* — when blindness drops a whole domain out of the score average the direction is unknown, so `ScoreEngine` exposes `score_is_upper_bound` (a ceiling), `score_is_uncertain` (anything unread — what a gate must read) and `score_span`. **v0.16.1** added `user_accounts.no_passwd` / `no_shadow`: the set was first enumerated by name (`*_unreadable` / `*_unknown`) and neither matches, so a third guard now sweeps by position — any key emitted inside an `if not snapshot.<x>readable` body must be in this set or in `NOT_A_VISIBILITY_LIMIT`, whatever it is called |
@@ -476,7 +476,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 
 | LoC | File | Hotspot reason |
 |---:|---|---|
-| 1037 | `bob/manage_logs.py` | Full curses TUI: list + preview + score chart + multi-directory view |
+| 1103 | `bob/manage_logs.py` | Full curses TUI: folder picker (tracked dirs) → per-directory list + preview + score chart |
 | 1017 | `bob/explain.py` | EXPLAIN_KEYS (194 keys / 50 prefixes after v0.8.0 backfill + v0.10.1 client x11) + alias map (emptied v0.9.0 D-3, first live entry v0.10.1) + interactive TUI |
 | 1056 | `bob/tui/cron.py` | Curses TUI for cron wizards (extracted v0.4.1) |
 | 940 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
@@ -500,7 +500,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 
 | LoC | File | Covers |
 |---:|---|---|
-| 1108 | `tests/test_manage_logs.py` | curses TUI flows (heavy fixturing) |
+| 1138 | `tests/test_manage_logs.py` | curses TUI flows (heavy fixturing) |
 | 1043 | `tests/test_ssh.py` | sshd_config + host keys + user keys (covers the new ssh/ package via re-exports) |
 | 974 | `tests/test_cron.py` | massive growth post-split (was 382 L) — covers cron/ package via re-exports + new helpers |
 | 932 | `tests/test_kernel_modules.py` | risky modules + apt kernel + dpkg ii filter (v0.4.6) |
@@ -520,7 +520,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 | `checks/kernel_modules.py` | 487 | 932 | 1.91× | Heavily tested — Bug 1 fix (v0.4.6) added 5 tests on top |
 | `domain_scores.py` | 552 | 855 | 1.55× | Scoring engine — critical, well tested |
 | `cron/` (package) | 1407 | 974 (test_cron) + 344 (test_cron_audit) | 0.94× | **Refactor done (v0.6.0)** — was 0.60× before split. test_cron jumped from 382 → 848+ L during the v0.5.x → v0.6.0 cycle as the now-modular surface became easier to target |
-| `manage_logs.py` | 1037 | 1108 | 1.07× | Curses UI — hard to test, but test_manage_logs grew significantly (882 → 1108) through the v0.5.x audit |
+| `manage_logs.py` | 1103 | 1138 | 1.03× | Curses UI — hard to test, but test_manage_logs grew significantly (882 → 1108) through the v0.5.x audit |
 | `_sandbox.py` | 881 | (covered by test_plugin_sandbox.py) | tracked | v0.7.0 T3 plugin runner — tests pin Tier 2 restrictions + known-bad plugin suite; v0.9.0 TD-1 retired the legacy bypass path (−75 L) |
 | `scoring.py` (posture API) | 839 | (covered by test_scoring.py + posture-specific cases) | high | v0.7.0 T1 + v0.7.3 helpers; posture escalation contract tested across consumers; v0.10.0 D-4 back-compat shim covered by `test_v092_baseline_i18n_and_shim.py` + D-4 ignore.yml tests; v0.10.2 I-1 iptables literal fix pinned by `test_v0102_posture_iptables_key.py` (7 tests + static AST guard forbidding live `iptables_nft.input_accept` comparisons) |
 | `tui/cron.py` | 949 | (covered by test_cron) | low | **Still under-tested** — soft-ceiling candidate remaining after v0.6.0 splits; curses code dominates |
@@ -906,7 +906,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 277 test files, ~6267 functions, **10249 collected** (v0.18.1) | `pytest --collect-only -q` |
+| Tests | 278 test files, ~6267 functions, **10314 collected** (v0.18.1) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

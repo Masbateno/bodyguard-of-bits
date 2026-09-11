@@ -105,7 +105,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 39 check
 ### Automation
 
 - **Detailed report** — timestamped log file with ASCII art header, system info, findings, and recommendations; created with `-d`; filename: `bob_YYYYMMDD_HHMMSS.log`. Each finding carries its explanation, its command (`→` fix, `?` check) and its key — unconditionally, and under `-q` too, since an archive cannot be re-run with `-v`
-- **`--manage-logs`** — interactive UI to list, preview, and delete saved report files; scrollable preview with full/summary toggle
+- **`--manage-logs`** — interactive UI to list, preview, and delete saved report files; scrollable preview with full/summary toggle. Opens on a folder picker (📁) of every tracked log directory — the current one and any previous ones, kept until you explicitly forget one so a directory change never loses sight of old reports; pick a folder to browse its reports
 - **`--install-cron`** — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email, then pin the audit's profile, language and outbound-probe stance (v0.16.1 — a cron runs as root, so without these it would read root's saved profile and cron's bare `$LANG`); MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; resulting command line shown before writing; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`
 - **`--manage-cron`** — looping TUI: list installed cron jobs, edit schedule or notification email, delete; email address book accessible from the menu even without any cron installed
 
