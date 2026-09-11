@@ -99,6 +99,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - SSH brute-force detection was blind on OpenSSH >= 9.8: authentication is
   logged by sshd-session, and BOB read sshd only. Measured on a Raspberry Pi
   Zero W: 71 failed attempts and 29 logins in the journal, BOB answered OK.
+- Raspberry Pi: trixie's cloud-init seed on the FAT boot partition held the
+  sudo account's current hash and the Wi-Fi PSK; BOB said OK. Now read.
 
 * Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
 - BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,

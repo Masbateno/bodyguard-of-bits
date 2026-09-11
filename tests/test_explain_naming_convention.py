@@ -247,7 +247,10 @@ class TestExplainAuditInvariants:
         # woken for.
         # v0.18.0 → 191: services.state.inactive_enabled — the one state in
         # the enum that rendered nothing, found on Alpine by stopping sshd.
-        assert len(EXPLAIN_KEYS) == 191, (
+        # v0.18.1 → 193: raspberry_pi.seed_password and seed_wifi_key — trixie
+        # provisions through cloud-init, and on a real Pi Zero W its seed held
+        # the sudo account's current hash and the Wi-Fi PSK while BOB said OK.
+        assert len(EXPLAIN_KEYS) == 193, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

@@ -350,6 +350,9 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("Raspberry Pi", [
         "raspberry_pi.userconf_present",
         "raspberry_pi.legacy_account",
+        # v0.18.1: trixie provisions through cloud-init instead of userconf.txt.
+        "raspberry_pi.seed_password",
+        "raspberry_pi.seed_wifi_key",
     ]),
     ("Container isolation", [
         "container_security.privileged",

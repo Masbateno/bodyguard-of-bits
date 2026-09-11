@@ -45,6 +45,25 @@ from bob._atomic import read_text_capped
 #: `$6$` SHA-512, `$5$` SHA-256, `$y$` yescrypt (Bookworm's default).
 _USERCONF_RE = re.compile(r"^([A-Za-z0-9._-]{1,32}):(\$[0-9a-z]{1,2}\$\S+)\s*$")
 
+#: Raspberry Pi OS trixie provisions through cloud-init, not userconf.txt:
+#: the Imager writes a NoCloud seed to the boot partition and
+#: /etc/cloud/cloud.cfg.d/99_raspberry-pi.cfg reads it from there
+#: (``seedfrom: file:///boot/firmware``). Measured on a Pi Zero W, the day
+#: after flashing: ``user-data`` still held the sudo account's yescrypt hash —
+#: byte-identical to its /etc/shadow entry — and ``network-config`` the Wi-Fi
+#: PSK, both mode 0755 through the vfat ``fmask=0022`` mount, both readable by
+#: every local account. BOB 0.18.0 looked for userconf.txt only and said OK.
+_SEED_USER_DATA = "user-data"
+_SEED_NETWORK = "network-config"
+
+#: Key lines, matched without a YAML parser — BOB has no dependencies. Values
+#: are captured to classify them and are never stored or printed.
+_SEED_HASH_RE = re.compile(
+    r"^\s*(?:passwd|hashed_passwd)\s*:\s*['\"]?(\$[0-9a-z]{1,2}\$[^'\"\s]+)", re.M)
+_SEED_CLEAR_RE = re.compile(r"^\s*plain_text_passwd\s*:\s*\S", re.M)
+_SEED_NAME_RE = re.compile(r"^\s*-?\s*name\s*:\s*['\"]?([A-Za-z0-9._-]{1,32})", re.M)
+_SEED_WIFI_KEY_RE = re.compile(r"^\s*password\s*:\s*\S", re.M)
+
 #: The provisioning marker that enables sshd on first boot. Empty by design.
 _SSH_MARKER = "ssh"
 
@@ -79,6 +98,18 @@ class RaspberryPiSnapshot:
     ssh_marker:       bool = False
     legacy_account:   bool = False
     shadow_readable:  bool = True
+    # v0.18.1 — the cloud-init seed. ``seed_password`` is "hash", "clear" or
+    # "" ; ``seed_password_current`` is True when the hash is the one the
+    # account uses now, False when it is stale, None when /etc/shadow could
+    # not be read to tell.
+    seed_password:          str = ""
+    seed_password_user:     str = ""
+    seed_password_current:  "bool | None" = None
+    seed_wifi_keys:         int = 0
+    seed_modes:             dict = field(default_factory=dict)
+    # Files present on the partition that BOB could not read. Present and
+    # unread is not "no credential": it blocks the all-clear.
+    unreadable:             list = field(default_factory=list)
     _notes:           list = field(default_factory=list)
 
     @classmethod
@@ -109,8 +140,12 @@ class RaspberryPiSnapshot:
             userconf = snap.boot_dir / "userconf.txt"
             try:
                 text = read_text_capped(userconf, encoding="utf-8", errors="replace")
-            except OSError:
+            except FileNotFoundError:
                 text = ""
+            except OSError:
+                # There and unread is not absent — see ``unreadable``.
+                text = ""
+                snap.unreadable.append(userconf.name)
             for line in text.splitlines():
                 m = _USERCONF_RE.match(line.strip())
                 if m:
@@ -123,10 +158,69 @@ class RaspberryPiSnapshot:
                 except OSError:
                     snap.userconf_mode = ""
             snap.ssh_marker = path_exists(snap.boot_dir / _SSH_MARKER)
+            _read_seed(snap, snap.boot_dir, _shadow or Path("/etc/shadow"))
 
         snap.legacy_account, snap.shadow_readable = _legacy_account_state(
             _passwd or Path("/etc/passwd"), _shadow or Path("/etc/shadow"))
         return snap
+
+
+def _read_text_or_note(snap: RaspberryPiSnapshot, path: Path) -> "str | None":
+    """The file's text, None when absent; an unreadable file is recorded."""
+    try:
+        return read_text_capped(path, encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        snap.unreadable.append(path.name)
+        return None
+
+
+def _mode_of(path: Path) -> str:
+    try:
+        return oct(stat.S_IMODE(path.stat().st_mode))[2:].rjust(3, "0")
+    except OSError:
+        return ""
+
+
+def _read_seed(snap: RaspberryPiSnapshot, boot_dir: Path, shadow: Path) -> None:
+    """What the cloud-init seed on the boot partition still discloses."""
+    user_data = _read_text_or_note(snap, boot_dir / _SEED_USER_DATA)
+    if user_data:
+        m = _SEED_HASH_RE.search(user_data)
+        if m:
+            snap.seed_password = "hash"
+            names = _SEED_NAME_RE.findall(user_data[: m.start()])
+            snap.seed_password_user = names[-1] if names else ""
+            snap.seed_password_current = _is_current_hash(
+                shadow, snap.seed_password_user, m.group(1))
+        elif _SEED_CLEAR_RE.search(user_data):
+            snap.seed_password = "clear"
+            names = _SEED_NAME_RE.findall(user_data)
+            snap.seed_password_user = names[0] if names else ""
+        if snap.seed_password:
+            snap.seed_modes[_SEED_USER_DATA] = _mode_of(boot_dir / _SEED_USER_DATA)
+
+    network = _read_text_or_note(snap, boot_dir / _SEED_NETWORK)
+    if network:
+        snap.seed_wifi_keys = len(_SEED_WIFI_KEY_RE.findall(network))
+        if snap.seed_wifi_keys:
+            snap.seed_modes[_SEED_NETWORK] = _mode_of(boot_dir / _SEED_NETWORK)
+
+
+def _is_current_hash(shadow: Path, user: str, digest: str) -> "bool | None":
+    """Whether *digest* is *user*'s password hash now. None when not established."""
+    if not user:
+        return None
+    try:
+        lines = read_text_capped(shadow, encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        parts = line.split(":")
+        if parts and parts[0] == user and len(parts) > 1:
+            return parts[1] == digest
+    return None
 
 
 def _legacy_account_state(passwd: Path, shadow: Path) -> "tuple[bool, bool]":
@@ -170,6 +264,9 @@ def check_raspberry_pi(snapshot: RaspberryPiSnapshot,
     Scoring:
       - userconf.txt still present:   WARN, −1  (a password hash on a
         filesystem with no permissions to protect it)
+      - cloud-init user-data password: WARN, −1  (the same, for trixie)
+      - cloud-init network-config key: WARN, −1  (the Wi-Fi PSK)
+      - a provisioning file unreadable: INFO — blocks the all-clear
       - legacy `pi` account can log in: WARN, −1 on server, INFO elsewhere
       - ssh first-boot marker present: INFO
       - shadow unreadable:            INFO, no deduction — not established
@@ -210,7 +307,67 @@ def check_raspberry_pi(snapshot: RaspberryPiSnapshot,
             cmd=f"sudo rm {snapshot.boot_dir / 'userconf.txt'}",
             nature="action",
         )
-    else:
+
+    # v0.18.1 — the cloud-init seed Raspberry Pi OS trixie provisions from.
+    # The remediation removes only the secret lines and leaves meta-data
+    # alone: measured on a Pi Zero W, a reboot afterwards kept Wi-Fi,
+    # /etc/shadow, netplan and the hostname unchanged, because cloud-init
+    # sees the same instance-id and skips every once-per-instance module.
+    # Deleting the seed files instead would hand cloud-init the `None`
+    # datasource — a new instance — and it would re-run them.
+    user_data = snapshot.boot_dir / _SEED_USER_DATA
+    if snapshot.seed_password:
+        if snapshot.seed_password_current is True:
+            currency = _t("raspberry_pi.seed_password_current")
+        elif snapshot.seed_password_current is False:
+            currency = _t("raspberry_pi.seed_password_stale")
+        else:
+            currency = _t("raspberry_pi.seed_password_unknown")
+        result.warn_with_deduction(
+            key="raspberry_pi.seed_password",
+            # Literal keys, not "seed_password_" + kind: the orphan-key guard
+            # finds references by reading the source, and a concatenation is
+            # a message nothing appears to use.
+            message=_t("raspberry_pi.seed_password_clear"
+                       if snapshot.seed_password == "clear"
+                       else "raspberry_pi.seed_password_hash",
+                       user=snapshot.seed_password_user or "?",
+                       path=str(user_data)),
+            reason=_t("raspberry_pi.seed_password_reason"),
+            points=1,
+            detail=_t("raspberry_pi.seed_password_detail",
+                      mode=snapshot.seed_modes.get(_SEED_USER_DATA) or "?",
+                      currency=currency),
+            cmd=("sudo sed -i -E "
+                 "'/^[[:space:]]*(passwd|hashed_passwd|plain_text_passwd):/d' "
+                 f"{user_data}"),
+            nature="action",
+        )
+    if snapshot.seed_wifi_keys:
+        network = snapshot.boot_dir / _SEED_NETWORK
+        result.warn_with_deduction(
+            key="raspberry_pi.seed_wifi_key",
+            message=_t("raspberry_pi.seed_wifi_key",
+                       count=snapshot.seed_wifi_keys, path=str(network)),
+            reason=_t("raspberry_pi.seed_wifi_key_reason"),
+            points=1,
+            detail=_t("raspberry_pi.seed_wifi_key_detail",
+                      mode=snapshot.seed_modes.get(_SEED_NETWORK) or "?"),
+            cmd=f"sudo sed -i -E '/^[[:space:]]*password:/d' {network}",
+            nature="action",
+        )
+
+    if snapshot.unreadable:
+        # Present and unread: the all-clear below would be a verdict about
+        # contents BOB never saw.
+        result.info(
+            message=_t("raspberry_pi.seed_unreadable",
+                       files=", ".join(snapshot.unreadable),
+                       path=str(snapshot.boot_dir)),
+            key="raspberry_pi.seed_unreadable",
+        )
+    elif not (snapshot.userconf_user or snapshot.seed_password
+              or snapshot.seed_wifi_keys):
         result.ok(message=_t("raspberry_pi.userconf_absent"),
                   key="raspberry_pi.userconf_absent")
 

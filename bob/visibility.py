@@ -63,6 +63,10 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "memory.swappiness_unknown",
     "password_policy.pam_stack_unknown",
     "raspberry_pi.account_unknown",
+    # v0.18.1: a cloud-init seed or userconf.txt present on the boot
+    # partition but unreadable — the credential finding it might carry
+    # (and its point) was not established.
+    "raspberry_pi.seed_unreadable",
     "plugin.sandbox.unreadable",
     "ports.unreadable",
     "samba.conf_unreadable",

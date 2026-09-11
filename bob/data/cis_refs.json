@@ -851,6 +851,16 @@
     "ref_fr": "Bonne pratique — Retirer le userconf.txt de l'Imager de la partition de boot une fois le compte créé ; FAT ne peut pas protéger une empreinte de mot de passe",
     "code": null
   },
+  "raspberry_pi.seed_password": {
+    "ref": "Best practice — Remove the password from the cloud-init seed on the boot partition once the account exists; FAT cannot protect it",
+    "ref_fr": "Bonne pratique — Retirer le mot de passe de l'amorçage cloud-init de la partition de boot une fois le compte créé ; FAT ne peut pas le protéger",
+    "code": null
+  },
+  "raspberry_pi.seed_wifi_key": {
+    "ref": "Best practice — Remove the Wi-Fi key from the cloud-init seed once NetworkManager holds the connection; FAT cannot protect it",
+    "ref_fr": "Bonne pratique — Retirer la clé Wi-Fi de l'amorçage cloud-init une fois la connexion détenue par NetworkManager ; FAT ne peut pas la protéger",
+    "code": null
+  },
   "raspberry_pi.legacy_account": {
     "ref": "Best practice — Replace the distribution's default account with one whose username an attacker has to discover",
     "ref_fr": "Bonne pratique — Remplacer le compte par défaut de la distribution par un compte dont l'attaquant doit deviner le nom",

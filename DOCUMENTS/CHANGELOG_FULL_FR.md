@@ -44,7 +44,30 @@ vers `/var/log/auth.log` quelle que soit la source lue par BOB. Sur un hôte
 journald seul, ce fichier n'existe pas ; la commande lit désormais le journal
 quand c'est ce que BOB a lu.
 
-**Tests** 9959 → **9988**. **Mutations** 166 → **170**.
+**Et la section Raspberry Pi affichait un feu vert par-dessus le mot de passe du compte sudo.**
+Raspberry Pi OS trixie crée le premier compte via cloud-init, et non plus
+`userconf.txt` : l'Imager écrit un amorçage NoCloud sur la partition de
+démarrage FAT, et `99_raspberry-pi.cfg` le lit à cet endroit. Sur la carte, le
+lendemain de l'installation, `user-data` contenait l'empreinte yescrypt du
+compte sudo — identique, octet pour octet, à celle de `/etc/shadow` — et
+`network-config` la PSK Wi-Fi de 64 chiffres hexadécimaux, tous deux en mode
+0755 via le montage vfat `fmask=0022`, tous deux lisibles par un compte sans
+privilège. BOB cherchait `userconf.txt`, n'en trouvait pas, et affichait
+*« ✔ Aucun identifiant de provisionnement sur la partition de démarrage »*. Il
+lit désormais l'amorçage, dit si l'empreinte est celle que le compte utilise
+aujourd'hui, et n'affiche jamais une valeur.
+
+La remédiation a été prouvée sur la carte avant d'être écrite : retirer les
+seules lignes secrètes puis redémarrer a laissé intacts le Wi-Fi, `/etc/shadow`,
+netplan et le nom d'hôte, parce que `meta-data` désigne toujours la même
+instance et que cloud-init saute chaque module « une fois par instance ».
+Supprimer l'amorçage aurait livré cloud-init à la source `None` — une nouvelle
+instance — et il les aurait rejoués. Puis BOB a fait lui-même le cycle sur le
+Pi : deux avertissements, `--fix --apply --yes`, ré-audit, feu vert. Un fichier
+de provisionnement que BOB ne peut pas lire bloque désormais le feu vert au
+lieu de compter comme vide.
+
+**Tests** 9959 → **10036**. **Mutations** 166 → **175**.
 
 ---
 

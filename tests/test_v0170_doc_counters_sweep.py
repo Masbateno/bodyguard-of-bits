@@ -62,6 +62,10 @@ _NOUNS = {
 #: ambiguity is why the older guard used long distinctive phrases, and why this
 #: one reports rather than guesses.
 _COINCIDENCES = {
+    # SNAPSHOT: "(193 L)" is bob/cron/_io.py's line count, which v0.18.1
+    # made equal to the EXPLAIN_KEYS count. Line counts are deliberately
+    # not guarded strictly (see the SNAPSHOT guard calibration).
+    "L",
     # README_TECH: "50 failed attempts" is a brute-force threshold that happens
     # to equal the explain-prefix count. Nothing to keep in sync.
     "failed attempts",

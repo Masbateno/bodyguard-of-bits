@@ -41,7 +41,28 @@ The command offered beside a login from a public address pointed at
 `/var/log/auth.log` whatever BOB had read. On a journald-only host that file
 does not exist; the command now reads the journal when BOB did.
 
-**Tests** 9959 → **9988**. **Mutations** 166 → **170**.
+**And the Raspberry Pi section printed an all-clear over the sudo account's password.**
+Raspberry Pi OS trixie provisions the first account through cloud-init, not
+`userconf.txt`: the Imager writes a NoCloud seed to the FAT boot partition and
+`99_raspberry-pi.cfg` reads it from there. On the board, the day after
+flashing, `user-data` held the sudo account's yescrypt hash — byte-identical to
+its `/etc/shadow` entry — and `network-config` the 64-hex-digit Wi-Fi PSK, both
+mode 0755 through the vfat `fmask=0022` mount, both readable by an unprivileged
+account. BOB looked for `userconf.txt`, found none, and said
+*"✔ No provisioning credentials left on the boot partition"*. It reads the seed
+now, says whether the hash is the one the account uses today, and never prints
+a value.
+
+The remedy was proven on the board before being written: removing only the
+secret lines and rebooting kept Wi-Fi, `/etc/shadow`, netplan and the hostname
+unchanged, because `meta-data` still names the same instance and cloud-init
+skips every once-per-instance module. Deleting the seed would have handed
+cloud-init the `None` datasource — a new instance — and it would have re-run
+them. Then BOB ran the round trip itself on the Pi: two warnings, `--fix
+--apply --yes`, re-audit, all-clear. A provisioning file BOB cannot read now
+blocks the all-clear instead of counting as empty.
+
+**Tests** 9959 → **10036**. **Mutations** 166 → **175**.
 
 ---
 

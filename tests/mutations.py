@@ -74,6 +74,7 @@ _NATIVEALL = "tests/test_v0180_every_sysctl_fix_is_native.py"
 _PY314 = "tests/test_v0180_python314_denial_is_not_absence.py"
 _SSHDSESS = "tests/test_v0181_sshd_session_is_read.py"
 _TESTTAB = "tests/test_v0181_testing_table_matches_changelog.py"
+_SEED = "tests/test_v0181_cloud_init_seed_on_the_boot_partition.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -280,7 +281,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="196 entries (109 formal CIS",
+        old="198 entries (109 formal CIS",
         new="174 entries (107 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -1867,5 +1868,55 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="v0.18.0 was published with this row reading 9832 \u2014 a count "
                "taken eight commits before the release \u2014 and no guard read "
                "the table",
+    ),
+    Mutation(
+        id="rpi-seed/the-seed-is-never-read",
+        file="bob/checks/raspberry_pi.py",
+        old="            _read_seed(snap, snap.boot_dir, _shadow or Path(\"/etc/shadow\"))\n",
+        new="",
+        kills=(f"{_SEED}::test_the_password_in_the_seed_is_reported_not_passed_as_ok",
+               f"{_SEED}::test_the_wifi_key_in_the_seed_is_reported"),
+        reason="measured on a Pi Zero W running trixie: the seed held the sudo "
+               "account's current hash and the Wi-Fi PSK, readable by every "
+               "local account, and BOB 0.18.0 printed an all-clear",
+    ),
+    Mutation(
+        id="rpi-seed/all-clear-printed-over-the-credentials",
+        file="bob/checks/raspberry_pi.py",
+        old="    elif not (snapshot.userconf_user or snapshot.seed_password\n              or snapshot.seed_wifi_keys):",
+        new="    elif True:",
+        kills=(f"{_SEED}::test_the_password_in_the_seed_is_reported_not_passed_as_ok",),
+        reason="the OK line and the WARN beside it would contradict each other, "
+               "and the OK is the one a skimming reader keeps",
+    ),
+    Mutation(
+        id="rpi-seed/an-unreadable-seed-reads-as-empty",
+        file="bob/checks/raspberry_pi.py",
+        old="    except OSError:\n        snap.unreadable.append(path.name)\n        return None",
+        new="    except OSError:\n        return None",
+        kills=(f"{_SEED}::test_a_seed_bob_could_not_read_blocks_the_all_clear",),
+        reason="a file BOB could not open said nothing about its contents; "
+               "treating it as empty is the class this project has closed five "
+               "times, reopened in a new collector",
+    ),
+    Mutation(
+        id="rpi-seed/currency-never-established",
+        file="bob/checks/raspberry_pi.py",
+        old="            return parts[1] == digest",
+        new="            return None",
+        kills=(f"{_SEED}::test_the_hash_is_said_to_be_the_current_one_when_it_is",
+               f"{_SEED}::test_a_stale_hash_is_called_stale"),
+        reason="on the board the seed hash was byte-identical to /etc/shadow; "
+               "saying so is the difference between a leak and a leftover",
+    ),
+    Mutation(
+        id="rpi-seed/the-remedy-deletes-the-seed",
+        file="bob/checks/raspberry_pi.py",
+        old="            cmd=(\"sudo sed -i -E \"\n                 \"'/^[[:space:]]*(passwd|hashed_passwd|plain_text_passwd):/d' \"\n                 f\"{user_data}\"),",
+        new="            cmd=f\"sudo rm {user_data}\",",
+        kills=(f"{_SEED}::test_applying_both_commands_clears_the_findings_and_nothing_else",),
+        reason="deleting the seed hands cloud-init no datasource on the next "
+               "boot; it treats the machine as a new instance and re-runs its "
+               "first-boot modules — the proven remedy removes only the lines",
     ),
 )
