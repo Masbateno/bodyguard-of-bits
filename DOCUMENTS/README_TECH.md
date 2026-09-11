@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Masbateno/bodyguard-of-bits/main/assets/logo_bob.png" alt="BOB — Bodyguard Of Bits" width="180">
+</p>
+
 *[Lire en français](README_TECH_FR.md)* · *[Vue d'ensemble](../README.md)*
 
 # BOB — Bodyguard Of Bits
