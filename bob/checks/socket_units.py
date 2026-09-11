@@ -84,8 +84,17 @@ class SocketUnit:
 
     @property
     def is_orphan(self) -> bool:
-        """At least one declared trigger service is gone/masked or failed."""
-        return bool(self.broken_trigger)
+        """An *active* socket whose backing service is gone/masked or failed.
+
+        v0.18.1: the socket must be active. An inactive .socket holds no kernel
+        socket open and listens for nothing — it is a dormant unit definition,
+        not "surface without function". Measured on a Raspberry Pi Zero W:
+        syslog.socket is inactive with a not-found syslog.service, and was
+        flagged as an orphan though it exposes nothing. The module has always
+        said an orphan is a socket "still active while the service is broken";
+        this makes the code say it too.
+        """
+        return self.active_state == "active" and bool(self.broken_trigger)
 
     @property
     def is_network_listener(self) -> bool:

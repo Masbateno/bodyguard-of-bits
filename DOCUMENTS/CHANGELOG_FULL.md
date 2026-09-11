@@ -150,7 +150,17 @@ and, when a unit was skipped by a failed condition, does not count it as a gap.
 A service that was genuinely enabled and stopped, or failed, with its condition
 met still warns and still costs.
 
-**Tests** 9959 → **10178**. **Mutations** 166 → **193**.
+**An inactive socket unit was listed as an orphan.** An orphaned .socket is
+one that is listening while the service behind it is broken — systemd accepts
+the connection and then fails it. An inactive socket listens for nothing: no
+kernel socket is open, no surface exists. On the Pi, syslog.socket is inactive
+with a not-found syslog.service, and BOB listed it as an orphan. The module had
+always described an orphan as a socket "still active while the service is
+broken"; ``is_orphan`` now checks the active part, so an inactive socket with a
+broken trigger is inert and not reported. An active orphan — and a .socket that
+itself failed to come up — are unchanged.
+
+**Tests** 9959 → **10187**. **Mutations** 166 → **194**.
 
 ---
 

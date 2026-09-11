@@ -162,7 +162,18 @@ systemd et, quand une unité a été sautée sur une condition échouée, ne la 
 pas comme une faille. Un service réellement activé et arrêté, ou en échec, dont
 la condition est remplie, avertit toujours et coûte toujours.
 
-**Tests** 9959 → **10178**. **Mutations** 166 → **193**.
+**Une unité socket inactive était listée comme orpheline.** Un .socket orphelin
+est un socket à l'écoute pendant que le service derrière lui est cassé — systemd
+accepte la connexion puis la fait échouer. Un socket inactif n'écoute rien :
+aucun socket noyau n'est ouvert, aucune surface n'existe. Sur le Pi,
+syslog.socket est inactif avec un syslog.service introuvable, et BOB le listait
+comme orphelin. Le module décrivait pourtant toujours un orphelin comme un socket
+« encore actif pendant que le service est cassé » ; ``is_orphan`` vérifie
+désormais la partie active, donc un socket inactif avec un déclencheur cassé est
+inerte et n'est pas rapporté. Un orphelin actif — et un .socket qui a lui-même
+échoué à démarrer — sont inchangés.
+
+**Tests** 9959 → **10187**. **Mutations** 166 → **194**.
 
 ---
 

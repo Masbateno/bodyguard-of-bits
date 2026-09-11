@@ -29,6 +29,8 @@ bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
   * A service systemd skipped by an unmet condition (apparmor.service,
     ConditionSecurity=apparmor, kernel AppArmor off) was reported as a stopped
     security service; ConditionResult=no is now read and it is not a gap.
+  * An inactive .socket with a broken backing service (syslog.socket) was
+    listed as an orphan though it holds no port open; an orphan must be active.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
 

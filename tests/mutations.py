@@ -2104,4 +2104,15 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "condition that was met (yes) and an inactive service is a real "
                "gap, and inverting the test would silence every one of them",
     ),
+    Mutation(
+        id="orphan-socket/inactive-still-flagged",
+        file="bob/checks/socket_units.py",
+        old='        return self.active_state == "active" and bool(self.broken_trigger)',
+        new='        return bool(self.broken_trigger)',
+        kills=("tests/test_v0181_inactive_socket_is_not_an_orphan.py::test_an_inactive_socket_with_a_broken_trigger_is_not_an_orphan",
+               "tests/test_v0181_inactive_socket_is_not_an_orphan.py::test_the_inactive_syslog_socket_produces_no_orphan_finding"),
+        reason="measured on a Pi: syslog.socket is inactive with a not-found "
+               "syslog.service; an inactive socket holds no port open and is no "
+               "surface, but without the active check it was listed as an orphan",
+    ),
 )
