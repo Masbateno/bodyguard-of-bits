@@ -1460,6 +1460,15 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "silence the denial, which is the one this flag exists for",
     ),
     Mutation(
+        id="cron/email-column-not-aligned",
+        file="bob/tui/cron.py",
+        old="    return [p.ljust(width) for p in parts]",
+        new="    return parts",
+        kills=("tests/test_v0181_cron_email_alignment.py::test_every_left_column_has_the_same_width",),
+        reason="without padding the name+schedule column to one width, a long "
+               "schedule shoves the e-mail addresses out of column",
+    ),
+    Mutation(
         id="capped/one-big-read-again",
         file="bob/_atomic.py",
         old="            chunk = fh.read(min(remaining, _READ_CHUNK))",

@@ -1005,6 +1005,24 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 # Curses management TUI
 # ---------------------------------------------------------------------------
 
+def _cron_left_columns(crons, t, lang) -> "list[str]":
+    """The name + schedule + legacy-tag column for each cron, every string
+    padded to one width so the e-mail addresses that follow line up.
+
+    The schedule text is variable-width — "every day at 18:56" against "the
+    1st, 15th of every month at 12:03" — so a fixed pad let a long schedule
+    shove the addresses out of column. Measuring the widest across all jobs
+    and padding to it puts every address at the same column.
+    """
+    parts = []
+    for e in crons:
+        human = cron_to_human(e.schedule_expr, lang)
+        tag = f"  [{t('manage_cron.legacy_tag')}]" if e.legacy else ""
+        parts.append(f"{e.name:<20} {human}{tag}")
+    width = max((len(p) for p in parts), default=0)
+    return [p.ljust(width) for p in parts]
+
+
 def _run_manage_cron_curses(stdscr, config, t) -> int:
     """Curses TUI for --manage-cron."""
     import curses as _curses
@@ -1064,20 +1082,20 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                                   cmd="sudo bob --install-cron"))
             _draw(stdscr, 4, 2, "m: " + t("manage_cron.prompt_ex_email_book"))
         else:
+            # Align the e-mail column across jobs (see _cron_left_columns).
+            lefts = _cron_left_columns(crons, t, lang)
             for row in range(body_h):
                 idx = scroll + row
                 if idx >= n:
                     break
                 entry = crons[idx]
                 is_marked = str(entry.cron_path) in marked
-                human = cron_to_human(entry.schedule_expr, lang)
-                legacy_tag = f"  [{t('manage_cron.legacy_tag')}]" if entry.legacy else ""
                 email_hint = ""
                 if entry.email:
                     addrs = " ; ".join(a.strip() for a in entry.email.split(",") if a.strip())
                     email_hint = f"   {addrs}"
                 mark = "✔ " if is_marked else "  "
-                line = f"{mark}{entry.name:<20} {human:<30}{legacy_tag}{email_hint}"
+                line = f"{mark}{lefts[idx]}{email_hint}"
 
                 is_cur = (idx == cursor)
                 if is_cur and has_color:
