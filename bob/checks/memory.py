@@ -68,6 +68,11 @@ class MemorySnapshot:
     swap_free_kb:     int       = 0
     swappiness:       "int | None" = None
     swap_on_ssd:      bool      = False
+    # v0.18.1 — True when a swap device is zram: compressed RAM, not a disk.
+    # Its rotational flag reads 0 (it looked like an SSD to BOB), but there is
+    # no physical wear and swapping to it is cheap and by design, so the
+    # disk-oriented swappiness advice is inverted for it.
+    swap_on_zram:     bool      = False
     swap_devices:     list[str] = field(default_factory=list)
 
     @classmethod
@@ -90,8 +95,12 @@ class MemorySnapshot:
         # --- active swap devices ---
         snap.swap_devices = _read_swap_devices()
 
-        # --- SSD detection ---
-        snap.swap_on_ssd = _detect_swap_on_ssd(snap.swap_devices)
+        # --- zram vs SSD detection ---
+        snap.swap_on_zram = any(_is_zram(d) for d in snap.swap_devices)
+        # zram is excluded: it is RAM, its rotational flag is 0, and counting
+        # it as an SSD would attach a wear warning to memory.
+        snap.swap_on_ssd = _detect_swap_on_ssd(
+            [d for d in snap.swap_devices if not _is_zram(d)])
 
         return snap
 
@@ -164,6 +173,22 @@ def check_memory(
             message=_t("memory.swappiness_unknown"),
             key="memory.swappiness_unknown",
         )
+
+    # --- Swap is zram: compressed RAM, not a disk -------------------------
+    # Every disk assumption below is wrong here. There is no SSD wear (it is
+    # RAM), and swapping is cheap by design: zram exists to trade CPU for RAM
+    # by compressing cold pages, so a *high* swappiness suits it and the
+    # "lower it to 1" advice is backwards. Measured on a Pi Zero W, whose only
+    # swap is /dev/zram0: v0.18.0 warned "swappiness=60 too aggressive". State
+    # what it is and stop — no deduction, no disk-tuning command.
+    if snapshot.swap_devices and all(_is_zram(d) for d in snapshot.swap_devices):
+        result.info(
+            message=_t("memory.swap_zram", value=snapshot.swappiness
+                       if snapshot.swappiness is not None else "?"),
+            detail=_t("memory.swap_zram_detail"),
+            key="memory.swap_zram",
+        )
+        return result
 
     # --- SSD wear: swap on SSD + high swappiness ---
     if (
@@ -305,6 +330,11 @@ def _read_swap_devices() -> list[str]:
     if not out:
         return []
     return [line.strip() for line in out.splitlines() if line.strip()]
+
+def _is_zram(device: str) -> bool:
+    """True for a zram swap device (/dev/zram0, …): compressed RAM, not a disk."""
+    return bool(re.match(r"^/dev/zram\d+$", device.strip()))
+
 
 def _detect_swap_on_ssd(swap_devices: list[str]) -> bool:
     """

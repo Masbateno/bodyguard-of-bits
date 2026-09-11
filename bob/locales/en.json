@@ -840,6 +840,8 @@
     "swappiness_ok": "swappiness={value} — well tuned for this system",
     "swappiness_ssd_wear": "Swap on SSD with swappiness={value} — unnecessary SSD wear",
     "swappiness_unknown": "vm.swappiness could not be read — swap tuning was not assessed",
+      "swap_zram": "Swap is zram (compressed RAM), swappiness={value} — swapping to it is cheap and by design",
+      "swap_zram_detail": "zram is a compressed block device in RAM, not a disk. There is no SSD wear to avoid, and swapping to it trades a little CPU for more usable RAM — which is the point. The swappiness values that suit a slow disk (lower is better) are inverted here: zram benefits from a high swappiness. BOB reports the value and does not recommend lowering it.",
     "swappiness_ssd_detail": "High swappiness on an SSD causes premature wear. Recommended: vm.swappiness={recommended}",
     "swappiness_unjustified": "Swap in use ({swap_pct}%) while {ram_pct}% of RAM is still free — swappiness={value} is too aggressive",
     "swappiness_unjustified_detail": "The kernel is swapping out pages despite available RAM. Lowering swappiness reduces unnecessary I/O. Recommended: vm.swappiness={recommended}",

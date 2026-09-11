@@ -126,7 +126,20 @@ kernel's flavour. Foreign flavours are listed but never a reboot target and
 never a purge target. A genuine same-flavour upgrade still reports pending, and
 a single-flavour host — the common case — is unchanged.
 
-**Tests** 9959 → **10138**. **Mutations** 166 → **188**.
+**Swap on zram was judged as swap on a slow disk, and the advice was
+backwards.** zram is a compressed block device in RAM: swapping to it trades a
+little CPU for more usable RAM by design, and it benefits from a high
+swappiness. BOB treated it as a disk. On the Pi Zero W, whose only swap is
+/dev/zram0, it warned "swap in use while RAM is free — swappiness=60 too
+aggressive" and offered `sysctl vm.swappiness=1`, the inverse of what zram
+wants. It had also mistaken zram for an SSD — zram's rotational flag reads 0,
+the same as an SSD — which would have attached a wear warning to RAM. zram is
+now detected (`/dev/zramN`), excluded from the SSD check, and when all swap is
+zram BOB reports it as compressed RAM, no deduction, no disk-tuning command. A
+real disk swap — SSD wear, unjustified swap on a spinning disk — is unchanged,
+and a machine with both zram and a real disk still gets the disk guidance.
+
+**Tests** 9959 → **10165**. **Mutations** 166 → **191**.
 
 ---
 

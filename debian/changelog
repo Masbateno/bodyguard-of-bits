@@ -23,6 +23,9 @@ bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
   * The kernel check ranked a Pi's rpi-v6/v7/v8 builds together and told the
     ARMv6 board to reboot into the arm64 kernel; reboot-pending, retention
     and purge now reason only within the running kernel's flavour.
+  * Swap on zram (compressed RAM) was judged as disk swap: BOB warned
+    swappiness was too aggressive and offered to lower it (backwards for
+    zram), and mistook zram for an SSD. zram is now recognised.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
 

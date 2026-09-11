@@ -2052,4 +2052,33 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "keying the flavour on the whole string splits them and hides a "
                "genuine pending reboot",
     ),
+    Mutation(
+        id="zram/treated-as-a-disk-so-lower-swappiness",
+        file="bob/checks/memory.py",
+        old="    if snapshot.swap_devices and all(_is_zram(d) for d in snapshot.swap_devices):",
+        new="    if False:",
+        kills=("tests/test_v0181_zram_swap_is_not_a_disk.py::test_zram_swap_is_reported_without_a_deduction",
+               "tests/test_v0181_zram_swap_is_not_a_disk.py::test_no_lower_swappiness_advice_on_zram"),
+        reason="measured on a Pi Zero W with zram-only swap: without the zram "
+               "branch BOB warned swappiness=60 was too aggressive and offered "
+               "to lower it to 1 — the inverse of what zram wants",
+    ),
+    Mutation(
+        id="zram/counted-as-an-ssd-to-wear-out",
+        file="bob/checks/memory.py",
+        old="        snap.swap_on_ssd = _detect_swap_on_ssd(\n            [d for d in snap.swap_devices if not _is_zram(d)])",
+        new="        snap.swap_on_ssd = _detect_swap_on_ssd(snap.swap_devices)",
+        kills=("tests/test_v0181_zram_swap_is_not_a_disk.py::test_from_system_excludes_zram_before_the_ssd_probe",),
+        reason="zram's rotational flag reads 0; counting it as an SSD would "
+               "attach a physical-wear warning to a block device that is RAM",
+    ),
+    Mutation(
+        id="zram/matches-a-swapfile-named-zram",
+        file="bob/checks/memory.py",
+        old='    return bool(re.match(r"^/dev/zram\\d+$", device.strip()))',
+        new='    return "zram" in device',
+        kills=("tests/test_v0181_zram_swap_is_not_a_disk.py::test_is_zram",),
+        reason="a swapfile at /swap/zram-backup is not a zram device; only "
+               "/dev/zramN is",
+    ),
 )

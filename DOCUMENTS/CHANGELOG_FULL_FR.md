@@ -136,7 +136,21 @@ sont jamais une cible de redémarrage ni de purge. Une vraie mise à niveau dans
 même saveur signale toujours l'attente, et un hôte à saveur unique — le cas
 courant — est inchangé.
 
-**Tests** 9959 → **10138**. **Mutations** 166 → **188**.
+**Le swap sur zram était jugé comme du swap sur disque lent, et le conseil était
+inversé.** zram est un périphérique bloc compressé en RAM : y swapper échange un
+peu de CPU contre plus de RAM utilisable, à dessein, et profite d'une swappiness
+élevée. BOB le traitait comme un disque. Sur le Pi Zero W, dont le seul swap est
+/dev/zram0, il avertissait « swap utilisé alors que la RAM est libre —
+swappiness=60 trop agressive » et proposait `sysctl vm.swappiness=1`, l'inverse
+de ce que veut zram. Il avait aussi pris zram pour un SSD — son drapeau
+rotational vaut 0, comme un SSD — ce qui aurait collé un avertissement d'usure à
+de la RAM. zram est désormais détecté (`/dev/zramN`), exclu du contrôle SSD, et
+quand tout le swap est du zram, BOB le rapporte comme de la RAM compressée, sans
+déduction, sans commande de réglage disque. Un swap sur disque réel — usure SSD,
+swap injustifié sur disque tournant — est inchangé, et une machine avec à la fois
+du zram et un disque réel garde le conseil disque.
+
+**Tests** 9959 → **10165**. **Mutations** 166 → **191**.
 
 ---
 
