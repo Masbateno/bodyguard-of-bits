@@ -48,11 +48,20 @@ def _alive(pid: int) -> bool:
     # init never reaps it. Measured on python:3.14-slim: fails without
     # `--init`, passes with it. A zombie runs nothing; it is dead for the
     # purpose of this test, which is whether apt-get kept working.
+    #
+    # And kill(pid, 0) races the process's own exit: it can succeed a beat
+    # before the process vanishes, so /proc/<pid>/stat is already gone by the
+    # time we read it. A missing stat file is the plainest proof the process
+    # is dead — the source of this test's rare full-suite flake, when it read
+    # a missing file as "alive" and the poll then timed out on a process that
+    # had in fact been stopped.
     try:
         with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
             state = fh.read().rsplit(")", 1)[1].split()[0]
+    except FileNotFoundError:
+        return False                       # the pid is gone: dead
     except (OSError, IndexError):
-        return True
+        return True                        # could not tell — assume alive
     return state not in ("Z", "X")
 
 
