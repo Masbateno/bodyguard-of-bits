@@ -2148,47 +2148,68 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="explain-family/level-not-stripped-splits-ubuntu",
         file="bob/cis_refs.py",
-        old="    return _LEVEL_SUFFIX.sub(\"\", head) or None",
-        new="    return head or None",
-        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_the_level_is_stripped_so_l1_and_l2_group_together",),
-        reason="without stripping L1/L2, CIS Ubuntu 22.04 L1 and L2 become two "
-               "families and the primary benchmark is split across headings",
+        old="    head = _LEVEL_SUFFIX.sub(\"\", head).strip()",
+        new="    head = head.strip()",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_the_level_is_stripped_so_l1_and_l2_group_under_one_distro",),
+        reason="without stripping L1/L2, CIS Ubuntu 22.04 L1 and L2 keep their "
+               "level and the Ubuntu keys scatter across more than one distro folder",
     ),
     Mutation(
         id="explain-family/best-practice-not-translated",
         file="bob/explain.py",
-        old="        label = (t(\"explain.ui.family_best_practice\")\n                 if fam == BEST_PRACTICE_FAMILY else fam)",
-        new="        label = fam",
+        old="        distro_label = (t(\"explain.ui.family_best_practice\")\n                        if distro == BEST_PRACTICE_FAMILY else distro)",
+        new="        distro_label = distro",
         kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_best_practice_heading_is_translated_in_french",),
         reason="the CIS names are proper nouns kept verbatim, but Best practice "
                "is prose and must read Bonne pratique under --french",
     ),
     Mutation(
-        id="explain-family/order-not-applied",
+        id="explain-family/distro-order-not-applied",
         file="bob/explain.py",
-        old="    families = sorted(set(fam_of.values()), key=cis_family_sort_key)",
-        new="    families = sorted(set(fam_of.values()))",
-        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_headings_are_in_the_declared_order",),
-        reason="dict insertion order is EXPLAIN_KEYS order, not the deliberate "
-               "Ubuntu-first / Best-practice-last family order",
+        old="    for distro in sorted(tree, key=cis_family_sort_key):",
+        new="    for distro in sorted(tree):",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_distros_are_ordered_ubuntu_first_best_practice_last",),
+        reason="a plain sort puts Best practice first and Ubuntu last; the "
+               "deliberate order is Ubuntu first (primary benchmark), Best "
+               "practice last",
     ),
     Mutation(
         id="explain-family/section-subgroups-flattened",
         file="bob/explain.py",
-        old="            here = [k for k in keys if fam_of.get(k) == fam]\n            if here:\n                sections.append((section_label, here))",
-        new="            here = [k for k in keys if fam_of.get(k) == fam]\n            if here:\n                sections.append((\"\", here))",
-        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_a_family_holds_typed_sub_sections",),
+        old="                 .setdefault(section_of[k], []).append(k))",
+        new="                 .setdefault(\"\", []).append(k))",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_a_version_holds_typed_sub_sections",),
         reason="the refinement keeps the SSH/ClamAV/Samba typed sub-sections "
-               "inside each family folder; blanking the label collapses them",
+               "inside each version folder; collapsing the label loses them",
     ),
     Mutation(
         id="explain-family/subgroups-not-alphabetical",
         file="bob/explain.py",
-        old="        sections.sort(key=lambda sk: sk[0])",
-        new="        pass",
-        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_sub_sections_are_sorted_alphabetically_within_a_family",),
-        reason="the sub-groups inside a family must read alphabetically "
+        old="            sections = sorted(tree[distro][bench_label].items())",
+        new="            sections = list(tree[distro][bench_label].items())",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_sub_sections_are_sorted_alphabetically_within_a_version",),
+        reason="the sub-groups inside a version must read alphabetically "
                "(Auditd, Authentication Logs, Cron, …); without the sort they "
                "follow _EXPLAIN_GROUPS order instead",
+    ),
+    Mutation(
+        id="explain-family/benchmarks-field-ignored",
+        file="bob/cis_refs.py",
+        old="    for lbl in entry.get(\"benchmarks\", {}):",
+        new="    for lbl in ():",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_a_shared_control_appears_under_each_benchmark_folder",),
+        reason="the per-benchmark map is what places one control under Debian "
+               "12/13 and Ubuntu 24.04 as well as its primary Ubuntu 22.04; "
+               "ignoring it drops the control from every folder but the primary",
+    ),
+    Mutation(
+        id="explain-family/detail-hides-other-benchmarks",
+        file="bob/explain.py",
+        old="    bench_rows = _benchmark_rows(norm)\n    if bench_rows:\n        print(f\"  {t('explain.ui.label_benchmarks')}:\")",
+        new="    bench_rows = []\n    if bench_rows:\n        print(f\"  {t('explain.ui.label_benchmarks')}:\")",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_a_shared_control_lists_its_other_benchmarks_in_the_detail",),
+        reason="the point of completing the collection is that --explain <key> "
+               "shows the control's number in every distribution's benchmark, "
+               "not only its primary Ubuntu 22.04 reference",
     ),
 )

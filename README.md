@@ -176,11 +176,11 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 ## CIS benchmark mapping
 
-174 entries: **107 CIS Ubuntu 22.04 · 7 CIS Docker · 60 best-practice**.
+199 entries: **109 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 82 best-practice**, plus **85 cross-benchmark citations** on 31 keys (CIS Debian 12/13 and CIS Ubuntu 24.04), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
 
 Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
 Full reference text is shown in `--verbose` mode.  
-`--explain KEY` returns the WHY, the HOW, and the CIS section — in plain English.
+`--explain KEY` returns the WHY, the HOW, the CIS section, and an **Also cited in** block naming the same control's number in every other benchmark that covers it. `--explain list` and the wizard group all keys as a folder tree — CIS distribution → benchmark version → type.
 
 ---
 

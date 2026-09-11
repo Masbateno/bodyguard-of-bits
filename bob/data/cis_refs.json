@@ -9,11 +9,39 @@
   },
   "auditd.not_installed": {
     "ref": "CIS Ubuntu 22.04 L2 — 4.1.1 — Ensure auditd is installed",
-    "code": "CIS:4.1.1"
+    "code": "CIS:4.1.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "6.2.1.1",
+        "title": "Ensure auditd packages are installed (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "6.2.1.1",
+        "title": "Ensure auditd packages are installed (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "6.2.1.1",
+        "title": "Ensure auditd packages are installed (Automated)"
+      }
+    }
   },
   "auditd.service_inactive": {
     "ref": "CIS Ubuntu 22.04 L2 — 4.1.2 — Ensure auditd service is enabled and active",
-    "code": "CIS:4.1.2"
+    "code": "CIS:4.1.2",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "6.2.1.2",
+        "title": "Ensure auditd service is enabled and active (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "6.2.1.2",
+        "title": "Ensure auditd service is enabled and active (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "6.2.1.2",
+        "title": "Ensure auditd service is enabled and active (Automated)"
+      }
+    }
   },
   "auth_log.brute_force": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.7 — Ensure SSH MaxAuthTries / fail2ban configured (active brute-force detected)",
@@ -189,7 +217,21 @@
   },
   "firewall_drivers.ip_forward_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.2.1 — Ensure IP forwarding is disabled (net.ipv4.ip_forward)",
-    "code": "CIS:3.2.1"
+    "code": "CIS:3.2.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.1",
+        "title": "Ensure ip forwarding is disabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.1",
+        "title": "Ensure net.ipv4.ip_forward is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.1",
+        "title": "Ensure ip forwarding is disabled (Automated)"
+      }
+    }
   },
   "firewall_drivers.iptables_bypass": {
     "ref": "Best practice — Avoid raw iptables ACCEPT rules in INPUT that bypass UFW chains",
@@ -252,11 +294,39 @@
   },
   "hardening.accept_redirects_v6_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.2 — Ensure ICMP redirects are not accepted (net.ipv6.conf.*.accept_redirects)",
-    "code": "CIS:3.3.2"
+    "code": "CIS:3.3.2",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.5",
+        "title": "Ensure icmp redirects are not accepted (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.2.3",
+        "title": "Ensure net.ipv6.conf.all.accept_redirects is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.5",
+        "title": "Ensure icmp redirects are not accepted (Automated)"
+      }
+    }
   },
   "hardening.accept_source_route_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure source routed packets are not accepted (net.ipv4.conf.*.accept_source_route)",
-    "code": "CIS:3.3.1"
+    "code": "CIS:3.3.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.8",
+        "title": "Ensure source routed packets are not accepted (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.14",
+        "title": "Ensure net.ipv4.conf.all.accept_source_route is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.8",
+        "title": "Ensure source routed packets are not accepted (Automated)"
+      }
+    }
   },
   "hardening.icmp_broadcast_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.7 — Ensure broadcast ICMP requests are ignored (net.ipv4.icmp_echo_ignore_broadcasts)",
@@ -264,35 +334,131 @@
   },
   "hardening.log_martians_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.12 — Ensure suspicious packets are logged",
-    "code": "CIS:3.3.12"
+    "code": "CIS:3.3.12",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.9",
+        "title": "Ensure suspicious packets are logged (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.16",
+        "title": "Ensure net.ipv4.conf.all.log_martians is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.9",
+        "title": "Ensure suspicious packets are logged (Automated)"
+      }
+    }
   },
   "hardening.protected_hardlinks_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.2 — Ensure filesystem integrity is configured (fs.protected_hardlinks)",
-    "code": "CIS:1.6.2"
+    "code": "CIS:1.6.2",
+    "benchmarks": {
+      "CIS Debian 13": {
+        "code": "1.5.1",
+        "title": "Ensure fs.protected_hardlinks is configured (Automated)"
+      }
+    }
   },
   "hardening.protected_symlinks_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.3 — Ensure filesystem integrity is configured (fs.protected_symlinks)",
-    "code": "CIS:1.6.3"
+    "code": "CIS:1.6.3",
+    "benchmarks": {
+      "CIS Debian 13": {
+        "code": "1.5.2",
+        "title": "Ensure fs.protected_symlinks is configured (Automated)"
+      }
+    }
   },
   "hardening.redirects_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.2 — Ensure ICMP redirects are not accepted",
-    "code": "CIS:3.3.2"
+    "code": "CIS:3.3.2",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.5",
+        "title": "Ensure icmp redirects are not accepted (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.8",
+        "title": "Ensure net.ipv4.conf.all.accept_redirects is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.5",
+        "title": "Ensure icmp redirects are not accepted (Automated)"
+      }
+    }
   },
   "hardening.rp_filter_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure source routed packets are not accepted",
-    "code": "CIS:3.3.1"
+    "code": "CIS:3.3.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.7",
+        "title": "Ensure reverse path filtering is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.12",
+        "title": "Ensure net.ipv4.conf.all.rp_filter is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.7",
+        "title": "Ensure reverse path filtering is enabled (Automated)"
+      }
+    }
   },
   "hardening.rp_filter_loose": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure source routed packets are not accepted (strict mode recommended)",
-    "code": "CIS:3.3.1"
+    "code": "CIS:3.3.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.7",
+        "title": "Ensure reverse path filtering is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.12",
+        "title": "Ensure net.ipv4.conf.all.rp_filter is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.7",
+        "title": "Ensure reverse path filtering is enabled (Automated)"
+      }
+    }
   },
   "hardening.send_redirects_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.2 — Ensure ICMP redirects are not sent (net.ipv4.conf.*.send_redirects)",
-    "code": "CIS:3.3.2"
+    "code": "CIS:3.3.2",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.2",
+        "title": "Ensure packet redirect sending is disabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.4",
+        "title": "Ensure net.ipv4.conf.all.send_redirects is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.2",
+        "title": "Ensure packet redirect sending is disabled (Automated)"
+      }
+    }
   },
   "hardening.tcp_syncookies_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.8 — Ensure TCP SYN cookies is enabled (net.ipv4.tcp_syncookies)",
-    "code": "CIS:3.3.8"
+    "code": "CIS:3.3.8",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "3.3.10",
+        "title": "Ensure tcp syn cookies is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.1.18",
+        "title": "Ensure net.ipv4.tcp_syncookies is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.10",
+        "title": "Ensure tcp syn cookies is enabled (Automated)"
+      }
+    }
   },
   "ipv6.port_no_v6_rule": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
@@ -308,29 +474,97 @@
   },
   "kernel_hardening.aslr_conservative": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3 — Ensure kernel ASLR is fully enabled (randomize_va_space = 2 recommended)",
-    "code": "CIS:3.3"
+    "code": "CIS:3.3",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "1.5.1",
+        "title": "Ensure address space layout randomization is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "1.5.9",
+        "title": "Ensure kernel.randomize_va_space is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "1.5.1",
+        "title": "Ensure address space layout randomization is enabled (Automated)"
+      }
+    }
   },
   "kernel_hardening.aslr_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3 — Ensure kernel ASLR is enabled (randomize_va_space = 2)",
-    "code": "CIS:3.3"
+    "code": "CIS:3.3",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "1.5.1",
+        "title": "Ensure address space layout randomization is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "1.5.9",
+        "title": "Ensure kernel.randomize_va_space is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "1.5.1",
+        "title": "Ensure address space layout randomization is enabled (Automated)"
+      }
+    }
   },
   "kernel_hardening.dmesg_exposed": {
     "ref": "Best practice — Restrict access to kernel log (kernel.dmesg_restrict = 1)",
     "ref_fr": "Bonne pratique — Restreindre l'accès au journal noyau (kernel.dmesg_restrict = 1)",
-    "code": null
+    "code": null,
+    "benchmarks": {
+      "CIS Debian 13": {
+        "code": "1.5.5",
+        "title": "Ensure kernel.dmesg_restrict is configured (Automated)"
+      }
+    }
   },
   "kernel_hardening.kptr_exposed": {
     "ref": "Best practice — Restrict kernel pointer exposure (kernel.kptr_restrict ≥ 1)",
     "ref_fr": "Bonne pratique — Restreindre l'exposition des pointeurs noyau (kernel.kptr_restrict ≥ 1)",
-    "code": null
+    "code": null,
+    "benchmarks": {
+      "CIS Debian 13": {
+        "code": "1.5.8",
+        "title": "Ensure kernel.kptr_restrict is configured (Automated)"
+      }
+    }
   },
   "kernel_hardening.ptrace_unrestricted": {
     "ref": "CIS Ubuntu 22.04 L2 — 1.6.1 — Ensure core dumps are restricted / ptrace scope (kernel.yama.ptrace_scope ≥ 1)",
-    "code": "CIS:1.6.1"
+    "code": "CIS:1.6.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "1.5.2",
+        "title": "Ensure ptrace_scope is restricted (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "1.5.3",
+        "title": "Ensure kernel.yama.ptrace_scope is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "1.5.2",
+        "title": "Ensure ptrace_scope is restricted (Automated)"
+      }
+    }
   },
   "kernel_hardening.suid_dump_all": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure core dumps are restricted (fs.suid_dumpable = 0)",
-    "code": "CIS:1.6.1"
+    "code": "CIS:1.6.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "1.5.3",
+        "title": "Ensure core dumps are restricted (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "1.5.4",
+        "title": "Ensure fs.suid_dumpable is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "1.5.3",
+        "title": "Ensure core dumps are restricted (Automated)"
+      }
+    }
   },
   "kernel_modules.kernels_obsolete": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (obsolete kernel running)",
@@ -427,7 +661,21 @@
   },
   "password_policy.no_quality_module": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.4.1 — Ensure password creation requirements are configured",
-    "code": "CIS:5.4.1"
+    "code": "CIS:5.4.1",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.3.2.3",
+        "title": "Ensure pam_pwquality module is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.3.2.3",
+        "title": "Ensure pam_pwquality module is enabled (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.3.2.3",
+        "title": "Ensure pam_pwquality module is enabled (Automated)"
+      }
+    }
   },
   "password_policy.weak_minlen": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.4.1 — Ensure password creation requirements are configured (minlen ≥ 14)",
@@ -519,7 +767,11 @@
     "ref_fr": "Bonne pratique — Activer ou retirer les outils de sécurité installés plutôt que de les laisser dormants",
     "code": null
   },
-  "services.state.inactive_enabled": {"ref": "Best practice — A service enabled at boot and not running is a silent gap between configured intent and running reality", "ref_fr": "Bonne pratique — Un service activé au démarrage et non lancé est un écart silencieux entre l'intention configurée et la réalité en cours", "code": null},
+  "services.state.inactive_enabled": {
+    "ref": "Best practice — A service enabled at boot and not running is a silent gap between configured intent and running reality",
+    "ref_fr": "Bonne pratique — Un service activé au démarrage et non lancé est un écart silencieux entre l'intention configurée et la réalité en cours",
+    "code": null
+  },
   "services_health.service_inactive": {
     "ref": "Best practice — Ensure security services remain enabled and active after reboot",
     "ref_fr": "Bonne pratique — S'assurer que les services de sécurité restent activés et actifs après redémarrage",
@@ -589,7 +841,21 @@
   },
   "ssh.ignore_rhosts_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.12 — Ensure SSH IgnoreRhosts is enabled",
-    "code": "CIS:5.2.12"
+    "code": "CIS:5.2.12",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.11",
+        "title": "Ensure sshd IgnoreRhosts is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.11",
+        "title": "Ensure sshd IgnoreRhosts is enabled (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.11",
+        "title": "Ensure sshd IgnoreRhosts is enabled (Automated)"
+      }
+    }
   },
   "ssh.known_hosts_deprecated": {
     "ref": "Best practice — Remove deprecated key types from known_hosts",
@@ -603,11 +869,39 @@
   },
   "ssh.login_grace_time": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.18 — Ensure SSH LoginGraceTime is set to one minute or less",
-    "code": "CIS:5.2.18"
+    "code": "CIS:5.2.18",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.13",
+        "title": "Ensure sshd LoginGraceTime is configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.14",
+        "title": "Ensure sshd LoginGraceTime is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.13",
+        "title": "Ensure sshd LoginGraceTime is configured (Automated)"
+      }
+    }
   },
   "ssh.max_auth_tries": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.7 — Ensure SSH MaxAuthTries is set to 4 or less",
-    "code": "CIS:5.2.7"
+    "code": "CIS:5.2.7",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.16",
+        "title": "Ensure sshd MaxAuthTries is configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.17",
+        "title": "Ensure sshd MaxAuthTries is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.16",
+        "title": "Ensure sshd MaxAuthTries is configured (Automated)"
+      }
+    }
   },
   "ssh.no_allow_users": {
     "ref": "CIS Ubuntu 22.04 L2 — 5.2.23 — Ensure SSH access is limited (AllowUsers/AllowGroups)",
@@ -629,19 +923,75 @@
   },
   "ssh.permit_empty_passwords": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.9 — Ensure SSH PermitEmptyPasswords is disabled",
-    "code": "CIS:5.2.9"
+    "code": "CIS:5.2.9",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.19",
+        "title": "Ensure sshd PermitEmptyPasswords is disabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.20",
+        "title": "Ensure sshd PermitEmptyPasswords is disabled (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.19",
+        "title": "Ensure sshd PermitEmptyPasswords is disabled (Automated)"
+      }
+    }
   },
   "ssh.permit_root_login": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.10 — Ensure SSH root login is disabled",
-    "code": "CIS:5.2.10"
+    "code": "CIS:5.2.10",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.20",
+        "title": "Ensure sshd PermitRootLogin is disabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.21",
+        "title": "Ensure sshd PermitRootLogin is disabled (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.20",
+        "title": "Ensure sshd PermitRootLogin is disabled (Automated)"
+      }
+    }
   },
   "ssh.permit_user_env": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.11 — Ensure SSH PermitUserEnvironment is disabled",
-    "code": "CIS:5.2.11"
+    "code": "CIS:5.2.11",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.21",
+        "title": "Ensure sshd PermitUserEnvironment is disabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.22",
+        "title": "Ensure sshd PermitUserEnvironment is disabled (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.21",
+        "title": "Ensure sshd PermitUserEnvironment is disabled (Automated)"
+      }
+    }
   },
   "ssh.private_key_perms": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure permissions on SSH private host key files are configured",
-    "code": "CIS:5.2.2"
+    "code": "CIS:5.2.2",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.2",
+        "title": "Ensure permissions on SSH private host key files are configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.2",
+        "title": "Ensure access to SSH private host key files is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.2",
+        "title": "Ensure permissions on SSH private host key files are configured (Automated)"
+      }
+    }
   },
   "ssh.pubkey_auth_disabled": {
     "ref": "Best practice — Ensure SSH public key authentication is enabled",
@@ -658,15 +1008,57 @@
   },
   "ssh.weak_ciphers": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.15 — Ensure only strong cipher suites are used",
-    "code": "CIS:5.2.15"
+    "code": "CIS:5.2.15",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.6",
+        "title": "Ensure sshd Ciphers are configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.6",
+        "title": "Ensure sshd Ciphers are configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.6",
+        "title": "Ensure sshd Ciphers are configured (Automated)"
+      }
+    }
   },
   "ssh.weak_kex": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.17 — Ensure only strong key exchange algorithms are used",
-    "code": "CIS:5.2.17"
+    "code": "CIS:5.2.17",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.12",
+        "title": "Ensure sshd KexAlgorithms is configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.12",
+        "title": "Ensure sshd KexAlgorithms is configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.12",
+        "title": "Ensure sshd KexAlgorithms is configured (Automated)"
+      }
+    }
   },
   "ssh.weak_macs": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.16 — Ensure only strong MAC algorithms are used",
-    "code": "CIS:5.2.16"
+    "code": "CIS:5.2.16",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.1.15",
+        "title": "Ensure sshd MACs are configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.1.16",
+        "title": "Ensure sshd MACs are configured (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.1.15",
+        "title": "Ensure sshd MACs are configured (Automated)"
+      }
+    }
   },
   "ssh.x11.forwarding.client": {
     "ref": "Best practice — Disable client-side X11 forwarding (ForwardX11 no) — prevents untrusted remotes from inspecting your local display",
@@ -700,7 +1092,10 @@
     "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
     "code": "CIS:6.1.13"
   },
-  "suid_audit.unowned_suid": {"ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed", "code": "CIS:6.1.13"},
+  "suid_audit.unowned_suid": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
+    "code": "CIS:6.1.13"
+  },
   "systemd_timers.pipe_to_shell": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron/timers (script integrity: verify sources before execution)",
     "code": "CIS:5.1"
@@ -753,7 +1148,21 @@
   },
   "user_accounts.uid_zero": {
     "ref": "CIS Ubuntu 22.04 L1 — 6.2.2 — Ensure no legacy '+' entries exist in /etc/passwd / Ensure no UID 0 accounts exist other than root",
-    "code": "CIS:6.2.2"
+    "code": "CIS:6.2.2",
+    "benchmarks": {
+      "CIS Debian 12": {
+        "code": "5.4.2.1",
+        "title": "Ensure root is the only UID 0 account (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.4.2.1",
+        "title": "Ensure root is the only UID 0 account (Automated)"
+      },
+      "CIS Ubuntu 24.04": {
+        "code": "5.4.2.1",
+        "title": "Ensure root is the only UID 0 account (Automated)"
+      }
+    }
   },
   "virt.bypass_risk": {
     "ref": "Best practice — Ensure bridge interfaces do not bypass UFW FORWARD rules",

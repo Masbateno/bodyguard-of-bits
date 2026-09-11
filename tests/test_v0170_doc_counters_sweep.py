@@ -75,6 +75,12 @@ _COINCIDENCES = {
     # _counts. Watched, just not here.
     "entries",
     "entrées",
+    # SNAPSHOT / README: "199 primary (109 CIS Ubuntu 22.04 + …)" is the
+    # cis_refs.json entry count, the same live value watched strictly via the
+    # "CIS references" / "entries" phrasings and by
+    # test_v0163_readme_tech_claims.py. "primary" here distinguishes the
+    # primary references from the 85 cross-benchmark citations beside them.
+    "primary",
     # README_TECH: "50 log entries" / "50 tentatives échouées" are brute-force
     # thresholds. Same coincidence as "failed attempts" above.
     "log entries",

@@ -218,6 +218,7 @@ _LANDING = {
 }
 _NESTED = {
     "bob.explain._DETAIL_KEYS",
+    "bob.explain._VERSION_KEYS",
     "bob.explain._KEY_PICKER_KEYS",
     "bob.manage_logs._PREVIEW_KEYS",
     "bob.tui.cron._SCHEDULE_KEYS",
@@ -302,6 +303,7 @@ _SCREEN_OF = {
     "bob/manage_logs.py::_run_manage_logs_curses": "bob.manage_logs._LIST_KEYS",
     "bob/manage_logs.py::_curses_preview_log":    "bob.manage_logs._PREVIEW_KEYS",
     "bob/explain.py::_family_picker":              "bob.explain._FAMILY_KEYS",
+    "bob/explain.py::_version_picker":             "bob.explain._VERSION_KEYS",
     "bob/explain.py::_key_picker":                 "bob.explain._KEY_PICKER_KEYS",
     "bob/explain.py::_detail_screen":             "bob.explain._DETAIL_KEYS",
 }

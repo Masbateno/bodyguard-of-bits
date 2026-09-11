@@ -676,62 +676,92 @@ def _render_dynamic_service_explain(norm: str, t) -> bool:
     return True
 
 
-def _grouped_families(t) -> "list[tuple[str, str, list[tuple[str, list[str]]]]]":
-    """Every --explain key, grouped by CIS benchmark family, then by type.
+def _grouped_families(t):
+    """Every --explain key, grouped distro -> benchmark version -> type.
 
-    Returns ``[(family_id, family_label, [(section_label, keys)])]`` in
-    display order: families are CIS Ubuntu first, other CIS families by name,
-    Best practice last (bob.cis_refs.cis_family / cis_family_sort_key, derived
-    from the canonical English reference so the grouping does not shift with
-    the interface language — CIS names are proper nouns kept verbatim, only
-    "Best practice" is translated). Inside a family the keys keep their
-    section grouping — "SSH — Authentication", "ClamAV", "Samba", … — in
-    ``_EXPLAIN_GROUPS`` order, so a family folder opens onto the same typed
-    sub-lists the flat view used to show. v0.19.x will add more CIS
-    distributions; a new family slots in by name.
+    Returns ``[(distro, distro_label, [(bench_label, [(section, keys)])])]``:
 
-    One source of truth for both `--explain list` and the interactive wizard.
+      * distro - the top folder: "CIS Ubuntu", "CIS Debian", "CIS Docker",
+        "CIS Red Hat", "Best practice". CIS Ubuntu first, other CIS families
+        by name, Best practice last (cis_family_sort_key).
+      * bench_label - one folder per CIS reference inside the distro:
+        "CIS Ubuntu 22.04", "CIS Ubuntu 24.04", "CIS Debian 12", ... Best
+        practice carries one node equal to the distro (no version folder).
+      * section - the "SSH - Authentication", "ClamAV", ... type labels,
+        alphabetical; keys within a section keep their _EXPLAIN_GROUPS order.
+
+    A key lands under every benchmark it carries a CIS reference for, so a
+    control cited by CIS Ubuntu 22.04, Ubuntu 24.04 and Debian 12/13 appears
+    in all four. Derived from the canonical English references, so grouping is
+    locale-stable; only "Best practice" is translated. One source of truth for
+    `--explain list` and the interactive wizard.
     """
     from bob.cis_refs import (
-        BEST_PRACTICE_FAMILY, cis_family, cis_family_sort_key,
+        BEST_PRACTICE_FAMILY, benchmark_labels, cis_family_sort_key,
+        split_benchmark,
     )
 
-    fam_of = {k: (cis_family(k) or BEST_PRACTICE_FAMILY) for k in EXPLAIN_KEYS}
-    families = sorted(set(fam_of.values()), key=cis_family_sort_key)
+    section_of = {k: lbl for lbl, keys in _EXPLAIN_GROUPS for k in keys}
+
+    tree = {}   # distro -> bench_label -> section_label -> [keys]
+    for k in EXPLAIN_KEYS:
+        for label in benchmark_labels(k) or [BEST_PRACTICE_FAMILY]:
+            distro, _version = split_benchmark(label)
+            if distro.startswith(BEST_PRACTICE_FAMILY):
+                distro = label = BEST_PRACTICE_FAMILY
+            (tree.setdefault(distro, {}).setdefault(label, {})
+                 .setdefault(section_of[k], []).append(k))
 
     out = []
-    for fam in families:
-        sections = []
-        for section_label, keys in _EXPLAIN_GROUPS:
-            here = [k for k in keys if fam_of.get(k) == fam]
-            if here:
-                sections.append((section_label, here))
-        # Sub-groups sorted alphabetically by their type label within the
-        # family (v0.18.1): "ClamAV" before "SSH — Access Control" before
-        # "SSH — Authentication". The keys inside a sub-group keep their
-        # _EXPLAIN_GROUPS order.
-        sections.sort(key=lambda sk: sk[0])
-        label = (t("explain.ui.family_best_practice")
-                 if fam == BEST_PRACTICE_FAMILY else fam)
-        out.append((fam, label, sections))
+    for distro in sorted(tree, key=cis_family_sort_key):
+        benches = []
+        for bench_label in sorted(tree[distro]):
+            # keys keep their _EXPLAIN_GROUPS order (appended in that order);
+            # sections sorted alphabetically by their type label.
+            sections = sorted(tree[distro][bench_label].items())
+            benches.append((bench_label, sections))
+        distro_label = (t("explain.ui.family_best_practice")
+                        if distro == BEST_PRACTICE_FAMILY else distro)
+        out.append((distro, distro_label, benches))
     return out
 
 
 def _print_explain_list(t) -> None:
-    """List every --explain key, grouped by CIS family (folders), then type."""
+    """List every --explain key, grouped distro -> version -> type (folders)."""
     print(t("explain.ui.list_header", count=len(EXPLAIN_KEYS)))
-    for _fam, label, sections in _grouped_families(t):
-        total = sum(len(ks) for _s, ks in sections)
+    dash = "\u2500"
+    for distro, distro_label, benches in _grouped_families(t):
+        total = sum(len(ks) for _b, secs in benches for _s, ks in secs)
         print()
-        print(f"  \U0001F4C1 {label}  ({total})")
-        _dash = "\u2500"
-        for section_label, keys in sections:
-            _rule = _dash * max(0, 42 - len(section_label))
-            print(f"    {_dash}{_dash} {section_label} {_rule}{_dash}")
-            for k in keys:
-                title = t(f"explain.{k}.title")
-                print(f"      {k:<40}  {title}")
+        print(f"  \U0001F4C1 {distro_label}  ({total})")
+        for bench_label, sections in benches:
+            versioned = bench_label != distro
+            indent = "      " if versioned else "    "
+            if versioned:
+                vcount = sum(len(ks) for _s, ks in sections)
+                print(f"    \U0001F4C1 {bench_label}  ({vcount})")
+            for section_label, keys in sections:
+                rule = dash * max(0, 42 - len(section_label))
+                print(f"{indent}{dash}{dash} {section_label} {rule}{dash}")
+                for k in keys:
+                    print(f"{indent}  {k:<40}  {t('explain.' + k + '.title')}")
     print()
+
+
+def _benchmark_rows(key: str) -> "list[tuple[str, str, str]]":
+    """The extra CIS citations for *key*, beyond its primary ``ref``.
+
+    Returns ``[(benchmark_label, code, title)]`` sorted by label — the same
+    control's number and wording in each other distribution's benchmark
+    (Debian 12/13, Ubuntu 24.04, …). Empty when the key carries only its
+    primary reference. Sourced from the ``benchmarks`` field of
+    ``bob/data/cis_refs.json``, generated from ComplianceAsCode/content.
+    """
+    from bob.cis_refs import benchmark_refs
+
+    refs = benchmark_refs(key)
+    return [(label, refs[label].get("code", ""), refs[label].get("title", ""))
+            for label in sorted(refs)]
 
 
 def run_explain(key: str, t) -> bool:
@@ -803,6 +833,11 @@ def run_explain(key: str, t) -> bool:
     print(f"  {_title_label}: {title_val}")
     if cis_val:
         print(f"  {_cis_label}:   {cis_val}")
+    bench_rows = _benchmark_rows(norm)
+    if bench_rows:
+        print(f"  {t('explain.ui.label_benchmarks')}:")
+        for label, code, bench_title in bench_rows:
+            print(f"    {label:<20} {code:<12} {bench_title}")
     print(_DIVIDER_WIDE)
 
     if _has_profile_variants(norm, t):
@@ -1047,6 +1082,11 @@ def _detail_screen(stdscr, key: str, t) -> None:
         lines.append((f"  {_title_label}: {title_val}", h_attr))
         if cis_line:
             lines.append((cis_line, dim))
+        bench_rows = _benchmark_rows(norm)
+        if bench_rows:
+            lines.append((f"  {t('explain.ui.label_benchmarks')}:", dim))
+            for label, code, bench_title in bench_rows:
+                lines.append((f"    {label:<20} {code:<12} {bench_title}", dim))
         lines.append(("  " + "─" * min(56, w - 4), dim))
 
         if _has_profile_variants(norm, t):
@@ -1161,19 +1201,28 @@ def _detail_screen(stdscr, key: str, t) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Interactive wizard — two levels: families (folders) → keys → detail
+# Interactive wizard — three levels: distro (folders) → version (folders)
+#                                    → keys → detail
 # ---------------------------------------------------------------------------
 #
 # v0.18.1: the wizard was one flat list of keys with section headers. It now
-# opens on a vertical list of CIS benchmark families (folders); arrow keys
-# move, Enter opens a family into its keys, Esc returns. The family screen is
-# a landing screen (``q`` quits, ``l`` switches language); the key screen and
-# the detail screen are nested (``Esc`` goes back).
+# opens on a vertical list of CIS distributions (folders): CIS Ubuntu, CIS
+# Debian, CIS Docker, CIS Red Hat, Best practice. Arrow keys move, Enter opens
+# a distro; a distro that carries several benchmark versions (Ubuntu 22.04 and
+# 24.04, Debian 12 and 13) opens onto a second folder list — one folder per
+# version — and Enter there opens that version's keys. A distro with a single
+# node whose label equals the distro (Best practice) skips straight to its
+# keys. The distro screen is a landing screen (``q`` quits, ``l`` switches
+# language); the version, key and detail screens are nested (``Esc`` goes back).
 
-#: The family screen is a landing screen: q exits, l switches language.
+#: The distro screen is a landing screen: q exits, l switches language.
 _FAMILY_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.LANDING_EXIT
 
-#: The key list inside a family is nested: Esc goes back to the families.
+#: The version-folder screen inside a distro is nested: Esc goes back to the
+#: distros.
+_VERSION_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
+
+#: The key list inside a version is nested: Esc goes back one level.
 _KEY_PICKER_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
 
 #: The detail screen is nested too, so it goes back rather than quitting.
@@ -1219,10 +1268,15 @@ def _visible_window(selected, scroll, list_h):
 
 
 def _family_picker(stdscr, families, t, selected=0) -> tuple:
-    """The landing screen: one folder row per CIS benchmark family.
+    """The landing screen: one folder row per CIS distribution.
+
+    ``families`` is ``[(distro, distro_label, benches)]`` from
+    ``_grouped_families``; the folder count is every key the distro cites
+    across all its benchmark versions (so a control shared by 22.04 and 24.04
+    counts in each), matching ``--explain list``.
 
     Returns ``(action, selected)`` — the caller (``_explain_wizard``) opens the
-    family on SELECT, quits on QUIT, toggles language on LANG. Navigation is
+    distro on SELECT, quits on QUIT, toggles language on LANG. Navigation is
     dispatched here so this screen owns every key it advertises.
     """
     import curses
@@ -1233,8 +1287,10 @@ def _family_picker(stdscr, families, t, selected=0) -> tuple:
         pass
     has_color = _init_colors()
 
-    rows = [(f"  {_FOLDER} {label}  ({sum(len(ks) for _s, ks in sections)})", "folder")
-            for _fam, label, sections in families]
+    rows = [(f"  {_FOLDER} {label}  "
+             f"({sum(len(ks) for _b, secs in benches for _s, ks in secs)})",
+             "folder")
+            for _distro, label, benches in families]
     n = len(rows)
     scroll = 0
     header = "  bob --explain    " + t(
@@ -1265,9 +1321,63 @@ def _family_picker(stdscr, families, t, selected=0) -> tuple:
             return action, selected
 
 
+def _version_picker(stdscr, distro_label, benches, t) -> None:
+    """The benchmark-version folders inside one distro. Enter opens a version
+    into its keys; Esc returns to the distros.
+
+    ``benches`` is ``[(bench_label, sections)]`` — "CIS Ubuntu 22.04",
+    "CIS Ubuntu 24.04", ... Each is a folder row showing its own key count. A
+    nested screen: Esc goes back, and navigation is dispatched here so this
+    screen owns every key it advertises.
+    """
+    import curses
+
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
+    has_color = _init_colors()
+
+    rows = [(f"  {_FOLDER} {bench_label}  "
+             f"({sum(len(ks) for _s, ks in sections)})", "folder")
+            for bench_label, sections in benches]
+    n = len(rows)
+    selected = 0
+    scroll = 0
+    header = f"  {_FOLDER} {distro_label}    " + t(
+        "explain.ui.picker_versions", n=len(benches)) + "  "
+
+    while True:
+        h, w = stdscr.getmaxyx()
+        from bob.tui import _chrome as _ch
+        list_h = max(1, h - 1 - _ch.chrome_height(t, _VERSION_KEYS, w))
+        scroll = _visible_window(selected, scroll, list_h)
+
+        stdscr.erase()
+        _ch.draw_header(stdscr, curses, header, has_color)
+        _draw_rows(stdscr, curses, rows, selected, scroll, list_h, w, has_color)
+        _ch.draw(stdscr, curses, t, _VERSION_KEYS, has_color)
+        stdscr.refresh()
+
+        ch = stdscr.getch()
+        action = _keys.resolve(curses, ch, _VERSION_KEYS)
+        if action == _keys.BACK:                       # nested screen: Esc goes back
+            return
+        elif action == _keys.MOVE:
+            selected = max(0, min(n - 1, selected + _keys.direction(curses, ch)))
+        elif action == _keys.PAGE:
+            step = max(1, list_h) * _keys.direction(curses, ch)
+            selected = max(0, min(n - 1, selected + step))
+        elif action == _keys.EDGE:
+            selected = 0 if _keys.is_top(ch) else n - 1
+        elif action == _keys.SELECT:
+            bench_label, sections = benches[selected]
+            _key_picker(stdscr, bench_label, sections, t)
+
+
 def _key_picker(stdscr, family_label, sections, t) -> None:
-    """The keys inside one family, sub-grouped by type. Enter opens the
-    detail; Esc returns.
+    """The keys inside one benchmark version, sub-grouped by type. Enter opens
+    the detail; Esc returns.
 
     ``sections`` is ``[(section_label, keys)]``. Section headings are drawn but
     not selectable — the arrows land only on keys, skipping the headings, as
@@ -1338,7 +1448,13 @@ def _key_picker(stdscr, family_label, sections, t) -> None:
 
 
 def _explain_wizard(stdscr, t) -> None:
-    """Drive the two-level wizard: families → keys → detail."""
+    """Drive the wizard: distro → version → keys → detail.
+
+    A distro whose only node is the distro itself (Best practice — no version
+    folder) skips the version screen and opens its keys directly; every other
+    distro opens a version-folder screen first, even when it holds a single
+    benchmark, so the operator always sees which reference the keys come from.
+    """
     selected = 0
     while True:
         # Rebuilt each pass so the Best-practice label follows a language
@@ -1351,8 +1467,11 @@ def _explain_wizard(stdscr, t) -> None:
             _keys.toggle_language()
             continue
         if action == _keys.SELECT:
-            _fam, label, sections = families[selected]
-            _key_picker(stdscr, label, sections, t)
+            distro, distro_label, benches = families[selected]
+            if len(benches) == 1 and benches[0][0] == distro:
+                _key_picker(stdscr, distro_label, benches[0][1], t)
+            else:
+                _version_picker(stdscr, distro_label, benches, t)
 
 
 def run_explain_interactive(t) -> None:

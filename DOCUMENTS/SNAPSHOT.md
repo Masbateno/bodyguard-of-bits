@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 10253 unit tests · 21 doc files · 5+ distros field-tested │
+│                 10281 unit tests · 21 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -334,7 +334,7 @@ bodyguard-of-bits/
 | `_sysctl_apply.py` | 137 | **NEW v0.18.0** native apply path for sysctl fixes: `apply_sysctl()` sets, persists idempotently via `atomic_write`, and reads back — `SysctlResult` distinguishes *applied*, *live but not persisted* and *refused*. Dispatched from `fixes._apply_native()` through `Finding.fix_action`, which bypasses the shell-operator barrier because no shell is run |
 | `_fs.py` | 59 | **NEW v0.18.0** version-proof path predicates. Python 3.14 made `Path.is_file()`/`exists()`/`is_symlink()` return False on a denial (3.13 raised), silently turning *off-limits* into *absent* at every call site that caught the raise. Used by `profiles.lookup_profile_file`, `services._is_safe_service_config`, `log_rotation._count_logrotate_rules`, `plugin_checks._load_one` |
 | `explain.py` | 1017 | `--explain` TUI + `EXPLAIN_KEYS` (194 keys, 50 prefixes) + `EXPLAIN_KEY_ALIASES` map (emptied v0.9.0 D-3; **first live entry v0.10.1** mapping the old `ssh.x11_forwarding` umbrella to the D-4 Rank 1 server/client split). v0.8.0 drift batch added 51 entries to cover WARN/ALERT findings previously emitted without --explain content; v0.10.1 added `ssh.x11.forwarding.client`. |
-| `cis_refs.py` | 101 | CIS lookup with `lru_cache(maxsize=1)`, reads `data/cis_refs.json` (199 entries); **v0.18.1** `cis_family()` + `cis_family_sort_key()` group `--explain list` by benchmark family, derived from the canonical English ref so grouping is locale-stable |
+| `cis_refs.py` | 146 | CIS lookup with `lru_cache(maxsize=1)`, reads `data/cis_refs.json` (199 entries); **v0.18.1** `cis_family()` (distro-level) + `split_benchmark()` + `benchmark_labels()` + `benchmark_refs()` + `cis_family_sort_key()` drive the three-level `--explain` tree (distro → benchmark version → type) and the per-key **Also cited in** block, derived from the canonical English ref so grouping is locale-stable |
 | `display.py` | 903 | Terminal output: section boxes, finding emission, summary box, score bar; `_LEVEL_DISPATCH` table + `print_audit_summary` split into 3 helpers (v0.5.x); `_compute_posture_annotation` single helper (v0.7.2 M-10); A1 hypotheses footer in summary box (v0.8.0) |
 | `output.py` | 675 | Low-level primitives: `print_ok/warn/alert/info/section/banner` |
 | `panorama.py` | 66 | Services panorama table builder (after-audit summary) |
@@ -650,7 +650,7 @@ Codes only added, never removed/renamed within a major. Exposed in `bob.__main__
 
 `bob.explain.EXPLAIN_KEYS` is a frozen canonical list. Adding a new key = additive (no breaking change). Renaming a key = breaking, must go through the alias map (`EXPLAIN_KEY_ALIASES`). Removing a key = major bump. Audited against the locale namespace + canonical naming convention in `tests/test_explain.py` and `tests/test_explain_naming_convention.py` (v0.7.0 T2 Sub-scope C).
 
-The `--explain KEY` interactive TUI shows: **title**, **WHY** it matters, **HOW** to fix, and a **CIS reference**. The first three (title/why/how) live in `en.json` and `fr.json` under `explain.{key}.{title,why,how}` and are validated for cross-locale parity by `test_locale_coverage.py::TestExplainNamespaceCoverage`. The CIS reference is sourced separately from `bob/data/cis_refs.json` (174 entries) via `bob/cis_refs.py::get_cis_ref(key)` — not stored in the locale files.
+The `--explain KEY` interactive TUI shows: **title**, **WHY** it matters, **HOW** to fix, a **CIS reference**, and an **Also cited in** block naming the same control's number in every other benchmark that covers it. The first three (title/why/how) live in `en.json` and `fr.json` under `explain.{key}.{title,why,how}` and are validated for cross-locale parity by `test_locale_coverage.py::TestExplainNamespaceCoverage`. The CIS references are sourced separately from `bob/data/cis_refs.json` (199 entries) via `bob/cis_refs.py::get_cis_ref(key)` / `benchmark_refs(key)` — not stored in the locale files.
 
 ### 4. 7 domain keys
 
@@ -913,7 +913,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Python versions tested | 3.10, 3.11, 3.12, 3.13, 3.14 | `.github/workflows/tests.yml` + `pyproject.toml` classifiers |
 | Locale keys | 2014 EN ↔ 2014 FR (strict parity) | `bob/locales/{en,fr}.json` |
 | EXPLAIN_KEYS | 194 (in 50 prefixes) | `bob.explain.EXPLAIN_KEYS` |
-| CIS references | 174 (106 CIS Ubuntu 22.04 + 7 CIS Docker + **1 CIS Red Hat 8/9** + 60 BOB-authored best-practice) | `bob/data/cis_refs.json` |
+| CIS references | 199 primary (109 CIS Ubuntu 22.04 + 7 CIS Docker 1.6 + **1 CIS Red Hat 8/9** + 82 BOB-authored best-practice) + **85 cross-benchmark citations** on 31 keys (27 CIS Debian 12 + 31 CIS Debian 13 + 27 CIS Ubuntu 24.04, sourced from ComplianceAsCode/content by `scripts/gen_cis_benchmarks.py`) | `bob/data/cis_refs.json` |
 | Known services | 38 | `bob/data/services.json` |
 | Score domains | 7 | `bob.domain_scores.DOMAINS` |
 | `_PREFIX_TO_DOMAIN` mappings | 36 (since v0.5.x explicit table) | `bob.domain_scores._PREFIX_TO_DOMAIN` |

@@ -1427,6 +1427,7 @@
       "list_header": "Available --explain keys ({count}):",
       "family_best_practice": "Best practice",
       "picker_families": "{n} CIS benchmark families",
+      "picker_versions": "{n} benchmark versions",
       "picker_in_family": "{n} keys",
       "unknown_key": "No explanation available for: {requested}",
       "unknown_hint": "Run 'bob --explain list' to see all available keys.",
@@ -1445,7 +1446,8 @@
       "scoring_impact_value": "run 'sudo bob --breakdown' to see this key's current score contribution",
       "label_key": "Key",
       "label_title": "Title",
-      "label_cis": "CIS"
+      "label_cis": "CIS",
+      "label_benchmarks": "Also cited in"
     },
     "ssh": {
       "password_auth": {

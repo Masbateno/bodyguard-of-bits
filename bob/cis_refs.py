@@ -59,42 +59,87 @@ def get_cis_code(key: str) -> str | None:
 BEST_PRACTICE_FAMILY = "Best practice"
 
 _LEVEL_SUFFIX = re.compile(r"\s+L[12]$")
+_VERSION_SUFFIX = re.compile(r"\s+[0-9][0-9./]*$")
+_PAREN_SUFFIX = re.compile(r"\s*\(.*\)$")
+
+
+def _benchmark_label(ref: str) -> "str | None":
+    """The full benchmark label a reference names, e.g. "CIS Ubuntu 22.04",
+    "CIS Docker 1.6", "Best practice". The ref up to the em-dash, L1/L2 and a
+    trailing ``(Samba)``-style qualifier stripped. Keeps the version."""
+    if not ref:
+        return None
+    head = _PAREN_SUFFIX.sub("", ref.split(" — ", 1)[0].strip())
+    head = _LEVEL_SUFFIX.sub("", head).strip()
+    return head or None
+
+
+def split_benchmark(label: str) -> "tuple[str, str]":
+    """Split a benchmark label into (distro family, version).
+
+        "CIS Ubuntu 22.04" -> ("CIS Ubuntu", "22.04")
+        "CIS Debian 12"    -> ("CIS Debian", "12")
+        "CIS Docker 1.6"   -> ("CIS Docker", "1.6")
+        "CIS Red Hat 8/9"  -> ("CIS Red Hat", "8/9")
+        "Best practice"    -> ("Best practice", "")
+    """
+    m = _VERSION_SUFFIX.search(label)
+    if m:
+        return label[: m.start()].strip(), m.group(0).strip()
+    return label, ""
+
+
+def benchmark_labels(key: str) -> "list[str]":
+    """Every benchmark label a key carries a reference for — its primary
+    ``ref`` plus any per-benchmark entries under ``benchmarks``."""
+    entry = _load().get(key)
+    if entry is None:
+        return []
+    labels = []
+    primary = _benchmark_label(entry.get("ref", ""))
+    if primary:
+        labels.append(primary)
+    for lbl in entry.get("benchmarks", {}):
+        if lbl not in labels:
+            labels.append(lbl)
+    return labels
+
+
+def benchmark_refs(key: str) -> "dict[str, dict]":
+    """The per-benchmark ``{label: {code, title}}`` map added beyond the
+    primary reference. Empty when the key has only its primary ref."""
+    entry = _load().get(key)
+    return dict(entry.get("benchmarks", {})) if entry else {}
 
 
 def cis_family(key: str) -> "str | None":
-    """The benchmark family a key belongs to, for grouping.
+    """The distro-level family a key belongs to, for the top-level grouping.
 
-    Derived from the canonical English ``ref`` — stable across locales, since
-    the family drives grouping and must not shift when the interface language
-    does. The benchmark name is the ref up to the first em-dash, with the
-    ``L1`` / ``L2`` level stripped so both levels of one benchmark group
-    together:
+    v0.18.1: distro-level, not benchmark-version-level — "CIS Ubuntu 22.04"
+    and a "CIS Ubuntu 24.04" reference both land in one "CIS Ubuntu" folder,
+    the versions living one level down. Derived from the canonical English
+    ``ref`` so grouping does not shift with the interface language.
 
-        "CIS Ubuntu 22.04 L1 — 3.3.1 — …"  -> "CIS Ubuntu 22.04"
-        "CIS Docker 1.6 — 5.7 — …"          -> "CIS Docker 1.6"
-        "CIS Red Hat 8/9 L1 — 1.7.1.4 — …"  -> "CIS Red Hat 8/9"
-        "Best practice — …"                 -> "Best practice"
+        "CIS Ubuntu 22.04 L1 — …"  -> "CIS Ubuntu"
+        "CIS Docker 1.6 — …"        -> "CIS Docker"
+        "Best practice — …"         -> "Best practice"
 
     Returns None when the key has no reference entry at all.
     """
-    entry = _load().get(key)
-    if entry is None:
+    label = _benchmark_label(_load().get(key, {}).get("ref", "")) if _load().get(key) else None
+    if label is None:
         return None
-    ref = entry.get("ref", "")
-    if ref.startswith(BEST_PRACTICE_FAMILY):
+    if label.startswith(BEST_PRACTICE_FAMILY):
         return BEST_PRACTICE_FAMILY
-    head = ref.split(" — ", 1)[0].strip()
-    return _LEVEL_SUFFIX.sub("", head) or None
+    return split_benchmark(label)[0]
 
 
 def cis_family_sort_key(family: str) -> "tuple[int, str]":
-    """Order families for display: CIS Ubuntu first (the primary benchmark),
-    then the other CIS families alphabetically, then Best practice last.
-
-    A CIS family added later (Fedora, openSUSE, Alpine in v0.19.x) slots in
-    among the CIS families by name without touching this function.
+    """Order distro families for display: CIS Ubuntu first (the primary
+    benchmark), then the other CIS families alphabetically, then Best practice
+    last. A family added later slots in among the CIS families by name.
     """
-    if family == "CIS Ubuntu 22.04":
+    if family == "CIS Ubuntu":
         return (0, "")
     if family == BEST_PRACTICE_FAMILY:
         return (2, "")

@@ -178,18 +178,42 @@ before trixie with userconf.txt rather than a cloud-init seed) will surface
 their own differences, and a solid Raspberry Pi matrix needs them tested too.
 Reports from any of them are worth more than emulation.
 
-**`--explain list` is grouped by CIS benchmark family.** The key list was
-ordered by audit section; it now separates into families — CIS Ubuntu 22.04,
-CIS Docker 1.6, CIS Red Hat 8/9, Best practice — each a folder heading (📁) in
-a vertical list with its key count, CIS Ubuntu first and Best practice last.
-The family a key belongs to comes from its canonical English CIS reference, so
-the grouping does not shift with the interface language: the benchmark names
-are proper nouns kept verbatim, only "Best practice" is translated (Bonne
-pratique). The per-key `--explain <key>` view is unchanged. This is groundwork
-for v0.19.x, which will extend the CIS collection to other distributions
-(Fedora, openSUSE, Alpine) — a new family slots into the ordering by name.
+**`--explain` groups its keys by CIS distribution, as folders.** The key list
+was one flat run ordered by audit section. It is now a three-level tree of
+folder headings (📁): the top level is the CIS distribution — CIS Ubuntu, CIS
+Debian, CIS Docker, CIS Red Hat, Best practice — CIS Ubuntu first and Best
+practice last; under a distribution that carries more than one benchmark come
+its version folders (CIS Ubuntu 22.04 and 24.04, CIS Debian 12 and 13); and
+inside a version the keys keep their type sub-sections (SSH — Authentication,
+ClamAV, Samba, …), alphabetical. Each folder shows its key count. The
+interactive `--explain` wizard navigates the same tree with the arrows: the
+distribution screen opens a version screen, which opens the keys; a
+distribution with a single node (Best practice) opens straight to its keys.
+The distribution a key belongs to is read from its canonical English CIS
+reference, so the grouping does not shift with the interface language — the
+benchmark names are proper nouns kept verbatim, only "Best practice" is
+translated (Bonne pratique).
 
-**Tests** 9959 → **10253**. **Mutations** 166 → **202**.
+**The CIS collection was extended to every officially supported distribution
+that publishes its own benchmark.** A control is rarely numbered the same way
+across benchmarks, and BOB now records, per key, the control number *and* its
+wording in each distribution's benchmark that covers it, beyond the primary
+reference. The numbers are not typed from memory: `scripts/gen_cis_benchmarks.py`
+fetches the control files of [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content)
+(the SCAP Security Guide, the open source of these mappings) and emits only the
+entries it can find there, so a citation is either sourced or absent — never
+invented. The completed set covers Debian 12 and 13, Ubuntu 22.04 and 24.04,
+CIS Docker 1.6 and CIS Red Hat 8/9. Distributions that do not publish their own
+CIS benchmark are deliberately left out of the CIS view rather than given a
+borrowed number: Alpine, Arch, Linux Mint and Raspberry Pi OS have none, and
+Fedora and openSUSE Leap are not themselves CIS benchmark targets (CIS covers
+RHEL and SLES). `bob --explain <key>` now prints an **Also cited in** block
+under the primary reference, listing each other benchmark's control number and
+title, so an operator can read straight off the screen that
+`hardening.rp_filter_disabled` is 3.3.1 in CIS Ubuntu 22.04, 3.3.7 in Debian 12
+and Ubuntu 24.04, and 3.3.1.12 in Debian 13.
+
+**Tests** 9959 → **10281**. **Mutations** 166 → **204**.
 
 ---
 
