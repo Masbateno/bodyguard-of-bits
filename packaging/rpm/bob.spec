@@ -110,6 +110,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - A condition-skipped unit (ConditionResult=no) was reported as a stopped service.
 - An inactive .socket was listed as an orphan; an orphan must be active (listening).
 - --fix applied fixes outside the --check scope; it now honours the selected sections.
+- --explain list is grouped by CIS benchmark family (folder-headed vertical list).
 
 * Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
 - BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,

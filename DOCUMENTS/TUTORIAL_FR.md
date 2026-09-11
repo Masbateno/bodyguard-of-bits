@@ -97,7 +97,7 @@ Pas de `sudo` requis — `--explain` est un lookup standalone, profile-aware. La
 Tu peux lister chaque clé explainable :
 
 ```bash
-bob --explain list                          # 194 clés en v0.18.x
+bob --explain list                          # 194 clés en v0.18.x, groupées par famille CIS
 bob --explain                               # picker interactif (↑↓/jk, PgUp/PgDn, g/G, Entrée, l langue, q quitter)
 ```
 
@@ -342,7 +342,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2428 clés × 2 locales en v0.18.1 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2429 clés × 2 locales en v0.18.1 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les 60 non codées, elles, *sont* traduites), et les **38 libellés de services** — dont 27 portent de la prose anglaise descriptive, comme `Samba (Windows file sharing)` ou `Apache Web Server` — traités comme des noms de produits. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 
@@ -354,7 +354,7 @@ Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'au
 - [`AUTOMATION_FR.md`](AUTOMATION_FR.md) — deep-dive cron + webhook + notification email
 - [`../SECURITY_FR.md`](../SECURITY_FR.md) — threat model, ce que BOB est / n'est PAS, env vars trap-door
 - [`../CHANGELOG_FR.md`](../CHANGELOG_FR.md) — historique des releases avec highlights par-version
-- `bob --explain list` — chaque finding que BOB sait expliquer, browsable dans le picker curses
+- `bob --explain list` — chaque finding que BOB sait expliquer, groupé par famille de benchmark CIS (CIS Ubuntu, CIS Docker, Bonne pratique, …) ; browsable dans le picker curses
 
 Si tu rencontres un bug ou veux qu'un finding soit ajouté, ouvre une issue sur [https://github.com/Masbateno/bodyguard-of-bits](https://github.com/Masbateno/bodyguard-of-bits).
 

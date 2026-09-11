@@ -97,7 +97,7 @@ No `sudo` needed — `--explain` is a standalone, profile-aware lookup. The outp
 You can list every explainable key :
 
 ```bash
-bob --explain list                          # 194 keys at v0.18.x
+bob --explain list                          # 194 keys at v0.18.x, grouped by CIS family
 bob --explain                               # interactive picker (↑↓/jk, PgUp/PgDn, g/G, Enter, l language, q quit)
 ```
 
@@ -337,7 +337,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2428 keys × 2 locales as of v0.18.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2429 keys × 2 locales as of v0.18.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the 60 uncoded ones *are* translated), and the **38 service labels** — 27 of which carry descriptive English prose, such as `Samba (Windows file sharing)` or `Apache Web Server` — treated as product names. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 
@@ -349,7 +349,7 @@ Three things stay English on purpose, and a bilingual diff of the audit output i
 - [`AUTOMATION.md`](AUTOMATION.md) — cron + webhook + email notification deep-dive
 - [`../SECURITY.md`](../SECURITY.md) — threat model, what BOB is / is NOT, trap-door env vars
 - [`../CHANGELOG.md`](../CHANGELOG.md) — release history with per-version highlights
-- `bob --explain list` — every finding BOB knows how to explain, browsable in the curses picker
+- `bob --explain list` — every finding BOB knows how to explain, grouped by CIS benchmark family (CIS Ubuntu, CIS Docker, Best practice, …); browsable in the curses picker
 
 If you hit a bug or want a finding added, open an issue at [https://github.com/Masbateno/bodyguard-of-bits](https://github.com/Masbateno/bodyguard-of-bits).
 

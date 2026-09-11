@@ -676,6 +676,40 @@ def _render_dynamic_service_explain(norm: str, t) -> bool:
     return True
 
 
+def _print_explain_list(t) -> None:
+    """List every --explain key, grouped by CIS benchmark family.
+
+    v0.18.1: grouped by family (CIS Ubuntu, CIS Docker, Best practice, …)
+    rather than by audit section, each family a folder heading. The family a
+    key belongs to comes from bob.cis_refs.cis_family, derived from the
+    canonical English reference so the grouping does not shift with the
+    interface language. v0.19.x will add more CIS distributions (Fedora,
+    openSUSE, Alpine); a new family slots into the ordering by name.
+    """
+    from bob.cis_refs import (
+        BEST_PRACTICE_FAMILY, cis_family, cis_family_sort_key,
+    )
+
+    families: "dict[str, list[str]]" = {}
+    for k in EXPLAIN_KEYS:
+        fam = cis_family(k) or BEST_PRACTICE_FAMILY
+        families.setdefault(fam, []).append(k)
+
+    print(t("explain.ui.list_header", count=len(EXPLAIN_KEYS)))
+    for fam in sorted(families, key=cis_family_sort_key):
+        keys = sorted(families[fam])
+        # CIS benchmark names are proper nouns, verbatim in every locale; only
+        # the best-practice family carries a translated label.
+        label = (t("explain.ui.family_best_practice")
+                 if fam == BEST_PRACTICE_FAMILY else fam)
+        print()
+        print(f"  \U0001F4C1 {label}  ({len(keys)})")
+        for k in keys:
+            title = t(f"explain.{k}.title")
+            print(f"      {k:<42}  {title}")
+    print()
+
+
 def run_explain(key: str, t) -> bool:
     """
     Print a structured explanation for *key*.
@@ -695,14 +729,7 @@ def run_explain(key: str, t) -> bool:
 
     # ---- list mode ---------------------------------------------------------
     if key == "list":
-        print(t("explain.ui.list_header"))
-        for group_label, keys in _EXPLAIN_GROUPS:
-            print()
-            print(f"  ── {group_label} {'─' * max(0, 46 - len(group_label))}─")
-            for k in keys:
-                title = t(f"explain.{k}.title")
-                print(f"    {k:<42}  {title}")
-        print()
+        _print_explain_list(t)
         return True
 
     # ---- single key mode ---------------------------------------------------

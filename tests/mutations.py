@@ -2145,4 +2145,31 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="a finding that already names its section (a check that tags its "
                "own) must keep it, not be relabelled by the apply call site",
     ),
+    Mutation(
+        id="explain-family/level-not-stripped-splits-ubuntu",
+        file="bob/cis_refs.py",
+        old="    return _LEVEL_SUFFIX.sub(\"\", head) or None",
+        new="    return head or None",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_the_level_is_stripped_so_l1_and_l2_group_together",),
+        reason="without stripping L1/L2, CIS Ubuntu 22.04 L1 and L2 become two "
+               "families and the primary benchmark is split across headings",
+    ),
+    Mutation(
+        id="explain-family/best-practice-not-translated",
+        file="bob/explain.py",
+        old="        label = (t(\"explain.ui.family_best_practice\")\n                 if fam == BEST_PRACTICE_FAMILY else fam)",
+        new="        label = fam",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_best_practice_heading_is_translated_in_french",),
+        reason="the CIS names are proper nouns kept verbatim, but Best practice "
+               "is prose and must read Bonne pratique under --french",
+    ),
+    Mutation(
+        id="explain-family/order-not-applied",
+        file="bob/explain.py",
+        old="    for fam in sorted(families, key=cis_family_sort_key):",
+        new="    for fam in families:",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_headings_are_in_the_declared_order",),
+        reason="dict insertion order is EXPLAIN_KEYS order, not the deliberate "
+               "Ubuntu-first / Best-practice-last family order",
+    ),
 )

@@ -193,7 +193,19 @@ amorçage cloud-init) révéleront leurs propres différences, et une matrice
 Raspberry Pi solide demande de les tester aussi. Un retour sur n'importe lequel
 vaut mieux que l'émulation.
 
-**Tests** 9959 → **10205**. **Mutations** 166 → **197**.
+**`--explain list` est groupé par famille de benchmark CIS.** La liste des clés
+était ordonnée par section d'audit ; elle se sépare désormais en familles — CIS
+Ubuntu 22.04, CIS Docker 1.6, CIS Red Hat 8/9, Bonne pratique — chacune un
+en-tête dossier (📁) en liste verticale avec son nombre de clés, CIS Ubuntu en
+premier et Bonne pratique en dernier. La famille d'une clé vient de sa référence
+CIS anglaise canonique, si bien que le groupement ne change pas avec la langue
+d'interface : les noms de benchmark sont des noms propres gardés tels quels,
+seule « Best practice » est traduite (Bonne pratique). La vue `--explain <clé>`
+par clé est inchangée. C'est le socle de la v0.19.x, qui étendra la collection
+CIS à d'autres distributions (Fedora, openSUSE, Alpine) — une nouvelle famille
+se glisse dans l'ordre par son nom.
+
+**Tests** 9959 → **10233**. **Mutations** 166 → **200**.
 
 ---
 

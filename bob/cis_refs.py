@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -46,3 +47,55 @@ def get_cis_code(key: str) -> str | None:
     if entry is None:
         return None
     return entry.get("code")
+
+
+# ---------------------------------------------------------------------------
+# Benchmark families — for grouping `--explain list` (v0.18.1)
+# ---------------------------------------------------------------------------
+
+#: Stable id for the best-practice family, whose display label is localised
+#: ("Best practice" / "Bonne pratique") while every CIS family name is a
+#: proper noun kept verbatim in both locales.
+BEST_PRACTICE_FAMILY = "Best practice"
+
+_LEVEL_SUFFIX = re.compile(r"\s+L[12]$")
+
+
+def cis_family(key: str) -> "str | None":
+    """The benchmark family a key belongs to, for grouping.
+
+    Derived from the canonical English ``ref`` — stable across locales, since
+    the family drives grouping and must not shift when the interface language
+    does. The benchmark name is the ref up to the first em-dash, with the
+    ``L1`` / ``L2`` level stripped so both levels of one benchmark group
+    together:
+
+        "CIS Ubuntu 22.04 L1 — 3.3.1 — …"  -> "CIS Ubuntu 22.04"
+        "CIS Docker 1.6 — 5.7 — …"          -> "CIS Docker 1.6"
+        "CIS Red Hat 8/9 L1 — 1.7.1.4 — …"  -> "CIS Red Hat 8/9"
+        "Best practice — …"                 -> "Best practice"
+
+    Returns None when the key has no reference entry at all.
+    """
+    entry = _load().get(key)
+    if entry is None:
+        return None
+    ref = entry.get("ref", "")
+    if ref.startswith(BEST_PRACTICE_FAMILY):
+        return BEST_PRACTICE_FAMILY
+    head = ref.split(" — ", 1)[0].strip()
+    return _LEVEL_SUFFIX.sub("", head) or None
+
+
+def cis_family_sort_key(family: str) -> "tuple[int, str]":
+    """Order families for display: CIS Ubuntu first (the primary benchmark),
+    then the other CIS families alphabetically, then Best practice last.
+
+    A CIS family added later (Fedora, openSUSE, Alpine in v0.19.x) slots in
+    among the CIS families by name without touching this function.
+    """
+    if family == "CIS Ubuntu 22.04":
+        return (0, "")
+    if family == BEST_PRACTICE_FAMILY:
+        return (2, "")
+    return (1, family)

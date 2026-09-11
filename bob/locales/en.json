@@ -1424,7 +1424,8 @@
       }
     },
     "ui": {
-      "list_header": "Available --explain keys:",
+      "list_header": "Available --explain keys ({count}):",
+      "family_best_practice": "Best practice",
       "unknown_key": "No explanation available for: {requested}",
       "unknown_hint": "Run 'bob --explain list' to see all available keys.",
       "did_you_mean": "Did you mean: {suggestions}?",

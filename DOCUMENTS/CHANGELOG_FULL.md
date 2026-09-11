@@ -178,7 +178,18 @@ before trixie with userconf.txt rather than a cloud-init seed) will surface
 their own differences, and a solid Raspberry Pi matrix needs them tested too.
 Reports from any of them are worth more than emulation.
 
-**Tests** 9959 → **10205**. **Mutations** 166 → **197**.
+**`--explain list` is grouped by CIS benchmark family.** The key list was
+ordered by audit section; it now separates into families — CIS Ubuntu 22.04,
+CIS Docker 1.6, CIS Red Hat 8/9, Best practice — each a folder heading (📁) in
+a vertical list with its key count, CIS Ubuntu first and Best practice last.
+The family a key belongs to comes from its canonical English CIS reference, so
+the grouping does not shift with the interface language: the benchmark names
+are proper nouns kept verbatim, only "Best practice" is translated (Bonne
+pratique). The per-key `--explain <key>` view is unchanged. This is groundwork
+for v0.19.x, which will extend the CIS collection to other distributions
+(Fedora, openSUSE, Alpine) — a new family slots into the ordering by name.
+
+**Tests** 9959 → **10233**. **Mutations** 166 → **200**.
 
 ---
 
