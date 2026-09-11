@@ -205,7 +205,7 @@ par clé est inchangée. C'est le socle de la v0.19.x, qui étendra la collectio
 CIS à d'autres distributions (Fedora, openSUSE, Alpine) — une nouvelle famille
 se glisse dans l'ordre par son nom.
 
-**Tests** 9959 → **10233**. **Mutations** 166 → **200**.
+**Tests** 9959 → **10253**. **Mutations** 166 → **202**.
 
 ---
 

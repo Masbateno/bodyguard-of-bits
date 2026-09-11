@@ -2166,10 +2166,29 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="explain-family/order-not-applied",
         file="bob/explain.py",
-        old="    for fam in sorted(families, key=cis_family_sort_key):",
-        new="    for fam in families:",
+        old="    families = sorted(set(fam_of.values()), key=cis_family_sort_key)",
+        new="    families = sorted(set(fam_of.values()))",
         kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_headings_are_in_the_declared_order",),
         reason="dict insertion order is EXPLAIN_KEYS order, not the deliberate "
                "Ubuntu-first / Best-practice-last family order",
+    ),
+    Mutation(
+        id="explain-family/section-subgroups-flattened",
+        file="bob/explain.py",
+        old="            here = [k for k in keys if fam_of.get(k) == fam]\n            if here:\n                sections.append((section_label, here))",
+        new="            here = [k for k in keys if fam_of.get(k) == fam]\n            if here:\n                sections.append((\"\", here))",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_a_family_holds_typed_sub_sections",),
+        reason="the refinement keeps the SSH/ClamAV/Samba typed sub-sections "
+               "inside each family folder; blanking the label collapses them",
+    ),
+    Mutation(
+        id="explain-family/subgroups-not-alphabetical",
+        file="bob/explain.py",
+        old="        sections.sort(key=lambda sk: sk[0])",
+        new="        pass",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_sub_sections_are_sorted_alphabetically_within_a_family",),
+        reason="the sub-groups inside a family must read alphabetically "
+               "(Auditd, Authentication Logs, Cron, …); without the sort they "
+               "follow _EXPLAIN_GROUPS order instead",
     ),
 )

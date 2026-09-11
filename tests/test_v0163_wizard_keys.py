@@ -210,7 +210,7 @@ class TestAnAdvertisedKeyDoesSomething:
 #: reintroduce "one keystroke abandons everything from three screens down"
 #: without any test noticing. Adding a screen means classifying it here.
 _LANDING = {
-    "bob.explain._PICKER_KEYS",
+    "bob.explain._FAMILY_KEYS",
     "bob.manage_logs._LIST_KEYS",
     "bob.manage_logs._MARKED_KEYS",
     "bob.tui.cron._LANDING_KEYS",
@@ -218,6 +218,7 @@ _LANDING = {
 }
 _NESTED = {
     "bob.explain._DETAIL_KEYS",
+    "bob.explain._KEY_PICKER_KEYS",
     "bob.manage_logs._PREVIEW_KEYS",
     "bob.tui.cron._SCHEDULE_KEYS",
     "bob.tui.cron._CONFIRM_KEYS",
@@ -300,7 +301,8 @@ _SCREEN_OF = {
     "bob/tui/cron.py::_curses_email_store_sub":   "bob.tui.cron._STORE_KEYS",
     "bob/manage_logs.py::_run_manage_logs_curses": "bob.manage_logs._LIST_KEYS",
     "bob/manage_logs.py::_curses_preview_log":    "bob.manage_logs._PREVIEW_KEYS",
-    "bob/explain.py::_picker":                    "bob.explain._PICKER_KEYS",
+    "bob/explain.py::_family_picker":              "bob.explain._FAMILY_KEYS",
+    "bob/explain.py::_key_picker":                 "bob.explain._KEY_PICKER_KEYS",
     "bob/explain.py::_detail_screen":             "bob.explain._DETAIL_KEYS",
 }
 

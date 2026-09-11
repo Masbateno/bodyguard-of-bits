@@ -124,3 +124,44 @@ def test_best_practice_heading_is_translated_in_french():
 def test_cis_benchmark_names_are_verbatim_in_french():
     out = _list("fr")
     assert "\U0001F4C1 CIS Ubuntu 22.04" in out, "a benchmark name is a proper noun"
+
+
+# ---------------------------------------------------------------------------
+# Inside a family: keys sub-grouped by type (v0.18.1 refinement)
+# ---------------------------------------------------------------------------
+
+def test_a_family_holds_typed_sub_sections():
+    """Inside a folder, keys keep their section grouping (SSH — …, ClamAV, …)."""
+    from bob.explain import _grouped_families
+    fams = {fam: sections for fam, _label, sections in _grouped_families(i18n.t)}
+    ubuntu = dict(fams["CIS Ubuntu 22.04"])
+    assert "SSH — Authentication" in ubuntu
+    assert all(k.startswith("ssh.") for k in ubuntu["SSH — Authentication"])
+
+
+def test_every_key_lands_in_exactly_one_family_section():
+    from bob.explain import _grouped_families
+    seen = []
+    for _fam, _label, sections in _grouped_families(i18n.t):
+        for _section, keys in sections:
+            seen.extend(keys)
+    assert sorted(seen) == sorted(EXPLAIN_KEYS)
+    assert len(seen) == len(set(seen)), "a key appeared under two families/sections"
+
+
+def test_sub_sections_are_sorted_alphabetically_within_a_family():
+    from bob.explain import _grouped_families
+    for _fam, _label, sections in _grouped_families(i18n.t):
+        labels = [s for s, _ in sections]
+        assert labels == sorted(labels), f"sub-sections not alphabetical: {labels}"
+
+
+def test_the_list_shows_section_sub_headings_under_a_folder():
+    """SSH — Authentication sits under the Ubuntu folder; ClamAV (a
+    best-practice section) sits under Best practice — each in its own family."""
+    out = _list()
+    ubuntu = out.index("\U0001F4C1 CIS Ubuntu 22.04")
+    docker = out.index("\U0001F4C1 CIS Docker 1.6")
+    assert "── SSH — Authentication " in out[ubuntu:docker]
+    best = out.index("\U0001F4C1 Best practice")
+    assert "── ClamAV " in out[best:], "ClamAV is a best-practice section"

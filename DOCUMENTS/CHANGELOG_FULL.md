@@ -189,7 +189,7 @@ pratique). The per-key `--explain <key>` view is unchanged. This is groundwork
 for v0.19.x, which will extend the CIS collection to other distributions
 (Fedora, openSUSE, Alpine) — a new family slots into the ordering by name.
 
-**Tests** 9959 → **10233**. **Mutations** 166 → **200**.
+**Tests** 9959 → **10253**. **Mutations** 166 → **202**.
 
 ---
 

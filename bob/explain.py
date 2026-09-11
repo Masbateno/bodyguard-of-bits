@@ -676,37 +676,61 @@ def _render_dynamic_service_explain(norm: str, t) -> bool:
     return True
 
 
-def _print_explain_list(t) -> None:
-    """List every --explain key, grouped by CIS benchmark family.
+def _grouped_families(t) -> "list[tuple[str, str, list[tuple[str, list[str]]]]]":
+    """Every --explain key, grouped by CIS benchmark family, then by type.
 
-    v0.18.1: grouped by family (CIS Ubuntu, CIS Docker, Best practice, …)
-    rather than by audit section, each family a folder heading. The family a
-    key belongs to comes from bob.cis_refs.cis_family, derived from the
-    canonical English reference so the grouping does not shift with the
-    interface language. v0.19.x will add more CIS distributions (Fedora,
-    openSUSE, Alpine); a new family slots into the ordering by name.
+    Returns ``[(family_id, family_label, [(section_label, keys)])]`` in
+    display order: families are CIS Ubuntu first, other CIS families by name,
+    Best practice last (bob.cis_refs.cis_family / cis_family_sort_key, derived
+    from the canonical English reference so the grouping does not shift with
+    the interface language — CIS names are proper nouns kept verbatim, only
+    "Best practice" is translated). Inside a family the keys keep their
+    section grouping — "SSH — Authentication", "ClamAV", "Samba", … — in
+    ``_EXPLAIN_GROUPS`` order, so a family folder opens onto the same typed
+    sub-lists the flat view used to show. v0.19.x will add more CIS
+    distributions; a new family slots in by name.
+
+    One source of truth for both `--explain list` and the interactive wizard.
     """
     from bob.cis_refs import (
         BEST_PRACTICE_FAMILY, cis_family, cis_family_sort_key,
     )
 
-    families: "dict[str, list[str]]" = {}
-    for k in EXPLAIN_KEYS:
-        fam = cis_family(k) or BEST_PRACTICE_FAMILY
-        families.setdefault(fam, []).append(k)
+    fam_of = {k: (cis_family(k) or BEST_PRACTICE_FAMILY) for k in EXPLAIN_KEYS}
+    families = sorted(set(fam_of.values()), key=cis_family_sort_key)
 
-    print(t("explain.ui.list_header", count=len(EXPLAIN_KEYS)))
-    for fam in sorted(families, key=cis_family_sort_key):
-        keys = sorted(families[fam])
-        # CIS benchmark names are proper nouns, verbatim in every locale; only
-        # the best-practice family carries a translated label.
+    out = []
+    for fam in families:
+        sections = []
+        for section_label, keys in _EXPLAIN_GROUPS:
+            here = [k for k in keys if fam_of.get(k) == fam]
+            if here:
+                sections.append((section_label, here))
+        # Sub-groups sorted alphabetically by their type label within the
+        # family (v0.18.1): "ClamAV" before "SSH — Access Control" before
+        # "SSH — Authentication". The keys inside a sub-group keep their
+        # _EXPLAIN_GROUPS order.
+        sections.sort(key=lambda sk: sk[0])
         label = (t("explain.ui.family_best_practice")
                  if fam == BEST_PRACTICE_FAMILY else fam)
+        out.append((fam, label, sections))
+    return out
+
+
+def _print_explain_list(t) -> None:
+    """List every --explain key, grouped by CIS family (folders), then type."""
+    print(t("explain.ui.list_header", count=len(EXPLAIN_KEYS)))
+    for _fam, label, sections in _grouped_families(t):
+        total = sum(len(ks) for _s, ks in sections)
         print()
-        print(f"  \U0001F4C1 {label}  ({len(keys)})")
-        for k in keys:
-            title = t(f"explain.{k}.title")
-            print(f"      {k:<42}  {title}")
+        print(f"  \U0001F4C1 {label}  ({total})")
+        _dash = "\u2500"
+        for section_label, keys in sections:
+            _rule = _dash * max(0, 42 - len(section_label))
+            print(f"    {_dash}{_dash} {section_label} {_rule}{_dash}")
+            for k in keys:
+                title = t(f"explain.{k}.title")
+                print(f"      {k:<40}  {title}")
     print()
 
 
@@ -1134,136 +1158,201 @@ def _detail_screen(stdscr, key: str, t) -> None:
             scroll = 0 if _keys.is_top(ch) else max_scroll
 
 
-#: What the picker accepts. The navigation floor is universal; SELECT and
-#: QUIT are this screen's own — it is a wizard's first page, so ``q`` exits
-#: here and nowhere deeper.
-_PICKER_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.LANDING_EXIT
 
-#: The detail screen is nested, so it goes back rather than quitting.
+
+# ---------------------------------------------------------------------------
+# Interactive wizard — two levels: families (folders) → keys → detail
+# ---------------------------------------------------------------------------
+#
+# v0.18.1: the wizard was one flat list of keys with section headers. It now
+# opens on a vertical list of CIS benchmark families (folders); arrow keys
+# move, Enter opens a family into its keys, Esc returns. The family screen is
+# a landing screen (``q`` quits, ``l`` switches language); the key screen and
+# the detail screen are nested (``Esc`` goes back).
+
+#: The family screen is a landing screen: q exits, l switches language.
+_FAMILY_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.LANDING_EXIT
+
+#: The key list inside a family is nested: Esc goes back to the families.
+_KEY_PICKER_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
+
+#: The detail screen is nested too, so it goes back rather than quitting.
 _DETAIL_KEYS = _keys.NAVIGATION + _keys.NESTED_EXIT
 
+_FOLDER = "\U0001F4C1"
 
-def _picker(stdscr, items: list, initial_selected: int, t) -> tuple:
-    """
-    Curses picker loop.  Returns (action, key_or_None, current_selected).
-    action: "quit" | "view"
 
-    Navigation is clamped — UP at the first key stays on the first key,
-    DOWN at the last key stays on the last key (no circular wrap).
+def _draw_rows(stdscr, curses, rows, selected, scroll, list_h, w, has_color) -> None:
+    """Draw a window of a row list. Pure rendering — no key handling.
+
+    ``rows`` is ``[(text, kind)]`` with kind in {"folder", "section", "key"}:
+    a folder or section heading gets the accent colour, the selected key the
+    selection colour, the rest normal.
     """
-    import curses  # local import — curses may not exist everywhere
+    for row in range(list_h):
+        idx = scroll + row
+        if idx >= len(rows):
+            break
+        text, kind = rows[idx]
+        if idx == selected:
+            attr = (curses.color_pair(1) | curses.A_BOLD) if has_color else curses.A_REVERSE
+            line = text[: w - 1].ljust(w - 1)
+        elif kind in ("folder", "section"):
+            attr = (curses.color_pair(2) | curses.A_BOLD) if has_color else curses.A_BOLD
+            line = text[: w - 1]
+        else:
+            attr = curses.color_pair(3) if has_color else 0
+            line = text[: w - 1]
+        try:
+            stdscr.addstr(row + 1, 0, line[: w - 1], attr)
+        except curses.error:
+            pass
+
+
+def _visible_window(selected, scroll, list_h):
+    """Keep the selected row in view; return the new scroll offset."""
+    if selected - scroll >= list_h:
+        scroll = selected - list_h + 1
+    if selected < scroll:
+        scroll = selected
+    return scroll
+
+
+def _family_picker(stdscr, families, t, selected=0) -> tuple:
+    """The landing screen: one folder row per CIS benchmark family.
+
+    Returns ``(action, selected)`` — the caller (``_explain_wizard``) opens the
+    family on SELECT, quits on QUIT, toggles language on LANG. Navigation is
+    dispatched here so this screen owns every key it advertises.
+    """
+    import curses
 
     try:
         curses.curs_set(0)
     except curses.error:
         pass
-
     has_color = _init_colors()
 
-    # Pre-compute indices of selectable (key) items for clamped navigation
-    key_indices = [i for i, (tp, _) in enumerate(items) if tp == "key"]
-
-    selected = initial_selected
-    scroll   = 0
+    rows = [(f"  {_FOLDER} {label}  ({sum(len(ks) for _s, ks in sections)})", "folder")
+            for _fam, label, sections in families]
+    n = len(rows)
+    scroll = 0
+    header = "  bob --explain    " + t(
+        "explain.ui.picker_families", n=len(families)) + "  "
 
     while True:
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        list_h = max(1, h - 1 - _ch.chrome_height(t, _PICKER_KEYS, w))
-
-        # Keep selected item in view
-        if selected - scroll >= list_h:
-            scroll = selected - list_h + 1
-        if selected < scroll:
-            # Also pull in the group header immediately above the selected key
-            new_scroll = selected
-            if new_scroll > 0 and items[new_scroll - 1][0] == "group":
-                new_scroll -= 1
-            scroll = new_scroll
+        list_h = max(1, h - 1 - _ch.chrome_height(t, _FAMILY_KEYS, w))
+        scroll = _visible_window(selected, scroll, list_h)
 
         stdscr.erase()
-
-        # ── header ──────────────────────────────────────────────────────────
-        # v0.16.3 — the banner carries the title and the context; the keys live
-        # in the footer, as on every other screen. They used to be merged here,
-        # which is why this wizard advertised a different set from the others.
-        header = "  bob --explain    " + t(
-            "explain.ui.picker_counts",
-            n_keys=len(key_indices), n_groups=len(_EXPLAIN_GROUPS),
-        ) + "  "
-        from bob.tui import _chrome
-        _chrome.draw_header(stdscr, curses, header, has_color)
-
-        # ── items ────────────────────────────────────────────────────────────
-        for row in range(list_h):
-            idx = scroll + row
-            if idx >= len(items):
-                break
-            item_type, item_val = items[idx]
-            y = row + 1
-
-            if item_type == "group":
-                label = f"  ── {item_val} "
-                attr  = (curses.color_pair(2) | curses.A_BOLD) if has_color else curses.A_BOLD
-                try:
-                    stdscr.addstr(y, 0, label[: w - 1], attr)
-                except curses.error:
-                    pass
-            else:
-                title = t(f"explain.{item_val}.title")
-                if title == f"explain.{item_val}.title":
-                    title = ""
-                line  = f"    {item_val:<46} {title}"
-                if idx == selected:
-                    attr = (curses.color_pair(1) | curses.A_BOLD) if has_color else curses.A_REVERSE
-                    padded = line[: w - 1].ljust(w - 1)
-                    try:
-                        stdscr.addstr(y, 0, padded[: w - 1], attr)
-                    except curses.error:
-                        pass
-                else:
-                    attr = curses.color_pair(3) if has_color else 0
-                    try:
-                        stdscr.addstr(y, 0, line[: w - 1], attr)
-                    except curses.error:
-                        pass
-
-        # ── bottom chrome ────────────────────────────────────────────────────
-        from bob.tui import _chrome
-        _chrome.draw(stdscr, curses, t, _PICKER_KEYS, has_color)
-
+        _ch.draw_header(stdscr, curses, header, has_color)
+        _draw_rows(stdscr, curses, rows, selected, scroll, list_h, w, has_color)
+        _ch.draw(stdscr, curses, t, _FAMILY_KEYS, has_color)
         stdscr.refresh()
 
         ch = stdscr.getch()
+        action = _keys.resolve(curses, ch, _FAMILY_KEYS)
+        if action == _keys.MOVE:
+            selected = max(0, min(n - 1, selected + _keys.direction(curses, ch)))
+        elif action == _keys.PAGE:
+            step = max(1, list_h) * _keys.direction(curses, ch)
+            selected = max(0, min(n - 1, selected + step))
+        elif action == _keys.EDGE:
+            selected = 0 if _keys.is_top(ch) else n - 1
+        elif action is not None:                       # SELECT / QUIT / LANG
+            return action, selected
 
-        action = _keys.resolve(curses, ch, _PICKER_KEYS)
-        pos = key_indices.index(selected) if selected in key_indices else 0
 
-        if action == _keys.QUIT:                       # landing screen: q exits
-            return ("quit", None, selected)
+def _key_picker(stdscr, family_label, sections, t) -> None:
+    """The keys inside one family, sub-grouped by type. Enter opens the
+    detail; Esc returns.
 
-        elif action == _keys.LANG:                     # landing screen: l switches
-            _keys.toggle_language()
-            continue
+    ``sections`` is ``[(section_label, keys)]``. Section headings are drawn but
+    not selectable — the arrows land only on keys, skipping the headings, as
+    the flat picker always did. A nested screen: Esc goes back to the
+    families, and navigation is dispatched here so this screen owns every key
+    it advertises.
+    """
+    import curses
 
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
+    has_color = _init_colors()
+
+    rows: "list[tuple[str, str]]" = []
+    key_at: "dict[int, str]" = {}          # row index -> finding key
+    total = 0
+    for section_label, keys in sections:
+        rows.append((f"  \u2500\u2500 {section_label} ", "section"))
+        for k in keys:
+            title = t(f"explain.{k}.title")
+            if title == f"explain.{k}.title":
+                title = ""
+            key_at[len(rows)] = k
+            rows.append((f"    {k:<46} {title}", "key"))
+            total += 1
+    key_indices = sorted(key_at)
+    pos = 0
+    selected = key_indices[0] if key_indices else 0
+    scroll = 0
+    header = f"  {_FOLDER} {family_label}    " + t(
+        "explain.ui.picker_in_family", n=total) + "  "
+
+    while True:
+        h, w = stdscr.getmaxyx()
+        from bob.tui import _chrome as _ch
+        list_h = max(1, h - 1 - _ch.chrome_height(t, _KEY_PICKER_KEYS, w))
+        # Pull in the section heading immediately above the selected key.
+        if selected < scroll:
+            scroll = selected - 1 if selected > 0 and rows[selected - 1][1] == "section" else selected
+            scroll = max(0, scroll)
+        elif selected - scroll >= list_h:
+            scroll = selected - list_h + 1
+
+        stdscr.erase()
+        _ch.draw_header(stdscr, curses, header, has_color)
+        _draw_rows(stdscr, curses, rows, selected, scroll, list_h, w, has_color)
+        _ch.draw(stdscr, curses, t, _KEY_PICKER_KEYS, has_color)
+        stdscr.refresh()
+
+        ch = stdscr.getch()
+        action = _keys.resolve(curses, ch, _KEY_PICKER_KEYS)
+        if action == _keys.BACK:                       # nested screen: Esc goes back
+            return
         elif action == _keys.MOVE:
-            # Clamped, as before: UP on the first key stays, DOWN on the last stays.
             pos = max(0, min(len(key_indices) - 1, pos + _keys.direction(curses, ch)))
             selected = key_indices[pos]
-
         elif action == _keys.PAGE:
             step = max(1, list_h) * _keys.direction(curses, ch)
             pos = max(0, min(len(key_indices) - 1, pos + step))
             selected = key_indices[pos]
-
         elif action == _keys.EDGE:
-            selected = key_indices[0 if _keys.is_top(ch) else -1]
-
+            pos = 0 if _keys.is_top(ch) else len(key_indices) - 1
+            selected = key_indices[pos]
         elif action == _keys.SELECT:
-            if items[selected][0] == "key":
-                # Show detail screen inside curses, then return to picker
-                _detail_screen(stdscr, items[selected][1], t)
-                # Redraw picker on next iteration (no return — loop continues)
+            _detail_screen(stdscr, key_at[selected], t)
+
+
+def _explain_wizard(stdscr, t) -> None:
+    """Drive the two-level wizard: families → keys → detail."""
+    selected = 0
+    while True:
+        # Rebuilt each pass so the Best-practice label follows a language
+        # toggle; CIS names are verbatim, so only that one label moves.
+        families = _grouped_families(t)
+        action, selected = _family_picker(stdscr, families, t, selected)
+        if action == _keys.QUIT:
+            return
+        if action == _keys.LANG:
+            _keys.toggle_language()
+            continue
+        if action == _keys.SELECT:
+            _fam, label, sections = families[selected]
+            _key_picker(stdscr, label, sections, t)
 
 
 def run_explain_interactive(t) -> None:
@@ -1279,25 +1368,13 @@ def run_explain_interactive(t) -> None:
         run_explain("list", t)
         return
 
-    # Build flat item list: group headers + keys
-    items: list[tuple[str, str]] = []
-    for group_label, keys in _EXPLAIN_GROUPS:
-        items.append(("group", group_label))
-        for k in keys:
-            items.append(("key", k))
-
-    # Start on first selectable key
-    selected = next(
-        (i for i, (tp, _) in enumerate(items) if tp == "key"), 0
-    )
-
     # Reduce ESC key delay from the default 1000ms to 25ms.
     # curses waits after ESC to distinguish escape sequences — 25ms is enough.
     import os
     os.environ.setdefault("ESCDELAY", "25")
 
     try:
-        curses.wrapper(lambda scr: _picker(scr, items, selected, t))
+        curses.wrapper(lambda scr: _explain_wizard(scr, t))
     except (curses.error, OSError):
         # curses unavailable or terminal too small — fallback
         run_explain("list", t)
