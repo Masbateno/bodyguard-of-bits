@@ -210,25 +210,42 @@ d'interface — les noms de benchmark sont des noms propres gardés tels quels,
 seule « Best practice » est traduite (Bonne pratique).
 
 **La collection CIS a été étendue à chaque distribution officiellement
-supportée qui publie son propre benchmark.** Un même contrôle est rarement
-numéroté de la même façon d'un benchmark à l'autre, et BOB enregistre désormais,
-par clé, le numéro de contrôle *et* son intitulé dans chaque benchmark de
-distribution qui le couvre, au-delà de la référence primaire. Les numéros ne
-sont pas saisis de mémoire : `scripts/gen_cis_benchmarks.py` récupère les
-fichiers de contrôles de [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content)
-(le SCAP Security Guide, la source ouverte de ces correspondances) et n'émet que
-les entrées qu'il y trouve — une citation est donc soit sourcée, soit absente,
-jamais inventée. L'ensemble complété couvre Debian 12 et 13, Ubuntu 22.04 et
-24.04, CIS Docker 1.6 et CIS Red Hat 8/9. Les distributions qui ne publient pas
-leur propre benchmark CIS sont délibérément laissées hors du volet CIS plutôt
-que dotées d'un numéro emprunté : Alpine, Arch, Linux Mint et Raspberry Pi OS
-n'en ont aucun, et Fedora comme openSUSE Leap ne sont pas elles-mêmes des cibles
-de benchmark CIS (CIS couvre RHEL et SLES). `bob --explain <clé>` affiche
-désormais un bloc **Aussi référencé dans** sous la référence primaire, listant
-le numéro de contrôle et le titre de chaque autre benchmark : un opérateur lit
-directement à l'écran que `hardening.rp_filter_disabled` est 3.3.1 dans CIS
-Ubuntu 22.04, 3.3.7 dans Debian 12 et Ubuntu 24.04, et 3.3.1.12 dans Debian 13.
+supportée qui publie son propre benchmark, et la numérotation Ubuntu a été
+rebasée sur une source unique.** L'ancre est le *nom de règle* ComplianceAsCode,
+pas le numéro de contrôle : les numéros sont renumérotés d'une version CIS à
+l'autre et étaient par endroits mal cités à la main — `hardening.rp_filter_disabled`
+portait `3.3.1 — Ensure source routed packets are not accepted`, soit un autre
+contrôle, et `kernel_hardening.ptrace_unrestricted` portait le numéro des core
+dumps. À partir de la règle, `scripts/gen_cis_benchmarks.py` fait désormais deux
+choses par clé mappée : il rebase la référence primaire (numéro, titre, niveau)
+sur la CIS Ubuntu 22.04 **v2.0.0** de CAC, corrigeant la dérive et les
+mauvaises citations (rp_filter devient 3.3.7, ptrace 1.5.2) ; et il remplit un
+bloc **Aussi référencé dans** avec le numéro et le titre du même contrôle en CIS
+Ubuntu 24.04, Debian 12 et Debian 13. Les numéros ne sont jamais saisis de
+mémoire — `gen_cis_benchmarks.py` récupère les fichiers de contrôles de
+[ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) (le SCAP
+Security Guide, la source ouverte de ces correspondances) et n'émet que les
+entrées qu'il y trouve : une citation est donc soit sourcée, soit absente. La
+couverture est passée de 29 clés croisées à **58**, et de **85 citations à
+163**. Deux clés dont le contrôle n'existe chez CAC qu'en CIS Debian 13
+(`fs.protected_hardlinks` / `protected_symlinks`) ont vu leur primaire « CIS
+Ubuntu 22.04 » invérifiable — qui était en fait le numéro du contrôle AIDE —
+rétrogradé en référence de bonne pratique, en gardant la vraie citation Debian 13.
 
+Les distributions qui ne publient pas leur propre benchmark CIS sont
+délibérément laissées hors du volet CIS plutôt que dotées d'un numéro emprunté :
+Alpine, Arch, Linux Mint et Raspberry Pi OS n'en ont aucun, et Fedora comme
+openSUSE Leap ne sont pas elles-mêmes des cibles de benchmark CIS (CIS couvre
+RHEL et SLES). Les clés dont le réglage n'a aucun contrôle CAC — CIS Ubuntu
+n'impose pas de désactiver l'authentification par mot de passe SSH ni le
+transfert X11, et les vérifications BOB de composition de pare-feu ou de mises à
+jour en attente n'ont pas de contrôle unique — gardent leur référence existante
+intacte, pas une référence fabriquée. `bob --explain <clé>` lit directement à
+l'écran que `hardening.rp_filter_disabled` est 3.3.7 dans CIS Ubuntu 22.04,
+3.3.7 dans Debian 12 et Ubuntu 24.04, et 3.3.1.12 dans Debian 13.
+
+**Références** 199 primaires (107 CIS Ubuntu 22.04 + 84 bonnes pratiques + 7 CIS
+Docker 1.6 + 1 CIS Red Hat 8/9) + 163 citations inter-benchmarks sur 58 clés.
 **Tests** 9959 → **10281**. **Mutations** 166 → **204**.
 
 ---

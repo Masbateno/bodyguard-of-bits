@@ -80,8 +80,11 @@ class TestGetCisRef:
 
 class TestGetCisCode:
     def test_formal_cis_entry_returns_code(self):
+        # v0.18.1: the primary references were re-based onto CAC's CIS Ubuntu
+        # 22.04 v2.0.0 numbering (sshd_set_max_auth_tries → 5.1.16); the old
+        # 5.2.7 was v1.0.0 numbering.
         code = get_cis_code("ssh.max_auth_tries")
-        assert code == "CIS:5.2.7"
+        assert code == "CIS:5.1.16"
 
     def test_code_format_matches_pattern(self):
         # v0.10.1 D-4 Rank 1: ssh.x11_forwarding was split into

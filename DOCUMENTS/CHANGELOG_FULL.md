@@ -195,24 +195,40 @@ benchmark names are proper nouns kept verbatim, only "Best practice" is
 translated (Bonne pratique).
 
 **The CIS collection was extended to every officially supported distribution
-that publishes its own benchmark.** A control is rarely numbered the same way
-across benchmarks, and BOB now records, per key, the control number *and* its
-wording in each distribution's benchmark that covers it, beyond the primary
-reference. The numbers are not typed from memory: `scripts/gen_cis_benchmarks.py`
-fetches the control files of [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content)
+that publishes its own benchmark, and its Ubuntu numbering was re-based onto a
+single source.** The anchor is the ComplianceAsCode *rule name*, not the control
+number: numbers are renumbered between CIS releases and were in places mis-cited
+by hand — `hardening.rp_filter_disabled` carried `3.3.1 — Ensure source routed
+packets are not accepted`, which is a different control, and
+`kernel_hardening.ptrace_unrestricted` carried the core-dumps number. From the
+rule, `scripts/gen_cis_benchmarks.py` now does two things for every mapped key:
+it re-bases the primary reference (number, title, level) onto CAC's CIS Ubuntu
+22.04 **v2.0.0**, correcting the drift and the mis-citations (rp_filter is now
+3.3.7, ptrace 1.5.2); and it fills an **Also cited in** block with the same
+control's number and title in CIS Ubuntu 24.04, Debian 12 and Debian 13. The
+numbers are never typed from memory — `gen_cis_benchmarks.py` fetches the
+control files of [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content)
 (the SCAP Security Guide, the open source of these mappings) and emits only the
-entries it can find there, so a citation is either sourced or absent — never
-invented. The completed set covers Debian 12 and 13, Ubuntu 22.04 and 24.04,
-CIS Docker 1.6 and CIS Red Hat 8/9. Distributions that do not publish their own
-CIS benchmark are deliberately left out of the CIS view rather than given a
-borrowed number: Alpine, Arch, Linux Mint and Raspberry Pi OS have none, and
-Fedora and openSUSE Leap are not themselves CIS benchmark targets (CIS covers
-RHEL and SLES). `bob --explain <key>` now prints an **Also cited in** block
-under the primary reference, listing each other benchmark's control number and
-title, so an operator can read straight off the screen that
-`hardening.rp_filter_disabled` is 3.3.1 in CIS Ubuntu 22.04, 3.3.7 in Debian 12
-and Ubuntu 24.04, and 3.3.1.12 in Debian 13.
+entries it finds there, so a citation is either sourced or absent. Coverage went
+from 29 cross-cited keys to **58**, and **85 citations to 163**. Two keys whose
+control CAC places only in CIS Debian 13 (`fs.protected_hardlinks` /
+`protected_symlinks`) had their unverifiable "CIS Ubuntu 22.04" primary — which
+was in fact the AIDE control's number — demoted to a best-practice reference,
+keeping the real Debian 13 citation.
 
+Distributions that do not publish their own CIS benchmark are deliberately left
+out of the CIS view rather than given a borrowed number: Alpine, Arch, Linux
+Mint and Raspberry Pi OS have none, and Fedora and openSUSE Leap are not
+themselves CIS benchmark targets (CIS covers RHEL and SLES). Keys whose setting
+has no CAC control at all — CIS Ubuntu does not mandate disabling SSH password
+authentication or X11 forwarding, and BOB's firewall-composition and
+update-pending checks have no single control — keep their existing reference
+untouched, not a fabricated one. `bob --explain <key>` reads straight off the
+screen that `hardening.rp_filter_disabled` is 3.3.7 in CIS Ubuntu 22.04, 3.3.7
+in Debian 12 and Ubuntu 24.04, and 3.3.1.12 in Debian 13.
+
+**References** 199 primary (107 CIS Ubuntu 22.04 + 84 best-practice + 7 CIS
+Docker 1.6 + 1 CIS Red Hat 8/9) + 163 cross-benchmark citations on 58 keys.
 **Tests** 9959 → **10281**. **Mutations** 166 → **204**.
 
 ---

@@ -30,7 +30,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 39 check
 - **Contextual scoring** — network context detection (direct public IP vs NAT); penalties are heavier on internet-exposed machines (an uncovered open port goes 1 → 2 points; a high/critical exposed service 2 → 3); firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
-- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 199 entries (110 formal CIS, 82 best-practice, 7 Docker)
+- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 199 entries (108 formal CIS, 84 best-practice, 7 Docker)
 - **5 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / DETECTION & HEALTH
 - **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target, **and since v0.16.2 whenever anything could not be read** — a score nothing verified cannot satisfy a gate (CI-ready). v0.16.0 said "whenever the score is an upper bound"; that stopped covering the case where blindness removes a whole scoring domain, which is the least trustworthy run of all
 

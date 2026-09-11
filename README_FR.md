@@ -176,7 +176,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ## Mapping des benchmarks CIS
 
-199 entrées : **109 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 82 bonnes pratiques**, plus **85 citations inter-benchmarks** sur 31 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+199 entrées : **107 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 84 bonnes pratiques**, plus **163 citations inter-benchmarks** sur 58 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
