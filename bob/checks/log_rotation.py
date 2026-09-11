@@ -21,6 +21,7 @@ from pathlib import Path
 from bob.checks._run import TranslationFunc, config_drifted, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
+from bob._fs import strict_is_file
 
 
 _JOURNALD_CONF   = Path("/etc/systemd/journald.conf")
@@ -308,7 +309,10 @@ def _count_logrotate_rules() -> "tuple[int, bool]":
     try:
         return sum(
             1 for p in _LOGROTATE_D.iterdir()
-            if p.is_file() and not p.name.startswith(".")
+            # strict_is_file: on Python 3.14 Path.is_file() answers False to
+            # a denial, and a listable but untraversable directory came back
+            # as (0, True) — the very assertion this function exists to stop.
+            if strict_is_file(p) and not p.name.startswith(".")
         ), True
     except OSError:
         return 0, False

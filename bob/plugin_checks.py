@@ -69,6 +69,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bob._sandbox import SandboxRejected, SandboxRunner, has_run_check
+from bob._fs import strict_is_file
 from bob.checks._run import TranslationFunc
 from bob.scoring import CheckResult
 from bob.sysinfo import get_user_home
@@ -290,7 +291,10 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
     # stdout) or was killed outright by the OOM killer. Only regular files are
     # plugins.
     try:
-        if not plugin_path.is_file():
+        # strict_is_file: from Python 3.14 Path.is_file() answers False to a
+        # denial, and the log said "not a regular file" about a file BOB
+        # had not been allowed to inspect.
+        if not strict_is_file(plugin_path):
             logger.warning("Plugin %s: not a regular file — skipped", plugin_path.name)
             return None
         size = plugin_path.stat().st_size

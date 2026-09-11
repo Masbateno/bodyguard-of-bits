@@ -71,6 +71,7 @@ _SINKKEY  = "tests/test_v0180_every_sink_carries_the_key.py"
 _ARCHIVE  = "tests/test_v0180_the_archive_keeps_the_remedy.py"
 _SNAPMAP  = "tests/test_v0180_snapshot_maps_every_module.py"
 _NATIVEALL = "tests/test_v0180_every_sysctl_fix_is_native.py"
+_PY314 = "tests/test_v0180_python314_denial_is_not_absence.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1775,5 +1776,54 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="the advice on screen is identical and every test about the "
                "advice passes, while --apply refuses the fix again \u2014 the "
                "v0.18.0 defect restored one call site at a time, silently",
+    ),
+    Mutation(
+        id="py314/profile-lookup-trusts-is-file",
+        file="bob/profiles.py",
+        old="            if strict_is_file(candidate):",
+        new="            if candidate.is_file():",
+        kills=(f"{_PY314}::test_profile_in_a_shut_directory_is_not_reported_absent",),
+        reason="caught by the CI's Python 3.14 job: from 3.14 Path.is_file() "
+               "answers False to a denial, the except PermissionError never "
+               "ran, and a profile sitting in a shut directory was 'not found'",
+    ),
+    Mutation(
+        id="py314/could-not-tell-reads-as-safe",
+        file="bob/checks/services.py",
+        old="        if not strict_is_symlink(path):",
+        new="        if not path.is_symlink():",
+        kills=(f"{_PY314}::test_a_config_path_bob_cannot_inspect_is_not_safe",),
+        reason="the function's own comment says the failure answer must be "
+               "False because 'I could not tell' is not 'safe'; under 3.14's "
+               "pathlib it answered True",
+    ),
+    Mutation(
+        id="py314/logrotate-claims-a-read-it-never-made",
+        file="bob/checks/log_rotation.py",
+        old='            if strict_is_file(p) and not p.name.startswith(".")',
+        new='            if p.is_file() and not p.name.startswith(".")',
+        kills=(f"{_PY314}::test_logrotate_rules_it_could_not_inspect_are_not_a_count_of_zero",),
+        reason="a listable but untraversable /etc/logrotate.d came back as "
+               "(0, readable=True) \u2014 'no logrotate rules configured' about a "
+               "directory whose entries BOB never inspected",
+    ),
+    Mutation(
+        id="py314/plugin-denial-logged-as-irregular",
+        file="bob/plugin_checks.py",
+        old="        if not strict_is_file(plugin_path):",
+        new="        if not plugin_path.is_file():",
+        kills=(f"{_PY314}::test_a_plugin_bob_cannot_stat_is_not_called_irregular",),
+        reason="the log said 'not a regular file' about a plugin BOB had not "
+               "been allowed to stat",
+    ),
+    Mutation(
+        id="py314/the-helper-swallows-a-denial-too",
+        file="bob/_fs.py",
+        old="        if exc.errno in _ABSENT:\n            return None\n        raise",
+        new="        return None",
+        kills=(f"{_PY314}::test_a_denial_still_raises",),
+        reason="a strict predicate that swallows the denial is Path.is_file() "
+               "on 3.14 under another name, and every call site above goes "
+               "back to reading 'not allowed' as 'not there'",
     ),
 )

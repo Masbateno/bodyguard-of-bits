@@ -42,7 +42,18 @@ def _alive(pid: int) -> bool:
         os.kill(pid, 0)
     except OSError as exc:
         return exc.errno == errno.EPERM
-    return True
+    # A killed process lingers as a zombie until its parent reaps it, and
+    # kill(pid, 0) still succeeds on a zombie. The grandchild's parent was
+    # killed too, so it is reparented to PID 1 — which in a container with no
+    # init never reaps it. Measured on python:3.14-slim: fails without
+    # `--init`, passes with it. A zombie runs nothing; it is dead for the
+    # purpose of this test, which is whether apt-get kept working.
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
+            state = fh.read().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return True
+    return state not in ("Z", "X")
 
 
 class TestTheTimeoutStopsTheWholeTree:

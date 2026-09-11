@@ -352,7 +352,29 @@ nom sans matériel derrière pour l'instant. Arch, openSUSE et Alpine passent de
 *best-effort* au Tier 2 : ce sont les machines sur lesquelles les défauts de
 v0.17.1 et v0.18.0 ont été trouvés.
 
-**Tests** 9528 → **9930**. **Mutations** 117 → **161**.
+**Attrapé par la CI, par aucune passe : Python 3.14 a changé « pas le droit de
+regarder » en « absent ».** Jusqu'à 3.13, `Path.is_file()`, `exists()` et
+`is_symlink()` relevaient une `PermissionError` ; depuis 3.14, ils répondent
+`False`. Mesuré sur 3.14.7 contre un fichier dans un répertoire en mode 000 —
+`is_file` False, `stat` lève toujours. Le job 3.14 de la CI a échoué sur le
+correctif de recherche de profil ci-dessus : son `except PermissionError` était
+devenu inatteignable, et un profil posé dans un répertoire fermé redevenait
+*introuvable*. Le même recours à l'exception changeait la réponse à trois autres
+endroits : une configuration de service que BOB ne pouvait pas inspecter était
+jugée *sûre à lire* — le commentaire de la fonction dit pourtant que « je n'ai
+pas pu savoir » n'est pas « sûr » —, un `/etc/logrotate.d` listable mais non
+traversable revenait comme *lu, zéro règle*, et un plugin que BOB ne pouvait pas
+examiner était journalisé comme *pas un fichier régulier*. `bob/_fs.py` tient le
+contrat ≤3.13 sur tous les interpréteurs en interrogeant `stat()` directement.
+Les gardes donnent à `pathlib` le comportement de 3.14 sur n'importe quelle
+version, et mordent donc sur le 3.12 du banc de mutation. Cinquante et un autres
+prédicats sont hors de tout `try` ; en 3.13 un refus y levait une exception et la
+section se déclarait *non évaluée*, en 3.14 il se lit `False`. En root, un refus
+suppose un LSM, un montage en root-squash ou un espace de noms utilisateur, et
+chaque site demande son propre jugement — ils sont laissés à la prochaine
+release plutôt que modifiés à l'aveugle.
+
+**Tests** 9528 → **9959**. **Mutations** 117 → **166**.
 
 ---
 

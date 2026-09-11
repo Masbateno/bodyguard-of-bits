@@ -43,6 +43,7 @@ from bob.registry import Service, ServiceRegistry
 from bob.scoring import CheckResult
 from bob.sysinfo import _is_private_or_loopback_ipv4, _is_private_or_loopback_ipv6
 from bob._atomic import read_text_capped
+from bob._fs import strict_is_symlink
 
 logger = logging.getLogger(__name__)
 
@@ -650,7 +651,9 @@ def _is_safe_service_config(path: Path, declared: str) -> bool:
     # path is safe to read, and "I could not tell" is not "safe". Widening the
     # existing try keeps every successful path byte-identical.
     try:
-        if not path.is_symlink():
+        # strict_is_symlink: Path.is_symlink() answers False to a denial
+        # from Python 3.14, which would read "could not tell" as "safe".
+        if not strict_is_symlink(path):
             return True
         root = Path(declared.split("*", 1)[0]).parent
         return path.resolve().is_relative_to(root.resolve())

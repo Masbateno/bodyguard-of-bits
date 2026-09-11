@@ -330,7 +330,26 @@ as many words that Raspberry Pi is the one name with no hardware behind it yet.
 Arch, openSUSE and Alpine move from *best-effort* to Tier 2: they are the
 machines the v0.17.1 and v0.18.0 defects were found on.
 
-**Tests** 9528 → **9930**. **Mutations** 117 → **161**.
+**Caught by the CI, not by any pass: Python 3.14 turned "not allowed to look"
+into "not there".** Up to 3.13, `Path.is_file()`, `exists()` and `is_symlink()`
+re-raised a `PermissionError`; from 3.14 they answer `False`. Measured on 3.14.7
+against a file inside a mode-000 directory — `is_file` False, `stat` still
+raising. The CI's 3.14 job failed on the profile-lookup fix above: its
+`except PermissionError` had become unreachable, and a profile sitting in a
+shut directory was *not found* again. The same reliance on the raise changed the
+answer in three more places: a service config BOB could not inspect was judged
+*safe to read* — the function's own comment says "I could not tell" is not
+"safe" — a listable but untraversable `/etc/logrotate.d` came back as *read,
+zero rules*, and a plugin BOB could not stat was logged as *not a regular
+file*. `bob/_fs.py` keeps the ≤3.13 contract on every interpreter by asking
+`stat()` directly. The guards give `pathlib` 3.14's behaviour on any version, so
+they bite on the 3.12 the mutation bench runs on. Fifty-one other predicates sit
+outside any `try`; on 3.13 a denial there raised and the section reported
+itself *not evaluated*, on 3.14 it reads `False`. Running as root, a denial
+needs an LSM, a root-squashed mount or a user namespace, and each site needs its
+own judgement — they are left for the next release rather than changed blind.
+
+**Tests** 9528 → **9959**. **Mutations** 117 → **166**.
 
 ---
 

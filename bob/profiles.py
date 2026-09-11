@@ -52,6 +52,7 @@ from typing import NamedTuple
 from bob.scoring import CheckResult, FindingLevel
 from bob.sysinfo import get_user_home
 from bob._atomic import read_text_capped
+from bob._fs import strict_is_file
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +299,9 @@ def lookup_profile_file(name: str) -> ProfileLookup:
     for directory in (_USER_PROFILES_DIR, _BUILTIN_PROFILES_DIR):
         candidate = directory / f"{name}.conf"
         try:
-            if candidate.is_file():
+            # strict_is_file, not Path.is_file: from Python 3.14 the latter
+            # answers False to a denial, and the except below never ran.
+            if strict_is_file(candidate):
                 return ProfileLookup(candidate, tuple(unreadable))
         except PermissionError:
             # Directory unreadable (e.g. created by root via sudo) — BOB did
