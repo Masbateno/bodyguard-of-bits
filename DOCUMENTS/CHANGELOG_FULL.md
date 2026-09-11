@@ -194,7 +194,10 @@ distribution with a single node (Best practice) opens straight to its keys.
 The distribution a key belongs to is read from its canonical English CIS
 reference, so the grouping does not shift with the interface language — the
 benchmark names are proper nouns kept verbatim, only "Best practice" is
-translated (Bonne pratique).
+translated (Bonne pratique). Each CIS family also shows a link to its **online
+CIS benchmark page** (`www.cisecurity.org/benchmark/…`) at the top of its keys,
+in both `--explain list` and the wizard; the four URLs were verified to resolve,
+and Best practice — being BOB-authored — carries none.
 
 **The CIS collection was extended to every officially supported distribution
 that publishes its own benchmark, and its Ubuntu numbering was re-based onto a
@@ -231,7 +234,7 @@ in Debian 12 and Ubuntu 24.04, and 3.3.1.12 in Debian 13.
 
 **References** 199 primary (107 CIS Ubuntu 22.04 + 84 best-practice + 7 CIS
 Docker 1.6 + 1 CIS Red Hat 8/9) + 163 cross-benchmark citations on 58 keys.
-**Tests** 9959 → **10282**. **Mutations** 166 → **204**.
+**Tests** 9959 → **10291**. **Mutations** 166 → **205**.
 
 ---
 

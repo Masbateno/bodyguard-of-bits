@@ -1447,7 +1447,8 @@
       "label_key": "Clé",
       "label_title": "Titre",
       "label_cis": "CIS",
-      "label_benchmarks": "Aussi référencé dans"
+      "label_benchmarks": "Aussi référencé dans",
+      "cis_resource": "Benchmark CIS"
     },
     "ssh": {
       "password_auth": {

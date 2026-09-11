@@ -304,3 +304,40 @@ def test_the_citation_label_is_translated_in_french():
     out = _explain("hardening.rp_filter_disabled", "fr")
     assert "Aussi référencé dans" in out
     assert "CIS Debian 12" in out, "a benchmark name stays verbatim in French"
+
+
+# ---------------------------------------------------------------------------
+# Online CIS resource link per family
+# ---------------------------------------------------------------------------
+
+def test_each_cis_family_has_a_verified_benchmark_url():
+    from bob.cis_refs import cis_benchmark_url
+    for fam in ("CIS Ubuntu", "CIS Debian", "CIS Docker", "CIS Red Hat"):
+        url = cis_benchmark_url(fam)
+        assert url and url.startswith("https://www.cisecurity.org/benchmark/"), fam
+
+
+def test_best_practice_has_no_cis_url():
+    from bob.cis_refs import cis_benchmark_url
+    assert cis_benchmark_url(BEST_PRACTICE_FAMILY) is None
+
+
+def test_the_list_shows_the_benchmark_url_under_each_cis_family():
+    out = _list()
+    ubuntu = out.index(f"{_FOLDER} CIS Ubuntu ")
+    debian = out.index(f"{_FOLDER} CIS Debian ")
+    # the Ubuntu URL sits between the Ubuntu header and the next family
+    assert "https://www.cisecurity.org/benchmark/ubuntu_linux" in out[ubuntu:debian]
+    assert "CIS benchmark:" in out[ubuntu:debian]
+
+
+def test_best_practice_shows_no_url_line():
+    out = _list()
+    best = out.index(f"{_FOLDER} Best practice")
+    assert "cisecurity.org" not in out[best:], "Best practice is BOB-authored"
+
+
+def test_the_resource_label_is_translated_in_french():
+    out = _list("fr")
+    assert "Benchmark CIS : https://www.cisecurity.org/benchmark/ubuntu_linux" in out \
+        or "Benchmark CIS: https://www.cisecurity.org/benchmark/ubuntu_linux" in out

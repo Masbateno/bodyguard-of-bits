@@ -144,3 +144,24 @@ def cis_family_sort_key(family: str) -> "tuple[int, str]":
     if family == BEST_PRACTICE_FAMILY:
         return (2, "")
     return (1, family)
+
+
+#: The official CIS benchmark landing page per distro family. Each URL was
+#: verified to resolve (HTTP 200) against www.cisecurity.org; the pages are
+#: per-distribution, covering every version BOB cites under that family. Best
+#: practice is BOB-authored and has no CIS resource, so it is absent here.
+CIS_BENCHMARK_URLS = {
+    "CIS Ubuntu": "https://www.cisecurity.org/benchmark/ubuntu_linux",
+    "CIS Debian": "https://www.cisecurity.org/benchmark/debian_linux",
+    "CIS Docker": "https://www.cisecurity.org/benchmark/docker",
+    "CIS Red Hat": "https://www.cisecurity.org/benchmark/red_hat_linux",
+}
+
+
+def cis_benchmark_url(family: str) -> "str | None":
+    """The online CIS benchmark page for a distro *family*, or None.
+
+    None for Best practice (BOB-authored, no CIS resource) and for any family
+    without a verified CIS page.
+    """
+    return CIS_BENCHMARK_URLS.get(family)

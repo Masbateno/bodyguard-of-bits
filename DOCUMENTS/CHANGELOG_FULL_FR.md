@@ -209,7 +209,11 @@ versions, qui ouvre les clés ; une distribution à nœud unique (Bonne pratique
 ouvre directement ses clés. La distribution d'une clé vient de sa référence CIS
 anglaise canonique, si bien que le groupement ne change pas avec la langue
 d'interface — les noms de benchmark sont des noms propres gardés tels quels,
-seule « Best practice » est traduite (Bonne pratique).
+seule « Best practice » est traduite (Bonne pratique). Chaque famille CIS
+affiche aussi un lien vers sa **page de benchmark CIS en ligne**
+(`www.cisecurity.org/benchmark/…`) en tête de ses clés, dans `--explain list`
+comme dans le wizard ; les quatre URL ont été vérifiées, et Bonne pratique —
+d'origine BOB — n'en porte aucune.
 
 **La collection CIS a été étendue à chaque distribution officiellement
 supportée qui publie son propre benchmark, et la numérotation Ubuntu a été
@@ -248,7 +252,7 @@ l'écran que `hardening.rp_filter_disabled` est 3.3.7 dans CIS Ubuntu 22.04,
 
 **Références** 199 primaires (107 CIS Ubuntu 22.04 + 84 bonnes pratiques + 7 CIS
 Docker 1.6 + 1 CIS Red Hat 8/9) + 163 citations inter-benchmarks sur 58 clés.
-**Tests** 9959 → **10282**. **Mutations** 166 → **204**.
+**Tests** 9959 → **10291**. **Mutations** 166 → **205**.
 
 ---
 

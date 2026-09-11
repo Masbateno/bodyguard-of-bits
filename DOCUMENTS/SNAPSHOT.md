@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 10282 unit tests · 23 doc files · 5+ distros field-tested │
+│                 10291 unit tests · 23 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -334,7 +334,7 @@ bodyguard-of-bits/
 | `_sysctl_apply.py` | 137 | **NEW v0.18.0** native apply path for sysctl fixes: `apply_sysctl()` sets, persists idempotently via `atomic_write`, and reads back — `SysctlResult` distinguishes *applied*, *live but not persisted* and *refused*. Dispatched from `fixes._apply_native()` through `Finding.fix_action`, which bypasses the shell-operator barrier because no shell is run |
 | `_fs.py` | 59 | **NEW v0.18.0** version-proof path predicates. Python 3.14 made `Path.is_file()`/`exists()`/`is_symlink()` return False on a denial (3.13 raised), silently turning *off-limits* into *absent* at every call site that caught the raise. Used by `profiles.lookup_profile_file`, `services._is_safe_service_config`, `log_rotation._count_logrotate_rules`, `plugin_checks._load_one` |
 | `explain.py` | 1017 | `--explain` TUI + `EXPLAIN_KEYS` (194 keys, 50 prefixes) + `EXPLAIN_KEY_ALIASES` map (emptied v0.9.0 D-3; **first live entry v0.10.1** mapping the old `ssh.x11_forwarding` umbrella to the D-4 Rank 1 server/client split). v0.8.0 drift batch added 51 entries to cover WARN/ALERT findings previously emitted without --explain content; v0.10.1 added `ssh.x11.forwarding.client`. |
-| `cis_refs.py` | 146 | CIS lookup with `lru_cache(maxsize=1)`, reads `data/cis_refs.json` (199 entries); **v0.18.1** `cis_family()` (distro-level) + `split_benchmark()` + `benchmark_labels()` + `benchmark_refs()` + `cis_family_sort_key()` drive the three-level `--explain` tree (distro → benchmark version → type) and the per-key **Also cited in** block, derived from the canonical English ref so grouping is locale-stable |
+| `cis_refs.py` | 167 | CIS lookup with `lru_cache(maxsize=1)`, reads `data/cis_refs.json` (199 entries); **v0.18.1** `cis_family()` (distro-level) + `split_benchmark()` + `benchmark_labels()` + `benchmark_refs()` + `cis_family_sort_key()` drive the three-level `--explain` tree (distro → benchmark version → type) and the per-key **Also cited in** block; `CIS_BENCHMARK_URLS` + `cis_benchmark_url()` link each CIS family to its online benchmark page — all derived from the canonical English ref so grouping is locale-stable |
 | `display.py` | 903 | Terminal output: section boxes, finding emission, summary box, score bar; `_LEVEL_DISPATCH` table + `print_audit_summary` split into 3 helpers (v0.5.x); `_compute_posture_annotation` single helper (v0.7.2 M-10); A1 hypotheses footer in summary box (v0.8.0) |
 | `output.py` | 675 | Low-level primitives: `print_ok/warn/alert/info/section/banner` |
 | `panorama.py` | 66 | Services panorama table builder (after-audit summary) |

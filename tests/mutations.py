@@ -2203,6 +2203,15 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "ignoring it drops the control from every folder but the primary",
     ),
     Mutation(
+        id="explain-family/list-hides-cis-benchmark-url",
+        file="bob/explain.py",
+        old="        url = cis_benchmark_url(distro)",
+        new="        url = None",
+        kills=("tests/test_v0181_explain_list_grouped_by_family.py::test_the_list_shows_the_benchmark_url_under_each_cis_family",),
+        reason="each CIS family folder shows the online benchmark URL at its top; "
+               "dropping it hides the resource the operator was pointed to",
+    ),
+    Mutation(
         id="explain-family/detail-hides-other-benchmarks",
         file="bob/explain.py",
         old="    bench_rows = _benchmark_rows(norm)\n    if bench_rows:\n        print(f\"  {t('explain.ui.label_benchmarks')}:\")",

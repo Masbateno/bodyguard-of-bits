@@ -45,7 +45,7 @@ import sys
 # deliberately never imports curses (it resolves the constants against a module
 # passed in). A headless bob-core build stays importable.
 from bob.tui import _keys
-from bob.cis_refs import get_cis_ref
+from bob.cis_refs import cis_benchmark_url, get_cis_ref
 
 logger = logging.getLogger(__name__)
 
@@ -734,6 +734,9 @@ def _print_explain_list(t) -> None:
         total = sum(len(ks) for _b, secs in benches for _s, ks in secs)
         print()
         print(f"  \U0001F4C1 {distro_label}  ({total})")
+        url = cis_benchmark_url(distro)
+        if url:
+            print(f"    {t('explain.ui.cis_resource')}: {url}")
         for bench_label, sections in benches:
             versioned = bench_label != distro
             indent = "      " if versioned else "    "
@@ -1338,11 +1341,21 @@ def _version_picker(stdscr, distro_label, benches, t) -> None:
         pass
     has_color = _init_colors()
 
-    rows = [(f"  {_FOLDER} {bench_label}  "
-             f"({sum(len(ks) for _s, ks in sections)})", "folder")
-            for bench_label, sections in benches]
-    n = len(rows)
-    selected = 0
+    # An optional CIS-resource line sits at the top of the family, not
+    # selectable — the arrows land only on the version folders, skipping it, so
+    # the operator reads the benchmark URL without it being a navigation stop.
+    rows: "list[tuple[str, str]]" = []
+    url = cis_benchmark_url(distro_label)
+    if url:
+        rows.append((f"  {t('explain.ui.cis_resource')}: {url}", "info"))
+    folder_at: "dict[int, tuple]" = {}
+    for bench_label, sections in benches:
+        folder_at[len(rows)] = (bench_label, sections)
+        rows.append((f"  {_FOLDER} {bench_label}  "
+                     f"({sum(len(ks) for _s, ks in sections)})", "folder"))
+    folder_indices = sorted(folder_at)
+    pos = 0
+    selected = folder_indices[0] if folder_indices else 0
     scroll = 0
     header = f"  {_FOLDER} {distro_label}    " + t(
         "explain.ui.picker_versions", n=len(benches)) + "  "
@@ -1364,14 +1377,17 @@ def _version_picker(stdscr, distro_label, benches, t) -> None:
         if action == _keys.BACK:                       # nested screen: Esc goes back
             return
         elif action == _keys.MOVE:
-            selected = max(0, min(n - 1, selected + _keys.direction(curses, ch)))
+            pos = max(0, min(len(folder_indices) - 1, pos + _keys.direction(curses, ch)))
+            selected = folder_indices[pos]
         elif action == _keys.PAGE:
             step = max(1, list_h) * _keys.direction(curses, ch)
-            selected = max(0, min(n - 1, selected + step))
+            pos = max(0, min(len(folder_indices) - 1, pos + step))
+            selected = folder_indices[pos]
         elif action == _keys.EDGE:
-            selected = 0 if _keys.is_top(ch) else n - 1
+            pos = 0 if _keys.is_top(ch) else len(folder_indices) - 1
+            selected = folder_indices[pos]
         elif action == _keys.SELECT:
-            bench_label, sections = benches[selected]
+            bench_label, sections = folder_at[selected]
             _key_picker(stdscr, bench_label, sections, t)
 
 
