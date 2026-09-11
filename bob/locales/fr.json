@@ -186,6 +186,8 @@
       "active_disabled": "{label} est actif en ce moment, mais ne redémarrera pas automatiquement.",
       "inactive_disabled": "{label} est installé mais arrêté et désactivé. Pas de risque immédiat.",
       "inactive_enabled": "{label} est activé au démarrage mais ne tourne pas",
+      "socket_activated": "{label} est activé et démarré à la demande par {trigger} — son socket est à l'écoute",
+      "socket_activated_detail": "Le service lui-même ne tourne pas, mais une unité socket, path ou timer active le démarrera dès qu'un client se connecte. C'est un état normal et sain — pas un service arrêté. Le socket à l'écoute est analysé pour son exposition comme n'importe quel autre.",
       "inactive_enabled_detail": "La machine a été configurée pour lancer ce service et il n'est pas lancé. Rien ici ne dit pourquoi : un plantage, un démarrage échoué sur une configuration fautive, un arrêt manuel que personne n'a défait, ou une dépendance qui n'est jamais montée. Vus de l'extérieur ces cas se ressemblent tous, et tous signifient que le service manquera jusqu'à ce que quelqu'un regarde. Demandez au gestionnaire de services ce qu'il en dit : systemctl status <unité> — ou, sur un hôte OpenRC, rc-service <nom> status",
       "installed_inactive_critical": "{label} est installé mais ne tourne pas et n'est pas activé au démarrage — rien n'écoute pour lui",
       "unknown": "Service installé, état indéterminé"

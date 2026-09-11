@@ -82,11 +82,20 @@ class ServiceState(Enum):
     ACTIVE_DISABLED   = "active_disabled"
     INACTIVE_ENABLED  = "inactive_enabled"
     INACTIVE_DISABLED = "inactive_disabled"
+    # v0.18.1 — enabled and inactive, but an active .socket/.path/.timer will
+    # start it on demand. That is not a stopped service: it is available, and
+    # its port is held by systemd on its behalf. Distinct from INACTIVE_ENABLED,
+    # which v0.18.0 (wrongly, for this case) called a crash or failed start.
+    SOCKET_ACTIVATED  = "socket_activated"
     UNKNOWN           = "unknown"
 
     @property
     def is_active(self) -> bool:
-        return self in (ServiceState.ACTIVE_ENABLED, ServiceState.ACTIVE_DISABLED)
+        # SOCKET_ACTIVATED counts as active: the service is reachable on demand
+        # and its listening socket is up, so the panorama, the port-exposure
+        # analysis and the JSON `active` field must treat it as serving.
+        return self in (ServiceState.ACTIVE_ENABLED, ServiceState.ACTIVE_DISABLED,
+                        ServiceState.SOCKET_ACTIVATED)
 
     @property
     def is_inactive(self) -> bool:
@@ -104,8 +113,9 @@ class Exposure(Enum):
 
 # Resolved after ServiceState is defined
 _STATE_PRIORITY = {
-    ServiceState.ACTIVE_ENABLED:    4,
-    ServiceState.ACTIVE_DISABLED:   3,
+    ServiceState.ACTIVE_ENABLED:    5,
+    ServiceState.ACTIVE_DISABLED:   4,
+    ServiceState.SOCKET_ACTIVATED:  3,
     ServiceState.INACTIVE_ENABLED:  2,
     ServiceState.INACTIVE_DISABLED: 1,
     ServiceState.UNKNOWN:           0,
@@ -137,6 +147,9 @@ class ServiceSnapshot:
     state:       ServiceState
     ports:       list[str]
     exposures:   dict[str, Exposure] = field(default_factory=dict)
+    # v0.18.1 — the active .socket/.path/.timer unit that starts this service
+    # on demand, when state is SOCKET_ACTIVATED. "" otherwise.
+    activation_trigger: str = ""
 
     @property
     def label(self) -> str:
@@ -169,6 +182,12 @@ class ServiceSnapshot:
 
         if installed:
             state = _detect_state(service)
+            trigger = ""
+            if state == ServiceState.SOCKET_ACTIVATED:
+                for svc_name in service.services:
+                    trigger = _active_trigger(svc_name)
+                    if trigger:
+                        break
             ports = _resolve_ports(service)
             exposures = {
                 port: _classify_exposure(port, ufw_rules, app_profiles)
@@ -191,6 +210,7 @@ class ServiceSnapshot:
                         exposures[port] = Exposure.NOT_LISTENING
         else:
             state     = ServiceState.UNKNOWN
+            trigger   = ""
             ports     = list(service.ports)
             exposures = {}
 
@@ -199,6 +219,7 @@ class ServiceSnapshot:
             installed=installed,
             install_via=via,
             state=state,
+            activation_trigger=trigger,
             ports=ports,
             exposures=exposures,
         )
@@ -373,6 +394,20 @@ def _check_single_service(
     # what it is doing. ACTIVE_DISABLED will lose the service at the next
     # reboot; this one has already lost it — a crash, a failed start, or a
     # hand stop nobody undid. Neither needs a threat model to state.
+    # v0.18.1: enabled, inactive, and an active trigger will start it on
+    # demand. Not a failure — the designed state of a socket-activated
+    # service. Reported so the panorama is not silent about it, INFO, no
+    # deduction. The port it will serve is analysed for exposure like any
+    # other, because the socket is genuinely listening.
+    if snap.state == ServiceState.SOCKET_ACTIVATED:
+        result.info(
+            key="services.state.socket_activated",
+            message=_t("services.state.socket_activated",
+                       label=snap.label,
+                       trigger=snap.activation_trigger or "a socket"),
+            detail=_t("services.state.socket_activated_detail"),
+        )
+
     if snap.state == ServiceState.INACTIVE_ENABLED:
         result.warn_with_deduction(
             key="services.state.inactive_enabled",
@@ -520,6 +555,22 @@ def _detect_installation(service: Service) -> tuple[bool, str]:
 
     return False, ""
 
+def _active_trigger(svc_name: str) -> str:
+    """The active .socket/.path/.timer that will start *svc_name* on demand.
+
+    systemd names them in ``TriggeredBy`` (measured on a Pi Zero W:
+    ``TriggeredBy=cups.socket cups.path``). Returns the first that is active,
+    or "" — an enabled-but-inactive service with no active trigger is stopped,
+    not dormant-by-activation.
+    """
+    shown = _run("systemctl", "show", svc_name, "-p", "TriggeredBy").strip()
+    _, _, units = shown.partition("=")
+    for unit in units.split():
+        if _run("systemctl", "is-active", unit).strip() == "active":
+            return unit
+    return ""
+
+
 def _detect_single_unit_state(svc_name: str) -> ServiceState:
     """
     Determine the systemd state of a single service unit.
@@ -552,6 +603,12 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
     if is_active:
         return ServiceState.ACTIVE_DISABLED
     if is_enabled:
+        # Enabled and not running is a stopped service only if nothing is
+        # waiting to start it. An active .socket/.path/.timer makes it
+        # available on demand — the normal state of cups.socket, and measured
+        # as such on the Pi Zero W (cups.service inactive, cups.socket active).
+        if _active_trigger(svc_name):
+            return ServiceState.SOCKET_ACTIVATED
         return ServiceState.INACTIVE_ENABLED
     if active in ("inactive", "failed", "activating"):
         return ServiceState.INACTIVE_DISABLED

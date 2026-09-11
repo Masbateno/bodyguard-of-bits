@@ -103,6 +103,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
   sudo account's current hash and the Wi-Fi PSK; BOB said OK. Now read.
 - AppArmor disabled in the kernel was reported active; the kernel now decides.
 - rp_filter was read from conf/all alone; effective posture is now per interface.
+- A socket-activated service was reported stopped; TriggeredBy is now read.
 
 * Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
 - BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,

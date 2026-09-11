@@ -105,7 +105,21 @@ verdict. Une pile réellement désactivée — conf/all à 0 et aucune interface
 relève — avertit toujours, et conf/all = 1, que le noyau applique à toutes les
 interfaces, reste le correctif.
 
-**Tests** 9959 → **10097**. **Mutations** 166 → **183**.
+**Un service activé par socket était rapporté comme un service arrêté — une
+régression de cette version.** La v0.18.0 avait donné une voix à INACTIVE_ENABLED
+sans qu'il en ait jamais eu, et l'avait formulée « activé au démarrage mais ne
+tourne pas — un crash, un démarrage échoué, un arrêt manuel jamais annulé ». Sur
+le Pi, cups.service est inactif et activé pendant que cups.socket est actif :
+systemd le démarre dès qu'un client se connecte, et le port est tenu entre-temps.
+C'est l'état conçu d'un démon activé par socket, pas une panne — et BOB
+avertissait et retirait un point. Il interroge désormais le TriggeredBy de
+systemd et, quand un .socket/.path/.timer actif démarrera le service, rapporte
+SOCKET_ACTIVATED : INFO, sans déduction, en nommant le déclencheur, et compté
+comme actif pour que le panorama le montre au service et que son port soit
+analysé comme n'importe quel autre. Un service réellement activé mais arrêté —
+sans déclencheur actif — avertit toujours.
+
+**Tests** 9959 → **10117**. **Mutations** 166 → **186**.
 
 ---
 

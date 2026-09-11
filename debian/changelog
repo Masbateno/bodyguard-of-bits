@@ -17,6 +17,9 @@ bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
   * Reverse-path filtering was read from conf/all alone and warned disabled
     on the systemd family; the kernel uses max(conf/all, conf/<iface>), so
     the effective posture is now computed per interface.
+  * A socket-activated service (cups.socket active, cups.service inactive) was
+    reported as stopped and cost a point; systemd's TriggeredBy is now read
+    and it is reported as available on demand. v0.18.0 regression.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
 

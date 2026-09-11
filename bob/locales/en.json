@@ -186,6 +186,8 @@
       "active_disabled": "{label} is currently active but will not restart automatically",
       "inactive_disabled": "{label} is installed but stopped and disabled. No immediate risk.",
       "inactive_enabled": "{label} is enabled at boot but is not running",
+      "socket_activated": "{label} is enabled and started on demand by {trigger} — its socket is listening",
+      "socket_activated_detail": "The service itself is not running, but an active socket, path or timer unit will start it the moment a client connects. This is a normal, healthy state — not a stopped service. The listening socket is analysed for exposure like any other listener.",
       "inactive_enabled_detail": "The machine was configured to start this service and it is not started. Nothing here says why: a crash, a start that failed on a bad config, a hand stop nobody undid, or a dependency that never came up. All of them look the same from outside, and all of them mean the service will be missing until someone looks. Ask the service manager what it says: systemctl status <unit> — or, on an OpenRC host, rc-service <name> status",
       "installed_inactive_critical": "{label} is installed but not running and not enabled — nothing is listening for it",
       "unknown": "Service installed, state undetermined"

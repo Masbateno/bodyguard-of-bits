@@ -98,7 +98,20 @@ mistaken for the verdict. A genuinely disabled stack — conf/all 0 and no
 interface lifting it — still warns, and conf/all = 1, which the kernel OR-s into
 every interface, is still the fix.
 
-**Tests** 9959 → **10097**. **Mutations** 166 → **183**.
+**A socket-activated service was reported as a stopped one — this release's own
+regression.** v0.18.0 gave INACTIVE_ENABLED a voice it had never had, and worded
+it "enabled at boot but not running — a crash, a failed start, a hand stop
+nobody undid". On the Pi, cups.service is inactive and enabled while cups.socket
+is active: systemd starts it the moment a client connects, and the port is held
+meanwhile. That is the designed state of a socket-activated daemon, not a
+failure — and BOB warned and took a point. It now asks systemd's TriggeredBy
+and, when an active .socket/.path/.timer will start the service, reports
+SOCKET_ACTIVATED: INFO, no deduction, naming the trigger, and counted as active
+so the panorama shows it serving and its port is analysed like any other
+listener. A genuinely enabled-but-stopped service — no active trigger — still
+warns.
+
+**Tests** 9959 → **10117**. **Mutations** 166 → **186**.
 
 ---
 

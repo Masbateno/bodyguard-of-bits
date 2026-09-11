@@ -77,6 +77,7 @@ _TESTTAB = "tests/test_v0181_testing_table_matches_changelog.py"
 _SEED = "tests/test_v0181_cloud_init_seed_on_the_boot_partition.py"
 _AAOFF = "tests/test_v0181_apparmor_off_in_kernel.py"
 _RPF = "tests/test_v0181_rp_filter_is_per_interface.py"
+_SOCK = "tests/test_v0181_socket_activated_is_not_stopped.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1998,5 +1999,35 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="the kernel OR-s conf/all into every interface; ignoring it "
                "would report an interface at 0 as off on a host where conf/all=1 "
                "makes the kernel enforce strict",
+    ),
+    Mutation(
+        id="socket-activated/no-trigger-check-so-cups-is-stopped",
+        file="bob/checks/services.py",
+        old="        if _active_trigger(svc_name):\n            return ServiceState.SOCKET_ACTIVATED\n        return ServiceState.INACTIVE_ENABLED",
+        new="        return ServiceState.INACTIVE_ENABLED",
+        kills=(f"{_SOCK}::test_the_cups_case_is_socket_activated_not_inactive_enabled",
+               f"{_SOCK}::test_the_snapshot_from_the_collector_knows_the_trigger"),
+        reason="measured on a Pi Zero W: cups.service inactive+enabled with "
+               "cups.socket active; without the trigger check v0.18.0 called it "
+               "a crash and took a point from a service listening on demand",
+    ),
+    Mutation(
+        id="socket-activated/a-dead-trigger-passes-for-a-live-one",
+        file="bob/checks/services.py",
+        old='        if _run("systemctl", "is-active", unit).strip() == "active":\n            return unit',
+        new='        if unit:\n            return unit',
+        kills=(f"{_SOCK}::test_enabled_and_inactive_with_no_active_trigger_is_still_stopped",),
+        reason="a service with a socket unit that is itself down is stopped, "
+               "not dormant-by-activation; the trigger has to be active",
+    ),
+    Mutation(
+        id="socket-activated/counted-as-inactive-in-the-panorama",
+        file="bob/checks/services.py",
+        old="        return self in (ServiceState.ACTIVE_ENABLED, ServiceState.ACTIVE_DISABLED,\n                        ServiceState.SOCKET_ACTIVATED)",
+        new="        return self in (ServiceState.ACTIVE_ENABLED, ServiceState.ACTIVE_DISABLED)",
+        kills=(f"{_SOCK}::test_the_snapshot_from_the_collector_knows_the_trigger",),
+        reason="the socket is listening and holds the port; a socket-activated "
+               "service that reads as inactive would be dimmed in the panorama "
+               "and its port dropped from exposure analysis",
     ),
 )
