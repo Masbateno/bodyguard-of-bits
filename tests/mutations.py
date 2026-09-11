@@ -2081,4 +2081,27 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="a swapfile at /swap/zram-backup is not a zram device; only "
                "/dev/zramN is",
     ),
+    Mutation(
+        id="condition-skipped/blames-the-service-for-the-kernel",
+        file="bob/checks/services_state.py",
+        old="                if _condition_skipped(unit_id):\n                    continue",
+        new="                if False:\n                    continue",
+        kills=("tests/test_v0181_condition_skipped_is_not_a_gap.py::test_apparmor_skipped_by_condition_is_not_enabled_inactive",
+               "tests/test_v0181_condition_skipped_is_not_a_gap.py::test_it_produces_no_finding_and_no_deduction"),
+        reason="measured on a Pi: apparmor.service inactive+enabled with "
+               "ConditionResult=no because the kernel has AppArmor off; without "
+               "the check BOB reports a security service not running and blames "
+               "the service for the kernel",
+    ),
+    Mutation(
+        id="condition-skipped/any-condition-value-excuses",
+        file="bob/checks/services_state.py",
+        old='    return out.strip().lower() == "conditionresult=no"',
+        new='    return "conditionresult=no" not in out.strip().lower()',
+        kills=("tests/test_v0181_condition_skipped_is_not_a_gap.py::test_the_condition_check_only_excuses_condition_no",
+               "tests/test_v0181_condition_skipped_is_not_a_gap.py::test_a_service_stopped_with_condition_met_is_still_a_gap"),
+        reason="only ConditionResult=no means systemd skipped the unit; a "
+               "condition that was met (yes) and an inactive service is a real "
+               "gap, and inverting the test would silence every one of them",
+    ),
 )

@@ -139,7 +139,18 @@ zram BOB reports it as compressed RAM, no deduction, no disk-tuning command. A
 real disk swap — SSD wear, unjustified swap on a spinning disk — is unchanged,
 and a machine with both zram and a real disk still gets the disk guidance.
 
-**Tests** 9959 → **10165**. **Mutations** 166 → **191**.
+**A service systemd skipped by an unmet condition was reported as a stopped
+security service.** apparmor.service carries ConditionSecurity=apparmor. On the
+Pi's stock kernel AppArmor is off, so systemd skipped the unit and left it
+inactive-and-enabled — ConditionResult=no, Result=success. The security-services
+check read enabled + inactive and warned "Security service enabled but not
+running: apparmor", −1, blaming the service for the kernel and contradicting the
+mac_policy verdict that owns that state. It now asks systemd's ConditionResult
+and, when a unit was skipped by a failed condition, does not count it as a gap.
+A service that was genuinely enabled and stopped, or failed, with its condition
+met still warns and still costs.
+
+**Tests** 9959 → **10178**. **Mutations** 166 → **193**.
 
 ---
 

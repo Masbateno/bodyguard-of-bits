@@ -107,6 +107,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - Kernel reboot/cleanup ranked all flavours together (told ARMv6 to boot arm64);
   now scoped to the running kernel's flavour.
 - Swap on zram was judged as disk swap (backwards advice); zram is now recognised.
+- A condition-skipped unit (ConditionResult=no) was reported as a stopped service.
 
 * Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
 - BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,

@@ -150,7 +150,19 @@ déduction, sans commande de réglage disque. Un swap sur disque réel — usure
 swap injustifié sur disque tournant — est inchangé, et une machine avec à la fois
 du zram et un disque réel garde le conseil disque.
 
-**Tests** 9959 → **10165**. **Mutations** 166 → **191**.
+**Un service que systemd a sauté sur une condition non remplie était rapporté
+comme un service de sécurité arrêté.** apparmor.service porte
+ConditionSecurity=apparmor. Sur le noyau d'origine du Pi, AppArmor est éteint,
+donc systemd a sauté l'unité et l'a laissée inactive et activée —
+ConditionResult=no, Result=success. Le check des services de sécurité lisait
+activé + inactif et avertissait « service de sécurité activé mais arrêté :
+apparmor », −1, blâmant le service pour le noyau et contredisant le verdict
+mac_policy qui possède cet état. Il interroge désormais le ConditionResult de
+systemd et, quand une unité a été sautée sur une condition échouée, ne la compte
+pas comme une faille. Un service réellement activé et arrêté, ou en échec, dont
+la condition est remplie, avertit toujours et coûte toujours.
+
+**Tests** 9959 → **10178**. **Mutations** 166 → **193**.
 
 ---
 

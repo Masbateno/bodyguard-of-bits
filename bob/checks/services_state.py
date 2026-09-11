@@ -135,7 +135,8 @@ class ServicesStateSnapshot:
             # Normalise to lowercase — systemd names are typically lowercase;
             # strip .service suffix AND "@instance" for templates so
             # "ssh.service" → "ssh" and "auditd@daily.service" → "auditd".
-            unit_name = parts[0].removesuffix(".service").split("@", 1)[0].lower()
+            unit_id   = parts[0]
+            unit_name = unit_id.removesuffix(".service").split("@", 1)[0].lower()
             active    = parts[2]  # active / inactive / failed / activating
 
             if unit_name not in SECURITY_SERVICES:
@@ -143,12 +144,31 @@ class ServicesStateSnapshot:
             if unit_name not in enabled_services:
                 continue  # intentionally disabled — not a finding
             if active in ("inactive", "failed"):
+                # v0.18.1: a unit systemd skipped because a start Condition was
+                # not met (ConditionResult=no) is not a stopped service — it
+                # did exactly what it should. Measured on a Raspberry Pi:
+                # apparmor.service carries ConditionSecurity=apparmor, the Pi's
+                # stock kernel has AppArmor off, so systemd skipped it and left
+                # it inactive+enabled. Reporting "security service not running"
+                # there both contradicts the mac_policy verdict and blames the
+                # service for the kernel. The mac_policy check owns that state.
+                if _condition_skipped(unit_id):
+                    continue
                 if unit_name not in seen:
                     enabled_inactive.append(unit_name)
                     seen.add(unit_name)
 
         snap.enabled_inactive = enabled_inactive
         return snap
+
+def _condition_skipped(unit_id: str) -> bool:
+    """True when systemd left *unit_id* inactive because a start Condition was
+    not met — ``ConditionResult=no``. Such a unit is skipped by design, not
+    stopped by failure, so it is not a security gap.
+    """
+    out = _run("systemctl", "show", unit_id, "-p", "ConditionResult", timeout=5)
+    return out.strip().lower() == "conditionresult=no"
+
 
 # ---------------------------------------------------------------------------
 # Pure check logic
