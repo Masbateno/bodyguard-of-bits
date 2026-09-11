@@ -11,6 +11,9 @@ bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
     partition while trixie's cloud-init seed held the sudo account's
     current password hash and the Wi-Fi PSK, both world-readable on FAT.
     Now read; the remedy removes only the secret lines, proven by a reboot.
+  * AppArmor built into the kernel and disabled at boot was reported active;
+    the kernel's own parameters/enabled now decides, and the remedy is the
+    kernel command line (cmdline.txt on a Pi), not systemctl.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
 

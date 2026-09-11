@@ -1963,6 +1963,11 @@
       }
     },
     "mac_policy": {
+      "apparmor_off_in_kernel": {
+        "title": "AppArmor built into the kernel but disabled at boot",
+        "why": "A kernel can carry AppArmor and still not run it: the security modules it starts are chosen at boot, and a kernel whose default list leaves AppArmor out reports it as present but disabled. The stock Raspberry Pi kernel ships exactly this way. Nothing is confined then, whatever profiles are installed under /etc/apparmor.d — and apparmor.service, which carries ConditionSecurity=apparmor, is silently skipped by systemd, so the usual advice to enable or start it does nothing.\n\naa-status is misleading here: it prints \"apparmor module is loaded\" because the module is built in, then exits 3 because the control files are missing. The kernel's own answer is /sys/module/apparmor/parameters/enabled.",
+        "how": "1. Confirm the kernel is the reason:\n   cat /sys/module/apparmor/parameters/enabled   (N)\n   cat /sys/kernel/security/lsm\n2. On a Raspberry Pi, add the parameters to cmdline.txt — it must stay a single line:\n   sudo sed -i '/ apparmor=1/!s/$/ apparmor=1 security=apparmor/' /boot/firmware/cmdline.txt\n   Elsewhere, add apparmor=1 security=apparmor to your bootloader's kernel parameters (GRUB_CMDLINE_LINUX in /etc/default/grub, then update-grub).\n3. Reboot, then check: sudo aa-status\n4. On a small board, expect the first boot to be slower while the profiles are compiled and cached — about a minute and a half on a Pi Zero W, and no difference on the boots after it."
+      },
       "apparmor_inactive": {
         "title": "AppArmor installed but the service is not running",
         "why": "AppArmor enforces mandatory access controls — restricting what files, network sockets, and capabilities each program can use, on top of standard Unix permissions. When the service is down, every confined profile (Firefox, snap apps, cups, ntpd, sshd on many distros, etc.) runs without confinement — a compromised program can do anything its user account can do. AppArmor is one of the few defences against post-exploitation lateral movement on Debian-family systems.",
@@ -3312,6 +3317,10 @@
     "ok": "{tool} scan is up to date (last run: {date})"
   },
   "mac_policy": {
+    "apparmor_off_in_kernel": "AppArmor is built into the kernel but not enabled at boot — no profile is enforced",
+    "apparmor_off_in_kernel_reason": "No mandatory access control is in force, and starting the service cannot change that",
+    "apparmor_off_in_kernel_detail": "The kernel reports AppArmor as built in but not enabled (/sys/module/apparmor/parameters/enabled is N, and /sys/kernel/security/apparmor does not exist), so no profile is enforced. apparmor.service carries ConditionSecurity=apparmor, so systemd skips it: enabling or starting it changes nothing. Only the kernel command line can: add apparmor=1 security=apparmor to the parameters your bootloader passes — typically GRUB_CMDLINE_LINUX in /etc/default/grub — and reboot. BOB offers no command because it has not measured your bootloader.",
+    "apparmor_off_in_kernel_detail_pi": "The kernel reports AppArmor as built in but not enabled (/sys/module/apparmor/parameters/enabled is N, and /sys/kernel/security/apparmor does not exist), so no profile is enforced — this is how the stock Raspberry Pi kernel ships it. apparmor.service carries ConditionSecurity=apparmor, so systemd skips it: enabling or starting it changes nothing. Adding apparmor=1 security=apparmor to cmdline.txt and rebooting enables it. Measured on a Pi Zero W: 121 profiles loaded, 22 in enforce mode. The first boot afterwards took about a minute and a half longer while AppArmor compiled and cached its profiles; the boots after it took the same time as before, about 3 min 15 s from shutdown to SSH. The command keeps cmdline.txt on one line and does nothing if the parameter is already there.",
     "apparmor_ok": "AppArmor enforcing — {enforcing} profile(s) enforce, {complain} complain",
     "apparmor_complain_profiles": "{complain} AppArmor profile(s) in complain mode — violations are logged but not blocked",
     "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. Switch profiles to enforce mode to actively prevent unauthorized access.",

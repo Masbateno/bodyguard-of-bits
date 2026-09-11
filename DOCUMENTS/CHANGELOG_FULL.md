@@ -62,7 +62,28 @@ them. Then BOB ran the round trip itself on the Pi: two warnings, `--fix
 --apply --yes`, re-audit, all-clear. A provisioning file BOB cannot read now
 blocks the all-clear instead of counting as empty.
 
-**Tests** 9959 → **10036**. **Mutations** 166 → **175**.
+**AppArmor was called active on a kernel that had it switched off.** The stock
+Raspberry Pi kernel builds AppArmor in and leaves it out of the security
+modules it starts. Run as root on the board, `aa-status` printed *"apparmor
+filesystem is not mounted"* and *"apparmor module is loaded"* and exited 3,
+while the kernel answered `parameters/enabled = N`, no securityfs directory,
+LSM list `capability`. BOB believed the tool: *"AppArmor is active, but its
+profile set could not be read"*, a detail describing an exit 4 that never
+happened, and a score ceiling for an uncertainty that did not exist. The kernel
+now has the last word, and the state has its own finding — because the remedy
+BOB offered for an inactive AppArmor, `systemctl enable --now apparmor`, does
+nothing here: the unit carries `ConditionSecurity=apparmor` and systemd skips
+it. What works was measured on the board, twice: `apparmor=1
+security=apparmor` in `cmdline.txt`, reboot, 121 profiles loaded and 22
+enforcing. BOB's command is idempotent — applied twice, one parameter, one
+line — and the first boot after it is about a minute and a half slower while
+the profiles are compiled and cached, the boots after it no slower at all.
+Where the kernel line lives in a bootloader BOB has not measured, it names the
+parameter and offers no command. Hosts that showed `apparmor_inactive` in this
+state now show `apparmor_off_in_kernel`: same warning, same point, a remedy that
+works.
+
+**Tests** 9959 → **10069**. **Mutations** 166 → **179**.
 
 ---
 

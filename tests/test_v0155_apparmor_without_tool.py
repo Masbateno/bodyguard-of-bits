@@ -129,7 +129,12 @@ class TestTheToolCanBePresentAndMute:
         """Polarity twin: the fallback must not forgive a genuinely off LSM."""
         fake_paths(monkeypatch, enabled="N\n", securityfs=False)
         result = check_mac_policy(MacPolicySnapshot.from_system())
-        assert "mac_policy.apparmor_inactive" in [f.key for f in result.findings]
+        # v0.18.1: enabled=N without securityfs is the kernel saying AppArmor is
+        # off, and it has its own finding now — apparmor_inactive's remedy,
+        # `systemctl enable --now apparmor`, cannot work in this state
+        # (measured on a Raspberry Pi: ConditionSecurity=apparmor, skipped).
+        # What this twin guards is unchanged: it still warns, still costs.
+        assert "mac_policy.apparmor_off_in_kernel" in [f.key for f in result.findings]
         assert result.deductions
 
 
@@ -149,5 +154,10 @@ class TestTheFindingIsHonest:
         """The twin that keeps the check a check."""
         fake_paths(monkeypatch, enabled="N\n", securityfs=False)
         result = check_mac_policy(MacPolicySnapshot.from_system())
-        assert "mac_policy.apparmor_inactive" in [f.key for f in result.findings]
+        # v0.18.1: enabled=N without securityfs is the kernel saying AppArmor is
+        # off, and it has its own finding now — apparmor_inactive's remedy,
+        # `systemctl enable --now apparmor`, cannot work in this state
+        # (measured on a Raspberry Pi: ConditionSecurity=apparmor, skipped).
+        # What this twin guards is unchanged: it still warns, still costs.
+        assert "mac_policy.apparmor_off_in_kernel" in [f.key for f in result.findings]
         assert result.deductions

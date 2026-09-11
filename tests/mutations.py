@@ -75,6 +75,7 @@ _PY314 = "tests/test_v0180_python314_denial_is_not_absence.py"
 _SSHDSESS = "tests/test_v0181_sshd_session_is_read.py"
 _TESTTAB = "tests/test_v0181_testing_table_matches_changelog.py"
 _SEED = "tests/test_v0181_cloud_init_seed_on_the_boot_partition.py"
+_AAOFF = "tests/test_v0181_apparmor_off_in_kernel.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -281,7 +282,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="198 entries (109 formal CIS",
+        old="199 entries (110 formal CIS",
         new="174 entries (107 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -1918,5 +1919,44 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="deleting the seed hands cloud-init no datasource on the next "
                "boot; it treats the machine as a new instance and re-runs its "
                "first-boot modules — the proven remedy removes only the lines",
+    ),
+    Mutation(
+        id="apparmor/the-tool-is-believed-over-the-kernel",
+        file="bob/checks/mac_policy.py",
+        old="        if _AA_MODULE_DIR.is_dir() and not _apparmor_live_in_kernel():",
+        new="        if False:",
+        kills=(f"{_AAOFF}::test_the_pi_is_not_told_apparmor_is_active",
+               f"{_AAOFF}::test_no_ceiling_for_an_uncertainty_that_does_not_exist"),
+        reason="measured on a Raspberry Pi Zero W: aa-status said \"module is "
+               "loaded\" and exited 3 while the kernel said enabled=N; BOB called "
+               "AppArmor active and capped the score for an uncertainty it had "
+               "invented",
+    ),
+    Mutation(
+        id="apparmor/off-in-kernel-told-to-start-the-service",
+        file="bob/checks/mac_policy.py",
+        old='            cmd = ("sudo sed -i \'/ apparmor=1/!s/$/ apparmor=1 security=apparmor/\' "\n                   f"{snapshot.kernel_cmdline_file}")',
+        new='            cmd = "sudo systemctl enable --now apparmor"',
+        kills=(f"{_AAOFF}::test_the_remedy_is_the_kernel_command_line_not_systemctl",),
+        reason="apparmor.service carries ConditionSecurity=apparmor; on the Pi "
+               "systemd skipped it, so this advice changes nothing",
+    ),
+    Mutation(
+        id="apparmor/the-parameter-is-appended-every-time",
+        file="bob/checks/mac_policy.py",
+        old="            cmd = (\"sudo sed -i '/ apparmor=1/!s/$/ apparmor=1 security=apparmor/' \"",
+        new="            cmd = (\"sudo sed -i '1 s/$/ apparmor=1 security=apparmor/' \"",
+        kills=(f"{_AAOFF}::test_applying_the_remedy_twice_leaves_one_line_and_one_parameter",),
+        reason="v0.17.1 made every append check before it writes; a boot "
+               "command line that grows by two parameters per --fix --apply is "
+               "the same defect on a file the firmware parses",
+    ),
+    Mutation(
+        id="apparmor/a-command-for-a-bootloader-never-measured",
+        file="bob/checks/mac_policy.py",
+        old="        cmd = \"\"\n        if snapshot.kernel_cmdline_file:",
+        new="        cmd = \"sudo update-grub\"\n        if snapshot.kernel_cmdline_file:",
+        kills=(f"{_AAOFF}::test_without_a_measured_bootloader_there_is_no_command",),
+        reason="where BOB has no measured command it emits none and says so",
     ),
 )

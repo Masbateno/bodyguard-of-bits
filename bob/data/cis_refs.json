@@ -373,6 +373,10 @@
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure AppArmor is installed and active",
     "code": "CIS:1.6.1"
   },
+  "mac_policy.apparmor_off_in_kernel": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.6.1 — Ensure AppArmor is enabled in the bootloader configuration",
+    "code": "CIS:1.6.1"
+  },
   "mac_policy.apparmor_no_enforce": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.6.2 — Ensure AppArmor is enabled in bootloader configuration",
     "code": "CIS:1.6.2"

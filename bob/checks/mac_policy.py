@@ -67,6 +67,14 @@ class MacPolicySnapshot:
     # False when aa-status reported the module but could not read the
     # profile set — the counters above are then unknown, not zero.
     apparmor_profiles_readable: bool = True
+    # v0.18.1 — compiled into the kernel, disabled at boot. The kernel says so
+    # itself (``parameters/enabled`` = N, no securityfs directory), while
+    # aa-status prints "apparmor module is loaded." regardless. Measured on a
+    # Raspberry Pi Zero W, whose stock kernel ships AppArmor this way.
+    apparmor_off_in_kernel: bool = False
+    # The file that carries the kernel command line when BOB can name it —
+    # the Raspberry Pi's cmdline.txt. "" when it cannot: then no command.
+    kernel_cmdline_file: str = ""
     selinux_installed:  bool = False
     selinux_mode:       str  = ""
 
@@ -123,7 +131,7 @@ class MacPolicySnapshot:
                     snap.apparmor_profiles_readable = counts is not None
                     if counts is not None:
                         _, snap.apparmor_enforcing, snap.apparmor_complain = counts
-        elif Path("/sys/module/apparmor").is_dir():
+        elif _AA_MODULE_DIR.is_dir():
             # Module loaded but aa-status not available (partial install).
             #
             # v0.15.5: this used to assert apparmor_active = False, which turned
@@ -147,6 +155,23 @@ class MacPolicySnapshot:
             snap.apparmor_profiles_readable = counts is not None
             if counts is not None:
                 _, snap.apparmor_enforcing, snap.apparmor_complain = counts
+
+        # v0.18.1 — whatever aa-status said, the kernel has the last word.
+        # On a Raspberry Pi Zero W, as root, aa-status printed "apparmor
+        # filesystem is not mounted." and "apparmor module is loaded." and
+        # exited 3; the "module is loaded" branch above then called AppArmor
+        # active and its profile set unreadable — a false verdict, and a
+        # score ceiling for an uncertainty that did not exist. The module
+        # directory exists because AppArmor is built in; `enabled` = N and
+        # the missing securityfs directory say it is not running.
+        if _AA_MODULE_DIR.is_dir() and not _apparmor_live_in_kernel():
+            snap.apparmor_off_in_kernel = True
+            snap.apparmor_active = False
+            snap.apparmor_profiles_readable = True
+            from bob.platform import boot_firmware_dir
+            boot = boot_firmware_dir()
+            if boot is not None and path_exists(boot / "cmdline.txt"):
+                snap.kernel_cmdline_file = str(boot / "cmdline.txt")
 
         # --- SELinux --------------------------------------------------------
         if _command_exists("getenforce"):
@@ -296,6 +321,35 @@ def check_mac_policy(
             )
         return result
 
+    # --- AppArmor built in, disabled at boot -------------------------------
+    # Before the "service not responding" branch, whose remedy — systemctl
+    # enable --now apparmor — cannot work here: the unit carries
+    # ConditionSecurity=apparmor and systemd skips it. Only the kernel command
+    # line changes this. On the Pi that was measured: `apparmor=1
+    # security=apparmor` in cmdline.txt, reboot, and the kernel reported the
+    # LSM live, 121 profiles loaded, 22 enforcing. Elsewhere the line lives in
+    # the bootloader's configuration, which BOB has not measured, so it names
+    # the parameter and offers no command.
+    if snapshot.apparmor_off_in_kernel:
+        cmd = ""
+        if snapshot.kernel_cmdline_file:
+            # No braces: this command is also quoted in the locale files,
+            # where every string must be a valid str.format template.
+            cmd = ("sudo sed -i '/ apparmor=1/!s/$/ apparmor=1 security=apparmor/' "
+                   f"{snapshot.kernel_cmdline_file}")
+        result.warn_with_deduction(
+            key="mac_policy.apparmor_off_in_kernel",
+            message=_t("mac_policy.apparmor_off_in_kernel"),
+            reason=_t("mac_policy.apparmor_off_in_kernel_reason"),
+            points=1,
+            detail=_t("mac_policy.apparmor_off_in_kernel_detail_pi"
+                      if snapshot.kernel_cmdline_file
+                      else "mac_policy.apparmor_off_in_kernel_detail"),
+            cmd=cmd,
+            nature="action" if cmd else "",
+        )
+        return result
+
     # --- AppArmor installed but service not responding ----------------------
     if snapshot.apparmor_installed and not snapshot.apparmor_active:
         result.warn_with_deduction(
@@ -370,6 +424,10 @@ def check_mac_policy(
 #: Debian 13 VM as root: 116 lines, modes ``unconfined``, ``enforce`` and
 #: ``complain``, agreeing exactly with ``aa-status`` (116 loaded, 15 enforce).
 _KERNEL_PROFILES = Path("/sys/kernel/security/apparmor/profiles")
+
+#: Present whenever AppArmor is compiled in — enabled or not. Its
+#: ``parameters/enabled`` is the kernel's own answer.
+_AA_MODULE_DIR = Path("/sys/module/apparmor")
 _KERNEL_PROFILE_RE = re.compile(r"\((\w+)\)\s*$")
 
 
@@ -421,14 +479,13 @@ def _apparmor_live_in_kernel() -> bool:
     whether the control is enforcing at all.
     """
     try:
-        enabled = Path(
-            "/sys/module/apparmor/parameters/enabled"
-        ).read_text(encoding="utf-8", errors="ignore").strip()
+        enabled = (_AA_MODULE_DIR / "parameters" / "enabled").read_text(
+            encoding="utf-8", errors="ignore").strip()
     except OSError:
         enabled = ""
     return (
         enabled.upper().startswith("Y")
-        or path_exists(Path("/sys/kernel/security/apparmor/profiles"))
+        or path_exists(_KERNEL_PROFILES)
     )
 
 

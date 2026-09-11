@@ -143,6 +143,8 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("MAC policy (AppArmor / SELinux)", [
         "mac_policy.apparmor_inactive",
+        # v0.18.1: built in, disabled at boot — the stock Raspberry Pi kernel.
+        "mac_policy.apparmor_off_in_kernel",
         "mac_policy.apparmor_no_enforce",
         "mac_policy.apparmor_no_profiles",
         "mac_policy.no_enforce",

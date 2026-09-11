@@ -67,7 +67,29 @@ Pi : deux avertissements, `--fix --apply --yes`, ré-audit, feu vert. Un fichier
 de provisionnement que BOB ne peut pas lire bloque désormais le feu vert au
 lieu de compter comme vide.
 
-**Tests** 9959 → **10036**. **Mutations** 166 → **175**.
+**AppArmor était déclaré actif sur un noyau qui l'avait éteint.** Le noyau
+Raspberry Pi d'origine compile AppArmor et l'écarte des modules de sécurité
+qu'il démarre. Lancé en root sur la carte, `aa-status` affichait *« apparmor
+filesystem is not mounted »* et *« apparmor module is loaded »* et sortait en 3,
+pendant que le noyau répondait `parameters/enabled = N`, pas de répertoire
+securityfs, liste des LSM `capability`. BOB croyait l'outil : *« AppArmor est
+actif, mais ses profils n'ont pas pu être lus »*, un détail décrivant une sortie
+en 4 qui n'a jamais eu lieu, et un plafond de score pour une incertitude qui
+n'existait pas. Le noyau a désormais le dernier mot, et cet état a son propre
+constat — car la remédiation que BOB proposait pour un AppArmor inactif,
+`systemctl enable --now apparmor`, ne fait rien ici : l'unité porte
+`ConditionSecurity=apparmor` et systemd la saute. Ce qui fonctionne a été
+mesuré sur la carte, deux fois : `apparmor=1 security=apparmor` dans
+`cmdline.txt`, redémarrage, 121 profils chargés dont 22 en enforce. La commande
+de BOB est idempotente — appliquée deux fois, un paramètre, une ligne — et le
+premier démarrage qui suit prend environ une minute et demie de plus, le temps
+de compiler et mettre en cache les profils ; les suivants ne sont pas plus
+lents. Là où la ligne du noyau vit dans un chargeur de démarrage que BOB n'a pas
+mesuré, il nomme le paramètre et ne propose pas de commande. Les hôtes qui
+affichaient `apparmor_inactive` dans cet état affichent `apparmor_off_in_kernel` :
+même avertissement, même point, une remédiation qui fonctionne.
+
+**Tests** 9959 → **10069**. **Mutations** 166 → **179**.
 
 ---
 
