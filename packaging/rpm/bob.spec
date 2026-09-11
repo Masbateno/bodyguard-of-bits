@@ -109,6 +109,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - Swap on zram was judged as disk swap (backwards advice); zram is now recognised.
 - A condition-skipped unit (ConditionResult=no) was reported as a stopped service.
 - An inactive .socket was listed as an orphan; an orphan must be active (listening).
+- --fix applied fixes outside the --check scope; it now honours the selected sections.
 
 * Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
 - BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,

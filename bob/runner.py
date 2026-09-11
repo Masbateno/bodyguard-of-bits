@@ -474,7 +474,7 @@ def run_checks(
             # v0.14.0 E: the profile is applied inside engine.apply() now — it is
             # the single choke point every result passes through, so the 12
             # hand-rolled always-on sections below get their overrides too.
-            engine.apply(result)
+            engine.apply(result, section=section)
             display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
             if post_display is not None and not config.quiet:
                 post_display(snapshot, result)
@@ -596,7 +596,7 @@ def run_checks(
                 detail=safe_detail,
                 key=f"{section}.unavailable",
             )
-            engine.apply(result)
+            engine.apply(result, section=section)
             display_result(result, report, config.verbose,
                            quiet=config.quiet, recurrence=_pr)
             if not config.quiet:
@@ -614,7 +614,7 @@ def run_checks(
 
     fw_status  = FirewallStatus.from_system()
     fw_result  = check_firewall(fw_status, t=t)
-    engine.apply(fw_result)
+    engine.apply(fw_result, section="firewall")
     display_result(fw_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
     if fw_status.ufw_output:
@@ -648,7 +648,7 @@ def run_checks(
         listening_ports=all_listening_ports,
         app_profiles=_ufw_app_profiles,
     )
-    engine.apply(rules_result)
+    engine.apply(rules_result, section="firewall_rules")
     display_result(rules_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
     if config.verbose and ufw_verbose and not config.quiet:
@@ -661,7 +661,7 @@ def run_checks(
         emit_section("ufw_logging")
 
         ufw_logging_result = check_ufw_logging(fw_status, t=t)
-        engine.apply(ufw_logging_result)
+        engine.apply(ufw_logging_result, section="ufw_logging")
         display_result(ufw_logging_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
     # ---- CHECK 46 — iptables / nftables (UFW inactive only) ----
@@ -670,7 +670,7 @@ def run_checks(
         with _core("firewall_iptables"):
             ipt_snapshot  = IptablesNftSnapshot.from_system()
             ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, t=t)
-            engine.apply(ipt_result)
+            engine.apply(ipt_result, section="firewall_iptables")
             display_result(ipt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if not config.quiet:
             print()
@@ -682,7 +682,7 @@ def run_checks(
     with _core("firewall_drivers"):
         stack_snapshot = FirewallStackSnapshot.from_system()
         stack_result   = check_firewall_stack(stack_snapshot, t=t)
-        engine.apply(stack_result)
+        engine.apply(stack_result, section="firewall_drivers")
         display_result(stack_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     if not config.quiet:
         print()
@@ -694,7 +694,7 @@ def run_checks(
     with _core("network_context"):
         net_snapshot = NetworkContextSnapshot.from_system()
         net_result   = check_network_context(net_snapshot, t=t)
-        engine.apply(net_result)
+        engine.apply(net_result, section="network_context")
         display_result(net_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if not config.quiet:
             display_network_context(net_snapshot, t, output)
@@ -775,7 +775,7 @@ def run_checks(
             snap, network_context, t, report, config.verbose,
             quiet=config.quiet, ufw_active=fw_status.active,
         )
-        engine.apply(svc_result)
+        engine.apply(svc_result, section="services")
         # v0.17.1 — only a service BOB judged *active* has really had its ports
         # accounted for. This used to run unconditionally, and the ports check
         # skips anything in this set ("already handled by services"), so a
@@ -812,7 +812,7 @@ def run_checks(
         ufw_active=fw_status.active,
         t=t,
     )
-    engine.apply(ports_result)
+    engine.apply(ports_result, section="ports")
     display_result(ports_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     display_ports_overview(ports_snapshot, config, t, report, output)
 
@@ -824,7 +824,7 @@ def run_checks(
         logs_snapshot = LogsSnapshot.from_system(log_days=config.log_days)
         display_geoip_notice(geoip2_status(), t, output, quiet=config.quiet)
         logs_result, logs_report = check_logs(logs_snapshot, audited_ports=audited_ports, t=t)
-        engine.apply(logs_result)
+        engine.apply(logs_result, section="logs")
         display_log_results(logs_result, logs_snapshot, logs_report, config, t, report)
 
     # ---- CHECK 6 — DDNS / external exposure ----
@@ -838,7 +838,7 @@ def run_checks(
             loopback_ports=loopback_only_ports,
             active_ports=active_external_ports,
         )
-        engine.apply(ddns_result)
+        engine.apply(ddns_result, section="ddns")
         display_result(ddns_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     # v0.4.4: the port list is now interpolated into the WARN message itself
     # (see ddns.py); we no longer print "→ 22/tcp" sub-items here.
@@ -849,7 +849,7 @@ def run_checks(
     with _core("docker"):
         docker_snapshot = DockerSnapshot.from_system()
         docker_result   = check_docker(docker_snapshot, network_context=network_context, t=t)
-        engine.apply(docker_result)
+        engine.apply(docker_result, section="docker")
         display_result(docker_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
         # I-1 (v0.7.4): gate the exposed-ports block on --quiet to honour the
@@ -872,7 +872,7 @@ def run_checks(
     with _core("virtualization"):
         virt_snapshot = VirtSnapshot.from_system()
         virt_result   = check_virtualization(virt_snapshot, t=t)
-        engine.apply(virt_result)
+        engine.apply(virt_result, section="virtualization")
         display_result(virt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     if not config.quiet:
         print()
@@ -1032,7 +1032,7 @@ def run_checks(
             print_section(plugin.name)
         report.write_section(plugin.name)
         plugin_result = plugin.run(t)
-        engine.apply(plugin_result)
+        engine.apply(plugin_result, section=plugin.name.lower())
         display_result(plugin_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if not config.quiet:
             print()

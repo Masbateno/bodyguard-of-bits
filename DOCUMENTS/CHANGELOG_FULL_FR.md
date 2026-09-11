@@ -173,7 +173,27 @@ désormais la partie active, donc un socket inactif avec un déclencheur cassé 
 inerte et n'est pas rapporté. Un orphelin actif — et un .socket qui a lui-même
 échoué à démarrer — sont inchangés.
 
-**Tests** 9959 → **10187**. **Mutations** 166 → **194**.
+**--fix appliquait des correctifs hors du périmètre de --check.** `bob
+--check=raspberry_pi --fix --apply --yes` lançait aussi `apt install -y ufw` de
+la section firewall. firewall est toujours active — elle tourne et s'affiche
+pour le contexte sous n'importe quel --check — mais son correctif ne devrait pas
+être appliqué quand l'opérateur a restreint la passe à raspberry_pi. Les
+constats portent désormais la section qui les a produits (estampillée par
+ScoreEngine.apply), et --fix n'applique que les correctifs des sections
+sélectionnées, avec la même règle de préfixe qu'utilise --check ailleurs (donc
+--check=firewall applique toujours le correctif ufw bien que la clé du constat
+soit prerequisites.*). Vérifié sur la carte : UFW retiré,
+--check=raspberry_pi --fix --apply l'a laissé non installé.
+
+**Ces dix correctifs ont été trouvés lors du premier audit de BOB sur un vrai
+Raspberry Pi — une seule carte, un Pi Zero W (ARMv6) sous Raspbian 13
+(trixie).** C'est un début, pas une matrice : d'autres modèles (Pi 4/5, arm64,
+versions de Raspberry Pi OS antérieures à trixie avec userconf.txt plutôt qu'un
+amorçage cloud-init) révéleront leurs propres différences, et une matrice
+Raspberry Pi solide demande de les tester aussi. Un retour sur n'importe lequel
+vaut mieux que l'émulation.
+
+**Tests** 9959 → **10205**. **Mutations** 166 → **197**.
 
 ---
 

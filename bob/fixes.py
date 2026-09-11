@@ -230,7 +230,23 @@ def run_fixes(engine, config, t) -> None:
     findings with *no* command. Visible but mislabelled was bad; invisible
     would have been worse.
     """
-    actionable   = [f for f in engine.findings if f.nature == "action"]
+    findings = engine.findings
+    # v0.18.1: --fix honours --check. An always-on context section (firewall,
+    # services, ports) still runs and displays under a narrowed --check, but
+    # its fixes are not applied unless it was one of the sections the operator
+    # selected. Measured: `--check=raspberry_pi --fix --apply` also ran
+    # `apt install -y ufw` from the always-on firewall section. Matching is the
+    # same prefix rule --check uses elsewhere (a token matches a section it
+    # equals or prefixes), and an untagged finding — only synthetic ones — is
+    # never filtered out.
+    check_only = getattr(config, "check_only", None)
+    if check_only:
+        def _selected(f) -> bool:
+            return (not f.section
+                    or any(f.section == tok or f.section.startswith(tok)
+                           for tok in check_only))
+        findings = [f for f in findings if _selected(f)]
+    actionable   = [f for f in findings if f.nature == "action"]
     # v0.18.0: a finding carrying a `fix_action` is applicable whatever its
     # displayed command looks like. The thirteen sysctl fixes read as shell
     # one-liners because that is how a human writes a two-step change; BOB

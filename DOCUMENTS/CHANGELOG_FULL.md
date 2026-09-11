@@ -160,7 +160,25 @@ broken"; ``is_orphan`` now checks the active part, so an inactive socket with a
 broken trigger is inert and not reported. An active orphan — and a .socket that
 itself failed to come up — are unchanged.
 
-**Tests** 9959 → **10187**. **Mutations** 166 → **194**.
+**--fix applied fixes from outside the --check scope.** `bob
+--check=raspberry_pi --fix --apply --yes` also ran `apt install -y ufw` from
+the firewall section. firewall is always-on — it runs and displays for context
+under any --check — but its fix should not be applied when the operator
+narrowed the run to raspberry_pi. Findings now carry the section that produced
+them (stamped by ScoreEngine.apply), and --fix applies only the fixes of the
+selected sections, with the same prefix rule --check uses elsewhere (so
+--check=firewall still applies the ufw fix even though its finding key is
+prerequisites.*). Verified on the board: with UFW removed,
+--check=raspberry_pi --fix --apply left it uninstalled.
+
+**These ten fixes were found in the first audit of BOB on physical Raspberry
+Pi hardware — one board, a Pi Zero W (ARMv6) on Raspbian 13 (trixie).** It is
+a start, not a matrix: other models (Pi 4/5, arm64, Raspberry Pi OS releases
+before trixie with userconf.txt rather than a cloud-init seed) will surface
+their own differences, and a solid Raspberry Pi matrix needs them tested too.
+Reports from any of them are worth more than emulation.
+
+**Tests** 9959 → **10205**. **Mutations** 166 → **197**.
 
 ---
 

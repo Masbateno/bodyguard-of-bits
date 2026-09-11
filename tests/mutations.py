@@ -2115,4 +2115,34 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "syslog.service; an inactive socket holds no port open and is no "
                "surface, but without the active check it was listed as an orphan",
     ),
+    Mutation(
+        id="fix-scope/check-ignored-so-every-fix-applies",
+        file="bob/fixes.py",
+        old="    check_only = getattr(config, \"check_only\", None)\n    if check_only:",
+        new="    check_only = getattr(config, \"check_only\", None)\n    if False:",
+        kills=("tests/test_v0181_fix_honours_check_scope.py::test_check_raspberry_pi_excludes_the_firewall_fix",
+               "tests/test_v0181_fix_honours_check_scope.py::test_run_fixes_preview_counts_only_selected_section"),
+        reason="measured on a Pi: --check=raspberry_pi --fix --apply also ran "
+               "apt install -y ufw from the always-on firewall section; without "
+               "the filter --fix ignores the scope --check set",
+    ),
+    Mutation(
+        id="fix-scope/section-never-stamped",
+        file="bob/scoring.py",
+        old="            if section and not finding.section:\n                finding.section = section",
+        new="            if False:\n                finding.section = section",
+        kills=("tests/test_v0181_fix_honours_check_scope.py::test_apply_stamps_the_section_on_each_finding",
+               "tests/test_v0181_fix_honours_check_scope.py::test_check_firewall_includes_the_firewall_fix"),
+        reason="an unstamped finding has section '' and the filter treats it as "
+               "always-included, so without the stamp the scope filter is inert",
+    ),
+    Mutation(
+        id="fix-scope/preset-section-overwritten",
+        file="bob/scoring.py",
+        old="            if section and not finding.section:",
+        new="            if section:",
+        kills=("tests/test_v0181_fix_honours_check_scope.py::test_a_finding_that_already_names_a_section_keeps_it",),
+        reason="a finding that already names its section (a check that tags its "
+               "own) must keep it, not be relabelled by the apply call site",
+    ),
 )

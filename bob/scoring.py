@@ -181,6 +181,12 @@ class Finding:
     # the tool's top severity, with no trace of the caveat the same audit had
     # just printed. json_output and webhook emit the key alone as well.
     qualified_by:  tuple = ()
+    # v0.18.1 — the audit section that produced this finding, stamped by
+    # ScoreEngine.apply(). Lets --fix scope its applied fixes to the
+    # sections --check selected: an always-on context section (firewall,
+    # services) still runs and displays, but its fixes are not applied
+    # under a narrowed --check unless it was one of the chosen sections.
+    section:       str = ""
 
     def __post_init__(self) -> None:
         """Strip ANSI escapes and control characters from operator-visible text.
@@ -511,7 +517,7 @@ class ScoreEngine:
     # Mutation
     # ------------------------------------------------------------------
 
-    def apply(self, result: CheckResult) -> None:
+    def apply(self, result: CheckResult, section: str = "") -> None:
         """
         Apply all deductions, findings, and caps from a CheckResult.
 
@@ -562,6 +568,8 @@ class ScoreEngine:
                 self._apply_deduction(deduction)
         kept: list[Finding] = []
         for finding in result.findings:
+            if section and not finding.section:
+                finding.section = section
             if _is_ignored(finding.key):
                 self.ignored_findings.append(finding)
             else:

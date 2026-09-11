@@ -31,6 +31,10 @@ bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
     security service; ConditionResult=no is now read and it is not a gap.
   * An inactive .socket with a broken backing service (syslog.socket) was
     listed as an orphan though it holds no port open; an orphan must be active.
+  * --fix applied fixes from outside the --check scope (--check=raspberry_pi
+    also installed ufw); findings carry their section and --fix now applies
+    only the selected sections' fixes. Ten fixes from the first audit on
+    physical Raspberry Pi hardware (a Pi Zero W); other models still needed.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
 
