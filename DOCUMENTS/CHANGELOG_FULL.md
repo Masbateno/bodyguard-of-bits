@@ -111,7 +111,22 @@ so the panorama shows it serving and its port is analysed like any other
 listener. A genuinely enabled-but-stopped service — no active trigger — still
 warns.
 
-**Tests** 9959 → **10117**. **Mutations** 166 → **186**.
+**The kernel check told an ARMv6 board to reboot into an arm64 kernel.** A
+Raspberry Pi carries every kernel version in three flavours — rpi-v6 (ARMv6),
+rpi-v7, rpi-v8 (arm64) — and the board can only boot its own. BOB ranked all
+flavours together by version number, so 6.18.39+rpt-rpi-v8 sorted as "latest"
+above the running 6.18.39+rpt-rpi-v6, and it reported a reboot pending into a
+kernel the Pi Zero W cannot run. The cleanup was worse in prospect: it kept the
+arm64 and armv7 builds as the newest and would have offered to purge the
+board's own rpi-v6 fallback. A kernel's flavour — the build-target tag, "generic"
+/ "amd64" / "rpi-v6" — is now extracted (the last hyphen token, so Debian's
++debN+N revision does not split one architecture and -unsigned stays one build),
+and reboot-pending, retention and purge all reason only within the running
+kernel's flavour. Foreign flavours are listed but never a reboot target and
+never a purge target. A genuine same-flavour upgrade still reports pending, and
+a single-flavour host — the common case — is unchanged.
+
+**Tests** 9959 → **10138**. **Mutations** 166 → **188**.
 
 ---
 

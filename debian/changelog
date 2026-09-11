@@ -20,6 +20,9 @@ bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
   * A socket-activated service (cups.socket active, cups.service inactive) was
     reported as stopped and cost a point; systemd's TriggeredBy is now read
     and it is reported as available on demand. v0.18.0 regression.
+  * The kernel check ranked a Pi's rpi-v6/v7/v8 builds together and told the
+    ARMv6 board to reboot into the arm64 kernel; reboot-pending, retention
+    and purge now reason only within the running kernel's flavour.
 
  -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
 

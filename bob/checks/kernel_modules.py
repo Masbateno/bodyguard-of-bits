@@ -303,6 +303,34 @@ def _kernel_sort_key(version: str) -> Tuple[int, int, int, int]:
         return (int(m.group(1)), int(m.group(2)), int(m.group(3)), abi)
     return (0, 0, 0, 0)
 
+
+def _kernel_flavour(version: str) -> str:
+    """The architecture/variant tag of a kernel version — everything that is
+    not the numeric ``MAJOR.MINOR.PATCH`` + ABI.
+
+    Kernels of different flavours are different builds, often for different
+    architectures, and are not comparable: a ``rpt-rpi-v6`` kernel (ARMv6) and
+    a ``rpt-rpi-v8:arm64`` kernel are not two versions of one thing, and the
+    board that boots one cannot boot the other. Measured on a Raspberry Pi
+    Zero W, which carries all three of rpi-v6, rpi-v7 and rpi-v8 at each
+    version; BOB ranked them together, called the arm64 build "latest", and
+    told an ARMv6 board to reboot into a kernel it cannot run.
+
+      "6.8.0-52-generic"          -> "generic"
+      "6.18.39+rpt-rpi-v6"        -> "rpt-rpi-v6"
+      "6.18.39+rpt-rpi-v8:arm64"  -> "rpt-rpi-v8:arm64"
+    """
+    if not _KVER_RE.match(version):
+        return version
+    # The build target is the last hyphen-separated token: "generic" for
+    # Ubuntu, "amd64" for Debian (whose +debN+N revision sits in the middle
+    # and must not split one architecture into two families), "v6"/"v8:arm64"
+    # for the Pi's rpt-rpi-vN builds. -unsigned is a signing variant of the
+    # same target, not a different one, so it is stripped first.
+    base = _strip_unsigned(version)
+    return base.rsplit("-", 1)[-1]
+
+
 def _parse_installed_kernels(dpkg_output: str) -> list[str]:
     """
     Extract version strings from ``dpkg-query`` output.
@@ -380,10 +408,17 @@ def _check_installed_kernels(
 
     # Sort oldest → newest
     kernels = sorted(installed, key=_kernel_sort_key)
-    most_recent = kernels[-1]
+
+    # v0.18.1: reason only within the running kernel's flavour. Other flavours
+    # are foreign builds — often other architectures — that this machine cannot
+    # boot, so they are never "the latest to reboot into" and never a purge
+    # target here. They stay in the listing for completeness.
+    running_flavour = _kernel_flavour(running)
+    family = [k for k in kernels if _kernel_flavour(k) == running_flavour]
+    most_recent = family[-1] if family else kernels[-1]
 
     # Format installed list with annotations
-    reboot_pending = running in kernels and _strip_unsigned(running) != _strip_unsigned(most_recent)
+    reboot_pending = running in family and _strip_unsigned(running) != _strip_unsigned(most_recent)
     annotated = []
     for k in kernels:
         if k == running:
@@ -412,8 +447,9 @@ def _check_installed_kernels(
             key="kernel_modules.kernels_up_to_date",
         )
 
-    # Single kernel or custom (non-dpkg) kernel — just list, nothing to clean
-    if len(kernels) <= 1 or running not in kernels:
+    # One kernel in this flavour, or a running kernel dpkg does not manage —
+    # nothing of this machine's own line to clean, so just list.
+    if len(family) <= 1 or running not in family:
         result.info(
             message=_t("kernel_modules.kernels_listed", count=len(kernels), installed=installed_str),
             key="kernel_modules.kernels_listed",
@@ -430,17 +466,18 @@ def _check_installed_kernels(
         )
         return
 
-    # Build the keep set: always include running + fill from newest down
+    # Build the keep set from this flavour only: always the running kernel,
+    # then fill from newest down. Foreign flavours are never removed here.
     keep_count = _RETENTION.get(profile_name, 3)
     to_keep: set[str] = {running}
-    for k in reversed(kernels):
+    for k in reversed(family):
         if len(to_keep) >= keep_count:
             break
         to_keep.add(k)
 
     # Expand: keep both signed and unsigned variants of every kept base version
     # so we never remove one variant while keeping the other for the same kernel.
-    kernel_set = set(kernels)
+    kernel_set = set(family)
     for k in list(to_keep):
         base = _strip_unsigned(k)
         if base in kernel_set:
@@ -449,7 +486,7 @@ def _check_installed_kernels(
         if unsigned in kernel_set:
             to_keep.add(unsigned)
 
-    to_remove = [k for k in kernels if k not in to_keep]
+    to_remove = [k for k in family if k not in to_keep]
 
     if to_remove:
         if _strip_unsigned(running) == _strip_unsigned(most_recent):

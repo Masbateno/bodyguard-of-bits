@@ -119,7 +119,24 @@ comme actif pour que le panorama le montre au service et que son port soit
 analysé comme n'importe quel autre. Un service réellement activé mais arrêté —
 sans déclencheur actif — avertit toujours.
 
-**Tests** 9959 → **10117**. **Mutations** 166 → **186**.
+**Le check noyau disait à une carte ARMv6 de redémarrer sur un noyau arm64.** Un
+Raspberry Pi porte chaque version de noyau en trois saveurs — rpi-v6 (ARMv6),
+rpi-v7, rpi-v8 (arm64) — et la carte ne peut démarrer que la sienne. BOB classait
+toutes les saveurs ensemble par numéro de version : 6.18.39+rpt-rpi-v8 passait
+pour « le plus récent » au-dessus du 6.18.39+rpt-rpi-v6 courant, et il signalait
+un redémarrage en attente vers un noyau que le Pi Zero W ne peut pas lancer. Le
+nettoyage était pire en perspective : il gardait les builds arm64 et armv7 comme
+les plus récents et aurait proposé de purger le fallback rpi-v6 de la carte. La
+saveur d'un noyau — l'étiquette de cible, « generic » / « amd64 » / « rpi-v6 » —
+est désormais extraite (le dernier segment après un tiret, pour que la révision
++debN+N de Debian ne scinde pas une architecture et que -unsigned reste un seul
+build), et le redémarrage en attente, la rétention et la purge ne raisonnent plus
+qu'au sein de la saveur du noyau courant. Les autres saveurs sont listées mais ne
+sont jamais une cible de redémarrage ni de purge. Une vraie mise à niveau dans la
+même saveur signale toujours l'attente, et un hôte à saveur unique — le cas
+courant — est inchangé.
+
+**Tests** 9959 → **10138**. **Mutations** 166 → **188**.
 
 ---
 

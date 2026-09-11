@@ -2030,4 +2030,26 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "service that reads as inactive would be dimmed in the panorama "
                "and its port dropped from exposure analysis",
     ),
+    Mutation(
+        id="kernel-flavour/all-flavours-ranked-together",
+        file="bob/checks/kernel_modules.py",
+        old="    family = [k for k in kernels if _kernel_flavour(k) == running_flavour]\n    most_recent = family[-1] if family else kernels[-1]",
+        new="    family = kernels\n    most_recent = kernels[-1]",
+        kills=("tests/test_v0181_kernel_flavour_is_not_comparable.py::test_the_pi_is_not_told_to_reboot_into_arm64",
+               "tests/test_v0181_kernel_flavour_is_not_comparable.py::test_the_pi_fallback_is_not_offered_for_purge"),
+        reason="measured on a Pi Zero W: ranking rpi-v6/v7/v8 together made the "
+               "arm64 build the latest and told an ARMv6 board to reboot into a "
+               "kernel it cannot run, then offered its own fallback for purge",
+    ),
+    Mutation(
+        id="kernel-flavour/debian-revision-splits-one-arch",
+        file="bob/checks/kernel_modules.py",
+        old="    base = _strip_unsigned(version)\n    return base.rsplit(\"-\", 1)[-1]",
+        new="    base = _strip_unsigned(version)\n    return base",
+        kills=("tests/test_v0181_kernel_flavour_is_not_comparable.py::test_debian_revision_does_not_split_one_architecture",
+               "tests/test_v0181_kernel_flavour_is_not_comparable.py::test_a_real_pending_reboot_within_one_flavour_still_fires"),
+        reason="6.12.63+deb13-amd64 and 6.12.74+deb13+1-amd64 are one architecture; "
+               "keying the flavour on the whole string splits them and hides a "
+               "genuine pending reboot",
+    ),
 )

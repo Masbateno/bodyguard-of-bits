@@ -104,6 +104,8 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 - AppArmor disabled in the kernel was reported active; the kernel now decides.
 - rp_filter was read from conf/all alone; effective posture is now per interface.
 - A socket-activated service was reported stopped; TriggeredBy is now read.
+- Kernel reboot/cleanup ranked all flavours together (told ARMv6 to boot arm64);
+  now scoped to the running kernel's flavour.
 
 * Wed Sep 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.0-1
 - BOB reads OpenRC: every service on a host without systemd came back UNKNOWN,
