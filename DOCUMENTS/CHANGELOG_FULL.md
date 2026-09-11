@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.18.1] — 2026-09-12
+## [v0.18.1] — 2026-09-11
 
 **BOB's SSH brute-force detection was blind on every recent distribution.**
 

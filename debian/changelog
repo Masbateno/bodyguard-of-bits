@@ -38,7 +38,7 @@ bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
   * --explain list is grouped by CIS benchmark family (folder-headed vertical
     list); groundwork for more CIS distributions in v0.19.x.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 12 Sep 2026 12:00:00 +0000
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 11 Sep 2026 16:00:00 +0000
 
 bodyguard-of-bits (0.18.0-1) unstable; urgency=low
 
