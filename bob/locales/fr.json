@@ -769,6 +769,7 @@
   "hardening": {
     "rp_filter_ok": "Filtrage par chemin inverse activé en mode strict (rp_filter=1)",
     "rp_filter_loose": "Filtrage par chemin inverse en mode permissif (rp_filter=2) — envisagez le mode strict (=1)",
+    "rp_filter_context": "Effectif sur {iface} : {iface_effective} (le noyau prend le max de conf/all et conf/{iface}) ; conf/all seul vaut {all_value}.",
     "rp_filter_disabled": "Filtrage par chemin inverse désactivé — risque d'usurpation d'adresse IP",
     "redirects_ok": "L'acceptation des redirections ICMP est désactivée",
     "redirects_enabled": "Redirections ICMP acceptées — risque de manipulation de la table de routage",

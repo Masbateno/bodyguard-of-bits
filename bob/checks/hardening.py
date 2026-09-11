@@ -37,7 +37,9 @@ class HardeningSnapshot:
     Raw snapshot of system hardening state collected from the system.
 
     Args:
-        rp_filter:                    Value of net.ipv4.conf.all.rp_filter (0, 1 or 2).
+        rp_filter:                    Effective reverse-path posture (0, 1 or 2) —
+                                      the weakest non-loopback interface, since
+                                      the kernel applies max(conf/all, conf/<if>).
         accept_redirects:             True if net.ipv4.conf.all.accept_redirects == 1.
         log_martians:                 True if net.ipv4.conf.all.log_martians == 1.
         icmp_echo_ignore_broadcasts:  True if net.ipv4.icmp_echo_ignore_broadcasts == 1.
@@ -51,6 +53,12 @@ class HardeningSnapshot:
     # None on every field means "this kernel does not expose the knob" — never
     # a stand-in for a value. The JSON output mirrors that as null.
     rp_filter:                   "int | None"  = None
+    # v0.18.1 — context for the effective posture above. ``rp_filter_all`` is
+    # conf/all alone (what BOB read before, and what confused it); ``rp_filter_iface``
+    # names the interface whose effective value is the weakest, "" when the
+    # posture came from the conf/all + conf/default fallback.
+    rp_filter_all:               "int | None"  = None
+    rp_filter_iface:             str           = ""
     accept_redirects:            "bool | None" = None
     log_martians:                "bool | None" = None
     icmp_echo_ignore_broadcasts: "bool | None" = None
@@ -71,7 +79,7 @@ class HardeningSnapshot:
             reflected as safe/default values.
         """
         # --- kernel sysctl parameters ---
-        rp_filter                   = _read_sysctl_int("net.ipv4.conf.all.rp_filter")
+        rp_filter, rp_filter_all, rp_filter_iface = _effective_rp_filter()
         accept_redirects            = _read_sysctl_bool("net.ipv4.conf.all.accept_redirects")
         log_martians                = _read_sysctl_bool("net.ipv4.conf.all.log_martians")
         icmp_echo_ignore_broadcasts = _read_sysctl_bool("net.ipv4.icmp_echo_ignore_broadcasts")
@@ -84,6 +92,8 @@ class HardeningSnapshot:
 
         return cls(
             rp_filter=rp_filter,
+            rp_filter_all=rp_filter_all,
+            rp_filter_iface=rp_filter_iface,
             accept_redirects=accept_redirects,
             log_martians=log_martians,
             icmp_echo_ignore_broadcasts=icmp_echo_ignore_broadcasts,
@@ -125,12 +135,19 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         result.ok(message=_t("hardening.rp_filter_ok"),
                   key="hardening.rp_filter_ok")
     elif snapshot.rp_filter == 2:
-        result.info(message=_t("hardening.rp_filter_loose"),
-                    key="hardening.rp_filter_loose")
+        result.info(
+            message=_t("hardening.rp_filter_loose"),
+            detail=_rp_filter_context(snapshot, _t),
+            key="hardening.rp_filter_loose")
     else:
+        # Genuinely off: the weakest interface's max(conf/all, conf/<if>) is 0,
+        # so conf/all is 0 and no interface lifts it. Setting conf/all = 1
+        # forces effective >= 1 everywhere it is currently 0, which is exactly
+        # this case.
         result.warn_with_deduction(
             key="hardening.rp_filter_disabled",
             message=_t("hardening.rp_filter_disabled"),
+            detail=_rp_filter_context(snapshot, _t),
             points=1,
             **sysctl_fix("net.ipv4.conf.all.rp_filter=1"),
             nature="action",
@@ -302,6 +319,77 @@ _SYSCTL_NAMES = {
     'protected_hardlinks'         : 'fs.protected_hardlinks',
     'protected_symlinks'          : 'fs.protected_symlinks',
 }
+
+#: Security ranking of the three rp_filter values: strict (1) is stronger than
+#: loose (2), which is stronger than off (0). NOT the integer order — this is
+#: why "the weakest interface" cannot be a plain min() of the values.
+_RP_RANK = {1: 2, 2: 1, 0: 0}
+
+#: conf/ entries that are not traffic-carrying interfaces: ``all`` is the knob
+#: max()-ed into every interface, ``default`` is the template for future ones,
+#: and ``lo`` (loopback) cannot receive a spoofed packet from the network.
+_RP_NOT_AN_INTERFACE = frozenset({"all", "default", "lo"})
+
+_IPV4_CONF = Path("/proc/sys/net/ipv4/conf")
+
+
+def _rp_filter_context(snapshot: "HardeningSnapshot", _t) -> str:
+    """One line saying what was read where, so conf/all = 0 is not mistaken
+    for the verdict. Empty when there is nothing to disambiguate."""
+    if snapshot.rp_filter_iface and snapshot.rp_filter_all is not None:
+        return _t(
+            "hardening.rp_filter_context",
+            iface=snapshot.rp_filter_iface,
+            iface_effective=snapshot.rp_filter,
+            all_value=snapshot.rp_filter_all,
+        )
+    return ""
+
+
+def _effective_rp_filter() -> "tuple[int | None, int | None, str]":
+    """The reverse-path posture the kernel actually enforces.
+
+    For a packet arriving on interface X the kernel uses
+    ``max(conf/all/rp_filter, conf/X/rp_filter)`` — reading conf/all alone (as
+    BOB did through v0.18.0) reports "disabled" on the whole systemd family,
+    which ships ``conf/all = 0`` while ``conf/default = 2`` gives every real
+    interface an effective 2. Measured on a Raspberry Pi Zero W: all=0,
+    wlan0=2, so wlan0 filters in loose mode and BOB warned it did not.
+
+    Returns ``(posture, all_value, iface)``: the weakest posture across
+    non-loopback interfaces by security rank, the raw conf/all, and the
+    interface that set it. Falls back to ``max(all, default)`` with iface ""
+    when no real interface can be read, and ``(None, None, "")`` when conf/all
+    itself is unreadable (an ipv6.disable-style absent tree).
+    """
+    all_val = _read_sysctl_int("net.ipv4.conf.all.rp_filter")
+    if all_val is None:
+        return None, None, ""
+
+    weakest: "int | None" = None
+    weakest_iface = ""
+    try:
+        ifaces = sorted(d.name for d in _IPV4_CONF.iterdir()
+                        if d.name not in _RP_NOT_AN_INTERFACE)
+    except OSError:
+        ifaces = []
+    for name in ifaces:
+        iface_val = _read_sysctl_int(f"net.ipv4.conf.{name}.rp_filter")
+        if iface_val is None:
+            continue
+        effective = max(all_val, iface_val)
+        if weakest is None or _RP_RANK[effective] < _RP_RANK[weakest]:
+            weakest, weakest_iface = effective, name
+
+    if weakest is not None:
+        return weakest, all_val, weakest_iface
+
+    # No readable interface: use the template that a new one would inherit.
+    default_val = _read_sysctl_int("net.ipv4.conf.default.rp_filter")
+    if default_val is None:
+        return all_val, all_val, ""
+    return max(all_val, default_val), all_val, ""
+
 
 def _read_sysctl_int(key: str) -> "int | None":
     """Read a sysctl value as int via /proc/sys, or None if it cannot be read.

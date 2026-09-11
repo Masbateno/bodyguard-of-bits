@@ -76,6 +76,7 @@ _SSHDSESS = "tests/test_v0181_sshd_session_is_read.py"
 _TESTTAB = "tests/test_v0181_testing_table_matches_changelog.py"
 _SEED = "tests/test_v0181_cloud_init_seed_on_the_boot_partition.py"
 _AAOFF = "tests/test_v0181_apparmor_off_in_kernel.py"
+_RPF = "tests/test_v0181_rp_filter_is_per_interface.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1958,5 +1959,44 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new="        cmd = \"sudo update-grub\"\n        if snapshot.kernel_cmdline_file:",
         kills=(f"{_AAOFF}::test_without_a_measured_bootloader_there_is_no_command",),
         reason="where BOB has no measured command it emits none and says so",
+    ),
+    Mutation(
+        id="rp_filter/reads-conf-all-alone",
+        file="bob/checks/hardening.py",
+        old="        rp_filter, rp_filter_all, rp_filter_iface = _effective_rp_filter()",
+        new='        rp_filter = _read_sysctl_int("net.ipv4.conf.all.rp_filter")\n        rp_filter_all = rp_filter\n        rp_filter_iface = ""',
+        kills=(f"{_RPF}::test_from_system_computes_the_effective_posture_not_conf_all",),
+        reason="measured on a Raspberry Pi Zero W: conf/all=0 while wlan0=2, so "
+               "reading conf/all alone reported disabled on an interface that "
+               "was filtering — and on the whole systemd family with it",
+    ),
+    Mutation(
+        id="rp_filter/weakest-by-lowest-number-not-security",
+        file="bob/checks/hardening.py",
+        old="        if weakest is None or _RP_RANK[effective] < _RP_RANK[weakest]:",
+        new="        if weakest is None or effective < weakest:",
+        kills=(f"{_RPF}::test_the_weakest_interface_by_security_wins_not_the_lowest_number",),
+        reason="loose (2) is weaker than strict (1) but numerically larger; a "
+               "plain min() would call a strict+loose host strict",
+    ),
+    Mutation(
+        id="rp_filter/loopback-counted-as-an-interface",
+        file="bob/checks/hardening.py",
+        old='_RP_NOT_AN_INTERFACE = frozenset({"all", "default", "lo"})',
+        new='_RP_NOT_AN_INTERFACE = frozenset({"all", "default"})',
+        kills=(f"{_RPF}::test_loopback_at_zero_does_not_read_as_disabled",),
+        reason="loopback cannot receive a spoofed packet from the network; "
+               "counting lo=0 would warn 'disabled' on a machine that filters "
+               "every real interface",
+    ),
+    Mutation(
+        id="rp_filter/conf-all-one-does-not-lift-a-zero-interface",
+        file="bob/checks/hardening.py",
+        old="        effective = max(all_val, iface_val)",
+        new="        effective = iface_val",
+        kills=(f"{_RPF}::test_conf_all_one_lifts_a_zero_interface_to_strict",),
+        reason="the kernel OR-s conf/all into every interface; ignoring it "
+               "would report an interface at 0 as off on a host where conf/all=1 "
+               "makes the kernel enforce strict",
     ),
 )

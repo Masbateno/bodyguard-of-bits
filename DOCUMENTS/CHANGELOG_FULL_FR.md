@@ -89,7 +89,23 @@ mesuré, il nomme le paramètre et ne propose pas de commande. Les hôtes qui
 affichaient `apparmor_inactive` dans cet état affichent `apparmor_off_in_kernel` :
 même avertissement, même point, une remédiation qui fonctionne.
 
-**Tests** 9959 → **10069**. **Mutations** 166 → **179**.
+**Le filtrage par chemin inverse était lu depuis conf/all seul, et signalait
+« désactivé » sur toute la famille systemd.** Pour un paquet arrivant sur
+l'interface X, le noyau applique max(conf/all/rp_filter, conf/X/rp_filter). BOB
+lisait conf/all et s'arrêtait là. systemd livre conf/all = 0 et conf/default = 2,
+donc chaque interface réelle a un effectif de 2 pendant que conf/all reste à 0 —
+et BOB avertissait, et retirait un point, sur des machines qui filtraient.
+Mesuré sur le Pi Zero W : conf/all=0, wlan0=2, effectif sur wlan0 = 2 (lâche).
+BOB calcule désormais la posture effective par interface et rapporte la plus
+faible — au sens de la sécurité, car strict (1) est plus fort que lâche (2), plus
+fort qu'éteint (0), ce qui n'est pas l'ordre des entiers. La boucle locale n'est
+pas comptée (elle ne peut pas recevoir de paquet usurpé), et le détail nomme
+l'interface et sa valeur effective pour que conf/all = 0 ne soit pas pris pour le
+verdict. Une pile réellement désactivée — conf/all à 0 et aucune interface qui le
+relève — avertit toujours, et conf/all = 1, que le noyau applique à toutes les
+interfaces, reste le correctif.
+
+**Tests** 9959 → **10097**. **Mutations** 166 → **183**.
 
 ---
 

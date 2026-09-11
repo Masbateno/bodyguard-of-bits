@@ -769,6 +769,7 @@
   "hardening": {
     "rp_filter_ok": "Reverse path filtering enabled in strict mode (rp_filter=1)",
     "rp_filter_loose": "Reverse path filtering in loose mode (rp_filter=2) — consider switching to strict mode (=1)",
+    "rp_filter_context": "Effective on {iface} is {iface_effective} (kernel uses max of conf/all and conf/{iface}); conf/all alone is {all_value}.",
     "rp_filter_disabled": "Reverse path filtering disabled — risk of IP spoofing attacks",
     "redirects_ok": "ICMP redirect acceptance is disabled",
     "redirects_enabled": "ICMP redirects accepted — risk of routing table manipulation",

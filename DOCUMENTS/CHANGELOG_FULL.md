@@ -83,7 +83,22 @@ parameter and offers no command. Hosts that showed `apparmor_inactive` in this
 state now show `apparmor_off_in_kernel`: same warning, same point, a remedy that
 works.
 
-**Tests** 9959 → **10069**. **Mutations** 166 → **179**.
+**Reverse-path filtering was read from conf/all alone, and warned "disabled"
+on the whole systemd family.** For a packet arriving on interface X the kernel
+enforces max(conf/all/rp_filter, conf/X/rp_filter). BOB read conf/all and
+stopped. systemd ships conf/all = 0 and conf/default = 2, so every real
+interface has an effective 2 while conf/all stays 0 — and BOB warned, and took
+a point, on machines that were filtering. Measured on the Pi Zero W: conf/all=0,
+wlan0=2, effective on wlan0 = 2 (loose). BOB now computes the effective posture
+per interface and reports the weakest — by security rank, since strict (1) is
+stronger than loose (2) is stronger than off (0), which is not the integer
+order. Loopback is not counted (it cannot receive a spoofed packet), and the
+detail names the interface and its effective value so conf/all = 0 is not
+mistaken for the verdict. A genuinely disabled stack — conf/all 0 and no
+interface lifting it — still warns, and conf/all = 1, which the kernel OR-s into
+every interface, is still the fix.
+
+**Tests** 9959 → **10097**. **Mutations** 166 → **183**.
 
 ---
 
