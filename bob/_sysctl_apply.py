@@ -1,6 +1,6 @@
 """Applying a sysctl setting without a shell.
 
-`--fix --apply` refuses commands carrying `&&` or `|`, and the thirteen sysctl
+`--fix --apply` refuses commands carrying `&&` or `|`, and the fifteen sysctl
 fixes BOB proposes carry both:
 
     sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && { grep -qxF … || echo … | sudo tee -a … ; }

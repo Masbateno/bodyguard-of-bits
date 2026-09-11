@@ -53,6 +53,10 @@ touches. La ligne de commande résultante est affichée avant toute écriture :
 
 `--quiet` et `--detailed` sont structurels, pas des préférences : cron n'a pas
 de terminal, et l'e-mail de notification *est* le `.log` qu'écrit `--detailed`.
+Depuis la v0.18.0, ce fichier porte l'explication, la commande et la clé de
+chaque constat. Auparavant, le chemin `--quiet` n'écrivait qu'un niveau et un
+message : un rapport planifié nommait chaque problème et aucune des corrections
+que le même audit affichait dans un terminal.
 
 Une mise à jour ne touche pas les crons existants — leur script conserve la
 ligne de commande avec laquelle il a été généré. Relancez
@@ -352,7 +356,7 @@ Forme de la sortie :
    - clamav.scan_old
 ```
 
-Le fichier baseline vit à `~/.config/bob/last_baseline.json` (mode `0600`) et est réécrit à la fin de chaque audit complet. Pour effacer la baseline et repartir à zéro :
+Le fichier baseline vit à `~/.config/bob/last_baseline.json` (mode `0600`) et est réécrit à la fin de chaque audit complet. Un fichier passé à `--diff` qui ne porte ni `timestamp` ni `score` est refusé comme *n'étant pas une baseline BOB* (code 3) au lieu d'être comparé comme une baseline à zéro. Pour effacer la baseline et repartir à zéro :
 
 ```bash
 sudo bob --reset-baseline
@@ -383,7 +387,7 @@ bob --history
 
 Le sparkline couvre jusqu'à 50 entrées ; la table en dessous en liste 10.
 
-Le fichier d'historique append une ligne par audit (timestamp + score + niveau) et rotate à 1000 entrées. Pas de sudo requis pour `--history` seul.
+Le fichier d'historique append une ligne par audit (timestamp + score + niveau) et rotate à 1000 entrées. Une ligne dont le score ou l'horodatage est illisible est ignorée plutôt que réparée : un fichier abîmé raccourcit le tableau au lieu de dessiner une tendance qui n'a jamais eu lieu. Pas de sudo requis pour `--history` seul.
 
 ### `--breakdown` (`-B`) — transparence du calcul de score
 

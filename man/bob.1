@@ -45,7 +45,11 @@ Show detailed port exposure per service in the services section.
 .BR \-d ", " \-\-detailed
 Write a detailed audit report to the configured log directory
 .RI ( ~/.local/share/bob/logs/
-by default).
+by default). Each finding is followed by its explanation, its command
+(\(-> for a fix, ? for a check) and its finding key, whatever the terminal
+verbosity and under
+.B \-\-quiet
+too.
 .TP
 .B \-\-target=\fIN\fR
 Set a security score target in 1\(en10. When the resulting score is below

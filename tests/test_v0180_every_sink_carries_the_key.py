@@ -29,7 +29,7 @@ from bob.report import SystemInfo
 from bob.scoring import Deduction, Finding, FindingLevel, ScoreEngine
 
 _KEY = "hardening.rp_filter_disabled"
-_KEY2 = "suid.orphan_binary"
+_KEY2 = "suid_audit.unowned_suid"
 
 
 @pytest.fixture(autouse=True)

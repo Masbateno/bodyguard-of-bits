@@ -52,6 +52,10 @@ The resulting command line is printed before anything is written:
 
 `--quiet` and `--detailed` are structural rather than preferences: cron has no
 terminal, and the notification email *is* the `.log` that `--detailed` writes.
+Since v0.18.0 that file carries each finding's explanation, its command and its
+key. Before, the `--quiet` path wrote a level and a message and nothing else, so
+a scheduled report named every problem and none of the fixes the same audit
+printed on a terminal.
 
 Existing cron jobs are untouched by an upgrade — their script keeps the command
 line it was generated with. Re-run `sudo bob --install-cron` with the same name
@@ -348,7 +352,7 @@ Output shape:
    - clamav.scan_old
 ```
 
-The baseline file lives at `~/.config/bob/last_baseline.json` (mode `0600`) and is rewritten at the end of every full audit run. To wipe the baseline and start fresh:
+The baseline file lives at `~/.config/bob/last_baseline.json` (mode `0600`) and is rewritten at the end of every full audit run. A file passed to `--diff` that carries no `timestamp` and `score` is refused as *not a BOB baseline* (exit 3) rather than compared against as a baseline of zero. To wipe the baseline and start fresh:
 
 ```bash
 sudo bob --reset-baseline
@@ -379,7 +383,7 @@ bob --history
 
 The sparkline covers up to 50 entries; the table below it lists 10.
 
-The history file appends one line per audit (timestamp + score + level) and rotates at 1000 entries. No sudo required for `--history` alone.
+The history file appends one line per audit (timestamp + score + level) and rotates at 1000 entries. A line whose score or timestamp cannot be read is skipped rather than repaired, so a damaged file shortens the table instead of drawing a trend that never happened. No sudo required for `--history` alone.
 
 ### `--breakdown` (`-B`) — score computation transparency
 

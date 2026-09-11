@@ -197,3 +197,23 @@ def test_both_locales_carry_the_refusal():
             "different findings and must not share one sentence"
         )
         assert stranger != entries["bad_shape"]
+
+
+def test_the_cli_refuses_a_stranger_with_the_error_exit(tmp_path, monkeypatch, capsys):
+    """End to end through ``_run``: the refusal is a technical error, exit 3.
+
+    AUTOMATION.md states the exit code, so it is measured here rather than
+    read off ``EXIT_ERROR`` — a script that gates on ``--diff`` needs to know
+    a refused file does not look like a clean comparison.
+    """
+    import bob.__main__ as main_mod
+
+    stranger = tmp_path / "stranger.json"
+    stranger.write_text('{"unrelated": {"nested": 1}}', encoding="utf-8")
+    monkeypatch.setattr(main_mod, "require_root", lambda: None)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = main_mod._run(["--english", f"--diff={stranger}"])
+
+    assert code == 3
+    assert "not a BOB baseline" in capsys.readouterr().err

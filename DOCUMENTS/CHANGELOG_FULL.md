@@ -90,7 +90,7 @@ fact and leaves the judgement where the knowledge is.
 
 **And the sysctl fixes are applied by BOB's own code, not by a shell.**
 
-Thirteen of the fixes BOB proposes read like this:
+Fifteen of the fixes BOB proposes read like this:
 
     sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && { grep -qxF … || echo … | sudo tee -a … ; }
 
@@ -252,7 +252,85 @@ into them — the loopback rule sits in `ufw-before-input`, unreachable. That is
 not BOB's defect, and BOB detects the result. What was BOB's is applying a
 default-deny policy unattended in the first place.
 
-**Tests** 9528 → **9916**. **Mutations** 117 → **159**.
+**Stress pass 5 — hostile input on every surface BOB reads back.** Twenty-three
+twisted command-line arguments (`$(id)`, `../../etc/passwd`, 5000-character
+names, an ANSI escape handed to `--explain`) all ended in a verdict and exit 3,
+none in a traceback. The CSV, HTML and Markdown writers neutralised formula,
+script and link injection. `ignore.yml` refused a `!!python/object/apply` tag
+without executing it. Three things did not hold, and all three were BOB
+asserting something it had not measured.
+
+`bob --profile` with a 300-character name printed `Fatal error: [Errno 36] File
+name too long` — the kernel's answer, surfaced as an internal crash, where a
+name one character shorter got the ordinary *profile not found*. Behind it sat
+the older defect: a profile directory BOB was **refused entry to** was reported
+the same way, *not found*, while the profile was sitting in it. Those are now
+three outcomes with three sentences: absent, could not look (naming the
+directory), and — when a built-in answered because the user directory that
+takes priority was shut — *read from the built-in, and this directory could
+not be searched*.
+
+`--diff` accepted any JSON at all as a baseline. `{"unrelated": 1}` loaded as a
+baseline of zero, and the diff announced:
+
+    ✔ [OK] Score improved by 72 point(s)
+    ⚠ [WARNING] New open port detected: 22/tcp
+    ℹ [INFO] Service became active: ssh
+
+Not one of those was compared against anything. Every baseline BOB has written
+since v0.3.0 carries `timestamp` and `score`; a file with neither is refused by
+name now, with its own sentence, and a genuine baseline whose score is 0 is
+still a baseline.
+
+`bob --history` repaired what it could not read. A score that was null, a
+string or out of range became `0`, and that invented figure fed the trend
+arrows — three audits of 8/10 with one score field lost rendered a collapse and
+a recovery that never happened:
+
+    8/10  →
+    0/10  ↓
+    8/10  ↑
+
+A line BOB cannot read is skipped now, as a line that is not a JSON object has
+been since v0.14.1. The same render died outright on `"ts": null` and printed
+the word `None` in the risk-level column. **Behaviour change on corrupt files
+only**: three tests that pinned the old repair (999 → 10, −5 → 0, "bad" → 0)
+now pin the skip.
+
+**Stress pass 6 — the six outputs, compared on one audit.** Score, counters and
+the score ceiling agree everywhere. Two sinks did not carry what the others did.
+
+The CSV named no finding. Five outputs carry each finding's key; the CSV had
+only `message`, which is translated prose — two exports of the same audit,
+one under `--french`, shared no column that meant the same thing, and a
+reworded message broke any join silently. It is the third field the CSV had
+dropped while the others carried it (`detail` was closed as T11 in v0.8.1).
+`key` is appended as the last column, so the fifteen of v0.17.1 keep their
+positions for anyone reading by index.
+
+The archived `.log` kept the accusation and threw away the remedy. `-d` is
+documented as the detailed report, "findings, and recommendations". One finding
+driven through the real renderer and the real report writer:
+
+    screen:  ✖ [ALERT] /usr/local/bin/oddbin is SUID root and belongs to no package
+                 → sudo chmod u-s /usr/local/bin/oddbin
+    .log:    2026-09-11 00:07:56 [ALERT] /usr/local/bin/oddbin is SUID root …
+
+`write_finding` had accepted a `detail` argument since it was written, and no
+caller had ever passed it. The file now carries the explanation, the command
+(`→` for a fix, `?` for a check) and the key — unconditionally, since a
+six-month-old report cannot be re-run with `-v`, and under `-q` too, which
+silences the terminal and not the file a cron job asked for.
+
+**Badges.** The badge block now sits on the public READMEs as well as
+README_TECH, with PyPI version, downloads and ruff added, and a platform badge
+naming nine systems. The prose behind it separates three kinds of evidence —
+daily use, CI on every push, real virtual machines per release — and says in
+as many words that Raspberry Pi is the one name with no hardware behind it yet.
+Arch, openSUSE and Alpine move from *best-effort* to Tier 2: they are the
+machines the v0.17.1 and v0.18.0 defects were found on.
+
+**Tests** 9528 → **9930**. **Mutations** 117 → **161**.
 
 ---
 

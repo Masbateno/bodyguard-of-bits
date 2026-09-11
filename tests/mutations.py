@@ -69,6 +69,8 @@ _PROFSRCH = "tests/test_v0180_profile_search_is_not_absence.py"
 _HISTREAD = "tests/test_v0180_history_reads_only_what_it_wrote.py"
 _SINKKEY  = "tests/test_v0180_every_sink_carries_the_key.py"
 _ARCHIVE  = "tests/test_v0180_the_archive_keeps_the_remedy.py"
+_SNAPMAP  = "tests/test_v0180_snapshot_maps_every_module.py"
+_NATIVEALL = "tests/test_v0180_every_sysctl_fix_is_native.py"
 _STRANGER = "tests/test_v0180_a_stranger_is_not_a_baseline.py"
 
 
@@ -1753,5 +1755,25 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=(f"{_ARCHIVE}::test_a_finding_with_no_body_adds_no_empty_lines",),
         reason="a finding with nothing to add would gain an indented blank "
                "line, and an OK-heavy audit would double the file with them",
+    ),
+    Mutation(
+        id="snapshot/a-module-falls-off-the-map",
+        file="DOCUMENTS/SNAPSHOT.md",
+        old="│   │   ├── _ufw.py            ←",
+        new="│   │   ├── _ufw_parser        ←",
+        kills=(f"{_SNAPMAP}::test_snapshot_names_every_module",),
+        reason="bob/checks/_ufw.py was unmapped from v0.15.0 to v0.18.0 \u2014 "
+               "four releases in which the map loaded first before any audit "
+               "did not mention the module that parses every UFW rule",
+    ),
+    Mutation(
+        id="sysctl/one-fix-falls-back-to-the-shell",
+        file="bob/checks/hardening.py",
+        old='            **sysctl_fix("net.ipv4.tcp_syncookies=1"),',
+        new='            cmd=sysctl_fix_cmd("net.ipv4.tcp_syncookies=1"),',
+        kills=(f"{_NATIVEALL}::test_no_check_builds_a_sysctl_command_without_its_action",),
+        reason="the advice on screen is identical and every test about the "
+               "advice passes, while --apply refuses the fix again \u2014 the "
+               "v0.18.0 defect restored one call site at a time, silently",
     ),
 )

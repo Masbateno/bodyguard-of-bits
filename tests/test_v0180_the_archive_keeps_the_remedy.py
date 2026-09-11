@@ -41,7 +41,7 @@ def _alert() -> Finding:
         message="/usr/local/bin/oddbin is SUID root and belongs to no package",
         detail="A SUID binary no package ships is the shape an escalation takes.",
         cmd="sudo chmod u-s /usr/local/bin/oddbin",
-        key="suid.orphan_binary",
+        key="suid_audit.unowned_suid",
         nature="action",
     )
 
@@ -70,7 +70,7 @@ def test_the_log_carries_the_explanation(tmp_path):
 def test_the_log_names_the_finding(tmp_path):
     """Identity, not prose: a message is translated and gets reworded."""
     log = _write(tmp_path, _alert())
-    assert "suid.orphan_binary" in log
+    assert "suid_audit.unowned_suid" in log
 
 
 def test_a_check_command_is_not_marked_as_a_fix(tmp_path):
@@ -96,7 +96,7 @@ def test_quiet_silences_the_screen_and_not_the_archive(tmp_path, capsys):
     assert "sudo chmod u-s /usr/local/bin/oddbin" in log, (
         "a file stripped of its remediation is the one nobody can act on later"
     )
-    assert "suid.orphan_binary" in log
+    assert "suid_audit.unowned_suid" in log
 
 
 def test_a_finding_with_no_body_adds_no_empty_lines(tmp_path):

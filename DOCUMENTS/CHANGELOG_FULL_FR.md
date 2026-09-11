@@ -94,7 +94,7 @@ connaissance.
 **Et les correctifs sysctl sont appliqués par le code de BOB, pas par un
 shell.**
 
-Treize des corrections que BOB propose se lisent ainsi :
+Quinze des corrections que BOB propose se lisent ainsi :
 
     sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && { grep -qxF … || echo … | sudo tee -a … ; }
 
@@ -267,7 +267,92 @@ de loopback siège dans `ufw-before-input`, inatteignable. Ce n'est pas un défa
 de BOB, et BOB en détecte le résultat. Ce qui était de BOB, c'est d'appliquer
 une politique de refus par défaut sans surveillance.
 
-**Tests** 9528 → **9916**. **Mutations** 117 → **159**.
+**Passe de stress 5 — des entrées hostiles sur tout ce que BOB relit.** Vingt-trois
+arguments tordus en ligne de commande (`$(id)`, `../../etc/passwd`, des noms de
+5000 caractères, une séquence ANSI passée à `--explain`) aboutissent tous à un
+verdict et au code 3, aucun à un traceback. Les sorties CSV, HTML et Markdown
+neutralisent l'injection de formule, de script et de lien. `ignore.yml` refuse
+une étiquette `!!python/object/apply` sans l'exécuter. Trois choses n'ont pas
+tenu, et toutes les trois consistaient pour BOB à affirmer ce qu'il n'avait pas
+mesuré.
+
+`bob --profile` avec un nom de 300 caractères affichait `Fatal error: [Errno
+36] File name too long` — la réponse du noyau, remontée comme un plantage
+interne, là où un nom d'un caractère plus court obtenait le banal *profil
+introuvable*. Derrière se trouvait le défaut plus ancien : un répertoire de
+profils dont l'accès **était refusé** à BOB était rapporté de la même façon,
+*introuvable*, alors que le profil s'y trouvait. Ce sont désormais trois issues
+avec trois phrases : absent, impossible à chercher (en nommant le répertoire),
+et — quand un profil intégré a répondu parce que le répertoire utilisateur,
+prioritaire, était fermé — *lu depuis le profil intégré, et ce répertoire n'a
+pas pu être parcouru*.
+
+`--diff` acceptait n'importe quel JSON comme baseline. `{"unrelated": 1}` se
+chargeait comme une baseline à zéro, et le diff annonçait :
+
+    ✔ [OK] Score improved by 72 point(s)
+    ⚠ [WARNING] New open port detected: 22/tcp
+    ℹ [INFO] Service became active: ssh
+
+Rien de tout cela n'avait été comparé à quoi que ce soit. Toute baseline écrite
+par BOB depuis la v0.3.0 porte `timestamp` et `score` ; un fichier qui n'a ni
+l'un ni l'autre est désormais refusé nommément, avec sa propre phrase, et une
+vraie baseline dont le score vaut 0 reste une baseline.
+
+`bob --history` réparait ce qu'il ne savait pas lire. Un score nul, textuel ou
+hors échelle devenait `0`, et ce chiffre inventé alimentait les flèches de
+tendance — trois audits à 8/10 dont un champ score était perdu affichaient un
+effondrement et une remontée qui n'ont jamais eu lieu :
+
+    8/10  →
+    0/10  ↓
+    8/10  ↑
+
+Une ligne que BOB ne sait pas lire est désormais ignorée, comme l'est depuis la
+v0.14.1 une ligne qui n'est pas un objet JSON. Le même rendu plantait net sur
+`"ts": null` et affichait le mot `None` dans la colonne du niveau de risque.
+**Changement de comportement sur fichier corrompu uniquement** : trois tests
+qui figeaient l'ancienne réparation (999 → 10, −5 → 0, "bad" → 0) figent
+désormais le saut.
+
+**Passe de stress 6 — les six sorties, comparées sur un même audit.** Score,
+compteurs et plafond de score concordent partout. Deux sorties ne portaient pas
+ce que portaient les autres.
+
+Le CSV ne nommait aucun constat. Cinq sorties portent la clé de chaque
+constat ; le CSV n'avait que `message`, qui est de la prose traduite — deux
+exports du même audit, dont l'un sous `--french`, ne partageaient aucune colonne
+de même sens, et une reformulation cassait toute jointure en silence. C'est le
+troisième champ que le CSV laissait tomber alors que les autres le portaient
+(`detail` avait été fermé en T11, v0.8.1). `key` est ajoutée en dernière
+colonne : les quinze de la v0.17.1 gardent leur position pour qui lit par
+index.
+
+Le `.log` archivé gardait l'accusation et jetait le remède. `-d` est documenté
+comme le rapport détaillé, « constats et recommandations ». Un constat passé
+par le vrai rendu et le vrai rédacteur de rapport :
+
+    écran :  ✖ [ALERT] /usr/local/bin/oddbin is SUID root and belongs to no package
+                 → sudo chmod u-s /usr/local/bin/oddbin
+    .log :   2026-09-11 00:07:56 [ALERT] /usr/local/bin/oddbin is SUID root …
+
+`write_finding` acceptait un argument `detail` depuis son écriture, et aucun
+appelant ne l'avait jamais passé. Le fichier porte désormais l'explication, la
+commande (`→` pour un correctif, `?` pour une vérification) et la clé — sans
+condition, car un rapport vieux de six mois ne peut pas être relancé avec `-v`,
+et sous `-q` aussi, qui fait taire le terminal et non le fichier qu'une tâche
+cron a demandé.
+
+**Badges.** Le bloc de badges figure désormais sur les README publics en plus
+de README_TECH, avec la version PyPI, les téléchargements et ruff en plus, et un
+badge de plateformes qui nomme neuf systèmes. La prose derrière distingue trois
+natures de preuve — usage quotidien, CI à chaque push, machines virtuelles
+réelles à chaque release — et dit en toutes lettres que Raspberry Pi est le seul
+nom sans matériel derrière pour l'instant. Arch, openSUSE et Alpine passent de
+*best-effort* au Tier 2 : ce sont les machines sur lesquelles les défauts de
+v0.17.1 et v0.18.0 ont été trouvés.
+
+**Tests** 9528 → **9930**. **Mutations** 117 → **161**.
 
 ---
 
