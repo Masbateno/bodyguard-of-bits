@@ -83,6 +83,8 @@ sudo apt install pipx && pipx ensurepath
 pipx install bodyguard-of-bits
 ```
 
+> **On a Raspberry Pi?** See the [Raspberry Pi guide](DOCUMENTS/RASPBERRY_PI.md) — install and usage specifics, the boot-partition credential checks, and exactly what was validated on a real Pi Zero W.
+
 ---
 
 ## Enable `sudo bob` + bash completion
@@ -343,6 +345,7 @@ The same release stopped BOB reading Debian's filenames to decide. `/etc/pam.d/c
 ## See also
 
 - [Tutorial — getting started](DOCUMENTS/TUTORIAL.md)
+- [Raspberry Pi guide](DOCUMENTS/RASPBERRY_PI.md)
 - [Full technical reference](DOCUMENTS/README_TECH.md)
 - [Changelog](CHANGELOG.md)
 - [Developer guide](DOCUMENTS/README_DEV.md)

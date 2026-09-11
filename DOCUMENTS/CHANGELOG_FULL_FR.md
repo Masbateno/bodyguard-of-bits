@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.18.1] — 11-09-2026
+## [v0.18.1] — 12-09-2026
 
 **La détection de force brute SSH de BOB était aveugle sur toutes les distributions récentes.**
 
@@ -191,7 +191,9 @@ Raspberry Pi — une seule carte, un Pi Zero W (ARMv6) sous Raspbian 13
 versions de Raspberry Pi OS antérieures à trixie avec userconf.txt plutôt qu'un
 amorçage cloud-init) révéleront leurs propres différences, et une matrice
 Raspberry Pi solide demande de les tester aussi. Un retour sur n'importe lequel
-vaut mieux que l'émulation.
+vaut mieux que l'émulation. Un [guide Raspberry Pi](RASPBERRY_PI_FR.md) dédié
+rassemble les spécificités d'installation et d'utilisation et cette passe Pi
+Zero W validée en un seul endroit.
 
 **`--explain` groupe ses clés par distribution CIS, en dossiers.** La liste des
 clés était un seul flux ordonné par section d'audit. C'est désormais une
@@ -246,7 +248,7 @@ l'écran que `hardening.rp_filter_disabled` est 3.3.7 dans CIS Ubuntu 22.04,
 
 **Références** 199 primaires (107 CIS Ubuntu 22.04 + 84 bonnes pratiques + 7 CIS
 Docker 1.6 + 1 CIS Red Hat 8/9) + 163 citations inter-benchmarks sur 58 clés.
-**Tests** 9959 → **10281**. **Mutations** 166 → **204**.
+**Tests** 9959 → **10282**. **Mutations** 166 → **204**.
 
 ---
 

@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.18.1] — 2026-09-11
+## [v0.18.1] — 2026-09-12
 
 **BOB's SSH brute-force detection was blind on every recent distribution.**
 
@@ -176,7 +176,9 @@ Pi hardware — one board, a Pi Zero W (ARMv6) on Raspbian 13 (trixie).** It is
 a start, not a matrix: other models (Pi 4/5, arm64, Raspberry Pi OS releases
 before trixie with userconf.txt rather than a cloud-init seed) will surface
 their own differences, and a solid Raspberry Pi matrix needs them tested too.
-Reports from any of them are worth more than emulation.
+Reports from any of them are worth more than emulation. A dedicated
+[Raspberry Pi guide](RASPBERRY_PI.md) collects the install and usage specifics
+and this validated Pi Zero W pass in one place.
 
 **`--explain` groups its keys by CIS distribution, as folders.** The key list
 was one flat run ordered by audit section. It is now a three-level tree of
@@ -229,7 +231,7 @@ in Debian 12 and Ubuntu 24.04, and 3.3.1.12 in Debian 13.
 
 **References** 199 primary (107 CIS Ubuntu 22.04 + 84 best-practice + 7 CIS
 Docker 1.6 + 1 CIS Red Hat 8/9) + 163 cross-benchmark citations on 58 keys.
-**Tests** 9959 → **10281**. **Mutations** 166 → **204**.
+**Tests** 9959 → **10282**. **Mutations** 166 → **204**.
 
 ---
 
