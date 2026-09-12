@@ -1478,13 +1478,31 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "declared directory is otherwise kept forever with no way to remove it",
     ),
     Mutation(
+        id="cron/wide-row-truncated-not-wrapped",
+        file="bob/tui/cron.py",
+        old="        if fits(raw, emails):\n            aligned = ",
+        new="        if True:\n            aligned = ",
+        kills=("tests/test_v0183_cron_line_wrap.py::test_a_wide_row_wraps_instead_of_truncating",),
+        reason="a row wider than the screen must wrap, not be forced onto one "
+               "over-long line the caller then truncates — hiding the addresses",
+    ),
+    Mutation(
         id="cron/email-column-not-aligned",
         file="bob/tui/cron.py",
-        old="    return [p.ljust(width) for p in parts]",
-        new="    return parts",
-        kills=("tests/test_v0181_cron_email_alignment.py::test_every_left_column_has_the_same_width",),
-        reason="without padding the name+schedule column to one width, a long "
-               "schedule shoves the e-mail addresses out of column",
+        old="            aligned = f\"{mark}{raw.ljust(align_w)}{sep}{emails}\"",
+        new="            aligned = f\"{mark}{raw}{sep}{emails}\"",
+        kills=("tests/test_v0181_cron_email_alignment.py::test_the_address_column_is_aligned_across_fitting_rows",),
+        reason="without padding the name+schedule column to one width, the "
+               "e-mail addresses do not line up across rows",
+    ),
+    Mutation(
+        id="cron/giant-row-drags-short-rows",
+        file="bob/tui/cron.py",
+        old="    align_w = max((len(raw) for raw, em, _ in rows if fits(raw, em)), default=0)",
+        new="    align_w = max((len(raw) for raw, em, _ in rows), default=0)",
+        kills=("tests/test_v0181_cron_email_alignment.py::test_a_giant_row_does_not_drag_short_rows_onto_two_lines",),
+        reason="aligning to every row, not just those that fit, lets one "
+               "month-long schedule pad every short row past the screen so they all wrap",
     ),
     Mutation(
         id="capped/one-big-read-again",

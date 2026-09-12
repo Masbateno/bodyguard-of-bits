@@ -1005,22 +1005,48 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 # Curses management TUI
 # ---------------------------------------------------------------------------
 
-def _cron_left_columns(crons, t, lang) -> "list[str]":
-    """The name + schedule + legacy-tag column for each cron, every string
-    padded to one width so the e-mail addresses that follow line up.
+def _cron_render_lines(rows, width: int) -> "list[list[str]]":
+    """Lay out the --manage-cron list at terminal *width*.
 
-    The schedule text is variable-width — "every day at 18:56" against "the
-    1st, 15th of every month at 12:03" — so a fixed pad let a long schedule
-    shove the addresses out of column. Measuring the widest across all jobs
-    and padding to it puts every address at the same column.
+    ``rows`` is ``[(raw_left, emails, is_marked)]`` where ``raw_left`` is the
+    unpadded ``name  schedule [tag]``. Returns, per row, the physical line(s) it
+    occupies:
+
+      * a row whose ``name schedule … addresses`` fits stays on **one line**,
+        with the addresses aligned in a column;
+      * a row too wide to fit **wraps** instead of being truncated — the
+        schedule keeps its own line(s) and the addresses move to an indented
+        continuation line (a month-long day list is what forced this).
+
+    The alignment column is measured across the rows that fit only, so one giant
+    schedule cannot drag the column out and push every short row onto two lines.
+    Everything adapts to ``width``, so shrinking the terminal reflows.
     """
-    parts = []
-    for e in crons:
-        human = cron_to_human(e.schedule_expr, lang)
-        tag = f"  [{t('manage_cron.legacy_tag')}]" if e.legacy else ""
-        parts.append(f"{e.name:<20} {human}{tag}")
-    width = max((len(p) for p in parts), default=0)
-    return [p.ljust(width) for p in parts]
+    import textwrap
+
+    def fits(raw: str, emails: str) -> bool:
+        sep = 3 if emails else 0
+        return 2 + len(raw) + sep + len(emails) <= width - 1
+
+    align_w = max((len(raw) for raw, em, _ in rows if fits(raw, em)), default=0)
+
+    out: list[list[str]] = []
+    for raw, emails, is_marked in rows:
+        mark = "✔ " if is_marked else "  "
+        sep = "   " if emails else ""
+        if fits(raw, emails):
+            aligned = f"{mark}{raw.ljust(align_w)}{sep}{emails}"
+            # Padding to the column can itself overrun on a row with long
+            # addresses; fall back to the unpadded (still one) line then.
+            out.append([aligned] if len(aligned) <= width - 1
+                       else [f"{mark}{raw}{sep}{emails}"])
+            continue
+        # Too wide: schedule and addresses flow together and wrap, so the
+        # addresses land at the end of the wrapped text — on the schedule's
+        # continuation line, not on a separate line of their own.
+        wrapped = textwrap.wrap(f"{raw}{sep}{emails}", max(8, width - 2)) or [""]
+        out.append([f"{mark}{wrapped[0]}"] + [f"  {seg}" for seg in wrapped[1:]])
+    return out
 
 
 def _run_manage_cron_curses(stdscr, config, t) -> int:
@@ -1082,21 +1108,35 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                                   cmd="sudo bob --install-cron"))
             _draw(stdscr, 4, 2, "m: " + t("manage_cron.prompt_ex_email_book"))
         else:
-            # Align the e-mail column across jobs (see _cron_left_columns).
-            lefts = _cron_left_columns(crons, t, lang)
-            for row in range(body_h):
-                idx = scroll + row
-                if idx >= n:
+            # Lay the list out for this width (see _cron_render_lines): rows
+            # that fit stay on one aligned line, only rows too wide to fit wrap.
+            # Entries are variable-height, so cursor and scroll count entries
+            # while the draw counts physical rows.
+            rows = []
+            for entry in crons:
+                is_marked = str(entry.cron_path) in marked
+                emails = (" ; ".join(a.strip() for a in entry.email.split(",") if a.strip())
+                          if entry.email else "")
+                human = cron_to_human(entry.schedule_expr, lang)
+                tag = f"  [{t('manage_cron.legacy_tag')}]" if entry.legacy else ""
+                rows.append((f"{entry.name:<20} {human}{tag}", emails, is_marked))
+            entry_lines = _cron_render_lines(rows, w)
+
+            # Keep the whole cursor entry visible with variable heights: pull
+            # scroll up to it, or advance until its block fits in body_h.
+            if cursor < scroll:
+                scroll = cursor
+            else:
+                while scroll < cursor and sum(
+                        len(entry_lines[i]) for i in range(scroll, cursor + 1)) > body_h:
+                    scroll += 1
+
+            prow = 0
+            for idx in range(scroll, n):
+                if prow >= body_h:
                     break
                 entry = crons[idx]
                 is_marked = str(entry.cron_path) in marked
-                email_hint = ""
-                if entry.email:
-                    addrs = " ; ".join(a.strip() for a in entry.email.split(",") if a.strip())
-                    email_hint = f"   {addrs}"
-                mark = "✔ " if is_marked else "  "
-                line = f"{mark}{lefts[idx]}{email_hint}"
-
                 is_cur = (idx == cursor)
                 if is_cur and has_color:
                     attr = _curses.color_pair(1) | _curses.A_BOLD
@@ -1108,7 +1148,11 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                     attr = _curses.color_pair(4)
                 else:
                     attr = _curses.A_NORMAL
-                _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
+                for line in entry_lines[idx]:
+                    if prow >= body_h:
+                        break
+                    _draw(stdscr, prow + 1, 0, line[:w - 1].ljust(w - 1), attr)
+                    prow += 1
 
         # ── Footer ───────────────────────────────────────────────────────────
         # v0.16.3 — transient message, else the shared key line. The counts
@@ -1155,17 +1199,16 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             continue
 
         # ── Navigation ───────────────────────────────────────────────────────
+        # Cursor moves in entry units; scroll is recomputed at render time to
+        # keep the (variable-height) cursor entry fully visible, so navigation
+        # here only moves the cursor.
         if ch in (_curses.KEY_UP, ord("k"), ord("K")):
             if cursor > 0:
                 cursor -= 1
-            if cursor < scroll:
-                scroll = cursor
 
         elif ch in (_curses.KEY_DOWN, ord("j"), ord("J")):
             if cursor < n - 1:
                 cursor += 1
-            if cursor >= scroll + body_h:
-                scroll = cursor - body_h + 1
         elif ch in (_curses.KEY_PPAGE, _curses.KEY_NPAGE, ord("g"), ord("G")):
             # v0.16.3 — the footer advertises PgUp/PgDn and g/G on every list,
             # so every list must honour them. A hint for a key that does
@@ -1175,7 +1218,6 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             else:
                 step = body_h if ch == _curses.KEY_NPAGE else -body_h
                 cursor = max(0, min(n - 1, cursor + step))
-            scroll = max(0, min(cursor, max(0, n - body_h)))
 
         # ── Selection ────────────────────────────────────────────────────────
         elif ch == ord(" "):
