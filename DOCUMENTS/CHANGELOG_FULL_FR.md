@@ -6,6 +6,47 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.18.2] — 12-09-2026
+
+**`--install-completion` affichait des clés de locale entre crochets au lieu du
+texte.** Trouvé en validant BOB sur le Raspberry Pi Zero W physique : `sudo bob
+--install-completion` affichait
+
+```
+✔ [completion.installed]
+✔ [completion.symlink_created]
+⚠  [completion.reload_title]
+```
+
+La forme `[clé]` est ce que renvoie `i18n.t` quand i18n n'a pas été initialisé.
+Toutes les autres branches d'action de `bob/__main__.py` appellent
+`i18n.init(lang=config.lang)` avant d'afficher ; la branche `--install-completion`
+ne le faisait pas, donc son erreur besoin-de-root comme la sortie de
+`install_completion()` retombaient sur des clés brutes — dans les deux langues.
+Les clés existaient depuis toujours ; c'est l'init qui manquait. Corrigé en
+initialisant i18n en tête de la branche. Le test de régression remet i18n à son
+état non initialisé, « processus froid », avant de lancer la commande — sinon un
+test précédent laisse i18n initialisé, `t()` renvoie du vrai texte quoi qu'il
+arrive, et l'init manquant passe inaperçu (le bug ne se voit que dans un processus
+neuf, ce qui est précisément ainsi que l'opérateur l'a rencontré). Une mutation
+retire l'init et doit remettre des crochets.
+
+**Le guide Raspberry Pi gagne deux sections.** *Le virtualenv créé par pipx* — ce
+que fait vraiment `pipx` : BOB vit dans son propre venv isolé
+(`~/.local/share/pipx/venvs/bodyguard-of-bits`, mesuré à ~5 Mo sur la carte au-
+dessus d'une base pip partagée de ~13 Mo), sur le Python système, sans toucher à
+ce que gère apt, avec `pipx upgrade`/`list`/`reinstall`. *Comment lancer `bob`* —
+il est dans le `PATH` (via `pipx ensurepath` / le `~/.profile` de Raspberry Pi OS),
+donc il s'exécute de n'importe où : **pas de `cd`** (qui exigerait `./bob`), le
+changement de `PATH` demande un nouveau shell, et `sudo bob` a besoin du lien
+`--install-completion` ou du chemin complet `~/.local/bin/bob`. Motivé par un
+opérateur qui, ayant lu les chemins du venv, a cru qu'il fallait `cd ~/.local/bin`
+avant de lancer BOB.
+
+**Tests** 10314 → **10321**. **Mutations** 207 → **208**.
+
+---
+
 ## [v0.18.1] — 11-09-2026
 
 **La détection de force brute SSH de BOB était aveugle sur toutes les distributions récentes.**

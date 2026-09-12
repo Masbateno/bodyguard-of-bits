@@ -1,3 +1,16 @@
+bodyguard-of-bits (0.18.2-1) unstable; urgency=medium
+
+  * --install-completion printed bracketed locale keys ([completion.installed],
+    …) instead of text: its branch in __main__ never called i18n.init(), unlike
+    every other action branch, so i18n.t() returned its uninitialised fallback in
+    both locales. Found validating BOB on the physical Raspberry Pi Zero W. Fixed
+    by initialising i18n in the branch; guarded by a regression test (resets i18n
+    to the cold-process state) and a mutation.
+  * Raspberry Pi guide expanded: the pipx virtualenv (isolation, measured
+    footprint) and how to invoke bob (on the PATH, no cd, the sudo path).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 12 Sep 2026 08:00:00 +0000
+
 bodyguard-of-bits (0.18.1-1) unstable; urgency=medium
 
   * SSH brute-force detection was blind on OpenSSH >= 9.8. Authentication is

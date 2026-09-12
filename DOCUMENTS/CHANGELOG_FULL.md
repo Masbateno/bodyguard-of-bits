@@ -6,6 +6,44 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.18.2] — 2026-09-12
+
+**`--install-completion` printed bracketed locale keys instead of text.** Found
+while validating BOB on the physical Raspberry Pi Zero W: `sudo bob
+--install-completion` printed
+
+```
+✔ [completion.installed]
+✔ [completion.symlink_created]
+⚠  [completion.reload_title]
+```
+
+The `[key]` form is what `i18n.t` returns when i18n has not been initialised.
+Every other action branch in `bob/__main__.py` calls `i18n.init(lang=config.lang)`
+before it prints; the `--install-completion` branch did not, so both its
+needs-root error and `install_completion()`'s own output fell back to raw keys —
+in either locale. The keys existed all along; the init was missing. Fixed by
+initialising i18n at the top of the branch. The regression test resets i18n to
+the uninitialised, cold-process state before driving the command — otherwise a
+prior test leaves i18n initialised, `t()` returns real text regardless, and the
+missing init goes unnoticed (the bug only shows in a fresh process, which is how
+the operator hit it). A mutation removes the init and must bracket again.
+
+**The Raspberry Pi guide gained two sections.** *The virtualenv pipx creates* —
+what `pipx` actually does: BOB lives in its own isolated venv
+(`~/.local/share/pipx/venvs/bodyguard-of-bits`, measured at ~5 MB on the board on
+top of a ~13 MB shared pip base), on the system Python, touching nothing apt
+manages, with `pipx upgrade`/`list`/`reinstall`. *How to run `bob`* — it is on
+the `PATH` (via `pipx ensurepath` / Raspberry Pi OS's `~/.profile`), so it runs
+from any directory: **no `cd`** (which would need `./bob`), the `PATH` change
+needs a new shell, and `sudo bob` needs the `--install-completion` symlink or the
+full `~/.local/bin/bob` path. Prompted by an operator who read the venv paths and
+assumed running BOB meant `cd ~/.local/bin` first.
+
+**Tests** 10314 → **10321**. **Mutations** 207 → **208**.
+
+---
+
 ## [v0.18.1] — 2026-09-11
 
 **BOB's SSH brute-force detection was blind on every recent distribution.**
