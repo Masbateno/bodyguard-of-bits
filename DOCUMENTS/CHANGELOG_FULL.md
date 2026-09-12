@@ -19,13 +19,17 @@ flowing together so the addresses land on the continuation line, which is
 indented to the schedule column so it lines up under the jobs above. A dim
 separator sits between jobs so they are told apart at a glance.
 
-**The pathlib-3.14 denial audit, batch 1.** Python 3.14 made
+**The pathlib-3.14 denial audit.** Python 3.14 made
 `Path.is_dir()` / `is_file()` / `exists()` return `False` on a `PermissionError`
 where ≤3.13 raised (v0.18.0 fixed the four sites the CI caught and promised the
-rest for the next release). The risk: a directory BOB is refused entry to reads
-as *absent*, and its security verdict as *clean*. This batch closes the
-highest-stakes sites with `strict_is_dir` (a stat-based predicate that still
-raises on a denial), routing each denial to a *not-established* finding:
+rest). The risk has two shapes: a directory BOB is refused entry to reads as
+*absent* and its verdict as *clean*; or, worse, a denial read as a *negative*
+finding, which lowers the score for a host BOB simply could not inspect. Fixed
+site-by-site with `bob/_fs.py`'s stat-based `strict_is_file` / `strict_is_dir` /
+`strict_is_symlink` (which still raise on a denial), each denial routed to a
+*not-established* finding.
+
+*Batch 1 — the highest-stakes reads:*
 
   * `/etc/sudoers.d` — a refused drop-in directory was skipped and the sudoers
     verdict stayed clean, hiding a `NOPASSWD:ALL`. Now marks the sudoers check
@@ -42,15 +46,44 @@ raises on a denial), routing each denial to a *not-established* finding:
     `journal_persistent` is now tri-state; unknown persistence emits
     `log_rotation.journal_dir_unreadable` rather than the worst-case warning.
 
-Each fix keeps its `strict_*` helper (`bob/_fs.py` gained `strict_is_dir` and
-`strict_exists`), a polarity pair on the interpreter-independent 3.14 bench
-(denied → not-established; absent → still False; readable → the finding still
-fires), and a mutation. No behaviour change on ≤3.13 or where the paths are
-readable, which is the overwhelming case. The remaining lower-stakes sites
-(backup active/installed nuance, ssl_certs, mac_policy, ssh key parsers,
-firewall context) stay on the list for the next batches.
+*Batch 2 — backup detection.* The borg keys directory and the borgmatic config
+probe were unguarded: up to 3.13 a refused path raised out of
+`BackupSnapshot.from_system()` (which documents that it never raises); on 3.14
+the tool fell silently to "installed". Both now resolve a denial to "installed"
+— the tool is present, its configuration could not be confirmed — never a false
+"active" that would assert backups are in place, and never a crash.
 
-**Tests** 10321 → **10373**. **Mutations** 208 → **216**.
+*Batch 3 — TLS certificate stores.* `/etc/letsencrypt/live` and
+`/etc/ssl/private` are root-owned 0700/0710. The subtle part: `is_dir()` is
+*not* the trap there — their parent is traversable, so `stat()` succeeds — but
+`Path.glob()` **swallows** the read `PermissionError` and returns `[]`, so a
+locked store read as "no certificates" and any expiring cert inside went
+unmeasured, its deduction silently unmade and the score an upper bound presented
+as clean. The stores are now iterated with `iterdir()` (which raises), and a
+denial is surfaced as `ssl_certs.dir_unreadable` (a visibility key).
+
+*Batch 4 — file-integrity databases.* The same `glob()` / `path_exists()`
+swallow hid a denied AIDE (`/var/lib/aide`) or Tripwire (`/var/lib/tripwire`)
+database directory, so a run without sudo reported `file_integrity.no_db` — a
+WARN with a −1 point, "database not initialised" — on a host that may be fully
+covered. This is the mirror-image visibility bug: the score *drops* when BOB
+sees less. Detection now tells denied from absent (`strict_is_file` raises on a
+denial but returns `False` on `ENOENT`, so a genuinely uninitialised database
+stays a true `no_db`); a denied location becomes `file_integrity.db_unknown`
+(INFO, no deduction, a visibility key).
+
+Each fix carries a polarity pair on the interpreter-independent 3.14 bench
+(denied → not-established; absent → still a true negative; readable → the
+finding still fires) and a mutation. No behaviour change on ≤3.13 or where the
+paths are readable, which is the overwhelming case. The lower-stakes sites left
+on the list were checked and *deliberately not changed*: `/sys/module/apparmor`
+(sysfs is world-readable, so a denial is not a realistic state), the SSH key
+parsers (their `is_file()` / `stat()` targets sit under a traversable
+`/etc/ssh`, where `stat` succeeds regardless of the file's own mode), and the
+WireGuard config glob in the firewall stack (a context signal with no deduction,
+already gated by the `wg` binary that `wg-quick` requires).
+
+**Tests** 10321 → **10406**. **Mutations** 208 → **221**.
 
 ---
 

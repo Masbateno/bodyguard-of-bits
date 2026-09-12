@@ -20,13 +20,17 @@ adresses arrivent sur la ligne de continuation, indentée sous la colonne du
 planning pour s’aligner avec les jobs du dessus. Un séparateur discret sépare les
 jobs.
 
-**L’audit des refus pathlib-3.14, lot 1.** Python 3.14 fait renvoyer `False` à
+**L’audit des refus pathlib-3.14.** Python 3.14 fait renvoyer `False` à
 `Path.is_dir()` / `is_file()` / `exists()` sur un `PermissionError` là où ≤3.13
-levait (v0.18.0 a corrigé les quatre sites attrapés par la CI et promis le reste
-pour la version suivante). Le risque : un répertoire refusé à BOB se lit comme
-*absent*, et son verdict de sécurité comme *propre*. Ce lot ferme les sites les
-plus sensibles avec `strict_is_dir` (un prédicat basé sur stat qui lève encore
-sur un refus), chaque refus menant à un constat *non établi* :
+levait (v0.18.0 a corrigé les quatre sites attrapés par la CI et promis le
+reste). Le risque a deux formes : un répertoire refusé à BOB se lit comme
+*absent* et son verdict comme *propre* ; ou, pire, un refus lu comme un constat
+*négatif*, qui abaisse le score d’un hôte que BOB n’a simplement pas pu
+inspecter. Corrigé site par site avec les prédicats basés sur stat de
+`bob/_fs.py` — `strict_is_file` / `strict_is_dir` / `strict_is_symlink` (qui
+lèvent encore sur un refus), chaque refus menant à un constat *non établi*.
+
+*Lot 1 — les lectures les plus sensibles :*
 
   * `/etc/sudoers.d` — un répertoire drop-in refusé était sauté et le verdict
     sudoers restait propre, masquant un `NOPASSWD:ALL`. Marque désormais le
@@ -45,16 +49,47 @@ sur un refus), chaque refus menant à un constat *non établi* :
     inconnue émet `log_rotation.journal_dir_unreadable` plutôt que l’avertissement
     du pire cas.
 
-Chaque correctif garde son helper `strict_*` (`bob/_fs.py` gagne `strict_is_dir`
-et `strict_exists`), une paire de polarité sur le banc 3.14 indépendant de
-l’interpréteur (refusé → non établi ; absent → toujours False ; lisible → le
-constat se déclenche) et une mutation. Aucun changement de comportement sous
-≤3.13 ni là où les chemins sont lisibles, soit l’immense majorité des cas. Les
-sites restants, moins sensibles (nuance actif/installé de backup, ssl_certs,
-mac_policy, parseurs de clés ssh, contexte pare-feu), restent sur la liste pour
-les lots suivants.
+*Lot 2 — détection des sauvegardes.* La sonde du répertoire de clés borg et de
+la config borgmatic n’était pas gardée : jusqu’à 3.13 un chemin refusé levait
+hors de `BackupSnapshot.from_system()` (qui documente qu’elle ne lève jamais) ;
+sous 3.14 l’outil tombait silencieusement en « installé ». Un refus se résout
+désormais en « installé » — l’outil est présent, sa configuration n’a pu être
+confirmée — jamais un faux « actif » qui affirmerait que des sauvegardes tournent,
+et jamais un crash.
 
-**Tests** 10321 → **10373**. **Mutations** 208 → **216**.
+*Lot 3 — magasins de certificats TLS.* `/etc/letsencrypt/live` et
+`/etc/ssl/private` appartiennent à root en 0700/0710. Le point subtil : `is_dir()`
+n’est *pas* le piège là — leur parent est traversable, donc `stat()` réussit —
+mais `Path.glob()` **avale** le `PermissionError` de lecture et renvoie `[]`, si
+bien qu’un magasin verrouillé se lit « aucun certificat » et qu’un certificat qui
+expire à l’intérieur n’est pas mesuré, sa déduction silencieusement non appliquée
+et le score une borne supérieure présentée comme propre. Les magasins sont
+désormais parcourus avec `iterdir()` (qui lève), et un refus est exposé via
+`ssl_certs.dir_unreadable` (une clé de visibilité).
+
+*Lot 4 — bases de données d’intégrité.* Le même avalage de `glob()` /
+`path_exists()` masquait un répertoire de base AIDE (`/var/lib/aide`) ou Tripwire
+(`/var/lib/tripwire`) refusé, si bien qu’un lancement sans sudo signalait
+`file_integrity.no_db` — un WARN à −1 point, « base non initialisée » — sur un
+hôte peut-être entièrement couvert. C’est le bug de visibilité en miroir : le
+score *baisse* quand BOB voit moins. La détection distingue désormais refusé
+d’absent (`strict_is_file` lève sur un refus mais renvoie `False` sur `ENOENT`,
+donc une base réellement non initialisée reste un vrai `no_db`) ; un emplacement
+refusé devient `file_integrity.db_unknown` (INFO, sans déduction, une clé de
+visibilité).
+
+Chaque correctif porte une paire de polarité sur le banc 3.14 indépendant de
+l’interpréteur (refusé → non établi ; absent → toujours un vrai négatif ; lisible
+→ le constat se déclenche) et une mutation. Aucun changement de comportement sous
+≤3.13 ni là où les chemins sont lisibles, soit l’immense majorité des cas. Les
+sites restants, moins sensibles, ont été examinés et *délibérément non modifiés* :
+`/sys/module/apparmor` (sysfs est lisible par tous, un refus n’est pas un état
+réaliste), les parseurs de clés ssh (leurs cibles `is_file()` / `stat()` sont
+sous un `/etc/ssh` traversable, où `stat` réussit quel que soit le mode du
+fichier) et le glob de config WireGuard du pare-feu (un signal de contexte sans
+déduction, déjà gated par le binaire `wg` qu’exige `wg-quick`).
+
+**Tests** 10321 → **10406**. **Mutations** 208 → **221**.
 
 ---
 
