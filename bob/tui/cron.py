@@ -1005,48 +1005,67 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 # Curses management TUI
 # ---------------------------------------------------------------------------
 
-def _cron_render_lines(rows, width: int) -> "list[list[str]]":
+#: Width of the name column: ``mark(2) + name.ljust(20) + " "`` → the schedule
+#: (and any continuation line) begins at this column.
+_CRON_NAME_W = 20
+_CRON_SCHED_COL = 2 + _CRON_NAME_W + 1
+
+
+def _cron_render_lines(rows, width: int) -> "list[tuple[str, int]]":
     """Lay out the --manage-cron list at terminal *width*.
 
-    ``rows`` is ``[(raw_left, emails, is_marked)]`` where ``raw_left`` is the
-    unpadded ``name  schedule [tag]``. Returns, per row, the physical line(s) it
-    occupies:
+    ``rows`` is ``[(name, body, emails, is_marked)]`` where ``body`` is the
+    human schedule plus any ``[legacy]`` tag. Returns the flat list of physical
+    display lines as ``(text, entry_index)`` — a job's own lines carry its
+    index, and a **separator** drawn between jobs carries ``-1`` (so the caller
+    dims it and never lands the cursor on it).
 
-      * a row whose ``name schedule … addresses`` fits stays on **one line**,
-        with the addresses aligned in a column;
-      * a row too wide to fit **wraps** instead of being truncated — the
-        schedule keeps its own line(s) and the addresses move to an indented
-        continuation line (a month-long day list is what forced this).
+    Layout:
+      * a job whose ``name schedule … addresses`` fits stays on **one line**,
+        addresses aligned in a column measured across the fitting jobs only —
+        so one month-long day list cannot inflate the column and drag every
+        short job onto two lines;
+      * a job too wide to fit **wraps** — schedule and addresses flow together
+        (the addresses land at the end of the wrapped text, not on a line of
+        their own), and every continuation line is indented to the schedule
+        column so it lines up under the jobs above.
 
-    The alignment column is measured across the rows that fit only, so one giant
-    schedule cannot drag the column out and push every short row onto two lines.
     Everything adapts to ``width``, so shrinking the terminal reflows.
     """
     import textwrap
 
-    def fits(raw: str, emails: str) -> bool:
+    def field(name: str) -> str:
+        return f"{name:<{_CRON_NAME_W}} "
+
+    def fits(name: str, body: str, emails: str) -> bool:
         sep = 3 if emails else 0
-        return 2 + len(raw) + sep + len(emails) <= width - 1
+        return 2 + len(field(name)) + len(body) + sep + len(emails) <= width - 1
 
-    align_w = max((len(raw) for raw, em, _ in rows if fits(raw, em)), default=0)
+    body_w = max((len(body) for name, body, em, _ in rows if fits(name, body, em)),
+                 default=0)
+    separator = "  " + "─" * max(4, width - 4)
 
-    out: list[list[str]] = []
-    for raw, emails, is_marked in rows:
+    display: list[tuple[str, int]] = []
+    for idx, (name, body, emails, is_marked) in enumerate(rows):
+        if idx > 0:
+            display.append((separator, -1))
         mark = "✔ " if is_marked else "  "
+        nf = field(name)
         sep = "   " if emails else ""
-        if fits(raw, emails):
-            aligned = f"{mark}{raw.ljust(align_w)}{sep}{emails}"
-            # Padding to the column can itself overrun on a row with long
+        if fits(name, body, emails):
+            aligned = f"{mark}{nf}{body.ljust(body_w)}{sep}{emails}"
+            # Padding to the column can itself overrun a job with long
             # addresses; fall back to the unpadded (still one) line then.
-            out.append([aligned] if len(aligned) <= width - 1
-                       else [f"{mark}{raw}{sep}{emails}"])
+            line = aligned if len(aligned) <= width - 1 else f"{mark}{nf}{body}{sep}{emails}"
+            display.append((line, idx))
             continue
-        # Too wide: schedule and addresses flow together and wrap, so the
-        # addresses land at the end of the wrapped text — on the schedule's
-        # continuation line, not on a separate line of their own.
-        wrapped = textwrap.wrap(f"{raw}{sep}{emails}", max(8, width - 2)) or [""]
-        out.append([f"{mark}{wrapped[0]}"] + [f"  {seg}" for seg in wrapped[1:]])
-    return out
+        indent = " " * _CRON_SCHED_COL
+        avail = max(8, width - 1 - _CRON_SCHED_COL)
+        segs = textwrap.wrap(f"{body}{sep}{emails}", avail) or [""]
+        display.append((f"{mark}{nf}{segs[0]}", idx))
+        for seg in segs[1:]:
+            display.append((f"{indent}{seg}", idx))
+    return display
 
 
 def _run_manage_cron_curses(stdscr, config, t) -> int:
@@ -1108,10 +1127,10 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                                   cmd="sudo bob --install-cron"))
             _draw(stdscr, 4, 2, "m: " + t("manage_cron.prompt_ex_email_book"))
         else:
-            # Lay the list out for this width (see _cron_render_lines): rows
-            # that fit stay on one aligned line, only rows too wide to fit wrap.
-            # Entries are variable-height, so cursor and scroll count entries
-            # while the draw counts physical rows.
+            # Lay the list out for this width (see _cron_render_lines): a flat
+            # list of (text, entry_index) physical rows, jobs that fit on one
+            # aligned line, wider ones wrapped, a dim separator (index -1)
+            # between jobs. Scroll counts physical rows; the cursor counts jobs.
             rows = []
             for entry in crons:
                 is_marked = str(entry.cron_path) in marked
@@ -1119,40 +1138,44 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                           if entry.email else "")
                 human = cron_to_human(entry.schedule_expr, lang)
                 tag = f"  [{t('manage_cron.legacy_tag')}]" if entry.legacy else ""
-                rows.append((f"{entry.name:<20} {human}{tag}", emails, is_marked))
-            entry_lines = _cron_render_lines(rows, w)
+                rows.append((entry.name, f"{human}{tag}", emails, is_marked))
+            display = _cron_render_lines(rows, w)
 
-            # Keep the whole cursor entry visible with variable heights: pull
-            # scroll up to it, or advance until its block fits in body_h.
-            if cursor < scroll:
-                scroll = cursor
-            else:
-                while scroll < cursor and sum(
-                        len(entry_lines[i]) for i in range(scroll, cursor + 1)) > body_h:
-                    scroll += 1
+            # Physical-row span of each job, to keep the whole cursor job visible.
+            first = {}
+            last = {}
+            for prow, (_txt, eidx) in enumerate(display):
+                if eidx >= 0:
+                    first.setdefault(eidx, prow)
+                    last[eidx] = prow
+            if cursor in first:
+                if first[cursor] < scroll:
+                    scroll = first[cursor]
+                elif last[cursor] >= scroll + body_h:
+                    scroll = last[cursor] - body_h + 1
+            scroll = max(0, min(scroll, max(0, len(display) - body_h)))
 
-            prow = 0
-            for idx in range(scroll, n):
-                if prow >= body_h:
+            for row in range(body_h):
+                di = scroll + row
+                if di >= len(display):
                     break
-                entry = crons[idx]
-                is_marked = str(entry.cron_path) in marked
-                is_cur = (idx == cursor)
-                if is_cur and has_color:
-                    attr = _curses.color_pair(1) | _curses.A_BOLD
-                elif is_cur:
-                    attr = _curses.A_REVERSE
-                elif is_marked:
-                    attr = marked_attr(_curses, has_color)
-                elif entry.legacy and has_color:
-                    attr = _curses.color_pair(4)
+                text, eidx = display[di]
+                if eidx < 0:                                    # separator
+                    attr = _curses.A_DIM
                 else:
-                    attr = _curses.A_NORMAL
-                for line in entry_lines[idx]:
-                    if prow >= body_h:
-                        break
-                    _draw(stdscr, prow + 1, 0, line[:w - 1].ljust(w - 1), attr)
-                    prow += 1
+                    entry = crons[eidx]
+                    is_marked = str(entry.cron_path) in marked
+                    if eidx == cursor and has_color:
+                        attr = _curses.color_pair(1) | _curses.A_BOLD
+                    elif eidx == cursor:
+                        attr = _curses.A_REVERSE
+                    elif is_marked:
+                        attr = marked_attr(_curses, has_color)
+                    elif entry.legacy and has_color:
+                        attr = _curses.color_pair(4)
+                    else:
+                        attr = _curses.A_NORMAL
+                _draw(stdscr, row + 1, 0, text[:w - 1].ljust(w - 1), attr)
 
         # ── Footer ───────────────────────────────────────────────────────────
         # v0.16.3 — transient message, else the shared key line. The counts
