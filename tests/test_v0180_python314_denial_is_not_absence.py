@@ -159,3 +159,83 @@ def test_a_plugin_bob_cannot_stat_is_not_called_irregular(
         d.chmod(0o755)
     assert "not a regular file" not in caplog.text
     assert "cannot stat" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# v0.18.3 — more call sites where a denial must not read as "clean"
+# ---------------------------------------------------------------------------
+
+def test_sudoers_d_denied_is_not_read_as_no_rules(
+    shut, tmp_path, monkeypatch, python314_predicates
+):
+    """A refused /etc/sudoers.d must mark the sudoers check incomplete, not
+    conclude there are no drop-in NOPASSWD rules."""
+    import bob.checks.file_perms as FP
+
+    monkeypatch.setattr(FP, "_SUDOERS_D", shut / "sudoers.d")   # stat denied (parent 000)
+    monkeypatch.setattr(FP, "_SUDOERS", tmp_path / "no-sudoers")
+    all_, spec, readable = FP._collect_nopasswd_entries()
+    assert readable is False, "a denied /etc/sudoers.d was read as 'no rules'"
+    assert all_ == [] and spec == []
+
+
+def test_sudoers_d_absent_is_readable_true(tmp_path, monkeypatch, python314_predicates):
+    """Polarity: genuinely absent (not denied) is fine — readable stays True."""
+    import bob.checks.file_perms as FP
+
+    monkeypatch.setattr(FP, "_SUDOERS_D", tmp_path / "nope")
+    monkeypatch.setattr(FP, "_SUDOERS", tmp_path / "no-sudoers")
+    _all, _spec, readable = FP._collect_nopasswd_entries()
+    assert readable is True
+
+
+def test_sudoers_d_readable_finds_nopasswd_all(tmp_path, monkeypatch):
+    """Polarity: a readable drop-in with NOPASSWD:ALL is still detected."""
+    import bob.checks.file_perms as FP
+
+    d = tmp_path / "sudoers.d"
+    d.mkdir()
+    (d / "danger").write_text("baduser ALL=(ALL) NOPASSWD: ALL\n", encoding="utf-8")
+    monkeypatch.setattr(FP, "_SUDOERS_D", d)
+    monkeypatch.setattr(FP, "_SUDOERS", tmp_path / "no-sudoers")
+    all_, _spec, readable = FP._collect_nopasswd_entries()
+    assert readable is True and any("NOPASSWD" in x.upper() for x in all_)
+
+
+def test_etc_ssh_denied_marks_host_keys_unreadable(
+    shut, monkeypatch, python314_predicates
+):
+    import bob.checks.file_perms as FP
+
+    monkeypatch.setattr(FP, "_ETC_SSH", shut / "ssh")          # stat denied
+    monkeypatch.setattr(FP, "_SUDOERS_D", shut.parent / "no-d")
+    monkeypatch.setattr(FP, "_SUDOERS", shut.parent / "no-sudoers")
+    snap = FP.FilePermsSnapshot.from_system()
+    assert snap.ssh_host_keys_readable is False
+
+
+def test_etc_ssh_readable_finds_a_bad_host_key(tmp_path, monkeypatch):
+    """Polarity: a readable /etc/ssh with an over-permissioned host key is
+    still flagged, and marked readable."""
+    import bob.checks.file_perms as FP
+
+    d = tmp_path / "ssh"
+    d.mkdir()
+    key = d / "ssh_host_rsa_key"
+    key.write_text("x", encoding="utf-8")
+    key.chmod(0o644)
+    monkeypatch.setattr(FP, "_ETC_SSH", d)
+    monkeypatch.setattr(FP, "_SUDOERS_D", tmp_path / "no-d")
+    monkeypatch.setattr(FP, "_SUDOERS", tmp_path / "no-sudoers")
+    snap = FP.FilePermsSnapshot.from_system()
+    assert snap.ssh_host_keys_readable is True
+    assert any("ssh_host_rsa_key" in p for p, _m in snap.ssh_host_key_issues)
+
+
+def test_ssh_host_keys_unreadable_emits_a_note():
+    from bob import i18n
+    from bob.checks.file_perms import FilePermsSnapshot, check_file_perms
+
+    i18n.init("en")
+    result = check_file_perms(FilePermsSnapshot(ssh_host_keys_readable=False), t=i18n.t)
+    assert "file_perms.ssh_host_keys_unreadable" in [f.key for f in result.findings]

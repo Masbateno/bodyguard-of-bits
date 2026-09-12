@@ -1887,6 +1887,24 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "back to reading 'not allowed' as 'not there'",
     ),
     Mutation(
+        id="py314/sudoers-d-denial-read-as-no-rules",
+        file="bob/checks/file_perms.py",
+        old="        if strict_is_dir(sudoers_d):",
+        new="        if sudoers_d.is_dir():",
+        kills=(f"{_PY314}::test_sudoers_d_denied_is_not_read_as_no_rules",),
+        reason="a bare is_dir() on 3.14 returns False for a refused /etc/sudoers.d, "
+               "so a hidden NOPASSWD:ALL reads as 'no risky sudo rule'",
+    ),
+    Mutation(
+        id="py314/etc-ssh-denial-read-as-clean",
+        file="bob/checks/file_perms.py",
+        old="            key_paths = sorted(ssh_dir.glob(\"ssh_host_*_key\")) if strict_is_dir(ssh_dir) else []",
+        new="            key_paths = sorted(ssh_dir.glob(\"ssh_host_*_key\")) if ssh_dir.is_dir() else []",
+        kills=(f"{_PY314}::test_etc_ssh_denied_marks_host_keys_unreadable",),
+        reason="a bare is_dir() on 3.14 returns False for a refused /etc/ssh, so "
+               "a world-readable host key reads as clean instead of not-established",
+    ),
+    Mutation(
         id="sshd-session/the-regex-knows-only-sshd",
         file="bob/checks/auth_log.py",
         old='_SSHD_TAG = r"sshd(?:-session|-auth)?\\[\\d+\\]:"',

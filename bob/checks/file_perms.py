@@ -25,6 +25,7 @@ from typing import NamedTuple, Tuple
 from bob.checks._run import TranslationFunc, _identity_t, join_continuations, path_exists
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
+from bob._fs import strict_is_dir, strict_is_file
 
 # ---------------------------------------------------------------------------
 # Sensitive files specification
@@ -34,6 +35,12 @@ class _FileSpec(NamedTuple):
     path:     str
     max_mode: int   # maximum allowed permissions (low 9 octal bits)
     key:      str   # short tag used to build unique finding keys
+
+#: Module-level so tests can point them at a mode-000 directory and prove a
+#: denial reads as "not established", not "clean".
+_ETC_SSH = Path("/etc/ssh")
+_SUDOERS = Path("/etc/sudoers")
+_SUDOERS_D = Path("/etc/sudoers.d")
 
 _SENSITIVE_FILES: tuple[_FileSpec, ...] = (
     _FileSpec("/etc/passwd",  0o644, "passwd"),
@@ -68,6 +75,7 @@ class FilePermsSnapshot:
     sudoers_nopasswd_all:      list[str]                 = field(default_factory=list)
     sudoers_nopasswd_specific: list[str]                 = field(default_factory=list)
     sudoers_readable:          bool                      = True
+    ssh_host_keys_readable:    bool                      = True
 
     @classmethod
     def from_system(cls) -> "FilePermsSnapshot":
@@ -99,17 +107,25 @@ class FilePermsSnapshot:
                 )
 
         # 2. SSH host private keys under /etc/ssh/
-        ssh_dir = Path("/etc/ssh")
-        if ssh_dir.is_dir():
-            for key_path in sorted(ssh_dir.glob("ssh_host_*_key")):
-                if key_path.suffix == ".pub":
-                    continue
-                try:
-                    mode = stat.S_IMODE(key_path.stat().st_mode)
-                    if mode != 0o600:
-                        snap.ssh_host_key_issues.append((str(key_path), mode))
-                except OSError:
-                    pass
+        ssh_dir = _ETC_SSH
+        try:
+            key_paths = sorted(ssh_dir.glob("ssh_host_*_key")) if strict_is_dir(ssh_dir) else []
+        except OSError:
+            # /etc/ssh present but BOB was refused entry — say the host-key
+            # permissions were not established, never imply they are fine. On
+            # 3.14 a bare is_dir() returns False on the denial; on <=3.13 the
+            # unguarded glob() raised.
+            key_paths = []
+            snap.ssh_host_keys_readable = False
+        for key_path in key_paths:
+            if key_path.suffix == ".pub":
+                continue
+            try:
+                mode = stat.S_IMODE(key_path.stat().st_mode)
+                if mode != 0o600:
+                    snap.ssh_host_key_issues.append((str(key_path), mode))
+            except OSError:
+                pass
 
         # 3. Sudoers NOPASSWD entries
         nopasswd_all, nopasswd_specific, sudoers_readable = _collect_nopasswd_entries()
@@ -159,17 +175,25 @@ def _collect_nopasswd_entries() -> "tuple[list[str], list[str], bool]":
     nopasswd_specific: list[str] = []
     paths: list[Path] = []
 
-    sudoers = Path("/etc/sudoers")
+    sudoers = _SUDOERS
     if path_exists(sudoers):
         paths.append(sudoers)
 
-    sudoers_d = Path("/etc/sudoers.d")
-    if sudoers_d.is_dir():
-        for f in sorted(sudoers_d.iterdir()):
-            if f.is_file() and not f.name.startswith(".") and not f.name.endswith("~"):
-                paths.append(f)
-
     readable = True
+    sudoers_d = _SUDOERS_D
+    try:
+        if strict_is_dir(sudoers_d):
+            for f in sorted(sudoers_d.iterdir()):
+                if strict_is_file(f) and not f.name.startswith(".") and not f.name.endswith("~"):
+                    paths.append(f)
+    except OSError:
+        # /etc/sudoers.d is present but BOB was refused entry — a denial, not
+        # an absence. Record the sudoers check as incomplete rather than
+        # concluding there are no drop-in NOPASSWD rules. On 3.14 a bare
+        # is_dir() returns False on the denial and would hide this; on <=3.13
+        # the unguarded iterdir() raised and crashed the whole check.
+        readable = False
+
     for p in paths:
         try:
             text = read_text_capped(p, encoding="utf-8", errors="replace")
@@ -298,6 +322,13 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
                 key=f"file_perms.ssh_host_key.{Path(path).name}",
             )
             ssh_deductions += 1
+
+    if not snapshot.ssh_host_keys_readable:
+        result.info(
+            message=_t("file_perms.ssh_host_keys_unreadable"),
+            detail=_t("file_perms.ssh_host_keys_unreadable_detail"),
+            key="file_perms.ssh_host_keys_unreadable",
+        )
 
     # ---- Sudoers NOPASSWD:ALL -----------------------------------------------
     if snapshot.sudoers_nopasswd_all:

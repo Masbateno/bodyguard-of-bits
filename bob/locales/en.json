@@ -1221,6 +1221,8 @@
     "ssh_host_key_perms_reason": "SSH host key permissions too open: {path}",
     "sudoers_unreadable": "Sudoers rules could not be read",
     "sudoers_unreadable_detail": "A file under /etc/sudoers or /etc/sudoers.d exists but could not be opened, so BOB skipped it. Any NOPASSWD grant it holds is invisible to this audit \u2014 the \"no risky sudo rule found\" verdict is withheld rather than stated. Check with: sudo visudo -c",
+    "ssh_host_keys_unreadable": "SSH host key permissions could not be checked \u2014 /etc/ssh was not readable",
+    "ssh_host_keys_unreadable_detail": "/etc/ssh exists but BOB was refused entry, so the permissions of the SSH host private keys could not be read. A world-readable host key would be invisible to this audit \u2014 the all-clear on host key permissions is withheld rather than stated. Check with: sudo ls -l /etc/ssh/ssh_host_*_key",
     "sudoers_nopasswd_all": "NOPASSWD:ALL in sudoers — unrestricted passwordless sudo: {line}",
     "sudoers_nopasswd_all_detail": "NOPASSWD:ALL grants full root access without password. Restrict to specific commands if possible.",
     "sudoers_nopasswd_all_reason": "NOPASSWD:ALL found in sudoers",

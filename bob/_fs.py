@@ -53,6 +53,17 @@ def strict_is_file(path: Path) -> bool:
     return mode is not None and stat.S_ISREG(mode)
 
 
+def strict_is_dir(path: Path) -> bool:
+    """``Path.is_dir()`` as it behaved up to 3.13: raises on a denial."""
+    mode = _mode(path, follow=True)
+    return mode is not None and stat.S_ISDIR(mode)
+
+
+def strict_exists(path: Path) -> bool:
+    """``Path.exists()`` as it behaved up to 3.13: raises on a denial."""
+    return _mode(path, follow=True) is not None
+
+
 def strict_is_symlink(path: Path) -> bool:
     """``Path.is_symlink()`` as it behaved up to 3.13: raises on a denial."""
     mode = _mode(path, follow=False)

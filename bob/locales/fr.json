@@ -1221,6 +1221,8 @@
     "ssh_host_key_perms_reason": "Permissions trop ouvertes sur la clé hôte SSH : {path}",
     "sudoers_unreadable": "Les r\u00e8gles sudoers n'ont pas pu \u00eatre lues",
     "sudoers_unreadable_detail": "Un fichier sous /etc/sudoers ou /etc/sudoers.d existe mais n'a pas pu \u00eatre ouvert : BOB l'a saut\u00e9. Toute autorisation NOPASSWD qu'il contient est invisible pour cet audit \u2014 le verdict \u00ab aucune r\u00e8gle sudo risqu\u00e9e \u00bb est retenu plut\u00f4t qu'affirm\u00e9. V\u00e9rifier avec : sudo visudo -c",
+    "ssh_host_keys_unreadable": "Les permissions des cl\u00e9s d'h\u00f4te SSH n'ont pas pu \u00eatre v\u00e9rifi\u00e9es \u2014 /etc/ssh n'\u00e9tait pas lisible",
+    "ssh_host_keys_unreadable_detail": "/etc/ssh existe mais BOB s'est vu refuser l'entr\u00e9e : les permissions des cl\u00e9s priv\u00e9es d'h\u00f4te SSH n'ont pas pu \u00eatre lues. Une cl\u00e9 d'h\u00f4te lisible par tous serait invisible pour cet audit \u2014 le feu vert sur les permissions des cl\u00e9s d'h\u00f4te est retenu plut\u00f4t qu'affirm\u00e9. V\u00e9rifier avec : sudo ls -l /etc/ssh/ssh_host_*_key",
     "sudoers_nopasswd_all": "NOPASSWD:ALL dans sudoers — sudo sans mot de passe illimité : {line}",
     "sudoers_nopasswd_all_detail": "NOPASSWD:ALL accorde un accès root complet sans mot de passe. Restreindre à des commandes spécifiques si possible.",
     "sudoers_nopasswd_all_reason": "NOPASSWD:ALL présent dans sudoers",
