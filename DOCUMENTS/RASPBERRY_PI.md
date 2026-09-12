@@ -65,11 +65,35 @@ source /etc/bash_completion.d/bob
 > duration at the end, so you need not guess. Installation pulls pure-Python
 > wheels — no compiler needed.
 
+### The virtualenv `pipx` creates
+
+`pipx` installs BOB into its **own isolated virtualenv** — measured on the Pi
+Zero W at `~/.local/share/pipx/venvs/bodyguard-of-bits`, about **5 MB**, on top
+of a **~13 MB** pip/setuptools base that `pipx` shares across every app it
+installs (created once). It uses the board's **system Python** (3.13 on trixie),
+so no second interpreter is downloaded, and it touches **nothing** apt manages —
+BOB's dependencies cannot clash with system packages, and vice versa. The only
+thing placed on your `PATH` is the launcher `~/.local/bin/bob` (via
+`pipx ensurepath`).
+
+Managing it, all without a compiler and without root:
+
+```bash
+pipx upgrade bodyguard-of-bits     # in place, keeps the same venv + launcher
+pipx list                          # shows the venv, its version and Python
+pipx reinstall bodyguard-of-bits   # rebuild the venv (e.g. after an OS Python bump)
+```
+
+`sudo bob` runs the same code: the `--install-completion` step above symlinks
+`/usr/local/bin/bob` to the venv launcher so root finds it (otherwise call
+`sudo ~/.local/bin/bob` directly). Uninstalling removes the whole venv cleanly —
+nothing is left behind in the system Python.
+
 ### Uninstall
 
 ```bash
 sudo rm -f /usr/local/bin/bob /etc/bash_completion.d/bob
-pipx uninstall bodyguard-of-bits
+pipx uninstall bodyguard-of-bits          # removes the isolated venv entirely
 ```
 
 ---
