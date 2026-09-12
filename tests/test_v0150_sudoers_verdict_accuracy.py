@@ -32,11 +32,10 @@ def _collect(text: str, tmp_path: Path, monkeypatch) -> tuple[list[str], list[st
     """
     f = tmp_path / "sudoers"
     f.write_text(text)
-    real = fp.Path
-    monkeypatch.setattr(
-        fp, "Path",
-        lambda p: f if str(p) == "/etc/sudoers" else real(tmp_path / "absent"),
-    )
+    # v0.18.3: the collector reads the module-level _SUDOERS / _SUDOERS_D
+    # constants (the testable seam), not Path("/etc/sudoers") at call time.
+    monkeypatch.setattr(fp, "_SUDOERS", f)
+    monkeypatch.setattr(fp, "_SUDOERS_D", tmp_path / "absent")
     nopasswd_all, nopasswd_specific, _readable = fp._collect_nopasswd_entries()
     return nopasswd_all, nopasswd_specific
 

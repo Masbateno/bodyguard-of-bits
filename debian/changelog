@@ -1,3 +1,17 @@
+bodyguard-of-bits (0.18.3-1) unstable; urgency=medium
+
+  * --manage-cron reflows to the terminal width instead of truncating: a job
+    scheduled on many days of the month kept its addresses (schedule wraps,
+    addresses flow onto the continuation line, aligned column, separator between
+    jobs).
+  * pathlib-3.14 denial audit, batch 1: on 3.14 Path.is_dir() returns False on a
+    PermissionError, so a refused directory read as absent/clean. Fixed with
+    strict_is_dir for /etc/sudoers.d, /etc/ssh, /etc/cron.d, the cron script
+    dirs, the user crontab spool and /var/log/journal — each now reads as
+    not-established. Also fixes an outright crash on <=3.13 for the cron dirs.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 12 Sep 2026 14:00:00 +0000
+
 bodyguard-of-bits (0.18.2-1) unstable; urgency=medium
 
   * --install-completion printed bracketed locale keys ([completion.installed],

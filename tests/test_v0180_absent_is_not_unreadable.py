@@ -79,7 +79,7 @@ class TestTheSnapshotAgreesWithItsOwnContract:
         monkeypatch.setattr(mod, "_SYSTEM_CRONTABS", [tmp_path / "crontab"])
         monkeypatch.setattr(mod, "_CRON_FORMAT_DIRS", [])
         monkeypatch.setattr(mod, "_CRON_SCRIPT_DIRS", [])
-        monkeypatch.setattr(mod, "_find_unexpected_user_crons", lambda: [])
+        monkeypatch.setattr(mod, "_find_unexpected_user_crons", lambda unreadable: [])
         snap = mod.CronAuditSnapshot.from_system()
         assert snap.unreadable_files == [], (
             "an absent /etc/crontab put cron.unreadable_files into `unverified`, "

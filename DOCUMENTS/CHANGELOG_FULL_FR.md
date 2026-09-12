@@ -6,6 +6,58 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.18.3] — 12-09-2026
+
+**`--manage-cron` se recompose à la largeur du terminal au lieu de tronquer.** Un
+cron planifié sur de nombreux jours du mois (« the 1st, 2nd, … 31st of every
+month at 12:03 ») faisait déborder sa planification hors de l’écran ; la ligne
+était coupée et les adresses e-mail à côté disparaissaient. Les lignes s’adaptent
+désormais : une qui tient reste sur une seule ligne, adresses alignées en colonne
+— mesurée sur les jobs qui tiennent seulement, pour qu’un planning d’un mois
+entier ne gonfle pas la colonne et ne tire pas chaque job court sur deux lignes —
+et une trop large se replie, planning et adresses coulant ensemble pour que les
+adresses arrivent sur la ligne de continuation, indentée sous la colonne du
+planning pour s’aligner avec les jobs du dessus. Un séparateur discret sépare les
+jobs.
+
+**L’audit des refus pathlib-3.14, lot 1.** Python 3.14 fait renvoyer `False` à
+`Path.is_dir()` / `is_file()` / `exists()` sur un `PermissionError` là où ≤3.13
+levait (v0.18.0 a corrigé les quatre sites attrapés par la CI et promis le reste
+pour la version suivante). Le risque : un répertoire refusé à BOB se lit comme
+*absent*, et son verdict de sécurité comme *propre*. Ce lot ferme les sites les
+plus sensibles avec `strict_is_dir` (un prédicat basé sur stat qui lève encore
+sur un refus), chaque refus menant à un constat *non établi* :
+
+  * `/etc/sudoers.d` — un répertoire drop-in refusé était sauté et le verdict
+    sudoers restait propre, masquant un `NOPASSWD:ALL`. Marque désormais le
+    contrôle sudoers illisible.
+  * `/etc/ssh` — les contrôles de permission des clés d’hôte étaient sautés ;
+    une clé d’hôte lisible par tous serait invisible. Nouveau constat
+    `file_perms.ssh_host_keys_unreadable`.
+  * `/etc/cron.d`, les dossiers de scripts `cron.daily/hourly/weekly/monthly` et
+    le spool `/var/spool/cron/crontabs` — un cron pipe-to-shell ou un crontab
+    utilisateur pirate passait inaperçu ; un répertoire refusé atterrit désormais
+    dans `cron.unreadable_files`. (Ils crashaient aussi l’audit sous ≤3.13, où
+    l’`iterdir()` non gardé levait.)
+  * `/var/log/journal` — sur un hôte par défaut (Storage=auto) un répertoire
+    refusé se lisait « volatile » et levait un faux « journaux perdus au
+    redémarrage ». `journal_persistent` est désormais tri-état ; une persistance
+    inconnue émet `log_rotation.journal_dir_unreadable` plutôt que l’avertissement
+    du pire cas.
+
+Chaque correctif garde son helper `strict_*` (`bob/_fs.py` gagne `strict_is_dir`
+et `strict_exists`), une paire de polarité sur le banc 3.14 indépendant de
+l’interpréteur (refusé → non établi ; absent → toujours False ; lisible → le
+constat se déclenche) et une mutation. Aucun changement de comportement sous
+≤3.13 ni là où les chemins sont lisibles, soit l’immense majorité des cas. Les
+sites restants, moins sensibles (nuance actif/installé de backup, ssl_certs,
+mac_policy, parseurs de clés ssh, contexte pare-feu), restent sur la liste pour
+les lots suivants.
+
+**Tests** 10321 → **10373**. **Mutations** 208 → **216**.
+
+---
+
 ## [v0.18.2] — 12-09-2026
 
 **`--install-completion` affichait des clés de locale entre crochets au lieu du

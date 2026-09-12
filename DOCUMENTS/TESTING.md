@@ -13,6 +13,7 @@ Two complementary parts:
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| v0.18.3 | 10373 | **`--manage-cron` reflows to width; pathlib-3.14 denial audit batch 1** (`/etc/sudoers.d`, `/etc/ssh`, `/etc/cron.d`, `/var/log/journal` — a refused dir reads as not-established, not clean). |
 | v0.18.2 | 10321 | **`--install-completion` printed bracketed locale keys** — its `__main__` branch skipped `i18n.init()`; found validating BOB on the Pi Zero W. Pi guide expanded (venv, invocation). |
 | v0.18.1 | 10314 | **SSH brute-force detection was blind on OpenSSH ≥ 9.8** — found on a real Raspberry Pi Zero W. |
 | v0.18.0 | 9959 | **BOB reads OpenRC.** Every service on a host without systemd came back UNKNOWN — honest and useless, since Alpine, Gentoo and Devuan run OpenRC. The contract is measured on Alpine Linux 3.22: `rc-service status` exits 0 started, 3 stopped and 1 for a service it does not know, while existence is settled by `/etc/init.d/<name>` — so a probe that could not run is never read as a stopped daemon, which is the mistake v0.17.1 had to undo four times. `CommandResult` carries the exit status now, because `ok` collapsed "exited 3" and "could not be started" into the same False. The remediation commands follow the init system rather than its spelling: `rc-service sshd restart`, and a two-verb `enable`. Verified by running the resolved command on both kinds of host. **BREAKING** — UNKNOWN becomes a real state on OpenRC hosts, so verdicts, scores and baselines move there; nothing changes under systemd. |

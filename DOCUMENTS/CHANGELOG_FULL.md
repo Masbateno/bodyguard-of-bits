@@ -6,6 +6,54 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.18.3] — 2026-09-12
+
+**`--manage-cron` reflows to the terminal width instead of truncating.** A cron
+scheduled on many days of the month ("the 1st, 2nd, … 31st of every month at
+12:03") ran its schedule past the screen; the row was clipped and the e-mail
+addresses beside it vanished. Rows now adapt to the width: one that fits stays on
+a single line with the addresses aligned in a column — measured across the jobs
+that fit only, so one month-long schedule cannot inflate the column and drag
+every short job onto two lines — and one too wide wraps, schedule and addresses
+flowing together so the addresses land on the continuation line, which is
+indented to the schedule column so it lines up under the jobs above. A dim
+separator sits between jobs so they are told apart at a glance.
+
+**The pathlib-3.14 denial audit, batch 1.** Python 3.14 made
+`Path.is_dir()` / `is_file()` / `exists()` return `False` on a `PermissionError`
+where ≤3.13 raised (v0.18.0 fixed the four sites the CI caught and promised the
+rest for the next release). The risk: a directory BOB is refused entry to reads
+as *absent*, and its security verdict as *clean*. This batch closes the
+highest-stakes sites with `strict_is_dir` (a stat-based predicate that still
+raises on a denial), routing each denial to a *not-established* finding:
+
+  * `/etc/sudoers.d` — a refused drop-in directory was skipped and the sudoers
+    verdict stayed clean, hiding a `NOPASSWD:ALL`. Now marks the sudoers check
+    unreadable.
+  * `/etc/ssh` — host-key permission checks were skipped; a world-readable host
+    key would be invisible. New `file_perms.ssh_host_keys_unreadable` note.
+  * `/etc/cron.d`, the `cron.daily/hourly/weekly/monthly` script dirs and the
+    `/var/spool/cron/crontabs` user spool — a pipe-to-shell cron or a rogue
+    user crontab went unaudited; a refused directory now lands in
+    `cron.unreadable_files`. (These also crashed the audit outright on ≤3.13,
+    where the unguarded `iterdir()` raised.)
+  * `/var/log/journal` — on a default (Storage=auto) host a refused directory
+    read as "volatile" and raised a false "logs lost on reboot" warning.
+    `journal_persistent` is now tri-state; unknown persistence emits
+    `log_rotation.journal_dir_unreadable` rather than the worst-case warning.
+
+Each fix keeps its `strict_*` helper (`bob/_fs.py` gained `strict_is_dir` and
+`strict_exists`), a polarity pair on the interpreter-independent 3.14 bench
+(denied → not-established; absent → still False; readable → the finding still
+fires), and a mutation. No behaviour change on ≤3.13 or where the paths are
+readable, which is the overwhelming case. The remaining lower-stakes sites
+(backup active/installed nuance, ssl_certs, mac_policy, ssh key parsers,
+firewall context) stay on the list for the next batches.
+
+**Tests** 10321 → **10373**. **Mutations** 208 → **216**.
+
+---
+
 ## [v0.18.2] — 2026-09-12
 
 **`--install-completion` printed bracketed locale keys instead of text.** Found
