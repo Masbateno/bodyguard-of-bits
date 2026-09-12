@@ -3452,6 +3452,8 @@
     "openssl_unavailable": "openssl not found — cannot check TLS/SSL certificate expiry",
     "no_certs": "No server TLS/SSL certificates found (Let's Encrypt, /etc/ssl/private, nginx, apache2, postfix)",
     "read_error": "Could not read certificate {path}: {error}",
+    "dir_unreadable": "Certificate store(s) could not be read: {dirs}",
+    "dir_unreadable_detail": "A certificate store BOB was refused entry to may hold a certificate that is expired or about to expire, and the deduction it would carry was not made. \"No certificates found\" and the score above are therefore an upper bound for these paths, not a clean bill. Run as root to inspect them: sudo bob --check ssl_certs",
     "expired": "Certificate {path} EXPIRED {days} day(s) ago",
     "expiring_critical": "Certificate {path} expires in {days} day(s) — renew immediately",
     "expiring_soon": "Certificate {path} expires in {days} day(s) — renew soon",

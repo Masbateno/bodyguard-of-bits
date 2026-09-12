@@ -41,6 +41,14 @@ from bob.checks._run import (
 )
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
+from bob._fs import strict_is_dir
+
+# Cert stores BOB reads directly. Both are root-owned 0700 by default, so an
+# operator running without sudo cannot traverse them — the ordinary denial
+# case, not an exotic one. Module constants so tests can point them elsewhere.
+_LE_LIVE     = Path("/etc/letsencrypt/live")
+_SSL_PRIVATE = Path("/etc/ssl/private")
+_PRIV_CERT_EXTS = frozenset({".pem", ".crt", ".cert"})
 
 _WARN_DAYS      = 30
 _ALERT_DAYS     = 7
@@ -74,6 +82,10 @@ class SslCertsSnapshot:
     """
     certs:             list[CertEntry] = field(default_factory=list)
     openssl_available: bool = True
+    # Cert stores BOB could not read: a denied store may hold a certificate
+    # whose expiry — and its deduction — goes unmeasured, so the "no certs" /
+    # score presented without it is an upper bound, not a clean bill.
+    unreadable_dirs:   list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "SslCertsSnapshot":
@@ -86,17 +98,26 @@ class SslCertsSnapshot:
         paths: set[str] = set()  # realpath-deduped set
 
         # --- Let's Encrypt ---
-        le_dir = Path("/etc/letsencrypt/live")
-        if le_dir.is_dir():
-            for cert in le_dir.glob("*/fullchain.pem"):
-                _add_path(cert, paths)
+        # These stores are 0700/0710 root: their parent (/etc, /etc/ssl) is
+        # traversable, so stat() and is_dir() succeed — but reading the store is
+        # denied. Path.glob() *swallows* that PermissionError and returns [],
+        # which would read a locked store as "no certificates". iterdir() raises
+        # instead, so the denial is caught and recorded rather than lost.
+        try:
+            if strict_is_dir(_LE_LIVE):
+                for sub in _LE_LIVE.iterdir():
+                    _add_path(sub / "fullchain.pem", paths)
+        except OSError:
+            snap.unreadable_dirs.append(str(_LE_LIVE))
 
         # --- /etc/ssl/private ---
-        priv = Path("/etc/ssl/private")
-        if priv.is_dir():
-            for ext in ("*.pem", "*.crt", "*.cert"):
-                for cert in priv.glob(ext):
-                    _add_path(cert, paths)
+        try:
+            if strict_is_dir(_SSL_PRIVATE):
+                for cert in _SSL_PRIVATE.iterdir():
+                    if cert.suffix in _PRIV_CERT_EXTS:
+                        _add_path(cert, paths)
+        except OSError:
+            snap.unreadable_dirs.append(str(_SSL_PRIVATE))
 
         # --- nginx ---
         # `sites-enabled` entries carry no extension on Debian — the stock site
@@ -160,6 +181,17 @@ def check_ssl_certs(snapshot: SslCertsSnapshot, t: TranslationFunc | None = None
             key="ssl_certs.openssl_unavailable",
         )
         return result
+
+    # A cert store BOB could not read is not an absence of certificates. Say so
+    # before any "no certs" conclusion, so an operator without sudo does not
+    # read a denied /etc/letsencrypt/live as "nothing to renew".
+    if snapshot.unreadable_dirs:
+        result.info(
+            message=_t("ssl_certs.dir_unreadable",
+                       dirs=", ".join(sorted(snapshot.unreadable_dirs))),
+            detail=_t("ssl_certs.dir_unreadable_detail"),
+            key="ssl_certs.dir_unreadable",
+        )
 
     if not snapshot.certs:
         result.info(

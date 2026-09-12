@@ -3452,6 +3452,8 @@
     "openssl_unavailable": "openssl introuvable — impossible de vérifier l'expiration des certificats TLS/SSL",
     "no_certs": "Aucun certificat serveur TLS/SSL trouvé (Let's Encrypt, /etc/ssl/private, nginx, apache2, postfix)",
     "read_error": "Impossible de lire le certificat {path} : {error}",
+    "dir_unreadable": "Magasin(s) de certificats illisible(s) : {dirs}",
+    "dir_unreadable_detail": "Un magasin de certificats dont l'accès a été refusé peut contenir un certificat expiré ou sur le point de l'être, et la déduction associée n'a pas été appliquée. « Aucun certificat trouvé » et le score ci-dessus sont donc une borne supérieure pour ces chemins, pas un état sain. À inspecter en root : sudo bob --check ssl_certs",
     "expired": "Certificat {path} EXPIRÉ depuis {days} jour(s)",
     "expiring_critical": "Certificat {path} expire dans {days} jour(s) — renouvellement urgent",
     "expiring_soon": "Certificat {path} expire dans {days} jour(s) — renouvellement conseillé",

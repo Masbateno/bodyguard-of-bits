@@ -1951,6 +1951,17 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "up to 3.13; the guard turns the denial into 'installed', not a crash",
     ),
     Mutation(
+        id="py314/cert-store-glob-swallows-denial",
+        file="bob/checks/ssl_certs.py",
+        old="        try:\n            if strict_is_dir(_SSL_PRIVATE):\n                for cert in _SSL_PRIVATE.iterdir():\n                    if cert.suffix in _PRIV_CERT_EXTS:\n                        _add_path(cert, paths)\n        except OSError:\n            snap.unreadable_dirs.append(str(_SSL_PRIVATE))",
+        new="        if _SSL_PRIVATE.is_dir():\n            for ext in (\"*.pem\", \"*.crt\", \"*.cert\"):\n                for cert in _SSL_PRIVATE.glob(ext):\n                    _add_path(cert, paths)",
+        kills=(f"{_PY314}::test_locked_cert_store_is_recorded_unreadable_not_absent",),
+        reason="Path.glob() swallows the PermissionError on a 0700/0710 store "
+               "(is_dir() is True — the parent is traversable) and returns [], so "
+               "an expiring cert inside reads as 'no certificates', its deduction "
+               "silently unmade; iterdir() raises and the denial is recorded",
+    ),
+    Mutation(
         id="sshd-session/the-regex-knows-only-sshd",
         file="bob/checks/auth_log.py",
         old='_SSHD_TAG = r"sshd(?:-session|-auth)?\\[\\d+\\]:"',

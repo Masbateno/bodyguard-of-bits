@@ -529,15 +529,15 @@ class TestSslCertsFromSystem:
         orig = mod.Path
 
         def _patched_path(s):
-            if s == "/etc/letsencrypt/live":
-                return le_live.parent
-            if s == "/etc/ssl/private":
-                return tmp_path / "nonexist"
             if s == "/etc/postfix/main.cf":
                 return tmp_path / "nonexist_main.cf"
             return orig(s)
 
+        # v0.18.3: the cert stores are read through module constants (a
+        # monkeypatch seam), not Path("/etc/…") at call time.
         with (
+            patch.object(mod, "_LE_LIVE", le_live.parent),
+            patch.object(mod, "_SSL_PRIVATE", tmp_path / "nonexist"),
             patch.object(mod, "Path", side_effect=_patched_path),
             patch("subprocess.run") as mock_run,
         ):
@@ -585,9 +585,7 @@ class TestSslCertsFromSystem:
 
         orig_path = mod.Path
         def _patched_path(s):
-            if s == "/etc/letsencrypt/live":
-                return le_live
-            if s in ("/etc/ssl/private", "/etc/postfix/main.cf",
+            if s in ("/etc/postfix/main.cf",
                      "/etc/nginx/sites-enabled", "/etc/nginx",
                      "/etc/apache2/sites-enabled", "/etc/apache2"):
                 return tmp_path / "nonexist"
@@ -595,6 +593,8 @@ class TestSslCertsFromSystem:
 
         with (
             patch("bob.checks.ssl_certs._command_exists", return_value=True),
+            patch.object(mod, "_LE_LIVE", le_live),
+            patch.object(mod, "_SSL_PRIVATE", tmp_path / "nonexist"),
             patch.object(mod, "Path", side_effect=_patched_path),
             patch("subprocess.run") as mock_run,
         ):

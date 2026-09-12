@@ -395,3 +395,65 @@ def test_borgmatic_config_present_is_active(tmp_path, monkeypatch):
     monkeypatch.setattr(B, "_BORGMATIC_CONFIGS", (cfg,))
     snap = B.BackupSnapshot.from_system()
     assert "borgmatic" in snap.active_tools
+
+
+# ---------------------------------------------------------------------------
+# v0.18.3 batch 3 — ssl_certs: a denied cert store is not "no certificates"
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def locked_store(tmp_path):
+    """A non-empty cert store whose *parent* is traversable but whose own bits
+    are cleared — the real /etc/ssl/private (0710 root) shape. stat() and
+    is_dir() succeed here; only reading the directory is denied. That is the
+    case Path.glob() silently swallows and iterdir() raises on."""
+    parent = tmp_path / "etc-ssl"
+    parent.mkdir()                       # 0755, traversable
+    store = parent / "private"
+    store.mkdir()
+    (store / "server.pem").write_text("x", encoding="utf-8")
+    store.chmod(0o000)                   # readable-parent, unreadable leaf
+    yield store
+    store.chmod(0o755)
+
+
+def test_locked_cert_store_is_recorded_unreadable_not_absent(
+    locked_store, tmp_path, monkeypatch
+):
+    """A 0700/0710 store BOB may list-deny (the ordinary no-sudo case) must be
+    recorded unreadable, not scanned as empty via glob's swallowed error — an
+    expiring cert inside would otherwise go unmeasured and its deduction unmade.
+    No 3.14 fixture: stat succeeds (parent traversable) so the regression is not
+    in is_dir() here; it is that glob() eats the read denial, which iterdir()
+    surfaces on every interpreter."""
+    import bob.checks.ssl_certs as S
+
+    monkeypatch.setattr(S, "_command_exists", _only_on_path("openssl"))
+    monkeypatch.setattr(S, "_SSL_PRIVATE", locked_store)
+    monkeypatch.setattr(S, "_LE_LIVE", tmp_path / "none")   # genuinely absent
+    snap = S.SslCertsSnapshot.from_system()
+    assert str(locked_store) in snap.unreadable_dirs
+    assert str(tmp_path / "none") not in snap.unreadable_dirs
+
+
+def test_ssl_private_absent_is_not_unreadable(tmp_path, monkeypatch):
+    """Polarity: a genuinely absent store leaves unreadable_dirs empty."""
+    import bob.checks.ssl_certs as S
+
+    monkeypatch.setattr(S, "_command_exists", _only_on_path("openssl"))
+    monkeypatch.setattr(S, "_LE_LIVE", tmp_path / "no-le")
+    monkeypatch.setattr(S, "_SSL_PRIVATE", tmp_path / "no-priv")
+    snap = S.SslCertsSnapshot.from_system()
+    assert snap.unreadable_dirs == []
+
+
+def test_unreadable_cert_store_is_a_visibility_note():
+    from bob import i18n
+    from bob.checks.ssl_certs import SslCertsSnapshot, check_ssl_certs
+    from bob.visibility import is_visibility_key
+
+    i18n.init("en")
+    snap = SslCertsSnapshot(unreadable_dirs=["/etc/letsencrypt/live"])
+    keys = [f.key for f in check_ssl_certs(snap, i18n.t).findings]
+    assert "ssl_certs.dir_unreadable" in keys
+    assert is_visibility_key("ssl_certs.dir_unreadable")

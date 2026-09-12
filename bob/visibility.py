@@ -76,6 +76,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "services.state.unknown",
     "ssh.active_unknown",
     "ssh.config_unreadable",
+    "ssl_certs.dir_unreadable",
     "suid_audit.ok_partial",
     "systemd_timers.unreadable",
     "umask.sources_unreadable",
