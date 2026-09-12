@@ -9,11 +9,13 @@ the user namespace mapping, and whether the root filesystem is writable.
 The whole section is suppressed on a non-container host (``skip_if`` on
 ``in_container``), so it only appears where it is meaningful.
 
-INFO-only by design (v0.13.0): the readings are surfaced as posture context
-(a privileged container is flagged with strong wording) but carry **no score
-deduction** in this first version — the deduction calibration (e.g. a real WARN
-for a privileged / CAP_SYS_ADMIN container) is a fast-follow once it can be
-validated inside a real container runtime. See CHANGELOG v0.13.0.
+Scoring (v0.15.4, BREAKING): the readings that reflect an explicit operator
+choice now deduct — a privileged container (the full capability set) 3 points,
+a lone CAP_SYS_ADMIN 2, and a switched-off seccomp filter 1 — calibrated and
+field-tested across four podman containers (a default container costs zero).
+The rest of the posture (no-new-privs, userns mapping, writable rootfs) stays
+INFO-only context. Introduced INFO-only in v0.13.0; see CHANGELOG v0.13.0 and
+v0.15.4.
 
 Split into:
   1. ContainerSecuritySnapshot.from_system() — detect + read /proc interfaces.
