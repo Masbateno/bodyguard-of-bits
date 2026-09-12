@@ -1460,6 +1460,15 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "silence the denial, which is the one this flag exists for",
     ),
     Mutation(
+        id="install-completion/i18n-not-initialised",
+        file="bob/__main__.py",
+        old="        i18n.init(lang=config.lang)\n        if os.geteuid() != 0:",
+        new="        if os.geteuid() != 0:",
+        kills=("tests/test_v0181_install_completion_i18n.py::test_english_output_has_no_bracketed_keys",),
+        reason="without i18n.init in the --install-completion branch, every "
+               "message it prints falls back to bracketed locale keys",
+    ),
+    Mutation(
         id="manage-logs/forget-does-not-drop-the-dir",
         file="bob/manage_logs.py",
         old="    extras = [d for d in _get_extra_dirs(user_config) if d != path]\n    _set_extra_dirs(user_config, extras)",

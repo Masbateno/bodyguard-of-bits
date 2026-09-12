@@ -417,6 +417,11 @@ def _run(argv=None) -> int:
             return EXIT_ERROR
 
     if config.install_completion:
+        # Every other action branch inits i18n before printing; this one did
+        # not, so both the needs-root error and install_completion()'s own
+        # output printed bracketed fallbacks ([completion.installed], …). An
+        # operator running --install-completion saw raw keys, in either locale.
+        i18n.init(lang=config.lang)
         if os.geteuid() != 0:
             self_path = Path(sys.argv[0]).resolve()
             print(
