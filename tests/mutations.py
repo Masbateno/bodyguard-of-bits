@@ -1905,6 +1905,24 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "a world-readable host key reads as clean instead of not-established",
     ),
     Mutation(
+        id="py314/cron-d-denial-read-as-empty",
+        file="bob/checks/cron_audit.py",
+        old="        for cron_dir in _CRON_FORMAT_DIRS:\n            try:\n                entries = sorted(cron_dir.iterdir()) if strict_is_dir(cron_dir) else []",
+        new="        for cron_dir in _CRON_FORMAT_DIRS:\n            try:\n                entries = sorted(cron_dir.iterdir()) if cron_dir.is_dir() else []",
+        kills=(f"{_PY314}::test_cron_d_denied_is_recorded_unreadable_not_empty",),
+        reason="a bare is_dir() on 3.14 returns False for a refused /etc/cron.d, "
+               "so a pipe-to-shell cron inside goes unaudited and the verdict stays clean",
+    ),
+    Mutation(
+        id="py314/user-crontab-denial-read-as-empty",
+        file="bob/checks/cron_audit.py",
+        old="                   if strict_is_dir(_USER_CRONTAB_DIR) else [])",
+        new="                   if _USER_CRONTAB_DIR.is_dir() else [])",
+        kills=(f"{_PY314}::test_user_crontab_dir_denied_is_recorded_unreadable",),
+        reason="a bare is_dir() on 3.14 returns False for a refused user crontab "
+               "spool, hiding a rogue user's crontab",
+    ),
+    Mutation(
         id="sshd-session/the-regex-knows-only-sshd",
         file="bob/checks/auth_log.py",
         old='_SSHD_TAG = r"sshd(?:-session|-auth)?\\[\\d+\\]:"',

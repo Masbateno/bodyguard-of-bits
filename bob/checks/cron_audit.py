@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, pipes_into_shell
+from bob._fs import strict_is_dir, strict_is_file
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
@@ -109,21 +110,43 @@ class CronAuditSnapshot:
             if not _read_cron_file(crontab_path, format_lines):
                 unreadable.append(str(crontab_path))
 
-        # /etc/cron.d — crontab format
+        # /etc/cron.d — crontab format. A directory BOB is refused entry to is
+        # recorded as unreadable, never skipped as empty: on 3.14 a bare
+        # is_dir() returns False on the denial (a pipe-to-shell cron inside
+        # would go unaudited and the verdict stay clean), and on <=3.13 the
+        # unguarded iterdir() raised and crashed the check.
         for cron_dir in _CRON_FORMAT_DIRS:
-            if cron_dir.is_dir():
-                for entry in sorted(cron_dir.iterdir()):
-                    if entry.is_file() and not _read_cron_file(entry, format_lines):
-                        unreadable.append(str(entry))
+            try:
+                entries = sorted(cron_dir.iterdir()) if strict_is_dir(cron_dir) else []
+            except OSError:
+                unreadable.append(str(cron_dir))
+                continue
+            for entry in entries:
+                try:
+                    is_file = strict_is_file(entry)
+                except OSError:
+                    unreadable.append(str(entry))
+                    continue
+                if is_file and not _read_cron_file(entry, format_lines):
+                    unreadable.append(str(entry))
 
         # cron.daily/hourly/weekly/monthly — executable scripts
         for cron_dir in _CRON_SCRIPT_DIRS:
-            if cron_dir.is_dir():
-                for entry in sorted(cron_dir.iterdir()):
-                    if entry.is_file():
-                        if not _read_cron_file(entry, script_lines):
-                            unreadable.append(str(entry))
-                        script_files.append(entry)
+            try:
+                entries = sorted(cron_dir.iterdir()) if strict_is_dir(cron_dir) else []
+            except OSError:
+                unreadable.append(str(cron_dir))
+                continue
+            for entry in entries:
+                try:
+                    is_file = strict_is_file(entry)
+                except OSError:
+                    unreadable.append(str(entry))
+                    continue
+                if is_file:
+                    if not _read_cron_file(entry, script_lines):
+                        unreadable.append(str(entry))
+                    script_files.append(entry)
 
         # Pipe-to-shell: check both format and script lines, deduplicated
         pipe_seen: set[str] = set()
@@ -139,7 +162,7 @@ class CronAuditSnapshot:
             format_lines, script_files
         )
 
-        snap.unexpected_user_crons = _find_unexpected_user_crons()
+        snap.unexpected_user_crons = _find_unexpected_user_crons(unreadable)
         snap.unreadable_files = unreadable
 
         return snap
@@ -232,20 +255,30 @@ def _find_world_writable_scripts(
 
     return sorted(world_writable)
 
-def _find_unexpected_user_crons() -> list[str]:
+def _find_unexpected_user_crons(unreadable: list[str]) -> list[str]:
     """
     Return usernames that have a crontab in /var/spool/cron/crontabs
     but are not in _EXPECTED_CRONTAB_USERS.
+
+    A refused directory is appended to *unreadable* rather than read as "no
+    unexpected user crontabs" — on 3.14 a bare is_dir() returns False on the
+    denial and would hide a rogue user's crontab.
     """
     unexpected: list[str] = []
-    if not _USER_CRONTAB_DIR.is_dir():
-        return unexpected
     try:
-        for entry in sorted(_USER_CRONTAB_DIR.iterdir()):
-            if entry.is_file() and entry.name not in _EXPECTED_CRONTAB_USERS:
-                unexpected.append(entry.name)
+        entries = (sorted(_USER_CRONTAB_DIR.iterdir())
+                   if strict_is_dir(_USER_CRONTAB_DIR) else [])
     except OSError:
-        pass
+        unreadable.append(str(_USER_CRONTAB_DIR))
+        return unexpected
+    for entry in entries:
+        try:
+            is_file = strict_is_file(entry)
+        except OSError:
+            unreadable.append(str(entry))
+            continue
+        if is_file and entry.name not in _EXPECTED_CRONTAB_USERS:
+            unexpected.append(entry.name)
     return unexpected
 
 # ---------------------------------------------------------------------------
