@@ -1923,6 +1923,15 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "spool, hiding a rogue user's crontab",
     ),
     Mutation(
+        id="py314/journal-dir-denial-read-as-volatile",
+        file="bob/checks/log_rotation.py",
+        old="            journal_persistent: \"bool | None\" = strict_is_dir(_JOURNAL_DIR)",
+        new="            journal_persistent: \"bool | None\" = _JOURNAL_DIR.is_dir()",
+        kills=(f"{_PY314}::test_journal_dir_denied_is_not_read_as_volatile",),
+        reason="a bare is_dir() on 3.14 returns False for a refused /var/log/journal, "
+               "so a default-storage host reads as volatile and warns that logs are lost",
+    ),
+    Mutation(
         id="sshd-session/the-regex-knows-only-sshd",
         file="bob/checks/auth_log.py",
         old='_SSHD_TAG = r"sshd(?:-session|-auth)?\\[\\d+\\]:"',

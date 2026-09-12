@@ -21,11 +21,12 @@ from pathlib import Path
 from bob.checks._run import TranslationFunc, config_drifted, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists, unit_config_applied_at  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
-from bob._fs import strict_is_file
+from bob._fs import strict_is_dir, strict_is_file
 
 
 _JOURNALD_CONF   = Path("/etc/systemd/journald.conf")
 _JOURNALD_CONF_D = Path("/etc/systemd/journald.conf.d")
+_JOURNAL_DIR     = Path("/var/log/journal")   # module-level so tests can redirect it
 _LOGROTATE_D     = Path("/etc/logrotate.d")
 _RSYSLOG_CONF    = Path("/etc/rsyslog.conf")
 _RSYSLOG_CONF_D  = Path("/etc/rsyslog.d")
@@ -90,7 +91,7 @@ class LogRotationSnapshot:
     journald_conf_readable:   bool  = True
     journald_max_use:         str   = ""
     journald_keep_free:       str   = ""
-    journal_persistent:       bool  = False
+    journal_persistent:       "bool | None" = False
     remote_syslog_configured: bool  = False
     syslog_daemon:            str   = ""
 
@@ -105,7 +106,14 @@ class LogRotationSnapshot:
             _journald_conf_drift() if journald_active else (None, "", "")
         )
         storage, max_use, keep_free, journald_readable = _read_journald_conf()
-        journal_persistent = Path("/var/log/journal").is_dir()
+        # Tri-state: True (dir present) / False (absent) / None (BOB was refused
+        # entry — not established). On 3.14 a bare is_dir() returns False on the
+        # denial, which on a default (Storage=auto) host reads as "volatile" and
+        # raises a false warning; None keeps that verdict from being asserted.
+        try:
+            journal_persistent: "bool | None" = strict_is_dir(_JOURNAL_DIR)
+        except OSError:
+            journal_persistent = None
 
         syslog_daemon, remote = _detect_remote_syslog()
 
@@ -205,7 +213,13 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
         is_volatile = storage in ("volatile", "none")
         is_persistent = (
             storage == "persistent"
-            or (storage in ("auto", "") and snapshot.journal_persistent)
+            or (storage in ("auto", "") and snapshot.journal_persistent is True)
+        )
+        # Default storage, but BOB was refused entry to /var/log/journal — it
+        # could not tell persistent from volatile. Say so, rather than assuming
+        # the worst and raising a false "logs lost on reboot".
+        persistence_unknown = (
+            storage in ("auto", "") and snapshot.journal_persistent is None
         )
 
         if is_volatile:
@@ -230,6 +244,12 @@ def check_log_rotation(snapshot: LogRotationSnapshot, t: TranslationFunc | None 
             result.ok(
                 message=_t("log_rotation.journald_persistent"),
                 key="log_rotation.journald_persistent",
+            )
+        elif persistence_unknown:
+            result.info(
+                message=_t("log_rotation.journal_dir_unreadable"),
+                detail=_t("log_rotation.journal_dir_unreadable_detail"),
+                key="log_rotation.journal_dir_unreadable",
             )
         else:
             # Unknown storage value — treat as volatile (worst-case assumption)

@@ -283,3 +283,51 @@ def test_user_crontab_dir_denied_is_recorded_unreadable(
     monkeypatch.setattr(CA, "_USER_CRONTAB_DIR", shut / "crontabs")   # stat denied
     snap = CA.CronAuditSnapshot.from_system()
     assert str(shut / "crontabs") in snap.unreadable_files
+
+
+def test_journal_dir_denied_is_not_read_as_volatile(
+    shut, monkeypatch, python314_predicates
+):
+    """A refused /var/log/journal must leave persistence unknown, not False —
+    False on a default (auto) host reads as 'volatile' and warns falsely."""
+    import bob.checks.log_rotation as L
+
+    monkeypatch.setattr(L, "_JOURNAL_DIR", shut / "journal")   # stat denied
+    snap = L.LogRotationSnapshot.from_system()
+    assert snap.journal_persistent is None
+
+
+def test_journal_dir_absent_is_false_not_none(tmp_path, monkeypatch, python314_predicates):
+    """Polarity: genuinely absent is False (a real 'auto → volatile' signal)."""
+    import bob.checks.log_rotation as L
+
+    monkeypatch.setattr(L, "_JOURNAL_DIR", tmp_path / "no-journal")
+    snap = L.LogRotationSnapshot.from_system()
+    assert snap.journal_persistent is False
+
+
+def test_unknown_journal_persistence_is_a_note_not_a_volatile_warning():
+    from bob import i18n
+    from bob.checks.log_rotation import LogRotationSnapshot, check_log_rotation
+
+    i18n.init("en")
+    snap = LogRotationSnapshot(
+        journald_active=True, journald_storage="", journal_persistent=None,
+        logrotate_installed=True, logrotate_rule_count=1,
+    )
+    keys = [f.key for f in check_log_rotation(snap, i18n.t).findings]
+    assert "log_rotation.journal_dir_unreadable" in keys
+    assert "log_rotation.journald_volatile" not in keys
+
+
+def test_absent_journal_dir_on_auto_still_warns_volatile():
+    """Polarity: a real absence on default storage is still the volatile WARN."""
+    from bob import i18n
+    from bob.checks.log_rotation import LogRotationSnapshot, check_log_rotation
+
+    i18n.init("en")
+    snap = LogRotationSnapshot(
+        journald_active=True, journald_storage="", journal_persistent=False,
+        journald_conf_readable=True, logrotate_installed=True, logrotate_rule_count=1,
+    )
+    assert "log_rotation.journald_volatile" in [f.key for f in check_log_rotation(snap, i18n.t).findings]

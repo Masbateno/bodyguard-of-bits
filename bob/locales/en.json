@@ -3463,6 +3463,8 @@
     "journald_conf_unreadable": "journald storage could not be determined",
     "journald_conf_newer_than_service": "journald.conf was modified at {changed}, after systemd-journald last applied its configuration at {applied} — the journald findings below describe the file, not the running journal",
     "journald_conf_unreadable_detail": "/etc/systemd/journald.conf exists but would not open, so Storage= reads as unset. Unset means journald's \"auto\" default, which is persistent when /var/log/journal exists — but a config setting Storage=volatile would look identical here, and its logs are lost on reboot. Check with: sudo grep -i storage /etc/systemd/journald.conf",
+    "journal_dir_unreadable": "journald log persistence could not be determined — /var/log/journal was not readable",
+    "journal_dir_unreadable_detail": "Storage= is at its default (auto), whose persistence depends on whether /var/log/journal exists — but BOB was refused entry there, so it could not tell persistent from volatile. Rather than assume the worst and warn that logs are lost on reboot, the verdict is withheld. Check with: sudo ls -ld /var/log/journal",
     "logrotate_missing": "logrotate not installed — log files will grow unbounded",
     "logrotate_missing_detail": "Without logrotate, log files in /var/log/ are never rotated or compressed. Disk exhaustion from runaway logs is a common cause of service outages.",
     "logrotate_missing_reason": "logrotate not installed — no log rotation",
