@@ -3297,6 +3297,8 @@
     "not_installed_detail": "File integrity monitors detect unauthorised changes to system files, binaries, and configuration. Without one, an attacker who modifies a binary or config file (e.g. /etc/passwd, /usr/bin/sudo) will go undetected. Install AIDE and initialise its database.",
     "no_db": "{tool} is installed but the integrity database has not been initialised",
     "no_db_detail": "Without an initialised database, {tool} has no baseline to compare against and cannot detect any changes. Initialise the database now.",
+    "db_unknown": "{tool} is installed but its database directory could not be read",
+    "db_unknown_detail": "The {tool} database location is root-owned and was not readable, so BOB cannot tell an initialised database from a missing one. Rather than warn that monitoring is inactive — which would be a guess, and would lower the score for a host that may be fully covered — the verdict is withheld. Run as root to settle it: sudo bob --check file_integrity",
     "no_db_reason": "{tool} installed but database not initialised — integrity monitoring inactive",
     "no_check": "{tool} database exists but no integrity check has been run",
     "no_check_detail": "The {tool} database exists but no check has been performed. Schedule regular checks via cron to detect file modifications promptly.",

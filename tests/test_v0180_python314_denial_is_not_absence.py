@@ -457,3 +457,75 @@ def test_unreadable_cert_store_is_a_visibility_note():
     keys = [f.key for f in check_ssl_certs(snap, i18n.t).findings]
     assert "ssl_certs.dir_unreadable" in keys
     assert is_visibility_key("ssl_certs.dir_unreadable")
+
+
+# ---------------------------------------------------------------------------
+# v0.18.3 batch 4 — file_integrity: a denied AIDE/Tripwire DB dir is not
+# "database not initialised" (a WARN and a point on a possibly-covered host)
+# ---------------------------------------------------------------------------
+
+def test_aide_db_dir_denied_is_unknown_not_missing(locked_store, monkeypatch):
+    """/var/lib/aide is root-owned; when it is not traversable, path_exists
+    swallows the denial and reports the DB missing. strict_is_file raises, so a
+    denied location is db_readable=False, not a false 'not initialised'."""
+    import bob.checks.file_integrity as FI
+
+    # A DB path *inside* the locked (mode-000) directory: stat is denied.
+    monkeypatch.setattr(FI, "_AIDE_DB_PATHS", (locked_store / "aide.db",))
+    exists, readable = FI._aide_db_state()
+    assert (exists, readable) == (False, False)
+
+
+def test_aide_db_present_is_found(tmp_path, monkeypatch):
+    """Polarity: a readable, present DB file is found and readable."""
+    import bob.checks.file_integrity as FI
+
+    db = tmp_path / "aide.db"
+    db.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(FI, "_AIDE_DB_PATHS", (db,))
+    assert FI._aide_db_state() == (True, True)
+
+
+def test_aide_db_genuinely_absent_is_a_real_no_db(tmp_path, monkeypatch):
+    """Polarity: AIDE installed, DB never initialised (ENOENT) stays a true
+    'no database' — readable True, so the WARN still fires."""
+    import bob.checks.file_integrity as FI
+
+    monkeypatch.setattr(FI, "_AIDE_DB_PATHS", (tmp_path / "never-made" / "aide.db",))
+    assert FI._aide_db_state() == (False, True)
+
+
+def test_tripwire_db_dir_denied_is_unknown_not_missing(locked_store, monkeypatch):
+    """glob() would swallow the read denial and report the DB missing; iterdir()
+    raises, so a locked /var/lib/tripwire is db_readable=False."""
+    import bob.checks.file_integrity as FI
+
+    monkeypatch.setattr(FI, "_TRIPWIRE_DB_DIR", locked_store)   # mode-000, readable parent
+    exists, readable = FI._tripwire_db_state()
+    assert (exists, readable) == (False, False)
+
+
+def test_tripwire_db_present_is_found(tmp_path, monkeypatch):
+    """Polarity: a readable dir holding a .twd is found."""
+    import bob.checks.file_integrity as FI
+
+    d = tmp_path / "tripwire"
+    d.mkdir()
+    (d / "host.twd").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(FI, "_TRIPWIRE_DB_DIR", d)
+    assert FI._tripwire_db_state() == (True, True)
+
+
+def test_denied_integrity_db_is_a_note_not_a_deduction():
+    from bob import i18n
+    from bob.checks.file_integrity import FileIntegritySnapshot, check_file_integrity
+    from bob.visibility import is_visibility_key
+
+    i18n.init("en")
+    snap = FileIntegritySnapshot(tool="aide", db_exists=False, db_readable=False)
+    result = check_file_integrity(snap, t=i18n.t)
+    keys = [f.key for f in result.findings]
+    assert "file_integrity.db_unknown" in keys
+    assert "file_integrity.no_db" not in keys
+    assert sum(d.points for d in result.deductions) == 0
+    assert is_visibility_key("file_integrity.db_unknown")

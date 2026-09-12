@@ -3297,6 +3297,8 @@
     "not_installed_detail": "Les moniteurs d'intégrité des fichiers détectent les modifications non autorisées des fichiers système, binaires et configurations. Sans eux, un attaquant qui modifie un binaire ou un fichier de configuration (ex : /etc/passwd, /usr/bin/sudo) passe inaperçu. Installez AIDE et initialisez sa base de données.",
     "no_db": "{tool} est installé mais la base de données d'intégrité n'a pas été initialisée",
     "no_db_detail": "Sans base de données initialisée, {tool} n'a aucune référence pour détecter des changements. Initialisez la base maintenant.",
+    "db_unknown": "{tool} est installé mais son répertoire de base de données n'a pas pu être lu",
+    "db_unknown_detail": "L'emplacement de la base {tool} appartient à root et n'était pas lisible : BOB ne peut donc pas distinguer une base initialisée d'une base absente. Plutôt que d'avertir que la surveillance est inactive — ce qui serait une supposition, et abaisserait le score d'un hôte peut-être entièrement couvert — le verdict est suspendu. À vérifier en root : sudo bob --check file_integrity",
     "no_db_reason": "{tool} installé mais base non initialisée — surveillance d'intégrité inactive",
     "no_check": "La base {tool} existe mais aucune vérification d'intégrité n'a été effectuée",
     "no_check_detail": "La base {tool} existe mais aucune vérification n'a été lancée. Planifiez des vérifications régulières via cron pour détecter rapidement les modifications.",

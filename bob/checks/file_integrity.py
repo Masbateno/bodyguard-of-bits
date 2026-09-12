@@ -27,6 +27,7 @@ from pathlib import Path
 
 from bob.checks._run import install_fix, TranslationFunc, _command_exists, _identity_t, path_exists
 from bob.scoring import CheckResult
+from bob._fs import strict_is_file
 
 # Age threshold before a stale check is flagged
 _CHECK_WARN_DAYS: int = 30
@@ -55,10 +56,13 @@ class FileIntegritySnapshot:
     Args:
         tool:             Detected tool name ("aide", "tripwire", "").
         db_exists:        True if the integrity database file is present.
+        db_readable:      False when the database location was denied — the
+                          "database missing" verdict is then unknown, not a fact.
         last_check_date:  ISO date (YYYY-MM-DD) of the last check, or None.
     """
     tool:            str           = ""
     db_exists:       bool          = False
+    db_readable:     bool          = True
     last_check_date: str | None = None
 
     @classmethod
@@ -68,13 +72,13 @@ class FileIntegritySnapshot:
 
         if _command_exists("aide"):
             snap.tool      = "aide"
-            snap.db_exists = any(path_exists(p) for p in _AIDE_DB_PATHS)
+            snap.db_exists, snap.db_readable = _aide_db_state()
             snap.last_check_date = _last_run_from_logs(_AIDE_LOG_PATHS)
             return snap
 
         if _command_exists("tripwire"):
             snap.tool      = "tripwire"
-            snap.db_exists = _tripwire_db_exists()
+            snap.db_exists, snap.db_readable = _tripwire_db_state()
             snap.last_check_date = _last_run_from_dir(_TRIPWIRE_LOG_DIR, "*.txt")
             return snap
 
@@ -119,12 +123,42 @@ def _last_run_from_dir(directory: Path, pattern: str) -> str | None:
     except OSError:
         return None
 
-def _tripwire_db_exists() -> bool:
-    """Return True if any Tripwire database file (.twd) exists."""
+def _aide_db_state() -> tuple[bool, bool]:
+    """Return ``(db_exists, db_readable)`` for the AIDE database.
+
+    ``db_readable`` is False when the database location was denied. /var/lib/aide
+    is root-owned; when it is not traversable, ``path_exists`` (like pathlib's
+    predicates on 3.14) would swallow the denial and report the database
+    missing — a WARN and a point on a host that may well have one. ``strict_is_file``
+    raises on the denial instead, so it is told apart from a real absence
+    (ENOENT, when AIDE is installed but never initialised, stays a true "no db").
+    """
+    found = False
+    for p in _AIDE_DB_PATHS:
+        try:
+            if strict_is_file(p):
+                found = True
+        except OSError:
+            return (False, False)
+    return (found, True)
+
+
+def _tripwire_db_state() -> tuple[bool, bool]:
+    """Return ``(db_exists, db_readable)`` for /var/lib/tripwire/*.twd.
+
+    ``glob()`` swallows a read denial and returns [], which would report the
+    database missing; ``iterdir()`` raises, so a locked DB directory is told
+    apart from a genuinely absent or empty one.
+    """
     try:
-        return any(_TRIPWIRE_DB_DIR.glob("*.twd"))
+        for entry in _TRIPWIRE_DB_DIR.iterdir():
+            if entry.suffix == ".twd":
+                return (True, True)
+        return (False, True)
+    except FileNotFoundError:
+        return (False, True)   # not initialised — a real "no database"
     except OSError:
-        return False
+        return (False, False)  # denied — the verdict is unknown
 
 def _check_age_days(iso_date: str) -> int | None:
     """Return days since iso_date (YYYY-MM-DD), or None on parse error."""
@@ -167,6 +201,16 @@ def check_file_integrity(snapshot: FileIntegritySnapshot, t: TranslationFunc | N
         return result
 
     tool = snapshot.tool
+
+    if not snapshot.db_exists and not snapshot.db_readable:
+        # The tool is installed but its database directory was denied. "No
+        # database" here is a guess, not a reading — so no WARN and no point.
+        result.info(
+            message=_t("file_integrity.db_unknown", tool=tool),
+            detail=_t("file_integrity.db_unknown_detail", tool=tool),
+            key="file_integrity.db_unknown",
+        )
+        return result
 
     if not snapshot.db_exists:
         init_cmd = "sudo aideinit" if tool == "aide" else "sudo tripwire --init"

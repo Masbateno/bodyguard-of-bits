@@ -46,6 +46,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "disk.smart_unknown",
     "fail2ban.state_unknown",
     "fail2ban.status_unreadable",
+    "file_integrity.db_unknown",
     "file_perms.ssh_host_keys_unreadable",
     "file_perms.sudoers_unreadable",
     "firewall.logging_unknown",

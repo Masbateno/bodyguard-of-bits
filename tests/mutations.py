@@ -1962,6 +1962,25 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "silently unmade; iterdir() raises and the denial is recorded",
     ),
     Mutation(
+        id="py314/tripwire-db-glob-swallows-denial",
+        file="bob/checks/file_integrity.py",
+        old="        for entry in _TRIPWIRE_DB_DIR.iterdir():\n            if entry.suffix == \".twd\":\n                return (True, True)\n        return (False, True)\n    except FileNotFoundError:\n        return (False, True)   # not initialised — a real \"no database\"\n    except OSError:\n        return (False, False)  # denied — the verdict is unknown",
+        new="        if any(_TRIPWIRE_DB_DIR.glob(\"*.twd\")):\n            return (True, True)\n        return (False, True)\n    except FileNotFoundError:\n        return (False, True)\n    except OSError:\n        return (False, False)",
+        kills=(f"{_PY314}::test_tripwire_db_dir_denied_is_unknown_not_missing",),
+        reason="glob() eats the read denial on a root-owned /var/lib/tripwire and "
+               "returns [], so db_readable stays True and the tool reports the "
+               "database not initialised — a WARN and a point on a covered host",
+    ),
+    Mutation(
+        id="py314/aide-db-path-exists-swallows-denial",
+        file="bob/checks/file_integrity.py",
+        old="        try:\n            if strict_is_file(p):\n                found = True\n        except OSError:\n            return (False, False)",
+        new="        if path_exists(p):\n            found = True",
+        kills=(f"{_PY314}::test_aide_db_dir_denied_is_unknown_not_missing",),
+        reason="path_exists() swallows the denial on a root-owned /var/lib/aide, so "
+               "db_readable stays True and an initialised database reads as missing",
+    ),
+    Mutation(
         id="sshd-session/the-regex-knows-only-sshd",
         file="bob/checks/auth_log.py",
         old='_SSHD_TAG = r"sshd(?:-session|-auth)?\\[\\d+\\]:"',
