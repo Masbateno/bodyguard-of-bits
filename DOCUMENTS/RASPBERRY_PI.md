@@ -100,6 +100,39 @@ pipx uninstall bodyguard-of-bits          # removes the isolated venv entirely
 
 ## First audit
 
+### How to run `bob`
+
+Once installed, `bob` is on your `PATH` — you call it from **any directory**.
+There is no `cd`, and no path to type:
+
+```bash
+bob -v -d --french     # verbose (-v), write a dated log (-d), French output
+bob --help             # every option
+```
+
+What put it on the `PATH` is the line `pipx ensurepath` added to `~/.profile`
+(on Raspberry Pi OS that line ships in the stock `~/.profile` already). It takes
+effect in a **new shell**, so if the terminal you installed from still answers
+`bob: command not found`, open a new terminal — or reload it once with
+`source ~/.profile`.
+
+> **Do not `cd ~/.local/bin` first.** The current directory is not on the
+> `PATH`, so after a `cd` you would have to type `./bob` — pointless. The whole
+> point of `pipx ensurepath` is that `bob` runs from wherever you are.
+
+**With `sudo` there is one wrinkle:** root's `PATH` does not include
+`~/.local/bin`. Run the one-time completion step from the install section
+(`sudo ~/.local/bin/bob --install-completion`) — it symlinks
+`/usr/local/bin/bob`, and from then on `sudo bob …` works from anywhere. Until
+you do, call the launcher by its full path:
+
+```bash
+sudo bob -v -d --french               # works after --install-completion
+sudo ~/.local/bin/bob -v -d --french  # equivalent, without the symlink
+```
+
+### The full audit
+
 ```bash
 sudo bob
 ```

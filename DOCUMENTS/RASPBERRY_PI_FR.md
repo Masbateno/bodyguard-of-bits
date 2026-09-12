@@ -102,6 +102,39 @@ pipx uninstall bodyguard-of-bits          # retire entièrement le venv isolé
 
 ## Premier audit
 
+### Comment lancer `bob`
+
+Une fois installé, `bob` est dans ton `PATH` — tu l'appelles depuis **n'importe
+quel dossier**. Pas de `cd`, aucun chemin à taper :
+
+```bash
+bob -v -d --french     # verbeux (-v), écrit un log daté (-d), sortie française
+bob --help             # toutes les options
+```
+
+Ce qui l'a mis dans le `PATH`, c'est la ligne ajoutée par `pipx ensurepath` dans
+`~/.profile` (sur Raspberry Pi OS, cette ligne est déjà présente dans le
+`~/.profile` d'origine). Elle prend effet dans un **nouveau shell** : si le
+terminal depuis lequel tu as installé répond encore `bob : commande introuvable`,
+ouvre un nouveau terminal — ou recharge-le une fois avec `source ~/.profile`.
+
+> **Ne fais pas `cd ~/.local/bin` d'abord.** Le répertoire courant n'est pas dans
+> le `PATH`, donc après un `cd` il faudrait taper `./bob` — inutile. Tout
+> l'intérêt de `pipx ensurepath`, c'est que `bob` s'exécute d'où que tu sois.
+
+**Avec `sudo`, une seule subtilité :** le `PATH` de root n'inclut pas
+`~/.local/bin`. Fais une fois l'étape de complétion de la section installation
+(`sudo ~/.local/bin/bob --install-completion`) — elle crée le lien
+`/usr/local/bin/bob`, et dès lors `sudo bob …` marche de partout. Tant que ce
+n'est pas fait, appelle le lanceur par son chemin complet :
+
+```bash
+sudo bob -v -d --french               # marche après --install-completion
+sudo ~/.local/bin/bob -v -d --french  # équivalent, sans le lien
+```
+
+### L'audit complet
+
 ```bash
 sudo bob
 ```
