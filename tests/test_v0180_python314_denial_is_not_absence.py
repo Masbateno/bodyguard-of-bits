@@ -331,3 +331,67 @@ def test_absent_journal_dir_on_auto_still_warns_volatile():
         journald_conf_readable=True, logrotate_installed=True, logrotate_rule_count=1,
     )
     assert "log_rotation.journald_volatile" in [f.key for f in check_log_rotation(snap, i18n.t).findings]
+
+
+# ---------------------------------------------------------------------------
+# v0.18.3 batch 2 — backup: a denied config/keys dir is "installed", not "active"
+# ---------------------------------------------------------------------------
+
+def _only_on_path(*names):
+    """A `_command_exists` stand-in: True for `names`, False for everything else."""
+    wanted = set(names)
+    return lambda cmd: cmd in wanted
+
+
+def test_borg_keys_dir_denied_is_installed_not_active(shut, monkeypatch):
+    """A refused /root/.config/borg/keys must leave borg "installed" (present,
+    configuration unconfirmed) and must never crash from_system — up to 3.13
+    the bare is_dir() raised here and the exception propagated out of a method
+    that promises not to. No 3.14 fixture: the stat-based strict_ helpers raise
+    on a real denied dir on every interpreter, so this exercises the real raise
+    the try/except must absorb."""
+    import bob.checks.backup as B
+
+    monkeypatch.setattr(B, "_command_exists", _only_on_path("borg"))
+    monkeypatch.setattr(B, "_BORG_KEYS_DIR", shut / "keys")   # stat denied (parent 000)
+    snap = B.BackupSnapshot.from_system()   # must not raise
+    assert "borg" in snap.installed_tools
+    assert "borg" not in snap.active_tools
+
+
+def test_borg_keys_dir_populated_is_active(tmp_path, monkeypatch):
+    """Polarity: a readable, non-empty keys dir still means borg is active."""
+    import bob.checks.backup as B
+
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    (keys / "repo").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(B, "_command_exists", _only_on_path("borg"))
+    monkeypatch.setattr(B, "_BORG_KEYS_DIR", keys)
+    snap = B.BackupSnapshot.from_system()
+    assert "borg" in snap.active_tools
+
+
+def test_borgmatic_config_denied_is_installed_not_active(shut, monkeypatch):
+    """A borgmatic config path BOB may not read is "installed" (present,
+    config unconfirmed), never a false "active"; from_system must not crash.
+    (Real denied dir, no 3.14 fixture — see the borg test above.)"""
+    import bob.checks.backup as B
+
+    monkeypatch.setattr(B, "_command_exists", _only_on_path("borgmatic"))
+    monkeypatch.setattr(B, "_BORGMATIC_CONFIGS", (shut / "config.yaml",))  # stat denied
+    snap = B.BackupSnapshot.from_system()   # must not raise
+    assert "borgmatic" in snap.installed_tools
+    assert "borgmatic" not in snap.active_tools
+
+
+def test_borgmatic_config_present_is_active(tmp_path, monkeypatch):
+    """Polarity: a readable borgmatic config file still means active."""
+    import bob.checks.backup as B
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("location:\n", encoding="utf-8")
+    monkeypatch.setattr(B, "_command_exists", _only_on_path("borgmatic"))
+    monkeypatch.setattr(B, "_BORGMATIC_CONFIGS", (cfg,))
+    snap = B.BackupSnapshot.from_system()
+    assert "borgmatic" in snap.active_tools

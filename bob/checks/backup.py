@@ -45,6 +45,7 @@ from pathlib import Path
 from bob.checks._run import _command_exists, install_fix, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
+from bob._fs import strict_is_dir, strict_is_file
 
 # ---------------------------------------------------------------------------
 # Config artefact paths (checked for root-run backups; no user enumeration)
@@ -173,7 +174,17 @@ class BackupSnapshot:
         # borgmatic has no config, borg itself may still be configured.
         # Skip borg when borgmatic is already confirmed active (implied coverage).
         if _command_exists("borg") and "borgmatic" not in snap.active_tools:
-            if _BORG_KEYS_DIR.is_dir() and any(_BORG_KEYS_DIR.iterdir()):
+            # A denied keys dir is not an empty one: up to 3.13 `is_dir()` raised
+            # here and the whole snapshot crashed (from_system must not); on 3.14
+            # it answers False and borg fell silently to "installed". Either way
+            # the honest verdict when the dir cannot be read is "installed" —
+            # borg is present, its configuration could not be confirmed — never
+            # "active", which would assert backups are in place.
+            try:
+                borg_active = strict_is_dir(_BORG_KEYS_DIR) and any(_BORG_KEYS_DIR.iterdir())
+            except OSError:
+                borg_active = False
+            if borg_active:
                 snap.active_tools.append("borg")
             else:
                 snap.installed_tools.append("borg")
@@ -418,11 +429,21 @@ def check_backup(
 # ---------------------------------------------------------------------------
 
 def _borgmatic_config_exists(path: Path) -> bool:
-    """Return True if path is a non-empty directory or an existing file."""
-    if path.is_file():
-        return True
-    if path.is_dir():
-        return any(path.iterdir())
+    """Return True if path is a non-empty directory or an existing file.
+
+    A path BOB may not read is not a missing config: up to 3.13 `is_file()`
+    raised here and the crash propagated out of `from_system` (which promises
+    never to raise); on 3.14 it answers False and borgmatic fell silently to
+    "installed". A denial returns False here too — but deliberately, so the
+    verdict is "present, configuration unconfirmed", never a false "active".
+    """
+    try:
+        if strict_is_file(path):
+            return True
+        if strict_is_dir(path):
+            return any(path.iterdir())
+    except OSError:
+        return False
     return False
 
 def _service_active(service: str) -> bool:

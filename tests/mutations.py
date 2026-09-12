@@ -1932,6 +1932,25 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "so a default-storage host reads as volatile and warns that logs are lost",
     ),
     Mutation(
+        id="py314/borg-keys-denial-crashes-from-system",
+        file="bob/checks/backup.py",
+        old="            try:\n                borg_active = strict_is_dir(_BORG_KEYS_DIR) and any(_BORG_KEYS_DIR.iterdir())\n            except OSError:\n                borg_active = False",
+        new="            borg_active = _BORG_KEYS_DIR.is_dir() and any(_BORG_KEYS_DIR.iterdir())",
+        kills=(f"{_PY314}::test_borg_keys_dir_denied_is_installed_not_active",),
+        reason="without the guard a refused borg keys dir raises out of from_system "
+               "(which promises never to) up to 3.13, and reads as 'installed' by "
+               "silent False on 3.14 — the guard makes both the honest 'installed'",
+    ),
+    Mutation(
+        id="py314/borgmatic-config-denial-crashes-from-system",
+        file="bob/checks/backup.py",
+        old="    try:\n        if strict_is_file(path):\n            return True\n        if strict_is_dir(path):\n            return any(path.iterdir())\n    except OSError:\n        return False\n    return False",
+        new="    if path.is_file():\n        return True\n    if path.is_dir():\n        return any(path.iterdir())\n    return False",
+        kills=(f"{_PY314}::test_borgmatic_config_denied_is_installed_not_active",),
+        reason="a borgmatic config path BOB may not read raised out of from_system "
+               "up to 3.13; the guard turns the denial into 'installed', not a crash",
+    ),
+    Mutation(
         id="sshd-session/the-regex-knows-only-sshd",
         file="bob/checks/auth_log.py",
         old='_SSHD_TAG = r"sshd(?:-session|-auth)?\\[\\d+\\]:"',
