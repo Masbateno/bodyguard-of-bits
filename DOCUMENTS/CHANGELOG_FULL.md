@@ -80,7 +80,19 @@ round-trip. The milder-fragility note from the v0.19.0 scope is now closed; the
 `/etc/default/ufw` and `/etc/login.defs` targets are the only monolithic ones,
 and both are covered.
 
-**Tests** 10486 → **10517**. **Mutations** 230 → **234**.
+**A distro logo in the banner (UX).** The audit header now shows a small emoji
+standing in for the distribution's logo, next to the OS name — 🦎 openSUSE,
+🐉 Kali, 🍓 Raspberry Pi, 🌿 Mint, 🎩 the RHEL family, 🟠 Ubuntu, 🔵 Fedora,
+🔴 Debian, 🔷 Arch, 🗻 Alpine, and 🐧 for any Linux without a mark. A terminal
+cannot render the real pixel logo portably; the emoji is the compact,
+dependency-free stand-in. Each glyph is deliberately a single East-Asian-Wide
+code point so `_visual_width` measures it as two columns and the banner's box
+border stays aligned — a variation-selector or ZWJ emoji would render at an
+unpredictable width and is rejected by the guard
+(`tests/test_v0200_distro_logo.py`, with a mutation that swaps in a
+variation-selector emoji and dies on the alignment check).
+
+**Tests** 10486 → **10539**. **Mutations** 230 → **235**.
 
 ---
 

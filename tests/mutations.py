@@ -1100,6 +1100,18 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="banner/distro-logo-not-single-wide",
+        file="bob/output.py",
+        old='"🦎"),',
+        new='"⚙️"),',
+        kills=("tests/test_v0200_distro_logo.py::"
+               "test_every_logo_is_single_codepoint_and_wide",),
+        reason="the banner pads each boxed row with _visual_width, so a distro "
+               "logo must be one East-Asian-Wide code point; a variation-selector "
+               "emoji renders at a width the code cannot predict and pushes the "
+               "System row's right border out of the box",
+    ),
+    Mutation(
         id="fix-lies/ufw-ipv6-literal-match",
         file="bob/checks/firewall.py",
         old="    return (\"sudo sed -i -E 's/^IPV6[[:space:]]*=[[:space:]]*no\\\\b.*/IPV6=yes/I' \"",

@@ -590,6 +590,40 @@ def _build_logo() -> str:
     return "\n".join(art_rows)
 
 
+# Distro → a single-codepoint, East-Asian-Wide emoji (width 2, so it lines up in
+# the banner via _visual_width). Matched on the PRETTY_NAME keywords, most
+# specific first — raspberry/mint/kali before the base distro they derive from.
+# Tux is the fallback for any Linux we do not have a mark for. Single-codepoint
+# and Wide is deliberate: variation-selector emoji render at an unpredictable
+# width and would misalign the box's right border.
+_DISTRO_LOGOS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("raspberry", "raspbian"),                                    "🍓"),
+    (("linux mint",),                                              "🌿"),
+    (("kali",),                                                    "🐉"),
+    (("manjaro",),                                                 "🟢"),
+    (("ubuntu", "pop!_os", "pop os", "elementary", "zorin"),       "🟠"),
+    (("opensuse", "suse"),                                         "🦎"),
+    (("fedora",),                                                  "🔵"),
+    (("red hat", "rhel", "centos", "rocky", "almalinux", "oracle"), "🎩"),
+    (("arch", "endeavour", "garuda"),                              "🔷"),
+    (("alpine",),                                                  "🗻"),
+    (("debian",),                                                  "🔴"),
+)
+
+
+def distro_logo(os_name: str) -> str:
+    """Return a small emoji standing in for the distribution's logo.
+
+    Keyed on the PRETTY_NAME string (what the banner already shows), so no extra
+    system read is needed. Falls back to Tux (🐧) for any unrecognised Linux.
+    """
+    low = (os_name or "").lower()
+    for needles, glyph in _DISTRO_LOGOS:
+        if any(n in low for n in needles):
+            return glyph
+    return "🐧"
+
+
 def print_banner(
     version: str,
     subtitle: str,
@@ -637,7 +671,7 @@ def print_banner(
     print(f"{_c.blue_bold}╠{bar_double}╣{_c.reset}")
 
     info_rows = [
-        (labels.get("system",   "System"),   system),
+        (labels.get("system",   "System"),   f"{distro_logo(system)}  {system}"),
         (labels.get("host",     "Host"),     host),
         (labels.get("kernel",   "Kernel"),   kernel),
         (labels.get("ufw",      "UFW"),      ufw_version),
