@@ -46,12 +46,20 @@ def _get_proc_umask() -> str | None:
     return None
 
 def _fix_cmd(source: str | None) -> str:
-    """Return the fix command appropriate for the file where the umask was found."""
+    """Return the fix command appropriate for the file where the umask was found.
+
+    Each sed matches what the corresponding detection regex matches, or the fix
+    is a no-op that leaves the finding standing forever. login.defs is detected
+    case-insensitively (``_LOGIN_DEFS_RE`` has re.IGNORECASE) → GNU sed ``I``
+    flag; the shell-file and PAM forms allow a tab or several spaces as the
+    separator (``\\s+``) → ``[[:space:]]+`` under ``-E``, not one literal space.
+    A plain ``umask 002`` fixed, but ``umask\\t002`` (a tab) did not.
+    """
     if not source or source == "/etc/login.defs":
-        return "sudo sed -i 's/^UMASK[[:space:]].*/UMASK\\t\\t022/' /etc/login.defs"
+        return "sudo sed -i 's/^UMASK[[:space:]].*/UMASK\\t\\t022/I' /etc/login.defs"
     if "/pam.d/" in source:
-        return f"sudo sed -i 's/umask=[0-7]*/umask=022/' {source}"
-    return f"sudo sed -i 's/\\bumask [0-7]*/umask 022/' {source}"
+        return f"sudo sed -i -E 's/umask=[0-7]+/umask=022/' {source}"
+    return f"sudo sed -i -E 's/\\bumask[[:space:]]+[0-7]+/umask 022/' {source}"
 
 def _scan(path: Path, regex) -> str | None:
     """Read *path* and return the **last** umask value matched, or None.

@@ -390,7 +390,7 @@ def _check_ipv6_coverage(
                 key="firewall_rules.ipv6_missing",
                 message=t("firewall_rules.ipv6_missing"),
                 points=1,
-                cmd="sudo sed -i 's/^IPV6=no/IPV6=yes/' /etc/default/ufw && sudo ufw reload",
+                cmd=_ipv6_enable_cmd(),
                 nature="improvement",
             )
         # else: IPv6 is disabled in /etc/default/ufw, or the file could not
@@ -486,7 +486,21 @@ def _read_logging_level(ufw_output: str, ufw_conf: Path = Path("/etc/ufw/ufw.con
     return "unknown"
 
 
-def _read_ipv6_config() -> "bool | None":
+def _ipv6_enable_cmd() -> str:
+    """The command that enables IPv6 in /etc/default/ufw.
+
+    Matches what ``_read_ipv6_config`` detects — optional spaces around ``=``
+    and any case (GNU sed ``-E`` + ``I`` flag, as the v0.19.0 samba fix uses).
+    A plain ``s/^IPV6=no/.../`` was a no-op (and so left the finding standing
+    forever) on the valid variants ``IPV6 = no`` and ``IPV6=NO``; the whole
+    line is rewritten to the canonical form. Kept as a function so the
+    fix-roundtrip guard (test_v0200) exercises the shipped command.
+    """
+    return ("sudo sed -i -E 's/^IPV6[[:space:]]*=[[:space:]]*no\\b.*/IPV6=yes/I' "
+            "/etc/default/ufw && sudo ufw reload")
+
+
+def _read_ipv6_config(path: Path = Path("/etc/default/ufw")) -> "bool | None":
     """
     Read /etc/default/ufw to determine if IPv6 is enabled.
 
@@ -494,9 +508,12 @@ def _read_ipv6_config() -> "bool | None":
     absent (ufw's own default), and None when it exists but could not be read.
     The last case used to answer True as well; see `ipv6._read_ufw_ipv6`, which
     reads the same file and paid for the conflation with a false deduction.
+
+    ``path`` is a seam for the fix-roundtrip guard (test_v0200); production
+    always uses the default.
     """
     try:
-        content = Path("/etc/default/ufw").read_text(encoding="utf-8", errors="ignore")
+        content = path.read_text(encoding="utf-8", errors="ignore")
     except FileNotFoundError:
         return True
     except OSError:

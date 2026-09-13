@@ -1100,6 +1100,39 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="fix-lies/ufw-ipv6-literal-match",
+        file="bob/checks/firewall.py",
+        old="    return (\"sudo sed -i -E 's/^IPV6[[:space:]]*=[[:space:]]*no\\\\b.*/IPV6=yes/I' \"",
+        new="    return (\"sudo sed -i -E 's/^IPV6=no/IPV6=yes/I' \"",
+        kills=("tests/test_v0200_config_fix_matches_detection.py::"
+               "TestUfwIpv6FixMatchesDetection::test_roundtrip_clears_the_finding",),
+        reason="detection matches ^IPV6\\s*=\\s*no (spaces, any case); a literal "
+               "^IPV6=no fix is a no-op on the valid variants IPV6 = no / IPV6=NO, "
+               "so --fix reports success and the next audit re-raises the finding",
+    ),
+    Mutation(
+        id="fix-lies/umask-shell-single-space",
+        file="bob/checks/umask.py",
+        old="    return f\"sudo sed -i -E 's/\\\\bumask[[:space:]]+[0-7]+/umask 022/' {source}\"",
+        new="    return f\"sudo sed -i -E 's/\\\\bumask [0-7]+/umask 022/' {source}\"",
+        kills=("tests/test_v0200_config_fix_matches_detection.py::"
+               "TestUmaskFixMatchesDetection::test_shell_file_roundtrip",),
+        reason="detection allows \\s+ (a tab, several spaces) between umask and "
+               "its value; requiring one literal space makes the fix a no-op on "
+               "umask<tab>002, a fix that lies",
+    ),
+    Mutation(
+        id="fix-lies/umask-login-defs-case",
+        file="bob/checks/umask.py",
+        old="        return \"sudo sed -i 's/^UMASK[[:space:]].*/UMASK\\\\t\\\\t022/I' /etc/login.defs\"",
+        new="        return \"sudo sed -i 's/^UMASK[[:space:]].*/UMASK\\\\t\\\\t022/' /etc/login.defs\"",
+        kills=("tests/test_v0200_config_fix_matches_detection.py::"
+               "TestUmaskFixMatchesDetection::test_login_defs_roundtrip",),
+        reason="login.defs is detected case-insensitively (_LOGIN_DEFS_RE has "
+               "re.IGNORECASE); dropping the GNU sed I flag makes the fix a no-op "
+               "on a lowercase 'umask' line the detection still flags",
+    ),
+    Mutation(
         id="domain-alignment/detection-scored-as-hardening",
         file="bob/domain_scores.py",
         old='"auditd":             "detection",',

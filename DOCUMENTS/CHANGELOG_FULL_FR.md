@@ -59,7 +59,34 @@ d'un hôte peut bouger d'un point ou deux par rapport à v0.19.x à constats
 identiques — les constats et leurs déductions sont inchangés ; seul leur
 regroupement dans la moyenne a changé.
 
-**Tests** 10486 → **10493**. **Mutations** 230 → **231**.
+**Deux remédiations qui mentaient de plus, fermées.** La campagne v0.19.0 a
+corrigé samba (ajout vs remplacement) et ssh (fichier main vs drop-in) ; un
+balayage des autres fixes de config monolithiques a trouvé la même fragilité
+dans deux autres, cette fois par un motif `sed` trop littéral plutôt que le
+mauvais fichier :
+
+  - **ufw IPv6** — `_read_ipv6_config` détecte `^IPV6\s*=\s*no` (espaces autour
+    de `=`, toute casse), mais le fix était `sed 's/^IPV6=no/IPV6=yes/'`, un
+    no-op sur les variantes valides `IPV6 = no` et `IPV6=NO`.
+  - **umask** — la détection autorise `\s+` entre `umask` et sa valeur (une
+    tabulation, plusieurs espaces) et lit login.defs sans tenir compte de la
+    casse, mais le fix fichier-shell exigeait un espace littéral
+    (`sed 's/\bumask [0-7]*/…'`, no-op sur `umask<tab>002`) et le fix login.defs
+    exigeait un `UMASK` majuscule.
+
+Les deux matchent désormais exactement ce que la détection matche — GNU
+`sed -E` avec `[[:space:]]*`/`[[:space:]]+` et le flag `I` (insensible à la
+casse), la forme que le fix samba utilise déjà. Les commandes de fix sont
+exposées en fonctions (`firewall._ipv6_enable_cmd`, `umask._fix_cmd`, et
+`_read_ipv6_config` gagne un point d'injection de chemin), et
+`tests/test_v0200_config_fix_matches_detection.py` fait un vrai round-trip
+forge→fix→re-détecte sur chaque variante non-canonique via les lecteurs de BOB.
+Trois mutations remettent chaque fix sous sa forme littérale et meurent sur le
+round-trip. La note « fragilité plus légère » du périmètre v0.19.0 est fermée ;
+`/etc/default/ufw` et `/etc/login.defs` sont les seules cibles monolithiques, et
+les deux sont couvertes.
+
+**Tests** 10486 → **10517**. **Mutations** 230 → **234**.
 
 ---
 

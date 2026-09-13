@@ -56,7 +56,31 @@ shift by a point or two versus v0.19.x even with identical findings — the
 findings and their deductions are unchanged; only how they are grouped into the
 average changed.
 
-**Tests** 10486 → **10493**. **Mutations** 230 → **231**.
+**Two more remediations that lied, closed.** The v0.19.0 campaign fixed samba
+(append vs replace) and ssh (main file vs drop-in); a sweep of the remaining
+monolithic-config fixes found the same fragility in two more, this time from an
+over-literal `sed` pattern rather than the wrong file:
+
+  - **ufw IPv6** — `_read_ipv6_config` detects `^IPV6\s*=\s*no` (spaces around
+    `=`, any case), but the fix was `sed 's/^IPV6=no/IPV6=yes/'`, a no-op on the
+    valid variants `IPV6 = no` and `IPV6=NO`.
+  - **umask** — the detection allows `\s+` between `umask` and its value (a tab,
+    several spaces) and reads login.defs case-insensitively, but the shell-file
+    fix required one literal space (`sed 's/\bumask [0-7]*/…'`, a no-op on
+    `umask<tab>002`) and the login.defs fix required an uppercase `UMASK`.
+
+Both now match exactly what the detection matches — GNU `sed -E` with
+`[[:space:]]*`/`[[:space:]]+` and the `I` (case-insensitive) flag, the same
+form the samba fix already uses. The fix commands are exposed as functions
+(`firewall._ipv6_enable_cmd`, `umask._fix_cmd`, and `_read_ipv6_config` gains a
+path seam), and `tests/test_v0200_config_fix_matches_detection.py` runs a real
+forge→fix→re-detect round-trip on every non-canonical variant through BOB's own
+readers. Three mutations revert each fix to its literal form and die on the
+round-trip. The milder-fragility note from the v0.19.0 scope is now closed; the
+`/etc/default/ufw` and `/etc/login.defs` targets are the only monolithic ones,
+and both are covered.
+
+**Tests** 10486 → **10517**. **Mutations** 230 → **234**.
 
 ---
 
