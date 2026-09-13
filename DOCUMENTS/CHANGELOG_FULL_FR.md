@@ -116,7 +116,34 @@ clé de constat apparaît ou se résout vraiment, cela nomme déjà le changemen
 v0.8.4 — rouverte et cadrée sur une forme minimale non-breaking après que la
 prémisse de coût, ~6-8h et un schéma BREAKING, s'est révélée périmée.)
 
-**Tests** 10321 → **10406**. **Mutations** 208 → **223**.
+**L'affichage de l'audit est réorganisé — six groupes thématiques au lieu de
+cinq (BREAKING : l'ordre des sections et deux en-têtes changent).** L'audit
+déroulait déjà ses ~50 sections sous des en-têtes thématiques, mais l'un —
+DURCISSEMENT SYSTÈME — en était venu à porter un tiers de l'audit, mêlant du
+vrai durcissement (un opérateur qui active ou désactive une défense) à des
+sections de ressources et de fraîcheur (disque, mémoire, sauvegarde, mises à
+jour, rotation des logs) et aux outils anti-intrusion. Il est désormais scindé
+en trois :
+
+  * **DURCISSEMENT SYSTÈME** — les défenses qu'on active : durcissement noyau,
+    politique MAC, audit SUID, umask, cron, durcissement service/conteneur,
+    unités socket, secure boot, contexte cloud et Pi.
+  * **SANTÉ & RÉSILIENCE** — fraîcheur, capacité et récupérabilité : mises à
+    jour, état des services, rotation des logs, timers, NTP, mémoire, disque,
+    sauvegarde, expiration des certificats TLS, firmware, applis desktop.
+  * **DÉTECTION DES MENACES** — ce qui rattrape une intrusion après coup :
+    auditd, fail2ban, ClamAV, intégrité des fichiers, scan de rootkits.
+
+`DÉTECTION & SANTÉ` disparaît ; les en-têtes que voit le lecteur, et l'ordre
+d'apparition des sections, changent donc. Le déplacement est **purement
+d'affichage** — seules les sections `_sec` indépendantes ont été réordonnées,
+le pipeline de données `_core` toujours-actif (pare-feu → services) est intact,
+et le score est calculé à partir des constats accumulés, donc inchangé (aucune
+déduction, champ de sortie ou code de sortie modifié). Un garde sur le source
+épingle désormais chaque section à son groupe et l'ordre des groupes, pour que
+la taxonomie ne dérive pas un déplacement négligent à la fois.
+
+**Tests** 10321 → **10406**. **Mutations** 208 → **224**.
 
 ---
 

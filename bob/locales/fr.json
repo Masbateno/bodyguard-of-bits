@@ -21,7 +21,8 @@
     "exposure_services": "EXPOSITION & SERVICES",
     "access_control": "CONTRÔLE D'ACCÈS",
     "system_hardening": "DURCISSEMENT SYSTÈME",
-    "detection_health": "DÉTECTION & SANTÉ"
+    "health_resilience": "SANTÉ & RÉSILIENCE",
+    "detection": "DÉTECTION DES MENACES"
   },
   "sections": {
     "prerequisites": "VÉRIFICATION DES PRÉREQUIS",

@@ -31,7 +31,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; findings répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
 - **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et ship ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
 - **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 199 entrées (108 CIS formels, 84 best-practice, 7 Docker)
-- **5 en-têtes de groupes thématiques** — sortie organisée en : FIREWALL & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / DÉTECTION & SANTÉ
+- **6 en-têtes de groupes thématiques** — sortie organisée en : PARE-FEU & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / SANTÉ & RÉSILIENCE / DÉTECTION DES MENACES
 - **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible, **et depuis la v0.16.2 dès que quelque chose n'a pas pu être lu** — un score que rien n'a vérifié ne peut pas satisfaire un portail (intégration CI). La v0.16.0 disait « dès que le score est une borne supérieure » ; cela ne couvrait plus le cas où l'aveuglement retire un domaine de notation entier, l'exécution la moins fiable de toutes.
 
 ### Réseau & pare-feu

@@ -905,7 +905,15 @@ def run_checks(
     _sec("file_perms", FilePermsSnapshot.from_system, check_file_perms)
 
     # =========================================================================
-    # GROUP 4 — DURCISSEMENT SYSTÈME
+    # GROUP 4 — SYSTEM HARDENING
+    # v0.18.3: regrouped. This group now holds only genuine hardening controls
+    # (an operator turning defences on or off). Resource/currency sections
+    # (disk, memory, backup, updates, log_rotation, ntp, timers, certs,
+    # firmware) moved to HEALTH & RESILIENCE, and the anti-intrusion tools to
+    # THREAT DETECTION, so no single group carries a third of the audit. Only
+    # ``_sec`` sections moved; the always-on ``_core`` pipeline (groups 1-2) is
+    # untouched, and section reordering is display-only — the score is computed
+    # from accumulated findings, order-independent.
     # =========================================================================
     emit_group("system_hardening")
 
@@ -921,6 +929,12 @@ def run_checks(
     # ---- CHECK 36 — Kernel hardening ----
     _sec("kernel_hardening", KernelHardeningSnapshot.from_system, check_kernel_hardening)
 
+    # ---- CHECK 14 — Kernel module audit ----
+    _sec("kernel_modules", KernelModulesSnapshot.from_system, check_kernel_modules, profile_name=_pname)
+
+    # ---- CHECK 34 — MAC policy (AppArmor / SELinux) ----
+    _sec("mac_policy", MacPolicySnapshot.from_system, check_mac_policy, profile_name=_pname)
+
     # ---- CHECK 37 — SUID/SGID binary audit ----
     _sec("suid_audit",
          lambda: SuidSnapshot.from_system(
@@ -928,27 +942,18 @@ def run_checks(
          ),
          check_suid_audit)
 
-    # ---- CHECK 38 — Docker container security audit ----
-    _sec("docker_hardening", DockerAuditSnapshot.from_system, check_docker_audit,
-         skip_if=lambda s: not s.docker_installed)
-
-    # ---- CHECK 39 — Log rotation & system journaling ----
-    _sec("log_rotation", LogRotationSnapshot.from_system, check_log_rotation)
-
-    # ---- CHECK 14 — Kernel module audit ----
-    _sec("kernel_modules", KernelModulesSnapshot.from_system, check_kernel_modules, profile_name=_pname)
-
-    # ---- CHECK 34 — MAC policy (AppArmor / SELinux) ----
-    _sec("mac_policy", MacPolicySnapshot.from_system, check_mac_policy, profile_name=_pname)
+    # ---- CHECK 41 — System umask ----
+    _sec("umask", UmaskSnapshot.from_system, check_umask)
 
     # ---- CHECK 15 — Cron job audit ----
     _sec("cron", CronAuditSnapshot.from_system, check_cron_audit)
 
-    # ---- CHECK 16 — Service state audit ----
-    _sec("services_health", ServicesStateSnapshot.from_system, check_services_state)
-
     # ---- CHECK 46 — Service hardening (systemd-analyze security) ----
     _sec("systemd_hardening", ServiceHardeningSnapshot.from_system, check_service_hardening)
+
+    # ---- CHECK 38 — Docker container security audit ----
+    _sec("docker_hardening", DockerAuditSnapshot.from_system, check_docker_audit,
+         skip_if=lambda s: not s.docker_installed)
 
     # ---- CHECK 47 — Container self-hardening posture (only inside a container) ----
     _sec("container_security", ContainerSecuritySnapshot.from_system, check_container_security,
@@ -956,6 +961,9 @@ def run_checks(
 
     # ---- CHECK 48 — Orphan / failed systemd socket units ----
     _sec("socket_units", SocketUnitsSnapshot.from_system, check_socket_units)
+
+    # ---- CHECK 32 — Secure Boot ----
+    _sec("secure_boot", SecureBootSnapshot.from_system, check_secure_boot, profile_name=_pname)
 
     # ---- CHECK 49 — Host-side cloud context (only on a cloud instance) ----
     _sec("cloud_context", CloudContextSnapshot.from_system, check_cloud_context,
@@ -965,11 +973,27 @@ def run_checks(
     _sec("raspberry_pi", RaspberryPiSnapshot.from_system, check_raspberry_pi,
          skip_if=lambda s: not s.is_pi)
 
+    # =========================================================================
+    # GROUP 5 — HEALTH & RESILIENCE (v0.18.3)
+    # Currency, capacity and recoverability — is the system patched, is there
+    # room and a way back. Not "is a defence switched on" (that is group 4).
+    # =========================================================================
+    emit_group("health_resilience")
+
     # ---- CHECK 13 — System updates ----
     _sec("updates", UpdatesSnapshot.from_system, check_updates, profile_name=_pname)
 
-    # ---- CHECK 41 — System umask ----
-    _sec("umask", UmaskSnapshot.from_system, check_umask)
+    # ---- CHECK 16 — Service state audit ----
+    _sec("services_health", ServicesStateSnapshot.from_system, check_services_state)
+
+    # ---- CHECK 39 — Log rotation & system journaling ----
+    _sec("log_rotation", LogRotationSnapshot.from_system, check_log_rotation)
+
+    # ---- CHECK 44 — Systemd timers audit ----
+    _sec("systemd_timers", SystemdTimersSnapshot.from_system, check_systemd_timers)
+
+    # ---- CHECK 28 — NTP time synchronisation ----
+    _sec("ntp", NtpSnapshot.from_system, check_ntp)
 
     # ---- CHECK 23 — Memory & Swap ----
     _sec("memory", MemorySnapshot.from_system, check_memory, profile_name=_pname)
@@ -978,19 +1002,28 @@ def run_checks(
     _sec("disk", DiskSnapshot.from_system, check_disk,
          post_display=lambda snap, _r: display_disk_partitions(snap, t, output))
 
-    # =========================================================================
-    # GROUP 5 — DÉTECTION & SANTÉ
-    # =========================================================================
-    emit_group("detection_health")
-
     # ---- CHECK 35 — Backup solution ----
     _sec("backup", BackupSnapshot.from_system, check_backup, profile_name=_pname)
 
+    # ---- CHECK 43 — TLS/SSL certificate expiry ----
+    _sec("ssl_certs", SslCertsSnapshot.from_system, check_ssl_certs)
+
+    # ---- CHECK 45 — Firmware & microcode audit ----
+    _sec("firmware", FirmwareSnapshot.from_system, check_firmware)
+
+    # ---- CHECK 19 — Desktop application audit ----
+    _sec("desktop_apps", DesktopAppsSnapshot.from_system, check_desktop_apps,
+         skip_if=lambda s: not s.detected)
+
+    # =========================================================================
+    # GROUP 6 — THREAT DETECTION (v0.18.3)
+    # The tools that would catch an intrusion after the fact: audit logging,
+    # brute-force blocking, malware and rootkit scanning, file integrity.
+    # =========================================================================
+    emit_group("detection")
+
     # ---- CHECK 31 — Linux Audit Framework (auditd) ----
     _sec("auditd", AuditdSnapshot.from_system, check_auditd, profile_name=_pname)
-
-    # ---- CHECK 32 — Secure Boot ----
-    _sec("secure_boot", SecureBootSnapshot.from_system, check_secure_boot, profile_name=_pname)
 
     # ---- CHECK 29 — Fail2ban intrusion prevention ----
     # Nothing reads this snapshot outside its own check, so it takes the lazy
@@ -1007,22 +1040,6 @@ def run_checks(
 
     # ---- CHECK 30 — Rootkit & integrity scan ----
     _sec("rootkit", RootkitSnapshot.from_system, check_rootkit)
-
-    # ---- CHECK 28 — NTP time synchronisation ----
-    _sec("ntp", NtpSnapshot.from_system, check_ntp)
-
-    # ---- CHECK 19 — Desktop application audit ----
-    _sec("desktop_apps", DesktopAppsSnapshot.from_system, check_desktop_apps,
-         skip_if=lambda s: not s.detected)
-
-    # ---- CHECK 45 — Firmware & microcode audit ----
-    _sec("firmware", FirmwareSnapshot.from_system, check_firmware)
-
-    # ---- CHECK 44 — Systemd timers audit ----
-    _sec("systemd_timers", SystemdTimersSnapshot.from_system, check_systemd_timers)
-
-    # ---- CHECK 43 — TLS/SSL certificate expiry ----
-    _sec("ssl_certs", SslCertsSnapshot.from_system, check_ssl_certs)
 
     # ---- Plugin checks (user-defined, checks.d/) ----
     for plugin in load_plugin_checks():

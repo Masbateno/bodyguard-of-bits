@@ -109,7 +109,32 @@ open since v0.3.0 and killed in v0.8.4 — reopened and scoped to a minimal,
 non-breaking form after the cost premise, ~6-8h and a BREAKING schema, proved
 outdated.)
 
-**Tests** 10321 → **10406**. **Mutations** 208 → **223**.
+**The audit display is regrouped — six thematic groups instead of five
+(BREAKING: section order and two group headers change).** The audit already
+streamed its ~50 sections under thematic headers, but one — SYSTEM HARDENING —
+had grown to carry a third of the audit, mixing genuine hardening controls (an
+operator switching a defence on or off) with resource and currency sections
+(disk, memory, backup, updates, log rotation) and the anti-intrusion tools. It
+is now split into three:
+
+  * **SYSTEM HARDENING** — defences you switch on: kernel hardening, MAC policy,
+    SUID audit, umask, cron, service/container hardening, socket units, secure
+    boot, cloud and Pi context.
+  * **HEALTH & RESILIENCE** — currency, capacity and recoverability: updates,
+    service state, log rotation, timers, NTP, memory, disk, backup, TLS-cert
+    expiry, firmware, desktop apps.
+  * **THREAT DETECTION** — what catches an intrusion after the fact: auditd,
+    fail2ban, ClamAV, file integrity, rootkit scan.
+
+`DETECTION & HEALTH` is gone; the group headers a reader sees, and the order
+sections appear in, therefore change. The move is **display-only** — only the
+independent `_sec` sections were reordered, the always-on `_core` data pipeline
+(firewall → services) is untouched, and the score is computed from accumulated
+findings, so it is unaffected (no deduction, output field or exit code changed).
+A source guard now pins each section to its group and the group order, so the
+taxonomy cannot drift back one careless move at a time.
+
+**Tests** 10321 → **10406**. **Mutations** 208 → **224**.
 
 ---
 

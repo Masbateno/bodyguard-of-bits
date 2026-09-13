@@ -1973,6 +1973,16 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "database not initialised — a WARN and a point on a covered host",
     ),
     Mutation(
+        id="grouping/health-group-collapses-into-hardening",
+        file="bob/runner.py",
+        old='    emit_group("health_resilience")',
+        new='    emit_group("system_hardening")',
+        kills=("tests/test_v0183_audit_grouping.py::TestGroupOrder::test_groups_appear_in_the_expected_order",),
+        reason="collapsing the health group back into a second SYSTEM HARDENING "
+               "header is exactly the overloaded-group regression v0.18.3 split, "
+               "and the taxonomy guard must catch the order drift",
+    ),
+    Mutation(
         id="compare/breakdown-lists-unchanged-keys",
         file="bob/compare.py",
         old="            for k in (set(prev_bd) | set(curr_bd))\n            if prev_bd.get(k, 0) != curr_bd.get(k, 0)",
