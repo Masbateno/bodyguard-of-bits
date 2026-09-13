@@ -95,21 +95,21 @@ class TestHardenedServer:
         )
 
     def test_score_exact(self):
-        # hardening: 2 deductions → domain=8; average over 1 active domain = 8
+        # system_hardening: 2 deductions → domain=8; average over 1 active domain = 8
         assert self._make().score == 8
 
     def test_hardening_domain_deducted(self):
         engine = self._make()
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 2
+        assert scores["system_hardening"]["deductions"] == 2
         # Verify against raw breakdown as independent source
         assert any(d.key == "kernel_hardening.ptrace_unrestricted" for d in engine.breakdown)
         assert any(d.key == "kernel_modules.risky_fs" for d in engine.breakdown)
 
     def test_other_domains_clean(self):
         scores, _ = compute_domain_scores(self._make())
-        assert scores["ssh"]["score"] == MAX_SCORE
-        assert scores["firewall"]["score"] == MAX_SCORE
+        assert scores["access_control"]["score"] == MAX_SCORE
+        assert scores["firewall_network"]["score"] == MAX_SCORE
 
 
 # ---------------------------------------------------------------------------
@@ -128,16 +128,17 @@ class TestDefaultDesktop:
         )
 
     def test_score_exact(self):
-        # hardening=8, ssh=9, updates=9 → average (8+9+9)/3 = 26/3 → round(8.67) = 9
+        # system_hardening=8, access_control=9, health_resilience=9 →
+        # average (8+9+9)/3 = 26/3 → round(8.67) = 9
         assert self._make().score == 9
 
     def test_ssh_domain_deducted(self):
         scores, _ = compute_domain_scores(self._make())
-        assert scores["ssh"]["deductions"] == 1
+        assert scores["access_control"]["deductions"] == 1
 
     def test_updates_domain_deducted(self):
         scores, _ = compute_domain_scores(self._make())
-        assert scores["updates"]["deductions"] == 1
+        assert scores["health_resilience"]["deductions"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -233,8 +234,11 @@ class TestDebian13Minimal:
         assert engine.score > engine.raw_score
 
     def test_score_exact(self):
-        # hardening=4 (6 deductions), disk=9 (1 deduction) → average (4+9)/2=6.5 → round=6
-        assert self._make().score == 6
+        # v0.20.0 domains: access_control=9 (password_policy), system_hardening=7
+        # (3 sysctl/kernel), health_resilience=9 (backup), detection=8
+        # (clamav 1 + rootkit 1, rootkit.no_scan capped) →
+        # average (9+7+9+8)/4 = 8.25 → round 8
+        assert self._make().score == 8
 
     def test_rootkit_cap_applied(self):
         engine = self._make()
@@ -244,8 +248,8 @@ class TestDebian13Minimal:
             if d.key and d.key.startswith("rootkit.")
         )
         assert rootkit_raw == 2  # 2 raw rootkit deductions
-        # 5 non-rootkit hardening pts + 1 rootkit (capped from 2) = 6 total, not 7
-        assert scores["hardening"]["deductions"] == 6
+        # detection = clamav (1) + rootkit (1, capped from 2) = 2, not 3
+        assert scores["detection"]["deductions"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -259,8 +263,8 @@ class TestToolCapInvariants:
             (1, "rootkit.no_scan"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 1
-        assert scores["hardening"]["score"] == 9
+        assert scores["detection"]["deductions"] == 1
+        assert scores["detection"]["score"] == 9
 
     def test_clamav_two_deductions_capped_at_one(self):
         engine = _engine(
@@ -268,7 +272,7 @@ class TestToolCapInvariants:
             (1, "clamav.scan_very_old"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 1
+        assert scores["detection"]["deductions"] == 1
 
     def test_file_integrity_two_deductions_capped_at_one(self):
         engine = _engine(
@@ -276,16 +280,16 @@ class TestToolCapInvariants:
             (1, "file_integrity.db_outdated"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 1
+        assert scores["detection"]["deductions"] == 1
 
     def test_uncapped_tool_accumulates_normally(self):
-        # ssh has no tool cap — two ssh deductions both counted
+        # ssh has no tool cap — two ssh deductions both counted (access_control)
         engine = _engine(
             (1, "ssh.password_auth"),
             (1, "ssh.permit_root_login"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["ssh"]["deductions"] == 2
+        assert scores["access_control"]["deductions"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -318,13 +322,13 @@ class TestScoreStability:
     def test_domain_scores_independent(self):
         """A deduction in one domain does not affect another domain's score."""
         engine = _engine(
-            (1, "ssh.password_auth"),
-            (1, "firewall.open_port"),
+            (1, "ssh.password_auth"),      # access_control
+            (1, "firewall.open_port"),     # firewall_network
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["ssh"]["score"] == 9
-        assert scores["firewall"]["score"] == 9
-        assert scores["updates"]["score"] == MAX_SCORE
+        assert scores["access_control"]["score"] == 9
+        assert scores["firewall_network"]["score"] == 9
+        assert scores["health_resilience"]["score"] == MAX_SCORE
 
     def test_score_always_in_valid_range(self):
         """Final score is always in [0, 10] regardless of deductions."""
@@ -347,22 +351,26 @@ class TestScoreStability:
 class TestMultiDomainMachine:
     """Realistic machine with findings spread across 4+ domains."""
 
+    _DOMAINS_HIT = ("access_control", "health_resilience", "system_hardening",
+                    "exposure_services", "detection")
+
     def _make(self) -> ScoreEngine:
+        # One deduction per distinct v0.20.0 domain (firewall_network left clean).
         return _engine(
-            (1, "ssh.password_auth"),           # ssh domain
-            (1, "updates.packages_outdated"),   # updates domain
-            (1, "hardening.rp_filter_disabled"),# hardening domain
-            (1, "samba.smb1_enabled"),          # samba domain
-            (1, "disk.smart_failing"),          # disk domain
+            (1, "ssh.password_auth"),            # access_control
+            (1, "updates.packages_outdated"),    # health_resilience
+            (1, "hardening.rp_filter_disabled"), # system_hardening
+            (1, "samba.smb1_enabled"),           # exposure_services
+            (1, "auditd.no_rules"),              # detection
         )
 
     def test_active_domains_exact(self):
         active = active_domains_from_engine(self._make())
-        assert active == frozenset({"ssh", "updates", "hardening", "samba", "disk"})
+        assert active == frozenset(self._DOMAINS_HIT)
 
     def test_each_domain_deducted_once(self):
         scores, _ = compute_domain_scores(self._make())
-        for domain in ("ssh", "updates", "hardening", "samba", "disk"):
+        for domain in self._DOMAINS_HIT:
             assert scores[domain]["deductions"] == 1, f"{domain} should have 1 pt deducted"
 
     def test_score_exact(self):

@@ -454,10 +454,12 @@ class TestIntentionalCatchallStaysTruthful:
             f"these prefixes ARE mapped, remove them from the catch-all list: {overlap}"
         )
 
-    def test_listed_prefixes_still_resolve_to_firewall(self):
-        from bob.domain_scores import _INTENTIONAL_CATCHALL, key_to_domain
+    def test_listed_prefixes_still_resolve_to_catchall(self):
+        from bob.domain_scores import (
+            _CATCHALL_DOMAIN, _INTENTIONAL_CATCHALL, key_to_domain,
+        )
         for prefix in _INTENTIONAL_CATCHALL:
-            assert key_to_domain(f"{prefix}.anything") == "firewall"
+            assert key_to_domain(f"{prefix}.anything") == _CATCHALL_DOMAIN
 
     def test_an_unknown_prefix_still_logs(self, caplog):
         import logging

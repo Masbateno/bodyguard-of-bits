@@ -45,27 +45,14 @@ _EMITTING_METHODS: frozenset[str] = frozenset({
 # (Phase 5 of the v0.5.x refactor). When tightening this allowlist,
 # remember the audit's medium-risk flag: changing a prefix's domain
 # changes the per-domain score breakdown on production systems.
+# v0.20.0: the score domains ARE the six display groups, so every display-group
+# prefix is now mapped explicitly in _PREFIX_TO_DOMAIN. The only prefixes that
+# legitimately reach the catch-all are the two that belong to no on-screen group
+# — environment prerequisites and the post-audit correlation engine — and
+# neither contributes a scoring deduction.
 _CATCH_ALL_BY_DESIGN: dict[str, str] = {
-    # Firewall/network surface — semantically *is* the firewall domain.
-    "firewall":        "Self-mapping: the catch-all IS firewall",
-    "firewall_rules":           "UFW rules analysis is part of firewall scoring",
-    "ports":           "Port exposure is part of firewall surface",
-    "services":        "Service exposure is part of firewall surface",
-    "firewall_iptables":    "iptables/nftables fallback is firewall stack",
-    "firewall_drivers":  "Firewall stack consistency analysis",
-    "network_context": "Network interfaces / connections inventory",
-    "ipv6":            "IPv6 consistency relative to UFW",
-    "docker":          "Docker network exposure (port mappings)",
-    "ddns":            "DDNS external exposure surface",
-
-    # v0.4.x silent fallbacks reviewed in finding #15b (Phase 5 / v0.5.4):
-    #   fail2ban     → moved to 'ssh' (primary purpose is SSH anti-bruteforce)
-    #   virt         → moved to 'hardening' (KVM/bridge bypass is kernel surface)
-    #   docker_audit → moved to 'hardening' (container hardening)
-    # `smtp` and `desktop_apps` stay catch-all: no clean domain fit identified.
-    "smtp":            "Local SMTP exposure (Postfix/Exim) — fits firewall surface semantics",
-    "desktop_apps":    "Desktop process detection — INFO-only inventory, no clean domain fit",
-    "prerequisites":   "Prerequisites check (UFW installed) — INFO-only, no scoring impact",
+    "prerequisites":   "Environment prerequisites (UFW installed) — INFO-only, no scoring impact, no group",
+    "risk":            "Post-audit signal correlation — cross-cutting, no on-screen group, no own deduction",
 }
 
 

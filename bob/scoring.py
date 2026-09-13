@@ -805,7 +805,7 @@ class ScoreEngine:
         calls overwrite earlier state.
 
         Type guard: ``firewall_domain_score`` MUST be ``int`` or ``None``.
-        Passing the full ``engine.domain_scores["firewall"]`` dict by mistake
+        Passing the full ``engine.domain_scores["firewall_network"]`` dict by mistake
         used to silently break ``posture_escalation`` at the ``<=`` comparison
         site; we now fail loudly with a clear TypeError instead.
         """
@@ -987,7 +987,9 @@ def set_posture_from_engine(engine: "ScoreEngine", fw_active: bool) -> None:
                    Anything else (UFW disabled or detection failure)
                    triggers the ``firewall_inactive`` posture floor.
     """
-    _fw_domain = engine.domain_scores.get("firewall")
+    # v0.20.0: the firewall score domain was renamed "firewall" → "firewall_network"
+    # when the score domains were aligned 1:1 with the six display groups.
+    _fw_domain = engine.domain_scores.get("firewall_network")
     # Guard against the v0.7.0 Phase 1 4ed2e3b regression class: when
     # domain_scores contains a dict, extract the .score key; when it's
     # a legacy bare int, use it directly; when missing, pass None.

@@ -61,22 +61,27 @@ def _clean_engine() -> ScoreEngine:
 
 class TestKeyToDomain:
     def test_ssh_key(self):
-        assert key_to_domain("ssh.password_auth") == "ssh"
+        assert key_to_domain("ssh.password_auth") == "access_control"
 
     def test_file_perms_key(self):
-        assert key_to_domain("file_perms.world_writable") == "file_perms"
+        assert key_to_domain("file_perms.world_writable") == "access_control"
 
     def test_updates_key(self):
-        assert key_to_domain("updates.security_pending") == "updates"
+        assert key_to_domain("updates.security_pending") == "health_resilience"
 
     def test_hardening_key(self):
-        assert key_to_domain("hardening.rp_filter_disabled") == "hardening"
+        assert key_to_domain("hardening.rp_filter_disabled") == "system_hardening"
 
-    def test_firewall_key_falls_back(self):
-        assert key_to_domain("firewall.inactive") == "firewall"
+    def test_firewall_key(self):
+        assert key_to_domain("firewall.inactive") == "firewall_network"
 
-    def test_unknown_prefix_falls_back_to_firewall(self):
-        assert key_to_domain("ports.public_port") == "firewall"
+    def test_ports_maps_to_exposure(self):
+        # v0.20.0: ports is now an explicit EXPOSURE & SERVICES prefix, not the
+        # firewall catch-all.
+        assert key_to_domain("ports.public_port") == "exposure_services"
+
+    def test_detection_prefix(self):
+        assert key_to_domain("auditd.no_rules") == "detection"
 
     def test_empty_key_returns_none(self):
         assert key_to_domain("") is None
@@ -84,14 +89,14 @@ class TestKeyToDomain:
     def test_none_key_returns_none(self):
         assert key_to_domain(None) is None
 
-    def test_dot_only_key_falls_back_to_firewall(self):
-        assert key_to_domain(".") == "firewall"
+    def test_dot_only_key_falls_back_to_catchall(self):
+        assert key_to_domain(".") == "firewall_network"
 
     def test_double_dot_key_uses_first_segment(self):
-        assert key_to_domain("ssh..weird") == "ssh"
+        assert key_to_domain("ssh..weird") == "access_control"
 
-    def test_no_dot_key_falls_back_to_firewall(self):
-        assert key_to_domain("something") == "firewall"
+    def test_no_dot_key_falls_back_to_catchall(self):
+        assert key_to_domain("something") == "firewall_network"
 
 
 # ---------------------------------------------------------------------------
@@ -136,32 +141,32 @@ class TestComputeDomainScoresStructure:
 # ---------------------------------------------------------------------------
 
 class TestComputeDomainScoresAttribution:
-    def test_ssh_deduction_reduces_ssh_score(self):
+    def test_ssh_deduction_reduces_access_control_score(self):
         engine = _make_engine((3, "ssh.permit_root_login"))
         scores, _ = compute_domain_scores(engine)
-        assert scores["ssh"]["score"] < MAX_SCORE
+        assert scores["access_control"]["score"] < MAX_SCORE
 
     def test_ssh_deduction_does_not_affect_other_domains(self):
         engine = _make_engine((3, "ssh.permit_root_login"))
         scores, _ = compute_domain_scores(engine)
         for d in DOMAINS:
-            if d != "ssh":
+            if d != "access_control":
                 assert scores[d]["score"] == MAX_SCORE
 
-    def test_updates_deduction_reduces_updates_score(self):
+    def test_updates_deduction_reduces_health_score(self):
         engine = _make_engine((2, "updates.security_pending"))
         scores, _ = compute_domain_scores(engine)
-        assert scores["updates"]["score"] < MAX_SCORE
+        assert scores["health_resilience"]["score"] < MAX_SCORE
 
-    def test_hardening_deduction_reduces_hardening_score(self):
+    def test_hardening_deduction_reduces_system_hardening_score(self):
         engine = _make_engine((1, "hardening.rp_filter_disabled"))
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["score"] < MAX_SCORE
+        assert scores["system_hardening"]["score"] < MAX_SCORE
 
-    def test_file_perms_deduction_reduces_file_perms_score(self):
+    def test_file_perms_deduction_reduces_access_control_score(self):
         engine = _make_engine((2, "file_perms.world_writable"))
         scores, _ = compute_domain_scores(engine)
-        assert scores["file_perms"]["score"] < MAX_SCORE
+        assert scores["access_control"]["score"] < MAX_SCORE
 
     def test_score_floor_is_zero(self):
         """Score never goes negative even with many deductions."""
@@ -172,7 +177,7 @@ class TestComputeDomainScoresAttribution:
         engine.apply(result)
         engine.finalize()
         scores, _ = compute_domain_scores(engine)
-        assert scores["ssh"]["score"] >= 0
+        assert scores["access_control"]["score"] >= 0
 
     def test_deductions_without_key_are_excluded(self):
         """Synthetic deductions (no key) must not affect any domain score."""
@@ -188,37 +193,37 @@ class TestComputeDomainScoresAttribution:
     # --- additional coverage gaps -------------------------------------------
 
     def test_multiple_deductions_same_domain_accumulate(self):
-        """Two SSH deductions must stack in the same domain bucket."""
+        """Two SSH deductions must stack in the same (access_control) bucket."""
         engine = _make_engine(
             (2, "ssh.password_auth"),
             (3, "ssh.permit_root_login"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["ssh"]["deductions"] == 5
-        assert scores["ssh"]["score"] == MAX_SCORE - 5
+        assert scores["access_control"]["deductions"] == 5
+        assert scores["access_control"]["score"] == MAX_SCORE - 5
 
     def test_multiple_deductions_cross_domain(self):
         """Deductions in different domains must each reduce only their own score."""
         engine = _make_engine(
-            (2, "ssh.password_auth"),
-            (3, "updates.security_pending"),
+            (2, "ssh.password_auth"),          # access_control
+            (3, "updates.security_pending"),   # health_resilience
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["ssh"]["score"] < MAX_SCORE
-        assert scores["updates"]["score"] < MAX_SCORE
-        assert scores["hardening"]["score"] == MAX_SCORE
-        assert scores["file_perms"]["score"] == MAX_SCORE
+        assert scores["access_control"]["score"] < MAX_SCORE
+        assert scores["health_resilience"]["score"] < MAX_SCORE
+        assert scores["system_hardening"]["score"] == MAX_SCORE
+        assert scores["detection"]["score"] == MAX_SCORE
 
-    def test_unknown_keys_go_to_firewall_domain(self):
-        """Keys with unknown prefixes must be attributed to the firewall bucket."""
+    def test_unknown_keys_go_to_catchall_domain(self):
+        """A truly unknown prefix must fall into the firewall_network catch-all."""
         engine = ScoreEngine()
         result = CheckResult()
-        result.add_deduction(reason="open port", points=2, key="ports.public_port")
+        result.add_deduction(reason="mystery", points=2, key="totallynew.thing")
         engine.apply(result)
         engine.finalize()
         scores, _ = compute_domain_scores(engine)
-        assert scores["firewall"]["deductions"] == 2
-        assert scores["firewall"]["score"] == MAX_SCORE - 2
+        assert scores["firewall_network"]["deductions"] == 2
+        assert scores["firewall_network"]["score"] == MAX_SCORE - 2
 
     def test_score_never_exceeds_max(self):
         """Domain score must never exceed MAX_SCORE even with a clean engine."""
@@ -234,8 +239,8 @@ class TestComputeDomainScoresAttribution:
         engine.apply(result)
         engine.finalize()
         scores, _ = compute_domain_scores(engine)
-        assert scores["ssh"]["deductions"] == 0
-        assert scores["ssh"]["score"] == MAX_SCORE
+        assert scores["access_control"]["deductions"] == 0
+        assert scores["access_control"]["score"] == MAX_SCORE
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +254,8 @@ class TestToolCaps:
             (1, "rootkit.no_scan"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 1
-        assert scores["hardening"]["score"] == MAX_SCORE - 1
+        assert scores["detection"]["deductions"] == 1
+        assert scores["detection"]["score"] == MAX_SCORE - 1
 
     def test_clamav_two_findings_capped_at_one(self):
         engine = _make_engine(
@@ -258,8 +263,8 @@ class TestToolCaps:
             (1, "clamav.scan_old"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 1
-        assert scores["hardening"]["score"] == MAX_SCORE - 1
+        assert scores["detection"]["deductions"] == 1
+        assert scores["detection"]["score"] == MAX_SCORE - 1
 
     def test_file_integrity_two_findings_capped_at_one(self):
         engine = _make_engine(
@@ -267,7 +272,7 @@ class TestToolCaps:
             (1, "file_integrity.no_run"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 1
+        assert scores["detection"]["deductions"] == 1
 
     def test_uncapped_prefix_accumulates_fully(self):
         engine = _make_engine(
@@ -275,8 +280,8 @@ class TestToolCaps:
             (1, "hardening.send_redirects_enabled"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 2
-        assert scores["hardening"]["score"] == MAX_SCORE - 2
+        assert scores["system_hardening"]["deductions"] == 2
+        assert scores["system_hardening"]["score"] == MAX_SCORE - 2
 
 
 
@@ -307,7 +312,7 @@ class TestEngineLevelDomainCap:
             (1, "firewall.forward_accept"),
         ])
         scores, _ = compute_domain_scores(engine)
-        assert scores["firewall"]["score"] == 3
+        assert scores["firewall_network"]["score"] == 3
 
     def test_firewall_domain_capped_when_many_global_deductions(self):
         # Many deductions push global raw_score below cap threshold so the
@@ -325,7 +330,7 @@ class TestEngineLevelDomainCap:
         assert engine._raw_score <= 3  # cap did not fire via breakdown
         scores, _ = compute_domain_scores(engine)
         # But firewall domain (raw=6) must still be capped at 3
-        assert scores["firewall"]["score"] == 3
+        assert scores["firewall_network"]["score"] == 3
 
     def test_firewall_domain_not_overcapped_when_already_at_cap(self):
         # If domain score is already at or below cap, no further reduction
@@ -335,7 +340,7 @@ class TestEngineLevelDomainCap:
             (3, "firewall.open_ports"),  # raw domain = 10-7 = 3 = cap
         ])
         scores, _ = compute_domain_scores(engine)
-        assert scores["firewall"]["score"] == 3  # already there, not pushed below
+        assert scores["firewall_network"]["score"] == 3  # already there, not pushed below
 
     def test_firewall_domain_score_never_exceeds_cap(self):
         for extra in range(5):
@@ -344,8 +349,8 @@ class TestEngineLevelDomainCap:
                 cap_maximum=3,
             )
             scores, _ = compute_domain_scores(engine)
-            assert scores["firewall"]["score"] <= 3, (
-                f"firewall score {scores['firewall']['score']} exceeds cap=3 "
+            assert scores["firewall_network"]["score"] <= 3, (
+                f"firewall score {scores['firewall_network']['score']} exceeds cap=3 "
                 f"with {extra} extra deductions"
             )
 
@@ -355,8 +360,8 @@ class TestEngineLevelDomainCap:
             (1, "firewall.forward_accept"),
         ])
         scores, _ = compute_domain_scores(engine)
-        # Only firewall is capped; hardening untouched
-        assert scores["hardening"]["score"] == MAX_SCORE
+        # Only firewall_network is capped; system_hardening untouched
+        assert scores["system_hardening"]["score"] == MAX_SCORE
 
     def test_all_domain_scores_in_valid_range_with_cap(self):
         engine = self._make_engine_with_cap([
@@ -371,19 +376,20 @@ class TestEngineLevelDomainCap:
 
     def test_caps_do_not_bleed_across_tools(self):
         # rootkit capped at 1 must not reduce clamav's allowed contribution
+        # (both in the detection domain since v0.20.0)
         engine = _make_engine(
             (1, "rootkit.db_outdated"),
             (1, "rootkit.no_scan"),
             (1, "clamav.db_outdated"),
         )
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 2   # rootkit=1 + clamav=1
+        assert scores["detection"]["deductions"] == 2   # rootkit=1 + clamav=1
 
     def test_cap_respects_first_deduction_points(self):
         # A single 2-point deduction against a cap of 1 is clamped to 1
         engine = _make_engine((2, "clamav.db_very_outdated"))
         scores, _ = compute_domain_scores(engine)
-        assert scores["hardening"]["deductions"] == 1
+        assert scores["detection"]["deductions"] == 1
 
     def test_tool_caps_dict_contains_expected_keys(self):
         assert "rootkit"        in TOOL_CAPS
@@ -450,24 +456,24 @@ class TestActiveDomainsIncludesOK:
     def test_ok_finding_makes_domain_active(self):
         engine = self._engine_with_finding("updates.ok", "ok")
         active = active_domains_from_engine(engine)
-        assert "updates" in active
+        assert "health_resilience" in active
 
     def test_warn_finding_makes_domain_active(self):
         engine = self._engine_with_finding("updates.security_pending", "warn")
         active = active_domains_from_engine(engine)
-        assert "updates" in active
+        assert "health_resilience" in active
 
     def test_alert_finding_makes_domain_active(self):
         engine = self._engine_with_finding("ssh.empty_password", "alert")
         active = active_domains_from_engine(engine)
-        assert "ssh" in active
+        assert "access_control" in active
 
     def test_info_only_finding_does_not_promote_domain(self):
         # INFO is advisory — domain stays hidden unless something stronger
         # also fires. Preserves terrain Mint test v0.4.5 behavior.
         engine = self._engine_with_finding("updates.regular_pending", "info")
         active = active_domains_from_engine(engine)
-        assert "updates" not in active
+        assert "health_resilience" not in active
 
     def test_no_findings_no_active_domains(self):
         engine = ScoreEngine()
@@ -491,9 +497,9 @@ class TestActiveDomainsIncludesOK:
         scores, _ = compute_domain_scores(engine)
         active = active_domains_from_engine(engine)
 
-        assert "updates" in active
-        assert "ssh" in active
-        assert scores["updates"]["score"] == MAX_SCORE  # 10/10 clean
+        assert "health_resilience" in active
+        assert "access_control" in active
+        assert scores["health_resilience"]["score"] == MAX_SCORE  # 10/10 clean
         assert compute_global_from_domains(scores, active) == round((10 + 8) / 2)
 
 
@@ -535,7 +541,8 @@ class TestApplyDomainScoreOverride:
         )
         assert engine._raw_score == 2, "sanity check: raw score before override"
         apply_domain_score_override(engine)
-        # domain average (hardening=4, disk=9) >> raw sum of 2
+        # v0.20.0 domains: access_control=9, system_hardening=7,
+        # health_resilience=9, detection=8 → average 8 >> raw sum of 2.
         assert engine.score > engine._raw_score
         assert engine.score >= 5
 
@@ -593,9 +600,10 @@ class TestRenderDomainScores:
         engine = _make_engine((5, "ssh.permit_root_login"))
         scores, _ = compute_domain_scores(engine)
         lines = render_domain_scores(scores)
-        ssh_line = next(l for l in lines if "SSH" in l)
-        assert "█" in ssh_line
-        assert "░" in ssh_line
+        # ssh.* is scored under the Access Control domain since v0.20.0.
+        ac_line = next(l for l in lines if "Access Control" in l)
+        assert "█" in ac_line
+        assert "░" in ac_line
 
 
 # ---------------------------------------------------------------------------
@@ -746,7 +754,7 @@ class TestScoringInvariants:
         engine.apply(result)
         engine.finalize()
         active = active_domains_from_engine(engine)
-        assert "ssh" not in active
+        assert "access_control" not in active
 
     def test_warn_finding_activates_domain(self):
         engine = ScoreEngine()
@@ -755,7 +763,7 @@ class TestScoringInvariants:
         engine.apply(result)
         engine.finalize()
         active = active_domains_from_engine(engine)
-        assert "ssh" in active
+        assert "access_control" in active
 
     def test_alert_finding_activates_domain(self):
         engine = ScoreEngine()
@@ -764,7 +772,7 @@ class TestScoringInvariants:
         engine.apply(result)
         engine.finalize()
         active = active_domains_from_engine(engine)
-        assert "ssh" in active
+        assert "access_control" in active
 
     def test_deduction_alone_activates_domain(self):
         """A deduction (no finding) still marks the corresponding domain active."""
@@ -774,7 +782,7 @@ class TestScoringInvariants:
         engine.apply(result)
         engine.finalize()
         active = active_domains_from_engine(engine)
-        assert "updates" in active
+        assert "health_resilience" in active
 
     def test_global_average_bounded_by_active_domain_scores(self):
         """Global average must lie within [min, max] of active domain scores."""
@@ -840,7 +848,7 @@ class TestCappedIndices:
         apply_domain_score_override(engine)
         scores, _ = compute_domain_scores(engine)
         assert engine.domain_scores == scores
-        assert "ssh" in engine.active_domains
+        assert "access_control" in engine.active_domains
 
     def test_engine_capped_indices_empty_before_override(self):
         engine = _make_engine((1, "ssh.password_auth"))

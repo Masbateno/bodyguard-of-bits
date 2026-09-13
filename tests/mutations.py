@@ -1100,6 +1100,19 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="domain-alignment/detection-scored-as-hardening",
+        file="bob/domain_scores.py",
+        old='"auditd":             "detection",',
+        new='"auditd":             "system_hardening",',
+        kills=("tests/test_v0200_domain_group_alignment.py::"
+               "test_every_section_is_scored_in_its_display_group",),
+        reason="v0.20.0 aligned the score domains 1:1 with the display groups; if "
+               "a detection section's prefix drifts back into another domain, a "
+               "reader sees the auditd finding under THREAT DETECTION but its "
+               "score lands in SYSTEM HARDENING — the exact two-taxonomy split "
+               "the alignment removed",
+    ),
+    Mutation(
         id="trust-boundary/config-path-denial-reads-as-safe",
         file="bob/checks/_run.py",
         old="    try:\n        return not strict_is_symlink(p)\n    except OSError:\n        return False",

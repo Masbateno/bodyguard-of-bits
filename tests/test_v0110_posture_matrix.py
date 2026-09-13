@@ -56,7 +56,9 @@ def _build_engine(*, iptables_finding: bool, domain_low: bool) -> ScoreEngine:
             Finding(level="warn", message="iptables INPUT ACCEPT", key=_IPTABLES_KEY)
         )
     score = 2 if domain_low else 8
-    engine.set_domain_scores({"firewall": {"score": score}}, frozenset({"firewall"}))
+    # v0.20.0: the firewall score domain is "firewall_network".
+    engine.set_domain_scores({"firewall_network": {"score": score}},
+                             frozenset({"firewall_network"}))
     return engine
 
 

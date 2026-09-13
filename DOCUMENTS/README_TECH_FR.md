@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.19.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.20.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -89,7 +89,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Gestion de la couleur** — auto-détectée depuis la v0.14.0 : l'ANSI n'est émis que si stdout est un terminal, donc rediriger vers un fichier ou un pipe est propre sans aucune option. `--no-color` (ou `NO_COLOR=1`) la force à off ; `FORCE_COLOR=1` la force à on pour `less -R` ou un log volontairement coloré
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit **Seule une commande que BOB peut exécuter sans surveillance est comptée comme automatique** : `cmd_type="fix"` (un diagnostic comme `smartctl -a` n'est pas une remédiation), aucun opérateur shell, aucun éditeur interactif. Tout le reste apparaît sous son propre titre, commande affichée mais non exécutée — le compteur au-dessus de l'invite est une promesse tenable, depuis la v0.17.1. Les commandes d'installation portent `-y`, car un correctif qui s'arrête pour poser une question ne peut pas être appliqué par un mode dont tout l'objet est de ne pas en poser.. Depuis la v0.18.0, les durcissements sysctl sont appliqués **par le code de BOB, pas par un shell** : la valeur est posée, persistée avec exactement une ligne par clé, puis **relue** avant que BOB n'affirme quoi que ce soit — la commande affichée reste la même pour qui veut la coller. Deux applications sans surveillance sont refusées d'office parce qu'elles peuvent vous faire perdre une machine distante — une politique de pare-feu de refus par défaut (`iptables -P INPUT DROP` et ses variantes `ip6tables`, `-nft`, `-legacy` et `nft … policy drop`) — et un correctif qui ouvre un accès (`ufw allow`) passe toujours avant celui qui en retire (`ufw enable`)
 - **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 194 clés sur 50 préfixes ; 109 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 85 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
-- **Scores par domaine** — sous-scores 0–10 (SSH / Samba / Fichiers & Accès / Mises à jour / Durcissement / Santé Disque / Pare-feu & Services) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
+- **Scores par domaine** — sous-scores 0–10, un par groupe affiché (Pare-feu & Réseau / Exposition & Services / Contrôle d'accès / Durcissement système / Santé & Résilience / Détection des menaces) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
 - **`--format=FORMAT`** — flag unifié : `json | json-full | csv | markdown | html` ; anciens flags conservés comme aliases. Depuis la v0.18.0, la dernière colonne du CSV est `key`, l'identifiant stable du constat — le même que portent `--explain`, `--ignore` et le JSON ; les quinze colonnes précédentes gardent leur position
@@ -377,7 +377,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.19.0  │  Auditeur de durcissement Linux                              ║
+║  BOB v0.20.0  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -745,17 +745,16 @@ Le champ `key` est une **clé i18n stable en notation pointée** (`<prefix>.<fin
 
 ```json
 {
-  "ssh":        { "score": 10, "label": "SSH",                "deductions": 0, "active": true,  "reason": null },
-  "samba":      { "score": 10, "label": "Samba Security",     "deductions": 0, "active": false, "reason": "not_installed" },
-  "file_perms": { "score": 10, "label": "Files & Access",     "deductions": 0, "active": true,  "reason": null },
-  "updates":    { "score": 10, "label": "Updates",            "deductions": 0, "active": false, "reason": "info_only" },
-  "hardening":  { "score": 9,  "label": "Hardening",          "deductions": 1, "active": true,  "reason": null },
-  "disk":       { "score": 10, "label": "Disk Health",        "deductions": 0, "active": false, "reason": "profile_skipped" },
-  "firewall":   { "score": 10, "label": "Firewall & Services","deductions": 0, "active": true,  "reason": null }
+  "firewall_network":  { "score": 10, "label": "Firewall & Network",  "deductions": 0, "active": true,  "reason": null },
+  "exposure_services": { "score": 10, "label": "Exposure & Services",  "deductions": 0, "active": false, "reason": "not_installed" },
+  "access_control":    { "score": 10, "label": "Access Control",       "deductions": 0, "active": true,  "reason": null },
+  "system_hardening":  { "score": 9,  "label": "System Hardening",     "deductions": 1, "active": true,  "reason": null },
+  "health_resilience": { "score": 10, "label": "Health & Resilience",  "deductions": 0, "active": false, "reason": "info_only" },
+  "detection":         { "score": 10, "label": "Threat Detection",     "deductions": 0, "active": false, "reason": "not_installed" }
 }
 ```
 
-Les clés de domaines sont stables : `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 au total — définies dans `bob.domain_scores.DOMAINS`). Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), `deductions` (int — total des points déduits dans ce domaine, nouveau en v2), et **`active` / `reason` (nouveau en v0.12.1)**.
+Les clés de domaines sont stables : `firewall_network`, `exposure_services`, `access_control`, `system_hardening`, `health_resilience`, `detection` (6 au total — définies dans `bob.domain_scores.DOMAINS`). **BREAKING en v0.20.0** : les domaines de score ont été réalignés 1:1 sur les six groupes affichés ; les sept clés précédentes (`ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall`) ont disparu. Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), `deductions` (int — total des points déduits dans ce domaine, nouveau en v2), et **`active` / `reason` (nouveau en v0.12.1)**.
 
 `active` (bool) vaut `true` quand le domaine a produit un finding actionnable (OK/WARN/ALERT) — **seuls les domaines actifs sont moyennés dans le `score` global**. Quand `active` vaut `false`, `reason` (string) explique pourquoi le domaine est affiché mais non scoré :
 

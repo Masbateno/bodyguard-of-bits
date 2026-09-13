@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 10486 unit tests · 23 doc files · 5+ distros field-tested │
+│                 10493 unit tests · 23 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -192,7 +192,7 @@ EXTERNAL CONTRACTS (frozen, do not break without major bump)
     schema_version = "3" only       ← JSON output top-level (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9)
     EXIT CODES 0/1/2/3/4            ← stable public API
     EXPLAIN_KEYS                    ← 194 keys / 50 prefixes; alias map emptied v0.9.0 D-3, first live alias v0.10.1 (ssh.x11)
-    7 domain keys                   ← ssh, samba, file_perms, updates, hardening, disk, firewall
+    6 domain keys                   ← firewall_network, exposure_services, access_control, system_hardening, health_resilience, detection
     38 --check/--skip section names ← stable filter surface (filterable; D-1 renames v0.9.0)
     10 always-on section names      ← firewall/firewall_rules/ports/… (recognised by --check since v0.7.0 M-7)
     services.json schema v1         ← plugin contract for users
@@ -299,7 +299,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 285 test files, ~6373 functions, 10486 collected (v0.19.0)
+├── tests/                     ← 286 test files, ~6376 functions, 10493 collected (v0.20.0)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -654,7 +654,7 @@ The `--explain KEY` interactive TUI shows: **title**, **WHY** it matters, **HOW*
 
 ### 4. 7 domain keys
 
-`bob.domain_scores.DOMAINS`: `['ssh', 'samba', 'file_perms', 'updates', 'hardening', 'disk', 'firewall']`. These are stable JSON keys; the human labels (`'SSH'`, `'Samba Security'`, etc.) live in `LABELS` and may change.
+`bob.domain_scores.DOMAINS`: `['firewall_network', 'exposure_services', 'access_control', 'system_hardening', 'health_resilience', 'detection']` (v0.20.0: realigned 1:1 with the six display groups; the previous seven keys were BREAKING-removed). These are stable JSON keys; the human labels (`'Firewall & Network'`, etc.) live in `LABELS` and may change.
 
 ### 5. Section names: 39 filterable + 10 always-on (49 total)
 
@@ -906,7 +906,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 285 test files, ~6373 functions, **10486 collected** (v0.19.0) | `pytest --collect-only -q` |
+| Tests | 286 test files, ~6376 functions, **10493 collected** (v0.20.0) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

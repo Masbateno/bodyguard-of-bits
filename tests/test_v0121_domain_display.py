@@ -1,8 +1,14 @@
 """v0.12.1 — all domains displayed, inactive ones annotated with the reason.
 
-The Domain Scores block now shows all 7 domains. An inactive domain (no
-OK/WARN/ALERT finding) is rendered without a score and tagged with WHY it is
-inactive — never counted in the global average. See [[project_v0121_domain_display]].
+The Domain Scores block shows all domains. An inactive domain (no OK/WARN/ALERT
+finding) is rendered without a score and tagged with WHY it is inactive — never
+counted in the global average. See [[project_v0121_domain_display]].
+
+v0.20.0 — the score domains ARE the six display groups (firewall_network,
+exposure_services, access_control, system_hardening, health_resilience,
+detection). A domain is PROFILE_SKIPPED / FILTERED only when *every* section
+that feeds it is skipped / filtered, so these tests skip a whole group's
+section set (detection: auditd/fail2ban/clamav/file_integrity/rootkit).
 """
 
 from __future__ import annotations
@@ -60,72 +66,70 @@ def _engine(findings):
 # ---------------------------------------------------------------------------
 
 
+# The five sections that feed the detection domain — skipping all of them makes
+# the whole domain profile-skipped / filtered under the v0.20.0 mirror.
+_DETECTION_SECTIONS = {"auditd", "fail2ban", "clamav", "file_integrity", "rootkit"}
+
+
 class TestInactiveReason:
     def test_info_only_domain(self):
         """A domain with only INFO notices = assessed, no action needed."""
-        eng = _engine([("info", "updates.cache_age")])
-        assert "updates" not in active_domains_from_engine(eng)
-        assert domain_inactive_reason("updates", eng) == REASON_INFO_ONLY
+        eng = _engine([("info", "updates.cache_age")])   # → health_resilience
+        assert "health_resilience" not in active_domains_from_engine(eng)
+        assert domain_inactive_reason("health_resilience", eng) == REASON_INFO_ONLY
 
     def test_profile_skipped_domain(self):
-        """Disk with no findings + a profile skipping disk+backup = not assessed."""
-        eng = _engine([("ok", "ssh.ok")])  # disk has no findings
-        prof = AuditProfile(name="container", skip_sections={"disk", "backup"})
-        assert "disk" not in active_domains_from_engine(eng)
-        assert domain_inactive_reason("disk", eng, prof) == REASON_PROFILE_SKIPPED
+        """A profile skipping every detection section = not assessed."""
+        eng = _engine([("ok", "ssh.ok")])  # no detection findings
+        prof = AuditProfile(name="container", skip_sections=set(_DETECTION_SECTIONS))
+        assert "detection" not in active_domains_from_engine(eng)
+        assert domain_inactive_reason("detection", eng, prof) == REASON_PROFILE_SKIPPED
 
     def test_not_installed_domain(self):
-        """Samba absent (no findings) and not profile-skipped = not installed."""
-        eng = _engine([("ok", "ssh.ok")])  # no samba findings
+        """Detection sections ran (nothing skipped) but found nothing = not installed."""
+        eng = _engine([("ok", "ssh.ok")])  # no detection findings
         prof = AuditProfile(name="desktop", skip_sections=set())
-        assert "samba" not in active_domains_from_engine(eng)
-        assert domain_inactive_reason("samba", eng, prof) == REASON_NOT_INSTALLED
-
-    def test_disk_is_never_not_installed(self):
-        """A disk always exists: on a non-skipping profile with no disk findings
-        it is NOT_INSTALLED only in the synthetic case; the real protection is
-        that a skipping profile yields PROFILE_SKIPPED, never NOT_INSTALLED."""
-        eng = _engine([("ok", "ssh.ok")])
-        prof = AuditProfile(name="container", skip_sections={"disk", "backup"})
-        assert domain_inactive_reason("disk", eng, prof) != REASON_NOT_INSTALLED
+        assert "detection" not in active_domains_from_engine(eng)
+        assert domain_inactive_reason("detection", eng, prof) == REASON_NOT_INSTALLED
 
     def test_info_beats_profile_skip(self):
         """If a domain emitted INFO, it was assessed → INFO_ONLY wins over skip."""
         eng = _engine([("info", "updates.cache_age")])
         prof = AuditProfile(name="x", skip_sections={"updates"})
-        assert domain_inactive_reason("updates", eng, prof) == REASON_INFO_ONLY
+        assert domain_inactive_reason("health_resilience", eng, prof) == REASON_INFO_ONLY
 
 
 class TestFilteredReason:
     """A-fix (v0.12.1): --check / --skip must not be mislabelled 'not installed'."""
 
     def test_check_excludes_domain(self):
-        """--check=ssh excludes samba/disk/etc → FILTERED, not NOT_INSTALLED."""
+        """--check=ssh runs only the ssh section → every other domain is FILTERED."""
         eng = _engine([("ok", "ssh.ok")])
         cfg = _config(check_only=["ssh"])
-        for dom in ("samba", "updates", "disk", "file_perms"):
+        for dom in ("exposure_services", "health_resilience", "detection",
+                    "firewall_network"):
             assert domain_inactive_reason(dom, eng, profile=None, config=cfg) == REASON_FILTERED
 
     def test_skip_excludes_domain(self):
-        """--skip=samba → samba is FILTERED."""
+        """--skip covering every detection section → detection is FILTERED."""
         eng = _engine([("ok", "ssh.ok")])
-        cfg = _config(skip_checks=["samba"])
-        assert domain_inactive_reason("samba", eng, profile=None, config=cfg) == REASON_FILTERED
+        cfg = _config(skip_checks=sorted(_DETECTION_SECTIONS))
+        assert domain_inactive_reason("detection", eng, profile=None, config=cfg) == REASON_FILTERED
 
     def test_profile_skip_still_wins_when_no_filter(self):
         """With config present but no --check/--skip, a profile-skipped domain
         stays PROFILE_SKIPPED (the filter branch must not swallow it)."""
         eng = _engine([("ok", "ssh.ok")])
         cfg = _config()  # no check/skip
-        prof = AuditProfile(name="container", skip_sections={"disk", "backup"})
-        assert domain_inactive_reason("disk", eng, prof, cfg) == REASON_PROFILE_SKIPPED
+        prof = AuditProfile(name="container", skip_sections=set(_DETECTION_SECTIONS))
+        assert domain_inactive_reason("detection", eng, prof, cfg) == REASON_PROFILE_SKIPPED
 
     def test_absent_service_with_config_still_not_installed(self):
-        """Samba absent (ran, found nothing) with a config and no filter = NOT_INSTALLED."""
+        """Detection ran (nothing skipped) with a config and no filter = NOT_INSTALLED."""
         eng = _engine([("ok", "ssh.ok")])
         cfg = _config()
         prof = AuditProfile(name="desktop", skip_sections=set())
-        assert domain_inactive_reason("samba", eng, prof, cfg) == REASON_NOT_INSTALLED
+        assert domain_inactive_reason("detection", eng, prof, cfg) == REASON_NOT_INSTALLED
 
     def test_check_filtered_render_text(self):
         """The rendered line for a --check-excluded domain says check/skip, not installed."""
@@ -134,9 +138,9 @@ class TestFilteredReason:
         cfg = _config(check_only=["ssh"])
         lines = render_domain_scores(scores, t=None, engine=eng, profile=None, config=cfg)
         text = "\n".join(lines)
-        samba_line = next(l for l in text.splitlines() if "Samba Security" in l)
-        assert "--check/--skip" in samba_line
-        assert "not installed" not in samba_line
+        det_line = next(l for l in text.splitlines() if "Threat Detection" in l)
+        assert "--check/--skip" in det_line
+        assert "not installed" not in det_line
 
 
 # ---------------------------------------------------------------------------
@@ -146,13 +150,12 @@ class TestFilteredReason:
 
 def _mixed_engine():
     return _engine([
-        ("ok", "ssh.ok"),
-        ("ok", "file_perms.ok"),
-        ("warn", "hardening.firmware"),   # hardening active, deduction
-        ("ok", "firewall.ok"),
-        ("info", "updates.cache_age"),    # updates → INFO only
-        # no disk findings  → profile-skipped (container)
-        # no samba findings → not installed
+        ("warn", "ssh.x11_forwarding"),   # access_control active, deduction
+        ("warn", "hardening.firmware"),   # system_hardening active, deduction
+        ("ok", "firewall.ok"),            # firewall_network active
+        ("info", "updates.cache_age"),    # health_resilience → INFO only
+        # no exposure_services findings → not installed
+        # no detection findings → profile-skipped (container skips them)
     ])
 
 
@@ -163,37 +166,37 @@ class TestRenderAllDomains:
         lines = render_domain_scores(scores, t=None, engine=eng, profile=profile)
         return "\n".join(lines)
 
-    def test_all_seven_labels_present(self):
+    def test_all_six_labels_present(self):
         text = self._text(AuditProfile(name="container",
-                                       skip_sections={"disk", "backup"}))
-        for label in ("SSH", "Samba Security", "Files & Access", "Updates",
-                      "Hardening", "Disk Health", "Firewall & Services"):
+                                       skip_sections=set(_DETECTION_SECTIONS)))
+        for label in ("Firewall & Network", "Exposure & Services", "Access Control",
+                      "System Hardening", "Health & Resilience", "Threat Detection"):
             assert label in text, f"missing domain label: {label}"
 
     def test_active_domain_shows_score(self):
         text = self._text(AuditProfile(name="container",
-                                       skip_sections={"disk", "backup"}))
-        ssh_line = next(l for l in text.splitlines() if "SSH" in l)
-        assert "/10" in ssh_line
+                                       skip_sections=set(_DETECTION_SECTIONS)))
+        ac_line = next(l for l in text.splitlines() if "Access Control" in l)
+        assert "/10" in ac_line
 
     def test_info_only_domain_shows_reason_no_score(self):
         text = self._text(AuditProfile(name="container",
-                                       skip_sections={"disk", "backup"}))
-        upd_line = next(l for l in text.splitlines() if "Updates" in l)
-        assert "no action needed" in upd_line
-        assert "/10" not in upd_line
+                                       skip_sections=set(_DETECTION_SECTIONS)))
+        hr_line = next(l for l in text.splitlines() if "Health & Resilience" in l)
+        assert "no action needed" in hr_line
+        assert "/10" not in hr_line
 
-    def test_profile_skipped_disk_label(self):
+    def test_profile_skipped_label(self):
         text = self._text(AuditProfile(name="container",
-                                       skip_sections={"disk", "backup"}))
-        disk_line = next(l for l in text.splitlines() if "Disk Health" in l)
-        assert "not assessed (container profile)" in disk_line
-        assert "not installed" not in disk_line
+                                       skip_sections=set(_DETECTION_SECTIONS)))
+        det_line = next(l for l in text.splitlines() if "Threat Detection" in l)
+        assert "not assessed (container profile)" in det_line
+        assert "not installed" not in det_line
 
     def test_absent_service_not_installed(self):
         text = self._text(AuditProfile(name="desktop", skip_sections=set()))
-        samba_line = next(l for l in text.splitlines() if "Samba Security" in l)
-        assert "not installed" in samba_line
+        exp_line = next(l for l in text.splitlines() if "Exposure & Services" in l)
+        assert "not installed" in exp_line
 
 
 # ---------------------------------------------------------------------------
@@ -203,16 +206,16 @@ class TestRenderAllDomains:
 
 class TestAverageUnaffected:
     def test_inactive_domains_excluded_from_average(self):
-        """Samba absent (score 10, inactive) must not pull the average up."""
+        """Inactive domains (score 10) must not pull the average up."""
         eng = _mixed_engine()
         scores, _ = compute_domain_scores(eng)
         active = active_domains_from_engine(eng)
         glob = compute_global_from_domains(scores, active)
-        # average is over active domains only (ssh/file_perms/hardening/firewall);
-        # the inactive 10/10 domains (samba, disk, updates) are not counted.
-        assert "samba" not in active
-        assert "disk" not in active
-        assert "updates" not in active
+        # average is over active domains only (access_control / system_hardening /
+        # firewall_network); the inactive 10/10 domains are not counted.
+        assert "exposure_services" not in active
+        assert "detection" not in active
+        assert "health_resilience" not in active
         active_scores = [scores[d]["score"] for d in DOMAINS if d in active]
         assert glob == round(sum(active_scores) / len(active_scores))
 
@@ -311,7 +314,7 @@ class TestADVB1MarkdownHtmlDomains:
         return _engine([
             ("ok", "ssh.ok"), ("ok", "firewall.ok"),
             ("warn", "hardening.firmware"),
-            ("info", "updates.cache_age"),     # inactive: info_only
+            ("info", "updates.cache_age"),     # health_resilience inactive: info_only
         ])
 
     def test_markdown_has_domain_section(self):
@@ -320,12 +323,12 @@ class TestADVB1MarkdownHtmlDomains:
         si = SystemInfo(os_name="x", hostname="h", kernel="k", ufw_version="u",
                         iptables_version="i", nftables_version="n", user="t",
                         config_path="/dev/null", language="en", version="0")
-        prof = AuditProfile(name="container", skip_sections={"disk", "backup"})
+        prof = AuditProfile(name="container", skip_sections=set(_DETECTION_SECTIONS))
         md = build_markdown_output(self._engine(), si, t=None, profile=prof, config=_config())
         assert "Domain Scores" in md
-        assert "SSH" in md and "Disk Health" in md
-        assert "no action needed" in md          # updates info_only
-        assert "not assessed (container profile)" in md   # disk profile-skipped
+        assert "Access Control" in md and "Threat Detection" in md
+        assert "no action needed" in md          # health_resilience info_only
+        assert "not assessed (container profile)" in md   # detection profile-skipped
 
     def test_html_has_domain_section(self):
         from bob.html_output import build_html_output
@@ -333,10 +336,10 @@ class TestADVB1MarkdownHtmlDomains:
         si = SystemInfo(os_name="x", hostname="h", kernel="k", ufw_version="u",
                         iptables_version="i", nftables_version="n", user="t",
                         config_path="/dev/null", language="en", version="0")
-        prof = AuditProfile(name="container", skip_sections={"disk", "backup"})
+        prof = AuditProfile(name="container", skip_sections=set(_DETECTION_SECTIONS))
         html = build_html_output(self._engine(), si, t=None, profile=prof, config=_config())
         assert "Domain Scores" in html
-        assert "<td>Disk Health</td>" in html
+        assert "<td>Threat Detection</td>" in html
         assert "not assessed (container profile)" in html
 
 
@@ -348,5 +351,5 @@ class TestLegacyRenderUnchanged:
         active = active_domains_from_engine(eng)
         lines = render_domain_scores(scores, t=None, active_domains=active)
         text = "\n".join(lines)
-        assert "Samba Security" not in text   # inactive → hidden (legacy)
-        assert "SSH" in text                    # active → shown
+        assert "Threat Detection" not in text   # inactive → hidden (legacy)
+        assert "Access Control" in text          # active → shown

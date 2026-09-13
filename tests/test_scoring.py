@@ -599,11 +599,11 @@ class TestPostureIntegrationWithDomainScores:
         apply_domain_score_override(e)
         ds = e.domain_scores
         # Sanity: the structure is dict[str, dict[str, int|str]]
-        assert isinstance(ds.get("firewall"), dict)
-        assert "score" in ds["firewall"]
-        assert isinstance(ds["firewall"]["score"], int)
+        assert isinstance(ds.get("firewall_network"), dict)
+        assert "score" in ds["firewall_network"]
+        assert isinstance(ds["firewall_network"]["score"], int)
         # The correct way to wire __main__.py:
-        e.set_posture(firewall_domain_score=ds["firewall"]["score"])
+        e.set_posture(firewall_domain_score=ds["firewall_network"]["score"])
         # No crash, posture_escalation returns a tuple
         floor, key = e.posture_escalation
         assert key in (

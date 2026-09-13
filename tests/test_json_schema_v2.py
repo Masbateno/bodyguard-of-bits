@@ -446,28 +446,33 @@ class TestADV1DomainActiveReason:
                 assert isinstance(entry["reason"], str) and entry["reason"], dom
 
     def test_active_domain_marked_active(self, engine_clean, minimal_args):
-        # engine_clean has a firewall.logging_off finding → firewall is active.
+        # engine_clean has a firewall.logging_off finding → firewall_network active.
         data = _build_v3(engine_clean, minimal_args)
-        assert data["domain_scores"]["firewall"]["active"] is True
-        assert data["domain_scores"]["firewall"]["reason"] is None
+        assert data["domain_scores"]["firewall_network"]["active"] is True
+        assert data["domain_scores"]["firewall_network"]["reason"] is None
 
     def test_profile_skip_reason_in_json(self, engine_clean, minimal_args):
+        # v0.20.0: a domain is profile_skipped only when *every* section that
+        # feeds it is skipped — skip the whole detection domain's section set.
         from bob.profiles import AuditProfile
-        prof = AuditProfile(name="container", skip_sections={"disk", "backup"})
+        prof = AuditProfile(name="container", skip_sections={
+            "auditd", "fail2ban", "clamav", "file_integrity", "rootkit"})
         data = build_json_data(engine=engine_clean, full=False, schema_version="3",
                                profile=prof, **minimal_args)
-        disk = data["domain_scores"]["disk"]
-        assert disk["active"] is False
-        assert disk["reason"] == "profile_skipped"
+        detection = data["domain_scores"]["detection"]
+        assert detection["active"] is False
+        assert detection["reason"] == "profile_skipped"
 
     def test_check_filter_reason_in_json(self, engine_clean, minimal_args):
+        # --check=firewall runs only the firewall_network sections; every
+        # EXPOSURE & SERVICES section is excluded, so that domain reads filtered.
         from types import SimpleNamespace
         cfg = SimpleNamespace(check_only=["firewall"], skip_checks=[])
         data = build_json_data(engine=engine_clean, full=False, schema_version="3",
                                config=cfg, **minimal_args)
-        samba = data["domain_scores"]["samba"]
-        assert samba["active"] is False
-        assert samba["reason"] == "filtered"
+        exposure = data["domain_scores"]["exposure_services"]
+        assert exposure["active"] is False
+        assert exposure["reason"] == "filtered"
 
     def test_score_reproducible_from_active_domains(self, engine_clean, minimal_args):
         """A consumer can recompute the headline: mean of active domain scores,

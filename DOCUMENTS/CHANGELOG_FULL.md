@@ -6,6 +6,60 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.20.0] — 2026-09-13
+
+**BREAKING — the per-domain scores are now the six on-screen groups.** BOB had
+been carrying two parallel taxonomies. The audit is *displayed* in six thematic
+groups (v0.18.3): FIREWALL & NETWORK, EXPOSURE & SERVICES, ACCESS CONTROL,
+SYSTEM HARDENING, HEALTH & RESILIENCE, THREAT DETECTION. But the score panel and
+the JSON `domain_scores` object used a different set of **seven** domains —
+`ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` — that
+had grown up separately and no longer lined up with what the reader sees.
+
+**What the mismatch looked like.** A reader saw **"Disk Health 10/10"** in the
+score panel while every disk finding had scrolled past under HEALTH & RESILIENCE.
+The `hardening` domain had become a monster, swallowing 28 finding-prefixes
+spanning three different display groups (system hardening, health, *and*
+detection). The five detection tools — auditd, fail2ban, clamav, file_integrity,
+rootkit — had their own display group but **no score domain at all**: four were
+scored inside `hardening` and fail2ban inside `ssh`, so there was no way to read
+a detection sub-score. `updates` and `samba` each held a whole 1/7 of the global
+average despite being, respectively, one check and one service, while the
+28-check hardening bucket also held 1/7.
+
+**The change.** The score domains are now *exactly* the six display groups:
+`firewall_network`, `exposure_services`, `access_control`, `system_hardening`,
+`health_resilience`, `detection`. Every finding-key prefix is mapped explicitly
+to the group its section is displayed under (`bob/domain_scores.py`
+`_PREFIX_TO_DOMAIN`), so a finding is scored in the box it is shown under —
+`disk`/`backup`/`ntp`/`ssl_certs`/… under HEALTH & RESILIENCE, the detection
+tools under a real `detection` domain, `samba`/`ports`/`services` under EXPOSURE
+& SERVICES. The two taxonomies are one.
+
+**Weighting.** The global score is the mean of the active domains — one vote per
+domain. Collapsing the uneven seven into the six thematic groups makes that
+vote defensible: each area the reader sees weighs the same, instead of a single
+Samba service counting as much as the entire hardening surface.
+
+**The guard that keeps them aligned.** `tests/test_v0200_domain_group_alignment.py`
+reads `bob/runner.py` in source order, tracks the group each `emit_group(...)`
+opens, and asserts that every section emitted under it is scored in that same
+domain by `key_to_domain`. Add a section under a group but forget to map its
+prefix, and the guard fails — the split cannot come back silently. A mutation
+(`domain-alignment/detection-scored-as-hardening`) proves the guard bites.
+
+**BREAKING.** JSON consumers of the `domain_scores` object must move from the
+seven old keys to the six new ones (`bob.domain_scores.DOMAINS`). The posture
+escalation now reads the `firewall_network` domain score (was `firewall`). The
+global headline is recomputed over the six axes, so a host's exact number can
+shift by a point or two versus v0.19.x even with identical findings — the
+findings and their deductions are unchanged; only how they are grouped into the
+average changed.
+
+**Tests** 10486 → **10493**. **Mutations** 230 → **231**.
+
+---
+
 ## [v0.19.0] — 2026-09-13
 
 **Remediation that actually applies on modern Include/drop-in configs — field-tested

@@ -4,14 +4,23 @@ Per-domain security sub-scores for BOB.
 Groups deductions from a finalized ScoreEngine by security domain and
 computes a score (0–10) for each domain independently.
 
-Domains:
-  ssh        — SSH server/client configuration (checks/ssh.py)
-  samba      — Samba security audit (checks/samba.py)
-  file_perms — Sensitive file permissions and sudoers (checks/file_perms.py)
-  updates    — System package updates (checks/updates.py)
-  hardening  — Kernel hardening and security tools (checks/hardening.py)
-  disk       — Disk health: SMART + partition usage (checks/disk.py)
-  firewall   — Firewall rules, ports, services, logs (everything else)
+Domains (v0.20.0 — one per on-screen group; see runner.emit_group and the
+``groups.*`` locale keys, kept in step by test_v0200_domain_group_alignment):
+  firewall_network   — firewall, rules, iptables/nftables, drivers, network, ipv6
+  exposure_services  — services, ports, log analysis, ddns, docker, virt, samba, smtp
+  access_control     — ssh, auth log, user accounts, password policy, file perms
+  system_hardening   — kernel/tools hardening, suid, cron, systemd/docker/container, boot
+  health_resilience  — updates, service health, timers, ntp, memory, disk, backup, certs
+  detection          — auditd, fail2ban, clamav, file integrity, rootkit
+
+Until v0.20.0 the score carried seven domains of its own (ssh, samba,
+file_perms, updates, hardening, disk, firewall) that did NOT match the six
+display groups: a reader saw "Disk Health 10/10" while the disk findings had
+scrolled under HEALTH & RESILIENCE, and the detection tools had a display group
+but no score domain (their deductions were buried in "hardening"). The two
+taxonomies are now one — every finding is scored in the box it is shown under.
+This changed the domain-score keys (BREAKING for JSON consumers) and the global
+average's per-axis weighting.
 
 Usage:
     from bob.domain_scores import compute_domain_scores, DOMAINS
@@ -39,18 +48,25 @@ from bob.visibility import VISIBILITY_KEYS
 # Domain definitions
 # ---------------------------------------------------------------------------
 
-# Ordered list of canonical domain identifiers (display order).
-DOMAINS: list[str] = ["ssh", "samba", "file_perms", "updates", "hardening", "disk", "firewall"]
+# Ordered list of canonical domain identifiers (display order == group order).
+# These ARE the six display-group keys (bob/runner.py emit_group + groups.*).
+DOMAINS: list[str] = [
+    "firewall_network",
+    "exposure_services",
+    "access_control",
+    "system_hardening",
+    "health_resilience",
+    "detection",
+]
 
-# Human-readable English labels for each domain.
+# Human-readable English labels for each domain (title-case of the group header).
 LABELS: dict[str, str] = {
-    "ssh":        "SSH",
-    "samba":      "Samba Security",
-    "file_perms": "Files & Access",
-    "updates":    "Updates",
-    "hardening":  "Hardening",
-    "disk":       "Disk Health",
-    "firewall":   "Firewall & Services",
+    "firewall_network":  "Firewall & Network",
+    "exposure_services": "Exposure & Services",
+    "access_control":    "Access Control",
+    "system_hardening":  "System Hardening",
+    "health_resilience": "Health & Resilience",
+    "detection":         "Threat Detection",
 }
 
 # Maximum total deduction (in points) that a single tool can contribute to its
@@ -63,54 +79,72 @@ TOOL_CAPS: dict[str, int] = {
     "file_integrity": 1,   # AIDE/Tripwire — presence + freshness
 }
 
-# Known key prefixes that map to specific domains.
-# Any prefix not listed here → "firewall" (catch-all).
-#
-# Re-attributions in v0.5.4 (audit finding #15b — Phase 5):
-#   fail2ban     → ssh         (primary purpose is SSH anti-bruteforce)
-#   virt         → hardening   (KVM/bridge bypass is kernel/system surface)
-#   docker_audit → hardening   (container hardening / daemon.json security)
-# `smtp` and `desktop_apps` stay in the firewall catch-all — no clean
-# domain fit identified; revisit if a "detection" domain is introduced.
+# Known key prefixes → their display group (== score domain). Every prefix a
+# check can emit is listed; the group is exactly the on-screen group the section
+# appears under (bob/runner.py). Any prefix NOT listed → "firewall_network"
+# (catch-all); test_v0200_domain_group_alignment fails if a section is displayed
+# under one group but its prefix is scored under another.
 _PREFIX_TO_DOMAIN: dict[str, str] = {
-    "ssh":              "ssh",
-    "samba":            "samba",
-    "file_perms":       "file_perms",
-    "updates":          "updates",
-    "hardening":        "hardening",
-    "kernel_hardening": "hardening",
-    "kernel_modules":   "hardening",
-    "cron":       "hardening",
-    "services_health":   "hardening",
-    "user_accounts":    "file_perms",
-    "password_policy":  "hardening",
-    "memory":           "hardening",
-    "clamav":           "hardening",
-    "auditd":           "hardening",
-    "secure_boot":      "hardening",
-    "backup":           "disk",
-    "file_integrity":   "hardening",
-    "log_rotation":     "hardening",
-    "mac_policy":       "hardening",
-    "ntp":              "hardening",
-    "rootkit":          "hardening",
-    "suid_audit":       "hardening",
-    "logs":             "hardening",
-    "umask":            "hardening",
-    "auth_log":         "ssh",
-    "ssl_certs":        "hardening",
-    "systemd_timers":   "hardening",
-    "systemd_hardening": "hardening",
-    "container_security": "hardening",
-    "socket_units":     "hardening",
-    "raspberry_pi":     "hardening",
-    "cloud_context":    "hardening",
-    "firmware":         "hardening",
-    "disk":             "disk",
-    "fail2ban":         "ssh",
-    "virt":             "hardening",
-    "docker_hardening":     "hardening",
+    # --- GROUP 1 — FIREWALL & NETWORK -------------------------------------
+    "firewall":           "firewall_network",   # incl. UFW logging (firewall.*)
+    "firewall_rules":     "firewall_network",
+    "firewall_iptables":  "firewall_network",
+    "firewall_drivers":   "firewall_network",
+    "network_context":    "firewall_network",
+    "ipv6":               "firewall_network",
+    # --- GROUP 2 — EXPOSURE & SERVICES ------------------------------------
+    "services":           "exposure_services",
+    "ports":              "exposure_services",
+    "logs":               "exposure_services",   # UFW log analysis (blocked/hits)
+    "ddns":               "exposure_services",
+    "docker":             "exposure_services",   # docker network exposure
+    "virt":               "exposure_services",   # KVM/bridge network exposure
+    "samba":              "exposure_services",
+    "smtp":               "exposure_services",
+    # --- GROUP 3 — ACCESS CONTROL -----------------------------------------
+    "ssh":                "access_control",
+    "auth_log":           "access_control",
+    "user_accounts":      "access_control",
+    "password_policy":    "access_control",
+    "file_perms":         "access_control",
+    # --- GROUP 4 — SYSTEM HARDENING ---------------------------------------
+    "hardening":          "system_hardening",
+    "kernel_hardening":   "system_hardening",
+    "kernel_modules":     "system_hardening",
+    "mac_policy":         "system_hardening",
+    "suid_audit":         "system_hardening",
+    "umask":              "system_hardening",
+    "cron":               "system_hardening",
+    "systemd_hardening":  "system_hardening",
+    "docker_hardening":   "system_hardening",
+    "container_security": "system_hardening",
+    "socket_units":       "system_hardening",
+    "secure_boot":        "system_hardening",
+    "cloud_context":      "system_hardening",
+    "raspberry_pi":       "system_hardening",
+    # --- GROUP 5 — HEALTH & RESILIENCE ------------------------------------
+    "updates":            "health_resilience",
+    "services_health":    "health_resilience",
+    "log_rotation":       "health_resilience",
+    "systemd_timers":     "health_resilience",
+    "ntp":                "health_resilience",
+    "memory":             "health_resilience",
+    "disk":               "health_resilience",
+    "backup":             "health_resilience",
+    "ssl_certs":          "health_resilience",
+    "firmware":           "health_resilience",
+    "desktop_apps":       "health_resilience",
+    # --- GROUP 6 — THREAT DETECTION ---------------------------------------
+    "auditd":             "detection",
+    "fail2ban":           "detection",
+    "clamav":             "detection",
+    "file_integrity":     "detection",
+    "rootkit":            "detection",
 }
+
+# The domain unmapped prefixes fall into. v0.20.0: firewall_network succeeds the
+# old "firewall" catch-all.
+_CATCHALL_DOMAIN = "firewall_network"
 
 
 # v0.14.1: prefixes that belong in the "firewall" catch-all *by design* —
@@ -120,10 +154,12 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
 # "a developer added a check and forgot to map its prefix". Listing the
 # deliberate ones keeps the log meaningful — it now fires only for a genuinely
 # unmapped prefix.
+# v0.20.0: with every display-group prefix now mapped explicitly above, the only
+# prefixes that legitimately reach the catch-all are the two that belong to no
+# on-screen group — environment prerequisites and the post-audit correlation
+# engine — and neither contributes a scoring deduction.
 _INTENTIONAL_CATCHALL: frozenset[str] = frozenset({
-    "ddns", "desktop_apps", "docker", "firewall", "firewall_drivers",
-    "firewall_iptables", "firewall_rules", "ipv6", "network_context",
-    "ports", "prerequisites", "risk", "services", "smtp",
+    "prerequisites", "risk",
 })
 
 
@@ -139,15 +175,15 @@ def key_to_domain(key: str | None) -> str | None:
     prefix = key.split(".", 1)[0]
     domain = _PREFIX_TO_DOMAIN.get(prefix)
     if domain is None:
-        # New check key without a domain mapping → falls back to firewall.
+        # New check key without a domain mapping → falls back to the catch-all.
         # Log so packagers/devs notice unmapped prefixes when they add checks —
         # but stay quiet for the prefixes that are catch-all on purpose.
         if prefix not in _INTENTIONAL_CATCHALL:
             logger.debug(
                 "domain_scores: prefix %r has no entry in _PREFIX_TO_DOMAIN, "
-                "defaulting to 'firewall'", prefix,
+                "defaulting to %r", prefix, _CATCHALL_DOMAIN,
             )
-        return "firewall"
+        return _CATCHALL_DOMAIN
     return domain
 
 
@@ -160,15 +196,21 @@ def key_to_domain(key: str | None) -> str | None:
 #
 # Most finding-key prefixes ARE the runner section name, but a few differ; M-1
 # (v0.12.2) maps those so _DOMAIN_SECTIONS holds real section names rather than
-# key prefixes. (Both differing sections — virtualization, ufw_logging — are
-# always-on, so the mismatch was behaviourally unreachable; this fixes the
-# latent inaccuracy + the comment claim.)
+# key prefixes (`virt` is emitted by the `virtualization` section).
 _PREFIX_TO_SECTION: dict[str, str] = {
     "virt": "virtualization",
-    "logs": "ufw_logging",
 }
+# Prefixes emitted by an always-on block that is NOT a gated runner section
+# (no _Section registry entry, so runner._section_enabled never sees it). They
+# must be left out of _DOMAIN_SECTIONS, whose whole purpose is the profile-skip /
+# --check / --skip reasoning — an always-on block can be none of those. `logs`
+# (the UFW log analysis in EXPOSURE & SERVICES) is one; v0.20.0 also retired the
+# stale `logs → ufw_logging` remap (ufw_logging emits firewall.* keys, not logs.*).
+_ALWAYS_ON_NO_SECTION: frozenset[str] = frozenset({"logs"})
 _DOMAIN_SECTIONS: dict[str, set[str]] = {}
 for _prefix, _dom in _PREFIX_TO_DOMAIN.items():
+    if _prefix in _ALWAYS_ON_NO_SECTION:
+        continue
     _DOMAIN_SECTIONS.setdefault(_dom, set()).add(_PREFIX_TO_SECTION.get(_prefix, _prefix))
 del _prefix, _dom
 

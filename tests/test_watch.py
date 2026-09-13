@@ -505,7 +505,7 @@ class TestWatchContractParity:
         fake_engine = MagicMock()
         fake_engine.score    = 8
         fake_engine.findings = []
-        fake_engine.domain_scores = {"firewall": {"score": 3}}
+        fake_engine.domain_scores = {"firewall_network": {"score": 3}}
         fake_engine.finalize = MagicMock()
         fake_engine.raw_score = 10  # numeric for the F1 cap check in apply_domain_score_override
         fake_engine.effective_level.value = "high"

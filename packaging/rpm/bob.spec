@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.19.0
+Version:        0.20.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Sep 13 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.0-1
+- BREAKING: the per-domain score keys were realigned 1:1 with the six on-screen
+  groups (firewall_network, exposure_services, access_control, system_hardening,
+  health_resilience, detection). The previous seven keys (ssh, samba, file_perms,
+  updates, hardening, disk, firewall) are gone. A reader saw "Disk Health 10/10"
+  while the disk findings scrolled under HEALTH & RESILIENCE, and the detection
+  tools had a display group but no score domain; every finding is now scored in
+  the box it is shown under. JSON consumers of domain_scores must update.
 * Sun Sep 13 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.19.0-1
 - Remediation now applies on modern Include/drop-in configs (field-tested on a
   real Raspberry Pi). The samba fixes appended the corrected directive without

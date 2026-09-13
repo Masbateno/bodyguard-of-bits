@@ -1,3 +1,16 @@
+bodyguard-of-bits (0.20.0-1) unstable; urgency=medium
+
+  * BREAKING: the per-domain score keys were realigned 1:1 with the six on-screen
+    groups (firewall_network, exposure_services, access_control, system_hardening,
+    health_resilience, detection). The previous seven keys (ssh, samba, file_perms,
+    updates, hardening, disk, firewall) are gone. A reader saw "Disk Health 10/10"
+    while the disk findings scrolled under HEALTH & RESILIENCE, and the detection
+    tools had a display group but no score domain; every finding is now scored in
+    the box it is shown under. JSON consumers of the domain_scores object must
+    update to the new keys.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 13 Sep 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.19.0-1) unstable; urgency=medium
 
   * Remediation now applies on modern Include/drop-in configs (field-tested on a

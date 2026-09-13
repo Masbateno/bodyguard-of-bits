@@ -28,10 +28,15 @@ class TestM1DomainSectionsAreRealSections:
                 assert sec in real, f"domain {domain!r}: {sec!r} is not a runner section"
 
     def test_stray_prefixes_remapped(self):
+        # v0.20.0: `virt` is emitted by the `virtualization` section (real name),
+        # and both live in the EXPOSURE & SERVICES domain. The `logs` prefix is
+        # an always-on block with no gated section, so it is excluded entirely.
         from bob.domain_scores import _DOMAIN_SECTIONS
-        h = _DOMAIN_SECTIONS["hardening"]
-        assert "virtualization" in h and "ufw_logging" in h
-        assert "virt" not in h and "logs" not in h
+        exp = _DOMAIN_SECTIONS["exposure_services"]
+        assert "virtualization" in exp
+        assert "virt" not in exp
+        all_sections = {s for secs in _DOMAIN_SECTIONS.values() for s in secs}
+        assert "logs" not in all_sections
 
 
 class TestCronNameControlCharStrip:

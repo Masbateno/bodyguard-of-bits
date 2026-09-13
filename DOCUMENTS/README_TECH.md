@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.19.0-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.20.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -89,7 +89,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 39 check
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail. **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.17.1. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking. Since v0.18.0 the sysctl hardenings are applied **by BOB's own code, not by a shell**: set, persisted with exactly one line per key, then **read back** before BOB claims anything — the one-liner on screen is unchanged for a human to paste. Two unattended applications are refused outright because they can take a remote host away from you — a default-deny firewall policy (`iptables -P INPUT DROP` and its `ip6tables`, `-nft`, `-legacy` and `nft … policy drop` spellings) — and a fix that grants access (`ufw allow`) always runs before one that withdraws it (`ufw enable`)
 - **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 194 explainable keys across 50 prefixes; 109 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 85 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
-- **Domain scores** — per-domain 0–10 sub-scores (SSH / Samba / Files & Access / Updates / Hardening / Disk Health / Firewall & Services); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
+- **Domain scores** — per-domain 0–10 sub-scores, one per on-screen group (Firewall & Network / Exposure & Services / Access Control / System Hardening / Health & Resilience / Threat Detection); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases. Since v0.18.0 the CSV's last column is `key`, the finding's stable identifier — the same one `--explain`, `--ignore` and the JSON carry; the fifteen columns before it keep their positions
@@ -377,7 +377,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.19.0  │  Linux hardening auditor                                     ║
+║  BOB v0.20.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -745,17 +745,16 @@ The `key` field is a **stable dotted i18n key** (`<prefix>.<finding_id>`) — ma
 
 ```json
 {
-  "ssh":        { "score": 10, "label": "SSH",                "deductions": 0, "active": true,  "reason": null },
-  "samba":      { "score": 10, "label": "Samba Security",     "deductions": 0, "active": false, "reason": "not_installed" },
-  "file_perms": { "score": 10, "label": "Files & Access",     "deductions": 0, "active": true,  "reason": null },
-  "updates":    { "score": 10, "label": "Updates",            "deductions": 0, "active": false, "reason": "info_only" },
-  "hardening":  { "score": 9,  "label": "Hardening",          "deductions": 1, "active": true,  "reason": null },
-  "disk":       { "score": 10, "label": "Disk Health",        "deductions": 0, "active": false, "reason": "profile_skipped" },
-  "firewall":   { "score": 10, "label": "Firewall & Services","deductions": 0, "active": true,  "reason": null }
+  "firewall_network":  { "score": 10, "label": "Firewall & Network",  "deductions": 0, "active": true,  "reason": null },
+  "exposure_services": { "score": 10, "label": "Exposure & Services",  "deductions": 0, "active": false, "reason": "not_installed" },
+  "access_control":    { "score": 10, "label": "Access Control",       "deductions": 0, "active": true,  "reason": null },
+  "system_hardening":  { "score": 9,  "label": "System Hardening",     "deductions": 1, "active": true,  "reason": null },
+  "health_resilience": { "score": 10, "label": "Health & Resilience",  "deductions": 0, "active": false, "reason": "info_only" },
+  "detection":         { "score": 10, "label": "Threat Detection",     "deductions": 0, "active": false, "reason": "not_installed" }
 }
 ```
 
-Domain keys are stable: `ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall` (7 total — defined in `bob.domain_scores.DOMAINS`). Each entry has `score` (int 0–10), `label` (English display name), `deductions` (int — total points deducted in this domain, new in v2), and **`active` / `reason` (new in v0.12.1)**.
+Domain keys are stable: `firewall_network`, `exposure_services`, `access_control`, `system_hardening`, `health_resilience`, `detection` (6 total — defined in `bob.domain_scores.DOMAINS`). **BREAKING in v0.20.0**: the score domains were realigned 1:1 with the six on-screen groups; the previous seven keys (`ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall`) are gone. Each entry has `score` (int 0–10), `label` (English display name), `deductions` (int — total points deducted in this domain, new in v2), and **`active` / `reason` (new in v0.12.1)**.
 
 `active` (bool) is `true` when the domain contributed an actionable (OK/WARN/ALERT) finding — **only active domains are averaged into the global `score`**. When `active` is `false`, `reason` (string) explains why the domain was shown but not scored:
 

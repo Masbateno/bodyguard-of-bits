@@ -91,35 +91,43 @@ class TestTheSpanBracketsTheTruth:
         return {k: {"score": v} for k, v in kw.items()}
 
     def test_the_real_case(self):
-        """5 scored domains totalling 32, file_perms blinded → 32/6 .. 42/6."""
-        scores = self._scores(ssh=5, samba=10, hardening=4, disk=10,
-                              firewall=3, file_perms=10)
-        active = {"ssh", "samba", "hardening", "disk", "firewall"}
+        """5 scored domains totalling 32, access_control blinded → 32/6 .. 42/6.
+
+        v0.20.0: user_accounts.* is scored under the access_control domain.
+        """
+        scores = self._scores(firewall_network=3, exposure_services=10,
+                              system_hardening=4, health_resilience=10,
+                              detection=5, access_control=10)
+        active = {"firewall_network", "exposure_services", "system_hardening",
+                  "health_resilience", "detection"}
         blinded, span = _uncertainty(
             _FakeEngine(["user_accounts.no_passwd"]), scores, active)
-        assert blinded == ["file_perms"]
+        assert blinded == ["access_control"]
         assert span == (5, 7), f"expected the sighted 7 inside the span, got {span}"
 
     def test_the_sighted_score_lies_inside_the_span(self):
         """The property that makes the span worth printing."""
-        scores = self._scores(ssh=5, samba=10, hardening=4, disk=10,
-                              firewall=3, file_perms=10)
-        active = {"ssh", "samba", "hardening", "disk", "firewall"}
+        scores = self._scores(firewall_network=3, exposure_services=10,
+                              system_hardening=4, health_resilience=10,
+                              detection=5, access_control=10)
+        active = {"firewall_network", "exposure_services", "system_hardening",
+                  "health_resilience", "detection"}
         _, (low, high) = _uncertainty(
             _FakeEngine(["user_accounts.no_passwd"]), scores, active)
         sighted = round(sum(scores[d]["score"] for d in scores) / len(scores))
         assert low <= sighted <= high
 
     def test_nothing_blind_collapses_the_span(self):
-        scores = self._scores(ssh=5, samba=10)
-        blinded, span = _uncertainty(_FakeEngine([]), scores, {"ssh", "samba"})
+        scores = self._scores(access_control=5, exposure_services=10)
+        blinded, span = _uncertainty(_FakeEngine([]), scores,
+                                     {"access_control", "exposure_services"})
         assert blinded == []
         assert span[0] == span[1]
 
     def test_the_span_never_leaves_the_scale(self):
-        scores = self._scores(ssh=0, file_perms=0)
+        scores = self._scores(firewall_network=0, access_control=0)
         _, (low, high) = _uncertainty(
-            _FakeEngine(["user_accounts.no_passwd"]), scores, {"ssh"})
+            _FakeEngine(["user_accounts.no_passwd"]), scores, {"firewall_network"})
         assert 0 <= low <= high <= MAX_SCORE
 
 
@@ -132,7 +140,7 @@ class TestADomainBobCouldNotReadSaysSo:
     def test_unreadable_beats_info_only(self):
         """Both states emit INFO and nothing scoreable; only one is a pass."""
         e = _engine(6, ["user_accounts.no_passwd"])
-        assert domain_inactive_reason("file_perms", e) == REASON_UNREADABLE
+        assert domain_inactive_reason("access_control", e) == REASON_UNREADABLE
 
     def test_a_genuinely_quiet_domain_still_reads_as_no_action(self):
         """Polarity: the new reason must not swallow the old one."""
@@ -141,7 +149,7 @@ class TestADomainBobCouldNotReadSaysSo:
         e = _engine(7, [])
         e.findings.append(Finding(
             level=FindingLevel.INFO, message="nothing to do", key="updates.none"))
-        assert domain_inactive_reason("updates", e) == REASON_INFO_ONLY
+        assert domain_inactive_reason("health_resilience", e) == REASON_INFO_ONLY
 
     def test_both_locales_name_the_new_reason(self):
         import json
