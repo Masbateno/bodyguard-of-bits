@@ -66,6 +66,13 @@ class UpdatesSnapshot:
         upgradable_count:     ``apt list --upgradable`` count (cross-check
                               against the simulated dist-upgrade). ``None`` if
                               the command isn't available or failed.
+        manager:              The detected package manager — "apt", "dnf",
+                              "zypper", "pacman", "apk", or "" when none is
+                              present. v0.19.0: the check was apt-only until a
+                              field test on real Fedora/openSUSE/Alpine/Arch VMs
+                              showed it reported "no apt" (blind) on 4 of the 5
+                              families. ``apt_available`` is kept as the apt
+                              back-compat alias (``manager == "apt"``).
     """
     apt_available:          bool = False
     pending_security:       list[str] = field(default_factory=list)
@@ -74,25 +81,44 @@ class UpdatesSnapshot:
     unattended_enabled:     bool = False
     apt_cache_age_days:     int | None = None
     upgradable_count:       int | None = None
+    manager:                str = ""
 
     @classmethod
     def from_system(cls) -> "UpdatesSnapshot":
         """
         Collect update state from the live system.
 
+        Detects the package manager and collects pending updates through it.
+        Only apt carries the extra apt-specific state (unattended-upgrades,
+        cache age, dist-upgrade cross-check); the others populate the shared
+        ``pending_security`` / ``pending_regular`` lists. Managers with no
+        security channel (pacman, apk) report every pending package as regular
+        — BOB does not invent a severity the tool cannot supply.
+
         Returns:
             Populated UpdatesSnapshot. Never raises — errors reflected as defaults.
         """
         snap = cls()
 
-        if not _command_exists("apt-get"):
-            return snap
-
-        snap.apt_available = True
-        snap.pending_security, snap.pending_regular = _collect_pending_updates()
-        snap.unattended_installed, snap.unattended_enabled = _check_unattended()
-        snap.apt_cache_age_days = _apt_cache_age_days()
-        snap.upgradable_count = _count_upgradable()
+        if _command_exists("apt-get"):
+            snap.manager = "apt"
+            snap.apt_available = True
+            snap.pending_security, snap.pending_regular = _collect_pending_updates()
+            snap.unattended_installed, snap.unattended_enabled = _check_unattended()
+            snap.apt_cache_age_days = _apt_cache_age_days()
+            snap.upgradable_count = _count_upgradable()
+        elif _command_exists("dnf"):
+            snap.manager = "dnf"
+            snap.pending_security, snap.pending_regular = _collect_dnf()
+        elif _command_exists("zypper"):
+            snap.manager = "zypper"
+            snap.pending_security, snap.pending_regular = _collect_zypper()
+        elif _command_exists("pacman"):
+            snap.manager = "pacman"
+            snap.pending_security, snap.pending_regular = _collect_pacman()
+        elif _command_exists("apk"):
+            snap.manager = "apk"
+            snap.pending_security, snap.pending_regular = _collect_apk()
 
         return snap
 
@@ -136,6 +162,132 @@ def _collect_pending_updates() -> tuple[list[str], list[str]]:
 
     # Deduplicate while preserving order (apt can emit the same package twice)
     return list(dict.fromkeys(security)), list(dict.fromkeys(regular))
+
+
+def _dedup(security: list[str], regular: list[str]) -> tuple[list[str], list[str]]:
+    """Dedup both lists and drop from *regular* anything already in *security*."""
+    sec = list(dict.fromkeys(security))
+    secset = set(sec)
+    reg = [p for p in dict.fromkeys(regular) if p not in secset]
+    return sec, reg
+
+
+# --- non-apt collectors (v0.19.0) ------------------------------------------
+# Each reads the package manager's own local state (no network refresh, mirroring
+# apt's simulated dist-upgrade), parses it against output captured on real VMs,
+# and returns (security, regular) package-name lists. Managers with no security
+# channel return security=[].
+
+def _collect_dnf() -> tuple[list[str], list[str]]:
+    """dnf: ``updateinfo list --security`` for security, ``check-update`` for all.
+
+    check-update row: ``name.arch  version  repo`` (name may carry no epoch;
+    the epoch sits in the version column). updateinfo row:
+    ``ADVISORY security SEVERITY name-version-release.arch DATE TIME`` — the
+    NEVRA's name is everything before the last two ``-`` fields.
+    """
+    security: list[str] = []
+    sec_out = _run("dnf", "-q", "--cacheonly", "updateinfo", "list", "--security", timeout=30)
+    for line in sec_out.splitlines():
+        parts = line.split()
+        # data rows have the literal type "security" as the 2nd column
+        if len(parts) >= 4 and parts[1].lower() == "security":
+            security.append(parts[3].rsplit("-", 2)[0])
+
+    regular: list[str] = []
+    all_out = _run("dnf", "-q", "--cacheonly", "check-update", timeout=30)
+    for line in all_out.splitlines():
+        line = line.rstrip()
+        # Everything from the "Obsoleting Packages" header on is not a pending
+        # update — stop rather than rely on the (version-dependent) indentation.
+        if line.lower().startswith("obsoleting"):
+            break
+        if not line or line.startswith(" "):
+            continue
+        parts = line.split()
+        # a package row is exactly ``name.arch  version  repo`` with a dotted name
+        if len(parts) == 3 and "." in parts[0]:
+            regular.append(parts[0].rsplit(".", 1)[0])
+
+    return _dedup(security, regular)
+
+
+def _collect_zypper() -> tuple[list[str], list[str]]:
+    """zypper: security *patches* + all package *updates* (pipe-delimited tables).
+
+    list-patches --category security: ``Repo | Name | Category | Severity | …``.
+    list-updates: ``S | Repository | Name | Current | Available | Arch``.
+    """
+    security: list[str] = []
+    sec_out = _run("zypper", "--non-interactive", "--quiet",
+                   "list-patches", "--category", "security", timeout=45)
+    for line in sec_out.splitlines():
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        # skip header (col 0 == "Repository") and separators
+        if len(cells) >= 4 and cells[0] and cells[0] != "Repository" and "---" not in line:
+            security.append(cells[1])
+
+    regular: list[str] = []
+    all_out = _run("zypper", "--non-interactive", "--quiet", "list-updates", timeout=45)
+    for line in all_out.splitlines():
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        # data rows carry a status flag ("v") in col 0; header is "S"
+        if len(cells) >= 3 and cells[0] and cells[0] != "S" and "---" not in line:
+            regular.append(cells[2])
+
+    return _dedup(security, regular)
+
+
+def _collect_pacman() -> tuple[list[str], list[str]]:
+    """pacman: ``pacman -Qu`` (``name old -> new``). No security channel — all
+    pending updates are reported as regular."""
+    regular: list[str] = []
+    out = _run("pacman", "-Qu", timeout=30)
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            regular.append(parts[0])
+    return _dedup([], regular)
+
+
+def _collect_apk() -> tuple[list[str], list[str]]:
+    """apk: ``apk version -l '<'`` (``name-version-rREV < available``). No
+    security channel — all pending upgrades are reported as regular."""
+    regular: list[str] = []
+    out = _run("apk", "version", "-l", "<", timeout=30)
+    for line in out.splitlines():
+        if "<" not in line or line.startswith("Installed"):
+            continue
+        nevra = line.split("<", 1)[0].strip()
+        if nevra:
+            regular.append(nevra.rsplit("-", 2)[0])
+    return _dedup([], regular)
+
+
+def _upgrade_cmd(manager: str) -> str:
+    """The command that applies the pending (security) updates for *manager*.
+
+    apt carries ``--with-new-pkgs`` because the finding is collected with
+    ``apt-get -s dist-upgrade``: plain ``upgrade`` refuses to pull in a new
+    package (every kernel security update), so it would detect with one command
+    and repair with a strictly weaker one — the kernel is *kept back*, apt
+    returns 0, and ``--fix --apply`` reports it applied. ``--with-new-pkgs``
+    installs the kernel and, unlike ``dist-upgrade``, removes nothing. The
+    ``-y`` (and the other managers' ``--security`` / ``patch`` / non-interactive
+    forms) keeps ``--fix --apply --yes`` from stopping to ask.
+    """
+    return {
+        "apt":    "sudo apt-get upgrade -y --with-new-pkgs",
+        "dnf":    "sudo dnf upgrade --security -y",
+        "zypper": "sudo zypper patch --category security -y",
+        "pacman": "sudo pacman -Syu",
+        "apk":    "sudo apk upgrade",
+    }.get(manager, "")
+
 
 def _apt_cache_age_days() -> int | None:
     """Return age of the APT cache in days, or ``None`` if it cannot be read.
@@ -281,47 +433,50 @@ def check_updates(
     security = snapshot.pending_security or []
     regular  = snapshot.pending_regular or []
 
-    # --- apt not available (non-Debian/Ubuntu system) -----------------------
-    if not snapshot.apt_available:
+    # v0.19.0: back-compat — old snapshots (and tests) set only ``apt_available``.
+    mgr = snapshot.manager or ("apt" if snapshot.apt_available else "")
+
+    # --- no supported package manager ---------------------------------------
+    if not mgr:
         result.info(
             message=_t("updates.no_apt"),
             key="updates.no_apt",
         )
         return result
 
-    # --- APT cache stale ----------------------------------------------------
-    # Without a fresh cache, dist-upgrade simulation reports stale data.
-    # We warn the user before reporting "0 pending" to avoid false reassurance.
-    cache_age = snapshot.apt_cache_age_days
-    if cache_age is not None and cache_age * 86400 >= _APT_CACHE_STALE_THRESHOLD:
-        result.warn(
-            message=_t("updates.apt_cache_stale", days=cache_age),
-            detail=_t("updates.apt_cache_stale_detail"),
-            cmd="sudo apt update",
-            key="updates.apt_cache_stale",
-            nature="improvement",
-        )
+    # --- APT-only: cache freshness + dist-upgrade cross-check ---------------
+    # These read apt-specific state; the other managers have no equivalent here.
+    if mgr == "apt":
+        # Without a fresh cache, dist-upgrade simulation reports stale data.
+        # We warn the user before reporting "0 pending" to avoid false reassurance.
+        cache_age = snapshot.apt_cache_age_days
+        if cache_age is not None and cache_age * 86400 >= _APT_CACHE_STALE_THRESHOLD:
+            result.warn(
+                message=_t("updates.apt_cache_stale", days=cache_age),
+                detail=_t("updates.apt_cache_stale_detail"),
+                cmd="sudo apt update",
+                key="updates.apt_cache_stale",
+                nature="improvement",
+            )
 
-    # --- Cross-check dist-upgrade vs apt list --upgradable ------------------
-    # If apt list reports upgradable packages while dist-upgrade returned
-    # zero, the simulation likely failed silently (locked, broken state, etc.).
-    # The cache_stale warning above already covers the stale-cache case.
-    if (
-        snapshot.upgradable_count is not None
-        and snapshot.upgradable_count > 0
-        and not security
-        and not regular
-    ):
-        result.warn(
-            message=_t(
-                "updates.dist_upgrade_inconsistent",
-                count=snapshot.upgradable_count,
-            ),
-            detail=_t("updates.dist_upgrade_inconsistent_detail"),
-            cmd="sudo apt update && sudo apt list --upgradable",
-            key="updates.dist_upgrade_inconsistent",
-            nature="improvement",
-        )
+        # If apt list reports upgradable packages while dist-upgrade returned
+        # zero, the simulation likely failed silently (locked, broken state, etc.).
+        if (
+            snapshot.upgradable_count is not None
+            and snapshot.upgradable_count > 0
+            and not security
+            and not regular
+        ):
+            result.warn(
+                message=_t(
+                    "updates.dist_upgrade_inconsistent",
+                    count=snapshot.upgradable_count,
+                ),
+                detail=_t("updates.dist_upgrade_inconsistent_detail"),
+                cmd="sudo apt update && sudo apt list --upgradable",
+                key="updates.dist_upgrade_inconsistent",
+                nature="improvement",
+            )
 
     # --- Security packages pending ------------------------------------------
     if security:
@@ -335,24 +490,14 @@ def check_updates(
             reason=_t("updates.security_pending_reason", count=count),
             points=2,
             detail=_t("updates.security_pending_detail"),
-            # v0.17.1: `-y` — nature="action" means --fix --apply runs this, and
-            # without the flag apt stops to ask, in the mode whose whole
-            # promise is not to ask. Proven on a real Debian 13: exit 1,
-            # "0 of 1 fix(es) applied". Same class as v0.16.4, in a verb
-            # its guard did not look at.
-            #
-            # v0.17.1: `--with-new-pkgs` — the finding above is collected with
-            # `apt-get -s dist-upgrade`, for the reason _collect_pending_updates
-            # spells out: plain `upgrade` refuses anything that pulls in a new
-            # package, which is every kernel security update. BOB was therefore
-            # detecting with one command and remediating with a strictly weaker
-            # one. Measured on Debian 13: `sudo apt-get upgrade -y` returned 0
-            # in six seconds with the kernel "kept back", BOB printed
-            # "✔ Applied / 1 of 1 fix(es) applied", and the next audit reported
-            # the same two packages. `--with-new-pkgs` installs what the upgrade
-            # needs; unlike `dist-upgrade` it still removes nothing, which is
-            # the line an unattended auditor must not cross.
-            cmd="sudo apt-get upgrade -y --with-new-pkgs",
+            # The remediation is the manager's own security-upgrade command.
+            # apt: `-y` so --fix --apply does not stop to ask (v0.17.1); and
+            # `--with-new-pkgs` because the finding is collected with
+            # `-s dist-upgrade`, so plain `upgrade` (which refuses to pull in a
+            # new package, i.e. every kernel security update) would detect with
+            # one command and remediate with a strictly weaker one. The other
+            # managers get their own `--security` / `patch` form.
+            cmd=_upgrade_cmd(mgr),
             nature="action",
         )
 
@@ -364,10 +509,10 @@ def check_updates(
             key="updates.regular_pending",
         )
 
-    # --- unattended-upgrades ------------------------------------------------
+    # --- unattended-upgrades (apt / Debian concept only) --------------------
     uu_ok = snapshot.unattended_installed and snapshot.unattended_enabled
 
-    if not uu_ok:
+    if mgr == "apt" and not uu_ok:
         if security and profile_name not in ("workstation", "desktop"):
             # Compound risk: security gap + no automation (server/default only)
             # Unattended upgrades are a Debian package *and* a Debian concept:
@@ -399,15 +544,17 @@ def check_updates(
     # the cache age so the user knows whether they are looking at a fresh
     # read or a stale snapshot. The stale-threshold warning above already
     # handles the > 7-day case — this INFO covers the "fresh-enough but
-    # not zero" range that the threshold leaves silent.
+    # not zero" range that the threshold leaves silent. apt-only: it reads
+    # ``apt_cache_age_days`` and the other managers have no equivalent.
     if (
-        cache_age is not None
+        mgr == "apt"
+        and snapshot.apt_cache_age_days is not None
         and not security
         and not regular
-        and cache_age * 86400 < _APT_CACHE_STALE_THRESHOLD
+        and snapshot.apt_cache_age_days * 86400 < _APT_CACHE_STALE_THRESHOLD
     ):
         result.info(
-            message=_t("updates.apt_cache_age", days=cache_age),
+            message=_t("updates.apt_cache_age", days=snapshot.apt_cache_age_days),
             detail=_t("updates.apt_cache_age_detail"),
             key="updates.apt_cache_age",
         )

@@ -716,8 +716,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="fixes/upgrade-waits-for-a-human",
         file="bob/checks/updates.py",
-        old='cmd="sudo apt-get upgrade -y --with-new-pkgs",',
-        new='cmd="sudo apt-get upgrade --with-new-pkgs",',
+        old='"apt":    "sudo apt-get upgrade -y --with-new-pkgs",',
+        new='"apt":    "sudo apt-get upgrade --with-new-pkgs",',
         kills=("tests/test_v0164_fix_commands_run_unattended.py::"
                "test_no_install_command_would_stop_to_ask",),
         reason="proven on a real Debian 13: apt-get upgrade without -y exits 1 "
@@ -1067,8 +1067,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="updates/fix-cannot-install-a-kernel",
         file="bob/checks/updates.py",
-        old='cmd="sudo apt-get upgrade -y --with-new-pkgs",',
-        new='cmd="sudo apt-get upgrade -y",',
+        old='"apt":    "sudo apt-get upgrade -y --with-new-pkgs",',
+        new='"apt":    "sudo apt-get upgrade -y",',
         kills=(f"{_UPGFIX}::TestDetectionAndRemediationStayReconciled::"
                "test_the_fix_offered_for_that_detection_matches_it",),
         reason="BOB collects the finding with `apt-get -s dist-upgrade` and "
@@ -1079,12 +1079,25 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="updates/fix-removes-packages-unattended",
         file="bob/checks/updates.py",
-        old='cmd="sudo apt-get upgrade -y --with-new-pkgs",',
-        new='cmd="sudo apt-get dist-upgrade -y",',
+        old='"apt":    "sudo apt-get upgrade -y --with-new-pkgs",',
+        new='"apt":    "sudo apt-get dist-upgrade -y",',
         kills=(f"{_UPGFIX}::TestTheProposedUpgradeCanInstallAKernel",),
         reason="dist-upgrade would install the kernel, and would also remove "
                "packages with nobody watching \u2014 the line an auto-applied "
                "fix must not cross",
+    ),
+    Mutation(
+        id="updates/security-fix-hardcodes-apt",
+        file="bob/checks/updates.py",
+        old="            cmd=_upgrade_cmd(mgr),\n            nature=\"action\",",
+        new="            cmd=\"sudo apt-get upgrade -y --with-new-pkgs\",\n            nature=\"action\",",
+        kills=("tests/test_v0190_updates_cross_distro.py::"
+               "TestCheckAcrossManagers::test_dnf_security_deducts_with_dnf_fix",),
+        reason="the check was apt-only until a field test on real Fedora/openSUSE "
+               "VMs showed it reported 'no apt' (blind) on 4 of 5 families; if the "
+               "security remediation reverts to a hardcoded apt command, a dnf host "
+               "with 93 pending security updates gets told to run a command it "
+               "does not have",
     ),
     Mutation(
         id="drift/millisecond-counts-as-drift",

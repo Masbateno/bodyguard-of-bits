@@ -63,6 +63,17 @@ def _apt_upgrade_fix_commands() -> list[tuple[str, str]]:
             if re.search(r"(?<![\w-])(apt|apt-get|aptitude)(?![\w-])", cmd) and \
                re.search(r"(?<!\w)(dist-upgrade|full-upgrade|upgrade)(?![\w-])", cmd):
                 found.append((str(path.relative_to(_SRC.parent)), cmd))
+    # v0.19.0: the upgrade command moved into updates._upgrade_cmd — one entry
+    # per manager, so a dnf host is not told to run apt. A cmd built by a call
+    # (`cmd=_upgrade_cmd(mgr)`) is invisible to the literal scrape above, the
+    # same blind spot _install_templates covers for _INSTALL_MANAGERS, so the
+    # scrape has to follow the command into that table.
+    from bob.checks.updates import _upgrade_cmd
+    for mgr in ("apt", "dnf", "zypper", "pacman", "apk"):
+        cmd = _upgrade_cmd(mgr)
+        if re.search(r"(?<![\w-])(apt|apt-get|aptitude)(?![\w-])", cmd) and \
+           re.search(r"(?<!\w)(dist-upgrade|full-upgrade|upgrade)(?![\w-])", cmd):
+            found.append((f"bob/checks/updates.py:_upgrade_cmd[{mgr}]", cmd))
     return found
 
 
@@ -101,18 +112,23 @@ class TestDetectionAndRemediationStayReconciled:
         )
 
     def test_the_fix_offered_for_that_detection_matches_it(self):
-        src = (_SRC / "checks" / "updates.py").read_text(encoding="utf-8")
-        # Anchor on the call, not on a token that also appears in prose: an
-        # earlier draft of this guard stopped at the `nature="action"` inside
-        # a comment and concluded the finding had lost its cmd.
-        i = src.index('key="updates.security_pending",')
-        block = src[i:i + 2500]
-        cmd = re.search(r'cmd="([^"]*)"', block)
+        # Behavioural, not a source scrape: the cmd is now `_upgrade_cmd(mgr)`,
+        # so build the apt security finding and read the command BOB actually
+        # hands the operator. That is the detection→remediation link this whole
+        # file exists to hold.
+        from bob.checks.updates import UpdatesSnapshot, check_updates
+        snap = UpdatesSnapshot(
+            manager="apt", apt_available=True,
+            pending_security=["linux-image-6.12.107+deb13-amd64", "linux-image-amd64"],
+        )
+        result = check_updates(snap)
+        cmd = next((f.cmd for f in result.findings
+                    if f.key == "updates.security_pending"), None)
         assert cmd, "security_pending lost its cmd"
-        assert _NEW_PKGS in cmd.group(1), (
+        assert _NEW_PKGS in cmd, (
             "BOB collects this finding with `apt-get -s dist-upgrade` and would "
-            f"repair it with `{cmd.group(1)}`, which cannot install a new "
-            "package — the exact gap that made a kernel update report as applied"
+            f"repair it with `{cmd}`, which cannot install a new package — the "
+            "exact gap that made a kernel update report as applied"
         )
 
 

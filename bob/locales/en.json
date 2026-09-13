@@ -1233,9 +1233,9 @@
     "ok": "Sensitive file permissions and sudoers: no issues detected"
   },
   "updates": {
-    "no_apt": "apt not available — package update check skipped",
+    "no_apt": "no supported package manager (apt/dnf/zypper/pacman/apk) found — update check skipped",
     "security_pending": "{count} security package(s) pending update: {packages}",
-    "security_pending_detail": "Security updates fix known vulnerabilities. Apply immediately: sudo apt-get upgrade",
+    "security_pending_detail": "Security updates fix known vulnerabilities. Apply the suggested command immediately.",
     "security_pending_reason": "{count} security package(s) pending update",
     "regular_pending": "{count} package(s) pending update (non-security)",
     "unattended_not_configured": "unattended-upgrades not configured — security patches require manual intervention",

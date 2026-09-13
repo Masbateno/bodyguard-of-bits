@@ -42,6 +42,34 @@ copy of the parameter first so it is idempotent, and falling back to a robust
 delete-then-append on the main file when there is no drop-in Include. Proven on the
 Pi: `sshd -T` flipped `passwordauthentication yes` → `no` after the fix.
 
+**`updates` is now cross-distro — it was blind on 4 of 5 distro families.** The
+same VM campaign that validated the config fixes carried the audit onto Fedora,
+openSUSE, Alpine and Arch, and there `updates` was **apt-only**: `from_system`
+returned early unless `apt-get` was on `$PATH` (`updates.no_apt`, INFO, no
+deduction). A Fedora host with 93 pending security updates got a clean-ish
+verdict — not a false "up to date" (BOB never lied), but the update posture, a
+core control, was simply *not audited* on every non-Debian family, out of step
+with `services`, `firewall` and `mac_policy`, which are all cross-distro.
+`from_system` now detects the package manager and reads pending updates through
+its own local state (no network refresh, mirroring apt's simulated
+dist-upgrade): `dnf` (`updateinfo list --security` for the security channel,
+`check-update` for the rest, stopping at the `Obsoleting Packages` section),
+`zypper` (`list-patches --category security` + `list-updates`, pipe-delimited),
+`pacman` (`-Qu`), and `apk` (`version -l '<'`). Each collector is pinned against
+command output captured on the real VM. The `−2` security deduction and the
+`security_pending` finding are shared, and the remediation command is now
+per-manager (`_upgrade_cmd`: `dnf upgrade --security -y`, `zypper patch
+--category security -y`, …) rather than a hardcoded apt line — so a dnf host is
+no longer told to run a command it does not have. Managers with **no security
+channel** (pacman, apk) report every pending package as a *regular* INFO with no
+deduction: BOB does not invent a severity the tool cannot supply. The apt-only
+extras (unattended-upgrades, cache-age, dist-upgrade cross-check) stay gated to
+apt. Field-proven on all four VMs against each tool's own resolver: Fedora and
+openSUSE raised `security_pending` with the right upgrade command, Alpine and
+Arch reported regular updates only. Guard:
+`tests/test_v0190_updates_cross_distro.py` (real-output fixtures) and a mutation
+that reverts the security remediation to a hardcoded apt command.
+
 **Scope.** A sweep of the other config-editing fixes found no more Include/drop-in
 cases: sysctl already uses `/etc/sysctl.d/99-hardening.conf`, and the remaining
 targets (`/etc/default/ufw`, `/etc/login.defs`) are genuinely monolithic. The
@@ -51,8 +79,8 @@ first-wins + continuation folding) is also filed — it only triggers on non-sta
 configs, which the corrected fix no longer produces.
 
 Guards: `tests/test_v0190_sshd_dropin_remediation.py`, the delete-then-insert shape
-pinned in `test_v0171`, and three mutations. **Tests** 10406 → **10455**.
-**Mutations** 224 → **227**.
+pinned in `test_v0171`, `tests/test_v0190_updates_cross_distro.py`, and four
+mutations. **Tests** 10406 → **10470**. **Mutations** 224 → **228**.
 
 ---
 

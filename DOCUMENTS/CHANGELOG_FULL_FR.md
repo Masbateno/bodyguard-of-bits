@@ -44,6 +44,36 @@ toute copie antérieure du paramètre (idempotent), avec repli sur un delete-the
 robuste sur le main quand il n'y a pas d'Include drop-in. Prouvé sur le Pi : `sshd -T`
 bascule `passwordauthentication yes` → `no` après le fix.
 
+**`updates` est désormais cross-distro — il était aveugle sur 4 des 5 familles de
+distros.** La campagne VM qui a validé les fixes de config a porté l'audit sur
+Fedora, openSUSE, Alpine et Arch, et là `updates` était **apt-only** :
+`from_system` retournait tôt sauf si `apt-get` était sur `$PATH`
+(`updates.no_apt`, INFO, aucune déduction). Un hôte Fedora avec 93 MàJ de
+sécurité en attente obtenait un verdict quasi-propre — pas un faux « à jour »
+(BOB n'a jamais menti), mais la posture de mise à jour, un contrôle cœur,
+n'était tout simplement *pas auditée* sur toute famille non-Debian, en décalage
+avec `services`, `firewall` et `mac_policy`, tous cross-distro. `from_system`
+détecte maintenant le gestionnaire et lit les MàJ en attente via son propre état
+local (sans rafraîchissement réseau, à l'image du dist-upgrade simulé d'apt) :
+`dnf` (`updateinfo list --security` pour le canal sécurité, `check-update` pour
+le reste, en s'arrêtant à la section `Obsoleting Packages`), `zypper`
+(`list-patches --category security` + `list-updates`, tables à barres),
+`pacman` (`-Qu`) et `apk` (`version -l '<'`). Chaque collecteur est épinglé
+contre la sortie capturée sur la VM réelle. La déduction `−2` sécurité et le
+constat `security_pending` sont partagés, et la commande de remédiation est
+désormais par gestionnaire (`_upgrade_cmd` : `dnf upgrade --security -y`,
+`zypper patch --category security -y`, …) plutôt qu'une ligne apt en dur — un
+hôte dnf ne se voit plus dire de lancer une commande qu'il n'a pas. Les
+gestionnaires **sans canal sécurité** (pacman, apk) signalent chaque paquet en
+attente en INFO *régulier* sans déduction : BOB n'invente pas une sévérité que
+l'outil ne fournit pas. Les extras apt-only (unattended-upgrades, âge du cache,
+cross-check dist-upgrade) restent réservés à apt. Prouvé sur les quatre VMs
+contre le résolveur de chaque outil : Fedora et openSUSE ont levé
+`security_pending` avec la bonne commande, Alpine et Arch n'ont signalé que des
+MàJ régulières. Garde : `tests/test_v0190_updates_cross_distro.py` (fixtures de
+sortie réelle) et une mutation qui remet la remédiation sécurité sur une
+commande apt en dur.
+
 **Périmètre.** Un balayage des autres fixes d'édition de config n'a trouvé aucun autre
 cas Include/drop-in : sysctl utilise déjà `/etc/sysctl.d/99-hardening.conf`, et les
 cibles restantes (`/etc/default/ufw`, `/etc/login.defs`) sont réellement monolithiques.
@@ -53,8 +83,8 @@ La divergence propre du parseur samba face à `testparm` sur doublons/continuati
 déclenche que sur config non-standard, que le fix corrigé ne produit plus.
 
 Gardes : `tests/test_v0190_sshd_dropin_remediation.py`, la forme delete-then-insert
-épinglée dans `test_v0171`, et trois mutations. **Tests** 10406 → **10455**.
-**Mutations** 224 → **227**.
+épinglée dans `test_v0171`, `tests/test_v0190_updates_cross_distro.py`, et quatre
+mutations. **Tests** 10406 → **10470**. **Mutations** 224 → **228**.
 
 ---
 

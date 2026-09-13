@@ -1233,9 +1233,9 @@
     "ok": "Permissions des fichiers sensibles et sudoers : aucun problème détecté"
   },
   "updates": {
-    "no_apt": "apt non disponible — vérification des mises à jour ignorée",
+    "no_apt": "aucun gestionnaire de paquets pris en charge (apt/dnf/zypper/pacman/apk) trouvé — vérification des mises à jour ignorée",
     "security_pending": "{count} paquet(s) de sécurité en attente de mise à jour : {packages}",
-    "security_pending_detail": "Les mises à jour de sécurité corrigent des vulnérabilités connues. À appliquer immédiatement : sudo apt-get upgrade",
+    "security_pending_detail": "Les mises à jour de sécurité corrigent des vulnérabilités connues. À appliquer immédiatement via la commande suggérée.",
     "security_pending_reason": "{count} paquet(s) de sécurité en attente de mise à jour",
     "regular_pending": "{count} paquet(s) en attente de mise à jour (hors sécurité)",
     "unattended_not_configured": "unattended-upgrades non configuré — les correctifs de sécurité nécessitent une intervention manuelle",

@@ -47,7 +47,7 @@ _PROMPTS = {
 #: its list did not contain — a guard with an allowlist protects the allowlist.
 _MUTATES = re.compile(
     r"(?<![\w-])(install|add|upgrade|remove|purge|erase|reinstall"
-    r"|dist-upgrade|-S|-Sy|-Syu|-U|-R|-Rs)(?![\w-])")
+    r"|dist-upgrade|patch|-S|-Sy|-Syu|-U|-R|-Rs)(?![\w-])")
 
 #: `update` means two different things and only one of them asks. Measured on
 #: Debian 13 with stdin closed: `apt-get update` exits 0 and prompts for
@@ -117,9 +117,41 @@ def _install_templates():
     ]
 
 
+def _upgrade_templates():
+    """The rendered upgrade commands from ``updates._upgrade_cmd``.
+
+    v0.19.0 moved the pending-security remediation into a per-manager table so
+    a dnf host is not told to run apt. Like the install commands, they reach a
+    call site as ``cmd=_upgrade_cmd(mgr)`` — a call, not a literal — so the AST
+    scrape above cannot see them. Scrape the table too, or a manager's upgrade
+    command written without its non-interactive flag goes unchecked.
+
+    Only apt/dnf/zypper are listed: they are the managers with a security
+    channel, so they are the only ones whose ``_upgrade_cmd`` BOB ever hands
+    over as a fix (``security_pending`` fires). pacman and apk report every
+    pending package as a regular INFO with no cmd, so their full-system upgrade
+    is never auto-applied — and a manually run ``pacman -Syu`` is *meant* to
+    prompt.
+    """
+    from bob.checks.updates import _upgrade_cmd
+    managers = ("apt", "dnf", "zypper")
+    return [
+        (f"bob/checks/updates.py:_upgrade_cmd[{m}]", f"updates.upgrade.{m}",
+         "action", "fix", _upgrade_cmd(m))
+        for m in managers
+    ]
+
+
 def test_the_scan_finds_commands_at_all():
-    """A scraper that matched nothing would satisfy everything below."""
-    assert len(_fix_commands()) > 80, "the cmd scrape broke"
+    """A scraper that matched nothing would satisfy everything below.
+
+    A comfortable floor, not the exact count: v0.19.0 turned the
+    ``updates.security_pending`` literal cmd into ``cmd=_upgrade_cmd(mgr)`` (a
+    call the AST scrape skips — _upgrade_templates carries it now), so an
+    exact ``> 80`` boundary would trip on a legitimate refactor. The guard is
+    against an empty scrape, so a wide margin below the real count is right.
+    """
+    assert len(_fix_commands()) > 70, "the cmd scrape broke"
 
 
 def test_every_manager_has_a_template_to_scan():
@@ -135,7 +167,7 @@ def test_no_install_command_would_stop_to_ask(manager):
     """Whether BOB runs it or the operator copies it, it must not hang."""
     flags = _PROMPTS[manager]
     offenders = []
-    for where, key, _nature, _ctype, text in _fix_commands() + _install_templates():
+    for where, key, _nature, _ctype, text in _fix_commands() + _install_templates() + _upgrade_templates():
         if not re.search(rf"\b{re.escape(manager)}\b", text):
             continue
         if not _mutates(text):
@@ -175,7 +207,7 @@ def test_no_package_verb_is_unclassified():
     classified deliberately rather than by omission.
     """
     unclassified = []
-    for where, key, _nature, _ctype, text in _fix_commands() + _install_templates():
+    for where, key, _nature, _ctype, text in _fix_commands() + _install_templates() + _upgrade_templates():
         if not _MANAGERS.search(text):
             continue
         if _mutates(text) or _READS.search(text) or _UPDATE.search(text):
