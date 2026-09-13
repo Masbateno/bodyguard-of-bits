@@ -86,6 +86,12 @@ class AuditBaseline:
     # was visible then": that would turn an unknown into a claim, the defect
     # this whole field exists to remove.
     unverified:      list[str] | None = None
+    # v0.18.3 — per-key deduction points {key: total_points}, so a "variable
+    # deductions" move (score changed with no finding key appearing or
+    # resolving — a graduated deduction like ssl_certs expiry count) can be
+    # attributed to the controls behind it. None marks a baseline written
+    # before the field existed; {} is a genuinely deduction-free audit.
+    deduction_breakdown: dict[str, int] | None = None
 
 
 @dataclass
@@ -115,6 +121,12 @@ class AuditDelta:
     # True when this run could read less than the previous one.
     visibility_dropped: bool = False
     deduction_delta:       int = 0                                   # change in total raw deduction points
+    # v0.18.3 — per-key point changes behind a variable-deductions move, as
+    # (key, prev_points, curr_points), sorted by key. Populated only when both
+    # baselines carry a deduction_breakdown (else empty — an old baseline gives
+    # the single-line total, unchanged). Rendered under the variable-deductions
+    # line so the operator sees which control moved, not just that one did.
+    deduction_key_deltas: list[tuple[str, int, int]] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         """Return True when no changes were detected since the previous audit."""
@@ -176,6 +188,15 @@ def build_baseline(
     })
     deduction_total = sum(d.points for d in engine.breakdown)
 
+    # v0.18.3 — aggregate the breakdown by key (a key may carry more than one
+    # deduction). Same source as deduction_total, kept per-key so the diff can
+    # attribute a variable-deductions move. Keyless deductions (none today) are
+    # folded into the total but not the per-key map, by construction.
+    deduction_breakdown: dict[str, int] = {}
+    for d in engine.breakdown:
+        if d.key:
+            deduction_breakdown[d.key] = deduction_breakdown.get(d.key, 0) + d.points
+
     # v0.9.0 F-2: capture hostname so cross-machine ``--diff PATH`` can
     # surface a friendly ``baseline from <host>`` line. ``socket.gethostname``
     # never raises and is consistent with what the report headers use.
@@ -197,6 +218,7 @@ def build_baseline(
         deduction_total=deduction_total,
         hostname=_host or None,
         unverified=unverified,
+        deduction_breakdown=deduction_breakdown,
     )
 
 
@@ -349,6 +371,22 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
         else:
             finding_keys = None
 
+        # v0.18.3 — the per-key breakdown carries finding keys too, so it must
+        # ride the same rename migrations as finding_keys or a cross-version
+        # diff would attribute a move to a key that no longer exists. Absent or
+        # malformed → None ("written before the field existed"), never {}.
+        raw_bd = raw.get("deduction_breakdown")
+        if isinstance(raw_bd, dict):
+            deduction_breakdown: dict[str, int] | None = {}
+            for k, v in raw_bd.items():
+                try:
+                    pts = int(v)
+                except (TypeError, ValueError):
+                    continue
+                deduction_breakdown[remap_v0160(remap_finding_key(str(k)))] = pts
+        else:
+            deduction_breakdown = None
+
         return AuditBaseline(
             timestamp=str(raw.get("timestamp", "")),
             score=int(raw.get("score", 0)),
@@ -369,6 +407,7 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
             # through the file. Absent stays None ("written before the field
             # existed"); an empty list stays a legitimately clean run.
             unverified=(list(raw["unverified"]) if isinstance(raw.get("unverified"), list) else None),
+            deduction_breakdown=deduction_breakdown,
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         if strict:
@@ -428,6 +467,21 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
         and set(curr.unverified or []) > set(prev.unverified)
     )
 
+    # v0.18.3 — per-key point changes. Only when both baselines carry the
+    # breakdown (None on either = an old baseline; fall back to the single
+    # total line, which stays correct). A key present in one and absent in the
+    # other counts as 0 on the missing side.
+    if prev.deduction_breakdown is not None and curr.deduction_breakdown is not None:
+        prev_bd = prev.deduction_breakdown
+        curr_bd = curr.deduction_breakdown
+        deduction_key_deltas = sorted(
+            (k, prev_bd.get(k, 0), curr_bd.get(k, 0))
+            for k in (set(prev_bd) | set(curr_bd))
+            if prev_bd.get(k, 0) != curr_bd.get(k, 0)
+        )
+    else:
+        deduction_key_deltas = []
+
     return AuditDelta(
         prev_timestamp=prev.timestamp,
         score_delta=curr.score - prev.score,
@@ -447,6 +501,7 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
             if prev.deduction_total is not None and curr.deduction_total is not None
             else 0
         ),
+        deduction_key_deltas=deduction_key_deltas,
     )
 
 
@@ -536,6 +591,12 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
         else:
             output_mod.print_info(t("compare.variable_deductions_decreased",
                                      delta=abs(delta.deduction_delta)))
+        # v0.18.3 — attribute the move to the controls behind it, when both
+        # baselines carried the per-key breakdown (else the single line above
+        # is all an older baseline can support).
+        for key, prev_pts, curr_pts in delta.deduction_key_deltas:
+            output_mod.print_dim("    " + t("compare.deduction_key_delta",
+                                            finding=key, prev=prev_pts, curr=curr_pts))
 
     # --- New / resolved ALERT+WARN finding keys ---
     for key in delta.new_finding_keys:

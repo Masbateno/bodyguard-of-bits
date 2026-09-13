@@ -56,6 +56,7 @@ _AAEMPTY = "tests/test_v0171_apparmor_empty_is_not_unreadable.py"
 _DORMANT = "tests/test_v0171_dormant_service_is_reported_not_scored.py"
 _WHOAMI = "tests/test_v0171_audit_user_is_measured.py"
 _SENTINEL = "tests/test_v0171_no_sentinel_reaches_the_header.py"
+_CMPBD = "tests/test_v0183_compare_breakdown.py"
 _SSHUNIT = "tests/test_v0171_ssh_unit_is_resolved.py"
 _NOSYSD = "tests/test_v0171_no_systemd_is_not_a_verdict.py"
 _OPENRC = "tests/test_v0180_openrc.py"
@@ -1970,6 +1971,26 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="glob() eats the read denial on a root-owned /var/lib/tripwire and "
                "returns [], so db_readable stays True and the tool reports the "
                "database not initialised — a WARN and a point on a covered host",
+    ),
+    Mutation(
+        id="compare/breakdown-lists-unchanged-keys",
+        file="bob/compare.py",
+        old="            for k in (set(prev_bd) | set(curr_bd))\n            if prev_bd.get(k, 0) != curr_bd.get(k, 0)",
+        new="            for k in (set(prev_bd) | set(curr_bd))",
+        kills=(f"{_CMPBD}::TestDeltaPerKey::test_only_changed_keys_appear",),
+        reason="without the changed-only filter the breakdown lists every key "
+               "including those whose points did not move, turning the "
+               "attribution into noise",
+    ),
+    Mutation(
+        id="compare/breakdown-ignores-old-baseline-none",
+        file="bob/compare.py",
+        old="    if prev.deduction_breakdown is not None and curr.deduction_breakdown is not None:",
+        new="    if curr.deduction_breakdown is not None:",
+        kills=(f"{_CMPBD}::TestDeltaPerKey::test_old_baseline_none_degrades_to_no_per_key",),
+        reason="dropping the prev-side None guard makes a pre-v0.18.3 baseline "
+               "(breakdown None) be diffed as if every current key were new, "
+               "attributing the whole score to controls it never measured",
     ),
     Mutation(
         id="py314/aide-db-path-exists-swallows-denial",

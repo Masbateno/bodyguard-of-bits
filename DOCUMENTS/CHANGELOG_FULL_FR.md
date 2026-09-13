@@ -89,7 +89,34 @@ sous un `/etc/ssh` traversable, où `stat` réussit quel que soit le mode du
 fichier) et le glob de config WireGuard du pare-feu (un signal de contexte sans
 déduction, déjà gated par le binaire `wg` qu’exige `wg-quick`).
 
-**Tests** 10321 → **10406**. **Mutations** 208 → **221**.
+**`--diff` attribue un mouvement de « déductions variables » aux contrôles qui
+en sont la cause.** La vue comparative nomme déjà les clés de constat qui
+apparaissent ou se résolvent, mais une déduction *graduée* — un contrôle dont la
+valeur en points change alors que sa clé reste présente, comme le nombre de
+certificats TLS proches de l'expiration, ou une exposition qui suit le contexte
+réseau — faisait bouger le score sans autre explication qu'une ligne unique
+`Déductions variables -N pt(s)`. Le baseline enregistre désormais un détail
+par clé, et cette ligne est suivie des contrôles qui ont bougé :
+
+```
+ℹ Déductions variables -3 pt(s) (logs, trafic réseau)
+      services.exposure.postgresql  2 → 1 pt
+      ssl_certs.expiring_critical   3 → 1 pt
+```
+
+La donnée était déjà calculée (c'est ce que `deduction_total` somme) ; elle est
+maintenant conservée par clé. Le champ du baseline est additif et optionnel —
+un baseline écrit avant cette version ne porte pas de détail, et le diff retombe
+sur la ligne totale unique, inchangée. Le détail suit les mêmes migrations de
+renommage de clés v0.9.0 / v0.16.0 que `finding_keys`, si bien qu'un `--diff`
+cross-version n'attribue jamais un mouvement à une clé renommée depuis. Les
+sous-lignes n'apparaissent que dans la branche déductions-variables : quand une
+clé de constat apparaît ou se résout vraiment, cela nomme déjà le changement.
+(Ceci ferme la ligne `compare` breakdown-diff ouverte depuis v0.3.0 et tuée en
+v0.8.4 — rouverte et cadrée sur une forme minimale non-breaking après que la
+prémisse de coût, ~6-8h et un schéma BREAKING, s'est révélée périmée.)
+
+**Tests** 10321 → **10406**. **Mutations** 208 → **223**.
 
 ---
 

@@ -83,7 +83,33 @@ parsers (their `is_file()` / `stat()` targets sit under a traversable
 WireGuard config glob in the firewall stack (a context signal with no deduction,
 already gated by the `wg` binary that `wg-quick` requires).
 
-**Tests** 10321 → **10406**. **Mutations** 208 → **221**.
+**`--diff` attributes a "variable deductions" move to the controls behind it.**
+The comparative view already names finding keys that appear or resolve, but a
+*graduated* deduction — a control whose point value changes while its key stays
+present, like the count of near-expiry TLS certificates, or an exposure that
+follows the network context — moved the score with nothing but a single
+`Variable deductions -N pt(s)` line to explain it. The baseline now records a
+per-key breakdown, and that line is followed by the controls that moved:
+
+```
+ℹ Variable deductions -3 pt(s) (logs, network traffic)
+      services.exposure.postgresql  2 → 1 pt
+      ssl_certs.expiring_critical   3 → 1 pt
+```
+
+The data was already computed (it is what `deduction_total` sums); it is now
+kept per key. The baseline field is additive and optional — a baseline written
+before this release carries no breakdown, and the diff falls back to the single
+total line, unchanged. The breakdown rides the same v0.9.0 / v0.16.0 key-rename
+migrations as `finding_keys`, so a cross-version `--diff` never attributes a
+move to a key that has since been renamed. The sub-lines appear only in the
+variable-deductions branch: when a finding key actually appeared or resolved,
+that already names the change. (This closes the `compare` breakdown-diff line
+open since v0.3.0 and killed in v0.8.4 — reopened and scoped to a minimal,
+non-breaking form after the cost premise, ~6-8h and a BREAKING schema, proved
+outdated.)
+
+**Tests** 10321 → **10406**. **Mutations** 208 → **223**.
 
 ---
 

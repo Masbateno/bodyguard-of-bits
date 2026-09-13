@@ -879,6 +879,7 @@
     "key_unreevaluated": "Not re-evaluated (its section could not be read): {finding}",
     "variable_deductions_increased": "Variable deductions +{delta} pt(s) (logs, network traffic)",
     "variable_deductions_decreased": "Variable deductions -{delta} pt(s) (logs, network traffic)",
+    "deduction_key_delta": "{finding}  {prev} → {curr} pt",
     "no_baseline_yet": "No previous baseline found — run a full audit first to establish a baseline.",
     "cross_machine_notice": "ℹ Baseline was recorded on '{baseline_host}'; comparing against current host '{current_host}' (cross-machine diff).",
     "baseline_load": {

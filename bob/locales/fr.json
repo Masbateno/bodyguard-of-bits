@@ -879,6 +879,7 @@
     "key_unreevaluated": "Non réévalué (sa section n'a pas pu être lue) : {finding}",
     "variable_deductions_increased": "Déductions variables +{delta} pt(s) (logs, trafic réseau)",
     "variable_deductions_decreased": "Déductions variables -{delta} pt(s) (logs, trafic réseau)",
+    "deduction_key_delta": "{finding}  {prev} → {curr} pt",
     "no_baseline_yet": "Aucune baseline précédente trouvée — exécutez d'abord un audit complet pour établir une baseline.",
     "cross_machine_notice": "ℹ Baseline enregistré sur « {baseline_host} » ; comparaison vs hôte courant « {current_host} » (diff cross-machine).",
     "baseline_load": {
