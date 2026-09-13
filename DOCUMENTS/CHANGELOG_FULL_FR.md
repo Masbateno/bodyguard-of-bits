@@ -74,17 +74,42 @@ MàJ régulières. Garde : `tests/test_v0190_updates_cross_distro.py` (fixtures 
 sortie réelle) et une mutation qui remet la remédiation sécurité sur une
 commande apt en dur.
 
+**Robustesse — une vérification de frontière de confiance qui se lisait « sûre »
+quand elle ne pouvait pas regarder.** `_is_safe_config_path` et
+`_is_safe_user_path` décident si BOB lira un chemin donné : un symlink sous
+`/etc/cron.d`, `/etc/sudoers.d` ou `~/.ssh` est suspect, car en suivre un sous
+sudo peut matérialiser un fichier que l'opérateur n'a jamais voulu exposer
+(`authorized_keys → /etc/shadow`). Les deux reposaient sur `Path.is_symlink()`,
+qui jusqu'à Python 3.13 *levait* `PermissionError` quand le chemin ne pouvait
+être lstat'é — mais depuis 3.14 répond `False`. Un symlink que BOB n'a pas le
+droit de lstat se lisait donc « pas un symlink, sûr », et la garde blanchissait
+un chemin qu'elle ne pouvait pas vraiment contrôler. Les deux appellent
+désormais `strict_is_symlink` (qui conserve la levée ≤3.13 sur toute version) et
+**échouent fermé** : une réponse indéterminable est traitée comme non sûre, pas
+sûre. Garde `tests/test_v0190_safe_path_denial_fails_closed.py` construit un
+parent mode-000 pour que le refus soit réel sur 3.12 comme sur 3.14, avec une
+paire de polarité par fonction et deux mutations qui basculent la branche
+fail-closed en fail-open.
+
 **Périmètre.** Un balayage des autres fixes d'édition de config n'a trouvé aucun autre
 cas Include/drop-in : sysctl utilise déjà `/etc/sysctl.d/99-hardening.conf`, et les
 cibles restantes (`/etc/default/ufw`, `/etc/login.defs`) sont réellement monolithiques.
 La fragilité « sed exact-match » plus légère sur celles-ci est notée pour plus tard.
 La divergence propre du parseur samba face à `testparm` sur doublons/continuations
 (configparser première-gagne + repli de continuation) est aussi notée — elle ne se
-déclenche que sur config non-standard, que le fix corrigé ne produit plus.
+déclenche que sur config non-standard, que le fix corrigé ne produit plus. Le backlog
+des prédicats pathlib-3.14 a été re-balayé (51 → 39 après les lots v0.18.3) : au-delà
+des deux sites de frontière de confiance ci-dessus, les prédicats restants ont été
+jugés un par un et laissés — ils échouent dans la direction conservative (un outil de
+sauvegarde actif lu comme simplement installé, un contexte pare-feu manqué donc BOB
+avertit *davantage*, un scan de découverte de certs dont le vrai angle mort est le
+`glob()`, déjà traité pour les stores primaires) ou portent sur du sysfs world-readable
+(`/sys/module/apparmor`) où aucun refus n'est réaliste.
 
 Gardes : `tests/test_v0190_sshd_dropin_remediation.py`, la forme delete-then-insert
-épinglée dans `test_v0171`, `tests/test_v0190_updates_cross_distro.py`, et quatre
-mutations. **Tests** 10406 → **10470**. **Mutations** 224 → **228**.
+épinglée dans `test_v0171`, `tests/test_v0190_updates_cross_distro.py`,
+`tests/test_v0190_safe_path_denial_fails_closed.py`, et six mutations.
+**Tests** 10406 → **10486**. **Mutations** 224 → **230**.
 
 ---
 

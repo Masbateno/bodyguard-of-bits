@@ -1100,6 +1100,30 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="trust-boundary/config-path-denial-reads-as-safe",
+        file="bob/checks/_run.py",
+        old="    try:\n        return not strict_is_symlink(p)\n    except OSError:\n        return False",
+        new="    try:\n        return not strict_is_symlink(p)\n    except OSError:\n        return True",
+        kills=("tests/test_v0190_safe_path_denial_fails_closed.py::"
+               "TestSafeConfigPath::test_undeterminable_fails_closed",),
+        reason="a symlink under /etc/cron.d that BOB is refused permission to "
+               "lstat must not read as 'not a symlink, safe' — on Python 3.14 "
+               "Path.is_symlink() answers False to that denial, so failing open "
+               "here would follow authorized_keys -> /etc/shadow into the report",
+    ),
+    Mutation(
+        id="trust-boundary/user-path-denial-reads-as-safe",
+        file="bob/checks/_run.py",
+        old="    try:\n        is_link = strict_is_symlink(p)\n    except OSError:\n        return False",
+        new="    try:\n        is_link = strict_is_symlink(p)\n    except OSError:\n        return True",
+        kills=("tests/test_v0190_safe_path_denial_fails_closed.py::"
+               "TestSafeUserPath::test_undeterminable_fails_closed",),
+        reason="if the symlink-ness of a path under a user's home cannot be "
+               "determined, treating it as a plain safe file lets a symlink "
+               "escaping the home be materialised — the exact attack the "
+               "home-boundary check exists to stop",
+    ),
+    Mutation(
         id="drift/millisecond-counts-as-drift",
         file="bob/checks/_run.py",
         old="    return newest_mtime - applied >= _APPLIED_RESOLUTION",

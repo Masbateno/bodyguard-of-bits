@@ -70,17 +70,41 @@ Arch reported regular updates only. Guard:
 `tests/test_v0190_updates_cross_distro.py` (real-output fixtures) and a mutation
 that reverts the security remediation to a hardcoded apt command.
 
+**Robustness — a trust-boundary path check that read as "safe" when it could
+not look.** `_is_safe_config_path` and `_is_safe_user_path` decide whether BOB
+will read a given path: a symlink under `/etc/cron.d`, `/etc/sudoers.d` or
+`~/.ssh` is suspect, because following one under sudo can materialise a file the
+operator never meant to expose (`authorized_keys → /etc/shadow`). Both were
+written around `Path.is_symlink()`, which up to Python 3.13 *raised*
+`PermissionError` when the path could not be lstat'd — but from 3.14 answers
+`False` instead. A symlink BOB is refused permission to lstat therefore read as
+"not a symlink, safe", and the guard would clear a path it could not actually
+vet. Both now call `strict_is_symlink` (which keeps the ≤3.13 raise on every
+version) and **fail closed**: an undeterminable answer is treated as unsafe, not
+safe. Guard `tests/test_v0190_safe_path_denial_fails_closed.py` builds a
+mode-000 parent so the denial is real on 3.12 as well as 3.14, with a polarity
+pair per function and two mutations flipping the fail-closed branch to
+fail-open.
+
 **Scope.** A sweep of the other config-editing fixes found no more Include/drop-in
 cases: sysctl already uses `/etc/sysctl.d/99-hardening.conf`, and the remaining
 targets (`/etc/default/ufw`, `/etc/login.defs`) are genuinely monolithic. The
 milder "exact-match sed" fragility on those is filed for later. The samba parser's
 own divergence from `testparm` on duplicate/continuation lines (configparser
 first-wins + continuation folding) is also filed — it only triggers on non-standard
-configs, which the corrected fix no longer produces.
+configs, which the corrected fix no longer produces. The pathlib-3.14 predicate
+backlog was re-swept (51 → 39 after the v0.18.3 batches): beyond the two
+trust-boundary sites above, the remaining predicates were judged site-by-site and
+left — they fail in the conservative direction (an active backup tool read as
+merely installed, a firewall context missed so BOB warns *more*, a cert-discovery
+scan whose `glob()` is the real blind spot, already handled for the primary
+stores) or sit on world-readable sysfs (`/sys/module/apparmor`) where no denial
+is realistic.
 
 Guards: `tests/test_v0190_sshd_dropin_remediation.py`, the delete-then-insert shape
-pinned in `test_v0171`, `tests/test_v0190_updates_cross_distro.py`, and four
-mutations. **Tests** 10406 → **10470**. **Mutations** 224 → **228**.
+pinned in `test_v0171`, `tests/test_v0190_updates_cross_distro.py`,
+`tests/test_v0190_safe_path_denial_fails_closed.py`, and six mutations.
+**Tests** 10406 → **10486**. **Mutations** 224 → **230**.
 
 ---
 

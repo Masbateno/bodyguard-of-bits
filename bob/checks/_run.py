@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, NamedTuple
 from bob._atomic import read_text_capped
+from bob._fs import strict_is_symlink
 
 _CMD_TIMEOUT = 10  # seconds — default for short commands (ss, ufw, iptables, etc.)
 
@@ -1155,7 +1156,17 @@ def _is_safe_config_path(path) -> bool:
     managed via git), use ``_is_safe_user_path()`` instead.
     """
     p = Path(path)
-    return p.is_absolute() and not p.is_symlink()
+    if not p.is_absolute():
+        return False
+    # strict_is_symlink, not Path.is_symlink: from Python 3.14 the latter
+    # answers False to a PermissionError instead of raising (3.13 raised). This
+    # guards a trust boundary — a symlink under /etc/cron.d, /etc/sudoers.d etc.
+    # is suspect — so a path whose symlink-ness we are refused permission to
+    # determine must fail *closed* (unsafe), never read as "not a symlink, safe".
+    try:
+        return not strict_is_symlink(p)
+    except OSError:
+        return False
 
 
 def _is_safe_user_path(path, owner_home) -> bool:
@@ -1180,7 +1191,16 @@ def _is_safe_user_path(path, owner_home) -> bool:
     p = Path(path)
     if not p.is_absolute():
         return False
-    if p.is_symlink():
+    # strict_is_symlink: on Python 3.14 Path.is_symlink() answers False to a
+    # PermissionError, so a symlink we are refused permission to lstat would slip
+    # past this branch and be read as a plain safe file — following it outside
+    # ``owner_home`` is the exact attack this defends against. If we cannot tell,
+    # fail closed: treat the path as unsafe rather than materialising its target.
+    try:
+        is_link = strict_is_symlink(p)
+    except OSError:
+        return False
+    if is_link:
         try:
             target = p.resolve(strict=True)
         except OSError:

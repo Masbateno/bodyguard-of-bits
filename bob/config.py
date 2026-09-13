@@ -219,7 +219,7 @@ class UserConfig:
         Return the value for key, or None if not set.
 
         Args:
-            key: Configuration key (e.g. "nginx_web_server_port").
+            key: Configuration key (e.g. "audit_profile", "webhook_url").
 
         Returns:
             Stored string value, or None.
@@ -231,7 +231,9 @@ class UserConfig:
         Store a key=value pair and persist to disk immediately.
 
         Args:
-            key:   Configuration key (must be a valid identifier, e.g. "ssh_port").
+            key:   Configuration key (must be a valid identifier, e.g.
+                   "audit_profile"). Not a per-service port key — those were
+                   never built; see the module docstring.
             value: String value to store.
             t:     Optional translation function ``t(key, **kwargs) -> str``
                    used to format the ValueError message. When ``None``,
