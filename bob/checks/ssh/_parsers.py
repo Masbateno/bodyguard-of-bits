@@ -75,6 +75,17 @@ def _parse_config_file(
             pattern = inc_match.group(1).strip()
             if not os.path.isabs(pattern):
                 pattern = str(path.parent / pattern)
+            # v0.19.0: record the first glob drop-in directory. Modern OpenSSH
+            # ships ``Include /etc/ssh/sshd_config.d/*.conf`` at the very top of
+            # sshd_config, so a directive set in a drop-in (e.g. cloud-init's
+            # ``50-cloud-init.conf``) is read first and, first-value-wins, beats
+            # the main file. A fix that edits only the main file is then a no-op;
+            # the remediation must write a drop-in that sorts *before* the
+            # offending one (``00-bob-hardening.conf``). Recorded here so the
+            # sub-check can target the right file. Field-test finding on a real
+            # Raspberry Pi (Raspbian trixie).
+            if "*" in pattern:
+                config.setdefault("_dropin_dir", os.path.dirname(pattern))
             for inc in sorted(_glob.glob(pattern)):
                 _parse_config_file(Path(inc), config, seen)
             continue

@@ -25,6 +25,40 @@ from ._parsers import _parse_time_seconds
 from ._snapshot import SSHSnapshot
 
 
+def _sshd_directive_fix(directive: str, param: str, cfg: dict) -> str:
+    """A command that makes *directive* the *effective* sshd setting.
+
+    v0.19.0. Modern OpenSSH reads ``Include /etc/ssh/sshd_config.d/*.conf`` at
+    the top of sshd_config and resolves first-value-wins, so a directive set in
+    a drop-in (cloud-init's ``50-cloud-init.conf``, say) is read first and beats
+    the main file. Editing only the main file — as the three earlier fixes did —
+    is then a silent no-op; field-tested on a real Raspberry Pi where
+    ``50-cloud-init.conf`` carried ``PasswordAuthentication yes`` and the fix
+    changed nothing.
+
+    When the parser saw such a drop-in Include, write ``00-bob-hardening.conf``
+    in that directory: it sorts before ``50-cloud-init.conf`` and, first-wins,
+    overrides it. Otherwise replace/insert in the main file. Either way the
+    parameter is deleted from the target first (case-insensitive, ``=`` or space
+    separator) and the correct line appended, so the directive is the sole
+    assignment and the command is idempotent.
+    """
+    restart = service_restart_cmd(ssh_unit())
+    # ``param`` is a fixed directive name (no regex metacharacters).
+    kill = f"/^[[:space:]]*#?[[:space:]]*{param}([[:space:]]|=)/Id"
+    dropin = cfg.get("_dropin_dir")
+    if dropin:
+        f = shlex.quote(f"{dropin}/00-bob-hardening.conf")
+        return (f"sudo touch {f} && "
+                f"sudo sed -i -E {shlex.quote(kill)} {f} && "
+                f"echo {shlex.quote(directive)} | sudo tee -a {f} >/dev/null && "
+                f"{restart}")
+    conf = "/etc/ssh/sshd_config"
+    return (f"sudo sed -i -E {shlex.quote(kill)} {conf} && "
+            f"echo {shlex.quote(directive)} | sudo tee -a {conf} >/dev/null && "
+            f"{restart}")
+
+
 def check_ssh(snapshot: SSHSnapshot, t: TranslationFunc | None = None, ssh_exposed: bool = True) -> CheckResult:
     """
     Check SSH server and client configuration.
@@ -190,7 +224,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             points=3,
             nature="improvement",
             detail=_t("ssh.permit_root_login_detail"),
-            cmd=f"sudo sed -i 's/^#*PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && {service_restart_cmd(ssh_unit())}",
+            cmd=_sshd_directive_fix("PermitRootLogin prohibit-password", "PermitRootLogin", cfg),
         )
         found_issue = True
     elif prl == "no":
@@ -223,7 +257,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
                 message=_t("ssh.password_auth"),
                 points=2,
                 detail=_t("ssh.password_auth_detail"),
-                cmd=f"sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && {service_restart_cmd(ssh_unit())}",
+                cmd=_sshd_directive_fix("PasswordAuthentication no", "PasswordAuthentication", cfg),
                 nature="action",
             )
             found_issue = True
@@ -256,7 +290,7 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             key="ssh.max_auth_tries",
             message=_t("ssh.max_auth_tries", value=max_tries),
             points=1,
-            cmd=f"sudo sed -i 's/^#*MaxAuthTries .*/MaxAuthTries 3/' /etc/ssh/sshd_config && {service_restart_cmd(ssh_unit())}",
+            cmd=_sshd_directive_fix("MaxAuthTries 3", "MaxAuthTries", cfg),
             nature="improvement",
         )
         found_issue = True

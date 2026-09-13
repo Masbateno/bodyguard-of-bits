@@ -1973,6 +1973,25 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "database not initialised — a WARN and a point on a covered host",
     ),
     Mutation(
+        id="sshd/fix-ignores-the-dropin",
+        file="bob/checks/ssh/_subchecks.py",
+        old="    dropin = cfg.get(\"_dropin_dir\")\n    if dropin:",
+        new="    dropin = cfg.get(\"_dropin_dir\")\n    if False:",
+        kills=("tests/test_v0190_sshd_dropin_remediation.py::TestFixTargetsTheWinningFile::test_dropin_present_writes_the_00_override",),
+        reason="ignoring the drop-in dir sends the fix back to editing the main "
+               "sshd_config, a no-op when the directive lives in a drop-in that "
+               "the Include reads first (field-test finding on a real Pi)",
+    ),
+    Mutation(
+        id="sshd/parser-forgets-the-dropin-dir",
+        file="bob/checks/ssh/_parsers.py",
+        old='            if "*" in pattern:\n                config.setdefault("_dropin_dir", os.path.dirname(pattern))',
+        new='            if False:\n                config.setdefault("_dropin_dir", os.path.dirname(pattern))',
+        kills=("tests/test_v0190_sshd_dropin_remediation.py::TestParserRecordsDropinDir::test_glob_include_records_the_directory",),
+        reason="without recording the drop-in dir the fix cannot target it and "
+               "falls back to the ineffective main-file edit",
+    ),
+    Mutation(
         id="samba/fix-appends-instead-of-replacing",
         file="bob/checks/samba.py",
         old='    return f"{delete} && {insert}"',

@@ -82,9 +82,17 @@ class TestNoBareAppendSurvivesInCode:
         assert _command_statements(), "no command builder found — guard lost its aim"
 
     def test_every_append_is_guarded(self):
-        """`tee -a` writes unconditionally; `tee FILE` overwrites, which is safe."""
+        """`tee -a` writes unconditionally; `tee FILE` overwrites, which is safe.
+
+        Two idempotency guards are accepted: a ``grep -qxF`` check before the
+        append, or a ``sed -i`` that deletes the parameter first so the append
+        cannot accumulate (v0.19.0 sshd drop-in fix — delete-then-append; the
+        delete regex lives in a ``kill`` variable, so match the ``sed -i`` that
+        applies it in the same statement).
+        """
         bare = [(w, ln) for w, ln in _command_statements()
                 if "tee -a" in ln and "grep -qxF" not in ln
+                and "sed -i" not in ln
                 and "append_once" not in ln]
         assert not bare, (
             "unguarded append(s) — applying the advice twice writes the line "
