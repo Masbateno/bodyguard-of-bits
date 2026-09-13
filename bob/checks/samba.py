@@ -19,8 +19,6 @@ Usage:
 
 from __future__ import annotations
 
-import shlex
-
 import configparser
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,26 +33,39 @@ from bob.scoring import CheckResult
 _SMB_CONF_PATH = Path("/etc/samba/smb.conf")
 
 
-def _global_directive_cmd(directive: str) -> str:
-    """A command that puts *directive* in smb.conf's ``[global]`` section, once.
+def _global_directive_cmd(directive: str, *clear_params: str) -> str:
+    """A command that makes *directive* the effective value in ``[global]``.
 
-    The three fixes below used to be `echo "X" | sudo tee -a /etc/samba/smb.conf`.
-    smb.conf is section-scoped, and appending puts the line in whatever section
-    happens to be last — on a stock Debian 13 that is `[print$]`, at line 224.
-    Measured on that machine: with `min protocol = SMB3` appended, `testparm
-    --section-name=global` still answered `SMB2_02`, and samba rejected the line
-    outright — *"Parameter min protocol unknown for section print$"*. All three
-    of these are global-only parameters, so all three fixes were no-ops. BOB's
-    own parser reads them from `[global]`, so the tool knew where they belonged
-    while its advice did not.
+    It **deletes** every existing assignment of the parameter (all *clear_params*
+    spellings — e.g. ``min protocol`` and its synonym ``server min protocol``)
+    and then inserts *directive* once under ``[global]``.
 
-    `sed` after the `[global]` header puts the line where samba will read it;
-    the `grep` in front makes re-running a no-op instead of a second copy.
-    Verified on the VM: three runs, one occurrence at line 25 directly under
-    `[global]`, and `testparm` answering `SMB3`.
+    The earlier version only *appended* the line, guarded by a ``grep`` so it
+    would not add a second copy. Field-tested on a real Raspberry Pi (Samba
+    4.22) against the configs that actually trigger these findings, that was a
+    silent no-op — and worse. The findings only fire when the bad directive is
+    *explicitly present* (``server min protocol = NT1``, ``server signing =
+    disabled``, ``map to guest = bad user``); the default value fires nothing.
+    Appending ``min protocol = SMB2`` above the existing ``NT1`` line left two
+    assignments, and samba resolves duplicates **last-wins** — ``testparm``
+    still answered ``NT1``, so the fix did not disable SMB1. BOB's own parser
+    resolves duplicates the other way, so it read the inserted value and
+    reported the finding *resolved* on a host still serving SMB1: a fix that
+    lied. Deleting first, then inserting, makes the directive the only
+    assignment, so samba and BOB agree and the finding truly clears. Idempotent:
+    a re-run deletes the inserted line too and re-inserts it once.
+
+    These are global-only parameters, so deleting every occurrence (rather than
+    scoping the delete to ``[global]``) is safe and simpler; samba would reject
+    them in any other section anyway.
     """
-    return (f'grep -qxF {shlex.quote(directive)} {_SMB_CONF_PATH} || '
-            f"sudo sed -i '/^\\[global\\]/a {directive}' {_SMB_CONF_PATH}")
+    params = clear_params or (directive.split("=", 1)[0].strip(),)
+    alts = "|".join(params)   # parameter names only — no regex metacharacters
+    # ``I`` (GNU sed) matches the key case-insensitively, as samba does.
+    delete = (f"sudo sed -i -E '/^[[:space:]]*({alts})[[:space:]]*=/Id' "
+              f"{_SMB_CONF_PATH}")
+    insert = f"sudo sed -i '/^\\[global\\]/a {directive}' {_SMB_CONF_PATH}"
+    return f"{delete} && {insert}"
 
 
 # SMBv1 protocol identifiers (any of these → ALERT)
@@ -257,7 +268,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             points=2,
             nature="improvement",
             detail=_t("samba.smb1_enabled_detail"),
-            cmd=_global_directive_cmd("min protocol = SMB2"),
+            cmd=_global_directive_cmd("min protocol = SMB2", "min protocol", "server min protocol"),
         )
     else:
         result.ok(message=_t("samba.smb1_disabled"), key="samba.smb1_disabled")
@@ -281,7 +292,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("samba.server_signing_disabled"),
             points=1,
             detail=_t("samba.server_signing_disabled_detail"),
-            cmd=_global_directive_cmd("server signing = mandatory"),
+            cmd=_global_directive_cmd("server signing = mandatory", "server signing"),
             nature="action",
         )
     elif snapshot.server_signing == "mandatory":
@@ -303,7 +314,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("samba.map_to_guest"),
             points=1,
             detail=_t("samba.map_to_guest_detail"),
-            cmd=_global_directive_cmd("map to guest = never"),
+            cmd=_global_directive_cmd("map to guest = never", "map to guest"),
             nature="action",
         )
 

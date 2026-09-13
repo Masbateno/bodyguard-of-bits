@@ -107,10 +107,23 @@ class TestTheGeneratedCommandsAreIdempotent:
         sysctl_fix_cmd("net.ipv4.conf.all.rp_filter=1"),
         _fix_cmd("kernel.randomize_va_space", 2),
         _suggest_rules_cmd(["/etc/shadow"]),
-        _global_directive_cmd("min protocol = SMB2"),
     ])
     def test_each_one_checks_before_it_writes(self, cmd):
         assert "grep -qxF" in cmd, f"writes unconditionally: {cmd}"
+
+    def test_the_samba_directive_deletes_then_inserts(self):
+        """v0.18.4: the samba fix is idempotent by *replacement*, not a grep
+        guard. It deletes every existing assignment of the parameter (all
+        spellings) and inserts the directive once — so a re-run deletes the
+        inserted line too and re-inserts a single copy, and, unlike the old
+        grep-then-append form, samba's last-wins resolution can no longer let a
+        stale ``NT1`` line below the insert keep SMB1 alive (field-test finding
+        on a real Pi). See _global_directive_cmd."""
+        cmd = _global_directive_cmd("min protocol = SMB2",
+                                    "min protocol", "server min protocol")
+        assert " -E '/^[[:space:]]*(min protocol|server min protocol)[[:space:]]*=/Id'" in cmd
+        # delete precedes insert, so the offending line cannot survive below it
+        assert cmd.index("/Id'") < cmd.index("/a min protocol = SMB2")
 
     def test_the_sysctl_fix_still_applies_it_live(self):
         cmd = sysctl_fix_cmd("net.ipv4.conf.all.rp_filter=1")

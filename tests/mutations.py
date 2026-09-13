@@ -1973,6 +1973,17 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "database not initialised — a WARN and a point on a covered host",
     ),
     Mutation(
+        id="samba/fix-appends-instead-of-replacing",
+        file="bob/checks/samba.py",
+        old='    return f"{delete} && {insert}"',
+        new='    return insert',
+        kills=("tests/test_v0171_advice_is_safe_to_apply_twice.py::TestTheGeneratedCommandsAreIdempotent::test_the_samba_directive_deletes_then_inserts",),
+        reason="without the delete the fix only appends a competing directive; "
+               "samba resolves duplicates last-wins so the stale NT1/disabled/"
+               "bad-user line keeps winning and the fix silently does nothing "
+               "(field-test finding on a real Pi)",
+    ),
+    Mutation(
         id="grouping/health-group-collapses-into-hardening",
         file="bob/runner.py",
         old='    emit_group("health_resilience")',
