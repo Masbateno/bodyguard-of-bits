@@ -6,6 +6,56 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.19.0] — 2026-09-13
+
+**Remediation that actually applies on modern Include/drop-in configs — field-tested
+on a real Raspberry Pi.** Two of BOB's config-editing fixes were validated on a live
+Pi Zero W (Raspbian trixie, Samba 4.22) by comparing BOB against the service's own
+parser — `testparm` for samba, `sshd -T` for ssh — and, decisively, by the
+round-trip: apply BOB's fix, re-run the service's parser, confirm the value actually
+changed. Both were **silent no-ops on the default modern layout**, for the same
+underlying reason: BOB's remediations assumed a single monolithic config file, but
+modern configs are assembled from `Include`/drop-in fragments.
+
+**Samba — a fix that lied.** The SMB1, server-signing and map-to-guest fixes
+*appended* the corrected directive under `[global]` without removing the offending
+one. samba resolves duplicate directives **last-wins**, so `testparm` still answered
+`NT1` / `disabled` / `Bad User` — the fix changed nothing. Worse, BOB's own smb.conf
+parser resolves duplicates **first-wins**, so it read the inserted line and reported
+the finding *resolved* on a host still serving SMB1. `_global_directive_cmd` now
+**deletes every existing assignment of the parameter (all spellings) first, then
+inserts** the directive once, so it is the sole assignment, samba and BOB agree, and
+the finding truly clears. Idempotent. Proven on the Pi: a combined hostile config
+(−4) cleared to zero deductions, `testparm` confirming `SMB2` / `required` / `Never`.
+
+**SSH — a fix on the wrong file.** `PermitRootLogin`, `PasswordAuthentication` and
+`MaxAuthTries` were `sed`-edited in `/etc/ssh/sshd_config`. But modern OpenSSH reads
+`Include /etc/ssh/sshd_config.d/*.conf` at the top of sshd_config and resolves
+**first-value-wins**, so a directive set in a drop-in — cloud-init's
+`50-cloud-init.conf` carried `PasswordAuthentication yes` on the Pi — is read first
+and beats the main file. The `sed` matched a line that was not there: a no-op.
+(BOB still *detected* the value, since its parser follows Includes, so there was no
+false clean — only ineffective advice.) The parser now records the drop-in directory
+(`_dropin_dir`), and `_sshd_directive_fix` writes **`00-bob-hardening.conf`** there —
+it sorts before `50-cloud-init.conf`, first-wins, overrides it — deleting any prior
+copy of the parameter first so it is idempotent, and falling back to a robust
+delete-then-append on the main file when there is no drop-in Include. Proven on the
+Pi: `sshd -T` flipped `passwordauthentication yes` → `no` after the fix.
+
+**Scope.** A sweep of the other config-editing fixes found no more Include/drop-in
+cases: sysctl already uses `/etc/sysctl.d/99-hardening.conf`, and the remaining
+targets (`/etc/default/ufw`, `/etc/login.defs`) are genuinely monolithic. The
+milder "exact-match sed" fragility on those is filed for later. The samba parser's
+own divergence from `testparm` on duplicate/continuation lines (configparser
+first-wins + continuation folding) is also filed — it only triggers on non-standard
+configs, which the corrected fix no longer produces.
+
+Guards: `tests/test_v0190_sshd_dropin_remediation.py`, the delete-then-insert shape
+pinned in `test_v0171`, and three mutations. **Tests** 10406 → **10455**.
+**Mutations** 224 → **227**.
+
+---
+
 ## [v0.18.3] — 2026-09-12
 
 **`--manage-cron` reflows to the terminal width instead of truncating.** A cron

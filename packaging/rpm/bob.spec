@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.18.3
+Version:        0.19.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,15 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Sep 13 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.19.0-1
+- Remediation now applies on modern Include/drop-in configs (field-tested on a
+  real Raspberry Pi). The samba fixes appended the corrected directive without
+  removing the offending one; samba resolves duplicates last-wins, so testparm
+  still answered the bad value and the fix was a no-op. Now delete-then-insert.
+- The ssh fixes edited /etc/ssh/sshd_config, but modern OpenSSH reads
+  sshd_config.d/*.conf first (first-wins), so a drop-in (cloud-init's
+  50-cloud-init.conf) beat the main file. The fix now writes
+  00-bob-hardening.conf in the drop-in dir, which sorts first and overrides it.
 * Fri Sep 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.18.1-1
 - SSH brute-force detection was blind on OpenSSH >= 9.8: authentication is
   logged by sshd-session, and BOB read sshd only. Measured on a Raspberry Pi

@@ -6,6 +6,58 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.19.0] — 13-09-2026
+
+**Une remédiation qui s'applique vraiment sur les configs modernes Include/drop-in —
+field-testée sur un vrai Raspberry Pi.** Deux fixes d'édition de config de BOB ont été
+validés sur un Pi Zero W réel (Raspbian trixie, Samba 4.22) en comparant BOB au
+parseur natif du service — `testparm` pour samba, `sshd -T` pour ssh — et, de façon
+décisive, par le round-trip : appliquer le fix de BOB, relancer le parseur du service,
+confirmer que la valeur a réellement changé. Les deux étaient des **no-op silencieux
+sur la disposition moderne par défaut**, pour la même raison de fond : les
+remédiations de BOB supposaient un fichier de config monolithique, or les configs
+modernes sont assemblées depuis des fragments `Include`/drop-in.
+
+**Samba — un fix qui ment.** Les fixes SMB1, signature serveur et map-to-guest
+*ajoutaient* la bonne directive sous `[global]` sans retirer la fautive. samba résout
+les doublons **dernière-gagne**, donc `testparm` répondait toujours `NT1` /
+`disabled` / `Bad User` — le fix ne changeait rien. Pire, le parseur smb.conf de BOB
+résout les doublons **première-gagne**, donc il lisait la ligne insérée et déclarait
+le constat *résolu* sur un hôte servant toujours SMB1. `_global_directive_cmd`
+**supprime désormais toute assignation existante du paramètre (toutes orthographes)
+d'abord, puis insère** la directive une fois : elle est la seule assignation, samba et
+BOB s'accordent, le constat disparaît vraiment. Idempotent. Prouvé sur le Pi : une
+config hostile combinée (−4) tombe à zéro déduction, `testparm` confirmant `SMB2` /
+`required` / `Never`.
+
+**SSH — un fix sur le mauvais fichier.** `PermitRootLogin`, `PasswordAuthentication`
+et `MaxAuthTries` étaient `sed`-édités dans `/etc/ssh/sshd_config`. Mais OpenSSH
+moderne lit `Include /etc/ssh/sshd_config.d/*.conf` en tête de sshd_config et résout
+**première-valeur-gagne**, donc une directive dans un drop-in — le
+`50-cloud-init.conf` du Pi portait `PasswordAuthentication yes` — est lue en premier
+et bat le main. Le `sed` visait une ligne absente : un no-op. (BOB *détectait* quand
+même la valeur, son parseur suivant les Includes, donc pas de faux « propre » — juste
+un conseil inefficace.) Le parseur enregistre désormais le dossier drop-in
+(`_dropin_dir`), et `_sshd_directive_fix` écrit **`00-bob-hardening.conf`** dedans —
+il trie avant `50-cloud-init.conf`, première-gagne, l'emporte — en supprimant d'abord
+toute copie antérieure du paramètre (idempotent), avec repli sur un delete-then-append
+robuste sur le main quand il n'y a pas d'Include drop-in. Prouvé sur le Pi : `sshd -T`
+bascule `passwordauthentication yes` → `no` après le fix.
+
+**Périmètre.** Un balayage des autres fixes d'édition de config n'a trouvé aucun autre
+cas Include/drop-in : sysctl utilise déjà `/etc/sysctl.d/99-hardening.conf`, et les
+cibles restantes (`/etc/default/ufw`, `/etc/login.defs`) sont réellement monolithiques.
+La fragilité « sed exact-match » plus légère sur celles-ci est notée pour plus tard.
+La divergence propre du parseur samba face à `testparm` sur doublons/continuations
+(configparser première-gagne + repli de continuation) est aussi notée — elle ne se
+déclenche que sur config non-standard, que le fix corrigé ne produit plus.
+
+Gardes : `tests/test_v0190_sshd_dropin_remediation.py`, la forme delete-then-insert
+épinglée dans `test_v0171`, et trois mutations. **Tests** 10406 → **10455**.
+**Mutations** 224 → **227**.
+
+---
+
 ## [v0.18.3] — 12-09-2026
 
 **`--manage-cron` se recompose à la largeur du terminal au lieu de tronquer.** Un
