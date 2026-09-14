@@ -81,6 +81,20 @@ class TestCheckSystemdTimers:
         result = check_systemd_timers(_snap(world_writable=["/opt/backup.sh"]))
         assert sum(d.points for d in result.deductions) == 1
 
+    def test_the_fix_covers_every_world_writable_script(self):
+        """A fix that chmods only the first five is a fix that lies: on a host
+        with more scripts, `--fix --apply` reports success while leaving the
+        rest world-writable. The remediation must reference all of them."""
+        scripts = [f"/opt/timer{i}.sh" for i in range(8)]
+        result = check_systemd_timers(_snap(world_writable=scripts))
+        f = _get_finding(result, "systemd_timers.world_writable")
+        for s in scripts:
+            assert s in f.cmd, f"{s} missing from the fix command: {f.cmd}"
+
+    def test_the_empty_list_yields_no_targetless_chmod(self):
+        from bob.checks.systemd_timers import _chmod_cmd
+        assert _chmod_cmd([]) == ""
+
     def test_user_created_root_info_only(self):
         result = check_systemd_timers(_snap(user_root=["backup.timer"]))
         f = _get_finding(result, "systemd_timers.user_created_root")

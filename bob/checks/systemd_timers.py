@@ -303,6 +303,14 @@ def _is_world_writable(path_str: str) -> bool:
         return False
 
 def _chmod_cmd(scripts: list[str]) -> str:
-    """Return a chmod o-w command for the given script list."""
-    paths = " ".join(shlex.quote(s) for s in scripts[:5])
-    return f"sudo chmod o-w {paths}"
+    """Return a chmod o-w command covering *every* world-writable script.
+
+    The message caps its display at three names, but the fix must clear the
+    world-writable bit on all of them: a ``scripts[:5]`` cap meant that on a
+    host with more than five such scripts ``--fix --apply`` reported success
+    while leaving the rest world-writable — a fix that lies. Returns "" for an
+    empty list so the caller never emits a target-less ``chmod``.
+    """
+    if not scripts:
+        return ""
+    return "sudo chmod o-w " + " ".join(shlex.quote(s) for s in scripts)

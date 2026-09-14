@@ -1100,6 +1100,18 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="fix-lies/timer-chmod-caps-at-five",
+        file="bob/checks/systemd_timers.py",
+        old='    return "sudo chmod o-w " + " ".join(shlex.quote(s) for s in scripts)',
+        new='    return "sudo chmod o-w " + " ".join(shlex.quote(s) for s in scripts[:5])',
+        kills=("tests/test_systemd_timers.py::"
+               "TestCheckSystemdTimers::test_the_fix_covers_every_world_writable_script",),
+        reason="the finding counts every world-writable timer script but a "
+               "scripts[:5] cap chmods only the first five, so --fix --apply "
+               "reports success while leaving the rest world-writable — a fix "
+               "that lies, the same class as the samba/ssh/ufw/umask fixes",
+    ),
+    Mutation(
         id="banner/distro-logo-not-single-wide",
         file="bob/output.py",
         old='"🦎"),',
