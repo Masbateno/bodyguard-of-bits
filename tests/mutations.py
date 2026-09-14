@@ -1100,6 +1100,19 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="span/partial-blinding-not-widened",
+        file="bob/domain_scores.py",
+        old="    low = round(sum(scores[d][\"score\"] for d in scored if d not in partial) / n)",
+        new="    low = round(sum(scores[d][\"score\"] for d in scored) / n)",
+        kills=("tests/test_v0162_score_direction.py::"
+               "TestTheSpanBracketsTheTruth::test_partial_blinding_widens_the_low_end_only",),
+        reason="a domain still scored but with an unread input is an upper bound; "
+               "if the span's low end does not drop for it, blinding systemctl "
+               "reads exposure_services as a firm 10 while service state was "
+               "never checked — the score-rise-when-blind class the span exists "
+               "to make honest",
+    ),
+    Mutation(
         id="fix-lies/timer-chmod-caps-at-five",
         file="bob/checks/systemd_timers.py",
         old='    return "sudo chmod o-w " + " ".join(shlex.quote(s) for s in scripts)',

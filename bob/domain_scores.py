@@ -481,20 +481,39 @@ def _uncertainty(engine, scores, active) -> "tuple[list[str], tuple[int, int]]":
     """
     from bob.visibility import VISIBILITY_KEYS  # noqa: F401  (contract anchor)
 
-    blinded = sorted({
+    unver_domains = {
         dom for key in getattr(engine, "unverified", []) or []
         if (dom := _PREFIX_TO_DOMAIN.get(key.split(".")[0])) is not None
-        and dom not in active
         and dom in scores
-    })
-    if not blinded:
+    }
+    # A whole domain fell out of the average (every finding reduced to INFO).
+    blinded = sorted(d for d in unver_domains if d not in active)
+    # v0.20.x — a domain still scored but with an unread input inside it. Its
+    # displayed score assumes the unread part is clean, so it is an upper bound:
+    # blinding `systemctl` drops the `services.state.inactive_enabled` deduction
+    # and `exposure_services` reads 10 while service state was never checked, so
+    # the true score could be lower. The span must reflect that, or a machine
+    # consumer reading score_low/high sees a firm range the audit cannot back.
+    # blinded stays whole-domain-only: it drives score_is_upper_bound, and the
+    # terminal must keep rendering a partially-read run as `≤ X` (a true
+    # ceiling), not flip it to the `~ X` whole-domain form.
+    partial = {d for d in unver_domains if d in active}
+    if not blinded and not partial:
         return [], (engine.score, engine.score)
 
     scored = [d for d in DOMAINS if d in active and d in scores]
-    total = sum(scores[d]["score"] for d in scored)
     n = len(scored) + len(blinded)
-    low  = max(0, min(MAX_SCORE, round(total / n)))
-    high = max(0, min(MAX_SCORE, round((total + MAX_SCORE * len(blinded)) / n)))
+    if n == 0:
+        return blinded, (engine.score, engine.score)
+    # High end (the ceiling, == engine.score): every scored domain as shown,
+    # each whole-blinded domain at its best (MAX).
+    high = round((sum(scores[d]["score"] for d in scored)
+                  + MAX_SCORE * len(blinded)) / n)
+    # Low end: an unread input can only add unknown deductions, so a partially
+    # read active domain could be as low as 0 — exactly like a whole blinded one.
+    low = round(sum(scores[d]["score"] for d in scored if d not in partial) / n)
+    low = max(0, min(MAX_SCORE, low))
+    high = max(0, min(MAX_SCORE, high))
     # The headline cap applies to the span exactly as it applies to the score,
     # or the high end would promise a perfect audit the deductions contradict.
     if engine.raw_score < MAX_SCORE:

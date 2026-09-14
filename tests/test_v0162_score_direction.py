@@ -124,6 +124,35 @@ class TestTheSpanBracketsTheTruth:
         assert blinded == []
         assert span[0] == span[1]
 
+    def test_partial_blinding_widens_the_low_end_only(self):
+        """A domain still scored but with an unread input inside it is a ceiling.
+
+        Blinding systemctl drops `services.state.inactive_enabled`, so
+        `exposure_services` reads 10 while service state was never checked. No
+        whole domain fell out (blinded stays empty, so the score is still a
+        `≤` ceiling), but the span's low end must drop to reflect that the true
+        score could be lower.
+        """
+        scores = self._scores(firewall_network=3, exposure_services=10,
+                              access_control=10, system_hardening=10,
+                              health_resilience=10, detection=10)
+        active = set(scores)  # every domain still active
+        fake = _FakeEngine(["services.state.unknown"], raw=7)  # → exposure_services
+        fake.score = 9
+        blinded, (low, high) = _uncertainty(fake, scores, active)
+        assert blinded == [], "no whole domain dropped — must stay a ceiling"
+        assert high == 9, "the high end is the reported ceiling"
+        assert low < high, f"partial blinding must widen the low end, got {low}..{high}"
+
+    def test_partial_blinding_keeps_the_ceiling_semantics(self):
+        """End-to-end: score_is_upper_bound stays True (terminal shows `≤`),
+        but score_span is no longer collapsed."""
+        e = _engine(9, ["services.state.unknown"])
+        e.set_score_uncertainty([], (7, 9))  # what _uncertainty now returns
+        assert e.score_is_upper_bound is True   # blinded_domains empty → `≤ 9`
+        assert e.score_is_uncertain is True
+        assert e.score_span == (7, 9)           # not (9, 9)
+
     def test_the_span_never_leaves_the_scale(self):
         scores = self._scores(firewall_network=0, access_control=0)
         _, (low, high) = _uncertainty(
