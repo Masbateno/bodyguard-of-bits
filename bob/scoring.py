@@ -85,6 +85,25 @@ MAX_SCORE: int = 10
 
 VALID_CONTEXTS: frozenset[str] = frozenset({"local", "public", "ddns", "structural"})
 
+
+def _sanitize_line(text: str, max_len: int = 2048) -> str:
+    """Flatten whitespace controls to spaces, then strip ANSI and non-printables.
+
+    The single source of truth for the fields that carry system- or plugin-
+    controlled text into every sink (Finding.message/detail/note and
+    Deduction.reason). A samba share, a file path or a package name can contain
+    raw escape sequences or a bare CR; unsanitised, they inject terminal escapes
+    and break CSV rows. `_flatten` turns the newline-family into spaces so a
+    value cannot forge a second finding line; `sanitize` drops ANSI and every
+    non-printable. Kept in one place so a copy cannot be fixed while another is
+    forgotten — the exact class the v0.20.x stress pass found in a duplicated
+    `_chmod_cmd`.
+    """
+    from bob.output import sanitize
+    flat = (text or "").replace("\r\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    return sanitize(flat, max_len=max_len)
+
+
 @dataclass
 class Deduction:
     """
@@ -123,6 +142,11 @@ class Deduction:
                 f"Deduction context {self.context!r} is invalid. "
                 f"Must be one of: {sorted(VALID_CONTEXTS)}"
             )
+        # The reason reaches the terminal score breakdown raw (display renders it
+        # without a sink escape), so an attacker-controlled string inside it —
+        # a samba share name, a file path — could inject ANSI escapes there. It
+        # is sanitised at the same choke point as Finding.message.
+        self.reason = _sanitize_line(self.reason)
 
 @dataclass
 class Finding:
@@ -204,15 +228,7 @@ class Finding:
         ``cmd`` keeps its newlines — remediation blocks are legitimately
         multi-line — and loses everything else.
         """
-        from bob.output import sanitize, sanitize_multiline
-
-        def _flatten(text: str) -> str:
-            # Turn the whitespace control characters into a space rather than
-            # deleting them: sanitize() drops non-printables outright, which
-            # would glue "line1\nline2" into "line1line2". Markdown already
-            # flattened newlines to spaces for its table cells; doing it here
-            # keeps that behaviour for every format at once.
-            return text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
+        from bob.output import sanitize_multiline
 
         # v0.17.0 — None is now a meaningful answer, not a programming error:
         # ``install_command`` returns it when BOB does not know what a package
@@ -223,9 +239,9 @@ class Finding:
         # rendered the whole section "unavailable". Three checks died that way
         # on Arch and Fedora while the Debian suite stayed green, because on
         # Debian the command is never None.
-        self.message = sanitize(_flatten(self.message or ""), max_len=2048)
-        self.detail  = sanitize(_flatten(self.detail or ""),  max_len=2048)
-        self.note    = sanitize(_flatten(self.note or ""),    max_len=2048)
+        self.message = _sanitize_line(self.message)
+        self.detail  = _sanitize_line(self.detail)
+        self.note    = _sanitize_line(self.note)
         # cmd keeps its newlines — remediation blocks are legitimately
         # multi-line — but a stray CR or tab still becomes a space.
         self.cmd     = sanitize_multiline(

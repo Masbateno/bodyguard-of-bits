@@ -1100,6 +1100,18 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="injection/deduction-reason-unsanitised",
+        file="bob/scoring.py",
+        old="        self.reason = _sanitize_line(self.reason)",
+        new="        self.reason = self.reason",
+        kills=("tests/test_v0141_robustness.py::"
+               "TestCsvFormulaInjection::test_deduction_reason_is_sanitised",),
+        reason="the score breakdown renders Deduction.reason raw to the terminal; "
+               "an attacker-controlled string inside it (a samba share name, a "
+               "file path) injects ANSI escapes there unless it passes the same "
+               "sanitise choke point as Finding.message",
+    ),
+    Mutation(
         id="span/partial-blinding-not-widened",
         file="bob/domain_scores.py",
         old="    low = round(sum(scores[d][\"score\"] for d in scored if d not in partial) / n)",

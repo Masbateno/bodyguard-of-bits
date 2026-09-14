@@ -388,6 +388,20 @@ class TestCsvFormulaInjection:
         assert "\n" in f.cmd, "cmd must keep its newlines"
         assert "\x1b" not in f.cmd and "\r" not in f.cmd
 
+    def test_deduction_reason_is_sanitised(self):
+        """The score breakdown renders Deduction.reason raw to the terminal.
+
+        v0.20.x stress pass: a samba share named with ANSI escapes reached the
+        breakdown line unsanitised (`-2 Guest-writable share: \\x1b[31m…`) —
+        Finding.message was cleaned but Deduction.reason was a separate field
+        that was not. It must pass the same choke point."""
+        from bob.scoring import Deduction
+
+        hostile = "\x1b]0;HIJACK\x07evil\r\x1b[2J\ninjected"
+        d = Deduction(reason=hostile, points=2, key="samba.guest_writable")
+        assert all(ord(c) >= 32 and ord(c) != 127 for c in d.reason), d.reason
+        assert "\x1b" not in d.reason and "\r" not in d.reason and "\n" not in d.reason
+
     def test_sanitisation_lives_in_the_dataclass_not_the_helper(self):
         """Guard the fix's location: add_finding is not the only constructor."""
         import ast

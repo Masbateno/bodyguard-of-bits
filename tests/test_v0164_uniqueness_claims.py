@@ -1,6 +1,6 @@
 """What the source says about itself, checked against what it does.
 
-Two claims of the same nature. Seventeen places say "single source of truth",
+Two claims of the same nature. Eighteen places say "single source of truth",
 and one function names the schema it produces in its docstring — both are
 assertions about the code, written in prose, that nothing verified.
 
@@ -10,7 +10,7 @@ project's answer to a defect it has hit repeatedly — the colour chart lived in
 three modules that happened to agree, which is exactly why nobody noticed the
 cursor row and the banner shared a background for nine releases.
 
-Every claim below is true today; all seventeen were checked by hand when this
+Every claim below is true today; all eighteen were checked by hand when this
 file was written. That is the problem this file exists for: "true today, load
 bearing, and unverified" is the state a property is in immediately before it
 stops being true. A second definition of `atomic_write` would not fail a single
@@ -43,6 +43,7 @@ _CLAIMS = [
     ("_EMAIL_RE",                 "assign",   "bob/cron/_install.py"),
     ("SCORE_BAR_WIDTH",           "assign",   "bob/breakdown.py"),
     ("_SECTIONS",                 "assign",   "bob/runner.py"),
+    ("_sanitize_line",            "function", "bob/scoring.py"),
 ]
 
 
@@ -93,7 +94,7 @@ def test_every_claim_in_the_source_has_a_row_here():
     total = 0
     for path in sorted(_PKG.rglob("*.py")):
         total += path.read_text(encoding="utf-8").count("single source of truth")
-    assert total == 17, (
+    assert total == 18, (
         f"{total} uniqueness claims in the source, {len(_CLAIMS)} rows in this "
         f"file's table. A claim was added or removed without its check; if it "
         f"is checkable, add a row, and if it is not, say why in the comment "
