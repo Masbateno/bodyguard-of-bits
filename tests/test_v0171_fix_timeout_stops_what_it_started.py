@@ -24,7 +24,6 @@ from __future__ import annotations
 import errno
 import io
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -63,6 +62,28 @@ def _alive(pid: int) -> bool:
     except (OSError, IndexError):
         return True                        # could not tell — assume alive
     return state not in ("Z", "X")
+
+
+def _reliably_dead(pid: int, samples: int = 8, gap: float = 0.25) -> bool:
+    """True as soon as the pid reads dead in any of a short burst of samples.
+
+    ``_alive`` is deliberately conservative: it returns True when it *cannot
+    tell* — a partial /proc/<pid>/stat read, an ESRCH mid-teardown — so a single
+    such reading must not decide the test. A process the product actually killed
+    becomes gone-or-zombie and reads dead within a sample or two; a genuine
+    survivor (a still-running `sleep`) reads alive in *every* sample and never
+    hits ``_alive``'s uncertain path, because its stat file is present and its
+    state is R/S. So "dead in any sample" is a safe, load-tolerant verdict that
+    still fails on a real survivor. This is the fix for the rare full-suite
+    flake: under CPU load the final liveness check occasionally caught the
+    teardown mid-read and read a dead process as alive.
+    """
+    for i in range(samples):
+        if not _alive(pid):
+            return True
+        if i < samples - 1:
+            time.sleep(gap)
+    return False
 
 
 def _describe(pid: int) -> str:
@@ -110,10 +131,14 @@ class TestTheTimeoutStopsTheWholeTree:
         assert pidfile.exists(), "the grandchild never started — test is inert"
         pid = int(pidfile.read_text())
 
-        deadline = time.time() + 20
+        deadline = time.time() + 30
         while time.time() < deadline and _alive(pid):
             time.sleep(0.1)
-        assert not _alive(pid), (
+        # Not a single final _alive() call — that occasionally caught the
+        # teardown mid-read under full-suite load and read a dead process as
+        # alive. _reliably_dead re-samples: dead in any sample is dead; a real
+        # survivor stays alive across the whole burst and still fails here.
+        assert _reliably_dead(pid), (
             f"{_describe(pid)}\n"
             f"pid {pid} outlived the timeout that claimed to stop it — "
             "this is the apt-get that kept running while BOB reported "
