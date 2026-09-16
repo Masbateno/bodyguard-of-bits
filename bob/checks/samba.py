@@ -23,6 +23,7 @@ import configparser
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bob._atomic import read_text_capped
 from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists
 from bob.scoring import CheckResult
 
@@ -372,14 +373,24 @@ def _read_smb_conf(path: Path) -> dict[str, dict[str, str]]:
     # Preserve keys with spaces (e.g. "min protocol") by only lowercasing
     parser.optionxform = lambda opt: opt.strip().lower()  # type: ignore[assignment]
 
-    # `RawConfigParser.read` takes a *list* of candidate files and silently
-    # skips any it cannot open, returning only those it did read. That turned
-    # an unreadable smb.conf into an empty config rather than an error, so the
-    # caller's `except OSError` guard never fired and every setting fell back
-    # to its default — the host was told SMB1 was disabled and null passwords
-    # refused by a parser that had read nothing. Raise, so the guard works.
-    if not parser.read(str(path), encoding="utf-8"):
-        raise OSError(f"{path} could not be read")
+    # Read the bytes ourselves rather than handing the path to
+    # ``RawConfigParser.read``. Two failure modes forced this:
+    #
+    #   * ``.read`` takes a *list* of candidate files and silently skips any it
+    #     cannot open, returning only those it did read. That turned an
+    #     unreadable smb.conf into an empty config rather than an error, so the
+    #     caller's ``except OSError`` guard never fired and every setting fell
+    #     back to its default — the host was told SMB1 was disabled and null
+    #     passwords refused by a parser that had read nothing.
+    #   * ``.read`` calls ``open(path).read()`` with no guard, so a smb.conf
+    #     that is a FIFO **blocked forever** — the exact hang ``read_text_capped``
+    #     was written to prevent (v0.14.1), re-introduced here by parsing the
+    #     path directly. Found by the v0.20.x Debian stress pass: mkfifo over
+    #     /etc/samba/smb.conf, ``--check samba`` never returned.
+    #
+    # ``read_text_capped`` rejects non-regular files and caps the size; on any
+    # OSError the caller degrades to an unreadable-config snapshot.
+    parser.read_string(read_text_capped(path, encoding="utf-8"), source=str(path))
 
     result: dict[str, dict[str, str]] = {}
     for section in parser.sections():

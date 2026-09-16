@@ -1160,6 +1160,20 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "that lies, the same class as the samba/ssh/ufw/umask fixes",
     ),
     Mutation(
+        id="robustness/samba-conf-read-bypasses-fifo-guard",
+        file="bob/checks/samba.py",
+        old='    parser.read_string(read_text_capped(path, encoding="utf-8"), source=str(path))',
+        new='    parser.read(str(path), encoding="utf-8")',
+        kills=("tests/test_v0201_samba_fifo_hang.py::"
+               "test_directory_smb_conf_is_refused",),
+        reason="configparser.read does open(path).read() with no guard, so a "
+               "smb.conf that is a FIFO blocks BOB forever — the exact hang "
+               "read_text_capped was written to prevent (v0.14.1), re-introduced "
+               "by parsing the path directly; it also swallows a directory's "
+               "OSError and reads nothing, so routing through the capped reader "
+               "restores both the FIFO guard and the raise-on-unreadable contract",
+    ),
+    Mutation(
         id="banner/distro-logo-not-single-wide",
         file="bob/output.py",
         old='"🦎"),',
