@@ -399,10 +399,18 @@ def display_network_context(snapshot, t, output_mod) -> None:
     else:
         for iface in snapshot.interfaces:
             status = t("network_context.up") if iface.is_up else t("network_context.down")
-            addr   = iface.address or "—"
+            # The kernel accepts an interface name with raw bytes — `ip link add
+            # name $'\x1b[31m…'` succeeds — and an attacker with CAP_NET_ADMIN (a
+            # container, a VPN, a userns veth) can create one. Rendered raw, its
+            # ANSI escapes would inject into this table; every system-derived
+            # cell is sanitised, exactly as the container name is at its own
+            # render site.
+            name   = output_mod.sanitize(iface.name, max_len=w_name * 2)
+            iftype = output_mod.sanitize(iface.if_type, max_len=w_type * 2)
+            addr   = output_mod.sanitize(iface.address, max_len=64) if iface.address else "—"
             row = (
-                f"  {iface.name:<{w_name}}"
-                f"  {iface.if_type:<{w_type}}"
+                f"  {name:<{w_name}}"
+                f"  {iftype:<{w_type}}"
                 f"  {status:<{w_stat}}"
                 f"  {addr}"
             )
@@ -1025,7 +1033,13 @@ def display_disk_partitions(snapshot, t, output_module) -> None:
             used_str = f"{p.used_pct}%"
             free_str = "—"
         bar = _disk_bar(p.used_pct, c)
-        rows.append((p.mountpoint, p.device, size_str, used_str, bar, free_str))
+        # mountpoint and device are system paths — any byte but '/' and NUL is
+        # allowed, so an ANSI-laden mountpoint (a userns tmpfs an unprivileged
+        # user can mount) would inject escapes into this table. Sanitised at row
+        # build so the column-width maths and the render both see clean text.
+        rows.append((output_module.sanitize(p.mountpoint, max_len=128),
+                     output_module.sanitize(p.device, max_len=128),
+                     size_str, used_str, bar, free_str))
 
     # Dynamic column widths (bar column is always _BAR_WIDTH — colour codes excluded)
     h_mount  = t("disk.col_mountpoint")

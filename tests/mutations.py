@@ -1100,6 +1100,29 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "does not have",
     ),
     Mutation(
+        id="injection/interface-name-unsanitised",
+        file="bob/display.py",
+        old="            name   = output_mod.sanitize(iface.name, max_len=w_name * 2)",
+        new="            name   = iface.name",
+        kills=("tests/test_v0201_display_injection.py::"
+               "test_interface_name_ansi_does_not_reach_the_terminal",),
+        reason="the kernel accepts an interface name with raw ANSI bytes and an "
+               "attacker with CAP_NET_ADMIN can create one; rendered raw in the "
+               "interface table it injects terminal escapes — a direct-render "
+               "path that bypasses the Finding sanitiser",
+    ),
+    Mutation(
+        id="injection/disk-mountpoint-unsanitised",
+        file="bob/display.py",
+        old="        rows.append((output_module.sanitize(p.mountpoint, max_len=128),",
+        new="        rows.append((p.mountpoint,",
+        kills=("tests/test_v0201_display_injection.py::"
+               "test_disk_mountpoint_and_device_ansi_do_not_reach_the_terminal",),
+        reason="a mountpoint is a path (any byte but / and NUL), so a userns "
+               "tmpfs an unprivileged user mounts can carry ANSI; rendered raw "
+               "in the partition table it injects terminal escapes",
+    ),
+    Mutation(
         id="injection/deduction-reason-unsanitised",
         file="bob/scoring.py",
         old="        self.reason = _sanitize_line(self.reason)",
