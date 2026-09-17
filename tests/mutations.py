@@ -208,6 +208,20 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "into the footer row and overwritten — hidden behind the key bar",
     ),
     Mutation(
+        id="services/socket-activated-active-service-warns",
+        file="bob/checks/services.py",
+        old="        if _enabled_trigger(svc_name):",
+        new="        if False:",
+        kills=("tests/test_v0201_active_socket_service_restarts.py::"
+               "test_active_service_with_enabled_socket_is_active_enabled",),
+        reason="Ubuntu 24.04+ ships ssh socket-activated (ssh.service disabled, "
+               "ssh.socket enabled); an active service whose own unit is disabled "
+               "but whose enabled .socket restarts it on boot must read as "
+               "ACTIVE_ENABLED, else BOB warns 'active but will not restart "
+               "automatically' about ssh on a default Ubuntu server — a false "
+               "positive found on a real Ubuntu 26.04 host",
+    ),
+    Mutation(
         id="tui/prompt-drawn-on-the-banner-row",
         file="bob/tui/cron.py",
         old='        raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_expression"))',

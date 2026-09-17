@@ -571,6 +571,25 @@ def _active_trigger(svc_name: str) -> str:
     return ""
 
 
+def _enabled_trigger(svc_name: str) -> str:
+    """The enabled .socket/.path/.timer that will start *svc_name* on boot.
+
+    Distinct from :func:`_active_trigger`, which asks whether a trigger is
+    *running now*. The boot-restart question is whether a trigger is *enabled*:
+    Ubuntu 24.04+ ships ssh with ``ssh.service`` disabled and ``ssh.socket``
+    enabled, so ssh is active now (socket-spawned) yet its own unit is disabled.
+    Without consulting the enabled trigger, BOB warned "active but will not
+    restart automatically" for a service that restarts fine on every boot.
+    Returns the first enabled trigger, or "".
+    """
+    shown = _run("systemctl", "show", svc_name, "-p", "TriggeredBy").strip()
+    _, _, units = shown.partition("=")
+    for unit in units.split():
+        if _run("systemctl", "is-enabled", unit).strip() == "enabled":
+            return unit
+    return ""
+
+
 def _detect_single_unit_state(svc_name: str) -> ServiceState:
     """
     Determine the systemd state of a single service unit.
@@ -601,6 +620,13 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
     if is_active and is_enabled:
         return ServiceState.ACTIVE_ENABLED
     if is_active:
+        # The unit itself is disabled, but a service started by an *enabled*
+        # .socket/.path/.timer still comes back on the next boot. Ubuntu 24.04+
+        # ships ssh exactly this way (ssh.service disabled, ssh.socket enabled),
+        # so without this it warned "active but will not restart automatically"
+        # about ssh on a default Ubuntu server — a false positive.
+        if _enabled_trigger(svc_name):
+            return ServiceState.ACTIVE_ENABLED
         return ServiceState.ACTIVE_DISABLED
     if is_enabled:
         # Enabled and not running is a stopped service only if nothing is
