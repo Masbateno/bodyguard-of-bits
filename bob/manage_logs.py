@@ -924,7 +924,15 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
 
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _MARKED_KEYS, w))
+        # This screen has *two* header rows — the title bar (row 0) and the dim
+        # directory path (row 1) — so the body starts at row 2. Every other list
+        # reserves one header row (`h - 1 - chrome`); reserving only one here
+        # made body_h one larger than the rows actually drawn, and the scroll
+        # math believed the last item was visible while the draw loop never
+        # painted it: the bottom report sat hidden behind the footer, reachable
+        # by cursor but never shown. body_h is now the true number of visible
+        # body rows, so the scroll window and the draw loop agree.
+        body_h = max(1, h - 2 - _ch.chrome_height(t, _MARKED_KEYS, w))
         _last = max(0, n - 1)
         cursor = max(0, min(cursor, _last))
         if cursor - scroll >= body_h:
@@ -959,7 +967,7 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
             except curses.error:
                 pass
         else:
-            for row in range(body_h - 1):
+            for row in range(body_h):
                 idx = scroll + row
                 if idx >= n:
                     break

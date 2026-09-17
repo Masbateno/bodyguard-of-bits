@@ -190,10 +190,22 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="tui/body-sized-by-a-constant",
         file="bob/manage_logs.py",
-        old="        body_h = max(1, h - 1 - _ch.chrome_height(t, _MARKED_KEYS, w))",
+        old="        body_h = max(1, h - 2 - _ch.chrome_height(t, _MARKED_KEYS, w))",
         new="        body_h = max(1, h - 2)",
         kills=(f"{_CHROME}::TestNoScreenPaintsOverItsOwnBanner",),
         reason="the pre-v0.16.3 arithmetic, already one short when hints wrap",
+    ),
+    Mutation(
+        id="tui/log-list-off-by-one-header",
+        file="bob/manage_logs.py",
+        old="        body_h = max(1, h - 2 - _ch.chrome_height(t, _MARKED_KEYS, w))",
+        new="        body_h = max(1, h - 1 - _ch.chrome_height(t, _MARKED_KEYS, w))",
+        kills=("tests/test_v0201_manage_logs_viewport.py::"
+               "test_the_last_report_is_visible_after_jumping_to_the_bottom",),
+        reason="the report list has two header rows (title + dir path), so "
+               "reserving only one (h-1) makes the scroll window one taller than "
+               "the rows drawn: the last report is reachable by cursor but painted "
+               "into the footer row and overwritten — hidden behind the key bar",
     ),
     Mutation(
         id="tui/prompt-drawn-on-the-banner-row",
