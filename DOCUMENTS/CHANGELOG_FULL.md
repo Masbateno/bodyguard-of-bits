@@ -6,6 +6,131 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.20.1] — 2026-09-18
+
+**A patch release: fixes harvested by stress-testing v0.20.0 on real hardware**
+— a Raspberry Pi (ARM), an exhaustive local hostile-`/etc` pass, a real Debian 13
+machine under true root (~25 angles, physical reboot), and a real Ubuntu 26.04
+server on Python 3.14, and a Linux Mint 22.3 machine — plus one display bug
+reported from normal use. One genuine hang, three ANSI-injection holes, one
+score-span gap, one fix that under-repaired, one false-positive warning about
+ssh, a **security-update false negative on a slow machine**, a `--manage-logs`
+entry hidden behind the footer, and a flaky test hardened. The release corrects
+robustness, confidence reporting (the machine-readable `score_low`), output
+safety, remediation completeness (what `--fix --apply` actually repairs), one
+interactive-screen layout, one false positive on socket-activated services, and
+one false negative that could hide pending security updates.
+
+**A FIFO config file no longer hangs BOB forever.** `_read_smb_conf` handed
+`/etc/samba/smb.conf` straight to `configparser.RawConfigParser.read`, which does
+`open(path).read()` with no guard. When that path is a named pipe, `--check
+samba` blocked indefinitely — the exact hang `read_text_capped` was written to
+prevent in v0.14.1 ("a cron job hangs instead of failing, and does so again on
+every subsequent run", its worst outcome), re-introduced here by parsing the path
+directly. The read now goes through `read_text_capped`, whose `is_file()` check
+refuses a FIFO — and directories, sockets, devices — before opening it, and caps
+the size; the caller already degrades to an unreadable-config snapshot on
+`OSError`, so the audit stays honest rather than falling back to all-defaults.
+Found on the real Debian machine (`mkfifo /etc/samba/smb.conf`, `--check samba`
+never returned), re-verified there after the fix. The regression test uses a
+directory as its deterministic mutation-killer so the harness can never block.
+(`tests/test_v0201_samba_fifo_hang.py`, mutation
+`robustness/samba-conf-read-bypasses-fifo-guard`.)
+
+**Three ANSI-injection holes in the direct-render display, closed.**
+`Finding.message` and `Deduction.reason` pass through a shared sanitiser that
+flattens control bytes and strips escape sequences, but three display paths
+printed system-derived strings straight to the terminal, bypassing it. An
+**interface name**: the kernel accepts raw ANSI bytes in one, and an attacker
+with `CAP_NET_ADMIN` — a container, a VPN, a userns veth — can create it. A
+**disk mountpoint/device**: a mountpoint is a path (any byte but `/` and NUL), so
+a userns tmpfs an unprivileged user mounts can carry ANSI. And
+**`Deduction.reason`** itself: a samba share name or a file path reaching the
+score breakdown injected escapes there unless it passed the same choke point as
+`Finding.message`. All three now do. (Found by the local and Debian stress
+passes; `tests/test_v0201_display_injection.py`, `tests/test_v0141_robustness.py`
+and the `injection/*` mutations.)
+
+**The uncertainty span widens for a partially-blinded domain.** A domain still
+scored but with an input it could not read is an upper bound, not a firm number.
+The span (`score_low..score_high`) already dropped its low end for a wholly
+blinded domain; it now does the same when a single key inside an active domain is
+unverified — so blinding `systemctl` no longer lets EXPOSURE & SERVICES read as a
+firm 10 while service state was never checked. The terminal `≤` and the delta are
+unchanged; only the machine-readable low bound moves. (`tests/test_v0162_score_direction.py`,
+mutation `span/partial-blinding-not-widened`.)
+
+**The world-writable timer fix now chmods every script.** The systemd-timer
+finding counts every world-writable `ExecStart` script, but the remediation
+capped its `chmod o-w` at the first five, so `--fix --apply` reported success
+while leaving the rest world-writable — a fix that lies, the same class as the
+samba/ssh/ufw/umask fixes closed in v0.19.0–v0.20.0. It now covers all of them,
+with an empty-list guard. Round-tripped on real systemd (six scripts, all
+`0777 → 0775`, finding cleared). (mutation `fix-lies/timer-chmod-caps-at-five`.)
+
+**A slow machine no longer hides its pending security updates.**
+`_collect_pending_updates` ran `apt-get -s dist-upgrade` through `_run` with a
+fixed 30 s timeout and read an empty result as "nothing pending". On a
+mechanical-disk Linux Mint 22.3 with 468 pending packages the simulation took
+**47 s** (full local dependency resolution — no network), so it timed out, and
+the host's **322 pending security updates** were scored as if it were fully
+patched: BOB reported "inconsistent state" and applied no security deduction.
+The "absence of an answer read as a negative" class. dist-upgrade now runs
+through `run_result` (which reports real success) with a 90 s timeout, and on
+any failure falls back to `apt list --upgradable` — fast (~1 s) and carrying the
+same `-security` suite tag — so a slow machine still gets its security updates
+counted. The fallback can over-count versus what dist-upgrade would install (it
+lists held/phased packages too), the safe direction for a security signal. BOB
+now reports "322 security updates pending" with the −2 deduction on that host.
+(`tests/test_v0201_apt_dist_upgrade_timeout.py`, mutation
+`updates/dist-upgrade-timeout-read-as-zero`.)
+
+**`--fix --apply` no longer cuts a slow package upgrade off half-way.** BOB runs
+a package fix under a timeout and then stops the group (SIGTERM, a grace window
+for dpkg to finish its current item, then SIGKILL). On the same mechanical-disk
+Mint, `apt-get upgrade` of 468 packages took ~25 min — past the 15 min budget —
+so a healthy security upgrade was stopped half-way and had to be re-run. The
+budget is raised to one hour, which comfortably covers a large upgrade on a slow
+disk; a transaction still running past that is genuinely stuck and stopping it is
+right. (The stop stays graceful, so it was recoverable, not corrupting.)
+
+**No more false "ssh will not restart automatically" on a socket-activated
+service.** Ubuntu 24.04+ ships ssh socket-activated: `ssh.service` is disabled,
+`ssh.socket` is enabled, and ssh is active because a connection spawned it. BOB
+read `ssh.service` alone — active + disabled → "active now but will not restart
+automatically", a WARN — on a default Ubuntu server where ssh restarts on every
+boot via its enabled socket. The active branch of the service-state detector now
+consults the trigger: if a `TriggeredBy` `.socket`/`.path`/`.timer` is *enabled*
+(not merely active — a socket up now but not enabled would not survive a reboot),
+the service reads as ACTIVE_ENABLED. A hand-started service with no enabled
+trigger keeps warning. Found on a real Ubuntu 26.04 server (Python 3.14).
+(`tests/test_v0201_active_socket_service_restarts.py`, mutation
+`services/socket-activated-active-service-warns`.)
+
+**The last report in `--manage-logs` is no longer hidden behind the footer.**
+The report list is the one interactive screen with *two* header rows — the title
+bar and the dim directory path — so its body starts at row 2. It sized the body
+as if it had one header row (`h - 1 - chrome_height`) and drew `range(body_h - 1)`
+to compensate, but the scroll math kept using the full `body_h`: when the cursor
+reached the last report the scroll believed it was on screen while the draw loop
+never painted it, so the bottom entry sat behind the key bar — selectable but
+invisible (reported from a real terminal: 152 reports, `[152]` hidden). `body_h`
+now reserves both header rows and the draw loop iterates it in full, so the
+scroll window and the painted rows agree. The other list screens have a single
+header row and were already consistent. Guarded by a render-driving test that
+models last-write-per-row, so a regression that draws the row *into* the footer
+fails too, not only one that never draws it. (`tests/test_v0201_manage_logs_viewport.py`,
+mutation `tui/log-list-off-by-one-header`.)
+
+**A flaky timeout test hardened.** The grandchild-death check sampled liveness
+once and could lose a race under load; it now re-samples (`_reliably_dead`)
+before concluding, and a dead `import signal` is gone. Test-only; no behaviour
+change.
+
+**Tests** 10539 → **10603**. **Mutations** 235 → **244**.
+
+---
+
 ## [v0.20.0] — 2026-09-13
 
 **BREAKING — the per-domain scores are now the six on-screen groups.** BOB had

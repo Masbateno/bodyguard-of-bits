@@ -1,3 +1,19 @@
+bodyguard-of-bits (0.20.1-1) unstable; urgency=medium
+
+  * Patch: six fixes harvested by stress-testing v0.20.0 on real hardware.
+  * A FIFO /etc/samba/smb.conf no longer hangs BOB forever — the samba config
+    read handed the path to configparser directly, bypassing the read_text_capped
+    FIFO guard added in v0.14.1.
+  * Three ANSI-injection holes in the direct-render display closed: an interface
+    name, a disk mountpoint/device, and Deduction.reason now pass through the same
+    sanitiser as Finding.message.
+  * The uncertainty span now widens for a partially-blinded domain, so blinding
+    one input no longer lets an active domain read as a firm score.
+  * The world-writable systemd-timer fix chmods every script, not the first five.
+  * A flaky timeout test hardened (re-samples liveness before concluding).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 18 Sep 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.20.0-1) unstable; urgency=medium
 
   * BREAKING: the per-domain score keys were realigned 1:1 with the six on-screen

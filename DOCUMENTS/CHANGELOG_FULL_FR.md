@@ -6,6 +6,144 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.20.1] — 18-09-2026
+
+**Une version corrective : des fixes récoltés en stress-testant v0.20.0 sur du
+matériel réel** — un Raspberry Pi (ARM), une passe locale exhaustive à `/etc`
+hostile, une vraie machine Debian 13 en vrai root (~25 angles, reboot physique),
+un vrai serveur Ubuntu 26.04 sous Python 3.14, et une machine Linux Mint 22.3 —
+plus un bug d'affichage signalé en usage normal. Un vrai blocage, trois failles
+d'injection ANSI, un trou dans le span de score, un fix qui sous-réparait, un
+faux positif au sujet de ssh, un **faux négatif masquant les updates de sécurité
+sur une machine lente**, une entrée `--manage-logs` cachée derrière le pied de
+page, et un test instable durci. Cette version corrige la
+robustesse, la fiabilité du report de confiance
+(le `score_low` lisible par machine), la sûreté de sortie, la complétude des
+remédiations (ce que `--fix --apply` répare réellement), une mise en page
+d'écran interactif, un faux positif sur les services socket-activés, et un faux
+négatif pouvant masquer des mises à jour de sécurité en attente.
+
+**Un fichier de config FIFO ne fait plus pendre BOB indéfiniment.**
+`_read_smb_conf` passait `/etc/samba/smb.conf` directement à
+`configparser.RawConfigParser.read`, qui fait `open(path).read()` sans garde.
+Quand ce chemin est un tube nommé, `--check samba` bloquait indéfiniment — le
+blocage exact que `read_text_capped` avait été écrit pour empêcher en v0.14.1
+(« un cron qui pend au lieu d'échouer, et recommence à chaque exécution », son
+pire cas), réintroduit ici en analysant le chemin en direct. La lecture passe
+maintenant par `read_text_capped`, dont le contrôle `is_file()` refuse un FIFO —
+ainsi que répertoires, sockets, périphériques — avant de l'ouvrir, et borne la
+taille ; l'appelant dégrade déjà vers un instantané config-illisible sur
+`OSError`, donc l'audit reste honnête au lieu de retomber sur les valeurs par
+défaut. Trouvé sur la vraie machine Debian (`mkfifo /etc/samba/smb.conf`,
+`--check samba` ne revenait jamais), revérifié après le fix. Le test de
+régression utilise un répertoire comme tueur de mutation déterministe pour que le
+harness ne puisse jamais bloquer. (`tests/test_v0201_samba_fifo_hang.py`, mutation
+`robustness/samba-conf-read-bypasses-fifo-guard`.)
+
+**Trois failles d'injection ANSI dans l'affichage à rendu direct, fermées.**
+`Finding.message` et `Deduction.reason` passent par un assainisseur partagé qui
+aplatit les octets de contrôle et retire les séquences d'échappement, mais trois
+chemins d'affichage imprimaient des chaînes issues du système directement au
+terminal, en le contournant. Un **nom d'interface** : le noyau accepte des octets
+ANSI bruts dedans, et un attaquant avec `CAP_NET_ADMIN` — un conteneur, un VPN, un
+veth en userns — peut en créer un. Un **point de montage/périphérique disque** :
+un point de montage est un chemin (tout octet sauf `/` et NUL), donc un tmpfs
+userns monté par un utilisateur non privilégié peut porter de l'ANSI. Et
+**`Deduction.reason`** lui-même : un nom de partage samba ou un chemin de fichier
+atteignant le détail du score y injectait des échappements s'il ne passait pas par
+le même point d'étranglement que `Finding.message`. Les trois y passent maintenant.
+(Trouvés par les passes de stress locale et Debian ;
+`tests/test_v0201_display_injection.py`, `tests/test_v0141_robustness.py` et les
+mutations `injection/*`.)
+
+**Le span d'incertitude s'élargit pour un domaine partiellement aveuglé.** Un
+domaine encore scoré mais avec une entrée illisible est une borne supérieure, pas
+un nombre ferme. Le span (`score_low..score_high`) baissait déjà sa borne basse
+pour un domaine entièrement aveuglé ; il le fait maintenant aussi quand une seule
+clé d'un domaine actif n'est pas vérifiée — si bien qu'aveugler `systemctl` ne
+laisse plus EXPOSITION & SERVICES s'afficher comme un 10 ferme alors que l'état des
+services n'a jamais été contrôlé. Le `≤` du terminal et le delta sont inchangés ;
+seule la borne basse lisible par machine bouge. (`tests/test_v0162_score_direction.py`,
+mutation `span/partial-blinding-not-widened`.)
+
+**Le fix des scripts de timer inscriptibles par tous chmode désormais chaque
+script.** Le constat des timers systemd compte chaque script `ExecStart`
+inscriptible par tous, mais la remédiation plafonnait son `chmod o-w` aux cinq
+premiers, donc `--fix --apply` annonçait le succès tout en laissant le reste
+inscriptible par tous — un fix qui ment, la même classe que les fixes
+samba/ssh/ufw/umask fermés en v0.19.0–v0.20.0. Il les couvre maintenant tous, avec
+une garde liste-vide. Roundtrip sur vrai systemd (six scripts, tous `0777 → 0775`,
+constat disparu). (mutation `fix-lies/timer-chmod-caps-at-five`.)
+
+**Une machine lente ne masque plus ses mises à jour de sécurité en attente.**
+`_collect_pending_updates` lançait `apt-get -s dist-upgrade` via `_run` avec un
+timeout fixe de 30 s et lisait un résultat vide comme « rien en attente ». Sur
+une Linux Mint 22.3 à disque mécanique avec 468 paquets en attente, la
+simulation prenait **47 s** (résolution de dépendances entièrement locale — pas
+de réseau), donc elle timeout-ait, et les **322 mises à jour de sécurité** de
+l'hôte étaient scorées comme s'il était à jour : BOB affichait « état incohérent »
+et n'appliquait aucune déduction sécurité. La classe « absence de réponse lue
+comme une négative ». dist-upgrade passe désormais par `run_result` (qui rapporte
+le vrai succès) avec un timeout de 90 s, et sur tout échec retombe sur
+`apt list --upgradable` — rapide (~1 s) et portant le même tag de suite
+`-security` — si bien qu'une machine lente compte quand même ses updates de
+sécurité. Le fallback peut sur-compter par rapport à ce que dist-upgrade
+installerait (il liste aussi les paquets held/phased), la direction sûre pour un
+signal de sécurité. BOB rapporte maintenant « 322 mises à jour de sécurité en
+attente » avec la déduction −2 sur cet hôte.
+(`tests/test_v0201_apt_dist_upgrade_timeout.py`, mutation
+`updates/dist-upgrade-timeout-read-as-zero`.)
+
+**`--fix --apply` ne coupe plus un upgrade lent à mi-chemin.** BOB lance un fix
+de paquets sous un timeout puis stoppe le groupe (SIGTERM, une fenêtre de grâce
+pour que dpkg finisse l'item courant, puis SIGKILL). Sur la même Mint à disque
+mécanique, `apt-get upgrade` de 468 paquets a pris ~25 min — au-delà du budget de
+15 min — donc un upgrade de sécurité sain était stoppé à mi-chemin et devait être
+relancé. Le budget passe à une heure, ce qui couvre largement un gros upgrade sur
+disque lent ; une transaction encore en cours au-delà est réellement bloquée et
+l'arrêter est justifié. (L'arrêt reste gracieux, donc récupérable, pas corrompant.)
+
+**Plus de faux « ssh ne redémarrera pas automatiquement » sur un service
+socket-activé.** Ubuntu 24.04+ livre ssh socket-activé : `ssh.service` est
+désactivé, `ssh.socket` activé, et ssh est actif car une connexion l'a démarré.
+BOB lisait `ssh.service` seul — actif + désactivé → « actif mais ne redémarrera
+pas automatiquement », un WARN — sur un serveur Ubuntu par défaut où ssh
+redémarre à chaque boot via son socket activé. La branche « actif » du détecteur
+d'état consulte désormais le trigger : si un `.socket`/`.path`/`.timer` de
+`TriggeredBy` est *activé* (pas seulement actif — un socket levé maintenant mais
+non activé ne survivrait pas au reboot), le service est lu ACTIVE_ENABLED. Un
+service démarré à la main sans trigger activé garde son avertissement. Trouvé
+sur un vrai serveur Ubuntu 26.04 (Python 3.14).
+(`tests/test_v0201_active_socket_service_restarts.py`, mutation
+`services/socket-activated-active-service-warns`.)
+
+**La dernière entrée de `--manage-logs` n'est plus cachée derrière le pied de
+page.** La liste des rapports est le seul écran interactif à *deux* lignes
+d'en-tête — la barre de titre et le chemin du répertoire en grisé — donc son
+corps commence à la ligne 2. Il dimensionnait le corps comme s'il n'avait qu'une
+ligne d'en-tête (`h - 1 - chrome_height`) et dessinait `range(body_h - 1)` pour
+compenser, mais la logique de scroll continuait d'utiliser le `body_h` complet :
+quand le curseur atteignait le dernier rapport, le scroll le croyait à l'écran
+alors que la boucle de dessin ne le peignait jamais — la dernière entrée restait
+derrière la barre de touches, sélectionnable mais invisible (signalé depuis un
+vrai terminal : 152 rapports, `[152]` caché). `body_h` réserve maintenant les
+deux lignes d'en-tête et la boucle de dessin l'itère en entier, si bien que la
+fenêtre de scroll et les lignes peintes coïncident. Les autres écrans de liste
+n'ont qu'une ligne d'en-tête et étaient déjà cohérents. Gardé par un test qui
+pilote le rendu réel en modélisant « dernière écriture par ligne », si bien
+qu'une régression qui dessine la ligne *dans* le pied de page échoue aussi, pas
+seulement celle qui ne la dessine jamais. (`tests/test_v0201_manage_logs_viewport.py`,
+mutation `tui/log-list-off-by-one-header`.)
+
+**Un test de timeout instable durci.** Le contrôle de mort du petit-fils
+échantillonnait la vivacité une seule fois et pouvait perdre une course sous
+charge ; il ré-échantillonne maintenant (`_reliably_dead`) avant de conclure, et un
+`import signal` mort a disparu. Test uniquement ; aucun changement de comportement.
+
+**Tests** 10539 → **10603**. **Mutations** 235 → **244**.
+
+---
+
 ## [v0.20.0] — 13-09-2026
 
 **BREAKING — les scores par domaine sont désormais les six groupes affichés.**

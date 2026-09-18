@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.20.0
+Version:        0.20.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Sep 18 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.1-1
+- Patch: six fixes harvested by stress-testing v0.20.0 on real hardware.
+  A FIFO /etc/samba/smb.conf no longer hangs BOB forever (the samba config
+  read bypassed the read_text_capped FIFO guard added in v0.14.1). Three
+  ANSI-injection holes in the direct-render display closed (interface name,
+  disk mountpoint/device, Deduction.reason). The uncertainty span now widens
+  for a partially-blinded domain. The world-writable systemd-timer fix chmods
+  every script, not the first five. A flaky timeout test hardened.
 * Sun Sep 13 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.0-1
 - BREAKING: the per-domain score keys were realigned 1:1 with the six on-screen
   groups (firewall_network, exposure_services, access_control, system_hardening,
