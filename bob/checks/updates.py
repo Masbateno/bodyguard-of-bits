@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import install_fix, package_installed, _command_exists, _identity_t, _run, is_unit_active, path_exists
+from bob.checks._run import install_fix, package_installed, _command_exists, _identity_t, _run, run_result, is_unit_active, path_exists
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
@@ -128,39 +128,76 @@ class UpdatesSnapshot:
 
 def _collect_pending_updates() -> tuple[list[str], list[str]]:
     """
-    Run ``apt-get -s dist-upgrade`` and parse Inst lines.
+    Return (security, regular) pending-update package names for apt.
 
-    Uses ``dist-upgrade`` (not ``upgrade``) because plain ``upgrade`` is
-    conservative — it refuses to upgrade any package that would require
-    installing a new package or removing an existing one. On Debian/Ubuntu
-    this hides every security update bundled with a kernel transition or a
-    new soname (e.g. ``linux-image-amd64 → linux-image-6.12.86-amd64``).
+    Primary source is ``apt-get -s dist-upgrade`` — plain ``upgrade`` is
+    conservative (it refuses anything that would install a new package or
+    remove one), which hides every security update bundled with a kernel
+    transition or a new soname (e.g. ``linux-image-amd64 → linux-image-…``).
 
-    Returns:
-        (security, regular) — lists of package names by update type.
-        Security packages are identified by a ``-security`` suite in the
-        apt source field (e.g. ``jammy-security``, ``debian-security``).
+    But dist-upgrade resolves the whole dependency graph, and on a slow disk
+    with hundreds of pending packages that takes tens of seconds — measured
+    **47 s** on a mechanical-disk Linux Mint with 468 pending. A fixed 30 s
+    timeout there returned *empty*, and ``_run`` cannot tell an empty result
+    from "nothing pending", so a host with 311 pending **security** updates was
+    scored as if it had none: the "absence of an answer read as a negative"
+    class this project keeps having to close.
+
+    So: run dist-upgrade through ``run_result`` (which reports whether it truly
+    succeeded) with a longer timeout, and on any failure fall back to
+    ``apt list --upgradable`` — fast (~1 s) and carrying the same ``-security``
+    suite tag — so a slow machine still gets its security updates counted
+    instead of a false all-clear. The fallback can over-count versus what
+    dist-upgrade would actually install (it also lists held/phased packages),
+    which is the safe direction for a security signal.
+
+    Security packages are identified by a ``-security`` suite in the apt source
+    field (e.g. ``jammy-security``, ``noble-security``, ``debian-security``).
+    """
+    res = run_result("apt-get", "-s", "dist-upgrade", timeout=90)
+    if res.ok:
+        return _classify_apt_lines(res.stdout.splitlines(), _pkg_from_inst)
+
+    # dist-upgrade failed or timed out — do NOT read its empty output as zero.
+    fallback = run_result("apt", "list", "--upgradable", timeout=30)
+    if fallback.ok:
+        return _classify_apt_lines(fallback.stdout.splitlines(), _pkg_from_list)
+    return [], []
+
+
+def _pkg_from_inst(line: str) -> "str | None":
+    """Package name from an ``apt-get -s dist-upgrade`` ``Inst`` line."""
+    if not line.startswith("Inst "):
+        return None
+    parts = line.split()
+    return parts[1] if len(parts) >= 2 else None
+
+
+def _pkg_from_list(line: str) -> "str | None":
+    """Package name from an ``apt list --upgradable`` ``pkg/suite …`` line."""
+    if "/" not in line or line.startswith(("Listing", "WARNING", "N:")):
+        return None
+    name = line.split("/", 1)[0].strip()
+    return name or None
+
+
+def _classify_apt_lines(lines, pkg_of) -> tuple[list[str], list[str]]:
+    """Split apt output *lines* into (security, regular) package names.
+
+    *pkg_of* extracts the package name from one line (or None to skip it); the
+    ``-security`` suite tag, present in both dist-upgrade and ``apt list``
+    output, decides the bucket. Order-preserving dedup per bucket.
     """
     security: list[str] = []
     regular:  list[str] = []
-
-    out = _run("apt-get", "-s", "dist-upgrade", timeout=30)
-    if not out:
-        return security, regular
-
-    for line in out.splitlines():
-        if not line.startswith("Inst "):
+    for line in lines:
+        pkg = pkg_of(line)
+        if pkg is None:
             continue
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        pkg = parts[1]
         if re.search(r"-security\b", line, re.IGNORECASE):
             security.append(pkg)
         else:
             regular.append(pkg)
-
-    # Deduplicate while preserving order (apt can emit the same package twice)
     return list(dict.fromkeys(security)), list(dict.fromkeys(regular))
 
 

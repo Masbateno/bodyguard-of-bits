@@ -1200,6 +1200,19 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "restores both the FIFO guard and the raise-on-unreadable contract",
     ),
     Mutation(
+        id="updates/dist-upgrade-timeout-read-as-zero",
+        file="bob/checks/updates.py",
+        old="    fallback = run_result(\"apt\", \"list\", \"--upgradable\", timeout=30)\n    if fallback.ok:",
+        new="    fallback = run_result(\"apt\", \"list\", \"--upgradable\", timeout=30)\n    if False:",
+        kills=("tests/test_v0201_apt_dist_upgrade_timeout.py::"
+               "test_dist_upgrade_timeout_falls_back_to_apt_list",),
+        reason="apt-get -s dist-upgrade takes 47s on a slow disk with hundreds "
+               "of pending packages, past the timeout; without the apt list "
+               "--upgradable fallback the empty (timed-out) result is read as "
+               "zero pending and a host with 322 pending security updates is "
+               "scored as fully patched — absence of an answer read as a negative",
+    ),
+    Mutation(
         id="banner/distro-logo-not-single-wide",
         file="bob/output.py",
         old='"🦎"),',

@@ -105,7 +105,12 @@ class TestDetectionAndRemediationStayReconciled:
 
     def test_detection_still_uses_the_broad_simulation(self):
         src = (_SRC / "checks" / "updates.py").read_text(encoding="utf-8")
-        assert '_run("apt-get", "-s", "dist-upgrade"' in src, (
+        # The invariant is the *broad* simulation (dist-upgrade, not plain
+        # upgrade), whatever wrapper runs it. v0.20.1 moved the call from `_run`
+        # to `run_result` so a timed-out simulation is no longer read as "zero
+        # pending" (test_v0201_apt_dist_upgrade_timeout); pin the argv, not the
+        # wrapper name.
+        assert '"apt-get", "-s", "dist-upgrade"' in src, (
             "detection no longer simulates dist-upgrade — if it narrowed, the "
             "reasoning behind --with-new-pkgs needs re-checking rather than "
             "this guard being deleted"
