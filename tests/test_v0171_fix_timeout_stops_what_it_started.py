@@ -202,7 +202,10 @@ class TestPackageTransactionsGetABudgetTheyCanFinishIn:
         assert _timeout_for(shlex.split(cmd)) == _fixes._TIMEOUT_DEFAULT
 
     def test_the_long_budget_is_minutes_not_seconds(self):
-        assert _fixes._TIMEOUT_PACKAGE >= 300
+        # v0.20.1 raised the floor: a real 468-package `apt-get upgrade` on a
+        # mechanical-disk Mint 22.3 took ~25 min, past the old 15 min cap, so
+        # the budget must comfortably exceed a large upgrade on a slow disk.
+        assert _fixes._TIMEOUT_PACKAGE >= 1800
 
     def test_every_package_fix_bob_ships_is_covered(self):
         """The buckets are decided from BOB's own catalogue, not from a hunch."""

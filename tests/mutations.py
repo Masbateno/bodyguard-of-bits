@@ -1069,13 +1069,13 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="fixes/package-budget-back-to-thirty-seconds",
         file="bob/fixes.py",
-        old="_TIMEOUT_PACKAGE = 900",
+        old="_TIMEOUT_PACKAGE = 3600",
         new="_TIMEOUT_PACKAGE = 30",
         kills=(f"{_FIXTMO}::TestPackageTransactionsGetABudgetTheyCanFinishIn::"
                "test_the_long_budget_is_minutes_not_seconds",),
         reason="thirty seconds is a budget for `ufw delete`; a package "
                "transaction reaching it means BOB stops a healthy upgrade "
-               "mid-transaction every single time",
+               "mid-transaction — measured needing ~25 min on a slow-disk Mint",
     ),
     Mutation(
         id="fixes/timeout-told-to-rerun-by-hand",

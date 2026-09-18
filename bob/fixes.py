@@ -118,7 +118,13 @@ _PACKAGE_TOOLS = frozenset({
 })
 
 _TIMEOUT_DEFAULT = 30
-_TIMEOUT_PACKAGE = 900
+#: v0.20.1 — 900 s (15 min) was still too short. A fresh Linux Mint 22.3 on a
+#: mechanical 5400 rpm disk took ~25 min to `apt-get upgrade` 468 packages, so
+#: `--fix --apply` on the security-updates finding stopped a healthy upgrade
+#: half-way (the graceful SIGTERM+grace stop below keeps it recoverable, but the
+#: operator has to re-run). One hour covers a large upgrade on a slow disk; a
+#: transaction still running past it is genuinely stuck and the stop is right.
+_TIMEOUT_PACKAGE = 3600
 
 #: How long a stopped process tree gets to unwind after SIGTERM before BOB
 #: escalates. dpkg uses the window to finish the item it is on.
