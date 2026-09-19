@@ -65,6 +65,19 @@ def run_watch(
     Returns:
         0 on clean exit (Ctrl+C).
     """
+    # Line-buffer stdout so each cycle is visible in real time even when the
+    # output is redirected or piped (`bob --watch | tee`, `> file`). Without
+    # this Python block-buffers a non-tty stdout, and because the loop only
+    # exits on Ctrl+C the buffer is flushed all at once — a monitor that shows
+    # nothing until it stops. A tty is already line-buffered; reconfigure is a
+    # no-op there. Guarded: a stream that cannot be reconfigured (already
+    # closed, or not a TextIOWrapper) must not abort watch mode.
+    try:
+        import sys
+        sys.stdout.reconfigure(line_buffering=True)
+    except (OSError, ValueError, AttributeError):
+        pass
+
     # Build a quiet, non-reporting config for each iteration
     watch_cfg = copy(config)
     watch_cfg.quiet   = True

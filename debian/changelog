@@ -1,3 +1,28 @@
+bodyguard-of-bits (0.20.2-1) unstable; urgency=medium
+
+  * Minor: firewalld recognition across the RPM/SUSE family, a banner naming
+    every distro's firewall front-end and init manager, and seven blind spots
+    caught by an exhaustive CLI pass on a real Fedora 44.
+  * firewalld: BOB was 100% UFW-centric and declared a firewalld-protected host
+    "UFW not installed / wide open". A shared FirewalldStatus (firewall-cmd) is
+    now threaded into the firewall, iptables/nftables, firewall-stack, ipv6,
+    services and ports checks — credited by zone, ACCEPT base policy explained,
+    IPv6 read as firewalld-filtered, per-port advice reframed, its own nft table
+    no longer flagged parallel to UFW. Credit is conditional (firewalld stopped
+    reverts to unprotected/HIGH); both polarities field-validated on Fedora 44.
+  * Banner now names firewalld and the init/service manager (systemd, OpenRC, …)
+    alongside UFW/iptables/nftables.
+  * cockpit socket-activation false negative fixed: a static+inactive service
+    reachable through an active .socket (cockpit.socket on 9090) read as "not
+    running, nothing listening"; the v0.20.1 ssh-socket fix is generalised to the
+    inactive-service case.
+  * --min-level now filters directly-printed INFO/OK meta lines; --watch is
+    screen-silent under quiet and line-buffers when piped; the --output-dir
+    mkdir-failure message is localised; --lang <unsupported> now warns visibly.
+  * Non-breaking. Tests 10603 -> 10676.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 19 Sep 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.20.1-1) unstable; urgency=medium
 
   * Patch: six fixes harvested by stress-testing v0.20.0 on real hardware.

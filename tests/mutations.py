@@ -2638,4 +2638,122 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "shows the control's number in every distribution's benchmark, "
                "not only its primary Ubuntu 22.04 reference",
     ),
+    Mutation(
+        id="firewalld/firewall-check-ignores-front-end",
+        file="bob/checks/firewall.py",
+        old="        if firewalld is not None and firewalld.active:",
+        new="        if firewalld is not None and firewalld.active and False:",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestFirewallCheck::test_firewalld_active_credits_instead_of_alerting",),
+        reason="on a firewalld host UFW is legitimately absent; without this "
+               "branch BOB alerts 'UFW not installed' on a firewalled Fedora "
+               "(measured on 192.168.1.16)",
+    ),
+    Mutation(
+        id="firewalld/raw-policy-reads-firewalled-host-as-wide-open",
+        file="bob/checks/iptables_nftables.py",
+        old="    if firewalld is not None and firewalld.active:",
+        new="    if firewalld is not None and firewalld.active and False:",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestIptablesCheck::test_firewalld_active_credits_and_returns",),
+        reason="firewalld keeps the base chain policy at ACCEPT and filters in "
+               "its zone chains; reading the raw policy without crediting "
+               "firewalld calls a firewalled host wide-open",
+    ),
+    Mutation(
+        id="firewalld/own-nft-table-framed-as-parallel-ruleset",
+        file="bob/checks/firewall_stack.py",
+        old="                    and table_name != \"firewalld\"",
+        new="                    and table_name != \"firewalld-disabled\"",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestNftTableAttribution::test_firewalld_table_is_not_a_parallel_ruleset",),
+        reason="firewalld's own `table inet firewalld` IS the firewall; without "
+               "the exclusion BOB frames a firewalld host as 'nftables running "
+               "in parallel with UFW'",
+    ),
+    Mutation(
+        id="firewalld/ipv6-gap-warned-though-firewalld-filters-v6",
+        file="bob/checks/ipv6.py",
+        old="        if snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled and firewalld_active:",
+        new="        if snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled and firewalld_active and False:",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestIPv6Coverage::test_firewalld_active_no_v6_gap_warning",),
+        reason="firewalld applies the same zone rules to IPv6 as IPv4; without "
+               "this branch every v6 listener is warned 'no UFW v6 rule' on a "
+               "firewalld host and docks the score",
+    ),
+    Mutation(
+        id="firewalld/ports-tells-firewalld-host-to-enable-ufw",
+        file="bob/checks/ports.py",
+        old="                if firewalld_active:",
+        new="                if firewalld_active and False:",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestPortsAdvice::test_firewalld_active_reframes_the_advice",),
+        reason="'enable UFW to filter it' contradicts the firewall check that "
+               "just credited firewalld; the port is governed by firewalld's "
+               "default zone",
+    ),
+    Mutation(
+        id="firewalld/service-exposure-says-ufw-inactive-under-firewalld",
+        file="bob/checks/services.py",
+        old="    if firewalld_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):",
+        new="    if False and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestServiceExposure::test_firewalld_active_uses_firewalld_exposure_key",),
+        reason="on a firewalld host a service with no UFW rule must not read as "
+               "'no rule (UFW inactive)', which both misleads and contradicts "
+               "the firewall check crediting firewalld",
+    ),
+    Mutation(
+        id="firewalld/banner-omits-firewalld-front-end",
+        file="bob/output.py",
+        old="        (labels.get(\"firewalld\", \"firewalld\"), firewalld),",
+        new="",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestHeadlineBanner::test_firewalld_row_is_shown",),
+        reason="the header must name firewalld, not only Debian's UFW, so an "
+               "RPM/openSUSE operator sees their front-end and version",
+    ),
+    Mutation(
+        id="firewalld/banner-omits-init-manager",
+        file="bob/output.py",
+        old="        (labels.get(\"init\",     \"Init\"),     init_system),",
+        new="",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestHeadlineBanner::test_init_row_is_shown",),
+        reason="the header must name the service manager (systemd, OpenRC, …) so "
+               "a non-systemd host is not read as systemd by default",
+    ),
+    Mutation(
+        id="blindspot/min-level-leaks-direct-info",
+        file="bob/output.py",
+        old="    if not _passes_threshold(\"info\"):\n        return",
+        new="    if False:\n        return",
+        kills=("tests/test_v0202_blind_spots.py::TestMinLevelAtPrimitive::test_min_level_warn_keeps_warn_drops_info",),
+        reason="--min-level must filter directly-printed INFO too, not only "
+               "findings routed through display_result; without the primitive "
+               "guard `--min-level warn` leaks every meta INFO line",
+    ),
+    Mutation(
+        id="blindspot/watch-dumps-risk-context-under-quiet",
+        file="bob/display.py",
+        old="    if not quiet:\n        from bob.output import print_risk_context, print_info",
+        new="    if True:\n        from bob.output import print_risk_context, print_info",
+        kills=("tests/test_v0202_blind_spots.py::TestRiskContextQuiet::test_quiet_silences_screen_but_keeps_the_archive",),
+        reason="watch mode runs quiet; without this gate every cycle dumps the "
+               "full multi-line risk block per high/critical service, burying "
+               "the terse score+delta line watch exists to show",
+    ),
+    Mutation(
+        id="blindspot/output-dir-error-hardcoded-english",
+        file="bob/manage_logs.py",
+        old="            print(f\"  ✖ {t('manage_logs.cannot_create_dir', path=d, error=exc)}\")",
+        new="            print(f\"  ✖ Cannot create directory {d}: {exc} — falling back to cwd\")",
+        kills=("tests/test_v0202_blind_spots.py::TestOutputDirFailureIsLocalised::test_unwritable_output_dir_uses_locale_key_and_falls_back",),
+        reason="the mkdir-failure message must be localised like the rest of the "
+               "tool; the hardcoded English string broke a French audit's output",
+    ),
+    Mutation(
+        id="blindspot/static-service-active-socket-read-as-stopped",
+        file="bob/checks/services.py",
+        old="        if _active_trigger(svc_name):\n            return ServiceState.SOCKET_ACTIVATED\n        return ServiceState.INACTIVE_DISABLED",
+        new="        if False:\n            return ServiceState.SOCKET_ACTIVATED\n        return ServiceState.INACTIVE_DISABLED",
+        kills=("tests/test_v0202_socket_activated_static.py::test_static_inactive_service_with_active_socket_is_socket_activated",),
+        reason="a static/disabled .service reachable through an active .socket "
+               "(cockpit.service static + cockpit.socket listening on 9090) must "
+               "read as socket-activated, not stopped — else a reachable web "
+               "admin interface reads as 'inactive, nothing listening'",
+    ),
 )

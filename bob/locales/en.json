@@ -6,8 +6,10 @@
     "host": "Host",
     "kernel": "Kernel",
     "ufw": "UFW",
+    "firewalld": "firewalld",
     "iptables": "iptables",
     "nftables": "nftables",
+    "init": "Init",
     "user": "User",
     "date": "Date",
     "not_installed": "not installed",
@@ -148,6 +150,7 @@
   },
   "firewall": {
     "active": "UFW firewall is active",
+    "firewalld_active": "firewalld is the active firewall — default zone '{zone}' allows: {services}",
     "inactive": "UFW firewall is disabled. Your machine is currently unprotected.",
     "policy_ok": "Default policy: incoming connections blocked (recommended)",
     "policy_open": "Default incoming policy is set to ALLOW — all ports are open by default",
@@ -199,9 +202,11 @@
       "deny": "explicitly blocked by a UFW rule",
       "no_rule": "covered by default deny policy (no explicit UFW rule needed)",
       "no_rule_ufw_inactive": "no active firewall protection (UFW inactive)",
+      "no_rule_firewalld": "firewall managed by firewalld (not UFW) — reachable only if its zone permits this port",
       "loopback": "bound to localhost only — UFW rule has no effect on external access",
       "loopback_no_rule": "bound to localhost only — no UFW rule needed (covered by default deny)",
       "loopback_no_rule_ufw_inactive": "bound to localhost only — no external exposure",
+      "loopback_no_rule_firewalld": "bound to localhost only — no external exposure (firewall managed by firewalld)",
       "not_listening": "not actively listening — port in registry but not detected on this system"
     },
     "port_exposure": "Port {port} — {exposure}"
@@ -218,7 +223,8 @@
     "listening_verbose_hint": "Use -v to display the full port table",
     "process_disclaimer": "This port belongs to {process} — blocking it may interrupt the application. Only run the command above if you know exactly what you are doing.",
     "uncovered_default_deny": "Port {port} listening on all interfaces — no explicit UFW rule, but covered by default deny policy",
-    "uncovered_ufw_inactive": "Port {port} listening on all interfaces — enable UFW to filter it"
+    "uncovered_ufw_inactive": "Port {port} listening on all interfaces — enable UFW to filter it",
+    "uncovered_firewalld": "Port {port} listening on all interfaces — governed by firewalld's default zone, not a UFW rule"
   },
   "logs": {
     "no_logfile": "UFW log file not found (/var/log/ufw.log) and no UFW entries in journald — logging disabled?",
@@ -327,6 +333,7 @@
     "saved": "Location saved: {path}"
   },
   "manage_logs": {
+    "cannot_create_dir": "Cannot create directory {path}: {error} — falling back to the current directory",
     "banner_total": "{total} report(s)",
     "banner_selected": "{count} selected / {total}",
     "title": "REPORT MANAGEMENT",
@@ -773,7 +780,7 @@
   },
   "virt": {
     "none_detected": "No virtualisation technology detected",
-    "bypass_risk": "{name} detected — {iface} bridge interface may insert iptables rules, bypassing UFW FORWARD policy",
+    "bypass_risk": "{name} detected — {iface} bridge interface may insert iptables rules, bypassing the firewall's FORWARD policy",
     "snap_network": "Snap package '{pkg}' has active network connections — verify it does not bypass UFW"
   },
   "hardening": {
@@ -1017,6 +1024,9 @@
       "delete_error": "Error: could not delete baseline: {error}",
       "not_found": "No baseline found at {path}"
     },
+    "lang": {
+      "unsupported": "Language '{lang}' is not available — falling back to '{fallback}'. Supported: en, fr."
+    },
     "test_email": {
       "no_address": "No notification address configured. Add one with the address book in `sudo bob --install-cron`, or `bob --manage-cron`.",
       "bad_address": "Saved notification address {to} is not a valid address. The address book validates on entry, so this file has been hand-edited: {path}",
@@ -1100,6 +1110,7 @@
     "listeners_list": "Listening port(s): {ports}",
     "port_no_v6_rule": "Port {port} listening on IPv6 (::) without a UFW (v6) rule",
     "all_ports_covered": "All {count} IPv6 listener(s) are covered by UFW (v6) rules",
+    "firewalld_v6": "IPv6 listeners are filtered by firewalld (same zone rules as IPv4) — no UFW v6 rule required",
     "ufw_disabled_listeners_link_local": "{count} service(s) listening on IPv6 (::) but UFW IPv6 is disabled — link-local addresses only, no internet exposure",
     "kernel_state_unknown": "Kernel IPv6 state could not be read",
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 exists but conf/all/disable_ipv6 could not be read, so BOB cannot say whether the IPv6 stack is active. It does not assume either way. The findings below are computed as if IPv6 were enabled, which is the cautious reading. Check with: sysctl net.ipv6.conf.all.disable_ipv6"
@@ -3635,6 +3646,7 @@
     "nft_no_input_filter": "nftables is installed and answered, but its ruleset filters no inbound traffic",
     "ufw_inactive_context": "UFW is installed but inactive — auditing the underlying {backend} layer",
     "backend_detected": "Active backend: {backend}",
+    "firewalld_active": "firewalld is the active firewall — default zone '{zone}' allows: {services}; the base chain policy stays ACCEPT by design (firewalld filters in its zone chains)",
     "input_accept": "Default INPUT policy: ACCEPT — all incoming traffic is allowed",
     "input_ok": "Default INPUT policy: {policy} (recommended)",
     "input_unknown": "Default INPUT policy: undetermined — manual verification recommended",

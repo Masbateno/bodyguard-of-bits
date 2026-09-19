@@ -184,6 +184,7 @@ def check_ports(
     network_context: str = "local",
     default_incoming_policy: str = "deny",
     ufw_active: bool = True,
+    firewalld_active: bool = False,
     t: TranslationFunc | None = None,
 ) -> CheckResult:
     """
@@ -286,6 +287,15 @@ def check_ports(
             # Downgrade to INFO when there is nothing actionable to show.
             if not ufw_active:
                 pp_info = f"{pp} ({lport.process})" if lport.process else pp
+                # On a firewalld host "enable UFW" contradicts the firewall
+                # check that just credited firewalld. The port is governed by
+                # firewalld's default zone, not by an absent UFW rule.
+                if firewalld_active:
+                    result.info(
+                        message=_t("ports.uncovered_firewalld", port=pp_info),
+                        key="ports.uncovered_firewalld",
+                    )
+                    continue
                 result.info(
                     message=_t("ports.uncovered_ufw_inactive", port=pp_info),
                     key="ports.uncovered_ufw_inactive",

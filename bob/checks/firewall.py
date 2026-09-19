@@ -119,7 +119,7 @@ class FirewallStatus:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> CheckResult:
+def check_firewall(status: FirewallStatus, firewalld=None, t: TranslationFunc | None = None) -> CheckResult:
     """
     Evaluate firewall status and return findings and deductions.
 
@@ -139,6 +139,18 @@ def check_firewall(status: FirewallStatus, t: TranslationFunc | None = None) -> 
 
     # --- UFW installed ---
     if not status.installed:
+        # firewalld is the firewall front-end on the RPM family and openSUSE.
+        # When it is active the machine IS firewalled; alerting "UFW not
+        # installed" there frames a properly-protected host as unprotected
+        # (measured on Fedora 44). Credit firewalld and name what it exposes.
+        if firewalld is not None and firewalld.active:
+            svc = ", ".join(firewalld.services + firewalld.ports) or "—"
+            result.ok(
+                message=_t("firewall.firewalld_active",
+                           zone=firewalld.default_zone or "?", services=svc),
+                key="firewall.firewalld_active",
+            )
+            return result
         _cmd, _detail = install_fix(_t, None, "ufw")
         result.alert(
             message=_t("prerequisites.ufw_missing"),
@@ -201,6 +213,7 @@ def check_rules(
     ipv6_enabled: bool = True,
     listening_ports: "set[str] | None" = None,
     app_profiles: "dict[str, list[str]] | None" = None,
+    firewalld_active: bool = False,
 ) -> "CheckResult":
     """
     Check UFW rules for duplicates, open-any wildcards, IPv6 consistency,
@@ -221,9 +234,15 @@ def check_rules(
     lines = [ln for ln in ufw_numbered.splitlines() if _ufw.is_rule_line(ln)]
     _check_duplicates(lines, t, result)
     _check_open_any(lines, t, result)
-    _check_ipv6_coverage(lines, t, result, ipv6_enabled)
-    if listening_ports is not None:
-        _check_orphan_rules(lines, listening_ports, t, result, app_profiles)
+    # The IPv6-coverage and orphan-rule checks reason about *UFW* rules covering
+    # listening ports. When firewalld is the active front-end there are no UFW
+    # rules to cover anything, so both fired for every listener ("port in IPv6
+    # without a matching UFW (v6) rule") — a UFW-framed false positive measured
+    # on Fedora 44. firewalld's own coverage is credited by check_firewall.
+    if not firewalld_active:
+        _check_ipv6_coverage(lines, t, result, ipv6_enabled)
+        if listening_ports is not None:
+            _check_orphan_rules(lines, listening_ports, t, result, app_profiles)
     return result
 
 

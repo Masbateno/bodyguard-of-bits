@@ -306,6 +306,7 @@ def check_services(
     network_context: str = "local",
     ufw_active: bool = True,
     t: TranslationFunc | None = None,
+    firewalld_active: bool = False,
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -323,7 +324,8 @@ def check_services(
     result = CheckResult()
 
     for snap in snapshots:
-        _check_single_service(snap, result, network_context, ufw_active, _t)
+        _check_single_service(snap, result, network_context, ufw_active, _t,
+                              firewalld_active=firewalld_active)
 
     return result
 
@@ -333,6 +335,7 @@ def _check_single_service(
     network_context: str,
     ufw_active: bool,
     _t,
+    firewalld_active: bool = False,
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -433,7 +436,8 @@ def _check_single_service(
 
     # Analyse each port exposure
     for port, exposure in snap.exposures.items():
-        _check_port_exposure(snap, port, exposure, result, network_context, ufw_active, _t)
+        _check_port_exposure(snap, port, exposure, result, network_context, ufw_active, _t,
+                             firewalld_active=firewalld_active)
 
 def _check_port_exposure(
     snap: ServiceSnapshot,
@@ -443,10 +447,18 @@ def _check_port_exposure(
     network_context: str,
     ufw_active: bool,
     _t,
+    firewalld_active: bool = False,
 ) -> None:
     """Add findings for a single port exposure."""
 
-    if not ufw_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
+    # firewalld is the front-end here, so "no UFW rule (UFW inactive)" would
+    # both mislead and contradict the firewall check crediting firewalld.
+    # The exposure classifier is UFW-rule-based and does not yet resolve
+    # firewalld zones to ports, so this states the front-end without claiming
+    # a per-port allow/block it has not measured.
+    if firewalld_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
+        exp_key = f"services.exposure.{exposure.value}_firewalld"
+    elif not ufw_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_ufw_inactive"
     else:
         exp_key = f"services.exposure.{exposure.value}"
@@ -637,6 +649,18 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
             return ServiceState.SOCKET_ACTIVATED
         return ServiceState.INACTIVE_ENABLED
     if active in ("inactive", "failed", "activating"):
+        # A .service unit can be static or disabled while its .socket/.path/
+        # .timer is the unit that makes it reachable on demand. cockpit ships
+        # exactly this way on Fedora: cockpit.service is static AND inactive,
+        # while cockpit.socket is active and listening on 9090. The is_enabled
+        # branch above only catches services whose own unit is enabled, so this
+        # inactive+static case fell straight through to INACTIVE_DISABLED — a web
+        # admin interface reachable on 9090 read as "inactive, nothing listening"
+        # (measured on real Fedora 44). Consult the active trigger here too. The
+        # v0.20.1 ssh fix covered the active-service case; this covers the
+        # inactive-service-active-socket case.
+        if _active_trigger(svc_name):
+            return ServiceState.SOCKET_ACTIVATED
         return ServiceState.INACTIVE_DISABLED
 
     # v0.18.0: systemd said nothing. On Alpine, Gentoo and Devuan that is not

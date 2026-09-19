@@ -111,6 +111,8 @@ class SystemInfo:
         hostname:    Machine hostname.
         kernel:      Kernel version string.
         ufw_version: UFW version string.
+        firewalld_version: firewalld version string ("" if not installed).
+        init_system: Service manager string (e.g. "systemd 257", "OpenRC").
         user:        Real username running the audit.
         config_path: Path to the user config file.
         language:    Language code ("en" or "fr").
@@ -129,6 +131,8 @@ class SystemInfo:
         config_path:      str,
         language:         str,
         version:          str,
+        firewalld_version: str = "",
+        init_system:       str = "",
     ) -> None:
         self.os_name          = os_name
         self.hostname         = hostname
@@ -136,6 +140,8 @@ class SystemInfo:
         self.ufw_version      = ufw_version
         self.iptables_version = iptables_version
         self.nftables_version = nftables_version
+        self.firewalld_version = firewalld_version
+        self.init_system      = init_system
         self.user             = user
         self.config_path      = config_path
         self.language         = language

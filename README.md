@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.20.1-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.20.2-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -326,7 +326,7 @@ Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
 
 | Tier | Distros | Status |
 |------|---------|--------|
-| **Tier 1** (daily-driven) | Linux Mint 22.x, Debian 13 | Full feature set, validated on production hardware |
+| **Tier 1** (validated on real hardware) | Linux Mint 22.3, Debian 13, Ubuntu Server 26.04, Fedora 44 Server | Full feature set, each stress-tested on a real machine during the v0.20.x cycle — exhaustive multi-angle passes covering firewalld recognition, socket-activated services, cross-distro updates, and remediation round-trips. Mint and Debian are daily-driven; Ubuntu 26.04 (Python 3.14) and Fedora 44 (SELinux enforcing, firewalld) are dedicated test machines |
 | **Tier 2** (validated, two ways) | *In CI, every PR:* Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · **Debian Bookworm arm64** (emulated). *On real virtual machines, per release:* Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 | CI runs a smoke + offline audit on every PR; no locale sentinels, no Python tracebacks, and the arm64 job additionally asserts that x86 firmware concepts degrade and that the Raspberry Pi section fires. The VM pass is a full audit driven by hand before a release — it is where the v0.17.1 and v0.18.0 defects were found, and Alpine is the only host among them without systemd |
 | **Tier 3** (works, not validated on hardware) | Other Debian/RHEL/SUSE/Arch-family Linux · **Raspberry Pi OS** (Bookworm, arm64) | Best-effort; checks degrade gracefully. The Raspberry Pi *section* is covered by the arm64 CI job above; the *board* has been audited once on physical hardware (a Pi Zero W, trixie, v0.18.1) — see below |
 

@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.20.1-brightgreen)
+![Release](https://img.shields.io/badge/version-v0.20.2-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -326,7 +326,7 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 
 | Niveau | Distros | État |
 |--------|---------|------|
-| **Tier 1** (production quotidienne) | Linux Mint 22.x, Debian 13 | Fonctionnalités complètes, validé sur matériel de production |
+| **Tier 1** (validé sur matériel réel) | Linux Mint 22.3, Debian 13, Ubuntu Server 26.04, Fedora 44 Server | Fonctionnalités complètes, chacune stress-testée sur une machine réelle durant le cycle v0.20.x — passes multi-angles exhaustives couvrant la reconnaissance firewalld, les services socket-activés, les updates cross-distro et les allers-retours de remédiation. Mint et Debian sont en production quotidienne ; Ubuntu 26.04 (Python 3.14) et Fedora 44 (SELinux enforcing, firewalld) sont des machines de test dédiées |
 | **Tier 2** (validé, de deux façons) | *En CI, à chaque PR :* Debian 12, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · **Debian Bookworm arm64** (émulé). *Sur machines virtuelles réelles, à chaque release :* Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 | La CI lance un smoke + un audit hors ligne à chaque PR ; pas de sentinelles locale, pas de traceback Python, et le job arm64 vérifie en plus que les concepts firmware x86 dégradent et que la section Raspberry Pi se déclenche. La passe VM est un audit complet conduit à la main avant une release — c'est là que les défauts de v0.17.1 et v0.18.0 ont été trouvés, et Alpine est la seule de ces machines sans systemd |
 | **Tier 3** (fonctionne, non validé sur matériel) | Autres Debian / RHEL / SUSE / Arch-family · **Raspberry Pi OS** (Bookworm, arm64) | Best-effort ; les vérifications dégradent proprement. La *section* Raspberry Pi est couverte par le job CI arm64 ci-dessus ; la *carte* a été auditée une fois sur du matériel physique (un Pi Zero W, trixie, v0.18.1) — voir ci-dessous |
 

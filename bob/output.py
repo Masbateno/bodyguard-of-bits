@@ -207,6 +207,13 @@ def _p(*args, **kwargs) -> None:
 # Status line printers
 # ---------------------------------------------------------------------------
 
+# --min-level filters findings inside display_result, but many status lines are
+# printed directly (audit-start banner, "profile: server", capability notices,
+# "score unchanged", …). Those bypassed the threshold, so `--min-level alert`
+# still leaked OK/INFO framing. Honouring the threshold at the primitive makes
+# the contract uniform: below the threshold, the line does not print, wherever
+# it was called from. Default threshold is 0, so normal output is unchanged;
+# alerts (rank 3) clear every threshold and always show.
 def print_ok(message: str, detail: str = "") -> None:
     """Print a green OK status line.
 
@@ -214,23 +221,31 @@ def print_ok(message: str, detail: str = "") -> None:
         message: Main message text.
         detail:  Optional secondary detail printed on the next line.
     """
+    if not _passes_threshold("ok"):
+        return
     _print_status(f"{_c.green_bold}✔{_c.reset}", "OK", _c.green, message, detail)
 
 
 def print_warn(message: str, detail: str = "") -> None:
     """Print a yellow WARNING status line."""
+    if not _passes_threshold("warn"):
+        return
     from bob.i18n import t as _t
     _print_status(f"{_c.yellow_bold}⚠{_c.reset}", _t("status.warn"), _c.yellow, message, detail)
 
 
 def print_alert(message: str, detail: str = "") -> None:
     """Print a red ALERT status line."""
+    if not _passes_threshold("alert"):
+        return
     from bob.i18n import t as _t
     _print_status(f"{_c.red_bold}✖{_c.reset}", _t("status.alert"), _c.red, message, detail)
 
 
 def print_info(message: str, detail: str = "") -> None:
     """Print a neutral INFO status line."""
+    if not _passes_threshold("info"):
+        return
     _print_status(f"{_c.cyan}ℹ{_c.reset}", "INFO", _c.dim, message, detail)
 
 
@@ -636,6 +651,8 @@ def print_banner(
     user: str,
     date: str,
     labels: dict[str, str],
+    firewalld: str = "",
+    init_system: str = "",
 ) -> None:
     """Print the ASCII art banner with system information.
 
@@ -651,6 +668,8 @@ def print_banner(
         user:        Current user.
         date:        Formatted date string.
         labels:      Dict of translated field labels.
+        firewalld:   firewalld version string (or "non installé").
+        init_system: Service manager string (e.g. "systemd 257", "OpenRC").
     """
     inner = _TERM_WIDTH - 2
     bar_double = "═" * inner
@@ -675,8 +694,10 @@ def print_banner(
         (labels.get("host",     "Host"),     host),
         (labels.get("kernel",   "Kernel"),   kernel),
         (labels.get("ufw",      "UFW"),      ufw_version),
+        (labels.get("firewalld", "firewalld"), firewalld),
         (labels.get("iptables", "iptables"), iptables),
         (labels.get("nftables", "nftables"), nftables),
+        (labels.get("init",     "Init"),     init_system),
         (labels.get("user",     "User"),     user),
         (labels.get("date",     "Date"),     date),
     ]

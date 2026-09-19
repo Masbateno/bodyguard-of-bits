@@ -6,6 +6,107 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.20.2] — 2026-09-19
+
+**A minor release: BOB learns firewalld, the banner names every distro's firewall
+front-end and init manager, and an exhaustive CLI pass on a real Fedora 44 turned
+up seven blind spots.** Field-validated on the real Fedora 44 server
+(`192.168.1.16`, Python 3.14, SELinux enforcing, firewalld) that surfaced the
+core defect in the v0.20.1 pass.
+
+### firewalld recognition (the headline)
+
+Before this release BOB had **zero** firewalld awareness. On the real Fedora 44
+it read the firewalld host as *"UFW not installed / INPUT ACCEPT / all inbound
+traffic allowed / no firewall protection"* — a false positive that hit the entire
+RPM family (Fedora, RHEL, Rocky, Alma) and openSUSE, all of which ship firewalld
+by default. firewalld works by *zones*: the base chain policy stays ACCEPT while
+the zone chains jump to an explicit drop, so a raw-policy reader calls a properly
+firewalled host wide-open.
+
+A new shared `bob/checks/_firewalld.py::FirewalldStatus` collects state from
+`firewall-cmd --state / --get-default-zone / --list-services / --list-ports`
+(returns inactive when the client is absent — the common non-RPM case — and
+`readable=False`, never "inactive", on a refusal). It is threaded into six checks:
+
+- **firewall** — an absent UFW is credited to firewalld by zone instead of alerted.
+- **iptables_nftables** — the ACCEPT base policy is explained as firewalld's design,
+  not flagged wide-open.
+- **firewall_stack** — firewalld's own `table inet firewalld` is no longer counted
+  as an nftables ruleset running "in parallel with UFW".
+- **ipv6** — IPv6 listeners read as filtered by firewalld (same zone rules as IPv4),
+  so no missing "UFW v6 rule" warning and no deduction.
+- **services** — per-port exposure names firewalld instead of "no rule (UFW inactive)".
+- **ports** — an uncovered public port is described as governed by firewalld's
+  default zone, not answered with "enable UFW".
+
+On the real host the risk level went **ÉLEVÉ→MOYEN** and the score **6→7**. The
+credit is **conditional**, proven in both polarities: `systemctl stop firewalld`
+reverts BOB to unprotected/HIGH, and `firewall-cmd --add-port` is reflected live in
+the zone credit line. `--fix --apply` remediation round-trips were validated on the
+RPM family (a sysctl fix applied, persisted, re-audited "resolved", reverted).
+
+### The banner names every distro's firewall front-end and init manager
+
+The header used to show UFW / iptables / nftables only. It now also names
+**firewalld** and the **init / service manager** (systemd on most distros, OpenRC
+on Alpine, `/proc/1/comm` otherwise), so a Fedora host reads
+`UFW: not installed · firewalld: v2.4.0 · iptables: … · nftables: … · Init: systemd 259`
+rather than a lone, misleading "UFW: not installed". There is one Init row (PID 1
+is unique) but one row per firewall front-end (they coexist).
+
+### Seven blind spots from an exhaustive CLI pass on the real Fedora
+
+Every BOB command was run on the Fedora host, plus a full install / uninstall /
+reinstall round-trip (wheel build, package-data — locales, `data/`, `_firewalld.py`
+— entry point):
+
+1. **cockpit socket-activation false negative** (security-relevant). `cockpit.service`
+   is *static + inactive* while `cockpit.socket` is active and listening on 9090.
+   BOB read the service unit alone and reported "installed but not running and not
+   enabled — nothing is listening for it" for a reachable web-admin interface. The
+   v0.20.1 ssh-socket fix covered the *active-service* case; the state detector now
+   also consults the active trigger when the service unit itself is inactive and
+   static/disabled, reading it as `SOCKET_ACTIVATED`. A systematic sweep of every
+   "inactive" verdict against listening ports confirmed cockpit was the only one.
+2. **`--min-level` leaked meta lines** — the threshold filtered findings routed
+   through `display_result`, but directly-printed INFO/OK lines (audit-start banner,
+   profile, GeoIP2 notice, "score unchanged") sailed past. The threshold is now
+   honoured in the `print_ok/info/warn/alert` primitives, so `--min-level alert`
+   drops from 7 leaked INFO to 0 while alerts still show.
+3. **`--watch` dumped risk-context blocks** — each cycle re-printed the full
+   multi-line risk block per high/critical service, burying the terse score+delta
+   line. `display_risk_context` now takes a screen-only `quiet` gate (the archive
+   still records it).
+4. **`--watch` block-buffered when piped** — `bob --watch | tee` showed nothing
+   until Ctrl+C. Watch now line-buffers stdout.
+5. **`--output-dir` mkdir-failure message** was hardcoded English in an otherwise
+   fully-localised tool; now a locale key.
+6. **`--lang <unsupported>`** fell back to English with only a `logger.warning`
+   (invisible); it now prints a visible warning, matching `--profile`.
+7. `--explain` has no entry for the new firewalld OK/INFO keys — **left by design**:
+   the explain registry is remediation-focused, and a healthy firewall has nothing
+   to remediate.
+
+The libvirt/KVM FORWARD-bypass warning was also reworded front-end-neutral ("the
+firewall's FORWARD policy" rather than "UFW's").
+
+### Compatibility
+
+Non-breaking. New JSON keys appear under `--json-full` (`firewall.firewalld_active`,
+`firewall_iptables.firewalld_active`, `ipv6.firewalld_v6`, `ports.uncovered_firewalld`);
+`--json` (the summary) is unchanged. The real-hardware support tier now lists
+Ubuntu Server 26.04 and Fedora 44 alongside Linux Mint 22.3 and Debian 13.
+
+### Tests
+
+10603 → **10676**. New guards: `test_v0202_firewalld_recognized.py` (firewalld across
+six sinks, each with a polarity twin + banner rows), `test_v0202_blind_spots.py`
+(min-level, watch quiet, output-dir i18n), `test_v0202_socket_activated_static.py`
+(cockpit). Eleven new mutations, all killed.
+
+---
+
 ## [v0.20.1] — 2026-09-18
 
 **A patch release: fixes harvested by stress-testing v0.20.0 on real hardware**

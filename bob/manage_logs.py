@@ -150,7 +150,7 @@ def get_or_prompt_log_dir(user_config, config, t) -> Path:
             d.mkdir(parents=True, exist_ok=True)
             chown_to_sudo_user(d)
         except OSError as exc:
-            print(f"  ✖ Cannot create directory {d}: {exc} — falling back to cwd")
+            print(f"  ✖ {t('manage_logs.cannot_create_dir', path=d, error=exc)}")
             d = Path.cwd()
         return d
 

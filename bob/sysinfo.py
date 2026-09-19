@@ -164,6 +164,37 @@ def collect_system_info(version: str, lang: str):
     nft_match = re.search(r"v([\d.]+)", nft_raw)
     nftables_version = nft_match.group(1) if nft_match else ""
 
+    # firewalld version — empty string if the client is not installed. Same
+    # rule as UFW above: the banner names the firewall front-ends that are
+    # present, so a firewalld host is not read as "UFW not installed" and
+    # nothing else. `firewall-cmd --version` prints just the number.
+    fwd_raw = run("firewall-cmd", "--version")
+    fwd_match = re.search(r"[\d.]+", fwd_raw)
+    firewalld_version = fwd_match.group(0) if fwd_match else ""
+
+    # Init / service manager — systemd on most distributions, OpenRC on Alpine,
+    # something else (busybox init, sysvinit) elsewhere. BOB's service and
+    # firewall reasoning assumes systemd in places, so naming the actual manager
+    # up front is honest about what the audit could and could not inspect.
+    init_system = ""
+    sysd_raw = run("systemctl", "--version")
+    sysd_match = re.search(r"systemd\s+(\d+)", sysd_raw)
+    if sysd_match:
+        init_system = f"systemd {sysd_match.group(1)}"
+    else:
+        orc_raw = run("openrc", "--version")
+        orc_match = re.search(r"[\d.]+", orc_raw)
+        if "openrc" in orc_raw.lower():
+            init_system = f"OpenRC {orc_match.group(0)}" if orc_match else "OpenRC"
+        else:
+            try:
+                init_system = _sanitize(
+                    Path("/proc/1/comm").read_text(encoding="ascii",
+                                                   errors="ignore").strip(),
+                    max_len=32)
+            except OSError:
+                init_system = ""
+
     # v0.17.1: both from `os.uname()`, which is a syscall and cannot be
     # missing, rather than from binaries that can be. Arch Linux ships no
     # `hostname` command in its cloud image — systemd's `hostnamectl` replaces
@@ -180,6 +211,8 @@ def collect_system_info(version: str, lang: str):
         ufw_version=ufw_version,
         iptables_version=iptables_version,
         nftables_version=nftables_version,
+        firewalld_version=firewalld_version,
+        init_system=init_system,
         user=_sanitize(audit_user(), max_len=32),
         config_path=str(get_user_home() / ".config" / "bob" / "config.conf"),
         language=lang,

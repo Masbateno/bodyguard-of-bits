@@ -124,7 +124,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  bob v0.14.1    ~34.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 10603 unit tests · 23 doc files · 5+ distros field-tested │
+│                 10676 unit tests · 23 doc files · 5+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -237,6 +237,7 @@ bodyguard-of-bits/
 │   ├── _sysctl_apply.py       ← **NEW v0.18.0** `apply_sysctl(param, conf) -> SysctlResult`: the native `--fix --apply` path for the thirteen sysctl fixes — sets the value, persists exactly one line per key through `atomic_write`, then **reads it back** before claiming success; `parse_param()` refuses any key/value outside the kernel's shape since the value reaches argv — 137 L
 │   ├── _fs.py                 ← **NEW v0.18.0** `strict_is_file` / `strict_is_symlink`: the ≤3.13 pathlib contract (ENOENT/ENOTDIR/EBADF/ELOOP → False, every other OSError raised) built on `stat()`, because from **Python 3.14** `Path.is_file()` answers False to a PermissionError — use wherever the exception *is* the answer — 59 L
 │   ├── checks/                ← 47 check modules, see Module index below
+│   │   ├── _firewalld.py      ← **NEW v0.20.2** `FirewalldStatus.from_system()` — `firewall-cmd` state/default-zone/services/ports, shared by `firewall`, `iptables_nftables`, `ports`, `ipv6` and `services` so a firewalld host (Fedora/RHEL/openSUSE) is not read as "wide open / UFW not installed" — 63 L
 │   │   ├── _run.py            ← shared subprocess helper with _C_LOCALE_ENV (centrality anchor — see Dependency graph)
 │   │   ├── _ufw.py            ← **v0.15.0** one parser for `ufw status numbered`, shared by `ports` and `services` — their two matchers disagreed, and `ALLOW IN 192.168.1.22` made port 22 look covered by a rule for port 80; `parse_rule`, `expand_port_spec`, `ranges_cover`, `read_app_profiles` — 175 L
 │   │   └── ssh/               ← split package since v0.6.0 (was 1296 L monolith)
@@ -299,7 +300,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 293 test files, ~6413 functions, 10603 collected (v0.20.1)
+├── tests/                     ← 296 test files, ~6438 functions, 10676 collected (v0.20.2)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -906,7 +907,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 34,251 LoC across 103 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 293 test files, ~6413 functions, **10603 collected** (v0.20.1) | `pytest --collect-only -q` |
+| Tests | 296 test files, ~6438 functions, **10676 collected** (v0.20.2) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |

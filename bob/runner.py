@@ -33,6 +33,7 @@ from bob.checks.ddns import DdnsSnapshot, check_ddns, ddns_effective_context
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
 from bob.checks.docker import DockerSnapshot, check_docker
 from bob.checks.firewall import FirewallStatus, check_firewall, check_rules, check_ufw_logging
+from bob.checks._firewalld import FirewalldStatus
 from bob.checks.iptables_nftables import IptablesNftSnapshot, check_iptables_nftables
 from bob.checks.umask import UmaskSnapshot, check_umask
 from bob.checks.firewall_stack import FirewallStackSnapshot, check_firewall_stack
@@ -531,13 +532,17 @@ def run_checks(
         summary and no JSON. That is the exact failure v0.14.1 set out to end,
         surviving in the half of the runner the barrier did not reach.
 
-        Two collections stay unguarded on purpose, and the reason is not the
-        NameError cascade — it is verdict honesty. ``fw_status`` and
-        ``ports_snapshot`` are read by nearly every check below. Substituting an
-        empty default for either would not degrade the audit, it would make it
-        *lie*: an unreadable port table would render as "nothing is listening",
-        and an unreadable firewall as a firewall with no rules. A failed audit
-        an operator can see is worth more than a clean one that is wrong.
+        Three collections stay unguarded on purpose, and the reason is not the
+        NameError cascade — it is verdict honesty. ``fw_status``,
+        ``fwd_status`` and ``ports_snapshot`` are read by nearly every check
+        below. Substituting an empty default for any would not degrade the
+        audit, it would make it *lie*: an unreadable port table would render as
+        "nothing is listening", an unreadable UFW as a firewall with no rules,
+        and an absent ``fwd_status`` would read a firewalld host as unprotected
+        — the exact false positive v0.20.2 exists to stop. (``FirewalldStatus``
+        also never raises: it queries via ``run_result`` and returns a False
+        state rather than propagating.) A failed audit an operator can see is
+        worth more than a clean one that is wrong.
 
         Any variable a guarded block assigns must be bound to a safe default
         *before* the block, or not read after it.
@@ -613,7 +618,8 @@ def run_checks(
     emit_section("firewall")
 
     fw_status  = FirewallStatus.from_system()
-    fw_result  = check_firewall(fw_status, t=t)
+    fwd_status = FirewalldStatus.from_system()
+    fw_result  = check_firewall(fw_status, firewalld=fwd_status, t=t)
     engine.apply(fw_result, section="firewall")
     display_result(fw_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
@@ -647,6 +653,7 @@ def run_checks(
         ufw_verbose, ufw_numbered, t, fw_status.ipv6_ufw_enabled,
         listening_ports=all_listening_ports,
         app_profiles=_ufw_app_profiles,
+        firewalld_active=fwd_status.active,
     )
     engine.apply(rules_result, section="firewall_rules")
     display_result(rules_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
@@ -669,7 +676,7 @@ def run_checks(
         emit_section("firewall_iptables")
         with _core("firewall_iptables"):
             ipt_snapshot  = IptablesNftSnapshot.from_system()
-            ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, t=t)
+            ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, firewalld=fwd_status, t=t)
             engine.apply(ipt_result, section="firewall_iptables")
             display_result(ipt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if not config.quiet:
@@ -703,7 +710,8 @@ def run_checks(
     ipv6_snapshot = IPv6Snapshot()
     with _core("ipv6"):
         ipv6_snapshot = IPv6Snapshot.from_system()
-    _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active)
+    _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active,
+         firewalld_active=fwd_status.active)
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES
@@ -768,12 +776,14 @@ def run_checks(
                 _port_note = t("service_risk.nonstandard_port_note")
             display_risk_context(snap.service.label, config.lang, t, report,
                                  context_note=_risk_note,
-                                 is_local=(network_context == "local"))
+                                 is_local=(network_context == "local"),
+                                 quiet=config.quiet)
             if _port_note and not config.quiet:
                 print_info(_port_note)
         svc_result = check_single_service_display(
             snap, network_context, t, report, config.verbose,
             quiet=config.quiet, ufw_active=fw_status.active,
+            firewalld_active=fwd_status.active,
         )
         engine.apply(svc_result, section="services")
         # v0.17.1 — only a service BOB judged *active* has really had its ports
@@ -810,6 +820,7 @@ def run_checks(
         network_context=network_context,
         default_incoming_policy=fw_status.incoming_policy,
         ufw_active=fw_status.active,
+        firewalld_active=fwd_status.active,
         t=t,
     )
     engine.apply(ports_result, section="ports")
@@ -1061,7 +1072,10 @@ def run_checks(
         net_snapshot=net_snapshot,
         hardening_snapshot=hardening_snapshot,
         ipv6_snapshot=ipv6_snapshot,
-        fw_active=fw_status.active,
+        # A firewall is active if UFW *or* firewalld is running — without the
+        # firewalld arm, the posture floor lifted a firewalld-protected host's
+        # risk level to HIGH ("firewall inactive"), measured on Fedora 44.
+        fw_active=fw_status.active or fwd_status.active,
         fw_policy=fw_status.incoming_policy or "unknown",
         network_context=network_context,
         degraded_sections=tuple(_degraded),

@@ -204,6 +204,7 @@ def _ipt_has_conntrack(rules: str) -> bool:
 def check_iptables_nftables(
     snapshot: IptablesNftSnapshot,
     ufw_installed: bool = False,
+    firewalld=None,
     t=None,
 ) -> CheckResult:
     """
@@ -215,6 +216,20 @@ def check_iptables_nftables(
     _t = t if t is not None else _identity_t
     result = CheckResult()
 
+    # firewalld is the active front-end: it keeps the base chain policy at
+    # ACCEPT and filters inside its zone chains (a jump to an explicit
+    # drop/reject at the end). Reading the raw base policy here would call a
+    # firewalled host wide-open — the false positive measured on a real Fedora
+    # 44. Credit firewalld and report what its default zone exposes; the zone
+    # rules themselves are firewalld's to audit, not this raw-policy check's.
+    if firewalld is not None and firewalld.active:
+        svc = ", ".join(firewalld.services + firewalld.ports) or "—"
+        result.ok(
+            message=_t("firewall_iptables.firewalld_active",
+                       zone=firewalld.default_zone or "?", services=svc),
+            key="firewall_iptables.firewalld_active",
+        )
+        return result
 
     if snapshot.query_failed and snapshot.backend == "none":
         # A backend binary is installed but its ruleset could not be read. The

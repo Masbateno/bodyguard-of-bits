@@ -105,7 +105,7 @@ class IPv6Snapshot:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None) -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False) -> CheckResult:
     """
     Check IPv6 firewall consistency.
 
@@ -194,7 +194,11 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             result.ok(message=_t("ipv6.both_disabled"), key="ipv6.both_disabled")
 
         # --- Per-port gap check (only when IPv6 is active on both sides) ---
-        if snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled:
+        # firewalld filters IPv6 through the same zone rules as IPv4, so a
+        # missing UFW v6 rule is not a gap here — UFW is not the firewall.
+        if snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled and firewalld_active:
+            result.ok(message=_t("ipv6.firewalld_v6"), key="ipv6.firewalld_v6")
+        elif snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled:
             covered_set = set(snapshot.ufw_v6_covered)
             port_deductions = 0
             for port_proto in snapshot.ipv6_listeners:
@@ -219,7 +223,7 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     # sits outside the branch chain, so heading that chain with the unknown case
     # was not enough: an unreadable policy still produced a clean bill of
     # coverage against rules that were never read.
-    if snapshot.ufw_ipv6_enabled is not None and not found_issue and not (
+    if snapshot.ufw_ipv6_enabled is not None and not found_issue and not firewalld_active and not (
         not snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled
     ):
         if snapshot.ipv6_listeners:

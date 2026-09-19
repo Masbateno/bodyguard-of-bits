@@ -172,6 +172,10 @@ bob/
 │   └── cron.py          # Curses TUI for --install-cron / --manage-cron
 ├── checks/
 │   ├── __init__.py
+│   ├── _firewalld.py       # FirewalldStatus — firewall-cmd state/zone/services,
+│   │                       #   shared by firewall, iptables_nftables, ports,
+│   │                       #   ipv6 and services so a firewalld host is not read
+│   │                       #   as "wide open / UFW not installed" (v0.20.2)
 │   ├── _run.py             # Shared _run() subprocess helper + C locale env,
 │   │                       #   run_result() — stdout *and* exit status, for
 │   │                       #   callers that must not read "could not run" as
@@ -497,7 +501,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2449 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2459 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

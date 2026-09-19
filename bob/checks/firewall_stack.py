@@ -247,6 +247,11 @@ def _has_user_nft_rules(nft_output: str) -> bool:
 
     Excluded from flagging:
     - Tables starting with "ufw"  → UFW's own nftables backend tables.
+    - The "firewalld" table        → firewalld's own nftables backend (Fedora,
+      RHEL, openSUSE). It IS the firewall, not a rogue ruleset beside one;
+      flagging it framed a firewalld host as "nftables in parallel with UFW"
+      (measured on Fedora 44). firewalld itself is credited by the firewall
+      checks via FirewalldStatus.
     - Standard iptables table names (filter, nat, mangle, raw, security)
       → created by iptables-nft compatibility layer; they ARE the iptables
         rules, not additional rules. Systems using iptables 1.x "(nf_tables)"
@@ -265,7 +270,9 @@ def _has_user_nft_rules(nft_output: str) -> bool:
         m = re.match(r"^table\s+\S+\s+(\S+)", line)
         if m:
             table_name = m.group(1)
-            if not table_name.startswith("ufw") and table_name not in _IPTABLES_COMPAT:
+            if (not table_name.startswith("ufw")
+                    and table_name != "firewalld"
+                    and table_name not in _IPTABLES_COMPAT):
                 return True
     return False
 

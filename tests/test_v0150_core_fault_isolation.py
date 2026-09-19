@@ -44,7 +44,7 @@ _RUNNER = pathlib.Path(__file__).resolve().parent.parent / "bob" / "runner.py"
 
 # Collections that must abort the audit rather than degrade, because an empty
 # default for them would be read as fact by nearly every check below.
-_DELIBERATELY_UNGUARDED = {"FirewallStatus", "PortsSnapshot"}
+_DELIBERATELY_UNGUARDED = {"FirewallStatus", "FirewalldStatus", "PortsSnapshot"}
 
 
 def _run_checks_body() -> ast.FunctionDef:

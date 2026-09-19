@@ -454,6 +454,16 @@ def _run(argv=None) -> int:
     i18n.init(lang=config.lang)
     t = i18n.t
 
+    # An explicit --lang=<unsupported> falls back to English, but that fallback
+    # was only a logger.warning — invisible to the user, who then wonders why
+    # `--lang de` produced English with no word about it. --profile already
+    # warns on an unknown name; --lang now matches. Auto-detected languages are
+    # always normalised to a supported code, so only an explicit request reaches
+    # this branch.
+    if config.lang not in i18n.SUPPORTED_LANGS:
+        output.print_warn(t("cli.lang.unsupported",
+                            lang=config.lang, fallback=i18n.DEFAULT_LANG))
+
     # F6 (v0.12.0): validate --check / --skip tokens BEFORE the root gate.
     # The validation needs no privileges, so an unknown section name should
     # report "unknown check 'X'" rather than first demanding sudo. Pre-fix,
@@ -615,10 +625,14 @@ def _run(argv=None) -> int:
                                  if sys_info.ufw_version else not_installed),
                     iptables=sys_info.iptables_version or not_installed,
                     nftables=sys_info.nftables_version or not_installed,
+                    firewalld=(f"v{sys_info.firewalld_version}"
+                               if sys_info.firewalld_version else not_installed),
+                    init_system=sys_info.init_system or not_installed,
                     user=sys_info.user,
                     date=datetime.now().strftime("%d/%m/%Y %H:%M"),
                     labels={k: t(f"banner.{k}") for k in
-                            ("system", "host", "kernel", "ufw", "iptables", "nftables", "user", "date")},
+                            ("system", "host", "kernel", "ufw", "firewalld",
+                             "iptables", "nftables", "init", "user", "date")},
                 )
                 output.print_info(t("audit.starting"))
                 output.print_info(t("audit.audit_profile", profile=active_profile.name))

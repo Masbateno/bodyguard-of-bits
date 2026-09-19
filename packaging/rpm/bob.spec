@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.20.1
+Version:        0.20.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,19 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Sep 19 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.2-1
+- Minor: firewalld recognition across the RPM/SUSE family, a banner naming
+  every distro's firewall front-end and init manager, and seven blind spots
+  from an exhaustive CLI pass on a real Fedora 44. BOB was 100% UFW-centric and
+  declared a firewalld-protected host "UFW not installed / wide open"; a shared
+  FirewalldStatus (firewall-cmd) is now threaded into the firewall,
+  iptables/nftables, firewall-stack, ipv6, services and ports checks. Credit is
+  conditional (firewalld stopped reverts to unprotected/HIGH); both polarities
+  field-validated on Fedora 44. Banner now shows firewalld + init manager.
+  cockpit socket-activation false negative fixed (static+inactive service on an
+  active .socket). --min-level filters directly-printed meta; --watch is
+  screen-silent under quiet and line-buffers when piped; --output-dir message
+  localised; --lang <unsupported> now warns. Non-breaking. Tests 10603 -> 10676.
 * Fri Sep 18 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.1-1
 - Patch: six fixes harvested by stress-testing v0.20.0 on real hardware.
   A FIFO /etc/samba/smb.conf no longer hangs BOB forever (the samba config

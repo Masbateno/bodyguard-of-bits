@@ -159,8 +159,16 @@ def display_result(
 
 def display_risk_context(label: str, lang: str, t, report,
                          context_note: str | None = None,
-                         is_local: bool = False) -> None:
-    """Display two-axis risk context for a high/critical service."""
+                         is_local: bool = False, quiet: bool = False) -> None:
+    """Display two-axis risk context for a high/critical service.
+
+    ``quiet`` silences the *screen* only, never the archive — the same
+    contract ``display_result`` follows. Watch mode (which runs each cycle
+    with ``config.quiet=True`` but leaves the output module un-quieted so it
+    can print its own summary) relied on this: without it every cycle dumped
+    the full multi-line risk block for each high/critical service, drowning
+    the terse score-and-delta line watch exists to show.
+    """
     # M-3 (v0.8.1 audit): centralised transform in ``bob.registry`` to
     # close the 3-way drift between this site, ``print_audit_summary``
     # below, and ``bob.explain._render_dynamic_service_explain``.
@@ -183,18 +191,19 @@ def display_risk_context(label: str, lang: str, t, report,
 
     level_display = f"{level} • LAN" if is_local else level
 
-    from bob.output import print_risk_context, print_info
-    print_risk_context(
-        title=t("risk_context.title"),
-        level=level_display,
-        exposure_label=t("risk_context.exposure"),
-        exposure=exposure,
-        threat_label=t("risk_context.threat"),
-        threat=threat,
-        risk_tier=risk_tier,
-    )
-    if context_note:
-        print_info(context_note)
+    if not quiet:
+        from bob.output import print_risk_context, print_info
+        print_risk_context(
+            title=t("risk_context.title"),
+            level=level_display,
+            exposure_label=t("risk_context.exposure"),
+            exposure=exposure,
+            threat_label=t("risk_context.threat"),
+            threat=threat,
+            risk_tier=risk_tier,
+        )
+        if context_note:
+            print_info(context_note)
     report.write_finding("INFO",
                          f"[{t('risk_context.title')} — {level_display}] {exposure}")
 
@@ -204,11 +213,13 @@ def display_risk_context(label: str, lang: str, t, report,
 # ---------------------------------------------------------------------------
 
 def check_single_service_display(snap, network_context, t, report, verbose,
-                                  quiet: bool = False, ufw_active: bool = True):
+                                  quiet: bool = False, ufw_active: bool = True,
+                                  firewalld_active: bool = False):
     """Run check for a single service and return its CheckResult."""
     from bob.checks.services import check_services
     result = check_services([snap], network_context=network_context,
-                            ufw_active=ufw_active, t=t)
+                            ufw_active=ufw_active, t=t,
+                            firewalld_active=firewalld_active)
     display_result(result, report, verbose, quiet=quiet)
     return result
 

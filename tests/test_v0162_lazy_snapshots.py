@@ -81,16 +81,21 @@ class TestEverySectionTakesAFactory:
 class TestTheEagerCoreIsTheDocumentedOne:
     """The always-on pipeline collects eagerly on purpose — its snapshots feed
     each other and the caller, so they cannot be factories. That list is fixed;
-    a twelfth arrival means someone widened the unconditional cost of every
+    a thirteenth arrival means someone widened the unconditional cost of every
     audit, including ``--check=ssh``.
     """
 
     #: Documented in the deferred-work note as staying eager permanently.
+    #: FirewalldStatus (v0.20.2) joins the firewall-posture core: it is read
+    #: once (a single `firewall-cmd --state`, short-circuited when the binary
+    #: is absent — the common non-RPM case) and feeds check_firewall,
+    #: check_iptables_nftables, check_ports, check_ipv6, check_services and the
+    #: posture floor (fw_active), exactly like FirewallStatus.
     ALWAYS_ON = frozenset({
         "FirewallStatus", "PortsSnapshot", "IptablesNftSnapshot",
         "FirewallStackSnapshot", "NetworkContextSnapshot", "IPv6Snapshot",
         "DdnsSnapshot", "LogsSnapshot", "DockerSnapshot", "VirtSnapshot",
-        "HardeningSnapshot",
+        "HardeningSnapshot", "FirewalldStatus",
     })
 
     @staticmethod
