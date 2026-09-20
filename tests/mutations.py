@@ -2746,6 +2746,46 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "tool; the hardcoded English string broke a French audit's output",
     ),
     Mutation(
+        id="profile/active-display-manager-not-read-as-desktop",
+        file="bob/sysinfo.py",
+        old="    if _run(\"systemctl\", \"is-active\", \"display-manager.service\") == \"active\":\n        return \"desktop\"",
+        new="    if _run(\"systemctl\", \"is-active\", \"display-manager.service\") == \"active\":\n        return \"server\"",
+        kills=("tests/test_v0203_desktop_profile_autodetect.py::TestDesktopAutodetect::test_active_display_manager_is_desktop",),
+        reason="an active display-manager (gdm/lightdm/sddm) is a graphical host "
+               "even when get-default is not graphical.target; it must resolve to "
+               "the desktop profile",
+    ),
+    Mutation(
+        id="snap/timer-flagged-as-manually-created",
+        file="bob/checks/systemd_timers.py",
+        old="        and not timer_name.startswith(\"snap.\")",
+        new="        and not timer_name.startswith(\"snap.DISABLED\")",
+        kills=("tests/test_v0203_snap_timer_not_manual.py::test_snap_timer_is_not_manual",),
+        reason="snapd writes its timers into /etc/systemd/system/ like a hand-added "
+               "unit; without the snap.* exclusion every snap's timers are listed "
+               "as 'manually created root timers' (noise, measured on Ubuntu 26.04)",
+    ),
+    Mutation(
+        id="podman/container-audit-is-docker-only",
+        file="bob/checks/docker_audit.py",
+        old="        runtime = next((rt for rt in _RUNTIMES if _command_exists(rt)), \"\")",
+        new="        runtime = next((rt for rt in (\"docker\",) if _command_exists(rt)), \"\")",
+        kills=("tests/test_v0203_podman_container_audit.py::TestPodmanAudit::test_podman_only_is_scanned",),
+        reason="a Podman host must be scanned for privileged/host-network/root "
+               "containers too; scanning only docker left a `podman run "
+               "--privileged` container invisible (measured on real Fedora 44)",
+    ),
+    Mutation(
+        id="snap/service-state-ignores-snap-units",
+        file="bob/checks/services.py",
+        old="    if getattr(service.detection, \"snap\", None):\n        snap_state = _snap_service_state(service)",
+        new="    if False:\n        snap_state = _snap_service_state(service)",
+        kills=("tests/test_v0203_snap_service_state.py::test_active_snap_service_reads_active",),
+        reason="a snap-packaged service runs under snap.<pkg>.* units, not its "
+               "deb-style names; without consulting them BOB reports a serving "
+               "snap (Nextcloud on 9090/80) as 'installed but not running'",
+    ),
+    Mutation(
         id="blindspot/static-service-active-socket-read-as-stopped",
         file="bob/checks/services.py",
         old="        if _active_trigger(svc_name):\n            return ServiceState.SOCKET_ACTIVATED\n        return ServiceState.INACTIVE_DISABLED",

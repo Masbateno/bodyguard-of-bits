@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.20.2
+Version:        0.20.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,19 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Sep 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.3-1
+- Minor: the audit reads Podman and snap-packaged services, and auto-detects the
+  desktop profile. Three scope gaps closed, each field-validated on real
+  hardware. Podman: container hardening was Docker-only (a privileged podman
+  container was invisible on real Fedora 44); DockerAuditSnapshot now scans
+  docker or podman via one Docker-compatible inspect parser, names the runtime,
+  and skips the Docker-only userns section for podman. Snap services: state
+  detection iterated deb unit names and reported a snap service stopped (real
+  Ubuntu 26.04: the Nextcloud snap served 200 while BOB said "not running"); now
+  resolved via `snap services <pkg>`. Desktop profile auto-detection: the
+  fallback was a hardcoded server, over-strict on graphical hosts; BOB now picks
+  desktop when a display-manager is active (explicit/saved profile always wins).
+  Non-breaking. containerd/CRI remains a follow-up. Tests 10676 -> 10701.
 * Sat Sep 19 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.2-1
 - Minor: firewalld recognition across the RPM/SUSE family, a banner naming
   every distro's firewall front-end and init manager, and seven blind spots

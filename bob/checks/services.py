@@ -688,6 +688,52 @@ def _openrc_unit_state(svc_name: str) -> ServiceState:
     return (ServiceState.INACTIVE_ENABLED if enabled
             else ServiceState.INACTIVE_DISABLED)
 
+def _snap_service_state(service: Service) -> ServiceState:
+    """Resolve state from snap-managed units, not the deb-style unit names.
+
+    A snap-packaged service runs under snapd's own units
+    (``snap.<pkg>.<svc>.service``), so ``systemctl is-active nextcloud`` is
+    inactive while ``snap.nextcloud.apache.service`` is active. `_detect_state`
+    iterates ``service.services`` — the *deb* names — and therefore reported a
+    snap service as stopped. Measured on a real Ubuntu 26.04 where Nextcloud,
+    installed as a snap, served HTTP 200 while BOB said "installed but not
+    running".
+
+    ``snap services <pkg>`` lists each service with a Startup (enabled/disabled)
+    and Current (active/inactive) column::
+
+        Service             Startup   Current   Notes
+        nextcloud.apache    enabled   active    -
+
+    Returns the highest-priority state across every snap service, or UNKNOWN
+    when snap is absent / the package has no services (leaving the deb-unit
+    verdict untouched).
+    """
+    best = ServiceState.UNKNOWN
+    for pkg in service.detection.snap:
+        out = _run("snap", "services", pkg)
+        if not out or "error" in out.lower():
+            continue
+        for line in out.splitlines():
+            parts = line.split()
+            # Skip the header row and any short/blank line.
+            if len(parts) < 3 or parts[0].lower() == "service":
+                continue
+            is_active  = parts[2] == "active"
+            is_enabled = parts[1] == "enabled"
+            if is_active and is_enabled:
+                state = ServiceState.ACTIVE_ENABLED
+            elif is_active:
+                state = ServiceState.ACTIVE_DISABLED
+            elif is_enabled:
+                state = ServiceState.INACTIVE_ENABLED
+            else:
+                state = ServiceState.INACTIVE_DISABLED
+            if _STATE_PRIORITY[state] > _STATE_PRIORITY[best]:
+                best = state
+    return best
+
+
 def _detect_state(service: Service) -> ServiceState:
     """
     Determine the effective systemd state of a service.
@@ -695,6 +741,10 @@ def _detect_state(service: Service) -> ServiceState:
     Aggregates across all units in service.services: returns the
     highest-priority state found. This prevents a first-match bug
     where an inactive unit would mask an active sibling.
+
+    A snap-packaged service (``detection.snap``) is also resolved through its
+    snap units, so a service whose deb-style unit names are all inactive but
+    which runs under ``snap.<pkg>.*`` reads as active, not stopped.
 
     Priority: ACTIVE_ENABLED > ACTIVE_DISABLED > INACTIVE_ENABLED
               > INACTIVE_DISABLED > UNKNOWN
@@ -707,6 +757,14 @@ def _detect_state(service: Service) -> ServiceState:
         state = _detect_single_unit_state(svc_name)
         if _STATE_PRIORITY[state] > _STATE_PRIORITY[best]:
             best = state
+    # getattr, not attribute access: a real Service always carries a Detection,
+    # but hand-built test fixtures (and any future caller) may pass a bare dict
+    # or omit it — a missing/empty snap list simply means "no snap units to
+    # resolve", never a crash.
+    if getattr(service.detection, "snap", None):
+        snap_state = _snap_service_state(service)
+        if _STATE_PRIORITY[snap_state] > _STATE_PRIORITY[best]:
+            best = snap_state
     return best
 
 def _resolve_ports(service: Service) -> list[str]:

@@ -1,11 +1,17 @@
 """
-Docker container security audit for BOB (CHECK 38).
+Container security audit for BOB (CHECK 38).
 
-Inspects running Docker containers for dangerous security misconfigurations:
+Inspects running containers for dangerous security misconfigurations:
   - Privileged containers     (--privileged)
-  - Docker socket in containers (/var/run/docker.sock mounted)
-  - User namespace remapping  (userns-remap in daemon.json)
+  - Runtime socket in containers (docker.sock / podman.sock mounted)
+  - User namespace remapping  (userns-remap in daemon.json — Docker only)
   - Containers running as root
+
+Supports **Docker and Podman**. Podman's CLI is Docker-compatible — `podman ps`
+and `podman inspect` emit the same JSON shape (HostConfig.Privileged,
+NetworkMode, Mounts, Config.User) — so one parser serves both. Before v0.20.3
+this was Docker-only: on a real Fedora 44 a `podman run --privileged` container
+was completely invisible (measured). Docker is preferred when both are present.
 
 The UFW bypass / iptables / exposed-port audit is handled by the existing
 docker.py (ANALYSE DOCKER section).  This check focuses on container hardening.
@@ -31,6 +37,16 @@ _DAEMON_JSON = Path("/etc/docker/daemon.json")
 _DOCKER_SOCK = "/var/run/docker.sock"
 _INSPECT_TIMEOUT = 20  # seconds
 
+# Container runtimes BOB can inspect, in preference order. Both expose a
+# Docker-compatible `ps -q` / `inspect` surface, so the parser is shared.
+_RUNTIMES = ("docker", "podman")
+# Each runtime's control socket — mounting it inside a container is
+# root-equivalent on the host, whichever runtime it belongs to.
+_RUNTIME_SOCKETS = {
+    "docker": "/var/run/docker.sock",
+    "podman": "/run/podman/podman.sock",
+}
+
 
 # ---------------------------------------------------------------------------
 # Snapshot
@@ -52,6 +68,7 @@ class DockerAuditSnapshot:
         scan_error:                  True if docker inspect failed (daemon down, etc.).
     """
     docker_installed:          bool      = False
+    runtime:                   str       = ""
     running_count:             int       = 0
     privileged_containers:     list[str] = field(default_factory=list)
     socket_mounted_containers: list[str] = field(default_factory=list)
@@ -62,16 +79,21 @@ class DockerAuditSnapshot:
 
     @classmethod
     def from_system(cls) -> "DockerAuditSnapshot":
-        """Inspect running containers. Never raises."""
-        if not _command_exists("docker"):
-            return cls(docker_installed=False)
+        """Inspect running containers via Docker or Podman. Never raises."""
+        runtime = next((rt for rt in _RUNTIMES if _command_exists(rt)), "")
+        if not runtime:
+            return cls(runtime="", docker_installed=False)
 
-        userns_remap = _read_userns_remap()
+        is_docker = runtime == "docker"
+        # userns-remap lives in Docker's daemon.json; Podman has no equivalent
+        # daemon config, so the check is Docker-only.
+        userns_remap = _read_userns_remap() if is_docker else False
+        sock_path = _RUNTIME_SOCKETS.get(runtime, _DOCKER_SOCK)
 
         # Get running container IDs
         try:
             proc = subprocess.run(
-                ["docker", "ps", "-q"],
+                [runtime, "ps", "-q"],
                 capture_output=True, text=True,
                 timeout=10, env=_C_LOCALE_ENV,
             )
@@ -79,10 +101,12 @@ class DockerAuditSnapshot:
                 line.strip() for line in proc.stdout.splitlines() if line.strip()
             ]
         except (subprocess.TimeoutExpired, OSError):
-            return cls(docker_installed=True, userns_remap=userns_remap, scan_error=True)
+            return cls(runtime=runtime, docker_installed=is_docker,
+                       userns_remap=userns_remap, scan_error=True)
 
         if not container_ids:
-            return cls(docker_installed=True, userns_remap=userns_remap)
+            return cls(runtime=runtime, docker_installed=is_docker,
+                       userns_remap=userns_remap)
 
         # Bulk inspect — one call for all containers
         privileged:     list[str] = []
@@ -92,13 +116,13 @@ class DockerAuditSnapshot:
 
         try:
             proc = subprocess.run(
-                ["docker", "inspect"] + container_ids,
+                [runtime, "inspect"] + container_ids,
                 capture_output=True, text=True,
                 timeout=_INSPECT_TIMEOUT, env=_C_LOCALE_ENV,
             )
             if proc.returncode != 0:
                 raise subprocess.SubprocessError(
-                    f"docker inspect exited {proc.returncode}: {proc.stderr.strip()}"
+                    f"{runtime} inspect exited {proc.returncode}: {proc.stderr.strip()}"
                 )
             containers = json.loads(proc.stdout)
             for c in containers:
@@ -109,10 +133,13 @@ class DockerAuditSnapshot:
                     privileged.append(name)
 
                 for mount in c.get("Mounts", []):
-                    if mount.get("Source") == _DOCKER_SOCK:
+                    if mount.get("Source") in (_DOCKER_SOCK, sock_path):
                         sock_mounted.append(name)
                         break
 
+                # Podman reports the host network as "host"; Docker too. Podman
+                # also uses "NetworkMode":"host" under HostConfig, so the same
+                # read works for both.
                 if host_config.get("NetworkMode") == "host":
                     host_net.append(name)
 
@@ -122,14 +149,16 @@ class DockerAuditSnapshot:
 
         except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
             return cls(
-                docker_installed=True,
+                runtime=runtime,
+                docker_installed=is_docker,
                 running_count=len(container_ids),
                 userns_remap=userns_remap,
                 scan_error=True,
             )
 
         return cls(
-            docker_installed=True,
+            runtime=runtime,
+            docker_installed=is_docker,
             running_count=len(container_ids),
             privileged_containers=sorted(privileged),
             socket_mounted_containers=sorted(sock_mounted),
@@ -196,7 +225,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             ),
             points=1,
             detail=_t("docker_hardening.privileged_detail"),
-            cmd=f"docker inspect --format '{{{{.HostConfig.Privileged}}}}' {first}",
+            cmd=f"{snapshot.runtime or 'docker'} inspect --format '{{{{.HostConfig.Privileged}}}}' {first}",
             cmd_type="check",
         )
 
@@ -217,7 +246,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             ),
             points=1,
             detail=_t("docker_hardening.socket_mounted_detail"),
-            cmd=f"docker inspect --format '{{{{json .Mounts}}}}' {first}",
+            cmd=f"{snapshot.runtime or 'docker'} inspect --format '{{{{json .Mounts}}}}' {first}",
             cmd_type="check",
         )
 
@@ -231,24 +260,28 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             key="docker_hardening.ok",
         )
 
-    # --- userns-remap (INFO only) ---
-    if not snapshot.userns_remap:
-        result.info(
-            message=_t("docker_hardening.userns_not_configured"),
-            detail=_t("docker_hardening.userns_not_configured_detail"),
-            # create-if-absent only: never clobbers an existing daemon.json (it
-            # may already hold log-driver / registry-mirrors / iptables keys).
-            # If the file exists the command is a no-op — the detail explains the
-            # manual merge. No human-language text in the cmd (would leak locale).
-            cmd='test -f /etc/docker/daemon.json || { echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker; }',
-            cmd_type="fix",
-            key="docker_hardening.userns_not_configured",
-        )
-    else:
-        result.ok(
-            message=_t("docker_hardening.userns_configured"),
-            key="docker_hardening.userns_configured",
-        )
+    # --- userns-remap (INFO only, Docker-only) ---
+    # Podman has no daemon.json userns-remap knob (it is rootless-capable by
+    # design and remaps per-container), so this section is meaningless there —
+    # but the root/host-network sections below still apply to Podman.
+    if snapshot.docker_installed:
+        if not snapshot.userns_remap:
+            result.info(
+                message=_t("docker_hardening.userns_not_configured"),
+                detail=_t("docker_hardening.userns_not_configured_detail"),
+                # create-if-absent only: never clobbers an existing daemon.json (it
+                # may already hold log-driver / registry-mirrors / iptables keys).
+                # If the file exists the command is a no-op — the detail explains the
+                # manual merge. No human-language text in the cmd (would leak locale).
+                cmd='test -f /etc/docker/daemon.json || { echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker; }',
+                cmd_type="fix",
+                key="docker_hardening.userns_not_configured",
+            )
+        else:
+            result.ok(
+                message=_t("docker_hardening.userns_configured"),
+                key="docker_hardening.userns_configured",
+            )
 
     # --- Root containers (INFO only) ---
     if snapshot.root_containers:

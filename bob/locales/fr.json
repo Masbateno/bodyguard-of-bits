@@ -201,7 +201,7 @@
       "open_local": "restreint au réseau local par règle UFW",
       "deny": "bloqué explicitement par règle UFW",
       "no_rule": "couvert par la politique deny par défaut",
-      "no_rule_ufw_inactive": "aucune protection pare-feu active (UFW inactif)",
+      "no_rule_ufw_inactive": "aucune protection pare-feu active",
       "no_rule_firewalld": "pare-feu géré par firewalld (pas UFW) — joignable seulement si sa zone autorise ce port",
       "loopback": "lié uniquement sur localhost — la règle UFW n'a aucun effet sur l'accès externe",
       "loopback_no_rule": "lié uniquement sur localhost — aucune règle UFW requise (couvert par refus par défaut)",
@@ -223,7 +223,7 @@
     "listening_verbose_hint": "Utilisez -v pour afficher le tableau complet des ports",
     "process_disclaimer": "Ce port appartient à {process} — le bloquer peut interrompre l'application. N'exécutez la commande ci-dessus que si vous savez précisément ce que vous faites.",
     "uncovered_default_deny": "Port {port} en écoute sur toutes les interfaces — aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
-    "uncovered_ufw_inactive": "Port {port} en écoute sur toutes les interfaces — activer UFW pour le filtrer",
+    "uncovered_ufw_inactive": "Port {port} en écoute sur toutes les interfaces — aucun pare-feu actif pour le filtrer",
     "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone par défaut de firewalld, pas par une règle UFW"
   },
   "logs": {
@@ -1120,6 +1120,7 @@
     "section_unavailable": "Section non évaluée ({section}) — une erreur interne a empêché ce contrôle de s'exécuter",
     "starting": "Démarrage de l'audit",
     "audit_profile": "Profil d'audit : {profile}",
+    "profile_autodetected_desktop": "Environnement de bureau détecté — profil « desktop » utilisé (assouplit backup/auditd/mac_policy). Forcer avec --profile server.",
     "profile_not_found": "Profil '{profile}' introuvable — utilisation du profil par défaut (server)",
     "profile_search_blocked": "Profil '{profile}' impossible à chercher — {dirs} illisible — utilisation du profil par défaut (server)",
     "profile_shadow_unchecked": "Profil '{profile}' lu depuis {path} — {dirs} n'a pas pu être parcouru et pourrait contenir un profil du même nom",
@@ -3507,7 +3508,7 @@
     "internet_facing_local": "derrière NAT / pas d'IP publique directe",
     "internet_facing_ddns": "DDNS actif — ports accessibles depuis internet",
     "firewall": "Pare-feu",
-    "firewall_inactive": "UFW inactif — tous les ports non filtrés",
+    "firewall_inactive": "Aucun pare-feu actif — tous les ports non filtrés",
     "firewall_allow_all": "politique par défaut ALLOW — aucun filtrage",
     "firewall_policy": "actif — politique par défaut {policy} en entrée",
     "open_ports": "Ports en écoute",
@@ -3617,15 +3618,15 @@
     "ok": "Aucun motif risqué trouvé dans les tâches cron"
   },
   "docker_hardening": {
-    "scan_error": "Démon Docker inaccessible — vérification de sécurité des conteneurs ignorée",
+    "scan_error": "Runtime de conteneurs inaccessible — vérification de sécurité des conteneurs ignorée",
     "no_containers": "Aucun conteneur en cours d'exécution — rien à auditer",
     "ok": "{count} conteneur(s) en cours d'exécution — aucun problème de sécurité critique",
     "privileged": "{count} conteneur(s) en mode privilégié : {containers}",
     "privileged_detail": "Les conteneurs privilégiés ont un accès complet au noyau et aux périphériques de l'hôte. Cela désactive effectivement l'isolation des conteneurs. Remplacez par des capacités ciblées (--cap-add) si des privilèges élevés sont nécessaires.",
     "privileged_reason": "{count} conteneur(s) privilégié(s) en cours d'exécution",
-    "socket_mounted": "{count} conteneur(s) avec la socket Docker montée : {containers}",
+    "socket_mounted": "{count} conteneur(s) avec la socket de contrôle du runtime montée : {containers}",
     "socket_mounted_detail": "Monter /var/run/docker.sock dans un conteneur donne un contrôle équivalent à root sur l'hôte. Tout processus du conteneur peut créer de nouveaux conteneurs privilégiés ou s'échapper du bac à sable.",
-    "socket_mounted_reason": "{count} conteneur(s) avec la socket Docker montée",
+    "socket_mounted_reason": "{count} conteneur(s) avec la socket de contrôle du runtime montée",
     "userns_not_configured": "Remappage des espaces de noms utilisateurs non configuré (userns-remap)",
     "userns_not_configured_detail": "Sans userns-remap, un processus conteneur s'exécutant en tant qu'UID 0 est mappé directement sur root de l'hôte. Activez userns-remap dans /etc/docker/daemon.json pour remapper les UID des conteneurs. La commande ci-dessous ne crée le fichier que s'il n'existe pas — si vous avez déjà un /etc/docker/daemon.json, ne l'écrasez PAS : sauvegardez-le et fusionnez-y la clé \"userns-remap\": \"default\", puis redémarrez docker.",
     "userns_configured": "Remappage des espaces de noms utilisateurs activé (userns-remap)",
@@ -3659,7 +3660,7 @@
     "ruleset_unreadable_detail": "Un binaire iptables ou nftables est installé, mais l'énumération du jeu de règles n'a rien produit. Un `iptables -S` qui fonctionne imprime toujours ses lignes de politique, même sans aucune règle chargée : un résultat vide signifie donc que la requête a été refusée — généralement une CAP_NET_ADMIN absente. L'état du pare-feu est inconnu, pas absent : BOB n'affirme ni l'un ni l'autre. Vérifier avec : sudo iptables -S"
   },
   "firewall_drivers": {
-    "no_issues": "Aucune règle de pare-feu supplémentaire interférant avec UFW détectée",
+    "no_issues": "Aucun ruleset pare-feu parallèle en conflit détecté",
     "iptables_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne INPUT : {rule}",
     "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
     "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker/VPN",

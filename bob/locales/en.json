@@ -201,7 +201,7 @@
       "open_local": "restricted to local network by UFW rule",
       "deny": "explicitly blocked by a UFW rule",
       "no_rule": "covered by default deny policy (no explicit UFW rule needed)",
-      "no_rule_ufw_inactive": "no active firewall protection (UFW inactive)",
+      "no_rule_ufw_inactive": "no active firewall protection",
       "no_rule_firewalld": "firewall managed by firewalld (not UFW) — reachable only if its zone permits this port",
       "loopback": "bound to localhost only — UFW rule has no effect on external access",
       "loopback_no_rule": "bound to localhost only — no UFW rule needed (covered by default deny)",
@@ -223,7 +223,7 @@
     "listening_verbose_hint": "Use -v to display the full port table",
     "process_disclaimer": "This port belongs to {process} — blocking it may interrupt the application. Only run the command above if you know exactly what you are doing.",
     "uncovered_default_deny": "Port {port} listening on all interfaces — no explicit UFW rule, but covered by default deny policy",
-    "uncovered_ufw_inactive": "Port {port} listening on all interfaces — enable UFW to filter it",
+    "uncovered_ufw_inactive": "Port {port} listening on all interfaces — no active firewall to filter it",
     "uncovered_firewalld": "Port {port} listening on all interfaces — governed by firewalld's default zone, not a UFW rule"
   },
   "logs": {
@@ -1120,6 +1120,7 @@
     "section_unavailable": "Section not evaluated ({section}) — an internal error prevented this check from running",
     "starting": "Starting audit",
     "audit_profile": "Audit profile: {profile}",
+    "profile_autodetected_desktop": "Desktop environment detected — using the 'desktop' profile (relaxes backup/auditd/mac_policy). Override with --profile server.",
     "profile_not_found": "Profile '{profile}' not found — using default (server)",
     "profile_search_blocked": "Profile '{profile}' could not be looked for — {dirs} unreadable — using default (server)",
     "profile_shadow_unchecked": "Profile '{profile}' read from {path} — {dirs} could not be searched and may hold a profile of the same name",
@@ -3507,7 +3508,7 @@
     "internet_facing_local": "behind NAT / no direct public IP",
     "internet_facing_ddns": "DDNS active — ports reachable from internet",
     "firewall": "Firewall",
-    "firewall_inactive": "UFW is inactive — all ports unfiltered",
+    "firewall_inactive": "No active firewall — all ports unfiltered",
     "firewall_allow_all": "default policy is ALLOW — no filtering",
     "firewall_policy": "active — default {policy} incoming",
     "open_ports": "Listening ports",
@@ -3617,15 +3618,15 @@
     "ok": "No risky patterns found in cron jobs"
   },
   "docker_hardening": {
-    "scan_error": "Docker daemon not reachable — container security check skipped",
+    "scan_error": "Container runtime not reachable — container security check skipped",
     "no_containers": "No running containers — nothing to audit",
     "ok": "{count} running container(s) — no critical security issues found",
     "privileged": "{count} container(s) running in privileged mode: {containers}",
     "privileged_detail": "Privileged containers have full access to the host kernel and devices. This effectively disables container isolation. Replace with fine-grained capabilities (--cap-add) if elevated privileges are required.",
     "privileged_reason": "{count} privileged container(s) running",
-    "socket_mounted": "{count} container(s) with Docker socket mounted: {containers}",
+    "socket_mounted": "{count} container(s) with the runtime control socket mounted: {containers}",
     "socket_mounted_detail": "Mounting /var/run/docker.sock inside a container grants root-equivalent control over the host. Any process in the container can create new privileged containers or escape the sandbox.",
-    "socket_mounted_reason": "{count} container(s) with Docker socket mounted",
+    "socket_mounted_reason": "{count} container(s) with the runtime control socket mounted",
     "userns_not_configured": "User namespace remapping not configured (userns-remap)",
     "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root. The command below only creates the file when it does not exist — if you already have a /etc/docker/daemon.json, do NOT overwrite it: back it up and merge the \"userns-remap\": \"default\" key into it, then restart docker.",
     "userns_configured": "User namespace remapping enabled (userns-remap)",
@@ -3659,7 +3660,7 @@
     "ruleset_unreadable_detail": "An iptables or nftables binary is installed, but listing the ruleset produced nothing. A working `iptables -S` always prints its policy lines, even with no rules loaded, so an empty result means the query was refused — normally a missing CAP_NET_ADMIN. The firewall state is unknown, not absent, so BOB reports neither. Check with: sudo iptables -S"
   },
   "firewall_drivers": {
-    "no_issues": "No additional firewall rules interfering with UFW detected",
+    "no_issues": "No conflicting parallel firewall ruleset detected",
     "iptables_bypass": "Raw iptables ACCEPT rule bypasses UFW in INPUT chain: {rule}",
     "iptables_forward_bypass": "Raw iptables ACCEPT rule bypasses UFW in FORWARD chain: {rule}",
     "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker/VPN routing",

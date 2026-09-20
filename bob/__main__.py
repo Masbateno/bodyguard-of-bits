@@ -75,7 +75,7 @@ from bob.runner import (
     validate_check_filters,
 )
 from bob.scoring import ScoreEngine
-from bob.sysinfo import collect_system_info, detect_network_context
+from bob.sysinfo import collect_system_info, detect_default_profile, detect_network_context
 
 # ---------------------------------------------------------------------------
 # Exit codes — STABLE PUBLIC API
@@ -535,9 +535,18 @@ def _run(argv=None) -> int:
             if not config.quiet:
                 print()
 
-            # Resolve audit profile: CLI flag > saved config > default
-            profile_name = config.profile or user_config.get_profile() or "server"
+            # Resolve audit profile: CLI flag > saved config > auto-detected role.
+            # The fallback is no longer a hardcoded "server": on a graphical host
+            # BOB auto-selects "desktop" so it is not over-strict (backup/auditd/
+            # mac_policy). An explicit choice — CLI or saved — always wins, and
+            # detection only relaxes (it never picks a stricter profile than
+            # server). Measured on a real Linux Mint 22.3 (lightdm active).
+            _explicit_profile = bool(config.profile or user_config.get_profile())
+            _detected_profile = "server" if _explicit_profile else detect_default_profile()
+            profile_name = config.profile or user_config.get_profile() or _detected_profile
             active_profile = load_profile(profile_name)
+            if not _explicit_profile and _detected_profile == "desktop":
+                output.print_info(t("audit.profile_autodetected_desktop"))
             if profile_name not in ("", "default", "server"):
                 from bob.profiles import lookup_profile_file
                 _shadow = lookup_profile_file(profile_name)

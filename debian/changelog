@@ -1,3 +1,25 @@
+bodyguard-of-bits (0.20.3-1) unstable; urgency=medium
+
+  * Minor: the audit reads Podman and snap-packaged services, and auto-detects
+    the desktop profile. Three scope gaps closed, each field-validated on real
+    hardware.
+  * Podman: container hardening (privileged / host-network / root / mounted
+    runtime socket) was Docker-only, so a `podman run --privileged` container
+    was invisible (real Fedora 44). DockerAuditSnapshot now scans docker or
+    podman through one Docker-compatible inspect parser, names the runtime in the
+    remediation command, and skips the Docker-only userns section for podman.
+  * Snap services: a snap-packaged service runs under snap.<pkg>.* units, so
+    state detection reported it stopped; now resolved via `snap services <pkg>`
+    (real Ubuntu 26.04: the Nextcloud snap reads active, was "not running").
+  * Desktop profile auto-detection: the fallback profile was a hardcoded server,
+    over-strict on graphical hosts; BOB now auto-selects desktop when a
+    display-manager is active (explicit/saved profile always wins). A real
+    Ubuntu Server tightened the signal to require an active DM, not just
+    graphical.target.
+  * Non-breaking. containerd/CRI remains a follow-up. Tests 10676 -> 10701.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 20 Sep 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.20.2-1) unstable; urgency=medium
 
   * Minor: firewalld recognition across the RPM/SUSE family, a banner naming

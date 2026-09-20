@@ -6,6 +6,96 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.20.3] — 2026-09-20
+
+**A minor release: BOB reads Podman and snap-packaged services, and auto-detects
+the desktop profile.** Three scope gaps from the v0.20.x real-machine campaign,
+each implemented with a guard + mutation and field-validated on real hardware.
+
+### Podman container hardening
+
+Container hardening (privileged / host-network / root / mounted runtime socket)
+was Docker-only: on a real Fedora 44 a `podman run --privileged` container was
+completely invisible. Podman's CLI is Docker-compatible — `podman ps` and
+`podman inspect` emit the same JSON (`HostConfig.Privileged`, `NetworkMode`,
+`Mounts`, `Config.User`) — so `DockerAuditSnapshot.from_system` now scans the
+first available runtime (`docker`, then `podman`) through one shared parser, and
+records which one via a `runtime` field. Docker is preferred when both exist. The
+flagged container's remediation command names the actual runtime
+(`podman inspect …`), the mounted-socket check accepts both `docker.sock` and
+`podman.sock`, and the Docker-only daemon.json userns-remap section is skipped
+for Podman while the root / host-network sections still apply. Field-validated on
+real Fedora 44: a privileged Podman container is now flagged (−1) where it was
+previously unseen.
+
+### Snap-packaged service state
+
+A snap-packaged service runs under snapd's own `snap.<pkg>.*` units, so
+`_detect_state` — which iterated the deb-style names in `service.services` —
+reported it stopped. Measured on a real Ubuntu 26.04 where Nextcloud, installed
+as a snap, served HTTP 200 while BOB said "installed but not running, nothing is
+listening". State detection now also resolves `detection.snap` packages via
+`snap services <pkg>` (parsing the Service / Startup / Current columns and
+aggregating with the same priority as the deb units). A host without `snap` gets
+an empty result and the deb-unit verdict stands, so nothing regresses.
+Field-validated on the real Ubuntu 26.04: Nextcloud reads **active** (80/443),
+and the compare even reported the inactive→active flip against the prior baseline.
+Both polarities were field-checked (stopping the snap read it inactive, not
+falsely active). A related snap-timer noise fix: snapd writes its timers into
+`/etc/systemd/system/` (`snap.<pkg>.*.timer`), where the systemd-timer check read
+them as "manually created root timers"; the `snap.` namespace is now excluded
+(like deb timers under `/lib`), while the pipe-to-shell / world-writable ExecStart
+checks still cover every timer.
+
+### Desktop profile auto-detection
+
+The fallback audit profile was a hardcoded `server`, which is over-strict on a
+graphical host (it keeps backup / auditd / mac_policy at WARN that the `desktop`
+profile relaxes). `detect_default_profile` now returns `desktop` when a
+**display-manager is active**, `server` otherwise. An explicit `--profile` or a
+saved one always wins, and detection can only *relax* (never picks a stricter
+profile than server). Field-validated on real Fedora and Mint (display-manager
+active → desktop, with a visible notice) and on a real Ubuntu Server — which
+exposed and corrected an over-detection: an earlier heuristic read
+`systemctl get-default == graphical.target` as desktop on its own, but a headless
+Ubuntu Server carried `graphical.target` with the display-manager **inactive**,
+so the signal was tightened to require an active DM.
+
+### Compatibility
+
+Non-breaking. `docker_audit` keeps its `docker_hardening.*` keys; a couple of
+messages that named "Docker" are now runtime-neutral ("container runtime"). A
+graphical host with no saved/CLI profile now audits under `desktop` instead of
+`server` — scores shift accordingly, with a one-line notice and an easy
+`--profile server` override. containerd/CRI (Kubernetes) container auditing
+remains a documented follow-up (podman covers the common single-host case).
+
+Also a small **generic-firewall wording** polish: four firewall-status messages
+that named UFW specifically — `exposure.firewall_inactive`,
+`services.exposure.no_rule_ufw_inactive`, `ports.uncovered_ufw_inactive` and
+`firewall_drivers.no_issues` — now read front-end-neutral, so a host with no UFW
+at all (a firewalld box, or a bare Alpine) no longer sees "enable UFW" or
+"interfering with UFW". Keys and remediation commands are unchanged.
+
+### First real Alpine pass
+
+v0.20.3 is the first release validated on **real Alpine hardware** (3.24.2,
+OpenRC 0.63.2, busybox, musl, Python 3.14.7, no `ss`, no firewall): the audit
+degraded honestly with zero tracebacks, sshd read active/enabled through OpenRC,
+`ss`-absent left the port list "unreadable" rather than empty, the banner Init
+row named OpenRC, `detect_default_profile` fell back to `server`, the container
+and snap sections skipped, and a `--fix` sysctl round-trip applied and reverted
+cleanly. No bug found. Alpine joins the real-hardware tier.
+
+### Tests
+
+10676 → **10709**. New guards: `test_v0203_podman_container_audit.py`,
+`test_v0203_snap_service_state.py`, `test_v0203_desktop_profile_autodetect.py`.
+Three new mutations, all killed. The desktop over-detection above was caught by
+the field test, not the unit tests, and the guard was corrected to match.
+
+---
+
 ## [v0.20.2] — 2026-09-19
 
 **A minor release: BOB learns firewalld, the banner names every distro's firewall

@@ -134,8 +134,9 @@ class SystemdTimersSnapshot:
                         snap.world_writable_scripts.append(script)
                         writable_seen.add(script)
 
-            # User-created timer running as root (no User= directive)
-            if is_user_created and not has_user and exec_starts:
+            # User-created timer running as root (no User= directive).
+            if _is_manually_created_root_timer(
+                    timer_name, is_user_created, has_user, bool(exec_starts)):
                 snap.user_created_root_timers.append(timer_name)
 
         return snap
@@ -294,6 +295,28 @@ def _parse_service_file(path: Path) -> tuple[list[str], bool]:
     exec_starts = [m.group(1).strip().lstrip("-@") for m in _EXEC_START_RE.finditer(text)]
     has_user    = bool(_USER_DIRECTIVE_RE.search(text))
     return exec_starts, has_user
+
+def _is_manually_created_root_timer(
+    timer_name: str, is_user_created: bool, has_user: bool, has_exec: bool
+) -> bool:
+    """Whether a timer is one the operator added by hand and runs as root.
+
+    ``is_user_created`` means the service unit lives under /etc/systemd/system/
+    (not the deb package dir /lib/systemd/system/). But **snapd** also writes its
+    timers there — ``snap.<pkg>.<name>.timer`` — so a snap-managed timer looks
+    hand-added while it belongs to an installed snap. Listing it as "manually
+    created" is noise (measured on a real Ubuntu 26.04:
+    ``snap.nextcloud.logrotate.timer``). The ``snap.`` namespace is excluded so
+    snap timers are treated like deb ones; the pipe-to-shell and world-writable
+    ExecStart checks still cover every timer regardless.
+    """
+    return (
+        is_user_created
+        and not has_user
+        and has_exec
+        and not timer_name.startswith("snap.")
+    )
+
 
 def _is_world_writable(path_str: str) -> bool:
     """Return True if the path exists and has the world-writable bit set."""

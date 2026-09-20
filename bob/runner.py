@@ -964,7 +964,7 @@ def run_checks(
 
     # ---- CHECK 38 — Docker container security audit ----
     _sec("docker_hardening", DockerAuditSnapshot.from_system, check_docker_audit,
-         skip_if=lambda s: not s.docker_installed)
+         skip_if=lambda s: not s.runtime)
 
     # ---- CHECK 47 — Container self-hardening posture (only inside a container) ----
     _sec("container_security", ContainerSecuritySnapshot.from_system, check_container_security,

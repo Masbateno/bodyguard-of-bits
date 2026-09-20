@@ -115,6 +115,45 @@ def audit_user() -> str:
         return f"uid {euid}"
 
 
+def detect_default_profile() -> str:
+    """Best-effort role detection for the *fallback* audit profile.
+
+    Returns ``"desktop"`` when the system's role is a graphical session, else
+    ``"server"``. Used only when the operator has set no profile at all — an
+    explicit ``--profile`` or a saved one always wins.
+
+    A server audit on a desktop is over-strict: it keeps backup / auditd /
+    mac_policy at WARN that the ``desktop`` profile relaxes to INFO. Measured on
+    a real Linux Mint 22.3 where lightdm was active but BOB defaulted to server
+    and scored 6/10 where desktop scores 8/10.
+
+    The signal, root-safe and needing no ``$DISPLAY``, is an **active**
+    ``display-manager.service`` (the generic gdm/lightdm/sddm/gdm3 alias that
+    presents the login session). ``systemctl get-default == graphical.target``
+    was tried too, but it is NOT a reliable desktop signal on its own: a real
+    headless Ubuntu Server (.14) carried ``graphical.target`` as its default
+    with ``display-manager`` **inactive**, and reading that as desktop would
+    have relaxed a server's profile. A genuine desktop always runs a DM.
+
+    Anything else — no active DM, or a host without systemd — reads as
+    ``server``, the safe, stricter default. Detection can only *relax*; it
+    never tightens.
+    """
+    def _run(*args) -> str:
+        try:
+            r = subprocess.run(
+                list(args), capture_output=True, text=True, timeout=5,
+                env=_C_LOCALE_ENV,
+            )
+            return r.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return ""
+
+    if _run("systemctl", "is-active", "display-manager.service") == "active":
+        return "desktop"
+    return "server"
+
+
 def collect_system_info(version: str, lang: str):
     """Collect system information for the report header."""
     from bob.report import SystemInfo
