@@ -6,6 +6,67 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.20.4] — 2026-09-20
+
+**A patch release: the openSUSE microcode package name, and firewalld
+rich-rules / forward-ports now shown in the credited zone line.** Two
+field-driven fixes from the v0.20.x real-machine campaign (openSUSE Leap 16 and
+Fedora 44), each implemented with a guard + mutation and field-validated.
+
+### openSUSE microcode package name
+
+The microcode-currency check maps a vendor (`microcode-amd` / `microcode-intel`)
+to the package that ships it, per package manager. The zypper column was missing,
+so on an openSUSE/SUSE host `microcode_name_known` was False and the finding read
+"microcode package unknown / no package manager available" — misleading, because
+`detect_install_manager` did return `zypper` and package queries worked; the real
+gate was the absent name. On the real openSUSE Leap 16 (AMD) this held the domain
+score to an **upper bound of 8** instead of a firm 8. The maps now carry
+`"zypper": "ucode-amd"` and `"zypper": "ucode-intel"` (the SUSE package names), so
+the rpm-backed install probe finds the installed package and the check reports
+"✔ microcode installed: ucode-amd", score 8 firm. A cross-distro sweep confirmed
+zypper was the **only** gap: apt (`amd64-microcode`) and dnf (`amd-ucode-firmware`)
+were field-confirmed on real AMD hosts, and apk/pacman carry the standard names.
+
+### firewalld rich-rules / forward-ports in the zone line
+
+When firewalld is the active front-end, the firewall and iptables/nftables checks
+credit it with a line naming what its default zone permits ("firewalld is the
+active firewall — zone 'FedoraServer' allows: cockpit, dhcpv6-client, ssh"). That
+line was built from `--list-services` + `--list-ports` only, so a port opened
+through an `accept` **rich rule**, a **forward-port**, or a zone bound to specific
+**sources** was invisible to the reader — measured on a real Fedora 44, where
+`firewall-cmd --add-rich-rule='… port port="5432" protocol="tcp" accept'` opened
+5432 and BOB's credit line never mentioned it. `FirewalldStatus.from_system` now
+also reads `--list-rich-rules`, `--list-forward-ports` and `--list-sources`
+(parsing rich-rules and forward-ports line-by-line, not by token), and a new
+`allows_summary()` folds them into the zone line: each `accept` rich rule shows
+its port (`5432/tcp (rich)`) or service (`https (rich)`), forward-ports show as
+`forward port=80:proto=tcp:toport=8080:…`, and **deny rules are never shown as
+allowances**. This is display completeness, not a verdict change: the firewall
+checks have always used firewalld as a boolean (`firewalld_active`), never as a
+per-port allow-list, so no score or exposure verdict moves — a reader simply now
+sees rich-rule and forward-port access that was previously hidden. Field-validated
+on the real Fedora 44 (5432/tcp rich rule + a forward-port both shown).
+containerd/CRI (Kubernetes) firewall visibility remains a documented follow-up.
+
+### Compatibility
+
+Non-breaking. Microcode: pure addition to the package-name maps; no key, message
+or score formula changes for any other distro. firewalld: the `FirewalldStatus`
+dataclass gains three optional list fields (defaulting empty) and one method; the
+credited zone message keeps its key and template — only the `{services}` value it
+renders is now more complete.
+
+### Tests
+
+10709 → **10735**. New guards: `test_v0204_opensuse_microcode.py`,
+`test_v0204_firewalld_rich_rules.py`. Two new mutations
+(`microcode/opensuse-name-unmapped`, `firewalld/rich-rule-port-omitted-from-allows`),
+both killed.
+
+---
+
 ## [v0.20.3] — 2026-09-20
 
 **A minor release: BOB reads Podman and snap-packaged services, and auto-detects

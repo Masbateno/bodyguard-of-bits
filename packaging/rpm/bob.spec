@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.20.3
+Version:        0.20.4
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,26 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Sep 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.4-1
+- Patch: the microcode-currency check now names the right package on
+  openSUSE/zypper. The check maps a vendor (microcode-amd / microcode-intel) to
+  the package that ships it, per package manager; the zypper column was missing,
+  so on a real openSUSE Leap 16 (AMD) the finding read "microcode package
+  unknown / no package manager available" -- the real gate was the absent name,
+  which capped the domain score at an upper bound of 8. The maps now carry
+  "zypper": "ucode-amd" / "zypper": "ucode-intel", so the rpm-backed probe finds
+  the installed package and the check reports it installed, score 8 firm. A
+  cross-distro sweep confirmed zypper was the only gap (apt amd64-microcode, dnf
+  amd-ucode-firmware field-confirmed on AMD; apk/pacman standard). Guard
+  test_v0204_opensuse_microcode.py, one new mutation, killed. Non-breaking.
+  firewalld visibility: the credited "zone allows ..." line was built from
+  --list-services + --list-ports only, so a port opened by an accept rich rule,
+  a forward-port, or a zone's sources was invisible; FirewalldStatus now reads
+  --list-rich-rules / --list-forward-ports / --list-sources and allows_summary()
+  folds accept rich-rule ports (5432/tcp (rich)) and forward-ports into the line,
+  deny rules never shown as allowances. Display-only, no verdict change.
+  Field-validated on real Fedora 44. Guard test_v0204_firewalld_rich_rules.py,
+  one new mutation, killed. Tests 10709 -> 10735.
 * Sun Sep 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.3-1
 - Minor: the audit reads Podman and snap-packaged services, and auto-detects the
   desktop profile. Three scope gaps closed, each field-validated on real

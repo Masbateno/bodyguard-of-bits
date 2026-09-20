@@ -156,8 +156,8 @@ class TestTheMicrocodeVerdictIsNotDebianOnly:
     """The false verdict: a point deducted on two whole distribution families."""
 
     def test_every_measured_name_is_asked_for(self):
-        for vendor, expected in (("intel", {"intel-microcode", "microcode_ctl", "intel-ucode"}),
-                                 ("amd", {"amd64-microcode", "amd-ucode-firmware", "amd-ucode"})):
+        for vendor, expected in (("intel", {"intel-microcode", "microcode_ctl", "intel-ucode", "ucode-intel"}),
+                                 ("amd", {"amd64-microcode", "amd-ucode-firmware", "amd-ucode", "ucode-amd"})):
             assert set(package_name_candidates(f"microcode-{vendor}")) == expected
 
     def test_the_snapshot_asks_for_all_of_them(self):

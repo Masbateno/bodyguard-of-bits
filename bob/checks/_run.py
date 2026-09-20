@@ -895,8 +895,8 @@ _PACKAGE_NAMES: "dict[str, dict[str, str | None]]" = {
     # two distribution families, not merely unusable advice — and the docstring
     # of the query helper had named ``microcode_ctl`` since v0.15.2 while the
     # list of names it was given stayed Debian's.
-    "microcode-intel":   {"apt": "intel-microcode", "dnf": "microcode_ctl", "pacman": "intel-ucode", "apk": "intel-ucode"},
-    "microcode-amd":     {"apt": "amd64-microcode", "dnf": "amd-ucode-firmware", "pacman": "amd-ucode", "apk": "amd-ucode"},
+    "microcode-intel":   {"apt": "intel-microcode", "dnf": "microcode_ctl", "pacman": "intel-ucode", "apk": "intel-ucode", "zypper": "ucode-intel"},
+    "microcode-amd":     {"apt": "amd64-microcode", "dnf": "amd-ucode-firmware", "pacman": "amd-ucode", "apk": "amd-ucode", "zypper": "ucode-amd"},
 }
 
 

@@ -223,7 +223,7 @@ def check_iptables_nftables(
     # 44. Credit firewalld and report what its default zone exposes; the zone
     # rules themselves are firewalld's to audit, not this raw-policy check's.
     if firewalld is not None and firewalld.active:
-        svc = ", ".join(firewalld.services + firewalld.ports) or "—"
+        svc = firewalld.allows_summary()
         result.ok(
             message=_t("firewall_iptables.firewalld_active",
                        zone=firewalld.default_zone or "?", services=svc),

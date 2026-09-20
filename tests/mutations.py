@@ -2756,6 +2756,26 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "the desktop profile",
     ),
     Mutation(
+        id="microcode/opensuse-name-unmapped",
+        file="bob/checks/_run.py",
+        old="\"apk\": \"amd-ucode\", \"zypper\": \"ucode-amd\"}",
+        new="\"apk\": \"amd-ucode\", \"zypper\": None}",
+        kills=("tests/test_v0204_opensuse_microcode.py::test_opensuse_amd_microcode_name",),
+        reason="openSUSE's AMD microcode package is ucode-amd; without the zypper "
+               "mapping BOB cannot confirm microcode on openSUSE and the score "
+               "becomes an upper bound even when the package is installed",
+    ),
+    Mutation(
+        id="firewalld/rich-rule-port-omitted-from-allows",
+        file="bob/checks/_firewalld.py",
+        old="            if grant:\n                parts.append(grant)",
+        new="            if grant:\n                pass",
+        kills=("tests/test_v0204_firewalld_rich_rules.py::TestAllowsSummary::test_allows_summary_surfaces_rich_rule_port",),
+        reason="a port opened only through a firewalld accept rich rule would be "
+               "absent from the credited 'zone allows' line, hiding real access "
+               "from the reader",
+    ),
+    Mutation(
         id="snap/timer-flagged-as-manually-created",
         file="bob/checks/systemd_timers.py",
         old="        and not timer_name.startswith(\"snap.\")",

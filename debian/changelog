@@ -1,3 +1,34 @@
+bodyguard-of-bits (0.20.4-1) unstable; urgency=medium
+
+  * Patch: the microcode-currency check now names the right package on
+    openSUSE/zypper.
+  * The check maps a vendor (microcode-amd / microcode-intel) to the package
+    that ships it, per package manager; the zypper column was missing, so on a
+    real openSUSE Leap 16 (AMD) microcode_name_known was False and the finding
+    read "microcode package unknown / no package manager available" — the real
+    gate was the absent name, which capped the domain score at an upper bound
+    of 8 instead of a firm 8.
+  * The maps now carry "zypper": "ucode-amd" / "zypper": "ucode-intel" (the
+    SUSE package names), so the rpm-backed probe finds the installed package
+    and the check reports the microcode as installed, score 8 firm.
+  * A cross-distro sweep confirmed zypper was the only gap: apt
+    (amd64-microcode) and dnf (amd-ucode-firmware) were field-confirmed on real
+    AMD hosts, apk/pacman carry the standard names.
+  * Found on a first real openSUSE Leap 16 pass. Guard
+    test_v0204_opensuse_microcode.py, one new mutation, killed. Non-breaking.
+  * firewalld visibility: the credited "zone allows ..." line was built from
+    --list-services + --list-ports only, so a port opened by an accept rich
+    rule, a forward-port, or a zone's sources was invisible to the reader.
+    FirewalldStatus now also reads --list-rich-rules / --list-forward-ports /
+    --list-sources, and allows_summary() folds each accept rich-rule port
+    (5432/tcp (rich)) and forward-port into the line; deny rules are never
+    shown as allowances. Display completeness only -- the checks use firewalld
+    as a boolean, so no score or exposure verdict changes.
+  * Field-validated on a real Fedora 44. Guard test_v0204_firewalld_rich_rules.py,
+    one new mutation, killed.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 20 Sep 2026 13:00:00 +0000
+
 bodyguard-of-bits (0.20.3-1) unstable; urgency=medium
 
   * Minor: the audit reads Podman and snap-packaged services, and auto-detects

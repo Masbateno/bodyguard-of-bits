@@ -104,8 +104,9 @@ class FirmwareSnapshot:
                     if snap.cpu_vendor in ("intel", "amd") else "")
         candidates = list(package_name_candidates(_logical)) if _logical else []
         # Whether a *negative* may be asserted: only when this host's manager is
-        # one whose name for the package BOB has actually measured. openSUSE
-        # calls it something else again, and nobody measured it.
+        # one whose name for the package BOB has actually measured. Measured on a
+        # real openSUSE Leap 16 (v0.20.4): the packages are `ucode-amd` /
+        # `ucode-intel`, now mapped for zypper, so the state is known there too.
         snap.microcode_name_known = bool(
             _logical and package_name(_logical, detect_install_manager()))
 

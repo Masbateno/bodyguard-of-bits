@@ -6,6 +6,72 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [v0.20.4] — 20-09-2026
+
+**Un correctif : le nom de paquet microcode openSUSE, et les rich-rules /
+forward-ports firewalld désormais affichés dans la ligne de zone créditée.**
+Deux fixes issus du terrain (campagne matériel réel v0.20.x : openSUSE Leap 16 et
+Fedora 44), chacun implémenté avec un guard + une mutation et field-validé.
+
+### Nom de paquet microcode openSUSE
+
+Le check d'actualité du microcode mappe un vendeur (`microcode-amd` /
+`microcode-intel`) au paquet qui le fournit, par gestionnaire de paquets. La
+colonne zypper manquait, si bien que sur un hôte openSUSE/SUSE `microcode_name_known`
+valait False et le constat se lisait « paquet microcode inconnu / aucun
+gestionnaire de paquets disponible » — trompeur, car `detect_install_manager`
+renvoyait bien `zypper` et les requêtes de paquets fonctionnaient ; le vrai
+verrou était le nom absent. Sur la vraie openSUSE Leap 16 (AMD) cela plafonnait
+le score du domaine à une **borne haute de 8** au lieu d'un 8 ferme. Les maps
+portent maintenant `"zypper": "ucode-amd"` et `"zypper": "ucode-intel"` (les noms
+de paquets SUSE), si bien que la sonde d'installation adossée à rpm trouve le
+paquet installé et le check rapporte « ✔ microcode installé : ucode-amd », score
+8 ferme. Un balayage cross-distro a confirmé que zypper était le **seul** trou :
+apt (`amd64-microcode`) et dnf (`amd-ucode-firmware`) ont été field-confirmés sur
+des hôtes AMD réels, et apk/pacman portent les noms standards.
+
+### Rich-rules / forward-ports firewalld dans la ligne de zone
+
+Quand firewalld est le front-end actif, les checks firewall et iptables/nftables
+le créditent d'une ligne nommant ce que sa zone par défaut autorise (« firewalld
+est le pare-feu actif — la zone 'FedoraServer' autorise : cockpit,
+dhcpv6-client, ssh »). Cette ligne était bâtie sur `--list-services` +
+`--list-ports` seulement, si bien qu'un port ouvert par une **rich rule**
+`accept`, un **forward-port** ou une zone liée à des **sources** précises était
+invisible au lecteur — mesuré sur une Fedora 44 réelle, où
+`firewall-cmd --add-rich-rule='… port port="5432" protocol="tcp" accept'` ouvrait
+5432 sans que la ligne créditée ne le mentionne. `FirewalldStatus.from_system`
+lit désormais aussi `--list-rich-rules`, `--list-forward-ports` et
+`--list-sources` (rich-rules et forward-ports parsés ligne par ligne, pas par
+token), et une nouvelle `allows_summary()` les intègre à la ligne de zone :
+chaque rich rule `accept` montre son port (`5432/tcp (rich)`) ou service
+(`https (rich)`), les forward-ports s'affichent en
+`forward port=80:proto=tcp:toport=8080:…`, et **les règles de déni ne sont jamais
+montrées comme des autorisations**. C'est de la complétude d'affichage, pas un
+changement de verdict : les checks firewall ont toujours utilisé firewalld comme
+un booléen (`firewalld_active`), jamais comme allow-list par-port, donc aucun
+score ni verdict d'exposition ne bouge — le lecteur voit simplement l'accès
+rich-rule / forward-port qui était masqué. Field-validé sur la Fedora 44 réelle
+(rich rule 5432/tcp + un forward-port tous deux affichés). La visibilité pare-feu
+containerd/CRI (Kubernetes) reste une suite documentée.
+
+### Compatibilité
+
+Non-breaking. Microcode : pure addition aux maps de noms de paquets ; aucun
+changement de clé, de message ou de formule de score pour les autres distros.
+firewalld : la dataclass `FirewalldStatus` gagne trois champs liste optionnels
+(défaut vide) et une méthode ; le message de zone crédité garde sa clé et son
+template — seule la valeur `{services}` rendue est désormais plus complète.
+
+### Tests
+
+10709 → **10735**. Nouveaux guards : `test_v0204_opensuse_microcode.py`,
+`test_v0204_firewalld_rich_rules.py`. Deux nouvelles mutations
+(`microcode/opensuse-name-unmapped`, `firewalld/rich-rule-port-omitted-from-allows`),
+toutes deux tuées.
+
+---
+
 ## [v0.20.3] — 20-09-2026
 
 **Version mineure : BOB lit Podman et les services packagés en snap, et

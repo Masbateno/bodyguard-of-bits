@@ -144,7 +144,7 @@ def check_firewall(status: FirewallStatus, firewalld=None, t: TranslationFunc | 
         # installed" there frames a properly-protected host as unprotected
         # (measured on Fedora 44). Credit firewalld and name what it exposes.
         if firewalld is not None and firewalld.active:
-            svc = ", ".join(firewalld.services + firewalld.ports) or "—"
+            svc = firewalld.allows_summary()
             result.ok(
                 message=_t("firewall.firewalld_active",
                            zone=firewalld.default_zone or "?", services=svc),
