@@ -74,6 +74,10 @@ class FilePermsSnapshot:
     ssh_host_key_issues:       list[Tuple[str, int]]     = field(default_factory=list)
     sudoers_nopasswd_all:      list[str]                 = field(default_factory=list)
     sudoers_nopasswd_specific: list[str]                 = field(default_factory=list)
+    # Names of groups (%group) that a NOPASSWD:ALL rule grants to but which
+    # currently have no members — the grant is real but latent (add a user and
+    # it becomes live root). Kali ships %kali-trusted this way by default.
+    sudoers_nopasswd_empty_groups: list[str]             = field(default_factory=list)
     sudoers_readable:          bool                      = True
     ssh_host_keys_readable:    bool                      = True
 
@@ -132,6 +136,15 @@ class FilePermsSnapshot:
         snap.sudoers_nopasswd_all      = nopasswd_all
         snap.sudoers_nopasswd_specific = nopasswd_specific
         snap.sudoers_readable          = sudoers_readable
+        # Flag %group NOPASSWD:ALL grants whose group currently has no members:
+        # the grant is real but latent, and saying so is more truthful than an
+        # unqualified alarm about a rule nobody can currently use.
+        empty: list[str] = []
+        for _line in nopasswd_all:
+            g = _nopasswd_group(_line)
+            if g and _group_has_no_members(g):
+                empty.append(g)
+        snap.sudoers_nopasswd_empty_groups = empty
 
         return snap
 
@@ -215,6 +228,34 @@ def _collect_nopasswd_entries() -> "tuple[list[str], list[str], bool]":
                 nopasswd_specific.append(stripped)
 
     return nopasswd_all, nopasswd_specific, readable
+
+# A sudoers rule's first field is the user/group spec; a group is written
+# `%name` (or `%#gid`). Only the leading spec matters — a later `%group` inside
+# a runas or command list is not who the rule is granted to.
+_NOPASSWD_GROUP_RE = re.compile(r"^%([^\s,#]+)")
+
+def _nopasswd_group(line: str) -> str | None:
+    """Return the group name a NOPASSWD line is granted to, or None if it is
+    granted to a user (not a ``%group``)."""
+    m = _NOPASSWD_GROUP_RE.match(line.strip())
+    return m.group(1) if m else None
+
+def _group_has_no_members(name: str) -> bool:
+    """True when the named group has no members at all — neither listed
+    (secondary) members nor any user carrying it as primary GID. False when it
+    has a member or cannot be resolved (never claim "empty" on uncertainty)."""
+    import grp
+    import pwd
+    try:
+        g = grp.getgrnam(name)
+    except (KeyError, OSError):
+        return False
+    if g.gr_mem:
+        return False
+    try:
+        return not any(u.pw_gid == g.gr_gid for u in pwd.getpwall())
+    except OSError:
+        return False
 
 def _is_nopasswd_all(line: str) -> bool:
     """
@@ -334,8 +375,15 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
     if snapshot.sudoers_nopasswd_all:
         for line in snapshot.sudoers_nopasswd_all:
             display = line[:120] + ("…" if len(line) > 120 else "")
+            group = _nopasswd_group(line)
+            if group and group in snapshot.sudoers_nopasswd_empty_groups:
+                # Latent: the grant is real but the group has no members yet.
+                message = _t("file_perms.sudoers_nopasswd_all_empty_group",
+                             line=display, group=group)
+            else:
+                message = _t("file_perms.sudoers_nopasswd_all", line=display)
             result.warn(
-                message=_t("file_perms.sudoers_nopasswd_all", line=display),
+                message=message,
                 detail=_t("file_perms.sudoers_nopasswd_all_detail"),
                 key="file_perms.sudoers_nopasswd_all",
                 nature="action",

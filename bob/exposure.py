@@ -165,6 +165,18 @@ def compute_exposure(
             color=color,
             detail=" · ".join(ssh_issues),
         ))
+    elif "ssh.password_auth" in all_keys:
+        # No ssh issue at this context's severity, but password auth *is*
+        # enabled — it was only downgraded to INFO (e.g. a LAN/desktop host).
+        # "key-only" would be a false statement here (measured on a real Kali
+        # desktop: PasswordAuthentication yes, reported INFO, summary claimed
+        # key-only). Green stays — it is acceptable for the context — but the
+        # detail must not deny that password auth is on.
+        items.append(ExposureItem(
+            label=t("exposure.ssh"),
+            icon="✔", color="ok",
+            detail=t("exposure.ssh_ok_password_on"),
+        ))
     else:
         items.append(ExposureItem(
             label=t("exposure.ssh"),
@@ -207,6 +219,15 @@ def compute_exposure(
             label=t("exposure.updates"),
             icon="⚠", color="warn",
             detail=t("exposure.updates_unknown"),
+        ))
+    elif "updates.no_security_channel" in all_keys:
+        # A rolling distro with no security channel and updates pending: BOB
+        # cannot say "security up to date" — it cannot classify security here at
+        # all, and updates are waiting. A green tick would be false reassurance.
+        items.append(ExposureItem(
+            label=t("exposure.updates"),
+            icon="⚠", color="warn",
+            detail=t("exposure.updates_no_channel"),
         ))
     else:
         items.append(ExposureItem(

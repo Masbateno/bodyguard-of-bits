@@ -2776,6 +2776,38 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "from the reader",
     ),
     Mutation(
+        id="exposure/ssh-summary-ignores-info-password-auth",
+        file="bob/exposure.py",
+        old='    elif "ssh.password_auth" in all_keys:',
+        new='    elif "ssh.password_auth" in bad_keys:',
+        kills=("tests/test_v0205_kali_findings.py::TestSshGlanceSummary::test_password_on_summary_not_key_only",),
+        reason="on a LAN/desktop host password auth is INFO, not a bad key; keying "
+               "the glance summary off bad_keys makes it fall through to "
+               "'key-only, root login disabled' while password auth is enabled — "
+               "the summary contradicting its own detailed finding",
+    ),
+    Mutation(
+        id="file_perms/nopasswd-empty-group-not-flagged",
+        file="bob/checks/file_perms.py",
+        old="            if group and group in snapshot.sudoers_nopasswd_empty_groups:",
+        new="            if group and group not in snapshot.sudoers_nopasswd_empty_groups:",
+        kills=("tests/test_v0205_kali_findings.py::TestEmptyGroupNopasswd::test_empty_group_message_says_latent",),
+        reason="a NOPASSWD:ALL grant to an empty group is latent, not live; without "
+               "the empty-group branch the finding implies someone currently holds "
+               "passwordless root when the group has no members",
+    ),
+    Mutation(
+        id="updates/no-security-channel-not-flagged",
+        file="bob/checks/updates.py",
+        old="        if not snapshot.security_channel_present:",
+        new="        if snapshot.security_channel_present:",
+        kills=("tests/test_v0205_kali_findings.py::TestNoSecurityChannelUpdates::test_no_channel_emits_no_security_channel_finding",),
+        reason="on a rolling distro with no security channel (Kali, Arch, Alpine) "
+               "pending updates cannot be classified as security; without this "
+               "branch the glance reads 'security up to date' while updates wait — "
+               "false reassurance measured on real Kali (1335 pending)",
+    ),
+    Mutation(
         id="snap/timer-flagged-as-manually-created",
         file="bob/checks/systemd_timers.py",
         old="        and not timer_name.startswith(\"snap.\")",

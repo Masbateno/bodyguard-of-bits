@@ -82,6 +82,13 @@ class UpdatesSnapshot:
     apt_cache_age_days:     int | None = None
     upgradable_count:       int | None = None
     manager:                str = ""
+    # Whether this system can classify a pending update as "security". apt with a
+    # -security suite, dnf and zypper can; pacman, apk and a rolling apt distro
+    # (Kali: kali-rolling, no -security suite) cannot, so "0 security pending"
+    # there means "unclassifiable", not "secure". Default True so an unknown
+    # manager keeps the prior behaviour. Measured on real Kali: the glance said
+    # "security up to date" with 1335 updates pending.
+    security_channel_present: bool = True
 
     @classmethod
     def from_system(cls) -> "UpdatesSnapshot":
@@ -107,6 +114,9 @@ class UpdatesSnapshot:
             snap.unattended_installed, snap.unattended_enabled = _check_unattended()
             snap.apt_cache_age_days = _apt_cache_age_days()
             snap.upgradable_count = _count_upgradable()
+            # A rolling apt distro (Kali) ships no -security suite; only then is
+            # the security/regular split meaningless.
+            snap.security_channel_present = _apt_has_security_channel()
         elif _command_exists("dnf"):
             snap.manager = "dnf"
             snap.pending_security, snap.pending_regular = _collect_dnf()
@@ -116,15 +126,34 @@ class UpdatesSnapshot:
         elif _command_exists("pacman"):
             snap.manager = "pacman"
             snap.pending_security, snap.pending_regular = _collect_pacman()
+            snap.security_channel_present = False  # Arch has no security-only channel
         elif _command_exists("apk"):
             snap.manager = "apk"
             snap.pending_security, snap.pending_regular = _collect_apk()
+            snap.security_channel_present = False  # Alpine has no security-only channel
 
         return snap
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _apt_has_security_channel() -> bool:
+    """True when the apt configuration carries a ``-security`` suite.
+
+    Debian and Ubuntu do (``bookworm-security``, ``noble-security``,
+    ``debian-security``); a rolling apt distro like Kali (``kali-rolling`` only)
+    does not, so there "0 security pending" means "unclassifiable", not "secure".
+    ``apt-cache policy`` is read rather than the sources files because it
+    normalises both one-line and deb822 formats to the same output. On any
+    failure we return True, keeping the pre-existing behaviour (assume a channel
+    exists rather than invent a warning).
+    """
+    res = run_result("apt-cache", "policy", timeout=20)
+    if not res.ok:
+        return True
+    return "-security" in res.stdout or "security." in res.stdout
+
 
 def _collect_pending_updates() -> tuple[list[str], list[str]]:
     """
@@ -540,11 +569,21 @@ def check_updates(
 
     # --- Regular packages pending -------------------------------------------
     if regular:
-        result.info(
-            message=_t("updates.regular_pending",
-                       count=len(regular)),
-            key="updates.regular_pending",
-        )
+        if not snapshot.security_channel_present:
+            # No security channel to classify against: "0 security pending" here
+            # is "unclassifiable", not "secure". Say so, so neither the detail
+            # nor the glance reads these as merely optional regular updates.
+            result.info(
+                message=_t("updates.no_security_channel", count=len(regular)),
+                detail=_t("updates.no_security_channel_detail"),
+                key="updates.no_security_channel",
+            )
+        else:
+            result.info(
+                message=_t("updates.regular_pending",
+                           count=len(regular)),
+                key="updates.regular_pending",
+            )
 
     # --- unattended-upgrades (apt / Debian concept only) --------------------
     uu_ok = snapshot.unattended_installed and snapshot.unattended_enabled

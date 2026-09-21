@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.20.4
+Version:        0.20.5
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,24 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Sep 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.5-1
+- Patch: three accuracy fixes found on a real Kali desktop, each a glance line or
+  finding that drifted from what the host actually is. SSH glance line: the
+  at-a-glance panel built its SSH verdict from bad-severity keys only, so on a
+  LAN/desktop host (PasswordAuthentication yes is INFO there) it fell through to
+  "key-only, root login disabled" while password auth was enabled; it now checks
+  all_keys (includes INFO) and shows a truthful line, and reworded the genuine
+  key-only case's "disabled" to "restricted" (prohibit-password permits key root
+  login). Empty-group NOPASSWD: Kali's %kali-trusted NOPASSWD:ALL on an empty
+  group now resolves membership (secondary + primary GID) and is flagged latent,
+  keeping the WARN and deduction; an unresolvable group is never claimed empty.
+  Rolling-distro updates glance: "security updates: up to date" showed green with
+  1335 pending; Kali (like Arch/Alpine) has no -security channel, so 0 classify as
+  security. UpdatesSnapshot.security_channel_present (apt-cache policy for apt,
+  False for pacman/apk) now drives an honest "no security channel to classify"
+  line; a clean channel still reads up to date. Display-only, INFO.
+  Guard test_v0205_kali_findings.py, three new mutations, killed. Non-breaking.
+  Tests 10735 -> 10762.
 * Sun Sep 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.4-1
 - Patch: the microcode-currency check now names the right package on
   openSUSE/zypper. The check maps a vendor (microcode-amd / microcode-intel) to

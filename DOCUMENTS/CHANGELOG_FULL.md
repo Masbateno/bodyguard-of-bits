@@ -6,6 +6,99 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.20.5] — 2026-09-21
+
+**A patch release: three accuracy fixes found on a real Kali desktop.**
+Each is a glance line or a finding that drifted from what the host actually is —
+from the maximal-spectrum pass on a real Kali Linux Rolling host (192.168.1.19),
+otherwise clean.
+
+### The SSH at-a-glance line no longer lies about password auth
+
+`compute_exposure` builds the attack-surface panel's one-line SSH verdict. Its
+green "key-only, root login disabled" was emitted whenever there were no
+*bad-severity* SSH keys — but `ssh.password_auth` is downgraded to INFO on a
+LAN/desktop host (password auth is acceptable hygiene behind NAT), so a host with
+`PasswordAuthentication yes` fell through to that line and the summary claimed
+"key-only". On the real Kali the detailed finding correctly said password auth was
+enabled while the glance said the opposite. The panel now checks `all_keys`
+(which includes INFO) and, when password auth is on, shows a truthful green line:
+"root login restricted, password auth on (OK for this context)". The genuinely
+key-only case keeps its line, reworded from "root login disabled" to "root login
+restricted" — `prohibit-password` still permits key-based root login (BOB was
+connected as root by key at the time), so "disabled" was itself imprecise.
+
+### Empty-group NOPASSWD:ALL is reported as latent, not live
+
+Kali ships `/etc/sudoers.d/kali-grant-root` with
+`%kali-trusted ALL=(ALL:ALL) NOPASSWD: ALL`, and the `kali-trusted` group is empty
+by default. The finding flagged this like a live passwordless-root grant. It now
+resolves the group's membership at snapshot time — both listed (secondary) members
+and any user carrying it as primary GID — and when the group is empty says so:
+"group 'kali-trusted' is empty — latent: no members yet, but any user added to it
+gets instant passwordless root". The WARN and its 2-point deduction stay (the rule
+is a real standing risk), and a group that cannot be resolved is never claimed
+empty (uncertainty is not an all-clear). The scoped `_gvm … NOPASSWD:
+/usr/sbin/openvas` grant is correctly left as a specific-command entry, not a
+NOPASSWD:ALL.
+
+### "Security updates: up to date" on a distro with no security channel
+
+The at-a-glance panel read "security updates: up to date" on the real Kali while
+1335 updates were pending. Kali is a rolling release: like Arch (pacman) and
+Alpine (apk), it has no separate `-security` suite, so BOB classifies every
+pending package as regular and counts zero security updates — and the glance,
+keyed off the security count alone, rendered that as a green "up to date". On such
+a host "0 security pending" means "unclassifiable", not "secure". The updates
+snapshot now records `security_channel_present` (False for pacman/apk, and for
+apt when `apt-cache policy` shows no `-security` suite — `apt-cache policy` is read
+because it normalises one-line and deb822 sources alike; any failure defaults to
+True, preserving Debian/Ubuntu behaviour). When the channel is absent and updates
+are pending, the check emits `updates.no_security_channel` and the glance shows
+"⚠ updates pending — no security channel to classify", with a detailed line
+explaining that security fixes ship through the same channel. A distro that *has*
+a security channel, clean, still reads a green "up to date"; nothing pending on any
+distro still reads "up to date". No score change — the finding is INFO, display
+honesty only. Field-validated on real Kali (glance flipped from green to the
+honest ⚠) and the Debian/Ubuntu path left unchanged.
+
+### The rest of the Kali pass was clean
+
+Verdicts confirmed against their native oracles: AppArmor read "active, 0
+profiles" correctly from the kernel securityfs — `aa-status` exits 2 with "Failed
+to get profiles" on Kali, and BOB takes the kernel's word (the v0.17.1 fix,
+validated here on real hardware); the desktop profile auto-detected (active
+display-manager); the firewall read INPUT ACCEPT / no firewall (empty nft ruleset);
+1335 pending apt updates were counted (a real count, not a timeout artifact); and
+the many installed-but-inactive Kali tools (samba, vnc, mysql) were honestly
+reported inactive with no false exposure. No tracebacks, no sentinel leaks.
+
+With this pass **Kali Rolling joins the real-hardware tier (Tier 1)**, and
+**openSUSE Leap 16** — validated on real hardware in v0.20.4 but never moved in the
+table — is promoted with it: seven distributions are now Tier 1 (Mint, Debian,
+Ubuntu Server, Fedora, openSUSE Leap, Alpine, Kali). The README support table is
+updated accordingly (the superseded Kali VM entry is dropped; Kali Rolling stays
+listed as CI-covered on every PR).
+
+### Compatibility
+
+Non-breaking. `compute_exposure` gains two branches and one new i18n key
+(`exposure.ssh_ok_password_on`); `exposure.ssh_ok` is reworded. `FilePermsSnapshot`
+gains one optional list field (`sudoers_nopasswd_empty_groups`, default empty) and
+one new i18n key (`file_perms.sudoers_nopasswd_all_empty_group`). `UpdatesSnapshot`
+gains `security_channel_present` (default True) and two i18n keys
+(`updates.no_security_channel` + detail, `exposure.updates_no_channel`). No score
+formula or JSON key changes. Locale keys 2460 → 2465.
+
+### Tests
+
+10735 → **10762**. New guard: `test_v0205_kali_findings.py`. Three new mutations
+(`exposure/ssh-summary-ignores-info-password-auth`,
+`file_perms/nopasswd-empty-group-not-flagged`,
+`updates/no-security-channel-not-flagged`), all killed.
+
+---
+
 ## [v0.20.4] — 2026-09-20
 
 **A patch release: the openSUSE microcode package name, and firewalld

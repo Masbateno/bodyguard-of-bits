@@ -1,3 +1,30 @@
+bodyguard-of-bits (0.20.5-1) unstable; urgency=medium
+
+  * Patch: three accuracy fixes found on a real Kali desktop, each a glance line
+    or finding that drifted from what the host actually is.
+  * SSH glance line: the at-a-glance panel built its SSH verdict from
+    bad-severity keys only, so on a LAN/desktop host (where PasswordAuthentication
+    yes is INFO, not WARN) it fell through to "key-only, root login disabled"
+    while password auth was enabled. It now checks all_keys (which includes INFO)
+    and shows a truthful line when password auth is on; the genuine key-only case
+    reworded from "root login disabled" to "restricted" (prohibit-password still
+    permits key-based root login).
+  * Empty-group NOPASSWD: Kali ships %kali-trusted ALL=(ALL:ALL) NOPASSWD: ALL
+    with the group empty; the finding now resolves group membership (secondary +
+    primary GID) and flags an empty group as latent, keeping the WARN and its
+    deduction. An unresolvable group is never claimed empty.
+  * Rolling-distro updates glance: "security updates: up to date" showed green
+    with 1335 updates pending. Kali (like Arch/Alpine) has no -security channel,
+    so 0 classify as security. UpdatesSnapshot.security_channel_present (via
+    apt-cache policy for apt; False for pacman/apk) now drives an honest
+    "no security channel to classify" line; a clean channel still reads up to
+    date. Display-only, INFO.
+  * Rest of the Kali maximal pass was clean (AppArmor 0-profiles read from the
+    kernel securityfs, desktop profile auto-detected, 1335 updates counted).
+  * Guard test_v0205_kali_findings.py, two new mutations, killed. Non-breaking.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 21 Sep 2026 16:00:00 +0000
+
 bodyguard-of-bits (0.20.4-1) unstable; urgency=medium
 
   * Patch: the microcode-currency check now names the right package on
