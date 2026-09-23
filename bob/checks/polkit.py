@@ -90,9 +90,11 @@ class PolkitSnapshot:
         snap = cls()
 
         for d in _RULES_DIRS:
-            p = Path(d)
             try:
-                dstat = p.stat()
+                # os.stat (not Path.stat): pathlib in Python 3.10 binds its
+                # os.stat reference at import, so a test monkeypatching os.stat
+                # would miss Path.stat there — os.stat keeps the seam uniform.
+                dstat = os.stat(d)
             except OSError:
                 continue  # directory absent — not a finding
             if not stat.S_ISDIR(dstat.st_mode):
@@ -119,9 +121,8 @@ class PolkitSnapshot:
                     snap.writable_rules.append(fp)
 
         for root in _PKLA_ROOTS:
-            rp = Path(root)
             try:
-                if not stat.S_ISDIR(rp.stat().st_mode):
+                if not stat.S_ISDIR(os.stat(root).st_mode):
                     continue
             except OSError:
                 continue
