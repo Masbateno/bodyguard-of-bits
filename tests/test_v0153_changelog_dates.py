@@ -30,8 +30,8 @@ DMY = re.compile(r"^\d{2}-\d{2}-\d{4}$")
 ENGLISH = ("CHANGELOG.md", "DOCUMENTS/CHANGELOG_FULL.md")
 FRENCH = ("CHANGELOG_FR.md", "DOCUMENTS/CHANGELOG_FULL_FR.md")
 
-ROW = re.compile(r"^\| \[(v[0-9.]+)\]\(#v[0-9]+\) \| ([0-9-]+) \|")
-HEAD = re.compile(r"^## \[(v[0-9.]+)\] — ([0-9-]+)\s*$")
+ROW = re.compile(r"^\| \[(v?[0-9.]+)\]\(#v[0-9]+\) \| ([0-9-]+) \|")
+HEAD = re.compile(r"^## \[(v?[0-9.]+)\] — ([0-9-]+)\s*$")
 
 
 def structural_dates(rel: str) -> dict[str, str]:

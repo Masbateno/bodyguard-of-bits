@@ -201,7 +201,7 @@ def test_changelog_top_row_matches_pyproject(rel_path: str):
     content = path.read_text(encoding="utf-8")
     # Find the first table data row: | [vX.Y.Z](#anchor) | ... |
     # Pre-releases include suffix like b4, rc1, etc.
-    m = re.search(r"^\|\s*\[v([\d.]+(?:[a-z]\d+)?)\]", content, re.MULTILINE)
+    m = re.search(r"^\|\s*\[v?([\d.]+(?:[a-z]\d+)?)\]", content, re.MULTILINE)
     assert m, f"Could not find first version row in {rel_path}"
     top_version = m.group(1)
     pyproject_version = _read_pyproject_version()
@@ -235,7 +235,7 @@ def test_changelog_full_top_section_matches_pyproject(rel_path: str):
     path = _REPO_ROOT / rel_path
     assert path.exists(), f"{rel_path} not found"
     content = path.read_text(encoding="utf-8")
-    m = re.search(r"^## \[v([\d.]+(?:[a-z]\d+)?)\]", content, re.MULTILINE)
+    m = re.search(r"^## \[v?([\d.]+(?:[a-z]\d+)?)\]", content, re.MULTILINE)
     assert m, f"Could not find first ## [vX.Y.Z] heading in {rel_path}"
     top_section = m.group(1)
     pyproject_version = _read_pyproject_version()

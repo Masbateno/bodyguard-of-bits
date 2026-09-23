@@ -180,8 +180,8 @@ class TestTheTestHistoryKeepsItsOwnPromise:
     def test_the_current_release_has_a_row(self, rel):
         version = self._current_version()
         text = (_ROOT / rel).read_text(encoding="utf-8")
-        assert re.search(rf"^\|\s*v{re.escape(version)}\s*\|", text, re.M), (
-            f"{rel} has no row for v{version}. The document promises an entry "
+        assert re.search(rf"^\|\s*v?{re.escape(version)}\s*\|", text, re.M), (
+            f"{rel} has no row for {version}. The document promises an entry "
             f"per release; add one before tagging."
         )
 
@@ -190,8 +190,8 @@ class TestTheTestHistoryKeepsItsOwnPromise:
         """A row with no number is a row that says nothing."""
         version = self._current_version()
         text = (_ROOT / rel).read_text(encoding="utf-8")
-        row = re.search(rf"^\|\s*v{re.escape(version)}\s*\|\s*(\d+)\s*\|", text, re.M)
-        assert row, f"{rel}: the v{version} row carries no test count"
+        row = re.search(rf"^\|\s*v?{re.escape(version)}\s*\|\s*(\d+)\s*\|", text, re.M)
+        assert row, f"{rel}: the {version} row carries no test count"
         assert int(row.group(1)) > 4000, f"{rel}: implausible count {row.group(1)}"
 
     def test_both_locales_document_the_same_releases(self):

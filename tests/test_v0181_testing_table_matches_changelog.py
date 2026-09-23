@@ -24,7 +24,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 def _changelog_counts(rel: str) -> "dict[str, int]":
     text = (_ROOT / rel).read_text(encoding="utf-8")
-    parts = re.split(r"^## \[(v[\d.]+[a-z0-9]*)\][^\n]*$", text, flags=re.M)
+    parts = re.split(r"^## \[(v?[\d.]+[a-z0-9]*)\][^\n]*$", text, flags=re.M)
     counts = {}
     for i in range(1, len(parts), 2):
         m = re.search(r"\*\*Tests\*\*[^\n→]*→\s*\*\*(\d{3,})\*\*", parts[i + 1])
@@ -36,7 +36,7 @@ def _changelog_counts(rel: str) -> "dict[str, int]":
 def _table_rows(rel: str) -> "list[tuple[str, int]]":
     text = (_ROOT / rel).read_text(encoding="utf-8")
     return [(v, int(n)) for v, n in
-            re.findall(r"^\| (v[\d.]+[a-z0-9]*) \| (\d{3,}) \|", text, re.M)]
+            re.findall(r"^\| (v?[\d.]+[a-z0-9]*) \| (\d{3,}) \|", text, re.M)]
 
 
 @pytest.mark.parametrize("table,changelog", [
@@ -58,4 +58,7 @@ def test_the_current_release_has_its_row():
     version = re.search(r'^version = "([^"]+)"',
                         (_ROOT / "pyproject.toml").read_text(), re.M).group(1)
     for table in ("DOCUMENTS/TESTING.md", "DOCUMENTS/TESTING_FR.md"):
-        assert f"v{version}" in dict(_table_rows(table)), f"{table} has no v{version} row"
+        rows = dict(_table_rows(table))
+        # SemVer no-"v" from 0.21.0 on; historical rows keep their v.
+        assert version in rows or f"v{version}" in rows, (
+            f"{table} has no {version} row")

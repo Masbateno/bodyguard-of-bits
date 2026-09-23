@@ -54,7 +54,7 @@ def _version_key(v: str) -> "tuple[int, ...]":
 
 
 def _documented_versions() -> "list[str]":
-    return re.findall(r"^## \[v([0-9.]+)\]", _FULL.read_text(encoding="utf-8"), re.M)
+    return re.findall(r"^## \[v?([0-9.]+)\]", _FULL.read_text(encoding="utf-8"), re.M)
 
 
 def test_the_harness_reads_a_real_changelog():

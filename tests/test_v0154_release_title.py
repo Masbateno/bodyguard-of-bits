@@ -50,7 +50,7 @@ def extract(version: str) -> str:
 
 def documented_versions() -> list[str]:
     rows = re.findall(
-        r"^\| \[(v[0-9.]+)\]\(#v[0-9]+\) \|", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), re.M
+        r"^\| \[(v?[0-9.]+)\]\(#v[0-9]+\) \|", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), re.M
     )
     return rows[:12]
 

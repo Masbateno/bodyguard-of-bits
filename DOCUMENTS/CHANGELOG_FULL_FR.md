@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [v0.21.0] — 23-09-2026
+## [0.21.0] — 23-09-2026
 
 **Une version mineure : huit nouvelles sections de vérification, et le préfixe
 « v » de SemVer abandonné partout.** Elle ouvre l'arc de croissance des checks

@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [v0.21.0] — 2026-09-23
+## [0.21.0] — 2026-09-23
 
 **A minor release: eight new check sections, and the SemVer "v" prefix dropped
 everywhere.** This opens the v0.21.x check-growth arc — the first waves that

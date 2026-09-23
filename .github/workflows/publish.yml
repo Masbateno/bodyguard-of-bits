@@ -100,7 +100,8 @@ jobs:
         id: extract
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"   # e.g. v0.4.6 or v0.7.0b1
+          VERSION="${GITHUB_REF_NAME}"   # e.g. 0.21.0 (tagless) or legacy v0.4.6
+          BASE="${VERSION#v}"            # strip a legacy leading "v" for matching
 
           # --- Detect pre-release per PEP 440 suffix (a/b/rc/.dev followed by digits)
           IS_PRERELEASE="false"
@@ -110,11 +111,12 @@ jobs:
           echo "is_prerelease=$IS_PRERELEASE"
           echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
 
-          # --- Body: section between "## [vX.Y.Z]" and the next "## [v" header
-          #           in DOCUMENTS/CHANGELOG_FULL.md (the header line itself is skipped)
-          awk -v marker="$VERSION" '
-            $0 ~ "^## \\[" marker "\\]" { flag=1; next }
-            flag && /^## \[v/ { exit }
+          # --- Body: section between "## [X.Y.Z]" (v optional, tagless from
+          #           0.21.0 on) and the next "## [" header of any form, in
+          #           DOCUMENTS/CHANGELOG_FULL.md (the header line is skipped).
+          awk -v marker="$BASE" '
+            $0 ~ "^## \\[v?" marker "\\]" { flag=1; next }
+            flag && /^## \[/ { exit }
             flag { print }
           ' DOCUMENTS/CHANGELOG_FULL.md > /tmp/notes.md
 
@@ -140,7 +142,7 @@ jobs:
             else
               echo "::error::No release notes extracted for $VERSION."
               echo "DOCUMENTS/CHANGELOG_FULL.md must contain a section starting with:"
-              echo "  ## [$VERSION] — YYYY-MM-DD"
+              echo "  ## [$BASE] — YYYY-MM-DD"
               exit 1
             fi
           fi
@@ -155,8 +157,8 @@ jobs:
           #     v0.15.3 — **First v0.15.3 work
           # Take the span between the first pair of "**" instead; fall back to
           # the first sentence when a row has no bold lead.
-          HEADLINE=$(awk -F'|' -v ver="$VERSION" '
-            $2 ~ "\\[" ver "\\]" { print $4; exit }
+          HEADLINE=$(awk -F'|' -v ver="${VERSION#v}" '
+            $2 ~ "\\[v?" ver "\\]" { print $4; exit }
           ' CHANGELOG.md)
           HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
           case "$HEADLINE" in
