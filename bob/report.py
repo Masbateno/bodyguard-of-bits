@@ -271,7 +271,7 @@ class AuditReport:
             self._writeln(f"║{row}{' ' * pad}║")
         self._writeln(f"╠{_BAR}╣")
 
-        v_line = f"  BOB v{info.version}  │  {now}"
+        v_line = f"  BOB {info.version}  │  {now}"
         self._writeln(f"║{v_line}{' ' * max(0, _BOX_INNER - len(v_line))}║")
         h_line = f"  {info.hostname}  │  {info.user}"
         self._writeln(f"║{h_line}{' ' * max(0, _BOX_INNER - len(h_line))}║")
@@ -283,7 +283,7 @@ class AuditReport:
         self._writeln(f"{_L.get('system',      'System'     ):<12}: {info.os_name}")
         self._writeln(f"{_L.get('host',        'Host'       ):<12}: {info.hostname}")
         self._writeln(f"{_L.get('kernel',      'Kernel'     ):<12}: {info.kernel}")
-        _ufw = (f"ufw v{info.ufw_version}" if info.ufw_version
+        _ufw = (f"ufw {info.ufw_version}" if info.ufw_version
                 else _L.get("not_installed", "not installed"))
         self._writeln(f"{_L.get('firewall',    'Firewall'   ):<12}: {_ufw}")
         self._writeln(f"{_L.get('user',        'User'       ):<12}: {info.user}")

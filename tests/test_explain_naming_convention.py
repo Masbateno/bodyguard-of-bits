@@ -178,6 +178,9 @@ class TestExplainPrefixDiscipline:
         "firewall_iptables", "mac_policy", "firewall_drivers", "docker",
         "services", "rootkit", "ports", "ntp", "fail2ban", "ddns",
         "log_rotation", "logs", "smtp", "backup", "network_context",
+        # v0.21.0 additions
+        "grub", "cups", "mount_hardening", "faillock", "disk_encryption",
+        "polkit",
     })
 
     @pytest.mark.parametrize("key", EXPLAIN_KEYS)
@@ -252,7 +255,10 @@ class TestExplainAuditInvariants:
         # the sudo account's current hash and the Wi-Fi PSK while BOB said OK.
         # v0.18.1 → 194: mac_policy.apparmor_off_in_kernel — AppArmor built in
         # and disabled at boot, which aa-status reports as "module is loaded".
-        assert len(EXPLAIN_KEYS) == 194, (
+        # v0.21.0 → 200: grub.cfg_perms, cups.listen_exposed,
+        # mount_hardening.options_missing, faillock.not_configured,
+        # disk_encryption.root_unencrypted, polkit.rule_writable.
+        assert len(EXPLAIN_KEYS) == 200, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."
@@ -266,7 +272,9 @@ class TestExplainAuditInvariants:
         KNOWN_PREFIXES + the audit doc."""
         prefixes = {k.split(".", 1)[0] for k in EXPLAIN_KEYS}
         # v0.17.0 → 50: raspberry_pi.
-        assert len(prefixes) == 50, (
+        # v0.21.0 → 56: grub, cups, mount_hardening, faillock, disk_encryption,
+        # polkit.
+        assert len(prefixes) == 56, (
             f"Prefix count drifted from v0.8.0 baseline 45 to "
             f"{len(prefixes)}. Update KNOWN_PREFIXES + audit doc."
         )

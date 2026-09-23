@@ -106,9 +106,10 @@ def test_shields_badge_version_matches_pyproject(rel_path: str):
     path = _REPO_ROOT / rel_path
     assert path.exists(), f"{rel_path} not found"
     content = path.read_text(encoding="utf-8")
-    # Match: img.shields.io/badge/version-vX.Y.Z-...
+    # Match: img.shields.io/badge/version-X.Y.Z-...  (no "v" prefix — SemVer,
+    # v0.21.0 onward; the optional v keeps historical badges matchable).
     m = re.search(
-        r"img\.shields\.io/badge/version-v([\d.]+(?:[a-z]\d+)?)-",
+        r"img\.shields\.io/badge/version-v?([\d.]+(?:[a-z]\d+)?)-",
         content,
     )
     assert m, f"Could not find shields.io version badge in {rel_path}"

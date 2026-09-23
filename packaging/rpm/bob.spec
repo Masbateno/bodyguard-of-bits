@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.20.5
+Version:        0.21.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,16 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Wed Sep 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.0-1
+- Minor: six new check sections and a SemVer versioning cleanup. SemVer: the "v"
+  prefix is dropped everywhere (version display, git tags, badges, banners) —
+  versions are now bare "0.21.0"; the publish workflow accepts both tagless and
+  legacy "v*" tags. New checks (Wave 1): GRUB bootloader password/config perms,
+  CUPS print-service network exposure, mount-hardening options (nodev/nosuid/
+  noexec on /tmp, /var/tmp, /dev/shm), core-dump policy (INFO), kexec/kernel-
+  lockdown state (INFO), and PAM account lockout (pam_faillock, profile-aware).
+  All six are profile-aware: unknown/unreadable never reads as clean, and BOB
+  does not auto-edit PAM or fstab (remediation is described).
 * Mon Sep 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.20.5-1
 - Patch: three accuracy fixes found on a real Kali desktop, each a glance line or
   finding that drifted from what the host actually is. SSH glance line: the

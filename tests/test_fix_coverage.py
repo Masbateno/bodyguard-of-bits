@@ -62,6 +62,25 @@ _ACTIONABLE_METHODS = frozenset({
 # shell command. Each entry needs a one-line rationale (inline comment)
 # explaining WHY operating-system-level automation is inappropriate.
 _MANUAL_BY_DESIGN = frozenset({
+    # v0.21.0 — no PAM account lockout. BOB does not auto-edit the PAM
+    # auth stack: a wrong pam_faillock rule can lock every account out,
+    # and the correct enablement is distro-specific (pam-auth-update vs
+    # authselect). The detail spells it out; applying it is the operator's call.
+    "faillock.not_configured",
+    # v0.21.0 — a world-writable mount missing nodev/nosuid. The remediation is
+    # an /etc/fstab edit + remount, which BOB deliberately does not run
+    # unattended: a wrong fstab line can leave a system unbootable, and the
+    # correct line depends on the existing entry (device, fstype, other opts)
+    # which the finding does not reconstruct. The detail spells out the fstab
+    # change and to test noexec first; applying it is the operator's call.
+    "mount_hardening.options_missing",
+    # v0.21.0 — an unencrypted root filesystem. Enabling full-disk encryption is
+    # a destructive, one-way operation on the volume: it requires re-installing
+    # with LUKS, or a backup / luksFormat / restore cycle. It cannot be done in
+    # place or unattended, so there is no command — the detail describes the two
+    # paths (installer option; backup+re-encrypt) and applying it is the
+    # operator's call.
+    "disk_encryption.root_unencrypted",
     # v0.18.0 — a service enabled at boot and not running. There is no one-line
     # remediation because the finding does not know why it is down: a crash, a
     # start that failed on a bad config, a dependency that never came up, or a

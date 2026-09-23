@@ -264,7 +264,7 @@ def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
         color = _SLACK_COLOR_OK
 
     summary = (
-        f"*BOB* v{_slack_escape(version)} — `{_slack_escape(sys_info.hostname)}`\n"
+        f"*BOB* {_slack_escape(version)} — `{_slack_escape(sys_info.hostname)}`\n"
         f"Score: *{score_display}* | "
         f"Risk: *{engine.effective_level.value.upper()}* | "
         f"{engine.alert_count} alert(s), {engine.warn_count} warning(s)"

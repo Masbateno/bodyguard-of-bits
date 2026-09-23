@@ -101,7 +101,7 @@ class MarkdownReport:
 
         self._writeln("# BOB Report")
         self._writeln("")
-        self._writeln(f"**Version:** v{info.version} | **Date:** {now}")
+        self._writeln(f"**Version:** {info.version} | **Date:** {now}")
         self._writeln(f"**Host:** {info.hostname} | **User:** {info.user}")
         self._writeln("")
         self._writeln("## System Information")

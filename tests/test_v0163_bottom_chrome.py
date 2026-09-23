@@ -446,7 +446,7 @@ class TestTheHeaderCarriesTheVersion:
         from bob import __version__
         row, col, text, _ = self._row0()
         assert row == 0 and col == 0
-        assert text.rstrip().endswith(f"v{__version__}"), text[-20:]
+        assert text.rstrip().endswith(f"{__version__}"), text[-20:]
 
     def test_the_title_stays_on_the_left(self):
         _, _, text, _ = self._row0(title="  bob --manage-logs")
@@ -476,7 +476,7 @@ class TestTheHeaderCarriesTheVersion:
         property worth holding is that the stamp is never half-written.
         """
         from bob import __version__
-        stamp = f"v{__version__}"
+        stamp = f"{__version__}"
         _, _, text, _ = self._row0(title="  bob --install-cron", w=24)
         assert "bob --install-cron" in text, "the title was sacrificed"
         fragments = [stamp[:n] for n in range(2, len(stamp))]

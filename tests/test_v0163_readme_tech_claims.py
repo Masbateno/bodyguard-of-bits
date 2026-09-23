@@ -294,10 +294,12 @@ class TestTheNamesAreReal:
     @pytest.mark.parametrize("lang", LOCALES)
     def test_the_banner_example_carries_the_current_version(self, lang):
         from bob import __version__
-        m = re.search(r"║\s+BOB v([0-9.]+)\s+│", _doc(lang))
+        # v0.21.0: the banner dropped its "v" prefix (SemVer, no "v" — see
+        # CONVENTIONS.md §8); the optional v keeps historical samples matchable.
+        m = re.search(r"║\s+BOB v?([0-9.]+)\s+│", _doc(lang))
         assert m, f"{lang}: the sample banner is gone or reshaped"
         assert m.group(1) == __version__, (
-            f"{lang}: the sample banner shows v{m.group(1)}, the package is v{__version__}"
+            f"{lang}: the sample banner shows {m.group(1)}, the package is {__version__}"
         )
 
     @pytest.mark.parametrize("lang", LOCALES)

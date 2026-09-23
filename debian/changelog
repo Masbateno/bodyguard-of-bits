@@ -1,3 +1,19 @@
+bodyguard-of-bits (0.21.0-1) unstable; urgency=medium
+
+  * Minor: six new check sections and a SemVer versioning cleanup.
+  * SemVer: the "v" prefix is dropped everywhere (version display, git tags,
+    badges, banners) — versions are now bare "0.21.0", per SemVer. The publish
+    workflow accepts both the new tagless "0.21.0" tags and the legacy "v*" ones
+    so the last v-tagged release still resolves.
+  * New checks (Wave 1): GRUB bootloader password/config permissions, CUPS
+    print-service network exposure, mount-hardening options (nodev/nosuid/noexec
+    on /tmp, /var/tmp, /dev/shm), core-dump policy (INFO), kexec/kernel-lockdown
+    state (INFO), and PAM account lockout (pam_faillock, profile-aware).
+  * All six are profile-aware and non-dogmatic: unknown/unreadable never reads as
+    clean, and BOB does not auto-edit PAM or fstab (the remediation is described).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 23 Sep 2026 16:00:00 +0000
+
 bodyguard-of-bits (0.20.5-1) unstable; urgency=medium
 
   * Patch: three accuracy fixes found on a real Kali desktop, each a glance line

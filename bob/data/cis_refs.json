@@ -1036,6 +1036,33 @@
     "ref": "CIS Ubuntu 22.04 L2 — 1.4.1 — Ensure Secure Boot is enabled",
     "code": "CIS:1.4.1"
   },
+  "grub.cfg_perms": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.4.1 — Ensure permissions on bootloader config are configured",
+    "code": "CIS:1.4.1"
+  },
+  "cups.listen_exposed": {
+    "ref": "Best practice — Bind CUPS (cupsd) to localhost unless network printing is required",
+    "ref_fr": "Bonne pratique — Lier CUPS (cupsd) à localhost sauf si l'impression réseau est nécessaire",
+    "code": null
+  },
+  "mount_hardening.options_missing": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.1 — Ensure nodev/nosuid/noexec options set on /tmp, /var/tmp and /dev/shm",
+    "code": "CIS:1.1"
+  },
+  "faillock.not_configured": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.3.2 — Ensure lockout for failed password attempts is configured",
+    "code": "CIS:5.3.2"
+  },
+  "disk_encryption.root_unencrypted": {
+    "ref": "Best practice — Encrypt data at rest (LUKS full-disk encryption) on portable or physically exposed hosts",
+    "ref_fr": "Bonne pratique — Chiffrer les données au repos (chiffrement intégral LUKS) sur les hôtes portables ou physiquement exposés",
+    "code": null
+  },
+  "polkit.rule_writable": {
+    "ref": "Best practice — polkit rule files must be root-owned and not group/other-writable (they are evaluated as root)",
+    "ref_fr": "Bonne pratique — les fichiers de règles polkit doivent appartenir à root et ne pas être modifiables par le groupe/autres (ils sont évalués en tant que root)",
+    "code": null
+  },
   "services.exposure.open_local": {
     "ref": "Best practice — Restrict LAN-exposed service ports to trusted networks or bind to 127.0.0.1",
     "ref_fr": "Bonne pratique — Restreindre les ports de service exposés sur le LAN aux réseaux de confiance ou les lier à 127.0.0.1",

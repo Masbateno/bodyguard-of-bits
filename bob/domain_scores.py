@@ -101,11 +101,14 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "virt":               "exposure_services",   # KVM/bridge network exposure
     "samba":              "exposure_services",
     "smtp":               "exposure_services",
+    "cups":               "exposure_services",   # print service network exposure
     # --- GROUP 3 — ACCESS CONTROL -----------------------------------------
     "ssh":                "access_control",
     "auth_log":           "access_control",
     "user_accounts":      "access_control",
     "password_policy":    "access_control",
+    "faillock":           "access_control",
+    "polkit":             "access_control",
     "file_perms":         "access_control",
     # --- GROUP 4 — SYSTEM HARDENING ---------------------------------------
     "hardening":          "system_hardening",
@@ -120,6 +123,11 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "container_security": "system_hardening",
     "socket_units":       "system_hardening",
     "secure_boot":        "system_hardening",
+    "grub":               "system_hardening",
+    "mount_hardening":    "system_hardening",
+    "core_dumps":         "system_hardening",
+    "kexec_lockdown":     "system_hardening",
+    "disk_encryption":    "system_hardening",
     "cloud_context":      "system_hardening",
     "raspberry_pi":       "system_hardening",
     # --- GROUP 5 — HEALTH & RESILIENCE ------------------------------------

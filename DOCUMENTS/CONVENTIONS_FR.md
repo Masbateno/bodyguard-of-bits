@@ -324,6 +324,22 @@ def test_nominal_case():
 
 ---
 
+## 8. Versionnage
+
+Les versions sont en **SemVer** `MAJEUR.MINEUR.CORRECTIF`, **sans préfixe `v`** —
+dans le code, les tags git, et tout ce que BOB affiche. La version canonique vit
+dans `bob/__init__.py` (`__version__`) et `pyproject.toml` ; PyPI et SemVer
+l'appellent `0.21.0`, donc le banner, `--version`, l'en-tête du rapport/markdown,
+le webhook et la barre de titre TUI affichent `0.21.0`, jamais `v0.21.0`. Les
+versions d'outils tiers (ufw, firewalld) sont affichées pareil — nues.
+
+Une release est un tag git nommé d'après la version **sans préfixe** (`0.21.0`,
+pas `v0.21.0`) ; le workflow de publication se déclenche dessus. La forme legacy
+`v*` n'est gardée dans le trigger que pour que la dernière release taguée en v
+(`v0.20.5`) publie encore — tout tag à partir de v0.21.0 est sans `v`.
+`tests/test_v0210_semver_no_v_prefix.py` épingle les surfaces d'affichage et
+`tests/test_doc_version_consistency.py` les badges.
+
 ---
 
 © 2026 Cédric Clauzel

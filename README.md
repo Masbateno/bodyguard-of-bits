@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-v0.20.5-brightgreen)
+![Release](https://img.shields.io/badge/version-0.21.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -18,7 +18,7 @@
 
 **Linux hardening auditor for sysadmins who read the output.**
 
-BOB is a CLI security audit and hardening tool for Linux systems. It runs 39 check sections across 7 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
+BOB is a CLI security audit and hardening tool for Linux systems. It runs 47 check sections across 7 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
 
 ---
 
@@ -159,7 +159,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 ---
 
-## Security checks — 39 check sections, 7 score domains
+## Security checks — 47 check sections, 7 score domains
 
 | Domain | What it covers |
 |--------|----------------|

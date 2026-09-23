@@ -69,7 +69,10 @@ class TestTheDirectoryFormExplainsItself:
             cwd=_ROOT, capture_output=True, text=True, timeout=60,
         )
         assert proc.returncode == 0
-        assert "bob v" in proc.stdout
+        # SemVer, no "v" prefix: "bob 0.21.0", not "bob v0.21.0".
+        from bob import __version__
+        assert f"bob {__version__}" in proc.stdout
+        assert "bob v" not in proc.stdout
 
 
 class TestTheHandlerStaysNarrow:

@@ -66,6 +66,14 @@ from bob.checks.desktop_apps import DesktopAppsSnapshot, check_desktop_apps
 from bob.checks.backup import BackupSnapshot, check_backup
 from bob.checks.auditd import AuditdSnapshot, check_auditd
 from bob.checks.secure_boot import SecureBootSnapshot, check_secure_boot
+from bob.checks.grub import GrubSnapshot, check_grub
+from bob.checks.mount_hardening import MountHardeningSnapshot, check_mount_hardening
+from bob.checks.core_dumps import CoreDumpsSnapshot, check_core_dumps
+from bob.checks.kexec_lockdown import KexecLockdownSnapshot, check_kexec_lockdown
+from bob.checks.faillock import FaillockSnapshot, check_faillock
+from bob.checks.disk_encryption import DiskEncryptionSnapshot, check_disk_encryption
+from bob.checks.polkit import PolkitSnapshot, check_polkit
+from bob.checks.cups import CupsSnapshot, check_cups
 from bob.checks.file_integrity import FileIntegritySnapshot, check_file_integrity
 from bob.checks.ntp import NtpSnapshot, check_ntp
 from bob.checks.fail2ban import Fail2banSnapshot, check_fail2ban
@@ -110,10 +118,13 @@ _SECTIONS: tuple[_Section, ...] = (
     # Filterable sections (gated by --check / --skip / profile)
     _Section("ipv6",              False),
     _Section("smtp",              False),
+    _Section("cups",              False),
     _Section("ssh",               False),
     _Section("auth_log",          False),
     _Section("user_accounts",     False),
     _Section("password_policy",   False),
+    _Section("faillock",          False),
+    _Section("polkit",            False),
     _Section("file_perms",        False),
     _Section("hardening",         False),
     _Section("kernel_hardening",  False),
@@ -136,6 +147,11 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("backup",            False),
     _Section("auditd",            False),
     _Section("secure_boot",       False),
+    _Section("grub",              False),
+    _Section("mount_hardening",   False),
+    _Section("core_dumps",        False),
+    _Section("kexec_lockdown",    False),
+    _Section("disk_encryption",   False),
     _Section("fail2ban",          False),
     _Section("clamav",            False),
     _Section("file_integrity",    False),
@@ -895,6 +911,8 @@ def run_checks(
     # ---- CHECK 26 — SMTP local exposure ----
     _sec("smtp", SmtpSnapshot.from_system, check_smtp)
 
+    _sec("cups", CupsSnapshot.from_system, check_cups)
+
     # =========================================================================
     # GROUP 3 — CONTRÔLE D'ACCÈS
     # =========================================================================
@@ -911,6 +929,10 @@ def run_checks(
 
     # ---- CHECK 18 — Password policy audit ----
     _sec("password_policy", PasswordPolicySnapshot.from_system, check_password_policy)
+
+    _sec("faillock", FaillockSnapshot.from_system, check_faillock, profile_name=_pname)
+
+    _sec("polkit", PolkitSnapshot.from_system, check_polkit)
 
     # ---- CHECK 12 — Sensitive file permissions + sudoers ----
     _sec("file_perms", FilePermsSnapshot.from_system, check_file_perms)
@@ -975,6 +997,17 @@ def run_checks(
 
     # ---- CHECK 32 — Secure Boot ----
     _sec("secure_boot", SecureBootSnapshot.from_system, check_secure_boot, profile_name=_pname)
+
+    _sec("grub", GrubSnapshot.from_system, check_grub)
+
+    _sec("mount_hardening", MountHardeningSnapshot.from_system, check_mount_hardening)
+
+    _sec("core_dumps", CoreDumpsSnapshot.from_system, check_core_dumps)
+
+    _sec("kexec_lockdown", KexecLockdownSnapshot.from_system, check_kexec_lockdown)
+
+    _sec("disk_encryption", DiskEncryptionSnapshot.from_system, check_disk_encryption,
+         profile_name=_pname)
 
     # ---- CHECK 49 — Host-side cloud context (only on a cloud instance) ----
     _sec("cloud_context", CloudContextSnapshot.from_system, check_cloud_context,

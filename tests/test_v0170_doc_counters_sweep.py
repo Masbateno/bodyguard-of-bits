@@ -66,6 +66,17 @@ _COINCIDENCES = {
     # made equal to the EXPLAIN_KEYS count. Line counts are deliberately
     # not guarded strictly (see the SNAPSHOT guard calibration).
     "L",
+    # SNAPSHOT: "43 long-form + 21 short options" is the CLI flag count
+    # (bob.cli.parse_args), which v0.21.0 made equal to the section count when
+    # core_dumps became the 43rd filterable section. Unrelated counter.
+    "long-form",
+    # v0.21.0 coincidences with the section count (now 44), all unrelated:
+    # "Fedora 44 Server" (a distro version in the tier table), "44 rows below"
+    # (the module-index row count), "44 non-pilot checks" (a historical
+    # template_vars-migration backlog note).
+    "Server",
+    "rows",
+    "non-pilot",
     # README_TECH: "50 failed attempts" is a brute-force threshold that happens
     # to equal the explain-prefix count. Nothing to keep in sync.
     "failed attempts",
@@ -90,8 +101,20 @@ _COINCIDENCES = {
     # the prefix count beside them — by
     # test_v0163_readme_tech_claims.py::test_the_explain_key_and_prefix_counts.
     "explainable keys",
+    # SNAPSHOT: "54 CIS Debian 12" / "54 CIS Ubuntu 24.04" are per-benchmark
+    # cross-citation counts that v0.21.0 made equal to the explain-prefix count
+    # (now 54) when faillock became the 54th prefix. Unrelated counters; the
+    # cis_refs total is watched via "CIS references" / "entries".
+    "CIS Debian",
+    "CIS Ubuntu",
     "keys",
     "clés",
+    # README_TECH sample output: "47 blocked attempt(s) over 7 day(s)" / FR "47
+    # tentative(s) bloquée(s)" is an illustrative auth-log count in a sample
+    # panel; v0.21.0 made it equal the filterable-section count (47). Arbitrary
+    # sample text, not a counter.
+    "blocked attempt",
+    "tentative",
     # AUTOMATION: "the last 50 audit scores" is history.jsonl's retention
     # length. It equals the explain-prefix count today and will stop doing so
     # the next time a prefix is added; neither figure constrains the other.

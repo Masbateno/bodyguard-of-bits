@@ -854,7 +854,7 @@ def print_help(t, version: str) -> None:
         # right of the rest.
         print(f"  {cmd:<{col}}  {t('help.example.' + key)}")
 
-    print(f"BOB v{version} — {t('help.tagline')}")
+    print(f"BOB {version} — {t('help.tagline')}")
     print()
     # The label is translated, so the continuation line is padded from its
     # rendered length rather than a hardcoded seven spaces.

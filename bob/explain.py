@@ -273,6 +273,24 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "secure_boot.setup_mode",
         "secure_boot.disabled",
     ]),
+    ("GRUB", [
+        "grub.cfg_perms",
+    ]),
+    ("CUPS", [
+        "cups.listen_exposed",
+    ]),
+    ("Mount hardening", [
+        "mount_hardening.options_missing",
+    ]),
+    ("PAM account lockout", [
+        "faillock.not_configured",
+    ]),
+    ("Disk encryption", [
+        "disk_encryption.root_unencrypted",
+    ]),
+    ("polkit authorization", [
+        "polkit.rule_writable",
+    ]),
     ("File Integrity", [
         "file_integrity.not_installed",
         "file_integrity.no_db",

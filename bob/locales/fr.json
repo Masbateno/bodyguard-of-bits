@@ -55,11 +55,19 @@
     "samba": "AUDIT DE SÉCURITÉ SAMBA",
     "clamav": "AUDIT ANTIVIRUS CLAMAV",
     "smtp": "EXPOSITION SMTP LOCALE",
+    "cups": "SERVICE D'IMPRESSION CUPS",
     "desktop_apps": "AUDIT APPLICATIONS BUREAU",
     "ntp": "SYNCHRONISATION NTP",
     "fail2ban": "PRÉVENTION D'INTRUSION FAIL2BAN",
     "auditd": "AUDIT SYSTÈME LINUX (AUDITD)",
     "secure_boot": "DÉMARRAGE SÉCURISÉ (SECURE BOOT)",
+    "grub": "BOOTLOADER GRUB",
+    "mount_hardening": "DURCISSEMENT DES MONTAGES",
+    "core_dumps": "CORE DUMPS",
+    "kexec_lockdown": "KEXEC & LOCKDOWN NOYAU",
+    "faillock": "VERROUILLAGE DE COMPTE PAM",
+    "disk_encryption": "CHIFFREMENT DU DISQUE",
+    "polkit": "AUTORISATION POLKIT",
     "file_integrity": "INTÉGRITÉ DES FICHIERS (AIDE / TRIPWIRE)",
     "rootkit": "DÉTECTION ROOTKIT & INTÉGRITÉ",
     "mac_policy": "POLITIQUE MAC (APPARMOR / SELINUX)",
@@ -100,7 +108,15 @@
       "rootkit": "Scanner rootkit — signatures rkhunter + historique des scans",
       "samba": "Samba — SMBv1 désactivé, signature serveur, accès invité",
       "secure_boot": "Statut Secure Boot — activé, mode setup",
+      "grub": "Bootloader GRUB — permissions grub.cfg, mot de passe superutilisateur",
+      "mount_hardening": "Options de montage — /tmp, /var/tmp, /dev/shm nodev/nosuid/noexec",
+      "core_dumps": "Disposition des core dumps — core_pattern, stockage systemd-coredump, limites",
+      "kexec_lockdown": "Intégrité du boot — kexec_load_disabled + mode lockdown noyau",
+      "faillock": "Verrouillage de compte PAM — pam_faillock/tally2 dans la pile auth, seuil deny",
+      "disk_encryption": "Chiffrement du disque — si le système de fichiers racine est sur un volume LUKS/dm-crypt (filtré par profil)",
+      "polkit": "Autorisation polkit — fichiers de règles évalués en tant que root ; un .rules/.pkla modifiable par non-root est un chemin d'escalade de privilèges",
       "smtp": "Exposition démon SMTP — binding Postfix / Exim, risque de relais",
+      "cups": "Service d'impression CUPS — adresse d'écoute cupsd.conf, browsing réseau",
       "ssh": "Durcissement SSH — sshd_config, clés hôte, ~/.ssh, authorized_keys",
       "ssl_certs": "Expiration certificats TLS/SSL — Let's Encrypt, nginx, apache, postfix",
       "suid_audit": "Binaires SUID/SGID — entrées inattendues vs whitelist",
@@ -2707,6 +2723,48 @@
         }
       }
     },
+    "grub": {
+      "cfg_perms": {
+        "title": "La config GRUB (grub.cfg) n'est pas réservée au propriétaire",
+        "why": "grub.cfg contient la ligne de commande de boot complète et, quand un mot de passe GRUB est configuré, son hash password_pbkdf2. Si le fichier est lisible par le groupe ou tous, ce hash peut être copié et cracké hors-ligne, et les paramètres de boot sont divulgués. S'il est inscriptible par le groupe ou tous, la ligne de commande de boot elle-même peut être altérée — p. ex. pour ajouter init=/bin/bash — ce qui est un chemin direct d'élévation de privilèges locale.",
+        "how": "Réserver grub.cfg à root :\n  sudo chmod 600 /boot/grub/grub.cfg   # ou /boot/grub2/grub.cfg sur Fedora/RHEL/openSUSE\n\nC'est préservé à la régénération sur la plupart des distributions ; si update-grub/grub2-mkconfig le réinitialise, ajouter un chmod au hook de mise à jour. CIS §1.4.1."
+      }
+    },
+    "cups": {
+      "listen_exposed": {
+        "title": "Le service d'impression CUPS écoute sur le réseau",
+        "why": "Le cupsd.conf livré n'écoute que sur localhost. Quand cupsd lie une adresse routable (Listen 0.0.0.0:631, une vraie IP, *:631, ou un simple Port), le service d'impression est joignable depuis le réseau. CUPS a un long historique de vulnérabilités exploitables à distance (la chaîne cups-browsed/foomatic de 2024 étant la plus récente largement médiatisée), donc un cupsd inutilement exposé sur le réseau est une vraie surface d'attaque.",
+        "how": "À moins de servir délibérément des imprimantes à d'autres hôtes, relier CUPS à localhost :\n  sudo cupsctl --no-remote-any\n  sudo systemctl restart cups\n\nOu éditer /etc/cups/cupsd.conf pour que les seules lignes Listen soient `Listen localhost:631` et `Listen /run/cups/cups.sock`, puis redémarrer cups. Si l'impression distante est nécessaire, restreindre l'accès avec des règles Location/Allow et une règle pare-feu limitant le 631 aux hôtes de confiance."
+      }
+    },
+    "mount_hardening": {
+      "options_missing": {
+        "title": "Une zone scratch world-writable manque nodev/nosuid",
+        "why": "/tmp, /var/tmp et /dev/shm sont world-writable. Quand elles sont leur propre montage mais manquent nodev, un attaquant qui peut y écrire peut créer un device node ; sans nosuid, un binaire set-uid déposé là garde son bit set-uid et devient un chemin d'élévation de privilèges. noexec empêche en plus d'exécuter du code directement depuis la zone. Ce sont des options de durcissement standards et peu coûteuses pour l'espace scratch.",
+        "how": "Ajouter les options dans /etc/fstab pour le montage et remonter. Par exemple :\n  tmpfs /tmp tmpfs defaults,nodev,nosuid,noexec 0 0\n  sudo mount -o remount /tmp\n\nAppliquer de même à /var/tmp et /dev/shm. Ajouter noexec en dernier et le tester — certains installateurs et builds de paquets exécutent légitimement depuis /tmp. BOB n'auto-corrige pas les montages : une erreur dans fstab peut rendre un système non bootable, donc le changement est à faire et vérifier par toi."
+      }
+    },
+    "faillock": {
+      "not_configured": {
+        "title": "Aucun verrouillage de compte PAM sur échec d'authentification",
+        "why": "Sans pam_faillock (ou le legacy pam_tally2), les tentatives répétées de mot de passe contre les logins locaux, su, sudo et tout autre consommateur PAM ne sont pas limitées par PAM. C'est distinct de fail2ban, qui bannit une IP à partir des lignes de log — il ne voit jamais les tentatives locales ou su. Sur un hôte multi-utilisateurs ou exposé, un chemin d'auth sans throttling est une vraie surface de bruteforce.",
+        "how": "Activer le verrouillage de compte et régler un seuil.\n\nDebian/Ubuntu : `sudo pam-auth-update` (activer les profils faillock), puis dans /etc/security/faillock.conf :\n  deny = 5\n  unlock_time = 900\n\nRHEL/Fedora : `sudo authselect enable-feature with-faillock` (ou l'équivalent du profil courant), puis les mêmes clés faillock.conf.\n\nBOB n'auto-édite pas PAM : une mauvaise règle de verrouillage peut verrouiller tous les comptes, donc appliquer et tester dans une seconde session avant de se déconnecter. Choisir un unlock_time fini — le verrouillage de compte est lui-même un levier de déni de service."
+      }
+    },
+    "disk_encryption": {
+      "root_unencrypted": {
+        "title": "Le système de fichiers racine n'est pas chiffré",
+        "why": "Le chiffrement intégral du disque protège les données au repos. Sans lui, quiconque obtient la possession physique du disque — un portable volé, un disque retourné en RMA, un disque mis au rebut ou revendu — peut lire chaque fichier en le branchant sur une autre machine, contournant entièrement toutes les permissions au niveau de l'OS et les contrôles de connexion. C'est le seul contrôle qui tient encore une fois la machine hors de ta garde. BOB filtre par profil : c'est une déduction sur un poste desktop/workstation (portable, physiquement exposé) et informatif sur un serveur (baie verrouillée, pas de console de boot pour une passphrase).",
+        "how": "Activer le chiffrement intégral LUKS (ou au moins de la partition).\n\nCela ne peut pas se faire en place sur une racine nue existante. Soit :\n  (a) réinstaller l'OS et choisir « chiffrer le disque » dans l'installateur, soit\n  (b) sauvegarder, recréer le volume avec `cryptsetup luksFormat`, et restaurer.\n\nPortable/desktop : l'option LUKS de l'installateur est le chemin le plus simple.\nServeur sans écran : associer LUKS à une méthode de déverrouillage distant (Clevis + Tang, ou dropbear-initramfs) pour que la machine démarre sans surveillance.\n\nBOB n'active jamais le chiffrement automatiquement — c'est une opération destructive et à sens unique sur le volume."
+      }
+    },
+    "polkit": {
+      "rule_writable": {
+        "title": "Un fichier de règle polkit est modifiable par un utilisateur non-root",
+        "why": "polkit décide qui peut exécuter des actions privilégiées (monter un disque, redémarrer un service, installer un paquet) et il évalue ses fichiers de règles en tant que root. Les règles JavaScript de /etc/polkit-1/rules.d — et les grants .pkla legacy — s'exécutent avec les pleins privilèges. Si un fichier de règle est modifiable par le groupe/autres, ou appartient à un utilisateur non-root, alors cet utilisateur peut l'éditer pour faire renvoyer `polkit.Result.YES` à polkit pour n'importe quelle action, ou s'accorder une action admin sans mot de passe. C'est un chemin direct et inconditionnel vers root, de même nature qu'un fichier sudoers modifiable.",
+        "how": "Restaurer la propriété root et retirer l'écriture non-root sur le fichier fautif :\n\n  sudo chown root:root <fichier>\n  sudo chmod g-w,o-w <fichier>\n\nLes fichiers de règles polkit sont conventionnellement en 0644 root:root. Vérifier aussi que le répertoire contenant (/etc/polkit-1/rules.d) appartient bien à root et est en 0755 — un répertoire modifiable laisse un attaquant déposer une nouvelle règle même si les fichiers existants sont sûrs. BOB signale chaque fichier modifiable séparément."
+      }
+    },
     "file_integrity": {
       "not_installed": {
         "title": "Aucun outil de surveillance d'intégrité des fichiers installé",
@@ -3236,6 +3294,19 @@
     "not_synchronized_detail": "Le service NTP fonctionne mais n'a pas encore terminé sa première synchronisation. C'est normal juste après le démarrage ou sur un système fraîchement installé. Si cela persiste, vérifiez la connectivité vers le pool NTP et consultez : journalctl -u systemd-timesyncd ou chronyc tracking.",
     "not_synchronized_reason": "NTP activé mais pas encore synchronisé"
   },
+  "cups": {
+    "not_present": "CUPS n'est pas configuré sur cet hôte — aucun service d'impression à auditer",
+    "not_present_detail": "BOB n'a trouvé aucun /etc/cups/cupsd.conf. CUPS n'est pas installé ou pas configuré ici, donc il n'y a pas d'exposition du service d'impression à évaluer.",
+    "cfg_unreadable": "/etc/cups/cupsd.conf trouvé mais illisible",
+    "cfg_unreadable_detail": "BOB n'a pas pu lire cupsd.conf pour vérifier l'adresse d'écoute. Relancer avec sudo pour une réponse complète.",
+    "listen_exposed": "CUPS écoute au-delà de localhost ({listen}) — le service d'impression est joignable sur le réseau",
+    "listen_exposed_reason": "cupsd lié à une adresse non-loopback — démon d'impression joignable sur le réseau (CUPS a un historique de CVE distantes)",
+    "listen_exposed_detail": "Le cupsd.conf livré n'écoute que sur localhost. Un Listen sur 0.0.0.0/*/une IP routable, ou un simple `Port`, expose le service d'impression au réseau. À moins de servir délibérément des imprimantes à d'autres hôtes, le relier à localhost. `cupsctl --no-remote-any` restaure le défaut local ; sinon éditer les lignes Listen dans /etc/cups/cupsd.conf et redémarrer cups.",
+    "listen_localhost": "CUPS n'écoute que sur localhost — le service d'impression n'est pas exposé sur le réseau",
+    "browsing_on": "Le Browsing CUPS est activé — les imprimantes sont annoncées/consommées sur le réseau (cups-browsed)",
+    "browsing_on_detail": "Browsing On active cups-browsed, qui annonce et ajoute automatiquement les imprimantes partagées sur le réseau (UDP 631). C'était le vecteur de la chaîne RCE cups-browsed de 2024. Si vous ne dépendez pas de la découverte automatique d'imprimantes, mettre `Browsing Off` dans /etc/cups/cupsd.conf (et envisager de désactiver le service cups-browsed). Aucune déduction de score — note d'information.",
+    "browsing_off": "Le Browsing CUPS est désactivé — aucune annonce d'imprimante sur le réseau"
+  },
   "smtp": {
     "not_installed": "Aucun MTA détecté (Postfix/Exim/Sendmail) — pas de serveur mail local",
     "installed_not_listening": "{mta} est installé mais n'écoute pas sur le port 25",
@@ -3291,6 +3362,90 @@
     "legacy_account_detail": "Raspberry Pi OS était livré avec un compte « {user} » jusqu'en 2022, et tous les guides écrits avant cette date disent encore de l'utiliser. Le compte présent ici a un mot de passe défini et un shell de connexion : il est donc utilisable. BOB ne teste pas si le mot de passe est resté celui de la distribution — cela demanderait une implémentation de crypt, or crypt a été retiré de la bibliothèque standard Python en 3.13. Vérifiez-le vous-même, et préférez un compte dont l'attaquant doit deviner le nom.",
     "account_unknown": "Impossible de lire /etc/shadow — l'état du compte par défaut n'a pas été établi",
     "account_unknown_detail": "Le champ mot de passe décide si le compte « {user} » peut se connecter, et /etc/shadow n'a pas pu être lu. Lancez BOB en root pour l'établir. Rien n'est affirmé dans un sens ou dans l'autre."
+  },
+  "grub": {
+    "not_present": "Aucune config du bootloader GRUB trouvée — rien à vérifier ici",
+    "not_present_detail": "BOB n'a trouvé aucun grub.cfg (/boot/grub, /boot/grub2, /boot/efi/EFI/*/). Cet hôte démarre probablement via systemd-boot, un EFI stub, extlinux, ou son propre firmware (Raspberry Pi). Le durcissement spécifique à GRUB ne s'applique pas.",
+    "cfg_unreadable": "Config GRUB {path} trouvée mais ses permissions n'ont pas pu être lues",
+    "cfg_unreadable_detail": "BOB n'a pas pu faire un stat de grub.cfg pour vérifier ses permissions. Relancer avec sudo pour une réponse complète.",
+    "cfg_perms": "La config GRUB {path} n'est pas réservée au propriétaire (mode {mode})",
+    "cfg_perms_detail": "grub.cfg ne devrait être lisible et modifiable que par root (0600). Tout ce qui est plus permissif divulgue la ligne de commande de boot complète et, si un mot de passe GRUB est défini, son hash password_pbkdf2 — crackable hors-ligne. Inscriptible par groupe/autres est pire : la ligne de boot elle-même peut être altérée.",
+    "cfg_perms_reason": "grub.cfg est accessible par groupe/autres — les paramètres de boot sont divulgués",
+    "cfg_perms_reason_hash": "grub.cfg est lisible par groupe/autres et porte un hash de mot de passe GRUB — le hash est exposé au crack hors-ligne",
+    "cfg_perms_reason_writable": "grub.cfg est inscriptible par groupe/autres — la ligne de commande de boot peut être altérée",
+    "cfg_perms_ok": "La config GRUB {path} est réservée au propriétaire (mode {mode})",
+    "no_password": "Aucun mot de passe superutilisateur GRUB défini — quiconque à la console peut éditer les entrées de boot",
+    "no_password_detail": "Sans superutilisateur GRUB (password_pbkdf2), une personne à la console physique peut appuyer sur « e » pour éditer une entrée du menu et démarrer avec init=/bin/bash pour un shell root non authentifié, ou passer en mode single-user. C'est un contrôle d'accès physique/console ; c'est signalé pour information (aucune déduction de score), car le définir peut bloquer les reboots sans surveillance et son absence est courante. Pour en définir un : lancer grub-mkpasswd-pbkdf2, puis ajouter « set superusers » et « password_pbkdf2 » dans /etc/grub.d/40_custom et lancer update-grub.",
+    "password_set": "Un mot de passe superutilisateur GRUB est configuré"
+  },
+  "mount_hardening": {
+    "unreadable": "/proc/self/mounts illisible — options de montage inconnues",
+    "unreadable_detail": "BOB lit les options de montage effectives depuis /proc/self/mounts. Illisible → l'état de /tmp, /var/tmp et /dev/shm est inconnu, pas propre.",
+    "not_found": "{mount} n'est pas présent comme montage — options non évaluables",
+    "not_separate": "{mount} n'est pas un montage séparé — ses options suivent le système de fichiers racine",
+    "not_separate_detail": "{mount} fait partie du système de fichiers racine, pas son propre montage, donc nodev/nosuid/noexec ne peuvent pas y être définis indépendamment. C'est un choix de topologie valide, pas un défaut — signalé pour information. Pour le durcir, lui donner son propre montage (une partition, ou une entrée bind/tmpfs dans /etc/fstab).",
+    "options_missing": "{mount} est monté sans {missing} — une zone world-writable sans protections clés",
+    "options_missing_reason": "{mount} manque nodev/nosuid — les device nodes ou binaires set-uid déposés là sont honorés",
+    "options_missing_detail": "Une zone scratch world-writable devrait porter nodev (pas de device nodes) et nosuid (pas de bit set-uid) pour qu'un fichier déposé par un attaquant ne devienne ni un device ni un binaire d'élévation. Ajouter les options dans /etc/fstab et remonter, p. ex. : une ligne `tmpfs /tmp tmpfs defaults,nodev,nosuid,noexec 0 0`, puis `sudo mount -o remount /tmp`. Tester noexec d'abord — il peut casser certains installateurs.",
+    "noexec_missing": "{mount} est monté nodev,nosuid mais sans noexec",
+    "noexec_missing_detail": "{mount} a les protections importantes (nodev, nosuid) ; noexec empêcherait aussi l'exécution de code depuis cette zone, mais peut casser des usages légitimes (installateurs, builds de paquets, certains runtimes utilisent /tmp). Ajouter noexec est un choix de durcissement — signalé pour information, sans déduction.",
+    "hardened": "{mount} est monté nodev, nosuid, noexec"
+  },
+  "core_dumps": {
+    "unknown": "kernel.core_pattern illisible — disposition des core dumps inconnue",
+    "unknown_detail": "BOB lit /proc/sys/kernel/core_pattern pour voir où vont les core dumps. Illisible → disposition inconnue, pas propre.",
+    "disabled": "Les core dumps sont désactivés — rien n'est écrit au crash",
+    "systemd": "Les core dumps sont gérés par systemd-coredump (Storage={storage})",
+    "systemd_detail": "Les crashs sont capturés par systemd-coredump et conservés ({storage}). Le stockage (/var/lib/systemd/coredump, ou le journal) est réservé à root par défaut, mais un core dump peut contenir des secrets détenus par le processus crashé — clés, mots de passe, données déchiffrées. Si tu n'as pas besoin des dumps, mettre Storage=none dans /etc/systemd/coredump.conf ; pour inspecter, utiliser coredumpctl. Aucune déduction — c'est la disposition, à toi de décider.",
+    "piped": "Les core dumps sont redirigés vers un handler ({handler})",
+    "piped_detail": "kernel.core_pattern redirige les crashs vers {handler}. Où finissent les dumps, et qui peut les lire, dépend de ce handler — les core dumps peuvent contenir des secrets du processus crashé, donc vérifier que son stockage n'est pas world-readable. Aucune déduction.",
+    "to_disk": "Les core dumps sont écrits sur disque (core_pattern : {pattern})",
+    "to_disk_detail": "kernel.core_pattern écrit les crashs vers un chemin du système de fichiers plutôt qu'un handler géré. Un dump écrit dans le répertoire de travail d'un processus peut être world-readable et contenir des secrets détenus par le processus. Envisager de router les dumps vers systemd-coredump, mettre Storage=none, ou une limite `hard core 0` si tu n'en as pas besoin. Aucune déduction — signalé pour information."
+  },
+  "kexec_lockdown": {
+    "kexec_disabled": "kexec est verrouillé (kernel.kexec_load_disabled=1) — aucun nouveau noyau ne peut être chargé jusqu'au reboot",
+    "kexec_allowed": "Le chargement kexec est autorisé (kernel.kexec_load_disabled=0)",
+    "kexec_allowed_detail": "Avec kexec_load_disabled=0, un utilisateur privilégié peut charger et démarrer une autre image noyau sans reboot — contournant le firmware et, avec lui, Secure Boot pour le prochain noyau. C'est utilisé légitimement par kdump (capture de crash-dump), donc c'est signalé, pas pénalisé. Si tu n'utilises pas kdump/kexec, mettre kernel.kexec_load_disabled=1 (sysctl.d) pour le verrouiller le temps de l'uptime — note qu'il ne peut pas être réactivé sans reboot.",
+    "kexec_unknown": "État kexec illisible (kernel.kexec_load_disabled)",
+    "lockdown_active": "Le lockdown noyau est actif (mode : {mode})",
+    "lockdown_none": "Le lockdown noyau n'est pas actif",
+    "lockdown_none_detail": "Le lockdown noyau restreint même root de modifier le noyau en cours (/dev/mem, modules non signés, kexec d'images non signées). Il est désactivé ici — le défaut sur les systèmes qui n'imposent pas Secure Boot. Il est typiquement activé automatiquement quand Secure Boot est actif, ou via le paramètre noyau lockdown=. Aucune déduction : l'activer peut casser des outils légitimes (certains debuggers, modules propriétaires).",
+    "lockdown_absent": "Interface de lockdown noyau absente — ce noyau a été compilé sans le LSM lockdown",
+    "lockdown_unknown": "État du lockdown noyau illisible"
+  },
+  "faillock": {
+    "unknown": "Pile d'auth PAM illisible — état du verrouillage de compte inconnu",
+    "unknown_detail": "BOB cherche pam_faillock/pam_tally2 dans /etc/pam.d/common-auth ou system-auth. Aucun fichier d'auth PAM lisible (ou le système n'utilise pas PAM), donc l'état du verrouillage de compte est inconnu, pas propre.",
+    "configured": "Le verrouillage de compte est configuré ({module}, deny={deny})",
+    "not_configured": "Aucun verrouillage de compte PAM sur échec d'authentification",
+    "not_configured_reason": "pas de pam_faillock/pam_tally2 — les tentatives répétées de mot de passe contre les logins locaux, su et sudo ne sont pas limitées par PAM",
+    "not_configured_detail": "pam_faillock verrouille un compte après N échecs d'authentification, couvrant les logins locaux, su, sudo et tout consommateur PAM — des chemins qu'un outil réseau comme fail2ban ne voit jamais. Il n'est pas configuré ici. Sur Debian/Ubuntu, l'activer avec `pam-auth-update` (ou ajouter pam_faillock à /etc/pam.d/common-auth) et régler `deny=`/`unlock_time=` dans /etc/security/faillock.conf ; sur RHEL/Fedora, utiliser `authselect`. BOB n'auto-édite pas PAM — une mauvaise règle de verrouillage peut verrouiller tous les comptes, donc l'appliquer et la tester soi-même. Note : le verrouillage de compte est lui-même un levier de déni de service ; l'associer à un unlock_time raisonnable.",
+    "not_configured_desktop_detail": "Pas de verrouillage de compte pam_faillock/pam_tally2. Sur un poste mono-utilisateur, la menace d'accès physique visée est plus faible et le verrouillage est un levier DoS, donc signalé sans déduction — l'activer (pam-auth-update / authselect, faillock.conf) si la machine est partagée ou exposée."
+  },
+  "disk_encryption": {
+    "container_na": "Le chiffrement intégral du disque ne s'applique pas dans un conteneur — les données au repos relèvent de l'hôte",
+    "unknown": "Périphérique racine non résolu — état du chiffrement inconnu",
+    "unknown_detail": "BOB lit le périphérique derrière / depuis /proc/self/mounts et le résout à travers la pile device-mapper. Le périphérique racine n'a pas pu être résolu (racine pseudo, overlay ou réseau, ou /proc/self/mounts illisible), donc l'état du chiffrement est inconnu, pas propre.",
+    "root_encrypted": "Le système de fichiers racine est sur un volume chiffré (LUKS/dm-crypt)",
+    "volumes_present_root_unknown": "{count} volume(s) chiffré(s) présent(s), mais le périphérique racine n'a pas pu être résolu",
+    "volumes_present_root_unknown_detail": "Des volumes LUKS/dm-crypt ont été trouvés ({volumes}), mais BOB n'a pas pu résoudre le périphérique derrière / (racine pseudo/overlay/réseau), donc il ne peut pas dire si le système de fichiers racine lui-même est chiffré.",
+    "root_unencrypted": "Le système de fichiers racine n'est pas chiffré",
+    "root_unencrypted_reason": "la racine est sur un périphérique nu, non chiffré — un disque volé ou jeté révèle son contenu",
+    "root_unencrypted_detail": "Le périphérique derrière / est une partition nue, donc les données au repos sont lisibles par quiconque obtient le disque (portable volé, disque retourné en RMA, disque mis au rebut). Le chiffrement intégral (LUKS) protège les données au repos. Il ne peut pas être activé en place — il faut réinstaller avec le chiffrement activé, ou un cycle sauvegarde/re-chiffrement/restauration. BOB ne le fait jamais automatiquement.",
+    "root_unencrypted_detail_with_volumes": "Le périphérique derrière / est une partition nue, donc les données au repos sont lisibles par quiconque obtient le disque. Des volumes chiffrés existent bien sur cet hôte ({volumes}) mais le système de fichiers racine n'en fait pas partie. Le chiffrement intégral (LUKS) protège les données au repos ; il ne peut pas être activé en place — il faut réinstaller avec le chiffrement activé, ou un cycle sauvegarde/re-chiffrement/restauration. BOB ne le fait jamais automatiquement.",
+    "root_unencrypted_server": "Le système de fichiers racine n'est pas chiffré (profil serveur — signalé, pas décompté)",
+    "root_unencrypted_server_detail": "Le périphérique racine est une partition nue. Sur un serveur sans écran, le chiffrement intégral nécessite un outillage de déverrouillage distant (une invite de passphrase au boot n'a pas de console), et le modèle de menace physique est une baie verrouillée plutôt qu'un appareil portable — donc BOB le signale sans déduction. Si le serveur détient des données sensibles au repos ou si ses disques peuvent être physiquement retirés ou mis au rebut, envisager LUKS avec une méthode de déverrouillage distant (Clevis/Tang, dropbear-initramfs)."
+  },
+  "polkit": {
+    "not_present": "Aucun répertoire de règles polkit trouvé — polkit non installé ou non configuré",
+    "unreadable": "Un répertoire de règles polkit n'a pas pu être lu — permissions des règles partiellement inconnues",
+    "unreadable_detail": "BOB liste /etc/polkit-1/rules.d, /usr/share/polkit-1/rules.d et les fichiers .pkla legacy de localauthority, et fait un stat sur chacun. Au moins une entrée n'a pas pu être lue, donc sa propriété/ses permissions n'ont pas pu être vérifiées — inconnu, pas propre.",
+    "rules_ok": "Les fichiers de règles polkit appartiennent à root et ne sont pas modifiables par non-root",
+    "rule_writable": "Fichier de règle polkit modifiable par non-root : {path}",
+    "rule_writable_reason": "polkit évalue ses règles en tant que root ; une règle qu'un utilisateur non-root peut éditer lui accorde n'importe quelle action privilégiée — escalade de privilèges directe",
+    "rule_writable_detail": "{path} est modifiable par le groupe/autres ou n'appartient pas à root. polkit exécute les règles JavaScript de /etc/polkit-1/rules.d (et lit les grants .pkla) en tant que root pour décider qui peut effectuer des actions privilégiées, donc quiconque peut écrire ce fichier peut faire renvoyer YES à polkit pour n'importe quelle action — root complet. Restaurer la propriété root et retirer l'écriture non-root : `sudo chown root:root {path} && sudo chmod g-w,o-w {path}` (les fichiers de règles sont conventionnellement en 0644 root:root).",
+    "pkla_any_yes": "Un .pkla polkit legacy accorde ResultAny=yes (contournement d'auth pour toute session) : {path}",
+    "pkla_any_yes_detail": "{path} définit ResultAny=yes, ce qui autorise son ou ses actions pour *toute* session — y compris inactives et distantes — sans authentification. Cela peut être délibéré (un kiosque, une appliance partagée), donc BOB le signale sans déduction ; vérifier si le contournement est intentionnel et si ResultActive serait assez étroit."
   },
   "secure_boot": {
     "enabled": "Secure Boot est activé",

@@ -126,7 +126,7 @@ def _run(argv=None) -> int:
         return EXIT_ERROR
 
     if config.show_version:
-        print(f"bob v{VERSION}")
+        print(f"bob {VERSION}")
         return EXIT_OK
 
     if config.show_help:
@@ -625,16 +625,16 @@ def _run(argv=None) -> int:
             if not config.quiet:
                 not_installed = t("banner.not_installed")
                 print_banner(
-                    version=f"v{VERSION}",
+                    version=VERSION,
                     subtitle=t("banner.subtitle"),
                     system=sys_info.os_name,
                     host=sys_info.hostname,
                     kernel=sys_info.kernel,
-                    ufw_version=(f"v{sys_info.ufw_version}"
+                    ufw_version=(sys_info.ufw_version
                                  if sys_info.ufw_version else not_installed),
                     iptables=sys_info.iptables_version or not_installed,
                     nftables=sys_info.nftables_version or not_installed,
-                    firewalld=(f"v{sys_info.firewalld_version}"
+                    firewalld=(sys_info.firewalld_version
                                if sys_info.firewalld_version else not_installed),
                     init_system=sys_info.init_system or not_installed,
                     user=sys_info.user,

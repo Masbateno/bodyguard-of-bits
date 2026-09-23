@@ -6,6 +6,137 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v0.21.0] — 2026-09-23
+
+**A minor release: eight new check sections, and the SemVer "v" prefix dropped
+everywhere.** This opens the v0.21.x check-growth arc — the first waves that
+widen BOB's coverage of long-standing hardening controls — and settles a
+versioning inconsistency that had been carried since v0.1.0.
+
+### SemVer: the "v" prefix is gone
+
+BOB's version string was displayed as `v0.20.5` in the banner, `--version`, the
+help header, the JSON output, the webhook payload and the report footer stamp,
+while `pyproject.toml` and `__init__.py` already carried the bare `0.20.5`. SemVer
+version cores do not include a `v`; the prefix is a git-tag/display convention that
+had leaked into the tool's own identity. Every display site now emits the bare
+number (`bob 0.21.0`, `BOB 0.21.0  │  …`), and git tags follow: the release tag is
+`0.21.0`, not `v0.21.0`. The publish workflow's tag trigger accepts **both** the
+new tagless `[0-9]+.[0-9]+.[0-9]+` form and the legacy `v*`, so the last v-tagged
+release (`v0.20.5`) still publishes and nothing already tagged breaks. The
+convention is now written down in `CONVENTIONS.md §8` (and its FR mirror). The
+shields badge regex was relaxed to `version-v?…` so both spellings match; the
+changelog's own `[vX.Y.Z]` anchor scheme is a historical ledger and is left as-is.
+
+### Eight new checks
+
+Each is split into a `Snapshot.from_system()` (all I/O, never raises) and a pure
+`check_*()`, profile-aware, and deliberately non-dogmatic: an unreadable or
+unknown state is reported as such (never as clean), CIS traps are avoided, and BOB
+does **not** auto-edit PAM or fstab — where a wrong edit could lock the operator
+out or fail to boot, the remediation is described, not applied.
+
+**GRUB bootloader** (`grub`, system-hardening). Reads `grub.cfg` permissions and
+whether a boot-menu password is set. A world- or group-readable `grub.cfg` is
+WARN — escalated in wording when the file carries a `password_pbkdf2` hash (a
+readable hash is offline-crackable) or is writable; the absence of any GRUB
+password is INFO (physical-access control, not always warranted); an unreadable
+config is INFO, not a silent pass. CIS 1.4.1.
+
+**CUPS print service** (`cups`, exposure). Flags a CUPS daemon `Listen`ing on a
+non-loopback address — remotely reachable print service — with remediation
+`cupsctl --no-remote-any`; `Browsing On` (network printer advertisement) is INFO.
+`localhost`, `127.`/`[::1]` and UNIX socket paths all read as loopback.
+
+**Mount hardening** (`mount_hardening`, system-hardening). Reads
+`/proc/self/mounts` for `/tmp`, `/var/tmp` and `/dev/shm`. A filesystem that *is* a
+separate mount but lacks `nodev`/`nosuid` is WARN; missing only `noexec` is INFO;
+a directory that is **not** a separate mount is INFO with no penalty — the CIS
+"must be a separate partition" requirement is a provisioning choice, not a running
+fault, and flagging it would be noise on the majority of real hosts.
+
+**Core-dump policy** (`core_dumps`, system-hardening, INFO-only). Reads
+`kernel.core_pattern`, systemd-coredump `Storage=` and any `hard core 0` limit.
+Dumps demonstrably disabled (`hard core 0`, or systemd `Storage=none`) read OK;
+otherwise an INFO states whether crash dumps are handled by systemd, piped to a
+handler, or written to disk — where a dump of a privileged process could persist
+secrets. No score impact; visibility only.
+
+**kexec / kernel lockdown** (`kexec_lockdown`, system-hardening, INFO-only). Reads
+`/proc/sys/kernel/kexec_load_disabled` and `/sys/kernel/security/lockdown` (the
+`[bracketed]` active mode). `kexec_load_disabled=1` or a lockdown of
+`integrity`/`confidentiality` reads OK; an enabled kexec path is INFO (a live
+kernel-replacement primitive). No score impact.
+
+**PAM account lockout** (`faillock`, access-control). Complementary to the existing
+fail2ban check (network layer): `pam_faillock` locks the *account* after N failed
+authentications, covering local logins, su and sudo — paths fail2ban never sees.
+Reads the auth stack (`common-auth` / `system-auth` / `password-auth`) for
+`pam_faillock.so` (or legacy `pam_tally2.so`) and the `deny=` threshold. Configured
+reads OK; not configured is WARN −1 on a **server** and INFO on
+desktop/workstation, where account lockout is also a real DoS lever (an attacker
+can lock every account on purpose) and the physical-access threat is smaller. An
+unreadable/absent PAM stack is INFO. CIS 5.3.2. BOB never edits PAM automatically.
+
+**Disk encryption** (`disk_encryption`, system-hardening). Reports whether the
+root filesystem is backed by an encrypted (LUKS/dm-crypt) device — the one control
+that still protects data once the machine leaves your custody (a stolen laptop, an
+RMA-returned or decommissioned disk). Detection reads the running system, not
+intent: every device-mapper node whose `/sys/block/dm-*/dm/uuid` starts with
+`CRYPT-` is a crypt volume, the device backing `/` is resolved from
+`/proc/self/mounts`, and the dm **stack** is walked through `slaves`, so the common
+LVM-on-LUKS layout is recognised, not just a bare crypt mount. Deliberately never
+binary and profile-gated: an unencrypted root is WARN on desktop/workstation
+(portable, physically exposed), INFO on a server (full-disk encryption there needs
+remote-unlock tooling and the threat model is a locked rack, not a coat pocket),
+not-applicable in a container (data-at-rest is the host's job), and unknown when
+the root device cannot be resolved (a pseudo/overlay/network root). BOB never turns
+encryption on — it is a destructive, one-way operation on the volume — so the
+remediation is described. Best practice (no single CIS number).
+
+**polkit authorization** (`polkit`, access-control). polkit decides who may run
+privileged actions and evaluates its rule files **as root**. The check is scoped
+narrowly to the one unambiguous, low-noise signal — mirroring the sudoers.d /
+cron.d permission checks BOB already trusts: a `.rules` file (or its `rules.d`
+directory), or a legacy `.pkla`, that a non-root user can write is a direct path
+to root, since whoever can edit it can make polkit return `YES` for any action.
+Each such file is WARN with a concrete `chown root:root && chmod g-w,o-w` fix.
+Separately, a legacy `.pkla` granting `ResultAny=yes` (auth bypass for any session
+including inactive/remote) is surfaced as INFO — it can be a deliberate kiosk/
+appliance choice, so it is reported, not scored. BOB does **not** parse the rules'
+JavaScript for over-broad `YES` returns: that is a high-false-positive exercise,
+and a noisy check is worse than none. Best practice (no single CIS number).
+
+### Compatibility
+
+No JSON schema or scoring-formula breaking change. But six of the new checks
+(GRUB, CUPS, mount hardening, PAM lockout, disk encryption, polkit, all
+profile-gated or permission-based) can change findings, deductions and scores on
+hosts where the new controls are applicable — a machine that upgrades to 0.21.0
+may see its score move even though nothing about that host changed; the other two
+are INFO-only (core dumps, kexec/lockdown) and never touch the score. Eight new
+section names join `--check` (`grub`, `cups`, `mount_hardening`, `core_dumps`,
+`kexec_lockdown`, `faillock`, `disk_encryption`, `polkit`) and `bob --explain
+list`; the explain set grows to **200 keys across 56 prefixes**, and
+`cis_refs.json` to **205 entries**. Locale keys 2465 → 2580.
+
+### Tests
+
+10762 → **10950**. New guards: `test_v0210_grub_bootloader.py`,
+`test_v0210_cups_service.py`, `test_v0210_mount_hardening.py`,
+`test_v0210_core_dumps.py`, `test_v0210_kexec_lockdown.py`,
+`test_v0210_faillock.py`, `test_v0210_disk_encryption.py`,
+`test_v0210_polkit.py`, `test_v0210_semver_no_v_prefix.py`. Nine new mutations
+(`versioning/help-header-readds-v-prefix`, `grub/loose-perms-not-flagged`,
+`cups/exposed-listen-not-flagged`, `mount_hardening/loose-options-not-flagged`,
+`core_dumps/storage-none-not-recognised-disabled`,
+`kexec_lockdown/locked-read-as-not-locked`,
+`faillock/server-lockout-gap-not-flagged`,
+`disk_encryption/plain-root-read-as-unknown`,
+`polkit/group-writable-rule-not-flagged`), all killed.
+
+---
+
 ## [v0.20.5] — 2026-09-21
 
 **A patch release: three accuracy fixes found on a real Kali desktop.**

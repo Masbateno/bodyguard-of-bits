@@ -116,7 +116,7 @@ def draw_header(stdscr, curses, title: str, has_color: bool) -> None:
     attr = ((curses.color_pair(BANNER) | curses.A_BOLD) if has_color
             else curses.A_REVERSE)
 
-    stamp = f"v{__version__}  "
+    stamp = f"{__version__}  "
     left = title[:width]
     if len(left) + len(stamp) + 2 <= width:
         line = left.ljust(width - len(stamp)) + stamp

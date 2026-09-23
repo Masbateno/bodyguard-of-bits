@@ -6,6 +6,9 @@ name: Publish to PyPI + GitHub Release
 on:
   push:
     tags:
+      # SemVer tags with no "v" prefix (v0.21.0 onward). The legacy "v*" form is
+      # kept so the last "v"-tagged release (v0.20.5) still triggers a publish.
+      - "[0-9]+.[0-9]+.[0-9]+"
       - "v*"
 
 jobs:

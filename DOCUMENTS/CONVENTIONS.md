@@ -309,6 +309,21 @@ def test_nominal_case():
 
 ---
 
+## 8. Versioning
+
+Versions are **SemVer** `MAJOR.MINOR.PATCH` with **no `v` prefix** — in code, in
+git tags, and in everything BOB displays. The canonical version lives in
+`bob/__init__.py` (`__version__`) and `pyproject.toml`; PyPI and SemVer both call
+it `0.21.0`, so the banner, `--version`, the report/markdown header, the webhook
+and the TUI title bar print `0.21.0`, never `v0.21.0`. Third-party tool versions
+(ufw, firewalld) are shown the same way — bare.
+
+A release is a git tag named for the version with **no prefix** (`0.21.0`, not
+`v0.21.0`); the publish workflow triggers on it. The legacy `v*` form is kept in
+the trigger only so the last v-tagged release (`v0.20.5`) still publishes — every
+tag from v0.21.0 on carries no `v`. `tests/test_v0210_semver_no_v_prefix.py` pins
+the display surfaces and `tests/test_doc_version_consistency.py` the badges.
+
 ---
 
 © 2026 Cédric Clauzel

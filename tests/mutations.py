@@ -311,8 +311,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="199 entries (108 formal CIS",
-        new="174 entries (107 formal CIS",
+        old="205 entries (111 formal CIS",
+        new="178 entries (110 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
     ),
@@ -330,8 +330,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         # Anchored on the *current* version, read from the package: a literal
         # here would break the bench at every release, which is churn, not a
         # finding. The fast guard caught exactly that on the v0.16.4 bump.
-        old=f"║  BOB v{_V}  │  Linux hardening auditor",
-        new="║  BOB v0.13.2  │  Linux hardening auditor",
+        old=f"║  BOB {_V}  │  Linux hardening auditor",
+        new="║  BOB 0.13.2  │  Linux hardening auditor",
         kills=(f"{_CLAIMS}::TestTheNamesAreReal",),
         reason="the sample banner sat three minor versions behind the package",
     ),
@@ -409,7 +409,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="header/version-dropped",
         file="bob/tui/_chrome.py",
-        old='    stamp = f"v{__version__}  "',
+        old='    stamp = f"{__version__}  "',
         new='    stamp = ""',
         kills=("tests/test_v0163_bottom_chrome.py::TestTheHeaderCarriesTheVersion",),
         reason="the running version would vanish from every wizard's title bar",
@@ -732,8 +732,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/section-count-stale-again",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="the 39 filterable + 10 always-on section names",
-        new="the 38 filterable + 10 always-on section names",
+        old="the 47 filterable + 10 always-on section names",
+        new="the 46 filterable + 10 always-on section names",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the section count drifted in seven places the moment a section "
                "was added, and nothing was watching",
@@ -1449,9 +1449,9 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="header/absent-firewall-renders-blank",
         file="bob/report.py",
-        old='        _ufw = (f"ufw v{info.ufw_version}" if info.ufw_version\n'
+        old='        _ufw = (f"ufw {info.ufw_version}" if info.ufw_version\n'
             '                else _L.get("not_installed", "not installed"))',
-        new='        _ufw = f"ufw v{info.ufw_version}"',
+        new='        _ufw = f"ufw {info.ufw_version}"',
         kills=(f"{_SENTINEL}::TestWhatTheWritersActuallyProduce::"
                "test_absent_ufw_is_named_in_the_text_report",),
         reason="with the source now empty, an unconditional version marker "
@@ -2795,6 +2795,96 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="a NOPASSWD:ALL grant to an empty group is latent, not live; without "
                "the empty-group branch the finding implies someone currently holds "
                "passwordless root when the group has no members",
+    ),
+    Mutation(
+        id="faillock/server-lockout-gap-not-flagged",
+        file="bob/checks/faillock.py",
+        old='    is_desktop = profile_name.lower() in ("desktop", "workstation")',
+        new='    is_desktop = profile_name.lower() in ("desktop", "workstation", "server")',
+        kills=("tests/test_v0210_faillock.py::TestNotConfigured::test_server_warns_and_deducts",),
+        reason="a server with no PAM account lockout is a real brute-force surface "
+               "(local logins, su, sudo unthrottled); treating server as desktop "
+               "drops the deduction and the WARN",
+    ),
+    Mutation(
+        id="polkit/group-writable-rule-not-flagged",
+        file="bob/checks/polkit.py",
+        old="    return bool(st.st_mode & (stat.S_IWGRP | stat.S_IWOTH))",
+        new="    return False",
+        kills=("tests/test_v0210_polkit.py::TestFromSystem::test_group_writable_rule_is_flagged",),
+        reason="polkit evaluates rules as root; a group/other-writable rule file "
+               "is a privilege-escalation path — ignoring the write bits lets it "
+               "pass as clean",
+    ),
+    Mutation(
+        id="disk_encryption/plain-root-read-as-unknown",
+        file="bob/checks/disk_encryption.py",
+        old="        if root_src.startswith(_REAL_BLOCK_PREFIXES):\n            return False",
+        new="        if root_src.startswith(_REAL_BLOCK_PREFIXES):\n            return None",
+        kills=("tests/test_v0210_disk_encryption.py::TestFromSystem::test_plain_root_is_false",),
+        reason="a root on a raw partition is a firm 'not encrypted' (a crypt root "
+               "always mounts through its mapper); reading it as unknown hides an "
+               "unencrypted disk behind an INFO instead of the desktop WARN",
+    ),
+    Mutation(
+        id="kexec_lockdown/locked-read-as-not-locked",
+        file="bob/checks/kexec_lockdown.py",
+        old="    if snapshot.kexec_disabled == 1:",
+        new="    if snapshot.kexec_disabled == 0:",
+        kills=("tests/test_v0210_kexec_lockdown.py::TestKexec::test_locked_is_ok",),
+        reason="kexec_load_disabled=1 means kexec is locked for the uptime; "
+               "reading 1 as anything but locked inverts the boot-integrity "
+               "verdict for a hardened host",
+    ),
+    Mutation(
+        id="core_dumps/storage-none-not-recognised-disabled",
+        file="bob/checks/core_dumps.py",
+        old='    if snapshot.hard_core_zero or (is_systemd and snapshot.storage == "none"):',
+        new='    if snapshot.hard_core_zero or (is_systemd and snapshot.storage == "never"):',
+        kills=("tests/test_v0210_core_dumps.py::TestDisposition::test_systemd_storage_none_is_disabled",),
+        reason="systemd-coredump Storage=none discards dumps; not recognising it "
+               "makes BOB report a host that discards core dumps as one that keeps "
+               "them, inverting the disposition",
+    ),
+    Mutation(
+        id="mount_hardening/loose-options-not-flagged",
+        file="bob/checks/mount_hardening.py",
+        old='        missing_hard = [o for o in ("nodev", "nosuid") if o not in m.options]',
+        new='        missing_hard = [o for o in ("nodev", "nosuid") if o in m.options]',
+        kills=("tests/test_v0210_mount_hardening.py::TestOptions::test_missing_nodev_nosuid_warns_and_deducts",),
+        reason="a world-writable scratch mount missing nodev/nosuid honours device "
+               "nodes and set-uid binaries dropped there; inverting the membership "
+               "test means BOB credits an unprotected /tmp as hardened",
+    ),
+    Mutation(
+        id="cups/exposed-listen-not-flagged",
+        file="bob/checks/cups.py",
+        old="                if not _is_loopback_listen(val):",
+        new="                if _is_loopback_listen(val):",
+        kills=("tests/test_v0210_cups_service.py::TestFromSystemParsing::test_non_loopback_listen_is_detected",),
+        reason="a cupsd Listen on a routable address exposes the print service to "
+               "the network; inverting the loopback test means BOB credits an "
+               "exposed cupsd as localhost-only",
+    ),
+    Mutation(
+        id="grub/loose-perms-not-flagged",
+        file="bob/checks/grub.py",
+        old="        group_other = mode & 0o077",
+        new="        group_other = mode & 0o000",
+        kills=("tests/test_v0210_grub_bootloader.py::TestPermissions::test_group_or_world_readable_warns_and_deducts",),
+        reason="a group/world-readable grub.cfg discloses the boot line and any "
+               "GRUB password hash; masking the group/other bits means BOB never "
+               "flags a loose bootloader config (CIS §1.4.1)",
+    ),
+    Mutation(
+        id="versioning/help-header-readds-v-prefix",
+        file="bob/cli.py",
+        old="    print(f\"BOB {version} — {t('help.tagline')}\")",
+        new="    print(f\"BOB v{version} — {t('help.tagline')}\")",
+        kills=("tests/test_v0210_semver_no_v_prefix.py::test_help_header_has_no_v_prefix",),
+        reason="SemVer: BOB's own version prints with no 'v' prefix from v0.21.0; "
+               "re-adding it makes the displayed version diverge from what PyPI "
+               "and SemVer call it",
     ),
     Mutation(
         id="updates/no-security-channel-not-flagged",

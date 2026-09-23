@@ -55,11 +55,19 @@
     "samba": "SAMBA SECURITY AUDIT",
     "clamav": "CLAMAV ANTIVIRUS AUDIT",
     "smtp": "SMTP LOCAL EXPOSURE",
+    "cups": "CUPS PRINT SERVICE",
     "desktop_apps": "DESKTOP APPLICATION AUDIT",
     "ntp": "NTP TIME SYNCHRONISATION",
     "fail2ban": "FAIL2BAN INTRUSION PREVENTION",
     "auditd": "LINUX AUDIT FRAMEWORK (AUDITD)",
     "secure_boot": "SECURE BOOT",
+    "grub": "GRUB BOOTLOADER",
+    "mount_hardening": "FILESYSTEM MOUNT HARDENING",
+    "core_dumps": "CORE DUMPS",
+    "kexec_lockdown": "KEXEC & KERNEL LOCKDOWN",
+    "faillock": "PAM ACCOUNT LOCKOUT",
+    "disk_encryption": "DISK ENCRYPTION",
+    "polkit": "POLKIT AUTHORIZATION",
     "file_integrity": "FILE INTEGRITY MONITORING (AIDE / TRIPWIRE)",
     "rootkit": "ROOTKIT & INTEGRITY SCAN",
     "mac_policy": "MAC POLICY (APPARMOR / SELINUX)",
@@ -100,7 +108,15 @@
       "rootkit": "Rootkit scanner — rkhunter signatures + scan history",
       "samba": "Samba — SMBv1 disabled, server signing, guest access",
       "secure_boot": "Secure Boot status — enabled, setup mode",
+      "grub": "GRUB bootloader — grub.cfg permissions, superuser password",
+      "mount_hardening": "Mount options — /tmp, /var/tmp, /dev/shm nodev/nosuid/noexec",
+      "core_dumps": "Core-dump disposition — core_pattern, systemd-coredump storage, limits",
+      "kexec_lockdown": "Boot integrity — kexec_load_disabled + kernel lockdown mode",
+      "faillock": "PAM account lockout — pam_faillock/tally2 in the auth stack, deny threshold",
+      "disk_encryption": "Disk encryption — whether the root filesystem is on a LUKS/dm-crypt volume (profile-gated)",
+      "polkit": "polkit authorization — rule files evaluated as root; a non-root-writable .rules/.pkla is a privilege-escalation path",
       "smtp": "SMTP daemon exposure — Postfix / Exim binding, relay risk",
+      "cups": "CUPS print service — cupsd.conf listen address, network browsing",
       "ssh": "SSH hardening — sshd_config, host keys, ~/.ssh, authorized_keys",
       "ssl_certs": "TLS/SSL certificate expiry — Let's Encrypt, nginx, apache, postfix",
       "suid_audit": "SUID/SGID binaries — unexpected entries vs whitelist",
@@ -2707,6 +2723,48 @@
         }
       }
     },
+    "grub": {
+      "cfg_perms": {
+        "title": "GRUB config (grub.cfg) is not owner-only",
+        "why": "grub.cfg holds the full boot command line and, when a GRUB password is configured, its password_pbkdf2 hash. If the file is group- or world-readable, that hash can be copied and cracked offline, and the boot parameters are disclosed. If it is group- or world-writable, the boot command line itself can be altered — e.g. to add init=/bin/bash — which is a direct local privilege-escalation path.",
+        "how": "Restrict grub.cfg to root only:\n  sudo chmod 600 /boot/grub/grub.cfg   # or /boot/grub2/grub.cfg on Fedora/RHEL/openSUSE\n\nThis is preserved across regeneration on most distributions; if update-grub/grub2-mkconfig resets it, add a chmod to the update hook. CIS §1.4.1."
+      }
+    },
+    "cups": {
+      "listen_exposed": {
+        "title": "CUPS print service listens on the network",
+        "why": "The shipped cupsd.conf listens on localhost only. When cupsd binds a routable address (Listen 0.0.0.0:631, a real IP, *:631, or a bare Port), the print service is reachable from the network. CUPS has a long history of remotely exploitable vulnerabilities (the 2024 cups-browsed/foomatic chain being the most recent widely-publicised one), so an unnecessarily network-exposed cupsd is real attack surface.",
+        "how": "Unless you deliberately serve printers to other hosts, bind CUPS back to localhost:\n  sudo cupsctl --no-remote-any\n  sudo systemctl restart cups\n\nOr edit /etc/cups/cupsd.conf so the only Listen lines are `Listen localhost:631` and `Listen /run/cups/cups.sock`, then restart cups. If remote printing is required, restrict access with Location/Allow rules and a firewall rule limiting 631 to trusted hosts."
+      }
+    },
+    "mount_hardening": {
+      "options_missing": {
+        "title": "A world-writable scratch area is missing nodev/nosuid",
+        "why": "/tmp, /var/tmp and /dev/shm are world-writable. When they are their own mount but lack nodev, an attacker who can write there can create a device node; without nosuid, a set-uid binary dropped there keeps its set-uid bit and becomes a privilege-escalation path. noexec additionally prevents executing code straight from the area. These are cheap, standard hardening options for scratch space.",
+        "how": "Add the options in /etc/fstab for the mount and remount. For example:\n  tmpfs /tmp tmpfs defaults,nodev,nosuid,noexec 0 0\n  sudo mount -o remount /tmp\n\nApply the same to /var/tmp and /dev/shm. Add noexec last and test it — some installers and package builds legitimately execute from /tmp. BOB does not auto-fix mounts: editing fstab wrong can leave a system unbootable, so the change is yours to make and verify."
+      }
+    },
+    "faillock": {
+      "not_configured": {
+        "title": "No PAM account lockout on failed authentication",
+        "why": "Without pam_faillock (or the legacy pam_tally2), repeated password guesses against local logins, su, sudo and any other PAM consumer are not rate-limited by PAM. This is distinct from fail2ban, which bans an IP based on log lines — it never sees local or su attempts. On a multi-user or exposed host, an unthrottled auth path is a real brute-force surface.",
+        "how": "Enable account lockout and set a threshold.\n\nDebian/Ubuntu: `sudo pam-auth-update` (enable the faillock profiles), then set in /etc/security/faillock.conf:\n  deny = 5\n  unlock_time = 900\n\nRHEL/Fedora: `sudo authselect enable-feature with-faillock` (or the current profile equivalent), then the same faillock.conf keys.\n\nBOB does not auto-edit PAM: a wrong lockout rule can lock every account out, so apply and test in a second session before logging out. Choose a finite unlock_time — account lockout is itself a denial-of-service lever."
+      }
+    },
+    "disk_encryption": {
+      "root_unencrypted": {
+        "title": "Root filesystem is not encrypted",
+        "why": "Full-disk encryption protects data at rest. Without it, anyone who gains physical possession of the disk — a stolen laptop, a drive returned under RMA, a decommissioned or resold disk — can read every file by attaching it to another machine, bypassing all OS-level permissions and login controls entirely. It is the one control that still holds once the machine leaves your custody. BOB gates this by profile: it is a deduction on a desktop/workstation (portable, physically exposed) and informational on a server (locked rack, no boot console for a passphrase).",
+        "how": "Enable LUKS full-disk (or at least full-partition) encryption.\n\nThis cannot be done in place on an existing plain root. Either:\n  (a) re-install the OS and choose \"encrypt the disk\" in the installer, or\n  (b) back up, re-create the volume with `cryptsetup luksFormat`, and restore.\n\nLaptop/desktop: the installer's LUKS option is the simplest path.\nHeadless server: pair LUKS with a remote-unlock method (Clevis + Tang, or dropbear-initramfs) so the machine can boot unattended.\n\nBOB never enables encryption automatically — it is a destructive, one-way operation on the volume."
+      }
+    },
+    "polkit": {
+      "rule_writable": {
+        "title": "A polkit rule file is writable by a non-root user",
+        "why": "polkit decides who may run privileged actions (mount a disk, restart a service, install a package) and it evaluates its rule files as root. The JavaScript rules in /etc/polkit-1/rules.d — and the legacy .pkla grants — run with full privilege. If a rule file is group/other-writable, or owned by a non-root user, then that user can edit it to make polkit `return polkit.Result.YES` for any action, or grant themselves an admin action with no password. That is a direct, unconditional path to root, identical in kind to a writable sudoers file.",
+        "how": "Restore root ownership and remove non-root write on the offending file:\n\n  sudo chown root:root <file>\n  sudo chmod g-w,o-w <file>\n\npolkit rule files are conventionally 0644 root:root. Also check the containing directory (/etc/polkit-1/rules.d) is itself root-owned and 0755 — a writable directory lets an attacker drop in a new rule even if the existing files are safe. BOB flags each writable file separately."
+      }
+    },
     "file_integrity": {
       "not_installed": {
         "title": "No file integrity monitoring tool installed",
@@ -3236,6 +3294,19 @@
     "not_synchronized_detail": "The NTP service is running but has not completed its first synchronisation. This is normal immediately after boot or on a freshly installed system. If it persists, check connectivity to the NTP pool and review: journalctl -u systemd-timesyncd or chronyc tracking.",
     "not_synchronized_reason": "NTP enabled but not yet synchronised"
   },
+  "cups": {
+    "not_present": "CUPS is not configured on this host — no print service to audit",
+    "not_present_detail": "BOB found no /etc/cups/cupsd.conf. CUPS is either not installed or not configured here, so there is no print-service exposure to assess.",
+    "cfg_unreadable": "/etc/cups/cupsd.conf found but could not be read",
+    "cfg_unreadable_detail": "BOB could not read cupsd.conf to check the listen address. Re-run with sudo for a complete answer.",
+    "listen_exposed": "CUPS listens beyond localhost ({listen}) — the print service is reachable over the network",
+    "listen_exposed_reason": "cupsd bound to a non-loopback address — network-reachable print daemon (CUPS has a history of remote CVEs)",
+    "listen_exposed_detail": "The shipped cupsd.conf listens on localhost only. A Listen on 0.0.0.0/*/a routable IP, or a bare `Port`, exposes the print service to the network. Unless you deliberately serve printers to other hosts, bind it back to localhost. `cupsctl --no-remote-any` restores the local-only default; otherwise edit the Listen lines in /etc/cups/cupsd.conf and restart cups.",
+    "listen_localhost": "CUPS listens on localhost only — the print service is not network-exposed",
+    "browsing_on": "CUPS Browsing is On — printers are advertised/consumed over the network (cups-browsed)",
+    "browsing_on_detail": "Browsing On enables cups-browsed, which advertises and auto-adds shared printers over the network (UDP 631). It was the vector of the 2024 cups-browsed RCE chain. If you do not rely on automatic printer discovery, set `Browsing Off` in /etc/cups/cupsd.conf (and consider disabling the cups-browsed service). No score deduction — this is an awareness note.",
+    "browsing_off": "CUPS Browsing is Off — no network printer advertisement"
+  },
   "smtp": {
     "not_installed": "No MTA detected (Postfix/Exim/Sendmail) — no local mail server",
     "installed_not_listening": "{mta} is installed but not listening on port 25",
@@ -3291,6 +3362,90 @@
     "legacy_account_detail": "Raspberry Pi OS shipped with a '{user}' account until 2022, and every guide written before then still tells people to use it. The account here has a password set and a login shell, so it is usable. BOB does not test whether the password is still the distribution's historical default — that needs a crypt implementation, and crypt was removed from the Python standard library in 3.13. Check it yourself, and prefer an account whose name an attacker has to discover.",
     "account_unknown": "Could not read /etc/shadow — the default account's state was not established",
     "account_unknown_detail": "Whether the '{user}' account can log in is decided by its password field, and /etc/shadow could not be read. Run BOB as root to establish it. Nothing is being claimed either way."
+  },
+  "grub": {
+    "not_present": "No GRUB bootloader config found — nothing to check here",
+    "not_present_detail": "BOB found no grub.cfg (/boot/grub, /boot/grub2, /boot/efi/EFI/*/). This host likely boots through systemd-boot, an EFI stub, extlinux, or its own firmware (Raspberry Pi). GRUB-specific hardening does not apply.",
+    "cfg_unreadable": "GRUB config {path} found but its permissions could not be read",
+    "cfg_unreadable_detail": "BOB could not stat grub.cfg to check its permissions. Re-run with sudo for a complete answer.",
+    "cfg_perms": "GRUB config {path} is not owner-only (mode {mode})",
+    "cfg_perms_detail": "grub.cfg should be readable and writable only by root (0600). Anything looser discloses the full boot command line and, if a GRUB password is set, its password_pbkdf2 hash — which is offline-crackable. World- or group-writable is worse: the boot line itself can be tampered with.",
+    "cfg_perms_reason": "grub.cfg is group/other-accessible — boot parameters are disclosed",
+    "cfg_perms_reason_hash": "grub.cfg is group/other-readable and carries a GRUB password hash — the hash is exposed for offline cracking",
+    "cfg_perms_reason_writable": "grub.cfg is group/other-writable — the boot command line can be tampered with",
+    "cfg_perms_ok": "GRUB config {path} is owner-only (mode {mode})",
+    "no_password": "No GRUB superuser password set — anyone at the console can edit boot entries",
+    "no_password_detail": "Without a GRUB superuser (password_pbkdf2), a person at the physical console can press 'e' to edit a menu entry and boot with init=/bin/bash for an unauthenticated root shell, or drop to single-user mode. This is a physical/console-access control; it is reported for awareness (no score deduction), as setting it can block unattended reboots and its absence is common. To set one: run grub-mkpasswd-pbkdf2, then add 'set superusers' and 'password_pbkdf2' in /etc/grub.d/40_custom and run update-grub.",
+    "password_set": "GRUB superuser password is configured"
+  },
+  "mount_hardening": {
+    "unreadable": "/proc/self/mounts could not be read — mount options unknown",
+    "unreadable_detail": "BOB reads effective mount options from /proc/self/mounts. It could not be read, so the state of /tmp, /var/tmp and /dev/shm is unknown rather than clean.",
+    "not_found": "{mount} is not present as a mount — cannot assess its options",
+    "not_separate": "{mount} is not a separate mount — its options follow the root filesystem",
+    "not_separate_detail": "{mount} is part of the root filesystem, not its own mount, so nodev/nosuid/noexec cannot be set for it independently. This is a valid topology choice, not a fault — noted for completeness. To harden it you would give it its own mount (a partition, or a bind/tmpfs entry in /etc/fstab).",
+    "options_missing": "{mount} is mounted without {missing} — a world-writable area missing key protections",
+    "options_missing_reason": "{mount} lacks nodev/nosuid — device nodes or set-uid binaries dropped there are honoured",
+    "options_missing_detail": "A world-writable scratch area should carry nodev (no device nodes) and nosuid (no set-uid bit) so a file an attacker drops there cannot become a device or a privilege-escalation binary. Add the options in /etc/fstab and remount, e.g.: a line `tmpfs /tmp tmpfs defaults,nodev,nosuid,noexec 0 0`, then `sudo mount -o remount /tmp`. Test noexec first — it can break some installers.",
+    "noexec_missing": "{mount} is mounted nodev,nosuid but without noexec",
+    "noexec_missing_detail": "{mount} has the important protections (nodev, nosuid); noexec would also stop code being executed from it, but it can break legitimate uses (installers, package builds, some runtimes use /tmp). Adding noexec is a hardening choice — reported for awareness, no deduction.",
+    "hardened": "{mount} is mounted nodev, nosuid, noexec"
+  },
+  "core_dumps": {
+    "unknown": "kernel.core_pattern could not be read — core-dump disposition unknown",
+    "unknown_detail": "BOB reads /proc/sys/kernel/core_pattern to see where core dumps go. It could not be read, so the disposition is unknown rather than clean.",
+    "disabled": "Core dumps are disabled — nothing is written on crash",
+    "systemd": "Core dumps are handled by systemd-coredump (Storage={storage})",
+    "systemd_detail": "Crashes are captured by systemd-coredump and kept ({storage}). The store (/var/lib/systemd/coredump, or the journal) is root-only by default, but a core dump can contain secrets the crashed process held — keys, passwords, decrypted data. If you do not need dumps, set Storage=none in /etc/systemd/coredump.conf; to inspect, use coredumpctl. No deduction — this is the disposition, for you to decide on.",
+    "piped": "Core dumps are piped to a handler ({handler})",
+    "piped_detail": "kernel.core_pattern pipes crashes to {handler}. Where the dumps end up, and who can read them, depends on that handler — core dumps can contain secrets from the crashed process, so confirm its store is not world-readable. No deduction.",
+    "to_disk": "Core dumps are written to disk (core_pattern: {pattern})",
+    "to_disk_detail": "kernel.core_pattern writes crashes to a filesystem path rather than a managed handler. A dump written into a process's working directory can be world-readable and can contain secrets the process held. Consider routing dumps to systemd-coredump, setting Storage=none, or a `hard core 0` limit if you do not need them. No deduction — reported for awareness."
+  },
+  "kexec_lockdown": {
+    "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",
+    "kexec_allowed": "kexec load is allowed (kernel.kexec_load_disabled=0)",
+    "kexec_allowed_detail": "With kexec_load_disabled=0, a privileged user can load and boot a different kernel image without a reboot — bypassing the firmware and, with it, Secure Boot for the next kernel. This is used legitimately by kdump (crash-dump capture), so it is reported, not penalised. If you do not use kdump/kexec, set kernel.kexec_load_disabled=1 (sysctl.d) to lock it for the uptime — note it cannot be re-enabled without a reboot.",
+    "kexec_unknown": "kexec state could not be read (kernel.kexec_load_disabled)",
+    "lockdown_active": "Kernel lockdown is active (mode: {mode})",
+    "lockdown_none": "Kernel lockdown is not active",
+    "lockdown_none_detail": "Kernel lockdown restricts even root from modifying the running kernel (/dev/mem, unsigned modules, kexec of unsigned images). It is off here — the default on systems that do not enforce Secure Boot. It is typically enabled automatically when Secure Boot is on, or via the lockdown= kernel parameter. No deduction: enabling it can break legitimate tooling (some debuggers, proprietary modules).",
+    "lockdown_absent": "Kernel lockdown interface not present — this kernel was built without the lockdown LSM",
+    "lockdown_unknown": "Kernel lockdown state could not be read"
+  },
+  "faillock": {
+    "unknown": "PAM auth stack could not be read — account-lockout state unknown",
+    "unknown_detail": "BOB looks for pam_faillock/pam_tally2 in /etc/pam.d/common-auth or system-auth. No PAM auth file could be read (or the system does not use PAM), so account-lockout state is unknown rather than clean.",
+    "configured": "Account lockout is configured ({module}, deny={deny})",
+    "not_configured": "No PAM account lockout on failed authentication",
+    "not_configured_reason": "no pam_faillock/pam_tally2 — repeated password guesses against local logins, su and sudo are not rate-limited by PAM",
+    "not_configured_detail": "pam_faillock locks an account after N failed authentications, covering local logins, su, sudo and every PAM consumer — paths a network-level tool like fail2ban never sees. It is not configured here. On Debian/Ubuntu enable it with `pam-auth-update` (or add pam_faillock to /etc/pam.d/common-auth) and set `deny=`/`unlock_time=` in /etc/security/faillock.conf; on RHEL/Fedora use `authselect`. BOB does not auto-edit PAM — a wrong lockout rule can lock every account out, so apply and test it yourself. Note account lockout is itself a denial-of-service lever; pair it with a sane unlock_time.",
+    "not_configured_desktop_detail": "No pam_faillock/pam_tally2 account lockout. On a single-user desktop the physical-access threat this addresses is smaller and lockout is a DoS lever, so this is reported without a deduction — enable it (pam-auth-update / authselect, faillock.conf) if the machine is shared or exposed."
+  },
+  "disk_encryption": {
+    "container_na": "Full-disk encryption is not applicable inside a container — data at rest is the host's responsibility",
+    "unknown": "Root device could not be resolved — disk-encryption state unknown",
+    "unknown_detail": "BOB reads the device backing / from /proc/self/mounts and resolves it through the device-mapper stack. The root device could not be resolved (a pseudo, overlay or network root, or /proc/self/mounts was unreadable), so encryption state is unknown rather than clean.",
+    "root_encrypted": "Root filesystem is on an encrypted volume (LUKS/dm-crypt)",
+    "volumes_present_root_unknown": "{count} encrypted volume(s) present, but the root device could not be resolved",
+    "volumes_present_root_unknown_detail": "LUKS/dm-crypt volumes were found ({volumes}), but BOB could not resolve the device backing / (a pseudo/overlay/network root), so it cannot say whether the root filesystem itself is encrypted.",
+    "root_unencrypted": "Root filesystem is not encrypted",
+    "root_unencrypted_reason": "root is on a plain, unencrypted device — a stolen or discarded disk reveals its contents",
+    "root_unencrypted_detail": "The device backing / is a plain partition, so data at rest is readable by anyone who obtains the disk (a stolen laptop, a returned RMA drive, a decommissioned disk). Full-disk encryption (LUKS) protects data at rest. It cannot be turned on in place — it requires re-installing with encryption enabled, or a backup/re-encrypt/restore cycle. BOB never does this automatically.",
+    "root_unencrypted_detail_with_volumes": "The device backing / is a plain partition, so data at rest is readable by anyone who obtains the disk. Encrypted volumes do exist on this host ({volumes}) but the root filesystem is not among them. Full-disk encryption (LUKS) protects data at rest; it cannot be turned on in place — it requires re-installing with encryption enabled, or a backup/re-encrypt/restore cycle. BOB never does this automatically.",
+    "root_unencrypted_server": "Root filesystem is not encrypted (server profile — reported, not scored)",
+    "root_unencrypted_server_detail": "The root device is a plain partition. On a headless server full-disk encryption needs remote-unlock tooling (a boot-time passphrase prompt has no console), and the physical threat model is a locked rack rather than a portable device — so BOB reports this without a deduction. If the server holds sensitive data at rest or its disks may be physically removed or decommissioned, consider LUKS with a remote-unlock method (Clevis/Tang, dropbear-initramfs)."
+  },
+  "polkit": {
+    "not_present": "No polkit rule directories found — polkit not installed or unconfigured",
+    "unreadable": "A polkit rule directory could not be read — rule permissions partly unknown",
+    "unreadable_detail": "BOB lists /etc/polkit-1/rules.d, /usr/share/polkit-1/rules.d and the legacy localauthority .pkla files, and stats each. At least one entry could not be read, so its ownership/permissions could not be checked — unknown, not clean.",
+    "rules_ok": "polkit rule files are root-owned and not writable by non-root",
+    "rule_writable": "polkit rule file writable by non-root: {path}",
+    "rule_writable_reason": "polkit evaluates its rules as root; a rule a non-root user can edit grants that user any privileged action — direct privilege escalation",
+    "rule_writable_detail": "{path} is either group/other-writable or not owned by root. polkit runs the JavaScript rules in /etc/polkit-1/rules.d (and reads .pkla grants) as root to decide who may perform privileged actions, so anyone who can write this file can make polkit return YES for any action — full root. Restore root ownership and remove non-root write: `sudo chown root:root {path} && sudo chmod g-w,o-w {path}` (rule files are conventionally 0644 root:root).",
+    "pkla_any_yes": "Legacy polkit .pkla grants ResultAny=yes (auth bypass for any session): {path}",
+    "pkla_any_yes_detail": "{path} sets ResultAny=yes, which authorizes its action(s) for *any* session — including inactive and remote ones — with no authentication. This can be deliberate (a kiosk, a shared appliance) so BOB reports it without a deduction; review whether the bypass is intended and whether ResultActive would be narrow enough."
   },
   "secure_boot": {
     "enabled": "Secure Boot is enabled",
