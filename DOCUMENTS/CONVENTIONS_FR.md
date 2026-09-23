@@ -340,6 +340,19 @@ pas `v0.21.0`) ; le workflow de publication se déclenche dessus. La forme legac
 `tests/test_v0210_semver_no_v_prefix.py` épingle les surfaces d'affichage et
 `tests/test_doc_version_consistency.py` les badges.
 
+**Le texte de `--version` est-il un contrat stable ?** Non. La *chaîne* de version
+est une surface d'affichage, pas une partie du contrat de compatibilité de BOB.
+Elle a changé exactement une fois — le `v` a été retiré en 0.21.0 — et est
+désormais figée sur le cœur SemVer nu. Le contrat CLI stable, c'est : les codes de
+sortie, le schéma JSON (`schema_version` et ses clés), les noms d'options et les
+clés de constat — ceux-là ne changent pas sans bump MAJEUR/MINEUR et note de
+changelog. Un script qui parsait `bob --version` en codant en dur le `v` (ou
+`sed 's/^v//'`) doit lire la forme nue à partir de 0.21.0 ; un script qui a besoin
+d'une version stable machine doit lire `--format json` (`schema_version`) plutôt
+que de gratter la sortie humaine. C'est explicité pour que le dé-`v` soit une
+décision ponctuelle et documentée, pas un précédent ouvert pour tripatouiller le
+texte de version.
+
 ---
 
 © 2026 Cédric Clauzel

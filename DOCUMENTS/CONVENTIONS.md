@@ -324,6 +324,17 @@ the trigger only so the last v-tagged release (`v0.20.5`) still publishes — ev
 tag from v0.21.0 on carries no `v`. `tests/test_v0210_semver_no_v_prefix.py` pins
 the display surfaces and `tests/test_doc_version_consistency.py` the badges.
 
+**Is the `--version` text a stable contract?** No. The version *string* is a
+display surface, not part of BOB's compatibility contract. It changed exactly
+once — the `v` was dropped in 0.21.0 — and is now fixed as the bare SemVer core.
+The stable CLI contract is: exit codes, the JSON schema (`schema_version` and its
+keys), option names, and finding keys — those do not change without a MAJOR/MINOR
+bump and a changelog note. A script that parsed `bob --version` and hard-coded the
+`v` (or `sed 's/^v//'`) must read the bare form from 0.21.0 on; scripts that need a
+machine-stable version should read `--format json` (`schema_version`) rather than
+scrape human output. This is called out so the de-`v` is a one-time, documented
+decision, not an open precedent for churning the version text.
+
 ---
 
 © 2026 Cédric Clauzel
