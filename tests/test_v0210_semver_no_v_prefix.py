@@ -46,6 +46,28 @@ def test_banner_renders_the_version_without_a_v():
     assert f"BOB v{__version__}" not in out
 
 
+def test_markdown_report_does_not_prepend_v_to_the_tool_version():
+    """The Markdown report showed a third-party tool version as 'v0.36.2' while
+    the terminal report showed the bare 'ufw 0.36.2' — CONVENTIONS §8 says
+    third-party versions are bare too. The mutation guard: no re-added 'v'.
+    """
+    from pathlib import Path
+
+    from bob.report import SystemInfo
+    from bob.report_markdown import MarkdownReport
+
+    info = SystemInfo(
+        os_name="Debian GNU/Linux 13", hostname="h", kernel="k",
+        ufw_version="0.36.2", iptables_version="1.8", nftables_version="1.0",
+        user="root", config_path="/x", language="en", version=__version__,
+    )
+    report = MarkdownReport.open(directory=Path("/tmp"), version=__version__)
+    report.write_header(info)
+    body = "\n".join(report._lines)
+    assert "0.36.2" in body
+    assert "v0.36.2" not in body
+
+
 def test_canonical_version_never_carried_a_v():
     # the source of truth is already SemVer-clean — this is the anchor the
     # display surfaces must now match.

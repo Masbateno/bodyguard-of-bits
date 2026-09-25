@@ -118,7 +118,7 @@ class TestWhatTheWritersActuallyProduce:
         assert "**Firewall (UFW):** v" not in out
 
     def test_present_ufw_still_shows_its_version_in_markdown(self, tmp_path):
-        assert "v0.36.2" in self._markdown_report(tmp_path, "0.36.2")
+        assert "0.36.2" in self._markdown_report(tmp_path, "0.36.2")  # bare, SemVer §8
 
 
 class TestOnlyTheUfwFieldWasAffected:

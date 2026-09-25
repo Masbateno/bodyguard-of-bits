@@ -37,8 +37,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 
 | Module | Rôle |
 |---|---|
-| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~401 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (47 sections filtrables + 10 always-on), `_section_enabled()` (~845 lignes) |
+| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~995 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (47 sections filtrables + 10 always-on), `_section_enabled()` (~1115 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig`, `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,9 +54,9 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `sysinfo.py` | Info système — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Rapport comparatif — `AuditBaseline` (avec `finding_keys`), `AuditDelta` (avec `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Chargeur de plugins — `PluginCheck`, `load_plugin_checks()`, sanitisation ANSI |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 200 clés canoniques dans 56 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
-| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (174 entrées : 107 CIS formels, 60 best-practice, 7 Docker) |
-| `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 7 domaines (`backup` → `disk`) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 205 clés canoniques dans 56 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
+| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (205 entrées : 111 CIS formels, 87 best-practice, 7 Docker) |
+| `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 6 domaines (`backup` → `health_resilience`) |
 | `webhook.py` | Envoi webhook — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, auto-détection format |
 | `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 6 règles de risque composé intégrées |
 | `exposure.py` | Analyse d'exposition des ports — regroupe par portée d'interface et niveau de risque ; allowlist fw_policy |
@@ -121,6 +121,15 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `container_security.py` | **v0.13.0** — posture du conteneur lue depuis `/proc` (CapBnd, mode seccomp, uid_map, rootfs inscriptible) ; section entièrement supprimée hors conteneur via `skip_if` ; **v0.15.4** privileged (−3) / CAP_SYS_ADMIN (−2) / seccomp désactivé (−1) déduisent comme choix opérateur, le reste reste INFO |
 | `socket_units.py` | **v0.13.1** — units `.socket` systemd orphelines / en échec, à l'intersection systemd × sockets en écoute ; un `Triggers=` vide n'est jamais signalé, un service backing simplement inactif est sain ; **v0.15.4** une orpheline liée à une adresse non-loopback déduit (−1), le loopback seul reste INFO |
 | `cloud_context.py` | **v0.13.1** — exposition cloud côté hôte (IMDS joignable on-link, user-data lisible par tous) ; détection conservatrice (provider DMI, ou cloud-init + route IMDS on-link) ; supprimée hors cloud, aucune API cloud ; **v0.15.4** le user-data lisible par tous déduit (−2) ; l'accessibilité IMDS reste INFO — l'application d'IMDSv2 ne se lit pas depuis l'hôte |
+| `raspberry_pi.py` | **v0.17.0** — détection de la carte Raspberry Pi (device tree) + identifiants de provisionnement sur la partition FAT de boot (`userconf.txt` de l'Imager, amorçage cloud-init), marqueur `ssh` de premier démarrage, compte `pi` historique quand il peut se connecter |
+| `grub.py` | **v0.21.0** — bootloader GRUB : `grub.cfg` lisible par le groupe/tous (escaladé s'il porte un hash `password_pbkdf2`), absence de mot de passe du menu de boot (INFO) |
+| `cups.py` | **v0.21.0** — service d'impression CUPS : `Listen` non-loopback (remédiation `cupsctl --no-remote-any`), Browsing activé (INFO) |
+| `mount_hardening.py` | **v0.21.0** — `nodev`/`nosuid`/`noexec` sur `/tmp`, `/var/tmp`, `/dev/shm` ; un montage *séparé* qui les manque est WARN, un non-séparé est INFO (piège CIS de la partition séparée évité) |
+| `core_dumps.py` | **v0.21.0** (INFO) — `core_pattern`, `Storage=` de systemd-coredump, limites `hard core 0` — si les core dumps peuvent persister |
+| `kexec_lockdown.py` | **v0.21.0** (INFO) — `kexec_load_disabled` + `/sys/kernel/security/lockdown` |
+| `faillock.py` | **v0.21.0** — verrouillage de compte PAM : absence de `pam_faillock` (ou `pam_tally2` legacy) dans la pile auth (WARN −1 sur server, INFO sur desktop/workstation) |
+| `disk_encryption.py` | **v0.21.0** — système de fichiers racine sur LUKS/dm-crypt via `/proc/mounts` + parcours de la pile dm (LVM-sur-LUKS reconnu) ; WARN sur une racine en clair desktop/workstation, INFO sur server, N/A en conteneur |
+| `polkit.py` | **v0.21.0** — règles polkit : un `.rules`/`.pkla` (ou le dossier `rules.d`) inscriptible par non-root est un chemin d'escalade (WARN + `chown`/`chmod`) ; un `.pkla` legacy accordant `ResultAny=yes` (INFO) |
 
 ---
 
@@ -129,7 +138,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 ```
 bob/
 ├── __init__.py
-├── __main__.py          # Orchestrateur (~410 lignes — coordination pure)
+├── __main__.py          # Orchestrateur (~995 lignes — coordination pure)
 ├── _paths.py            # Résolution des chemins de données
 ├── _tty.py              # read_line() — lecteur de ligne mode raw avec Esc-pour-annuler, repli input()
 ├── breakdown.py         # Moteur de décomposition de score — trace per-deduction complète pour --breakdown / -B
@@ -142,8 +151,8 @@ bob/
 ├── cron.py              # CronEntry, logique wizard planification, build_script_content()
 ├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
-├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→disk
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 200 clés dans 56 préfixes
+├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→health_resilience
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 205 clés dans 56 préfixes
 ├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
 ├── fixes.py             # Interface mode fix (interactif + auto-fix)
 ├── formatter.py         # bob.formatter — rendu indépendant de la locale via Finding.template_vars (v0.4.1)
@@ -151,18 +160,18 @@ bob/
 ├── html_output.py       # build_html_output() — export HTML autonome (--html)
 ├── i18n.py              # t(key) avec notation pointée
 ├── ignore.py            # Liste d'ignore persistante par finding-key (~/.config/bob/ignore.yml)
-├── json_output.py       # Formatter sortie JSON (--json / --json-full) avec schema_version=1
+├── json_output.py       # Formatter sortie JSON (--json / --json-full) avec schema_version=3
 ├── manage_logs.py       # Interface --manage-logs, get_or_prompt_log_dir()
 ├── markdown_output.py   # Formatter sortie Markdown (--format markdown)
 ├── output.py            # Primitives terminal bas niveau
 ├── panorama.py          # build_panorama_rows()
 ├── plugin_checks.py     # PluginCheck + load_plugin_checks()
-├── profiles.py          # Chargeur de profil d'audit (server/workstation/desktop/docker + profils utilisateur)
+├── profiles.py          # Chargeur de profil d'audit (server/workstation/desktop/container + profils utilisateur)
 ├── recurrence.py        # Suivi findings récurrents — compteurs consécutifs
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, email HTML
-├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (38 filtrables + 10 always-on)
+├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (47 sections filtrables + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # Mode --watch=N — relance l'audit toutes les N secondes
@@ -249,10 +258,19 @@ bob/
 │   ├── systemd_hardening.py    # ServiceHardeningSnapshot + check_service_hardening() (v0.13.0)
 │   ├── container_security.py   # ContainerSecuritySnapshot + check_container_security() (v0.13.0)
 │   ├── socket_units.py         # SocketUnitsSnapshot + check_socket_units() (v0.13.1)
-│   └── cloud_context.py        # CloudContextSnapshot + check_cloud_context() (v0.13.1)
+│   ├── cloud_context.py        # CloudContextSnapshot + check_cloud_context() (v0.13.1)
+│   ├── raspberry_pi.py         # RaspberryPiSnapshot + check_raspberry_pi() — carte + creds partition de boot (v0.17.0)
+│   ├── grub.py                 # GrubSnapshot + check_grub() — perms grub.cfg + mot de passe boot (v0.21.0)
+│   ├── cups.py                 # CupsSnapshot + check_cups() — exposition du service d'impression (v0.21.0)
+│   ├── mount_hardening.py      # MountHardeningSnapshot + check_mount_hardening() — nodev/nosuid/noexec (v0.21.0)
+│   ├── core_dumps.py           # CoreDumpsSnapshot + check_core_dumps() — persistance des core dumps (v0.21.0)
+│   ├── kexec_lockdown.py       # KexecLockdownSnapshot + check_kexec_lockdown() — kexec + lockdown (v0.21.0)
+│   ├── faillock.py             # FaillockSnapshot + check_faillock() — verrouillage de compte PAM (v0.21.0)
+│   ├── disk_encryption.py      # DiskEncryptionSnapshot + check_disk_encryption() — racine LUKS/dm-crypt (v0.21.0)
+│   └── polkit.py               # PolkitSnapshot + check_polkit() — règles polkit inscriptibles (v0.21.0)
 ├── data/
 │   ├── services.json            # Registre déclaratif des 38 services
-│   ├── cis_refs.json            # Références CIS — 174 entrées {ref, code}
+│   ├── cis_refs.json            # Références CIS — 205 entrées {ref, code}
 │   └── bob.bash-completion  # Script d'autocomplétion bash
 └── locales/
     ├── en.json          # Clés de traduction anglais
@@ -356,7 +374,7 @@ python3 -m unittest tests/test_firewall.py
 ### Résultats attendus
 
 ```
-4500 passed in X.XXs
+~11000 passed in X.XXs
 ```
 
 Les tests n'effectuent aucun appel système — tous les snapshots sont construits directement dans les tests. Ils peuvent être lancés sans `sudo` et sans UFW installé.
@@ -484,8 +502,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 1401
-FR keys: 1401
+EN keys: 2595
+FR keys: 2595
 Missing in FR: none
 ```
 
@@ -501,7 +519,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2580 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2595 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json
@@ -626,7 +644,7 @@ raw   = engine._raw_score    # score brut pré-override (débogage uniquement)
 
 **Ensemble des domaines actifs :** un domaine compte comme « actif » dans la moyenne globale dès qu'un check de ce domaine émet un finding `OK`, `WARN` ou `ALERT` (ou une déduction avec une clé). Les findings `INFO` seuls (observations purement consultatives) ne promeuvent pas un domaine à eux seuls — ils sont explicitement exclus pour que les domaines avec uniquement des notices informatives restent cachés. L'inclusion du `OK` est le fix v0.4.6 (Bug 2) : avant lui, un domaine qui passait clean après remédiation (seul `updates.ok` subsistant après `apt upgrade`) sortait du set actif et le score global *baissait* malgré un système strictement plus sécurisé.
 
-**Pondération égale des domaines :** tous les domaines actifs contribuent également à la moyenne globale — il n'y a pas de pondération par domaine. Une machine où seul SSH est dégradé et tous les autres domaines sont à 10/10 bénéficie de la dilution ; une machine avec les sept domaines actifs accorde le même poids au pare-feu qu'à la santé du disque. C'est un choix de conception intentionnel maintenu à travers la v0.4.x.
+**Pondération égale des domaines :** tous les domaines actifs contribuent également à la moyenne globale — il n'y a pas de pondération par domaine. Une machine où seul SSH est dégradé et tous les autres domaines sont à 10/10 bénéficie de la dilution ; une machine avec les six domaines actifs accorde le même poids au pare-feu qu'à la santé & résilience. C'est un choix de conception intentionnel maintenu à travers la v0.4.x.
 
 **`ScoreCap.key` :** les plafonds portent un champ `key` propagé à leur déduction synthétique de breakdown, permettant l'attribution au domaine pour les déductions déclenchées par un plafond.
 

@@ -7,16 +7,16 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.21.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.21.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
-![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20Arch%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
-BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check sections across 7 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
+BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check sections across 6 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
 
 ---
 
@@ -47,6 +47,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 - **IPv6 consistency check** — detects IPv6 listeners not covered by a matching UFW v6 rule; conflict detection when IPv6 is disabled globally but listeners are present; link-local/ULA-only addresses downgraded to INFO
 - **UFW logging level check** — `off` → ALERT −2 pts (no visibility into blocked traffic); `low`/`medium` → OK; `high`/`full` → INFO
 - **Port exposure grouping** — groups exposed listening services by interface scope and risk level; system daemons on known OS ports classified separately from user-space apps
+- **CUPS print service** — flags a CUPS daemon listening beyond localhost (`Listen`/`Port` on a non-loopback address) → WARN −1 pt with `cupsctl --no-remote-any`; `Browsing On` (network printer advertisement) → INFO; localhost- or socket-only reads OK; no `cupsd.conf` → not audited (v0.21.0)
 
 ### System hardening
 
@@ -58,6 +59,13 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 - **System umask audit** — reads umask from `/etc/login.defs`, PAM, `/etc/profile`, shell RC files, and current process; permissive umask (0002/0000) → WARN −1 pt; conflicting sources → WARN −1 pt
 - **Secure Boot** — UEFI state via `mokutil --sb-state` / `efivars` / `bootctl`; WARN −1 pt if disabled on desktop; INFO if disabled on server/VM or BIOS/unknown
 - **Firmware & microcode audit** — `fwupdmgr` pending device firmware; CPU microcode package (Intel/AMD); WARN −1 pt if absent or outdated
+- **GRUB bootloader** — `grub.cfg` permission audit: world/group-readable → WARN −1 pt, escalated in wording when a `password_pbkdf2` hash is present (an offline-crackable secret exposed) or the file is writable; no GRUB superuser password → INFO; no GRUB config at all (a non-GRUB boot such as a Raspberry Pi) → INFO, never a false finding (v0.21.0, CIS 1.4.1)
+- **Mount hardening** — effective `nodev`/`nosuid`/`noexec` on `/tmp`, `/var/tmp`, `/dev/shm` read from `/proc/self/mounts`: a separate mount missing `nodev`/`nosuid` → WARN −1 pt; missing only `noexec` → INFO; a scratch area that is *not* its own mount is INFO, never penalised — the CIS "must be a separate partition" trap is deliberately avoided (v0.21.0, CIS 1.1)
+- **Disk encryption (LUKS)** — reports whether the root filesystem is on a LUKS/dm-crypt device, walking the device-mapper stack so LVM-on-LUKS is recognised, not just a bare crypt mount; profile-gated and never binary: an unencrypted root → WARN −1 pt on desktop/workstation (portable, physically exposed), INFO on a server (remote-unlock tooling needed, locked-rack threat model), not-applicable in a container, unknown when the root device cannot be resolved; BOB never enables encryption — a destructive, one-way operation (v0.21.0)
+- **PAM account lockout** — flags a missing `pam_faillock` (or legacy `pam_tally2`) in the auth stack: WARN −1 pt on a server, INFO on desktop/workstation (where mass account lockout is itself a DoS lever); complementary to fail2ban (network layer) — faillock covers local logins, su and sudo; an unreadable/absent PAM stack reads unknown, not clean; BOB never auto-edits PAM (v0.21.0, CIS 5.3.2)
+- **polkit authorization** — a polkit `.rules`/`.pkla` file (or its `rules.d` directory) writable by a non-root user is a direct privilege-escalation path, since polkit evaluates its rules as root → WARN −1 pt with a `chown`/`chmod` fix; a legacy `.pkla` granting `ResultAny=yes` → INFO; the rules' JavaScript is deliberately not parsed for over-broad `YES` returns (a false-positive machine) (v0.21.0)
+- **Core dumps** — `kernel.core_pattern`, systemd-coredump `Storage=`, and `hard core 0` limits; reports whether crash dumps could persist a privileged process's memory (written to disk / piped to a handler such as apport / handled by systemd-coredump) or are disabled; INFO-only, no deduction (v0.21.0)
+- **kexec / kernel lockdown** — reads `kernel.kexec_load_disabled` and `/sys/kernel/security/lockdown`: kexec locked, or lockdown in `integrity`/`confidentiality`, → OK; otherwise → INFO; an interface absent on a kernel built without it reads as unknown; INFO-only (v0.21.0)
 - **TLS/SSL certificate expiry** — scans Let's Encrypt, `/etc/ssl/private`, nginx/apache2/postfix config files; expired → ALERT −2 pts; <7 d → ALERT −2 pts; <30 d → WARN −1 pt; total capped at −4 pts; broken symlinks handled
 - **Systemd timers security** — curl/wget piped to a shell in ExecStart → WARN −2 pts; world-writable scripts in ExecStart → WARN −1 pt; user-created root timers without `User=` → INFO
 - **Service hardening (`systemd-analyze security`)** — surfaces the systemd exposure score of running services (NoNewPrivileges, ProtectSystem, capability bounding, namespacing…); INFO-only summary (counts by predicate + least-hardened running services + pointer to `systemd-analyze security <unit>`), **no deduction** — a high default exposure is the normal state of a Linux host, not a chosen misconfiguration (v0.13.0)
@@ -88,12 +96,12 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail. **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.17.1. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking. Since v0.18.0 the sysctl hardenings are applied **by BOB's own code, not by a shell**: set, persisted with exactly one line per key, then **read back** before BOB claims anything — the one-liner on screen is unchanged for a human to paste. Two unattended applications are refused outright because they can take a remote host away from you — a default-deny firewall policy (`iptables -P INPUT DROP` and its `ip6tables`, `-nft`, `-legacy` and `nft … policy drop` spellings) — and a fix that grants access (`ufw allow`) always runs before one that withdraws it (`ufw enable`)
-- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 200 explainable keys across 56 prefixes; 109 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 91 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
+- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 205 explainable keys across 56 prefixes; 114 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 91 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
 - **Domain scores** — per-domain 0–10 sub-scores, one per on-screen group (Firewall & Network / Exposure & Services / Access Control / System Hardening / Health & Resilience / Threat Detection); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases. Since v0.18.0 the CSV's last column is `key`, the finding's stable identifier — the same one `--explain`, `--ignore` and the JSON carry; the fifteen columns before it keep their positions
-- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 48 section names — the 38 that are filterable, plus the 10 always-on ones it also lists
+- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 57 section names — the 47 filterable, plus the 10 always-on ones it also lists
 - **`--output-dir PATH`** — override report save directory for the current run; no persist
 - **Comparative report** — baseline saved after each audit (`~/.config/bob/last_baseline.json`); next run shows score delta, alert/warn changes, new/closed ports, started/stopped services; new and resolved ALERT+WARN finding keys tracked separately. A file that is not a BOB baseline (no `timestamp` and `score`) is refused by name rather than compared against as a baseline of zero
 - **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 1000-entry rotation. A line whose score or timestamp BOB cannot read is skipped, never repaired into a figure it did not measure
@@ -160,10 +168,10 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 
 ## Requirements
 
-- Linux — the platform badge covers nine names, on three different kinds of evidence:
+- Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
-  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
-  - **validated on real virtual machines** (v0.17.1 and v0.18.0 field tests): Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine being the one host without systemd, which is what the OpenRC support was written against
+  - **real hardware** (stress-tested during the v0.20.x cycle): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
+  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - Python 3.10+
 - `ss` recommended (`iproute2` package) — available by default on modern systems
@@ -176,10 +184,10 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 
 ### Prerequisites
 
-- Linux — the platform badge covers nine names, on three different kinds of evidence:
+- Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
-  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
-  - **validated on real virtual machines** (v0.17.1 and v0.18.0 field tests): Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine being the one host without systemd, which is what the OpenRC support was written against
+  - **real hardware** (stress-tested during the v0.20.x cycle): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
+  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - pipx *(isolated Python app installer)*:
 
@@ -297,7 +305,7 @@ sudo bob --reconfigure
 
 ## Plugin checks — `~/.config/bob/checks.d/*.py`
 
-BOB supports custom audit checks written in Python. Drop a `*.py` file under `~/.config/bob/checks.d/` and BOB picks it up at the next run. Each plugin is executed inside a **sandboxed subprocess** (introduced in v0.7.0 T3) — RLIMIT_AS 256 MiB, RLIMIT_CPU 10 s wall clock, restricted import allowlist, denied filesystem writes, blocked reads on sensitive paths (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). A misbehaving plugin **cannot** abort the audit, and any output is ANSI-sanitised.
+BOB supports custom audit checks written in Python. Drop a `*.py` file under `~/.config/bob/checks.d/` and BOB picks it up at the next run. Each plugin is executed inside a **sandboxed subprocess** (introduced in v0.7.0 T3) — RLIMIT_AS 256 MiB, a 5 s wall-clock timeout, RLIMIT_CPU 10 s, restricted import allowlist, denied filesystem writes, blocked reads on sensitive paths (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). A misbehaving plugin **cannot** abort the audit, and any output is ANSI-sanitised.
 
 > **Threat model note:** in-process Python sandboxing is defence-in-depth, not a hard security boundary (PEP 416 consensus). Use the shipped AppArmor profile for actual isolation. See SECURITY.md → "Plugin checks" section.
 
@@ -377,11 +385,11 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.21.0  │  Linux hardening auditor                                     ║
+║  BOB 0.21.1  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
-║  UFW           : v0.36.2                                                     ║
+║  UFW           : 0.36.2                                                      ║
 ║  User          : alice                                                       ║
 ║  Date          : 17/05/2026 10:00                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -830,7 +838,7 @@ The `findings[*].key` and `deductions[*].key` are part of the `--explain` key se
 
 ### EXPLAIN_KEYS audit
 
-As of v0.11.x, the `--explain` key set contains **200 keys** across **56 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
+As of v0.11.x, the `--explain` key set contains **205 keys** across **56 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
 
 - **Pattern:** `<prefix>.<finding_id>` (single dot, snake_case)
 - **Exceptions:** `file_perms.<path>.<finding_id>` (path-segment middles) and `services.{exposure,state}.<finding_id>` (two-tier taxonomy), both resolved by `bob.explain.normalize_key`

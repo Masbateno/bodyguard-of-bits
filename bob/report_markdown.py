@@ -108,7 +108,7 @@ class MarkdownReport:
         self._writeln("")
         self._writeln(f"- **OS:** {info.os_name}")
         self._writeln(f"- **Kernel:** {info.kernel}")
-        _ufw = f"v{info.ufw_version}" if info.ufw_version else "not installed"
+        _ufw = f"{info.ufw_version}" if info.ufw_version else "not installed"
         self._writeln(f"- **Firewall (UFW):** {_ufw}")
         self._writeln(f"- **Language:** {info.language}")
         self._writeln(f"- **Config:** {info.config_path}")

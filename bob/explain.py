@@ -132,6 +132,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "hardening.send_redirects_enabled",
         "hardening.protected_hardlinks_disabled",
         "hardening.protected_symlinks_disabled",
+        "hardening.icmp_broadcast_enabled",
     ]),
     ("iptables / nftables", [
         "firewall_iptables.no_backend",
@@ -150,6 +151,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "mac_policy.no_enforce",
         "mac_policy.no_mac",
         "mac_policy.selinux_disabled",
+        "mac_policy.apparmor_complain_profiles",
     ]),
     ("Firewall stack integrity", [
         "firewall_drivers.iptables_bypass",
@@ -223,6 +225,9 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("Kernel Modules", [
         "kernel_modules.risky_fs",
         "kernel_modules.risky_net",
+        "kernel_modules.kernels_obsolete",
+        "kernel_modules.kernels_reboot_pending",
+        "kernel_modules.kernels_update_available",
     ]),
     ("Firewall Rules", [
         "firewall_rules.duplicate_found",

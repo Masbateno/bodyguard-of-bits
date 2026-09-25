@@ -1862,6 +1862,11 @@
       }
     },
     "hardening": {
+      "icmp_broadcast_enabled": {
+        "title": "Host answers ICMP echo sent to broadcast addresses (icmp_echo_ignore_broadcasts = 0)",
+        "why": "When a host replies to ICMP echo requests aimed at a broadcast or multicast address, an attacker can spoof a victim's source address and ping the broadcast — every host on the segment then floods the victim with replies (the classic 'Smurf' amplification). Ignoring broadcast echo removes the host as an amplifier. BOB reports this as informational rather than a deduction: the amplification factor on a modern switched LAN is small, but the setting is a free, standard hardening default.",
+        "how": "1. Enable now:\n   sudo sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1\n2. Make it permanent:\n   echo 'net.ipv4.icmp_echo_ignore_broadcasts=1' | sudo tee /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+      },
       "rp_filter_disabled": {
         "title": "Reverse path filtering disabled (rp_filter = 0)",
         "why": "Without reverse path filtering, the kernel accepts packets from source IP addresses that could not have arrived via the receiving interface — a sign of IP spoofing. This enables spoofed-source attacks and can be used to bypass firewall rules that rely on source IP.",
@@ -2014,6 +2019,11 @@
       }
     },
     "mac_policy": {
+      "apparmor_complain_profiles": {
+        "title": "AppArmor profiles loaded in complain mode",
+        "why": "A profile in complain (learning) mode logs policy violations but does not block them — it gives visibility, not enforcement. Profiles left in complain mode after tuning present the appearance of MAC coverage while allowing the very actions they describe. BOB reports this as informational: complain mode is a legitimate, temporary state while a profile is being developed.",
+        "how": "Review which profiles are in complain mode:\n   sudo aa-status\nOnce a profile is tuned and no longer logging false positives, switch it to enforce:\n   sudo aa-enforce /etc/apparmor.d/<profile>\nKeep a profile in complain mode only while you are actively developing or debugging it."
+      },
       "apparmor_off_in_kernel": {
         "title": "AppArmor built into the kernel but disabled at boot",
         "why": "A kernel can carry AppArmor and still not run it: the security modules it starts are chosen at boot, and a kernel whose default list leaves AppArmor out reports it as present but disabled. The stock Raspberry Pi kernel ships exactly this way. Nothing is confined then, whatever profiles are installed under /etc/apparmor.d — and apparmor.service, which carries ConditionSecurity=apparmor, is silently skipped by systemd, so the usual advice to enable or start it does nothing.\n\naa-status is misleading here: it prints \"apparmor module is loaded\" because the module is built in, then exits 3 because the control files are missing. The kernel's own answer is /sys/module/apparmor/parameters/enabled.",
@@ -2372,6 +2382,21 @@
       }
     },
     "kernel_modules": {
+      "kernels_obsolete": {
+        "title": "Obsolete kernel packages still installed",
+        "why": "Old kernel packages left installed after upgrades consume /boot space (which can fill and break the next upgrade) and keep vulnerable kernel images available as boot options. Keeping the running kernel plus one or two fallbacks is enough. Informational: removing kernels is a maintenance choice, not a live vulnerability.",
+        "how": "Debian/Ubuntu:\n   sudo apt autoremove --purge   (review the list before confirming)\nRHEL/Fedora:\n   sudo dnf remove $(dnf repoquery --installonly --latest-limit=-2 -q)\nAlways keep at least the running kernel plus one fallback, and only remove old kernels after a successful boot into the current one."
+      },
+      "kernels_reboot_pending": {
+        "title": "A newer kernel is installed but not running — reboot pending",
+        "why": "A kernel update has been installed but the system is still running the older kernel, so any security fixes in the new kernel are not yet active. The host stays exposed to whatever the update fixed until it reboots into the new image. Informational: when to reboot is an operational decision.",
+        "how": "Schedule a reboot to activate the new kernel:\n   sudo reboot\nAfter rebooting, confirm the running kernel matches the latest installed one:\n   uname -r\nRemove the old kernel only once the new one has booted successfully."
+      },
+      "kernels_update_available": {
+        "title": "A kernel update is available but not installed",
+        "why": "A newer kernel package is offered by the distribution but has not been installed. Kernel updates carry fixes for local (and sometimes remote) privilege-escalation vulnerabilities, so a host on an outdated kernel misses them. Informational because installing a kernel and rebooting is scheduled maintenance, not an unattended action.",
+        "how": "Install the available kernel, then reboot:\n   Debian/Ubuntu: sudo apt update && sudo apt full-upgrade\n   RHEL/Fedora:   sudo dnf upgrade --refresh\n   sudo reboot\nThe new kernel runs only after the reboot."
+      },
       "risky_fs": {
         "title": "Risky filesystem kernel modules loaded",
         "why": "Filesystem drivers (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf, usb_storage) expand kernel attack surface unnecessarily on servers. Vulnerabilities in these drivers can be triggered by mounting a maliciously crafted filesystem image or inserting a USB device, potentially enabling privilege escalation or arbitrary code execution in kernel space.",

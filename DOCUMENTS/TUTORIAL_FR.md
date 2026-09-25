@@ -30,7 +30,7 @@ Pour Fedora/RHEL : `sudo dnf install pipx`. Pour Arch : `sudo pacman -S python-p
 Vérifier :
 
 ```bash
-bob --version                               # affiche "BOB v0.13.x"
+bob --version                               # affiche "bob 0.21.x" (SemVer nu, sans « v »)
 ```
 
 ### Faire fonctionner `sudo bob`
@@ -60,7 +60,7 @@ sudo /home/$USER/.local/bin/bob
 sudo bob
 ```
 
-BOB tourne ~30 secondes (plus long la première fois, plus rapide ensuite). Tu verras :
+BOB prend de quelques secondes à deux ou trois minutes — environ 9 s sur un desktop à SSD rapide, mais ~40 s à plus de 2 minutes sur un disque lent (mécanique) ou une petite carte comme un Raspberry Pi Zero. Ça dépend du disque, du CPU et du nombre de services installés, pas seulement de l'architecture. Tu verras :
 
 1. **Des headers de section** au fur et à mesure que chaque domaine est checké (`SSH`, `Firewall`, `Services`, …) avec `✔` / `⚠` / `✖` par finding
 2. **Une box résumé** à la fin avec le score (`/10`), le verdict (`hardening`, `acceptable`, `at risk`, `warning`, `critical`), le profil utilisé, et le contexte réseau détecté par BOB
@@ -97,7 +97,7 @@ Pas de `sudo` requis — `--explain` est un lookup standalone, profile-aware. La
 Tu peux lister chaque clé explainable :
 
 ```bash
-bob --explain list                          # 200 clés en v0.18.x, groupées par famille CIS
+bob --explain list                          # 205 clés en v0.18.x, groupées par famille CIS
 bob --explain                               # picker interactif (↑↓/jk, PgUp/PgDn, g/G, Entrée, l langue, q quitter)
 ```
 
@@ -342,9 +342,9 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2580 clés × 2 locales en v0.18.1 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2595 clés × 2 locales en v0.21.1 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
-Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les 60 non codées, elles, *sont* traduites), et les **38 libellés de services** — dont 27 portent de la prose anglaise descriptive, comme `Samba (Windows file sharing)` ou `Apache Web Server` — traités comme des noms de produits. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
+Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les 87 non codées, elles, *sont* traduites), et les **38 libellés de services** — dont 27 portent de la prose anglaise descriptive, comme `Samba (Windows file sharing)` ou `Apache Web Server` — traités comme des noms de produits. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 
 ---
 

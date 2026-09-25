@@ -30,7 +30,7 @@ For Fedora/RHEL : `sudo dnf install pipx`. For Arch : `sudo pacman -S python-pip
 Verify :
 
 ```bash
-bob --version                               # prints "BOB v0.13.x"
+bob --version                               # prints "bob 0.21.x" (bare SemVer, no "v")
 ```
 
 ### Make `sudo bob` work
@@ -60,7 +60,7 @@ sudo /home/$USER/.local/bin/bob
 sudo bob
 ```
 
-BOB runs ~30 seconds (longer the first time, faster after). You will see :
+BOB takes anywhere from a few seconds to a couple of minutes — about 9 s on a fast SSD desktop, but ~40 s to over 2 minutes on a slow (mechanical) disk or a small board like a Raspberry Pi Zero. It scales with the disk, the CPU and how many services are installed, not just the architecture. You will see :
 
 1. **Section headers** as each domain is checked (`SSH`, `Firewall`, `Services`, …) with `✔` / `⚠` / `✖` per finding
 2. **A summary box** at the end with the score (`/10`), the verdict (`hardening`, `acceptable`, `at risk`, `warning`, `critical`), the profile used, and the network context BOB detected
@@ -97,7 +97,7 @@ No `sudo` needed — `--explain` is a standalone, profile-aware lookup. The outp
 You can list every explainable key :
 
 ```bash
-bob --explain list                          # 200 keys at v0.18.x, grouped by CIS family
+bob --explain list                          # 205 keys at v0.18.x, grouped by CIS family
 bob --explain                               # interactive picker (↑↓/jk, PgUp/PgDn, g/G, Enter, l language, q quit)
 ```
 
@@ -337,9 +337,9 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2580 keys × 2 locales as of v0.18.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2595 keys × 2 locales as of v0.21.1 — **with one exception you will see on screen: the 27 service labels that carry English prose** (`Samba (Windows file sharing)`, `Apache Web Server`, …) stay English by design, as explained below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
-Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the 60 uncoded ones *are* translated), and the **38 service labels** — 27 of which carry descriptive English prose, such as `Samba (Windows file sharing)` or `Apache Web Server` — treated as product names. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
+Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the 87 uncoded ones *are* translated), and the **38 service labels** — 27 of which carry descriptive English prose, such as `Samba (Windows file sharing)` or `Apache Web Server` — treated as product names. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 
 ---
 

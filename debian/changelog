@@ -1,3 +1,19 @@
+bodyguard-of-bits (0.21.1-1) unstable; urgency=medium
+
+  * Patch: documentation accuracy, five backfilled --explain entries, and
+    anti-drift guards. No scoring, JSON-schema or check-behaviour change.
+  * Five --explain entries backfilled so every CIS-mapped finding key has an
+    explanation (explain set 200 -> 205 keys / 56 prefixes).
+  * report_markdown: the ufw version no longer gets a spurious "v" prefix
+    (the one de-"v" site the v0.21.0 SemVer change missed).
+  * New machine guards (value-second "| metric | count |" tables, per-category
+    CIS breakdown, locale-key total, check-module count), each with a mutation,
+    plus a fixed relic test (an offline urllib patch that silently no-op'd).
+  * Field-tested on 8 real machines (Debian, Ubuntu, Fedora, openSUSE, Alpine,
+    Kali, Linux Mint, Raspberry Pi OS), 0 bug.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 25 Sep 2026 14:00:00 +0000
+
 bodyguard-of-bits (0.21.0-1) unstable; urgency=medium
 
   * Minor: six new check sections and a SemVer versioning cleanup.

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.21.0
+Version:        0.21.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,12 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Sep 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.1-1
+- Patch: documentation accuracy, five backfilled --explain entries (explain set
+  200 -> 205 keys, completing CIS coverage), report_markdown ufw-version de-"v"
+  fix, and anti-drift guards. No scoring, JSON-schema or check-behaviour change.
+  Field-tested on 8 real machines (Debian, Ubuntu, Fedora, openSUSE, Alpine,
+  Kali, Mint, Raspberry Pi), 0 bug.
 * Wed Sep 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.0-1
 - Minor: six new check sections and a SemVer versioning cleanup. SemVer: the "v"
   prefix is dropped everywhere (version display, git tags, badges, banners) —

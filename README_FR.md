@@ -7,18 +7,18 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.21.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.21.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
-![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20Arch%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 47 sections de vérification sur 7 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
+BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 47 sections de vérification sur 6 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -65,7 +65,7 @@ Un mode CIS strict (sans modulation contextuelle) est prévu sur la roadmap.
 
 ## Installation
 
-> **Sécurité d'exécution** : BOB est en lecture seule. Il n'exécute que des commandes inoffensives (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) et n'écrit qu'à `~/.config/bob` et son répertoire de logs. Le mode optionnel `--fix --apply` demande confirmation avant chaque correction, et seulement pour les commandes que BOB peut exécuter sans surveillance — un diagnostic comme `smartctl -a` est affiché, jamais exécuté. Ajouter `--yes` supprime les confirmations ; rien d'autre ne modifie l'état du système. Un audit prend quelques secondes et **annonce sa propre durée** depuis la v0.16.4, sans qu'il faille te fier à nous : environ six secondes sur un poste de travail, moins de cinq sur un conteneur minimal.
+> **Sécurité d'exécution** : BOB est en lecture seule. Il n'exécute que des commandes inoffensives (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) et n'écrit qu'à `~/.config/bob` et son répertoire de logs. Le mode optionnel `--fix --apply` demande confirmation avant chaque correction, et seulement pour les commandes que BOB peut exécuter sans surveillance — un diagnostic comme `smartctl -a` est affiché, jamais exécuté. Ajouter `--yes` supprime les confirmations ; rien d'autre ne modifie l'état du système. Un audit prend quelques secondes et **annonce sa propre durée** depuis la v0.16.4, sans qu'il faille te fier à nous — la valeur exacte dépend de la machine et du nombre de checks actifs.
 
 ### Prérequis
 
@@ -131,10 +131,10 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB v0.15.5  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.21.1  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
-║  UFW           : v0.36.2                                                     ║
+║  UFW           : 0.36.2                                                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━ DURCISSEMENT SYSTÈME ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -159,16 +159,17 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ---
 
-## Vérifications de sécurité — 47 sections de vérification, 7 domaines de score
+## Vérifications de sécurité — 47 sections de vérification, 6 domaines de score
 
 | Domaine | Ce qu'il couvre |
 |---------|----------------|
 | **Pare-feu** | Règles UFW, iptables/nftables (quand UFW inactif), cohérence IPv6, exposition des ports |
 | **SSH** | Durcissement sshd_config — PermitRootLogin, qualité des clés, timeouts, forwarding |
 | **Durcissement noyau** | Paramètres sysctl, modules noyau, Secure Boot, firmware/microcode |
-| **Services** | 38 services connus avec classification du risque ; détection du contournement pare-feu Docker |
-| **Permissions fichiers** | Audit SUID/SGID, fichiers sensibles, sudoers |
-| **Comptes utilisateurs** | Comptes expirés, politique de mots de passe, login.defs, PAM |
+| **Boot & stockage** | Mot de passe/permissions de config GRUB, options de montage (nodev/nosuid/noexec), chiffrement disque LUKS, politique de core dumps, kexec/lockdown noyau |
+| **Services** | 38 services connus avec classification du risque ; détection du contournement pare-feu Docker ; exposition réseau du service d'impression CUPS |
+| **Permissions fichiers** | Audit SUID/SGID, fichiers sensibles, sudoers, permissions des règles polkit |
+| **Comptes utilisateurs** | Comptes expirés, politique de mots de passe, login.defs, PAM, verrouillage de compte (pam_faillock) |
 | **Mises à jour & détection** | Mises à jour apt, règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
 | **Opérations** | Rotation des logs, analyse auth.log, synchro NTP, expiration certificats TLS, timers systemd, Samba, tâches cron |
 | **Réseau** | Contexte IP publique, détection du type de réseau (serveur/LAN/VPN), GeoIP optionnel |
@@ -178,7 +179,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ## Mapping des benchmarks CIS
 
-199 entrées : **107 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 84 bonnes pratiques**, plus **163 citations inter-benchmarks** sur 58 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+205 entrées : **110 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 87 bonnes pratiques**, plus **163 citations inter-benchmarks** sur 58 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
@@ -203,7 +204,7 @@ Sans sudo. Entièrement hors ligne — aucun appel externe ni collecte de donné
 | Profil | Cas d'usage |
 |--------|------------|
 | `server` | Par défaut — strict sur SSH, pare-feu, services |
-| `desktop` | Assoupli pour les systèmes desktop — auth SSH par mot de passe tolérée, apps GUI non signalées, mécanismes de mise à jour manuels acceptés (~11 surcharges étendant `server`) |
+| `desktop` | Assoupli pour les systèmes desktop — auth SSH par mot de passe tolérée, apps GUI non signalées, mécanismes de mise à jour manuels acceptés (~35 surcharges étendant `server`) |
 | `workstation` | Profil business first-class depuis v0.8.1 (plus un alias vers `desktop`) — garde backup / auditd / MAC-enforce au niveau WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file-integrity que `desktop` |
 | `container` | Étend `desktop` et saute les vérifications niveau hôte (modules noyau, durcissement noyau, secure boot, auditd, suid_audit, docker_audit, intégrité fichiers, rootkit) |
 
@@ -327,7 +328,7 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 | Niveau | Distros | État |
 |--------|---------|------|
 | **Tier 1** (validé sur matériel réel) | Linux Mint 22.3, Debian 13, Ubuntu Server 26.04, Fedora 44 Server, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd), Kali Rolling | Fonctionnalités complètes, chacune stress-testée sur une machine réelle durant le cycle v0.20.x — passes multi-angles exhaustives couvrant firewalld et SELinux (Fedora, openSUSE), AppArmor (Kali), les services socket-activés, les updates cross-distro et les allers-retours de remédiation. Mint et Debian sont en production quotidienne ; les autres sont des machines de test dédiées — Ubuntu 26.04 (Python 3.14), Fedora 44 (SELinux enforcing, firewalld), openSUSE Leap 16 (zypper, SELinux), Kali Rolling (AppArmor, updates sans canal sécurité ; aussi exercée en CI à chaque PR) |
-| **Tier 2** (validé, de deux façons) | *En CI, à chaque PR :* Debian 12, Ubuntu 22.04/24.04/25.04, Fedora 41 · **Debian Bookworm arm64** (émulé). *Sur machines virtuelles réelles, à chaque release :* Fedora 43, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 | La CI lance un smoke + un audit hors ligne à chaque PR ; pas de sentinelles locale, pas de traceback Python, et le job arm64 vérifie en plus que les concepts firmware x86 dégradent et que la section Raspberry Pi se déclenche. La passe VM est un audit complet conduit à la main avant une release — c'est là que les défauts de v0.17.1 et v0.18.0 ont été trouvés, et Alpine est la seule de ces machines sans systemd |
+| **Tier 2** (validé en CI à chaque PR) | Debian 12, Ubuntu 22.04/24.04/25.04, Fedora 41 · **Debian Bookworm arm64** (émulé) | La CI lance un smoke + un audit hors ligne à chaque PR ; pas de sentinelles locale, pas de traceback Python, et le job arm64 vérifie en plus que les concepts firmware x86 dégradent et que la section Raspberry Pi se déclenche. Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22) — c'est cette passe qui a trouvé les défauts de v0.17.1 et v0.18.0 — mais ces familles d'OS sont désormais couvertes par du matériel réel en Tier 1, donc la passe VM par release a été abandonnée |
 | **Tier 3** (fonctionne, non validé sur matériel) | Autres Debian / RHEL / SUSE / Arch-family · **Raspberry Pi OS** (Bookworm, arm64) | Best-effort ; les vérifications dégradent proprement. La *section* Raspberry Pi est couverte par le job CI arm64 ci-dessus ; la *carte* a été auditée une fois sur du matériel physique (un Pi Zero W, trixie, v0.18.1) — voir ci-dessous |
 
 **Le Raspberry Pi** est reconnu depuis la v0.17.0. BOB lit le nom de la carte dans le device tree et rapporte ce qu'un PC n'a pas : les identifiants de provisionnement laissés sur la partition FAT de boot — le `userconf.txt` de l'Imager sous Bookworm et, sous trixie, l'amorçage cloud-init, dont `user-data` contient l'empreinte du mot de passe du compte et `network-config` la clé Wi-Fi, sur un système de fichiers sans notion de propriétaire — le marqueur `ssh` de premier démarrage, et le compte `pi` historique de la distribution quand il peut réellement se connecter. Les concepts firmware x86 dégradent au lieu de déduire : le microcode ne s'applique pas, et Secure Boot rapporte qu'aucun UEFI n'a été trouvé plutôt que d'affirmer un BIOS que la carte n'a pas. BOB ne teste **pas** si le compte `pi` a gardé le mot de passe par défaut : il faudrait `crypt`, que Python a retiré de la bibliothèque standard en 3.13. La section a été testée sur `aarch64` émulé (qemu-user) : la carte y est lue dans le device tree, la partition de boot se résout en `/boot/firmware` (chemin Bookworm), le hash yescrypt de l'imager est reconnu et le round trip `--fix --apply` supprime le fichier et efface le constat. L'émulation n'est pas du matériel, et elle n'y est pas non plus silencieusement équivalente : `setrlimit(RLIMIT_AS)` y retourne un succès sans rien appliquer, ce qui est précisément ainsi qu'on a surpris le bac à sable des plugins à revendiquer un plafond mémoire jamais obtenu. Un job arm64 tourne sur chaque PR : il refuse de passer si `uname -m` ne répond pas réellement `aarch64`, puis vérifie que l'audit sort proprement, que le microcode dégrade, qu'un UEFI absent n'est pas annoncé comme un BIOS, et que la section Raspberry Pi se déclenche sur une carte simulée. **v0.18.1 est la première version auditée sur un Pi physique** — un Zero W sous Raspbian 13 trixie — et elle a trouvé ce que l'émulation ne pouvait pas trouver : le contrôle de la partition de boot cherchait un fichier que trixie n'écrit plus, pendant que l'amorçage cloud-init d'à côté contenait l'empreinte actuelle du compte sudo, et la détection de force brute SSH était aveugle à OpenSSH ≥ 9.8. Une carte n'est pas une matrice : les retours sur d'autres modèles valent toujours plus que n'importe quel nombre d'exécutions émulées.
@@ -346,7 +347,7 @@ La même version a cessé de faire lire à BOB les noms de fichiers de Debian po
 
 - [Tutoriel — démarrer](DOCUMENTS/TUTORIAL_FR.md)
 - [Guide Raspberry Pi](DOCUMENTS/RASPBERRY_PI_FR.md)
-- [Référence technique complète](DOCUMENTS/README_TECH.md)
+- [Référence technique complète](DOCUMENTS/README_TECH_FR.md)
 - [Journal des modifications](CHANGELOG_FR.md)
 - [Guide développeur](DOCUMENTS/README_DEV_FR.md)
 - [Guide d'automatisation](DOCUMENTS/AUTOMATION_FR.md)

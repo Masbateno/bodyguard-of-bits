@@ -50,6 +50,7 @@ _NOUNS = {
     "CIS references": "cis_refs", "références CIS": "cis_refs",
     "check sections": "sections", "sections de vérification": "sections",
     "filterable": "sections", "sections filtrables": "sections",
+    "check modules": "check_modules", "modules de vérification": "check_modules",
 }
 #: Phrases carrying a number that equals a live counter, and which this sweep
 #: deliberately does not watch — either because the figure is checked by a more
@@ -138,6 +139,14 @@ def _live() -> dict:
             (_ROOT / "bob" / "data" / "cis_refs.json").read_text(encoding="utf-8"))),
         # What a reader means by "check sections" is what --check accepts.
         "sections": len(_ALL_SECTIONS),
+        # Check *modules* on disk: one bob/checks/*.py per check (underscore
+        # helpers excluded), plus the ssh/ sub-package counted as one. Distinct
+        # from the section count — a module can register more than one section.
+        "check_modules": (
+            len([p for p in (_ROOT / "bob" / "checks").glob("*.py")
+                 if not p.name.startswith("_")])
+            + (1 if (_ROOT / "bob" / "checks" / "ssh").is_dir() else 0)
+        ),
     }
 
 

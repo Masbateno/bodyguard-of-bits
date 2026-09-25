@@ -37,8 +37,8 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | Role |
 |---|---|
-| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~401 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (47 filterable + 10 always-on sections), `_section_enabled()` (~845 lines) |
+| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~995 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (47 filterable + 10 always-on sections), `_section_enabled()` (~1115 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `~/.config/bob/config.conf`, `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,9 +54,9 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 200-key canonical list in 56 prefixes, profile variants (71 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
-| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (174 entries: 107 formal CIS, 60 best-practice, 7 Docker) |
-| `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 7-domain attribution (`backup` → `disk`) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 205-key canonical list in 56 prefixes, profile variants (71 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
+| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (205 entries: 111 formal CIS, 87 best-practice, 7 Docker) |
+| `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 6-domain attribution (`backup` → `health_resilience`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
 | `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 6 built-in compound-risk rules |
 | `exposure.py` | Port exposure analysis — groups exposed listening services by interface scope and risk level; fw_policy allowlist |
@@ -121,6 +121,15 @@ This separation allows the entire business logic to be tested by instantiating s
 | `container_security.py` | **v0.13.0** — container self-posture read from `/proc` (CapBnd, seccomp mode, uid_map, rootfs writability); whole section suppressed off-container via `skip_if`; **v0.15.4** privileged (−3) / CAP_SYS_ADMIN (−2) / seccomp-off (−1) deduct as operator choices, the rest stays INFO |
 | `socket_units.py` | **v0.13.1** — orphan / failed systemd `.socket` units at the systemd × listening-sockets intersection; an empty `Triggers=` is never flagged, a merely inactive backing service is healthy; **v0.15.4** an orphan bound to a non-loopback address deducts (−1), loopback-only stays INFO |
 | `cloud_context.py` | **v0.13.1** — host-side cloud exposure (IMDS reachable on-link, world-readable user-data); conservative detection (DMI provider, or cloud-init + on-link IMDS route); suppressed off-cloud, no cloud API; **v0.15.4** world-readable user-data deducts (−2); IMDS reachability stays INFO — IMDSv2 enforcement cannot be read host-side |
+| `raspberry_pi.py` | **v0.17.0** — Raspberry Pi board detection (device tree) + provisioning credentials on the FAT boot partition (Imager `userconf.txt`, cloud-init seed), first-boot `ssh` marker, historical `pi` account when it can log in |
+| `grub.py` | **v0.21.0** — GRUB bootloader: world/group-readable `grub.cfg` (escalated if it carries a `password_pbkdf2` hash), no boot-menu password (INFO) |
+| `cups.py` | **v0.21.0** — CUPS print service: non-loopback `Listen` (remediation `cupsctl --no-remote-any`), Browsing-on (INFO) |
+| `mount_hardening.py` | **v0.21.0** — `nodev`/`nosuid`/`noexec` on `/tmp`, `/var/tmp`, `/dev/shm`; a *separate* mount missing them is WARN, a non-separate one INFO (CIS separate-partition trap avoided) |
+| `core_dumps.py` | **v0.21.0** (INFO) — `core_pattern`, systemd-coredump `Storage=`, `hard core 0` limits — whether crash dumps could persist |
+| `kexec_lockdown.py` | **v0.21.0** (INFO) — `kexec_load_disabled` + `/sys/kernel/security/lockdown` |
+| `faillock.py` | **v0.21.0** — PAM account lockout: no `pam_faillock` (or legacy `pam_tally2`) in the auth stack (WARN −1 on server, INFO on desktop/workstation) |
+| `disk_encryption.py` | **v0.21.0** — root filesystem on LUKS/dm-crypt via `/proc/mounts` + dm-stack walk (LVM-on-LUKS recognised); WARN on a desktop/workstation plain root, INFO on server, N/A in a container |
+| `polkit.py` | **v0.21.0** — polkit rules: a non-root-writable `.rules`/`.pkla` (or `rules.d` dir) is a privesc path (WARN + `chown`/`chmod`); legacy `.pkla` granting `ResultAny=yes` (INFO) |
 
 ---
 
@@ -129,7 +138,7 @@ This separation allows the entire business logic to be tested by instantiating s
 ```
 bob/
 ├── __init__.py
-├── __main__.py          # Orchestrator (~410 lines — pure coordination)
+├── __main__.py          # Orchestrator (~995 lines — pure coordination)
 ├── _paths.py            # Path resolution for data files
 ├── _tty.py              # read_line() — raw-mode line reader with Esc-to-cancel, TTY fallback to input()
 ├── breakdown.py         # Score breakdown engine — full per-deduction trace for --breakdown / -B
@@ -142,8 +151,8 @@ bob/
 ├── cron.py              # CronEntry, schedule wizard logic, build_script_content()
 ├── csv_output.py        # CSV output formatter (--format csv)
 ├── display.py           # Terminal output helpers (display_result, print_audit_summary…)
-├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→disk attribution
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 200 keys in 56 prefixes
+├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→health_resilience attribution
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 205 keys in 56 prefixes
 ├── exposure.py          # Port exposure grouping — interface scope + risk level
 ├── fixes.py             # Fix mode UI (interactive + auto-fix)
 ├── formatter.py         # bob.formatter — locale-independent rendering via Finding.template_vars (v0.4.1)
@@ -151,13 +160,13 @@ bob/
 ├── html_output.py       # build_html_output() — standalone HTML export (--html)
 ├── i18n.py              # t(key) with dot notation
 ├── ignore.py            # Persistent finding-key ignore list (~/.config/bob/ignore.yml)
-├── json_output.py       # JSON output formatter (--json / --json-full) with schema_version=1
+├── json_output.py       # JSON output formatter (--json / --json-full) with schema_version=3
 ├── manage_logs.py       # --manage-logs UI, get_or_prompt_log_dir()
 ├── markdown_output.py   # Markdown output formatter (--format markdown)
 ├── output.py            # Low-level terminal primitives
 ├── panorama.py          # build_panorama_rows()
 ├── plugin_checks.py     # PluginCheck + load_plugin_checks()
-├── profiles.py          # Audit profile loader (server/workstation/desktop/docker + user profiles)
+├── profiles.py          # Audit profile loader (server/workstation/desktop/container + user profiles)
 ├── recurrence.py        # Recurring finding tracker — consecutive-audit counters
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
@@ -249,10 +258,19 @@ bob/
 │   ├── systemd_hardening.py    # ServiceHardeningSnapshot + check_service_hardening() (v0.13.0)
 │   ├── container_security.py   # ContainerSecuritySnapshot + check_container_security() (v0.13.0)
 │   ├── socket_units.py         # SocketUnitsSnapshot + check_socket_units() (v0.13.1)
-│   └── cloud_context.py        # CloudContextSnapshot + check_cloud_context() (v0.13.1)
+│   ├── cloud_context.py        # CloudContextSnapshot + check_cloud_context() (v0.13.1)
+│   ├── raspberry_pi.py         # RaspberryPiSnapshot + check_raspberry_pi() — board + boot-partition creds (v0.17.0)
+│   ├── grub.py                 # GrubSnapshot + check_grub() — grub.cfg perms + boot password (v0.21.0)
+│   ├── cups.py                 # CupsSnapshot + check_cups() — print service exposure (v0.21.0)
+│   ├── mount_hardening.py      # MountHardeningSnapshot + check_mount_hardening() — nodev/nosuid/noexec (v0.21.0)
+│   ├── core_dumps.py           # CoreDumpsSnapshot + check_core_dumps() — crash-dump persistence (v0.21.0)
+│   ├── kexec_lockdown.py       # KexecLockdownSnapshot + check_kexec_lockdown() — kexec + lockdown (v0.21.0)
+│   ├── faillock.py             # FaillockSnapshot + check_faillock() — PAM account lockout (v0.21.0)
+│   ├── disk_encryption.py      # DiskEncryptionSnapshot + check_disk_encryption() — LUKS/dm-crypt root (v0.21.0)
+│   └── polkit.py               # PolkitSnapshot + check_polkit() — writable polkit rules (v0.21.0)
 ├── data/
 │   ├── services.json            # Declarative registry of the 38 services
-│   ├── cis_refs.json            # CIS benchmark references — 174 entries {ref, code}
+│   ├── cis_refs.json            # CIS benchmark references — 205 entries {ref, code}
 │   └── bob.bash-completion  # Bash completion script
 └── locales/
     ├── en.json          # English translation keys
@@ -356,7 +374,7 @@ python3 -m unittest tests/test_firewall.py
 ### Expected result
 
 ```
-4500 passed in X.XXs
+~11000 passed in X.XXs
 ```
 
 Tests make no system calls — all snapshots are built directly in the test files. They can be run without `sudo` and without UFW installed.
@@ -484,8 +502,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Expected output:
 ```
-EN keys: 1401
-FR keys: 1401
+EN keys: 2595
+FR keys: 2595
 Missing in FR: none
 ```
 
@@ -501,7 +519,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2580 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2595 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json
@@ -626,7 +644,7 @@ raw   = engine._raw_score    # pre-override raw deduction total (debug only)
 
 **Active domain set:** a domain counts as "active" in the global average as soon as any check from it emits a `OK`, `WARN`, or `ALERT` finding (or a keyed deduction). `INFO`-only findings (purely advisory observations) do not promote a domain on their own — they're explicitly excluded so domains with only informational notices stay hidden. The `OK` inclusion is the v0.4.6 fix (Bug 2): before it, a domain that went clean after remediation (only `updates.ok` left after `apt upgrade`) dropped out of the active set and the global score *decreased* despite the system being strictly more secure.
 
-**Equal domain weighting:** all active domains contribute equally to the global average — there is no per-domain weight. A machine where only SSH is degraded and all others score 10/10 benefits from dilution; a machine with all seven domains active gives the same weight to firewall as to disk health. This is an intentional design choice retained through v0.4.x.
+**Equal domain weighting:** all active domains contribute equally to the global average — there is no per-domain weight. A machine where only SSH is degraded and all others score 10/10 benefits from dilution; a machine with all six domains active gives the same weight to firewall as to health & resilience. This is an intentional design choice retained through v0.4.x.
 
 **`ScoreCap.key`:** caps carry a `key` field propagated to their synthetic breakdown deduction, enabling domain attribution for cap-triggered deductions.
 

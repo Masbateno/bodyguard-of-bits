@@ -6,6 +6,80 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.21.1] — 2026-09-25
+
+**A patch release: the documentation brought back into line with the code, five
+backfilled `--explain` entries, and new guards so the drift this pass found
+cannot return silently.** No behaviour changed — no scoring, JSON-schema,
+CSV-column-order or check-logic change; the explain additions and the
+`report_markdown` fix are additive/cosmetic.
+
+### Five `--explain` entries backfilled (CIS completeness)
+
+Five CIS-mapped finding keys were emitted without a matching `--explain` entry:
+`hardening.icmp_broadcast_enabled`, `kernel_modules.kernels_obsolete`,
+`kernel_modules.kernels_reboot_pending`, `kernel_modules.kernels_update_available`
+and `mac_policy.apparmor_complain_profiles`. Each now has a title / why / how /
+CIS reference in both locales. The explain set goes from 200 to **205 keys**
+across **56 prefixes**; `EXPLAIN_KEYS` and `cis_refs.json` are both at 205. The
+last of the five was then met in the field on a real Debian 13 (6 enforce + 23
+complain AppArmor profiles), so its execution path is exercised, not just its text.
+
+### Documentation-accuracy pass
+
+An exhaustive veracity sweep of every current-state document (verified against the
+live code, not from memory) found figures that had drifted since as far back as
+v0.14.1 and fixed them:
+
+- **SNAPSHOT — *Numbers at a glance*** was frozen at v0.14.1: score domains
+  `7 → 6` (the v0.20.0 realignment), `_PREFIX_TO_DOMAIN` `36 → 57`, filterable
+  sections `38 → 47`, the Python-source LoC/file totals, and the version /
+  supported-branch rows. The table's `| Metric | value |` layout puts the number
+  *after* the noun, which is why no counter guard had ever caught it.
+- **README_DEV / README_DEV_FR** were frozen around v0.13.x: the check tree and
+  module table were **missing nine shipped modules** (`raspberry_pi` and the
+  eight v0.21.0 checks), `json_output` said `schema_version=1` (live: 3), the
+  profile loader listed a `docker` profile that does not exist (it is
+  `container`), and the orchestrator line count, the test-suite example count and
+  the locale-parity snippet were all stale.
+- Smaller fixes: the **CSV frozen contract** (16 columns now, `nature` is column
+  11), the **CLI option table** (adds the live `--test-email`), the **CIS
+  breakdown** (110 Ubuntu / 7 Docker / 1 Red Hat / 87 best-practice = 205), ~30
+  stale per-module **LoC** figures, and the last "7 domains" stragglers.
+
+### `report_markdown`: ufw version no longer gets a spurious `v`
+
+The v0.21.0 SemVer de-`v` change missed one site: the Markdown report rendered the
+ufw version as `vX.Y.Z`. It now renders the bare version, like every other output.
+
+### Anti-drift guards (so this pass is the last one needed by hand)
+
+New machine guards, each with a mutation in `tests/mutations.py`: a **live-count
+guard** for value-second `| Metric | N |` tables (the layout that let *Numbers at a
+glance* rot); a **per-category CIS-breakdown guard**; a **locale-key-total guard**
+and a **check-module-count guard**; and `scripts/regen_loc.py` extended to
+regenerate the *biggest source files* hotspot table and the annotated-tree LoC.
+Separately, a relic-test audit found `test_get_public_ip_offline_skips_urllib`
+patching `sysinfo.urllib` with `raising=False` — but `urllib` is imported locally
+inside `get_public_ip`, so the patch silently no-op'd and the test would have
+passed even with the offline short-circuit removed. It now patches the real
+`urllib.request.urlopen`, proven by a mutation. The rest of the suite was found
+healthy (0 dead skips, all declared mutations still killing their guard).
+
+### Field-tested — 8 real machines, 0 bug
+
+Debian 13, Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24, Kali
+Rolling, Linux Mint and Raspberry Pi OS — spanning desktop and server, systemd
+and OpenRC, SELinux and AppArmor, firewalld and nftables, SSD and mechanical disk.
+The eight v0.21.0 checks all read correctly, and results were intentionally
+*different* per context (disk_encryption WARN on a desktop / INFO on a server,
+firewall-inactive → HIGH, AppArmor 0-profile on Kali vs enforce+complain on
+Debian). Run time was measured from ~9 s (SSD desktop) to ~2 min 14 s
+(mechanical-disk Kali); the tutorial's wording now scales it with disk / CPU /
+services rather than architecture.
+
+**Tests** 10950 → **11048**.
+
 ## [0.21.0] — 2026-09-23
 
 **A minor release: eight new check sections, and the SemVer "v" prefix dropped

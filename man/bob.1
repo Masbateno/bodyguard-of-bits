@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-09-23" "BOB 0.21.0" "User Commands"
+.TH BOB 1 "2026-09-25" "BOB 0.21.1" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -246,7 +246,7 @@ Display a structured explanation for a single finding key. Pass
 .B list
 as the
 .I KEY
-to list all available explain keys (169 keys).
+to list all available explain keys (205 keys).
 .TP
 .B \-e
 Shortcut for
@@ -321,10 +321,16 @@ matches
 .BR kernel_hardening " and " kernel_modules ).
 Core checks
 .RB ( firewall ,
-.BR ports ,
+.BR firewall_rules ,
+.BR ufw_logging ,
+.BR firewall_drivers ,
+.BR network_context ,
 .BR services ,
-.BR logs )
-always run.
+.BR ports ,
+.BR ddns ,
+.BR docker ,
+.BR virtualization )
+always run and cannot be skipped.
 .TP
 .B \-\-skip=\fIA,B,…\fR
 Inverse of

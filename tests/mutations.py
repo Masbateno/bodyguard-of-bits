@@ -46,6 +46,7 @@ _PKGNAMES = "tests/test_v0170_package_names.py"
 _PATHS = "tests/test_v0170_distro_paths.py"
 _PI = "tests/test_v0170_raspberry_pi.py"
 _SWEEP = "tests/test_v0170_doc_counters_sweep.py"
+_LIVECOUNT = "tests/test_v0211_live_count_claims.py"
 _UNITS = "tests/test_v0171_service_units_and_ports.py"
 _FIXTMO = "tests/test_v0171_fix_timeout_stops_what_it_started.py"
 _UPGFIX = "tests/test_v0171_upgrade_fix_can_install_what_it_found.py"
@@ -737,6 +738,71 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the section count drifted in seven places the moment a section "
                "was added, and nothing was watching",
+    ),
+    Mutation(
+        id="docs/module-count-stale-again",
+        file="DOCUMENTS/SNAPSHOT.md",
+        old="bob/checks/*.py  ← 56 check modules · Snapshot+check_xxx pattern",
+        new="bob/checks/*.py  ← 55 check modules · Snapshot+check_xxx pattern",
+        kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
+        reason="the check-module count said 57 (conflated with the 57 sections) "
+               "in four places while the on-disk count and SNAPSHOT's own table "
+               "were 56 — an independent doc audit caught it; now watched",
+    ),
+    Mutation(
+        id="docs/glance-table-value-drifts",
+        file="DOCUMENTS/SNAPSHOT.md",
+        old="| Score domains | 6 | `bob.domain_scores.DOMAINS` |",
+        new="| Score domains | 5 | `bob.domain_scores.DOMAINS` |",
+        kills=(f"{_LIVECOUNT}::test_numbers_at_a_glance_table_matches_live",),
+        reason="the 'Numbers at a glance' table (value-second `| Metric | N |` "
+               "layout) sat frozen at v0.14.1 on six rows because no guard could "
+               "read a number that follows its noun; now watched",
+    ),
+    Mutation(
+        id="sysinfo/offline-still-calls-urlopen",
+        file="bob/sysinfo.py",
+        old='    if offline:\n        return ""\n\n    import ipaddress',
+        new='    if False:\n        return ""\n\n    import ipaddress',
+        kills=("tests/test_webhook.py::TestOfflineModeNetworkContract::"
+               "test_get_public_ip_offline_skips_urllib",),
+        reason="the offline short-circuit must skip every HTTP call; the guard "
+               "silently no-op'd for its whole life (it patched a non-existent "
+               "`sysinfo.urllib` with raising=False, so the urlopen sabotage "
+               "never installed) — it would have passed with this line gone. "
+               "Fixed to patch the real `urllib.request.urlopen`.",
+    ),
+
+    Mutation(
+        id="docs/domain-count-stale-again",
+        file="README.md",
+        old="47 check sections, 6 score domains",
+        new="47 check sections, 7 score domains",
+        kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_score_domain_count",),
+        reason="v0.20.0 realigned the seven score domains onto the six display "
+               "groups, but the intros and headings kept saying 7 for four "
+               "releases — a one-digit count the two-digit sweep cannot watch",
+    ),
+    Mutation(
+        id="docs/locale-key-total-stale",
+        file="DOCUMENTS/SNAPSHOT.md",
+        old="locale auto-detect (POSIX), 2595 keys EN/FR",
+        new="locale auto-detect (POSIX), 2594 keys EN/FR",
+        kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
+        reason="the locale total sat at '2014 keys' against files holding 2595 "
+               "because '2014' reads as a year and the sweep's noun set had no "
+               "locale entry",
+    ),
+    Mutation(
+        id="docs/cis-breakdown-mis-split",
+        file="DOCUMENTS/README_TECH.md",
+        old="205 entries (111 formal CIS, 87 best-practice, 7 Docker)",
+        new="205 entries (110 formal CIS, 88 best-practice, 7 Docker)",
+        kills=(f"{_LIVECOUNT}::"
+               "test_the_readme_tech_cis_breakdown_matches_the_live_categories",),
+        reason="v0163 checks only that the parts sum to the total, so a wrong "
+               "split that still sums (110+88+7=205) passed it — the per-category "
+               "check catches the split against the live counts",
     ),
 
     Mutation(
@@ -2885,6 +2951,16 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="SemVer: BOB's own version prints with no 'v' prefix from v0.21.0; "
                "re-adding it makes the displayed version diverge from what PyPI "
                "and SemVer call it",
+    ),
+    Mutation(
+        id="versioning/markdown-report-readds-v-to-tool-version",
+        file="bob/report_markdown.py",
+        old='_ufw = f"{info.ufw_version}" if info.ufw_version else "not installed"',
+        new='_ufw = f"v{info.ufw_version}" if info.ufw_version else "not installed"',
+        kills=("tests/test_v0210_semver_no_v_prefix.py::test_markdown_report_does_not_prepend_v_to_the_tool_version",),
+        reason="CONVENTIONS §8: third-party tool versions (ufw/firewalld) are shown "
+               "bare too; the Markdown report prepended a 'v' the terminal report "
+               "did not — the de-v pass missed this surface",
     ),
     Mutation(
         id="updates/no-security-channel-not-flagged",

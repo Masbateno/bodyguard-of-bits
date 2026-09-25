@@ -270,7 +270,7 @@ Le payload générique est volontairement minimal et stable :
 ```json
 {
   "source": "bob",
-  "version": "0.14.1",
+  "version": "0.21.0",
   "host": "example.local",
   "timestamp": "2026-06-11T18:42:01+00:00",
   "score": 8,

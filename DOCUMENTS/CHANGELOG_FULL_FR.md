@@ -6,6 +6,84 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.21.1] — 25-09-2026
+
+**Une version corrective : la documentation remise en phase avec le code, cinq
+entrées `--explain` complétées, et de nouvelles gardes pour que la dérive trouvée
+par cette passe ne puisse plus revenir en silence.** Aucun comportement n'a changé
+— pas de changement de score, de schéma JSON, d'ordre des colonnes CSV ni de
+logique de check ; les ajouts explain et le correctif `report_markdown` sont
+additifs/cosmétiques.
+
+### Cinq entrées `--explain` complétées (complétude CIS)
+
+Cinq clés de constat mappées CIS étaient émises sans entrée `--explain` :
+`hardening.icmp_broadcast_enabled`, `kernel_modules.kernels_obsolete`,
+`kernel_modules.kernels_reboot_pending`, `kernel_modules.kernels_update_available`
+et `mac_policy.apparmor_complain_profiles`. Chacune a désormais un titre / pourquoi
+/ comment / référence CIS dans les deux locales. L'ensemble explain passe de 200 à
+**205 clés** sur **56 préfixes** ; `EXPLAIN_KEYS` et `cis_refs.json` sont tous deux
+à 205. La dernière des cinq a ensuite été rencontrée sur le terrain sur un vrai
+Debian 13 (6 profils AppArmor enforce + 23 complain), donc son chemin d'exécution
+est exercé, pas seulement son texte.
+
+### Passe de justesse documentaire
+
+Un balayage de véracité exhaustif de chaque document d'état-courant (vérifié contre
+le code live, pas de mémoire) a trouvé des chiffres dérivés depuis aussi loin que
+v0.14.1 et les a corrigés :
+
+- **SNAPSHOT — *Numbers at a glance*** était gelée à v0.14.1 : domaines de score
+  `7 → 6` (réalignement v0.20.0), `_PREFIX_TO_DOMAIN` `36 → 57`, sections
+  filtrables `38 → 47`, les totaux LoC/fichiers du source Python, et les lignes
+  version / branche supportée. Le layout `| Métrique | valeur |` place le nombre
+  *après* le nom — c'est pourquoi aucune garde de compteur ne l'avait jamais vu.
+- **README_DEV / README_DEV_FR** étaient gelés vers v0.13.x : l'arbre et la table
+  de checks **omettaient neuf modules livrés** (`raspberry_pi` et les huit checks
+  v0.21.0), `json_output` disait `schema_version=1` (live : 3), le chargeur de
+  profils listait un profil `docker` inexistant (c'est `container`), et le compte
+  de lignes de l'orchestrateur, l'exemple de compte de tests et le snippet de
+  parité locale étaient tous périmés.
+- Corrections plus petites : le **contrat CSV gelé** (16 colonnes désormais,
+  `nature` en colonne 11), la **table des options CLI** (ajout de `--test-email`
+  live), le **breakdown CIS** (110 Ubuntu / 7 Docker / 1 Red Hat / 87 best-practice
+  = 205), ~30 chiffres **LoC** par module périmés, et les derniers « 7 domaines ».
+
+### `report_markdown` : la version d'ufw ne reçoit plus un `v` parasite
+
+Le changement SemVer de dé-`v` de v0.21.0 avait manqué un site : le rapport
+Markdown affichait la version d'ufw en `vX.Y.Z`. Elle est désormais nue, comme
+toutes les autres sorties.
+
+### Gardes anti-dérive (pour que cette passe soit la dernière faite à la main)
+
+De nouvelles gardes machine, chacune avec une mutation dans `tests/mutations.py` :
+une **garde de comptage** pour les tables `| Métrique | N |` (nombre en second — le
+layout qui a laissé *Numbers at a glance* pourrir) ; une **garde de breakdown CIS
+par catégorie** ; une **garde du total de clés locale** et une **garde du compte de
+modules de check** ; et `scripts/regen_loc.py` étendu pour régénérer la table
+*biggest source files* et les LoC d'arbre annoté. Séparément, un audit des tests
+reliques a trouvé `test_get_public_ip_offline_skips_urllib` qui patchait
+`sysinfo.urllib` avec `raising=False` — mais `urllib` est importé localement dans
+`get_public_ip`, donc le patch était un no-op silencieux et le test aurait passé
+même sans le court-circuit offline. Il patche désormais le vrai
+`urllib.request.urlopen`, prouvé par une mutation. Le reste de la suite a été jugé
+sain (0 skip mort, toutes les mutations déclarées tuent encore leur garde).
+
+### Field-testé — 8 machines réelles, 0 bug
+
+Debian 13, Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24, Kali
+Rolling, Linux Mint et Raspberry Pi OS — couvrant desktop et serveur, systemd et
+OpenRC, SELinux et AppArmor, firewalld et nftables, SSD et disque mécanique. Les
+huit checks v0.21.0 se lisent tous correctement, et les résultats étaient
+intentionnellement *différents* selon le contexte (disk_encryption WARN sur desktop
+/ INFO sur serveur, pare-feu inactif → HIGH, AppArmor 0-profil sur Kali vs
+enforce+complain sur Debian). Le runtime mesuré va de ~9 s (desktop SSD) à
+~2 min 14 s (Kali disque mécanique) ; le wording du tutoriel le rattache désormais
+au disque / CPU / services plutôt qu'à l'architecture.
+
+**Tests** 10950 → **11048**.
+
 ## [0.21.0] — 23-09-2026
 
 **Une version mineure : huit nouvelles sections de vérification, et le préfixe

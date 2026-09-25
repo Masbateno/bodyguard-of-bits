@@ -1862,6 +1862,11 @@
       }
     },
     "hardening": {
+      "icmp_broadcast_enabled": {
+        "title": "L'hôte répond aux echo ICMP envoyés à des adresses de broadcast (icmp_echo_ignore_broadcasts = 0)",
+        "why": "Quand un hôte répond aux requêtes echo ICMP visant une adresse de broadcast ou multicast, un attaquant peut usurper l'adresse source d'une victime et pinger le broadcast — chaque hôte du segment inonde alors la victime de réponses (l'amplification « Smurf » classique). Ignorer l'echo broadcast retire l'hôte comme amplificateur. BOB le signale en informatif plutôt qu'en déduction : le facteur d'amplification sur un LAN commuté moderne est faible, mais le réglage est un durcissement standard et gratuit.",
+        "how": "1. Activer maintenant :\n   sudo sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1\n2. Rendre permanent :\n   echo 'net.ipv4.icmp_echo_ignore_broadcasts=1' | sudo tee /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
+      },
       "rp_filter_disabled": {
         "title": "Filtrage par chemin inverse désactivé (rp_filter = 0)",
         "why": "Sans filtrage par chemin inverse, le noyau accepte des paquets provenant d'adresses IP sources qui ne peuvent pas avoir transité par l'interface réceptrice — signe classique d'usurpation d'IP. Cela permet des attaques par source usurpée et peut contourner les règles du pare-feu basées sur l'IP source.",
@@ -2014,6 +2019,11 @@
       }
     },
     "mac_policy": {
+      "apparmor_complain_profiles": {
+        "title": "Profils AppArmor chargés en mode complain",
+        "why": "Un profil en mode complain (apprentissage) journalise les violations de politique mais ne les bloque pas — il apporte de la visibilité, pas de l'enforcement. Des profils laissés en complain après réglage donnent l'apparence d'une couverture MAC tout en autorisant les actions mêmes qu'ils décrivent. BOB le signale en informatif : le mode complain est un état légitime et temporaire pendant le développement d'un profil.",
+        "how": "Vérifier quels profils sont en mode complain :\n   sudo aa-status\nUne fois un profil réglé et sans faux positifs, le passer en enforce :\n   sudo aa-enforce /etc/apparmor.d/<profil>\nNe garder un profil en complain que pendant que tu le développes ou le débogues activement."
+      },
       "apparmor_off_in_kernel": {
         "title": "AppArmor compilé dans le noyau mais désactivé au démarrage",
         "why": "Un noyau peut contenir AppArmor sans l'exécuter : les modules de sécurité qu'il démarre sont choisis au boot, et un noyau dont la liste par défaut écarte AppArmor le déclare présent mais désactivé. Le noyau Raspberry Pi d'origine est livré exactement ainsi. Rien n'est alors confiné, quels que soient les profils installés sous /etc/apparmor.d — et apparmor.service, qui porte ConditionSecurity=apparmor, est sauté sans bruit par systemd : le conseil habituel de l'activer ou de le démarrer ne fait rien.\n\naa-status induit en erreur ici : il affiche \"apparmor module is loaded\" parce que le module est compilé, puis sort en 3 parce que les fichiers de contrôle manquent. La réponse du noyau lui-même est /sys/module/apparmor/parameters/enabled.",
@@ -2372,6 +2382,21 @@
       }
     },
     "kernel_modules": {
+      "kernels_obsolete": {
+        "title": "Paquets de noyau obsolètes encore installés",
+        "why": "Les anciens paquets de noyau laissés installés après les mises à niveau consomment l'espace de /boot (qui peut se remplir et casser la prochaine mise à niveau) et gardent des images de noyau vulnérables disponibles au démarrage. Garder le noyau courant plus un ou deux de secours suffit. Informatif : retirer des noyaux est un choix de maintenance, pas une vulnérabilité active.",
+        "how": "Debian/Ubuntu :\n   sudo apt autoremove --purge   (vérifier la liste avant de confirmer)\nRHEL/Fedora :\n   sudo dnf remove $(dnf repoquery --installonly --latest-limit=-2 -q)\nToujours garder au moins le noyau courant plus un de secours, et ne retirer les anciens qu'après un démarrage réussi sur le courant."
+      },
+      "kernels_reboot_pending": {
+        "title": "Un noyau plus récent est installé mais pas en cours d'exécution — redémarrage en attente",
+        "why": "Une mise à jour de noyau a été installée mais le système exécute encore l'ancien noyau, donc les correctifs de sécurité du nouveau ne sont pas encore actifs. L'hôte reste exposé à ce que la mise à jour corrigeait jusqu'à ce qu'il redémarre sur la nouvelle image. Informatif : le moment du redémarrage est une décision opérationnelle.",
+        "how": "Planifier un redémarrage pour activer le nouveau noyau :\n   sudo reboot\nAprès le redémarrage, vérifier que le noyau courant correspond au dernier installé :\n   uname -r\nNe retirer l'ancien noyau qu'une fois le nouveau démarré avec succès."
+      },
+      "kernels_update_available": {
+        "title": "Une mise à jour de noyau est disponible mais pas installée",
+        "why": "Un paquet de noyau plus récent est proposé par la distribution mais n'a pas été installé. Les mises à jour de noyau portent des correctifs pour des vulnérabilités d'escalade de privilèges locales (et parfois distantes), donc un hôte sur un noyau obsolète les manque. Informatif car installer un noyau et redémarrer est une maintenance planifiée, pas une action sans surveillance.",
+        "how": "Installer le noyau disponible, puis redémarrer :\n   Debian/Ubuntu : sudo apt update && sudo apt full-upgrade\n   RHEL/Fedora :   sudo dnf upgrade --refresh\n   sudo reboot\nLe nouveau noyau ne s'exécute qu'après le redémarrage."
+      },
       "risky_fs": {
         "title": "Modules noyau de systèmes de fichiers risqués chargés",
         "why": "Les pilotes de systèmes de fichiers (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf, usb_storage) élargissent inutilement la surface d'attaque du noyau. Des vulnérabilités dans ces pilotes peuvent être déclenchées en montant une image de système de fichiers malveillante ou en insérant un périphérique USB, permettant potentiellement une escalade de privilèges ou une exécution de code arbitraire dans l'espace noyau.",

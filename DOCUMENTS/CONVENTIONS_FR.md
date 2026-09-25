@@ -110,7 +110,7 @@ lisaient comme de la prose ordinaire dans l'assistant.
 
 Dans un bloc `HOW TO FIX`, c'est l'indentation qui marque la matière — 664
 lignes indentées contre 527 étapes numérotées et 74 notes, de façon constante
-sur les 187 clés. Peindre un bloc entier en violet a été essayé et a vidé la
+sur toutes les clés. Peindre un bloc entier en violet a été essayé et a vidé la
 couleur de son sens : les deux tiers d'un bloc sont de la prose.
 
 L'orange comme le violet se replient sur l'approximation la plus proche en 8
@@ -165,7 +165,7 @@ lancé en root.
 
 Une donnée qui atteint le terminal *hors* d'un Finding — un nom d'hôte, un
 domaine, un nom de conteneur — passe par `output.sanitize()` au point où elle est
-lue. Il y a sept endroits de ce genre et ce sont les fragiles : un huitième
+lue. Il y a plusieurs endroits de ce genre et ce sont les fragiles : un nouveau
 ajouté sans l'appel serait un vecteur d'échappement que rien ne verrait.
 
 ---

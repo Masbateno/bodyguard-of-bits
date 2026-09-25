@@ -558,7 +558,13 @@ class TestOfflineModeNetworkContract:
             called.append(args)
             raise AssertionError("urllib.request.urlopen called in offline mode")
 
-        monkeypatch.setattr(sysinfo, "urllib", MagicMock(request=MagicMock(urlopen=_explode)), raising=False)
+        # get_public_ip does `import urllib.request` locally, so the live seam
+        # is the real urllib.request.urlopen (resolved at call time), NOT a
+        # module-level `sysinfo.urllib` — which does not exist, so the old
+        # `setattr(sysinfo, "urllib", …, raising=False)` silently no-op'd and
+        # the sabotage never installed. Patch the real target, and let it raise
+        # if urlopen ever moves (no raising=False).
+        monkeypatch.setattr("urllib.request.urlopen", _explode)
         result = sysinfo.get_public_ip(offline=True)
         assert result == ""
         assert not called, "no urlopen call must be attempted in offline mode"

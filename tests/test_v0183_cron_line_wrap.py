@@ -41,6 +41,10 @@ def test_the_addresses_flow_onto_the_schedule_continuation():
 
 def test_continuation_lines_align_under_the_schedule_column():
     lines = _lines(60)
+    # Guard against a vacuous pass: the whole point is the *continuation* lines,
+    # so the row must actually wrap at this width — otherwise the loop below is
+    # empty and this test would verify nothing.
+    assert len(lines) > 1, "row did not wrap at width 60 — nothing to align"
     for cont in lines[1:]:
         assert cont.startswith(" " * _CRON_SCHED_COL)
         assert cont[_CRON_SCHED_COL] != " "               # real content there

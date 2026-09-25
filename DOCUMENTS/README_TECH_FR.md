@@ -7,16 +7,16 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.21.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.21.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
 ![Integration](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/integration.yml/badge.svg)
 ![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
-![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20Arch%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
+![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
-BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 47 sections de vérification sur 7 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
+BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 47 sections de vérification sur 6 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
 ---
 
@@ -47,6 +47,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Cohérence IPv6** — détecte les ports IPv6 actifs sans règle UFW v6 correspondante ; IPv6 désactivé globalement mais ports en écoute présents ; adresses link-local/ULA uniquement → INFO
 - **Contrôle niveau de journalisation UFW** — `off` → ALERT −2 pts (aucune visibilité sur le trafic bloqué) ; `low`/`medium` → OK ; `high`/`full` → INFO
 - **Regroupement exposition des ports** — regroupe les services en écoute exposés par portée d'interface et niveau de risque ; démons OS connus sur ports système classifiés séparément des apps utilisateur
+- **Service d'impression CUPS** — signale un démon CUPS en écoute au-delà de localhost (`Listen`/`Port` sur une adresse non-loopback) → WARN −1 pt avec `cupsctl --no-remote-any` ; `Browsing On` (annonce d'imprimante réseau) → INFO ; localhost- ou socket-only lit OK ; pas de `cupsd.conf` → non audité (v0.21.0)
 
 ### Durcissement système
 
@@ -58,6 +59,13 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Audit umask système** — lit le umask depuis `/etc/login.defs`, PAM, `/etc/profile`, RC shells et processus courant ; umask permissif (0002/0000) → WARN −1 pt ; sources conflictuelles → WARN −1 pt
 - **Secure Boot** — état UEFI via `mokutil --sb-state` / `efivars` / `bootctl` ; WARN −1 pt si désactivé sur desktop ; INFO sur server/VM ou BIOS/inconnu
 - **Audit firmware & microcode** — `fwupdmgr` firmware device en attente ; paquet microcode CPU (Intel/AMD) ; WARN −1 pt si absent ou obsolète
+- **Bootloader GRUB** — audit des permissions de `grub.cfg` : lisible par le monde/groupe → WARN −1 pt, escaladé dans le libellé si un hash `password_pbkdf2` est présent (un secret crackable hors-ligne exposé) ou si le fichier est inscriptible ; pas de mot de passe superutilisateur GRUB → INFO ; aucune config GRUB du tout (un boot non-GRUB comme un Raspberry Pi) → INFO, jamais un faux constat (v0.21.0, CIS 1.4.1)
+- **Durcissement des montages** — options effectives `nodev`/`nosuid`/`noexec` sur `/tmp`, `/var/tmp`, `/dev/shm` lues depuis `/proc/self/mounts` : un montage séparé sans `nodev`/`nosuid` → WARN −1 pt ; sans seulement `noexec` → INFO ; une zone scratch qui n'est *pas* son propre montage est INFO, jamais pénalisée — le piège CIS « doit être une partition séparée » est délibérément évité (v0.21.0, CIS 1.1)
+- **Chiffrement du disque (LUKS)** — indique si le système de fichiers racine est sur un périphérique LUKS/dm-crypt, en parcourant la pile device-mapper pour reconnaître LVM-sur-LUKS, pas seulement un montage crypt nu ; filtré par profil et jamais binaire : une racine non chiffrée → WARN −1 pt sur desktop/workstation (portable, physiquement exposé), INFO sur un serveur (déverrouillage distant requis, modèle de menace baie verrouillée), non-applicable dans un conteneur, inconnu quand le périphérique racine n'est pas résolu ; BOB n'active jamais le chiffrement — opération destructive à sens unique (v0.21.0)
+- **Verrouillage de compte PAM** — signale l'absence de `pam_faillock` (ou l'ancien `pam_tally2`) dans la pile auth : WARN −1 pt sur un serveur, INFO sur desktop/workstation (où le verrouillage massif de comptes est lui-même un levier de DoS) ; complémentaire de fail2ban (couche réseau) — faillock couvre les logins locaux, su et sudo ; une pile PAM illisible/absente lit inconnu, pas propre ; BOB n'auto-édite jamais PAM (v0.21.0, CIS 5.3.2)
+- **Autorisation polkit** — un fichier `.rules`/`.pkla` polkit (ou son répertoire `rules.d`) inscriptible par un non-root est un chemin d'escalade de privilèges direct, puisque polkit évalue ses règles en tant que root → WARN −1 pt avec un correctif `chown`/`chmod` ; un `.pkla` legacy accordant `ResultAny=yes` → INFO ; le JavaScript des règles n'est délibérément pas parsé pour des `YES` trop larges (une machine à faux positifs) (v0.21.0)
+- **Core dumps** — `kernel.core_pattern`, `Storage=` de systemd-coredump, et les limites `hard core 0` ; indique si les crash dumps pourraient persister la mémoire d'un processus privilégié (écrits sur disque / pipés vers un handler comme apport / gérés par systemd-coredump) ou sont désactivés ; INFO seulement, sans déduction (v0.21.0)
+- **kexec / lockdown noyau** — lit `kernel.kexec_load_disabled` et `/sys/kernel/security/lockdown` : kexec verrouillé, ou lockdown en `integrity`/`confidentiality`, → OK ; sinon → INFO ; une interface absente sur un noyau compilé sans elle lit inconnu ; INFO seulement (v0.21.0)
 - **Expiration certificats TLS/SSL** — analyse Let's Encrypt, `/etc/ssl/private`, directives nginx/apache2/postfix ; expiré → ALERT −2 pts ; <7 j → ALERT −2 pts ; <30 j → WARN −1 pt ; total plafonné à −4 pts ; liens symboliques cassés gérés
 - **Sécurité timers systemd** — curl/wget pipé vers un shell dans ExecStart → WARN −2 pts ; scripts world-writable dans ExecStart → WARN −1 pt ; timers root créés par l'utilisateur sans `User=` → INFO
 - **Durcissement des services (`systemd-analyze security`)** — remonte le score d'exposition systemd des services en cours (NoNewPrivileges, ProtectSystem, capability bounding, namespacing…) ; résumé INFO uniquement (compte par prédicat + services en cours les moins durcis + pointeur `systemd-analyze security <unit>`), **aucune déduction** — une exposition élevée par défaut est l'état normal d'un hôte Linux, pas une mauvaise configuration choisie (v0.13.0)
@@ -88,12 +96,12 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` / `--english` (ou `--lang=fr` / `--lang=en`)
 - **Gestion de la couleur** — auto-détectée depuis la v0.14.0 : l'ANSI n'est émis que si stdout est un terminal, donc rediriger vers un fichier ou un pipe est propre sans aucune option. `--no-color` (ou `NO_COLOR=1`) la force à off ; `FORCE_COLOR=1` la force à on pour `less -R` ou un log volontairement coloré
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit **Seule une commande que BOB peut exécuter sans surveillance est comptée comme automatique** : `cmd_type="fix"` (un diagnostic comme `smartctl -a` n'est pas une remédiation), aucun opérateur shell, aucun éditeur interactif. Tout le reste apparaît sous son propre titre, commande affichée mais non exécutée — le compteur au-dessus de l'invite est une promesse tenable, depuis la v0.17.1. Les commandes d'installation portent `-y`, car un correctif qui s'arrête pour poser une question ne peut pas être appliqué par un mode dont tout l'objet est de ne pas en poser.. Depuis la v0.18.0, les durcissements sysctl sont appliqués **par le code de BOB, pas par un shell** : la valeur est posée, persistée avec exactement une ligne par clé, puis **relue** avant que BOB n'affirme quoi que ce soit — la commande affichée reste la même pour qui veut la coller. Deux applications sans surveillance sont refusées d'office parce qu'elles peuvent vous faire perdre une machine distante — une politique de pare-feu de refus par défaut (`iptables -P INPUT DROP` et ses variantes `ip6tables`, `-nft`, `-legacy` et `nft … policy drop`) — et un correctif qui ouvre un accès (`ufw allow`) passe toujours avant celui qui en retire (`ufw enable`)
-- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 200 clés sur 56 préfixes ; 109 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 91 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
+- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 205 clés sur 56 préfixes ; 114 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 91 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
 - **Scores par domaine** — sous-scores 0–10, un par groupe affiché (Pare-feu & Réseau / Exposition & Services / Contrôle d'accès / Durcissement système / Santé & Résilience / Détection des menaces) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
 - **`--format=FORMAT`** — flag unifié : `json | json-full | csv | markdown | html` ; anciens flags conservés comme aliases. Depuis la v0.18.0, la dernière colonne du CSV est `key`, l'identifiant stable du constat — le même que portent `--explain`, `--ignore` et le JSON ; les quinze colonnes précédentes gardent leur position
-- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 48 noms de sections — les 38 filtrables, plus les 10 toujours actives qu'il liste aussi
+- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 57 noms de sections — les 47 sections filtrables, plus les 10 toujours actives qu'il liste aussi
 - **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante ; sans persistance
 - **Rapport comparatif** — baseline enregistrée après chaque audit ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément. Un fichier qui n'est pas une baseline BOB (sans `timestamp` ni `score`) est refusé nommément au lieu d'être comparé comme une baseline à zéro
 - **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 1000 entrées. Une ligne dont BOB ne sait lire ni le score ni l'horodatage est ignorée, jamais réparée en un chiffre qu'il n'a pas mesuré
@@ -160,10 +168,10 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ## Prérequis
 
-- Linux — le badge de plateformes couvre neuf noms, sur trois natures de preuve différentes :
+- Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
-  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
-  - **validé sur machines virtuelles réelles** (tests terrain v0.17.1 et v0.18.0) : Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine étant la seule machine sans systemd, celle contre laquelle le support OpenRC a été écrit
+  - **matériel réel** (stress-testé pendant le cycle v0.20.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
+  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - Python 3.10+
 - `ss` recommandé (paquet `iproute2`) — disponible par défaut sur les systèmes modernes
@@ -176,10 +184,10 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Prérequis
 
-- Linux — le badge de plateformes couvre neuf noms, sur trois natures de preuve différentes :
+- Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
-  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41
-  - **validé sur machines virtuelles réelles** (tests terrain v0.17.1 et v0.18.0) : Fedora 43, Kali 2026.2, openSUSE Leap 15.6, Arch Linux, Alpine 3.22 — Alpine étant la seule machine sans systemd, celle contre laquelle le support OpenRC a été écrit
+  - **matériel réel** (stress-testé pendant le cycle v0.20.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
+  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - pipx *(installateur d'applications Python isolées)* :
 
@@ -297,7 +305,7 @@ sudo bob -r
 
 ## Plugins de check — `~/.config/bob/checks.d/*.py`
 
-BOB supporte des checks d'audit personnalisés écrits en Python. Posez un fichier `*.py` dans `~/.config/bob/checks.d/` et BOB le picke au run suivant. Chaque plugin est exécuté dans un **sous-processus sandboxé** (introduit en v0.7.0 T3) — RLIMIT_AS 256 MiB, RLIMIT_CPU 10 s wall clock, allowlist d'import restreinte, écritures filesystem refusées, lectures bloquées sur chemins sensibles (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). Un plugin défaillant **ne peut pas** interrompre l'audit, et toute sortie est ANSI-sanitisée.
+BOB supporte des checks d'audit personnalisés écrits en Python. Posez un fichier `*.py` dans `~/.config/bob/checks.d/` et BOB le picke au run suivant. Chaque plugin est exécuté dans un **sous-processus sandboxé** (introduit en v0.7.0 T3) — RLIMIT_AS 256 MiB, un timeout wall-clock de 5 s, RLIMIT_CPU 10 s, allowlist d'import restreinte, écritures filesystem refusées, lectures bloquées sur chemins sensibles (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). Un plugin défaillant **ne peut pas** interrompre l'audit, et toute sortie est ANSI-sanitisée.
 
 > **Note threat model :** le sandboxing Python in-process est de la défense en profondeur, pas une frontière de sécurité dure (consensus PEP 416). Utilisez le profil AppArmor shippé pour une vraie isolation. Voir SECURITY_FR.md → section "Plugin checks".
 
@@ -377,11 +385,11 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.21.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.21.1  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
-║  UFW           : v0.36.2                                                     ║
+║  UFW           : 0.36.2                                                      ║
 ║  User          : alice                                                       ║
 ║  Date          : 17/05/2026 10:00                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -830,7 +838,7 @@ Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--expl
 
 ### Audit EXPLAIN_KEYS
 
-À partir de v0.11.x, le set de clés `--explain` contient **200 clés** réparties sur **56 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
+À partir de v0.11.x, le set de clés `--explain` contient **205 clés** réparties sur **56 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
 
 - **Pattern :** `<prefix>.<finding_id>` (un seul point, snake_case)
 - **Exceptions :** `file_perms.<path>.<finding_id>` (segments de chemin intermédiaires) et `services.{exposure,state}.<finding_id>` (taxonomie à deux niveaux), toutes deux résolues par `bob.explain.normalize_key`

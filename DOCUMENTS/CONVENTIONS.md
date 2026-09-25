@@ -103,7 +103,7 @@ were violet in `bob --explain` read as ordinary prose inside the wizard.
 
 Inside a `HOW TO FIX` block, indentation is what marks the material — 664
 indented lines against 527 numbered steps and 74 notes, consistent across all
-187 keys. Painting a whole block violet was tried and emptied the colour of
+explain keys. Painting a whole block violet was tried and emptied the colour of
 meaning: two thirds of a block is prose.
 
 Both orange and violet fall back to the nearest 8-colour approximation rather
@@ -153,7 +153,7 @@ cannot carry an escape sequence into a root-run audit's output.
 
 Data that reaches the terminal *outside* a Finding — a hostname, a domain, a
 container name — goes through `output.sanitize()` at the point it is read. There
-are seven such places and they are the fragile ones: a new one added without it
+are several such places and they are the fragile ones: a new one added without it
 is a terminal-escape vector that no test would notice.
 
 ---
