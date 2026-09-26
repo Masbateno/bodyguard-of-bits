@@ -6,6 +6,69 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.21.2] — 26-09-2026
+
+**Une version corrective : un FIFO (ou tout fichier non-régulier) sur
+`/etc/ssh/sshd_config` ne fait plus hanger l'audit.** Aucun changement de score,
+de schéma JSON, d'ordre des colonnes CSV ni de verdict — le seul changement
+observable est qu'un fichier de config non-régulier se lit désormais comme
+*illisible* au lieu de bloquer.
+
+### Le hang
+
+Le snapshot ssh sondait `/etc/ssh/sshd_config` par un `open("rb")` brut pour
+distinguer trois états — absent (sshd tourne sur ses défauts), illisible (un déni
+de permission qui ne doit **pas** retomber sur les défauts, sinon un faux « root
+login restreint » est accordé à un hôte qui l'autorise), et lisible (parser). Mais
+`open` sur un FIFO bloque pour toujours en attendant un writer, donc `mkfifo
+/etc/ssh/sshd_config` faisait hanger tout l'audit — un cron hangerait à chaque
+exécution. C'est la classe du FIFO samba (v0.20.1), à un read que la garde
+`read_text_capped` n'atteignait pas car c'est un probe-open dédié.
+
+### Le correctif
+
+Le probe fait désormais un `stat` d'abord — métadonnée seule, qui ne bloque
+jamais — et **échoue fermé** sur un fichier non-régulier : un FIFO, périphérique
+caractère, répertoire ou socket se lit comme illisible, n'est jamais parsé, et ne
+retombe jamais sur les défauts compilés de sshd. Un fichier régulier est ensuite
+ouvert comme avant (un `open` sur un fichier régulier ne peut pas bloquer) pour
+séparer lisible et permission-refusée.
+
+La garde `tests/test_v0212_sshd_config_no_hang.py` lance `SSHSnapshot.from_system`
+contre un vrai FIFO sous un watchdog SIGALRM et vérifie qu'il ne hang pas et ne se
+lit pas comme présent. Le watchdog lève une `BaseException` à dessein : un
+`TimeoutError` est un `OSError`, que le `except OSError` du probe avalerait —
+transformant un hang en passage silencieux. La mutation
+`ssh/fifo-sshd-config-blocks-open` (retirer la garde non-régulier) est tuée.
+
+### Trouvé par un stress test
+
+Un stress test Debian trixie exhaustif a passé 38 commandes CLI, des entrées
+hostiles (FIFO / périphérique caractère / permission-refusée / lien mort) sur 22
+chemins de config, et un forçage de polarité de détection (permissions de
+fichiers, cron pipe-to-shell, sudoers NOPASSWD, permissions grub, drop-in ssh
+PermitRootLogin, règle polkit inscriptible). Seul le probe-open de sshd_config
+hangait ; tous les autres reads étaient déjà FIFO-safe, et toute la détection a
+mordu correctement.
+
+### Validé sur le terrain sur 8 machines réelles
+
+Le correctif a ensuite été éprouvé sur huit machines réelles — Debian 13,
+Raspberry Pi OS (ARM), Fedora, Kali Rolling, Ubuntu Server 26.04, Linux Mint,
+openSUSE Leap 16 et une Alpine 3.24 fraîchement installée — couvrant glibc et
+musl, Python 3.12–3.14, quatre gestionnaires de paquets (apt / dnf / zypper /
+apk), et systemd comme OpenRC. Sur chacune, un chemin de config transformé en
+FIFO se lit comme *illisible* sans hang (la mesure ciblée par check distingue un
+vrai hang non borné d'un hôte simplement lent, affamé de CPU), et un
+`sshd_config` normal se parse toujours intact. La même passe a fait surgir
+plusieurs problèmes *pré-existants et sans rapport* — non touchés par ce
+correctif et reportés à une version ultérieure — dont le fait que l'audit ssh de
+BOB lit `/etc/ssh/sshd_config` et rapporte donc les défauts OpenSSH sur les
+distributions qui le placent sous `/usr/etc` (openSUSE), et que `/etc/doas.conf`
+n'est pas audité sur les systèmes à base de doas (Alpine).
+
+**Tests** 11048 → **11053**.
+
 ## [0.21.1] — 25-09-2026
 
 **Une version corrective : la documentation remise en phase avec le code, cinq

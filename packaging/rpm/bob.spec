@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.21.1
+Version:        0.21.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,12 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Sep 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.2-1
+- Patch: a FIFO (or any non-regular file) at /etc/ssh/sshd_config no longer hangs
+  the audit -- the ssh config probe used a raw open("rb") that blocks forever on a
+  FIFO; it now stat()s first and fails closed on a non-regular file (never parsed,
+  never falls back to sshd defaults). Same class as the samba FIFO fix (v0.20.1),
+  found by an exhaustive Debian stress test. Guard + mutation added.
 * Fri Sep 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.1-1
 - Patch: documentation accuracy, five backfilled --explain entries (explain set
   200 -> 205 keys, completing CIS coverage), report_markdown ufw-version de-"v"

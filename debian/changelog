@@ -1,3 +1,18 @@
+bodyguard-of-bits (0.21.2-1) unstable; urgency=medium
+
+  * Patch: a FIFO (or any non-regular file) at /etc/ssh/sshd_config no longer
+    hangs the audit. The ssh snapshot probed the config with a raw open("rb")
+    to tell absent/unreadable/readable apart, and open() on a FIFO blocks
+    forever waiting for a writer -- so `mkfifo /etc/ssh/sshd_config` hung BOB
+    (a cron audit would hang on every run). The probe now stat()s first (never
+    blocks) and fails closed on a non-regular file: it is never parsed and never
+    falls back to sshd's compiled-in defaults. Same class as the samba FIFO fix
+    (v0.20.1); found by an exhaustive Debian stress test.
+  * Guard tests/test_v0212_sshd_config_no_hang.py + mutation
+    ssh/fifo-sshd-config-blocks-open.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 26 Sep 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.21.1-1) unstable; urgency=medium
 
   * Patch: documentation accuracy, five backfilled --explain entries, and

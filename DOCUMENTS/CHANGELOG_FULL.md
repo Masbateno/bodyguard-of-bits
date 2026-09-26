@@ -6,6 +6,65 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.21.2] — 2026-09-26
+
+**A patch release: a FIFO (or any non-regular file) at `/etc/ssh/sshd_config`
+no longer hangs the audit.** No scoring, JSON-schema, CSV-column-order or verdict
+change — the one observable change is that a non-regular config file now reads as
+*unreadable* instead of blocking.
+
+### The hang
+
+The ssh snapshot probed `/etc/ssh/sshd_config` with a raw `open("rb")` to tell
+three states apart — absent (sshd runs on its defaults), unreadable (a permission
+denial that must **not** fall back to defaults, or a false "root login is
+restricted" is handed to a host that permits it), and readable (parse it). But
+`open` on a FIFO blocks forever waiting for a writer, so `mkfifo
+/etc/ssh/sshd_config` hung the entire audit — a cron job would hang on every run.
+This is the samba FIFO class (v0.20.1) at a read the `read_text_capped` guard
+never reached, because this one is a purpose-built open-probe, not a capped read.
+
+### The fix
+
+The probe now `stat`s the path first — metadata only, which never blocks — and
+**fails closed** on a non-regular file: a FIFO, character device, directory or
+socket reads as unreadable, is never parsed, and never falls back to sshd's
+compiled-in defaults. A regular file is then opened as before (a plain `open` on
+a regular file cannot block) to separate readable from permission-denied.
+
+Guard `tests/test_v0212_sshd_config_no_hang.py` drives `SSHSnapshot.from_system`
+against a real FIFO under a SIGALRM watchdog and asserts it neither hangs nor
+reads as present. The watchdog raises a `BaseException` on purpose: a
+`TimeoutError` is an `OSError`, which the probe's own `except OSError` would
+swallow — turning a hang into a silent pass. Mutation
+`ssh/fifo-sshd-config-blocks-open` (drop the non-regular guard) is killed.
+
+### Found by a stress test
+
+An exhaustive Debian trixie stress test drove 38 CLI commands, hostile inputs
+(FIFO / char device / permission-denied / dangling symlink) across 22 config
+paths, and detection-polarity forcing (file perms, cron pipe-to-shell, sudoers
+NOPASSWD, grub perms, ssh PermitRootLogin drop-in, polkit writable rule). Only
+the sshd_config open-probe hung; every other read was already FIFO-safe, and all
+detection fired correctly.
+
+### Field-validated on 8 real machines
+
+The fix was then exercised on eight real machines — Debian 13, Raspberry Pi OS
+(ARM), Fedora, Kali Rolling, Ubuntu Server 26.04, Linux Mint, openSUSE Leap 16
+and a freshly-installed Alpine 3.24 — spanning glibc and musl, Python 3.12–3.14,
+four package managers (apt / dnf / zypper / apk), and both systemd and OpenRC. On
+every one, a `mkfifo`'d config path read as *unreadable* with no hang (the
+targeted per-check timing separated a real unbounded hang from a merely slow,
+CPU-starved host), and a normal `sshd_config` still parsed intact. The same pass
+surfaced several *pre-existing, unrelated* issues — not touched by this patch and
+carried to a later release — including that BOB's ssh audit reads
+`/etc/ssh/sshd_config` and so reports OpenSSH defaults on distributions that ship
+it under `/usr/etc` (openSUSE), and that `/etc/doas.conf` is not audited on
+doas-based systems (Alpine).
+
+**Tests** 11048 → **11053**.
+
 ## [0.21.1] — 2026-09-25
 
 **A patch release: the documentation brought back into line with the code, five

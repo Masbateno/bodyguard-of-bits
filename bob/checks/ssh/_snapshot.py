@@ -228,8 +228,7 @@ class SSHSnapshot:
         # under a directory the auditor cannot traverse it does not report
         # False, it raises. Only the open separates the three cases.
         try:
-            with _SSHD_CONFIG_PATH.open("rb"):
-                pass
+            st = os.stat(_SSHD_CONFIG_PATH)  # metadata only — never blocks
         except FileNotFoundError:
             # Genuinely absent: sshd really would run on its defaults, so the
             # subchecks reading them are right. Leave `sshd_config_readable`.
@@ -237,7 +236,24 @@ class SSHSnapshot:
         except OSError:
             config_state = "unreadable"
         else:
-            config_state = "readable"
+            if not stat.S_ISREG(st.st_mode):
+                # A FIFO / char device / directory / socket at sshd_config is
+                # not a legitimate config — and a plain ``open("rb")`` on a FIFO
+                # blocks forever waiting for a writer, so ``mkfifo
+                # /etc/ssh/sshd_config`` would hang the whole audit (the samba
+                # FIFO class, v0.20.1). Fail closed: a non-regular file reads as
+                # unreadable, is never parsed, and never falls back to defaults.
+                config_state = "unreadable"
+            else:
+                # Regular file: ``open`` can no longer block, so the probe only
+                # separates readable from permission-denied.
+                try:
+                    with _SSHD_CONFIG_PATH.open("rb"):
+                        pass
+                except OSError:
+                    config_state = "unreadable"
+                else:
+                    config_state = "readable"
 
         if config_state == "unreadable":
             snap.sshd_config_readable = False

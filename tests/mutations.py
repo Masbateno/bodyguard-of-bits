@@ -760,6 +760,18 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "read a number that follows its noun; now watched",
     ),
     Mutation(
+        id="ssh/fifo-sshd-config-blocks-open",
+        file="bob/checks/ssh/_snapshot.py",
+        old="            if not stat.S_ISREG(st.st_mode):",
+        new="            if False:  # mutated: drop the non-regular-file guard",
+        kills=("tests/test_v0212_sshd_config_no_hang.py::"
+               "test_a_fifo_sshd_config_does_not_hang_and_reads_as_unreadable",),
+        reason="without the S_ISREG guard, open('rb') on a FIFO sshd_config "
+               "blocks forever — `mkfifo /etc/ssh/sshd_config` hung the whole "
+               "audit (the samba FIFO class); found by the v0.21.1 Debian stress "
+               "test, the probe now stat()s first and fails closed",
+    ),
+    Mutation(
         id="sysinfo/offline-still-calls-urlopen",
         file="bob/sysinfo.py",
         old='    if offline:\n        return ""\n\n    import ipaddress',
