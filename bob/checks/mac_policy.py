@@ -330,7 +330,17 @@ def check_mac_policy(
     # LSM live, 121 profiles loaded, 22 enforcing. Elsewhere the line lives in
     # the bootloader's configuration, which BOB has not measured, so it names
     # the parameter and offers no command.
-    if snapshot.apparmor_off_in_kernel:
+    # ``and not selinux_installed``: on a distro that ships SELinux as its MAC
+    # (Fedora, openSUSE Leap 16), the kernel may still carry AppArmor compiled-in
+    # but off — that is by design, not the finding. When SELinux is present but
+    # not enforcing, the real verdict is "SELinux is permissive/disabled →
+    # setenforce 1", handled by the SELinux branches below; complaining about
+    # AppArmor there sent the admin to enable the wrong framework (measured on a
+    # real openSUSE Leap 16 with SELinux set permissive). SELinux enforcing has
+    # already returned at the top, so this only defers the permissive/disabled
+    # case; a host with no SELinux (Alpine, the Pi) still gets the AppArmor
+    # verdict.
+    if snapshot.apparmor_off_in_kernel and not snapshot.selinux_installed:
         cmd = ""
         if snapshot.kernel_cmdline_file:
             # No braces: this command is also quoted in the locale files,
@@ -351,7 +361,10 @@ def check_mac_policy(
         return result
 
     # --- AppArmor installed but service not responding ----------------------
-    if snapshot.apparmor_installed and not snapshot.apparmor_active:
+    # Same deferral as the branch above: an SELinux host is not told to enable
+    # AppArmor; its non-enforcing SELinux is handled below.
+    if (snapshot.apparmor_installed and not snapshot.apparmor_active
+            and not snapshot.selinux_installed):
         result.warn_with_deduction(
             key="mac_policy.apparmor_inactive",
             message=_t("mac_policy.apparmor_inactive"),

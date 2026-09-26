@@ -29,9 +29,31 @@ rather than guessed.
 
 ## Coverage legend
 
-- **✓** — BOB handles this correctly (field-verified).
+- **✓** — BOB handles this correctly, **verified on ≥1 real machine**.
+- **✓ (0.21.3)** — gap closed in code for 0.21.3, **guarded + mutation-tested**, but
+  **field re-verification on the real distro is still pending** (the fix is proven
+  by tests, not yet re-confirmed on the hardware that surfaced it).
 - **⚠** — partial or cosmetic issue (verdict usually right, wording/edge off).
 - **✗** — genuine gap; BOB is wrong or blind here. Each ✗/⚠ names the finding.
+
+**Two governance rules for this file** (it exists to prevent the very doc-drift
+0.21.1 corrected, so it holds itself to the same bar):
+
+1. A **✓** must have been verified on at least one real machine, or be marked
+   explicitly as unverified / test-only. A **✓ (0.21.3)** is test-only until a
+   field pass moves it to plain ✓.
+2. A quirk **not encountered** is never inferred just because it is "known" for a
+   distribution. Rows for untested distros (Arch, *BSD) say so.
+
+**Convention vs observed state.** A "Distro → mechanism" cell (e.g. *Fedora →
+firewalld*) is the distribution's *convention*; a runtime property (e.g.
+*firewalld active*) is a *property of the measured host*. They differ: a Fedora
+can ship firewalld yet have it stopped, and a Kali can have nftables/iptables
+available with no firewall actually active. Where the distinction bites, it is
+called out.
+
+**Status verified against BOB 0.21.3.** A ✓ describes 0.21.3, not necessarily a
+later HEAD.
 
 ---
 
@@ -46,9 +68,15 @@ rather than guessed.
 - **✓** Banner names the manager (systemd / OpenRC …); on OpenRC, `systemd-analyze`
   and `systemctl` service-state checks degrade honestly ("not available →
   skipped") rather than reading a service as stopped.
-- **⚠** Some remediation commands hard-code `systemctl restart …`. On Alpine that
-  should be `rc-service <svc> restart` (e.g. the SSH-hardening fix). *Wording gap
-  — verdict is correct, the suggested command is not runnable as-is on OpenRC.*
+- **✓ (0.21.3)** The dynamic fix commands were already OpenRC-aware via
+  `service_restart_cmd()`; the static SSH explain/detail strings that hardcoded
+  `systemctl restart ssh` now also name the `rc-service` form. *Fix: extend the 27
+  static hints (EN+FR); guard `test_v0213_openrc_fix_wording.py` forbids any
+  `systemctl restart ssh` string without an `rc-service` mention.*
+  **Evidence/oracle:** on Alpine, `bob --explain ssh.permit_root_login` must not
+  show a systemd-only restart.
+  **Design rule:** service-lifecycle remediation abstracts over the init system;
+  never emit `systemctl` unconditionally.
 
 ## 2. Config-file layout — `/etc` vs `/usr/etc`
 
@@ -62,27 +90,34 @@ defaults under `/usr/etc/<file>`, with `/etc/<file>` as the *optional* override
 | `login.defs` | `/etc/login.defs` | **`/usr/etc/login.defs`** |
 | `sudoers` | `/etc/sudoers` | **`/usr/etc/sudoers`** (mode 444; `@includedir /etc/sudoers.d` **and** `/usr/etc/sudoers.d`) |
 
-**BOB status:**
-- **✗** BOB reads only the `/etc` paths (`bob/checks/ssh/_snapshot.py`,
-  `password_policy.py:44`, `file_perms.py:42`). On openSUSE:
-  - **sshd_config** — `/etc/ssh/sshd_config` is absent, so BOB never follows the
-    `Include /etc/ssh/sshd_config.d/*.conf` declared in the `/usr/etc` file and
-    **reports OpenSSH compiled-in defaults for every config-derived SSH finding**
-    (PermitRootLogin, PasswordAuthentication, …). A real `PermitRootLogin yes`
-    set in `/usr/etc` or a drop-in is masked as "✔ root login restricted".
-    *MEDIUM-HIGH — the most serious open gap. Host keys (read by separate glob)
-    are still real.*
-  - **login.defs** — reported as the default `PASS_MAX_DAYS 99999` (coincidentally
-    correct here; would misreport a stricter `/usr/etc` policy). *LOW.*
-  - **sudoers** — the main file is not read, but `/etc/sudoers.d` **is** (field-
-    verified: a `NOPASSWD:ALL` dropped there is caught), so real admin rules are
-    seen; only rules directly in `/usr/etc/sudoers[.d]` escape. *LOW.*
-- **Fix direction (0.21.3 candidate):** read `/etc/<f>` then fall back to
-  `/usr/etc/<f>`; or, for SSH, resolve the effective config via `sshd -T`. This is
-  the coherent "distro-mechanism-awareness" lot together with §6 (doas).
-- **✓** Where `/etc/ssh/sshd_config` exists (all other distros), the parser is
-  correct: it follows `Include`, sorts drop-ins, and applies first-value-wins —
-  a forced `PermitRootLogin yes` on Alpine is detected as an ALERT.
+**BOB status:** before 0.21.3 BOB read only the `/etc` paths, so on openSUSE:
+- **sshd_config** — `/etc/ssh/sshd_config` is absent, so BOB never followed the
+  `Include /etc/ssh/sshd_config.d/*.conf` declared in the `/usr/etc` file and
+  **reported OpenSSH compiled-in defaults for every config-derived SSH finding**;
+  a real `PermitRootLogin yes` was masked as "✔ root login restricted".
+  *(MEDIUM-HIGH — was the most serious gap; host keys, read by a separate glob,
+  were always real.)*
+- **login.defs** — reported the default `PASS_MAX_DAYS 99999` (coincidentally
+  correct here; would misreport a stricter `/usr/etc` policy). *(LOW.)*
+- **sudoers** — main file unread, but `/etc/sudoers.d` **was** read (a
+  `NOPASSWD:ALL` there is caught); only rules directly in `/usr/etc/sudoers[.d]`
+  escaped. *(LOW.)*
+
+- **✓ (0.21.3)** BOB now resolves `/etc/<f>` first, then falls back to
+  `/usr/etc/<f>` (`sshd_config`, `login.defs`, `sudoers` + both `sudoers.d` dirs).
+  Guards `test_v0213_sshd_config_usr_etc_fallback.py`,
+  `test_v0213_usr_etc_login_defs_sudoers.py`; mutations
+  `ssh/usr-etc-sshd-config-not-read`, `password_policy/login-defs-usr-etc-not-read`,
+  `file_perms/sudoers-usr-etc-vendor-not-read`.
+  **Evidence/oracle (field re-verify pending):** on openSUSE Leap 16, forge
+  `PermitRootLogin yes` (`sshd -T` = yes) → BOB must ALERT; forge `permit`/`NOPASSWD`
+  under `/usr/etc/sudoers.d` → must be caught.
+  **Design rule:** for config that a distro may ship under `/usr/etc`, resolve
+  `/etc/<f>` then `/usr/etc/<f>` (systemd vendor-config precedence); prefer the
+  service's *effective* view (`sshd -T`) where practical.
+- **✓** Where `/etc/ssh/sshd_config` exists (every other distro), the parser was
+  always correct — a forged `PermitRootLogin yes` on Alpine is detected as an
+  ALERT. This is what isolated the bug to the `/usr/etc` layout.
 
 ## 3. Package manager & updates
 
@@ -96,27 +131,39 @@ defaults under `/usr/etc/<file>`, with `/etc/<file>` as the *optional* override
 | Arch *(unverified)* | pacman | **none** | `pacman -Qu` (all pending = regular) |
 
 **BOB status:**
-- **✓** All five managers handled; the "no security channel" case (Kali/Alpine/
-  Arch/pacman) is explicit — BOB does not read "0 security pending" as "secure".
+- **✓** The **four field-tested managers** (apt / dnf / zypper / apk) are handled
+  and real-machine-verified; **pacman is implemented but unverified** (Arch has
+  never been field-tested — see the provenance rule). The "no security channel"
+  case (Kali/Alpine, and pacman by design) is explicit — BOB does not read "0
+  security pending" as "secure".
 - **✓** Microcode-package mapping per manager: apt `amd64-microcode`, dnf
   `amd-ucode-firmware`, **zypper `ucode-amd` / `ucode-intel`** (added v0.20.4),
   apk/pacman standard.
 
 ## 4. Firewall
 
-| Distro | Default firewall | BOB support |
-|--------|------------------|-------------|
-| Ubuntu, Mint, Debian, Pi OS | ufw (often inactive) / nftables | **✓** ufw active↔inactive, v6 awareness |
-| Fedora, openSUSE | firewalld | **✓** credited by zone (v0.20.2); rich-rules/forward-ports shown (v0.20.4) |
-| Kali | nftables (no ufw) | **✓** underlying nft/iptables layer inspected |
-| Alpine | **none by default** (awall available) | **✓** honest "no firewall / unprotected"; **✗** awall front-end not recognised (soft — nft/iptables layer still inspected) |
+Column is the distro *convention* (default front-end); the *observed* state on
+the tested host is in the last column where it differs.
+
+| Distro | Default front-end | BOB support | Observed on tested host |
+|--------|-------------------|-------------|-------------------------|
+| Ubuntu, Mint, Debian, Pi OS | ufw / nftables | **✓** ufw active↔inactive, v6 awareness | ufw inactive |
+| Fedora, openSUSE | firewalld | **✓** credited by zone (v0.20.2); rich-rules/forward-ports shown (v0.20.4) | firewalld active |
+| Kali | nftables (no ufw) | **✓** underlying nft/iptables layer inspected | no active firewall |
+| Alpine | **none by default** (awall available) | **✓** honest "no firewall / unprotected"; **✗** awall front-end not recognised (soft — nft/iptables layer still inspected) | no firewall |
 
 **BOB status:**
-- **⚠** firewalld that is **installed but stopped** is shown in the banner as
-  "firewalld: not installed" — `firewall-cmd --version` needs the daemon
-  (exits 252 when stopped), so the version probe returns empty. Verdict (ALERT /
-  unprotected) is correct; only the banner presence line is wrong. *LOW —
-  detect presence via `command -v firewall-cmd`, not `--version` success.*
+- **✓ (0.21.3)** firewalld that is **installed but stopped** used to show
+  "firewalld: not installed" in the banner — `firewall-cmd --version` needs the
+  daemon (firewalld 2.1.2 exits non-zero when stopped), so the version probe
+  returned empty. Presence is now detected by the client binary (`shutil.which`)
+  and the banner reads **"installed (inactive)"** when the version is unobtainable
+  but the binary is there. Guard `test_v0213_firewalld_banner_presence.py`,
+  mutation `sysinfo/firewalld-stopped-reads-not-installed`. *(The score verdict —
+  ALERT/unprotected — was always correct; only the banner presence line was
+  wrong.)*
+  **Evidence/oracle (field re-verify pending):** on Fedora/openSUSE, `systemctl
+  stop firewalld` → banner must read "installed (inactive)", not "not installed".
 
 ## 5. MAC framework (LSM)
 
@@ -131,15 +178,21 @@ defaults under `/usr/etc/<file>`, with `/etc/<file>` as the *optional* override
 **BOB status:**
 - **✓** AppArmor enforcing / complain / 0-profile (read from kernel securityfs,
   not the exit-2 `aa-status`), SELinux enforcing, and "no MAC" all read correctly.
-- **✗** `mac_policy` branch ordering: on a **SUSE-style kernel (AppArmor
-  compiled-in-off) where SELinux is the real MAC**, when SELinux is **Permissive**
-  (or Disabled), the `apparmor_off_in_kernel` branch fires *before* the SELinux
-  branch, so BOB says "AppArmor built into the kernel but not enabled" and
-  suggests `apparmor=1` — never mentioning that SELinux is merely permissive and
-  the real fix is `setenforce 1`. *MEDIUM — misleading remediation on an SELinux
-  distro. SELinux-enforcing short-circuits at the top, so it only bites in the
-  permissive/disabled state. Alpine's identical AppArmor-off warning is **correct**
-  there — Alpine genuinely has no MAC and no SELinux.*
+- **✓ (0.21.3)** `mac_policy` branch ordering: on a **SUSE-style kernel (AppArmor
+  compiled-in-off) where SELinux is the real MAC**, a **Permissive** (or Disabled)
+  SELinux used to hit the `apparmor_off_in_kernel` branch first and suggest
+  `apparmor=1` instead of `setenforce 1`. The AppArmor-off / inactive branches now
+  defer when SELinux is the installed MAC, so a permissive/disabled SELinux
+  reaches its own verdict. Guard `test_v0213_mac_policy_selinux_precedence.py`,
+  mutation `mac_policy/apparmor-off-steals-selinux-permissive`. *(MEDIUM.
+  SELinux-enforcing short-circuits at the top, so only the non-enforcing case
+  changed; Alpine's identical AppArmor-off warning stays **correct** — Alpine
+  genuinely has no MAC and no SELinux.)*
+  **Evidence/oracle (field re-verify pending):** on openSUSE Leap 16, `setenforce
+  0` → verdict must be the SELinux-permissive one (`setenforce 1`), not "enable
+  AppArmor".
+  **Design rule:** when a distro ships SELinux as its MAC, AppArmor-compiled-in-off
+  is by design, not a finding; the SELinux state is the verdict.
 
 ## 6. Privilege escalation — sudo vs doas
 
@@ -151,13 +204,20 @@ defaults under `/usr/etc/<file>`, with `/etc/<file>` as the *optional* override
 **BOB status:**
 - **✓** sudo: `/etc/sudoers` + `/etc/sudoers.d`, `NOPASSWD:ALL` and empty-group
   latent grants flagged.
-- **✗** **doas is not audited at all.** A forged `permit nopass baduser as root`
-  (passwordless root — the doas equivalent of `NOPASSWD:ALL`) produces **no BOB
-  finding**. On doas-based systems this is a blind spot for the whole privilege-
-  escalation surface. *MEDIUM — 0.21.3 candidate alongside §2.*
-- **⚠** SUID baseline is sudo/Debian-centric: on Alpine, `/usr/bin/doas` and
-  `/bin/bbsuid` (busybox-suid) are flagged as "unexpected SUID" though both are
-  standard there. *LOW — recognise them when an apk package owns them.*
+- **✓ (0.21.3)** **doas is now audited.** `/etc/doas.conf` is parsed: a
+  `permit nopass` with no `cmd` clause is unrestricted passwordless root (WARN −2,
+  the `NOPASSWD:ALL` equivalent), a `cmd`-scoped one is INFO, a `deny` never
+  grants, and a FIFO/denied file reads as unreadable (never a hang). Dedicated
+  `--explain file_perms.doas_nopass_all`. Guard `test_v0213_doas_audit.py`,
+  mutation `file_perms/doas-nopass-not-flagged`.
+  **Evidence/oracle (field re-verify pending):** on Alpine, forge `permit nopass
+  baduser as root` in `/etc/doas.conf` → BOB must WARN.
+  **Design rule:** privilege-escalation detection abstracts over the backend
+  (sudo *and* doas), never assumes sudo.
+- **✓ (0.21.3)** SUID baseline: `doas` (standard SUID sudo-replacement) and
+  `/bin/bbsuid` (busybox-suid) are now in the known-safe SUID set, so they are no
+  longer flagged "unexpected" on Alpine. Guard `test_v0213_suid_doas_bbsuid.py`,
+  mutation `suid/doas-flagged-unexpected`. *(LOW.)*
 
 ## 7. Bootloader / GRUB
 
@@ -200,21 +260,129 @@ audit under a generous timeout, (3) per-check FIFO probes with a timeout far abo
 a single check's runtime — never conclude "hang" from a whole-audit timeout on a
 busy host.
 
-## Open gaps summary (0.21.3 / 0.22 backlog)
+## Gaps and their resolution
 
-The ✗/⚠ above, most-actionable first. The first three share one root cause —
-*BOB does not know the distro's actual mechanism* — and make a coherent lot:
+These are not eight independent bugs. They fall into a few classes, and the two
+most serious share one root cause — *BOB knew the security control but not the
+mechanism the distribution actually uses*:
 
-| # | Gap | Severity | §  |
-|---|-----|----------|----|
-| 1 | SSH audit blind on `/usr/etc` layout (reports OpenSSH defaults) | MEDIUM-HIGH | §2 |
-| 2 | `/etc/doas.conf` not audited (passwordless doas invisible) | MEDIUM | §6 |
-| 3 | `mac_policy` mis-orders SELinux-permissive vs AppArmor-off | MEDIUM | §5 |
-| 4 | `login.defs` / `sudoers` in `/usr/etc` not read | LOW | §2 |
-| 5 | firewalld "not installed" when merely stopped | LOW | §4 |
-| 6 | doas / bbsuid flagged as "unexpected SUID" on Alpine | LOW | §6 |
-| 7 | fix wording `systemctl` vs OpenRC `rc-service` | LOW | §1 |
-| 8 | awall front-end not recognised (nft/iptables still inspected) | soft | §4 |
+```
+Distro-aware mechanism resolution        Distro-aware baseline
+├── SSH config layout (/usr/etc)         └── SUID expectations (doas/bbsuid)
+├── privilege-escalation backend (doas)
+├── config file layout (login.defs/sudoers)   Pure wording
+└── init/service-manager remediation     └── generic firewall / systemctl hints
+```
+
+**Resolved in 0.21.3** (all guarded + mutation-tested, and — as of 2026-09-26 —
+**all field-re-verified on real hardware**; no gap is test-only). The **Field**
+column names the machine and the oracle replayed.
+
+| # | Gap | Sev. | § | Field re-verified | Guard / mutation |
+|---|-----|------|---|-------------------|------------------|
+| 1 | SSH audit blind on `/usr/etc` (reported OpenSSH defaults) | MEDIUM-HIGH | §2 | **✓ openSUSE Leap 16** (forged `PermitRootLogin yes`, sshd -T=yes → ALERT); `/etc` non-regression ✓ Alpine+Pi | `test_v0213_sshd_config_usr_etc_fallback` · `ssh/usr-etc-sshd-config-not-read` |
+| 2 | `/etc/doas.conf` not audited (passwordless doas invisible) | MEDIUM | §6 | **✓ Alpine 3.24** (forged `permit nopass` → WARN; full/scoped/deny/persist polarity + FIFO + hostile) | `test_v0213_doas_audit` · `file_perms/doas-nopass-not-flagged` |
+| 3 | `mac_policy` mis-ordered SELinux-permissive vs AppArmor-off | MEDIUM | §5 | **✓ openSUSE Leap 16** (`setenforce 0` → "SELinux permissive → setenforce 1", not AppArmor); no-SELinux side ✓ Pi | `test_v0213_mac_policy_selinux_precedence` · `mac_policy/apparmor-off-steals-selinux-permissive` |
+| 4 | `login.defs` / `sudoers` in `/usr/etc` not read | LOW | §2 | **✓ openSUSE Leap 16** (`/usr/etc/login.defs` value read — 99999-finding disappears at 42; `/usr/etc/sudoers.d` NOPASSWD caught) | `test_v0213_usr_etc_login_defs_sudoers` · 2 mutations |
+| 5 | firewalld "not installed" when merely stopped | LOW | §4 | **✓ openSUSE Leap 16** (`systemctl stop firewalld` → banner "installed (inactive)") | `test_v0213_firewalld_banner_presence` · `sysinfo/firewalld-stopped-reads-not-installed` |
+| 6 | doas / bbsuid flagged "unexpected SUID" | LOW | §6 | **✓ Alpine 3.24** ("All SUID known-safe (2 SUID)") | `test_v0213_suid_doas_bbsuid` · `suid/doas-flagged-unexpected` |
+| 7 | fix wording `systemctl` vs OpenRC `rc-service` | LOW | §1 | **✓ Alpine 3.24** (`--explain` shows rc-service) | `test_v0213_openrc_fix_wording` · `locale/ssh-restart-hint-systemd-only` |
+
+*Alpine 3.24 field pass (0.21.3, 2026-09-26): baseline clean (0.21.3, OpenRC, 0
+sentinels). doas parser verified across all four cases — full `permit nopass`
+→ WARN −2, `cmd`-scoped → INFO, `deny` and `permit persist` → ignored; its new
+read path is FIFO-safe (mkfifo `/etc/doas.conf` → no-hang) and fail-closed on a
+dangling symlink. SUID: "All SUID known-safe (2 SUID)". rc-service hint present.
+firewalld-absent still reads "not installed" (no false "installed (inactive)").
+FIFO-sshd no-hang and forged `PermitRootLogin yes` → ALERT confirm the ssh-probe
+restructure did not regress `/etc` detection. **A/B audit 0.21.2 ↔ 0.21.3
+(normalised): the only substantive diff is the intended SUID fix (2 unexpected →
+known-safe, System Hardening 6→7); everything else is the dedup counter shifting
+by the one removed finding — no unintended regression.***
+
+*Raspberry Pi OS field pass (0.21.3, 2026-09-26, Pi Zero W armv6l): a
+Debian-style host with **none** of the fixed conditions (no doas, no `/usr/etc`,
+no SELinux, no firewalld) — the cleanest non-regression bench. A JSON A/B
+0.21.2 ↔ 0.21.3 is **identical**: same global score (6), same per-domain scores,
+same finding-key set (∅ added, ∅ removed). Regressions confirmed on ARM: FIFO
+`sshd_config` no-hang; forged `PermitRootLogin yes` → ALERT (ssh-probe
+restructure intact); `mac_policy` still emits `apparmor_off_in_kernel` (the
+`not selinux_installed` guard did not break a no-SELinux host); doas parser
+portable (forged `permit nopass` → WARN on ARM/Debian too). So 0.21.3 changes
+nothing on a host without the fixed conditions — proven on two real hosts
+(Alpine + Pi).*
+
+*openSUSE Leap 16 field pass (0.21.3, 2026-09-26, real, SELinux enforcing +
+firewalld active, `/etc/ssh/sshd_config` absent → `/usr/etc`): the four openSUSE
+gaps re-verified on hardware. **#1** — forged `PermitRootLogin yes` (drop-in,
+sshd -T=yes) → ✖ ALERT (0.21.2 read OpenSSH defaults and missed it). **#3** —
+`setenforce 0` → "SELinux is in permissive mode → setenforce 1", not the false
+"enable AppArmor"; `setenforce 1` restored. **#4** — `PASS_MAX_DAYS 42` appended
+to `/usr/etc/login.defs` → the "not enforced (99999)" finding disappears (BOB
+reads the vendor value, not the absent-`/etc` default); a NOPASSWD:ALL in
+`/usr/etc/sudoers.d` → caught. **#5** — `systemctl stop firewalld` → banner
+"firewalld: installed (inactive)"; restarted. Box fully restored (Enforcing,
+firewalld active, all forges removed). **With this, all seven 0.21.3 fixes are
+field-verified on real hardware (Alpine + Pi + openSUSE) — no test-only rows
+remain.***
+
+*Linux Mint 22.3 field pass (0.21.3, 2026-09-26, real, Ubuntu-noble base): a
+second Debian-style non-regression bench, and a new context — **AppArmor active
+with enforcing profiles** (25 enforce, 6 complain), where the `mac_policy` fix
+must *not* change the verdict (branch 3, untouched by the `not selinux_installed`
+guard). Confirmed: `mac_policy` reads "AppArmor enforcing — 25 enforce, 6
+complain" unchanged. JSON A/B 0.21.2 ↔ 0.21.3 (`--profile server`) **identical**
+(score 5, same domains, same finding-keys). Regressions/portability all green:
+firewalld-absent → "not installed"; FIFO-sshd no-hang; forged `PermitRootLogin
+yes` → ALERT; doas parser portable (forged `permit nopass` → WARN); `/etc/sudoers.d`
+NOPASSWD caught; SUID all-known-safe (18 SUID). Non-regression now proven on three
+Debian-style real hosts (Pi + Mint + Alpine's A/B). Full CLI matrix clean on Mint
+(exit codes for `--version`/`--help`/valid & invalid `--explain`/`--check`/
+`--min-level`/`--target`/`--badflag`/`--profile bogus`/`--lang zz`; 0 traceback),
+and the new `--explain file_perms.doas_nopass_all` renders title/why/how/CIS in
+both locales, appears in `--explain list`, and JSON stays valid.*
+
+*Ubuntu Server 26.04 field pass (0.21.3, 2026-09-26, real, heavily loaded — php/
+node/Wekan, load 6–9 on 4 cores): a third Debian-style non-regression bench and a
+**perf-discipline** stress. JSON A/B 0.21.2 ↔ 0.21.3 (`--profile server`)
+**identical** (score 6, same domains, same finding-keys). The loaded box made the
+FIFO-sshd probe take **195 s** — it still completed (no-hang); with a naive 40 s
+timeout it would have read as a false HANG (the lesson: never call a hang from a
+whole-check timeout on a starved host). CLI matrix clean; polarity (PermitRootLogin/
+shadow/sudoers.d/doas) all fire; SUID all-known-safe (15); firewalld-absent →
+"not installed"; updates classify the apt `-security` channel ("5 security
+pending"); AppArmor 214-enforce unchanged. `--fix --apply` correctly says **"No
+automatic fix available"** for the sensitive `chmod /etc/shadow` (shows it for
+manual run) — it declines rather than lies (v0.16.4 behaviour). Samba: the
+initial re-check was blocked by a pre-existing interrupted-dpkg state
+(unattended-upgrades kept re-grabbing the lock); after masking the apt timers,
+`dpkg --configure -a` + install succeeded, and the oracles passed — forged
+`server min protocol = NT1` → ✖ ALERT (EternalBlue), FIFO `smb.conf` no-hang
+(12 s). apt timers unmasked afterwards; dpkg state left repaired. Non-regression
+now proven on **four real hosts** (Pi + Mint + Ubuntu + Alpine's A/B).*
+
+*Fedora 44 Server field pass (0.21.3, 2026-09-26, real, SELinux enforcing +
+firewalld active + dnf/rpm — a distro family not otherwise exercised): JSON A/B
+0.21.2 ↔ 0.21.3 (`--profile server`) **identical** (score 7, same domains, same
+finding-keys — SELinux-enforce + firewalld-active means no fixed condition
+triggers). **#3 on native SELinux** (no AppArmor compiled in, so a clean path):
+enforcing → OK; `setenforce 0` → "SELinux permissive → setenforce 1" (not the
+false AppArmor advice). **#5 on native firewalld**: active → credited (zone
+FedoraServer); `systemctl stop firewalld` → banner "installed (inactive)".
+Mechanisms: GRUB `/boot/grub2` 0600, dnf `-security` channel ("363 security
+pending"). CLI matrix clean; polarity (PermitRootLogin/shadow/sudoers.d/doas) all
+fire; FIFO-sshd no-hang; samba via **dnf** → SMB1 ALERT + FIFO `smb.conf` no-hang.
+`--fix` honestly declines the sensitive `chmod /etc/shadow`. *(Pre-existing box
+observation, identical in 0.21.2 by A/B: 21 "unexpected SUID" from installed
+kismet/glusterfs helpers — a real WARN, not a regression.)* Non-regression proven
+on **five real hosts** (Pi + Mint + Ubuntu + Fedora + Alpine's A/B); 0.21.3 now
+field-verified across Alpine, Pi, openSUSE, Mint, Ubuntu and Fedora.*
+
+**Still open:**
+
+| Gap | Sev. | § | Note |
+|-----|------|---|------|
+| awall front-end not recognised | soft | §4 | The Alpine-native firewall builder is not read as a front-end, but the underlying nft/iptables ruleset it generates *is* inspected — so a host with active awall rules is not read as unprotected. Low urgency. |
 
 ---
 © 2026 Cédric Clauzel

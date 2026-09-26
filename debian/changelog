@@ -1,3 +1,24 @@
+bodyguard-of-bits (0.21.3-1) unstable; urgency=medium
+
+  * Patch: BOB reads the distribution's real config paths, not just Debian's.
+    Four distro-mechanism gaps found by the v0.21.2 field campaign (openSUSE
+    Leap 16 and a fresh Alpine 3.24), each changing output only on the affected
+    layout:
+  * (1) The SSH audit was blind on the /usr/etc layout: openSUSE ships
+    sshd_config under /usr/etc, so BOB (which parsed /etc/ssh/sshd_config only)
+    never followed the drop-in Include and reported OpenSSH defaults, masking a
+    real PermitRootLogin yes. It now falls back to /usr/etc/ssh/sshd_config when
+    /etc is absent (/etc wins when present; FIFO-safety preserved).
+  * (2) doas is now audited: `permit nopass` in /etc/doas.conf (the passwordless
+    root equivalent of sudo NOPASSWD:ALL, used on Alpine/OpenBSD) was invisible.
+  * (3) A permissive/disabled SELinux is no longer misdiagnosed as AppArmor-off
+    on SUSE-style kernels (setenforce 1, not apparmor=1).
+  * (4) login.defs and sudoers honour the /usr/etc vendor layout too.
+  * Each fix ships a guard + killed mutation. explain 205 -> 206 keys,
+    cis_refs 205 -> 206. Scoring changes only on the affected layouts.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 26 Sep 2026 13:00:00 +0000
+
 bodyguard-of-bits (0.21.2-1) unstable; urgency=medium
 
   * Patch: a FIFO (or any non-regular file) at /etc/ssh/sshd_config no longer

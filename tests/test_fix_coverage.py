@@ -127,6 +127,7 @@ _MANUAL_BY_DESIGN = frozenset({
     "samba.guest_writable",                      # per-share fix in smb.conf
     "samba.guest_readonly",                      # per-share fix in smb.conf
     "file_perms.sudoers_nopasswd_all",           # visudo edit, NEVER chmod (locking yourself out)
+    "file_perms.doas_nopass_all",                # /etc/doas.conf edit, no safe one-liner (as sudoers)
 
     # Disruptive / interactive operations:
     "ssh.rsa_weak",                              # regenerating host key disconnects all existing clients

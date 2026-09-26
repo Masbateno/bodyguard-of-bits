@@ -41,6 +41,16 @@ class _FileSpec(NamedTuple):
 _ETC_SSH = Path("/etc/ssh")
 _SUDOERS = Path("/etc/sudoers")
 _SUDOERS_D = Path("/etc/sudoers.d")
+# doas is Alpine's (and OpenBSD's) privilege-escalation tool in place of sudo;
+# `permit nopass` in /etc/doas.conf is its NOPASSWD equivalent. A sudo-only audit
+# is blind to it on a doas-based host.
+_DOAS_CONF = Path("/etc/doas.conf")
+# openSUSE Leap 16+ vendor layout: the main sudoers lives under /usr/etc, with
+# /etc/sudoers as the optional override, and its @includedir pulls in *both*
+# /etc/sudoers.d and /usr/etc/sudoers.d. Reading only the /etc paths missed a
+# NOPASSWD rule set in the vendor tree.
+_SUDOERS_VENDOR = Path("/usr/etc/sudoers")
+_SUDOERS_D_VENDOR = Path("/usr/etc/sudoers.d")
 
 _SENSITIVE_FILES: tuple[_FileSpec, ...] = (
     _FileSpec("/etc/passwd",  0o644, "passwd"),
@@ -80,6 +90,13 @@ class FilePermsSnapshot:
     sudoers_nopasswd_empty_groups: list[str]             = field(default_factory=list)
     sudoers_readable:          bool                      = True
     ssh_host_keys_readable:    bool                      = True
+    # doas (Alpine/OpenBSD): `permit nopass` grants. Full (no `cmd` clause) is the
+    # NOPASSWD:ALL equivalent; a `cmd`-scoped one is the specific-command case.
+    doas_nopass_all:           list[str]                 = field(default_factory=list)
+    doas_nopass_specific:      list[str]                 = field(default_factory=list)
+    # False when /etc/doas.conf existed but could not be read (a denial, not an
+    # absence — same distinction as sudoers_readable).
+    doas_readable:             bool                      = True
 
     @classmethod
     def from_system(cls) -> "FilePermsSnapshot":
@@ -146,6 +163,12 @@ class FilePermsSnapshot:
                 empty.append(g)
         snap.sudoers_nopasswd_empty_groups = empty
 
+        # 4. doas `permit nopass` entries (Alpine/OpenBSD privilege tool)
+        doas_all, doas_specific, doas_readable = _collect_doas_nopass()
+        snap.doas_nopass_all      = doas_all
+        snap.doas_nopass_specific = doas_specific
+        snap.doas_readable        = doas_readable
+
         return snap
 
 # ---------------------------------------------------------------------------
@@ -188,24 +211,29 @@ def _collect_nopasswd_entries() -> "tuple[list[str], list[str], bool]":
     nopasswd_specific: list[str] = []
     paths: list[Path] = []
 
-    sudoers = _SUDOERS
-    if path_exists(sudoers):
-        paths.append(sudoers)
+    # Main sudoers: /etc wins; fall back to the /usr/etc vendor file (openSUSE)
+    # when /etc/sudoers is absent, mirroring what sudo itself reads there.
+    if path_exists(_SUDOERS):
+        paths.append(_SUDOERS)
+    elif path_exists(_SUDOERS_VENDOR):
+        paths.append(_SUDOERS_VENDOR)
 
     readable = True
-    sudoers_d = _SUDOERS_D
-    try:
-        if strict_is_dir(sudoers_d):
-            for f in sorted(sudoers_d.iterdir()):
-                if strict_is_file(f) and not f.name.startswith(".") and not f.name.endswith("~"):
-                    paths.append(f)
-    except OSError:
-        # /etc/sudoers.d is present but BOB was refused entry — a denial, not
-        # an absence. Record the sudoers check as incomplete rather than
-        # concluding there are no drop-in NOPASSWD rules. On 3.14 a bare
-        # is_dir() returns False on the denial and would hide this; on <=3.13
-        # the unguarded iterdir() raised and crashed the whole check.
-        readable = False
+    # Both drop-in dirs: the vendor sudoers `@includedir`s /etc/sudoers.d *and*
+    # /usr/etc/sudoers.d. A denial on either is "incomplete", not "clean".
+    for sudoers_d in (_SUDOERS_D, _SUDOERS_D_VENDOR):
+        try:
+            if strict_is_dir(sudoers_d):
+                for f in sorted(sudoers_d.iterdir()):
+                    if strict_is_file(f) and not f.name.startswith(".") and not f.name.endswith("~"):
+                        paths.append(f)
+        except OSError:
+            # The dir is present but BOB was refused entry — a denial, not an
+            # absence. Record the sudoers check as incomplete rather than
+            # concluding there are no drop-in NOPASSWD rules. On 3.14 a bare
+            # is_dir() returns False on the denial and would hide this; on <=3.13
+            # the unguarded iterdir() raised and crashed the whole check.
+            readable = False
 
     for p in paths:
         try:
@@ -279,6 +307,49 @@ def _is_nopasswd_all(line: str) -> bool:
     after = after.lstrip(": \t")
     # Only flag when the command field is exactly ALL — nothing more, nothing less
     return after.strip() == "ALL"
+
+def _collect_doas_nopass() -> "tuple[list[str], list[str], bool]":
+    """Parse /etc/doas.conf for ``permit nopass`` rules — the doas equivalent of
+    sudo's NOPASSWD.
+
+    Returns (nopass_all, nopass_specific, readable):
+      - nopass_all      — permit-nopass rules with no ``cmd`` clause (full root)
+      - nopass_specific — permit-nopass rules scoped to a ``cmd``
+      - readable        — False when the file existed but could not be read (a
+                          denial, or a FIFO/non-regular file that ``read_text_capped``
+                          refuses — never a hang)
+
+    doas grammar: ``permit|deny [options] identity [as target] [cmd command …]``.
+    Only ``permit`` rules grant; ``nopass`` is an option token before the
+    identity. A file absent altogether is the common, non-doas case (empty, OK).
+    """
+    nopass_all: list[str] = []
+    nopass_specific: list[str] = []
+    conf = _DOAS_CONF
+    if not path_exists(conf):
+        return nopass_all, nopass_specific, True
+    try:
+        text = read_text_capped(conf, encoding="utf-8", errors="replace")
+    except OSError:
+        return nopass_all, nopass_specific, False
+    for raw in text.splitlines():
+        # doas comments start with `#` (whole-line or trailing).
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        fields = line.split()
+        if fields[0] != "permit":
+            continue  # `deny` never grants
+        if "nopass" not in fields[1:]:
+            continue
+        display = line[:120] + ("…" if len(line) > 120 else "")
+        # A `cmd` clause scopes the passwordless grant to one command (specific);
+        # without it the rule is unrestricted passwordless root.
+        if "cmd" in fields[1:]:
+            nopass_specific.append(display)
+        else:
+            nopass_all.append(display)
+    return nopass_all, nopass_specific, True
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -410,6 +481,37 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
             message=_t("file_perms.sudoers_unreadable"),
             detail=_t("file_perms.sudoers_unreadable_detail"),
             key="file_perms.sudoers_unreadable",
+        )
+
+    # ---- doas permit nopass (Alpine/OpenBSD; the doas equivalent of NOPASSWD) --
+    if snapshot.doas_nopass_all:
+        for line in snapshot.doas_nopass_all:
+            result.warn(
+                message=_t("file_perms.doas_nopass_all", line=line),
+                detail=_t("file_perms.doas_nopass_all_detail"),
+                key="file_perms.doas_nopass_all",
+                nature="action",
+            )
+        result.add_deduction(
+            reason=_t("file_perms.doas_nopass_all_reason"),
+            points=2,
+            context="local",
+            key="file_perms.doas_nopass_all",
+        )
+
+    if snapshot.doas_nopass_specific:
+        result.info(
+            message=_t("file_perms.doas_nopass_specific",
+                       count=len(snapshot.doas_nopass_specific)),
+            detail=_t("file_perms.doas_nopass_specific_detail"),
+            key="file_perms.doas_nopass_specific",
+        )
+
+    if not snapshot.doas_readable:
+        result.info(
+            message=_t("file_perms.doas_unreadable"),
+            detail=_t("file_perms.doas_unreadable_detail"),
+            key="file_perms.doas_unreadable",
         )
 
     # ---- All clear ----------------------------------------------------------

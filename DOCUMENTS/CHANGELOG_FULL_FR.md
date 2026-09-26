@@ -6,6 +6,112 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.21.3] — 26-09-2026
+
+**Un correctif : BOB lit la *vraie* configuration de la distribution, pas
+seulement les chemins de Debian.** Quatre angles morts trouvés par la campagne
+terrain v0.21.2 (openSUSE Leap 16 et une Alpine 3.24 fraîche) étaient tous de la
+même classe — *BOB ne connaissait pas le mécanisme réel de la distro*. Chacun ne
+change la sortie que sur le layout concerné ; un hôte type Debian/Ubuntu (config
+dans `/etc`, sudo, AppArmor ou SELinux enforcing) est inchangé — field-vérifié
+par un audit A/B byte-identique sur un Raspberry Pi et sur Alpine. Une section
+séparée plus bas couvre trois findings de moindre sévérité de la même campagne.
+
+### 1. L'audit SSH était aveugle sur le layout `/usr/etc` (MEDIUM-HIGH)
+
+openSUSE Leap 16 place `sshd_config` sous `/usr/etc/ssh/`, avec `/etc/ssh/
+sshd_config` comme override *optionnel*. BOB ne parsait que `/etc/ssh/
+sshd_config`, donc sur openSUSE il ne trouvait rien, ne suivait jamais
+l'`Include /etc/ssh/sshd_config.d/*.conf` déclaré dans le fichier `/usr/etc`, et
+retombait sur les défauts compilés d'OpenSSH pour les findings dérivés de la config.
+Mesuré : un `PermitRootLogin yes` forcé (`sshd -T` = yes) était rapporté par BOB
+en « ✔ root login restreint » — le raté dangereux, un vrai trou masqué — tandis
+qu'un `PasswordAuthentication no` durci était rapporté « enabled », une fausse
+alerte inoffensive dans l'autre sens. Le rapport était simplement décorrélé de la
+config effective. Le snapshot ssh résout désormais le fichier principal
+effectif — `/etc/ssh/sshd_config` s'il existe, sinon `/usr/etc/ssh/sshd_config` —
+et le parser existant (qui suit correctement l'`Include` et applique
+first-value-wins) fait le reste. La garde fail-closed FIFO de v0.21.2 s'applique
+au chemin retenu. Confirmé sur une Alpine réelle (où `/etc/ssh/sshd_config`
+existe) qu'un `PermitRootLogin yes` forgé est bien capté — isolant le bug au
+layout `/usr/etc`.
+
+### 2. doas est maintenant audité (MEDIUM)
+
+Alpine et OpenBSD utilisent **doas** à la place de sudo ; `permit nopass` dans
+`/etc/doas.conf` est l'équivalent root-sans-mot-de-passe de `NOPASSWD:ALL`. BOB
+auditait `/etc/sudoers` et `/etc/sudoers.d` mais jamais `/etc/doas.conf`, donc un
+`permit nopass baduser as root` forgé ne produisait aucun finding (mesuré sur une
+Alpine 3.24 réelle). `/etc/doas.conf` est désormais parsé : un `permit nopass`
+sans clause `cmd` est root sans mot de passe sans restriction (WARN −2, comme
+`NOPASSWD:ALL`) ; restreint par `cmd` c'est INFO ; une règle `deny` n'accorde
+jamais ; un FIFO ou fichier refusé se lit comme illisible, jamais un hang. Un
+`--explain file_perms.doas_nopass_all` dédié donne une remédiation doas (éditer
+`/etc/doas.conf`, `doas -C` pour valider) plutôt qu'un conseil sudo.
+
+### 3. Un SELinux permissive n'est plus mal diagnostiqué en AppArmor (MEDIUM)
+
+Sur un noyau SUSE-style, le noyau porte AppArmor compilé mais off, tandis que
+SELinux est le vrai MAC. Quand SELinux était **permissive** (ou disabled),
+`check_mac_policy` atteignait la branche `apparmor_off_in_kernel` en premier et
+disait d'activer AppArmor (`apparmor=1 security=apparmor`) — sans jamais
+mentionner que SELinux était juste permissive et que le geste est `setenforce 1`
+(mesuré sur openSUSE Leap 16 réelle). Les branches AppArmor-off / AppArmor-inactive
+cèdent désormais quand SELinux est le MAC installé, donc un SELinux
+permissive/disabled atteint son propre verdict. SELinux *enforcing* court-circuite
+déjà en tête, donc seul le cas non-enforcing change ; un hôte sans SELinux
+(Alpine, le Pi) garde le verdict AppArmor, qui y est correct.
+
+### 4. login.defs et sudoers honorent aussi `/usr/etc` (LOW)
+
+Le même fallback vendor s'applique désormais à `login.defs` et à `sudoers`. Pour
+`login.defs`, BOB lit la valeur de `/usr/etc` (un `PASS_MAX_DAYS` plus strict y
+est honoré, pas le défaut compilé). Pour `sudoers`, il résout le fichier vendor
+principal et *les deux* arbres `sudoers.d` que la config vendor `@includedir` —
+`/etc/sudoers.d` et `/usr/etc/sudoers.d` — donc une règle `NOPASSWD` dans l'arbre
+vendor n'est plus manquée. La passe terrain avait déjà montré que `/etc/sudoers.d`
+était lu (règles admin captées) ; ceci ferme le gap plus étroit de l'arbre vendor.
+
+### Contrat
+
+Chaque fix livre une garde et une mutation tuée. L'ensemble `--explain` passe de
+205 à **206 clés** (le nouveau `file_perms.doas_nopass_all`, avec sa référence
+CIS best-practice, son entrée bash-completion et son contenu explain bilingue),
+et `cis_refs.json` de 205 à **206 entrées**. Clés locale 2595 → 2606.
+
+### Trois findings de moindre sévérité, aussi corrigés
+
+- **firewalld installé mais stoppé** lu « not installed » dans le banner : son
+  `firewall-cmd --version` exige le daemon (firewalld 2.1.2 sort en erreur quand
+  stoppé), donc la sonde de version renvoyait vide. La présence est désormais
+  détectée par le binaire client (`shutil.which`), et le banner affiche
+  « installed (inactive) » quand la version est indisponible mais le binaire là.
+- **doas et busybox-suid flagués « unexpected SUID »** sur Alpine : `doas` (le
+  remplaçant standard de sudo, SUID par conception) et `/bin/bbsuid` sont
+  désormais dans le set SUID connu-sûr, donc la baseline sudo/Debian-centrique ne
+  les flague plus à tort.
+- **`systemctl restart` dans les conseils SSH statiques sur OpenRC** : les
+  commandes de fix dynamiques étaient déjà OpenRC-aware via
+  `service_restart_cmd()`, mais les strings explain/detail statiques hardcodaient
+  `systemctl restart ssh` avec un commentaire ne nommant que des distros
+  systemd ; chaque conseil nomme désormais aussi la forme `rc-service`. Gardé
+  sémantiquement (aucun `systemctl restart ssh` ne peut être sans mention
+  `rc-service`).
+
+### Field-vérifié
+
+Les sept correctifs ont été re-vérifiés sur les machines réelles qui les ont
+révélés, pas seulement en tests unitaires : sur **openSUSE Leap 16** un
+`PermitRootLogin yes` forgé ALERTe désormais, `setenforce 0` donne le verdict
+SELinux-permissive, un `PASS_MAX_DAYS` de `/usr/etc` est lu, un NOPASSWD dans
+`/usr/etc/sudoers.d` est capté, et un firewalld stoppé lit « installed
+(inactive) » ; sur **Alpine 3.24** le parseur doas (les quatre polarités + FIFO),
+la reconnaissance SUID et le conseil `rc-service` ; sur un **Raspberry Pi** et
+Alpine un audit A/B byte-identique confirme que rien ne change sur un hôte sans
+les conditions corrigées.
+
+**Tests** 11053 → **11119**.
+
 ## [0.21.2] — 26-09-2026
 
 **Une version corrective : un FIFO (ou tout fichier non-régulier) sur

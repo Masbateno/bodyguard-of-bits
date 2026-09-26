@@ -312,7 +312,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="205 entries (111 formal CIS",
+        old="206 entries (111 formal CIS",
         new="178 entries (110 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -772,6 +772,93 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "test, the probe now stat()s first and fails closed",
     ),
     Mutation(
+        id="ssh/usr-etc-sshd-config-not-read",
+        file="bob/checks/ssh/_snapshot.py",
+        old="            config_path = _SSHD_CONFIG_VENDOR_PATH",
+        new="            config_path = _SSHD_CONFIG_PATH  # mutated: no /usr/etc fallback",
+        kills=("tests/test_v0213_sshd_config_usr_etc_fallback.py::"
+               "test_reads_vendor_config_when_etc_absent",),
+        reason="openSUSE Leap 16+ ships sshd_config under /usr/etc; without the "
+               "fallback BOB reads only the (absent) /etc path and reports OpenSSH "
+               "defaults, masking a real PermitRootLogin yes — the MEDIUM-HIGH gap "
+               "from the v0.21.2 field campaign",
+    ),
+    Mutation(
+        id="mac_policy/apparmor-off-steals-selinux-permissive",
+        file="bob/checks/mac_policy.py",
+        old="    if snapshot.apparmor_off_in_kernel and not snapshot.selinux_installed:",
+        new="    if snapshot.apparmor_off_in_kernel:  # mutated: no SELinux deferral",
+        kills=("tests/test_v0213_mac_policy_selinux_precedence.py::"
+               "test_selinux_permissive_wins_over_apparmor_off",),
+        reason="on a SUSE-style kernel (AppArmor compiled-in-off) where SELinux is "
+               "the MAC, a permissive SELinux hit the AppArmor-off branch first and "
+               "told the admin to enable AppArmor instead of `setenforce 1` — "
+               "measured on real openSUSE Leap 16",
+    ),
+    Mutation(
+        id="file_perms/doas-nopass-not-flagged",
+        file="bob/checks/file_perms.py",
+        old='        if fields[0] != "permit":\n            continue  # `deny` never grants\n        if "nopass" not in fields[1:]:\n            continue',
+        new='        if fields[0] != "permit":\n            continue  # `deny` never grants\n        if "nopass" not in fields[1:]:\n            continue\n        if True:\n            continue  # mutated: drop every doas nopass rule',
+        kills=("tests/test_v0213_doas_audit.py::"
+               "test_collector_classifies_permit_deny_and_cmd",),
+        reason="Alpine/OpenBSD use doas, not sudo; without parsing /etc/doas.conf a "
+               "`permit nopass` (passwordless root, the NOPASSWD:ALL equivalent) is "
+               "invisible — the MEDIUM gap from the v0.21.2 Alpine field pass",
+    ),
+    Mutation(
+        id="password_policy/login-defs-usr-etc-not-read",
+        file="bob/checks/password_policy.py",
+        old="        for _login_defs in (_LOGIN_DEFS_PATH, _LOGIN_DEFS_VENDOR):",
+        new="        for _login_defs in (_LOGIN_DEFS_PATH,):  # mutated: no /usr/etc fallback",
+        kills=("tests/test_v0213_usr_etc_login_defs_sudoers.py::"
+               "test_login_defs_read_from_vendor_when_etc_absent",),
+        reason="openSUSE ships login.defs under /usr/etc; without the fallback BOB "
+               "reads the default PASS_MAX_DAYS and misreports a stricter vendor "
+               "policy",
+    ),
+    Mutation(
+        id="file_perms/sudoers-usr-etc-vendor-not-read",
+        file="bob/checks/file_perms.py",
+        old="    elif path_exists(_SUDOERS_VENDOR):\n        paths.append(_SUDOERS_VENDOR)",
+        new="    elif False:  # mutated: no /usr/etc sudoers fallback\n        paths.append(_SUDOERS_VENDOR)",
+        kills=("tests/test_v0213_usr_etc_login_defs_sudoers.py::"
+               "test_sudoers_nopasswd_read_from_vendor_when_etc_absent",),
+        reason="openSUSE ships the main sudoers under /usr/etc; without the fallback "
+               "a NOPASSWD:ALL rule in the vendor file is silently missed",
+    ),
+    Mutation(
+        id="sysinfo/firewalld-stopped-reads-not-installed",
+        file="bob/sysinfo.py",
+        old="    firewalld_present = bool(firewalld_version) or shutil.which(\"firewall-cmd\") is not None",
+        new="    firewalld_present = bool(firewalld_version)  # mutated: drop binary-presence check",
+        kills=("tests/test_v0213_firewalld_banner_presence.py::"
+               "test_firewalld_present_via_binary_when_version_unavailable",),
+        reason="firewalld 2.1.2 (openSUSE) needs the daemon for `firewall-cmd "
+               "--version`, so a stopped-but-installed firewalld read as 'not "
+               "installed' in the banner without the binary-presence fallback",
+    ),
+    Mutation(
+        id="suid/doas-flagged-unexpected",
+        file="bob/checks/suid_audit.py",
+        old='    "doas",',
+        new='    # "doas",  # mutated: doas dropped from the known-safe SUID set',
+        kills=("tests/test_v0213_suid_doas_bbsuid.py::test_doas_is_known_safe_suid",),
+        reason="doas is the standard SUID sudo-replacement on Alpine/OpenBSD; "
+               "without it in _KNOWN_SUID it was flagged as an unexpected SUID "
+               "(false positive on every doas host)",
+    ),
+    Mutation(
+        id="locale/ssh-restart-hint-systemd-only",
+        file="bob/locales/en.json",
+        old='"permit_root_login_detail": "Set PermitRootLogin no in /etc/ssh/sshd_config, then: sudo systemctl restart ssh   # \'sshd\' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service"',
+        new='"permit_root_login_detail": "Set PermitRootLogin no in /etc/ssh/sshd_config, then: sudo systemctl restart ssh   # \'sshd\' on Arch, Fedora, RHEL, openSUSE"',
+        kills=("tests/test_v0213_openrc_fix_wording.py::"
+               "test_every_ssh_restart_hint_is_openrc_aware_en",),
+        reason="on Alpine (OpenRC) there is no systemctl; a static `systemctl "
+               "restart ssh` hint must also name the rc-service form",
+    ),
+    Mutation(
         id="sysinfo/offline-still-calls-urlopen",
         file="bob/sysinfo.py",
         old='    if offline:\n        return ""\n\n    import ipaddress',
@@ -798,8 +885,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 2595 keys EN/FR",
-        new="locale auto-detect (POSIX), 2594 keys EN/FR",
+        old="locale auto-detect (POSIX), 2606 keys EN/FR",
+        new="locale auto-detect (POSIX), 2605 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
                "because '2014' reads as a year and the sweep's noun set had no "
@@ -808,8 +895,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-breakdown-mis-split",
         file="DOCUMENTS/README_TECH.md",
-        old="205 entries (111 formal CIS, 87 best-practice, 7 Docker)",
-        new="205 entries (110 formal CIS, 88 best-practice, 7 Docker)",
+        old="206 entries (111 formal CIS, 88 best-practice, 7 Docker)",
+        new="206 entries (110 formal CIS, 89 best-practice, 7 Docker)",
         kills=(f"{_LIVECOUNT}::"
                "test_the_readme_tech_cis_breakdown_matches_the_live_categories",),
         reason="v0163 checks only that the parts sum to the total, so a wrong "

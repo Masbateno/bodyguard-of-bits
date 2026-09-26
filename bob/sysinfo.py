@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -210,6 +211,12 @@ def collect_system_info(version: str, lang: str):
     fwd_raw = run("firewall-cmd", "--version")
     fwd_match = re.search(r"[\d.]+", fwd_raw)
     firewalld_version = fwd_match.group(0) if fwd_match else ""
+    # `firewall-cmd --version` needs the daemon on some builds — firewalld 2.1.2
+    # (openSUSE Leap 16) exits non-zero with "FirewallD is not running" when the
+    # service is stopped, so an empty version does NOT mean absent. Detect
+    # presence by the client binary, so a merely-stopped firewalld reads as
+    # "installed (inactive)" in the banner rather than the false "not installed".
+    firewalld_present = bool(firewalld_version) or shutil.which("firewall-cmd") is not None
 
     # Init / service manager — systemd on most distributions, OpenRC on Alpine,
     # something else (busybox init, sysvinit) elsewhere. BOB's service and
@@ -251,6 +258,7 @@ def collect_system_info(version: str, lang: str):
         iptables_version=iptables_version,
         nftables_version=nftables_version,
         firewalld_version=firewalld_version,
+        firewalld_present=firewalld_present,
         init_system=init_system,
         user=_sanitize(audit_user(), max_len=32),
         config_path=str(get_user_home() / ".config" / "bob" / "config.conf"),

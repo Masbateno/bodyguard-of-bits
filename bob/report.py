@@ -132,6 +132,7 @@ class SystemInfo:
         language:         str,
         version:          str,
         firewalld_version: str = "",
+        firewalld_present: bool = False,
         init_system:       str = "",
     ) -> None:
         self.os_name          = os_name
@@ -141,6 +142,7 @@ class SystemInfo:
         self.iptables_version = iptables_version
         self.nftables_version = nftables_version
         self.firewalld_version = firewalld_version
+        self.firewalld_present = firewalld_present
         self.init_system      = init_system
         self.user             = user
         self.config_path      = config_path

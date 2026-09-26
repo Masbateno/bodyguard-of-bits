@@ -6,6 +6,111 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.21.3] — 2026-09-26
+
+**A patch release: BOB reads the distribution's *real* configuration, not just
+Debian's paths.** Four gaps found by the v0.21.2 field campaign (openSUSE Leap 16
+and a fresh Alpine 3.24) were all of the same class — *BOB did not know the
+distro's actual mechanism*. Each changes output only on the affected layout; a
+Debian/Ubuntu-style host (config in `/etc`, sudo, AppArmor or enforcing SELinux)
+is unchanged — field-verified by a byte-identical A/B audit on a Raspberry Pi and
+on Alpine. A separate section below covers three lower-severity findings from the
+same campaign.
+
+### 1. The SSH audit was blind on the `/usr/etc` layout (MEDIUM-HIGH)
+
+openSUSE Leap 16 ships `sshd_config` under `/usr/etc/ssh/`, with `/etc/ssh/
+sshd_config` as the *optional* override. BOB parsed `/etc/ssh/sshd_config` only,
+so on openSUSE it found nothing, never followed the `Include /etc/ssh/
+sshd_config.d/*.conf` declared in the `/usr/etc` file, and fell back to OpenSSH's
+compiled-in defaults for config-derived findings. Measured: a forced
+`PermitRootLogin yes` (`sshd -T` = yes) was reported by BOB as
+"✔ root login restricted" — the dangerous miss, a real hole hidden — while a
+hardened `PasswordAuthentication no` was reported as "enabled", a harmless false
+alarm in the other direction. The report was simply detached from the effective
+config. The ssh snapshot now resolves the effective main config —
+`/etc/ssh/sshd_config` when present, else `/usr/etc/ssh/sshd_config` — and the
+existing parser (which correctly follows `Include` and applies first-value-wins)
+does the rest. The v0.21.2 FIFO fail-closed guard runs on whichever path is
+resolved. Confirmed on a real Alpine (where `/etc/ssh/sshd_config` exists) that a
+forged `PermitRootLogin yes` is correctly caught, isolating this to the
+`/usr/etc` layout.
+
+### 2. doas is now audited (MEDIUM)
+
+Alpine and OpenBSD use **doas** in place of sudo; `permit nopass` in
+`/etc/doas.conf` is the passwordless-root equivalent of sudo's `NOPASSWD:ALL`.
+BOB audited `/etc/sudoers` and `/etc/sudoers.d` but never `/etc/doas.conf`, so a
+forged `permit nopass baduser as root` produced no finding (measured on a real
+Alpine 3.24). `/etc/doas.conf` is now parsed: a `permit nopass` with no `cmd`
+clause is unrestricted passwordless root (WARN −2, mirroring `NOPASSWD:ALL`); one
+scoped to a `cmd` is INFO; a `deny` rule never grants; a FIFO or denied file
+reads as unreadable, never a hang. A dedicated `--explain
+file_perms.doas_nopass_all` gives doas-specific remediation (edit
+`/etc/doas.conf`, `doas -C` to validate) rather than sudo advice.
+
+### 3. A permissive SELinux is no longer misdiagnosed as AppArmor (MEDIUM)
+
+On a SUSE-style kernel the kernel carries AppArmor compiled-in but off, while
+SELinux is the actual MAC. When SELinux was **permissive** (or disabled),
+`check_mac_policy` reached the `apparmor_off_in_kernel` branch first and told the
+admin to enable AppArmor (`apparmor=1 security=apparmor`) — never mentioning that
+SELinux was merely permissive and the fix is `setenforce 1` (measured on real
+openSUSE Leap 16). The AppArmor-off / AppArmor-inactive branches now defer when
+SELinux is the installed MAC, so a permissive/disabled SELinux reaches its own
+verdict. SELinux *enforcing* already short-circuited at the top, so only the
+non-enforcing case changes; a host with no SELinux (Alpine, the Pi) still gets
+the AppArmor verdict, which is correct there.
+
+### 4. login.defs and sudoers honour `/usr/etc` too (LOW)
+
+The same vendor-layout fallback now applies to `login.defs` and to `sudoers`.
+For `login.defs`, BOB reads the `/usr/etc` value (a stricter `PASS_MAX_DAYS`
+there is honoured, not the compiled-in default). For `sudoers`, it resolves the
+main vendor file and *both* `sudoers.d` trees the vendor configuration
+`@includedir`s — `/etc/sudoers.d` and `/usr/etc/sudoers.d` — so a `NOPASSWD` rule
+in the vendor tree is no longer missed. The field pass had already shown
+`/etc/sudoers.d` was read (admin rules caught); this closes the narrower
+vendor-tree gap.
+
+### Contract
+
+Each fix ships a guard and a killed mutation. The `--explain` set grows 205 →
+**206 keys** (the new `file_perms.doas_nopass_all`, with its own CIS
+best-practice reference, bash-completion entry, and cross-locale explain
+content), and `cis_refs.json` 205 → **206 entries**. Locale keys 2595 → 2606.
+
+### Three lower-severity field findings, also fixed
+
+- **firewalld installed but stopped** read as "not installed" in the banner: its
+  `firewall-cmd --version` needs the daemon (firewalld 2.1.2 exits non-zero when
+  stopped), so the version probe returned empty. Presence is now detected by the
+  client binary (`shutil.which`), and the banner reads "installed (inactive)"
+  when the version is unobtainable but the binary is there.
+- **doas and busybox-suid flagged as "unexpected SUID"** on Alpine: `doas` (the
+  standard sudo replacement, SUID by design) and `/bin/bbsuid` are now in the
+  known-safe SUID set, so the sudo/Debian-centric baseline no longer false-flags
+  them.
+- **`systemctl restart` in static SSH hints on OpenRC**: the dynamic fix commands
+  were already OpenRC-aware via `service_restart_cmd()`, but the static explain
+  and detail strings hardcoded `systemctl restart ssh` with a distro comment
+  naming only systemd distros; every such hint now also names the `rc-service`
+  form. Guarded semantically (no `systemctl restart ssh` string may lack an
+  `rc-service` mention).
+
+### Field-verified
+
+All seven fixes were re-verified on the real machines that surfaced them, not
+just in unit tests: on **openSUSE Leap 16** a forged `PermitRootLogin yes` now
+ALERTs, `setenforce 0` yields the SELinux-permissive verdict, a `/usr/etc`
+`PASS_MAX_DAYS` is read, a `/usr/etc/sudoers.d` NOPASSWD is caught, and a stopped
+firewalld reads "installed (inactive)"; on **Alpine 3.24** the doas parser (all
+four polarities + FIFO), the SUID recognition and the `rc-service` hint; on a
+**Raspberry Pi** and Alpine a byte-identical A/B audit confirms nothing changes
+on a host without the fixed conditions.
+
+**Tests** 11053 → **11119**.
+
 ## [0.21.2] — 2026-09-26
 
 **A patch release: a FIFO (or any non-regular file) at `/etc/ssh/sshd_config`

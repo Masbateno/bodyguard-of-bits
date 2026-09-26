@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.21.2-brightgreen)
+![Release](https://img.shields.io/badge/version-0.21.3-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -30,7 +30,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 - **Contextual scoring** — network context detection (direct public IP vs NAT); penalties are heavier on internet-exposed machines (an uncovered open port goes 1 → 2 points; a high/critical exposed service 2 → 3); firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
-- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 205 entries (111 formal CIS, 87 best-practice, 7 Docker)
+- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 206 entries (111 formal CIS, 88 best-practice, 7 Docker)
 - **6 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / HEALTH & RESILIENCE / THREAT DETECTION
 - **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target, **and since v0.16.2 whenever anything could not be read** — a score nothing verified cannot satisfy a gate (CI-ready). v0.16.0 said "whenever the score is an upper bound"; that stopped covering the case where blindness removes a whole scoring domain, which is the least trustworthy run of all
 
@@ -96,7 +96,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail. **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.17.1. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking. Since v0.18.0 the sysctl hardenings are applied **by BOB's own code, not by a shell**: set, persisted with exactly one line per key, then **read back** before BOB claims anything — the one-liner on screen is unchanged for a human to paste. Two unattended applications are refused outright because they can take a remote host away from you — a default-deny firewall policy (`iptables -P INPUT DROP` and its `ip6tables`, `-nft`, `-legacy` and `nft … policy drop` spellings) — and a fix that grants access (`ufw allow`) always runs before one that withdraws it (`ufw enable`)
-- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 205 explainable keys across 56 prefixes; 114 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 91 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
+- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 206 explainable keys across 56 prefixes; 114 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 91 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
 - **Domain scores** — per-domain 0–10 sub-scores, one per on-screen group (Firewall & Network / Exposure & Services / Access Control / System Hardening / Health & Resilience / Threat Detection); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
@@ -385,7 +385,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.21.2  │  Linux hardening auditor                                     ║
+║  BOB 0.21.3  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -838,7 +838,7 @@ The `findings[*].key` and `deductions[*].key` are part of the `--explain` key se
 
 ### EXPLAIN_KEYS audit
 
-As of v0.11.x, the `--explain` key set contains **205 keys** across **56 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
+As of v0.11.x, the `--explain` key set contains **206 keys** across **56 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
 
 - **Pattern:** `<prefix>.<finding_id>` (single dot, snake_case)
 - **Exceptions:** `file_perms.<path>.<finding_id>` (path-segment middles) and `services.{exposure,state}.<finding_id>` (two-tier taxonomy), both resolved by `bob.explain.normalize_key`

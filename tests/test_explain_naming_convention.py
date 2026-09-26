@@ -258,7 +258,9 @@ class TestExplainAuditInvariants:
         # v0.21.0 → 200: grub.cfg_perms, cups.listen_exposed,
         # mount_hardening.options_missing, faillock.not_configured,
         # disk_encryption.root_unencrypted, polkit.rule_writable.
-        assert len(EXPLAIN_KEYS) == 205, (
+        # v0.21.1 → 205: five backfilled --explain entries.
+        # v0.21.3 → 206: file_perms.doas_nopass_all (doas audit, Alpine/OpenBSD).
+        assert len(EXPLAIN_KEYS) == 206, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

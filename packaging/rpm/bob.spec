@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.21.2
+Version:        0.21.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,19 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Sep 26 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.3-1
+- Patch: BOB reads the distribution's real config paths, not just Debian's.
+  Four distro-mechanism gaps from the v0.21.2 field campaign (openSUSE Leap 16,
+  Alpine 3.24), each changing output only on the affected layout:
+  (1) the SSH audit was blind on the /usr/etc layout (openSUSE ships sshd_config
+  under /usr/etc) and reported OpenSSH defaults, masking a real PermitRootLogin
+  yes -- now falls back to /usr/etc/ssh/sshd_config; (2) doas is now audited
+  (permit nopass in /etc/doas.conf, the NOPASSWD:ALL equivalent on Alpine/OpenBSD)
+  -- was previously invisible; (3) a permissive SELinux is no longer misdiagnosed
+  as AppArmor-off on SUSE-style kernels (setenforce 1, not apparmor=1); (4)
+  login.defs and sudoers honour /usr/etc too. Each fix ships a guard + killed
+  mutation. explain 205 -> 206 keys, cis_refs 205 -> 206. Scoring changes only on
+  the affected layouts.
 * Fri Sep 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.2-1
 - Patch: a FIFO (or any non-regular file) at /etc/ssh/sshd_config no longer hangs
   the audit -- the ssh config probe used a raw open("rb") that blocks forever on a

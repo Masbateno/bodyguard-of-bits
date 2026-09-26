@@ -42,6 +42,11 @@ from bob._atomic import read_text_capped
 # ---------------------------------------------------------------------------
 
 _LOGIN_DEFS_PATH    = Path("/etc/login.defs")
+# openSUSE Leap 16+ ships login.defs under /usr/etc, with /etc as the optional
+# override. Reading only /etc reported the OpenSSH-style default (PASS_MAX_DAYS
+# 99999) on a host whose real policy lives in /usr/etc — right by coincidence
+# here, wrong the moment /usr/etc sets a stricter value. /etc wins when present.
+_LOGIN_DEFS_VENDOR  = Path("/usr/etc/login.defs")
 _PWQUALITY_CONF     = Path("/etc/security/pwquality.conf")
 # libpwquality reads the drop-in directory *first*, in ASCII order, then the
 # main file — so the main file wins where both set a value, and a drop-in
@@ -153,9 +158,12 @@ class PasswordPolicySnapshot:
         """
         snap = cls()
 
-        # ---- /etc/login.defs ------------------------------------------------
-        try:
-            login_defs_text = read_text_capped(_LOGIN_DEFS_PATH, encoding="utf-8", errors="replace")
+        # ---- login.defs (/etc, else the /usr/etc vendor path) ---------------
+        for _login_defs in (_LOGIN_DEFS_PATH, _LOGIN_DEFS_VENDOR):
+            try:
+                login_defs_text = read_text_capped(_login_defs, encoding="utf-8", errors="replace")
+            except OSError:
+                continue  # absent (or a FIFO/non-regular file) — try the vendor path
             snap.login_defs_readable = True
 
             v = _last_int(_PASS_MAX_DAYS_RE, login_defs_text)
@@ -165,9 +173,7 @@ class PasswordPolicySnapshot:
             v = _last_int(_PASS_MIN_DAYS_RE, login_defs_text)
             if v is not None:
                 snap.pass_min_days = v
-
-        except OSError:
-            pass
+            break  # /etc wins when present; only fall through when it is absent
 
         # ---- the PAM password stack -----------------------------------------
         # Not `/etc/pam.d/common-password` alone: that is Debian's name for it

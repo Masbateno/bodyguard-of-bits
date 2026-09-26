@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.21.2-brightgreen)
+![Release](https://img.shields.io/badge/version-0.21.3-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -30,7 +30,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Score contextuel** — détection du contexte réseau (IP publique directe vs NAT) ; pénalités plus lourdes sur les machines exposées sur internet (un port ouvert non couvert passe de 1 à 2 points ; un service critique exposé de 2 à 3) ; pare-feu inactif plafonne le score à 3/10
 - **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; findings répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
 - **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et ship ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
-- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 205 entrées (111 CIS formels, 87 best-practice, 7 Docker)
+- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 206 entrées (111 CIS formels, 88 best-practice, 7 Docker)
 - **6 en-têtes de groupes thématiques** — sortie organisée en : PARE-FEU & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / SANTÉ & RÉSILIENCE / DÉTECTION DES MENACES
 - **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible, **et depuis la v0.16.2 dès que quelque chose n'a pas pu être lu** — un score que rien n'a vérifié ne peut pas satisfaire un portail (intégration CI). La v0.16.0 disait « dès que le score est une borne supérieure » ; cela ne couvrait plus le cas où l'aveuglement retire un domaine de notation entier, l'exécution la moins fiable de toutes.
 
@@ -96,7 +96,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` / `--english` (ou `--lang=fr` / `--lang=en`)
 - **Gestion de la couleur** — auto-détectée depuis la v0.14.0 : l'ANSI n'est émis que si stdout est un terminal, donc rediriger vers un fichier ou un pipe est propre sans aucune option. `--no-color` (ou `NO_COLOR=1`) la force à off ; `FORCE_COLOR=1` la force à on pour `less -R` ou un log volontairement coloré
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit **Seule une commande que BOB peut exécuter sans surveillance est comptée comme automatique** : `cmd_type="fix"` (un diagnostic comme `smartctl -a` n'est pas une remédiation), aucun opérateur shell, aucun éditeur interactif. Tout le reste apparaît sous son propre titre, commande affichée mais non exécutée — le compteur au-dessus de l'invite est une promesse tenable, depuis la v0.17.1. Les commandes d'installation portent `-y`, car un correctif qui s'arrête pour poser une question ne peut pas être appliqué par un mode dont tout l'objet est de ne pas en poser.. Depuis la v0.18.0, les durcissements sysctl sont appliqués **par le code de BOB, pas par un shell** : la valeur est posée, persistée avec exactement une ligne par clé, puis **relue** avant que BOB n'affirme quoi que ce soit — la commande affichée reste la même pour qui veut la coller. Deux applications sans surveillance sont refusées d'office parce qu'elles peuvent vous faire perdre une machine distante — une politique de pare-feu de refus par défaut (`iptables -P INPUT DROP` et ses variantes `ip6tables`, `-nft`, `-legacy` et `nft … policy drop`) — et un correctif qui ouvre un accès (`ufw allow`) passe toujours avant celui qui en retire (`ufw enable`)
-- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 205 clés sur 56 préfixes ; 114 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 91 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
+- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 206 clés sur 56 préfixes ; 114 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 91 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
 - **Scores par domaine** — sous-scores 0–10, un par groupe affiché (Pare-feu & Réseau / Exposition & Services / Contrôle d'accès / Durcissement système / Santé & Résilience / Détection des menaces) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
@@ -385,7 +385,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.21.2  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.21.3  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -838,7 +838,7 @@ Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--expl
 
 ### Audit EXPLAIN_KEYS
 
-À partir de v0.11.x, le set de clés `--explain` contient **205 clés** réparties sur **56 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
+À partir de v0.11.x, le set de clés `--explain` contient **206 clés** réparties sur **56 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
 
 - **Pattern :** `<prefix>.<finding_id>` (un seul point, snake_case)
 - **Exceptions :** `file_perms.<path>.<finding_id>` (segments de chemin intermédiaires) et `services.{exposure,state}.<finding_id>` (taxonomie à deux niveaux), toutes deux résolues par `bob.explain.normalize_key`

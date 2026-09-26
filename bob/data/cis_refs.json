@@ -275,6 +275,11 @@
       }
     }
   },
+  "file_perms.doas_nopass_all": {
+    "ref": "Best practice — Require a password for privilege escalation via doas: avoid 'permit nopass' without a 'cmd' clause in /etc/doas.conf (the doas equivalent of sudo NOPASSWD:ALL)",
+    "ref_fr": "Bonne pratique — Exiger un mot de passe pour l'escalade de privilèges via doas : éviter « permit nopass » sans clause « cmd » dans /etc/doas.conf (l'équivalent doas de NOPASSWD:ALL de sudo)",
+    "code": null
+  },
   "file_perms.too_permissive": {
     "ref": "CIS Ubuntu 22.04 L1 — 6.1 — Ensure appropriate permissions on sensitive files",
     "code": "CIS:6.1"

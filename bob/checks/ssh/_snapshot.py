@@ -29,6 +29,14 @@ from bob.checks._run import (
 # ---------------------------------------------------------------------------
 
 _SSHD_CONFIG_PATH = Path("/etc/ssh/sshd_config")
+# openSUSE Leap 16+ ships the vendor sshd_config under /usr/etc, with /etc as the
+# optional override (the systemd vendor-config split). When /etc/ssh/sshd_config
+# is absent, sshd reads this file — and it carries the `Include
+# /etc/ssh/sshd_config.d/*.conf` that pulls in the drop-ins — so BOB must parse it
+# too, or it reads OpenSSH's compiled-in defaults and can hand a host a false
+# "root login is restricted". /etc always wins when present (behaviour unchanged
+# on every distro that keeps sshd_config in /etc).
+_SSHD_CONFIG_VENDOR_PATH = Path("/usr/etc/ssh/sshd_config")
 
 # Files in ~/.ssh/ that are never private keys
 _NON_KEY_FILES: frozenset[str] = frozenset({
@@ -227,15 +235,29 @@ class SSHSnapshot:
         # login is restricted". `exists()` cannot make the distinction either:
         # under a directory the auditor cannot traverse it does not report
         # False, it raises. Only the open separates the three cases.
+        # Resolve the effective main config: /etc wins, else the /usr/etc vendor
+        # path (openSUSE Leap 16+). Only when *both* are absent does sshd truly
+        # run on its defaults. `st is None` marks "no file to probe" so the three
+        # states (absent / unreadable / readable) stay exhaustive below.
+        config_path = _SSHD_CONFIG_PATH
+        st = None
         try:
-            st = os.stat(_SSHD_CONFIG_PATH)  # metadata only — never blocks
+            st = os.stat(config_path)  # metadata only — never blocks
         except FileNotFoundError:
-            # Genuinely absent: sshd really would run on its defaults, so the
-            # subchecks reading them are right. Leave `sshd_config_readable`.
-            config_state = "absent"
+            config_path = _SSHD_CONFIG_VENDOR_PATH
+            try:
+                st = os.stat(config_path)
+            except FileNotFoundError:
+                # Genuinely absent everywhere: sshd really would run on its
+                # defaults, so the subchecks reading them are right. Leave
+                # `sshd_config_readable`.
+                config_state = "absent"
+            except OSError:
+                config_state = "unreadable"
         except OSError:
             config_state = "unreadable"
-        else:
+
+        if st is not None:
             if not stat.S_ISREG(st.st_mode):
                 # A FIFO / char device / directory / socket at sshd_config is
                 # not a legitimate config — and a plain ``open("rb")`` on a FIFO
@@ -248,7 +270,7 @@ class SSHSnapshot:
                 # Regular file: ``open`` can no longer block, so the probe only
                 # separates readable from permission-denied.
                 try:
-                    with _SSHD_CONFIG_PATH.open("rb"):
+                    with config_path.open("rb"):
                         pass
                 except OSError:
                     config_state = "unreadable"
@@ -260,7 +282,7 @@ class SSHSnapshot:
         elif config_state == "readable":
             seen: set[str] = set()
             config: dict[str, str] = {}
-            _parsers._parse_config_file(_SSHD_CONFIG_PATH, config, seen)
+            _parsers._parse_config_file(config_path, config, seen)
             snap.sshd_config = config
 
             # The findings below describe this file. sshd loads it at start and

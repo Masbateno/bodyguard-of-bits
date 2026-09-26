@@ -634,8 +634,9 @@ def _run(argv=None) -> int:
                                  if sys_info.ufw_version else not_installed),
                     iptables=sys_info.iptables_version or not_installed,
                     nftables=sys_info.nftables_version or not_installed,
-                    firewalld=(sys_info.firewalld_version
-                               if sys_info.firewalld_version else not_installed),
+                    firewalld=(sys_info.firewalld_version if sys_info.firewalld_version
+                               else (t("banner.installed_inactive")
+                                     if sys_info.firewalld_present else not_installed)),
                     init_system=sys_info.init_system or not_installed,
                     user=sys_info.user,
                     date=datetime.now().strftime("%d/%m/%Y %H:%M"),

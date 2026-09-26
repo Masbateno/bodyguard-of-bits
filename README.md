@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.21.2-brightgreen)
+![Release](https://img.shields.io/badge/version-0.21.3-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -131,7 +131,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.21.2  │  Linux hardening auditor                                     ║
+║  BOB 0.21.3  │  Linux hardening auditor                                     ║
 ║  System        : Linux Mint 22.3                                             ║
 ║  Kernel        : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -179,7 +179,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 ## CIS benchmark mapping
 
-205 entries: **110 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 87 best-practice**, plus **163 cross-benchmark citations** on 58 keys (CIS Debian 12/13 and CIS Ubuntu 24.04), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
+206 entries: **110 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 88 best-practice**, plus **163 cross-benchmark citations** on 58 keys (CIS Debian 12/13 and CIS Ubuntu 24.04), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
 
 Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
 Full reference text is shown in `--verbose` mode.  

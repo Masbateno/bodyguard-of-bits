@@ -115,6 +115,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "file_perms.world_writable",
         "file_perms.too_permissive",
         "file_perms.sudoers_nopasswd_all",
+        "file_perms.doas_nopass_all",
         "file_perms.ssh_host_key_perms",
     ]),
     ("Updates", [

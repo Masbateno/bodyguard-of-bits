@@ -32,6 +32,13 @@ _KNOWN_SUID: frozenset[str] = frozenset({
     # Core auth / privilege escalation
     "su", "sudo", "sudo.ws", "newgrp", "passwd", "chsh", "chfn", "gpasswd", "expiry",
     "chage",
+    # doas — the standard sudo replacement on Alpine and OpenBSD; it is SUID root
+    # by design (it must escalate). Flagging it as "unexpected" was a false
+    # positive on every doas-based host (v0.21.2 Alpine field pass).
+    "doas",
+    # busybox-suid: Alpine ships /bin/bbsuid, the SUID helper busybox execs for
+    # its privileged applets (su, mount, …). Standard on any busybox system.
+    "bbsuid",
     # Network tools (ping was SUID on older kernels)
     "ping", "ping6", "pppd",
     # Filesystem / mount
