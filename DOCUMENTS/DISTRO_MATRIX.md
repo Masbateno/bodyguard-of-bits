@@ -400,7 +400,11 @@ restored 660 → OK; **suid_audit.writable_suid** — a `chmod 6777` set-id bina
 ✖ ALERT. Hostile: FIFO `/etc/modprobe.d/*.conf` → no-hang. module-sig reads
 "unsigned modules accepted" (INFO). Two honest observations, neither a bug:
 `--fix --apply` **shows** the `chmod go-w` for a writable SUID but does not
-auto-apply it (no native handler — and it never claims success); and under CPU
+auto-apply it — **by design**: a world-writable set-id root binary is a
+compromise *symptom* (something made it writable; the timestamps are evidence),
+so BOB surfaces the command for the operator to run *after* investigating rather
+than silently flipping the bit and hiding the cause. It never claims success. And
+under CPU
 starvation the SUID `find` (15 s) timed out once → honest "scan skipped", not a
 hang (the full audit always completed, ~1:48).*
 
@@ -421,7 +425,7 @@ writable-SUID ALERT confirmed live. Box restored (Enforcing, sleep unmasked).*
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
 | awall front-end not recognised | soft | §4 | The Alpine-native firewall builder is not read as a front-end, but the underlying nft/iptables ruleset it generates *is* inspected — so a host with active awall rules is not read as unprotected. Low urgency. |
-| `suid_audit.writable_suid` fix not auto-applied | soft | §9 | The finding shows `chmod go-w <path>` but `--fix --apply` does not run it (no native apply handler); it never claims success. A native chmod handler is a possible post-0.22.x enhancement. |
+| SUID `find` skips under CPU starvation | soft | §10 | On a pathologically loaded host the 15 s `find` timeout can be hit → honest "SUID scan skipped" (never a false "clean"), but the SUID coverage is lost for that run. **Backlog 0.22.1**: raise `_FIND_TIMEOUT` 15 → 30 s (normal host ~2 s, unaffected; reduces — not eliminates — the skip under load). |
 
 ---
 © 2026 Cédric Clauzel
