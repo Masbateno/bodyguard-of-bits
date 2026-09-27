@@ -378,11 +378,50 @@ kismet/glusterfs helpers — a real WARN, not a regression.)* Non-regression pro
 on **five real hosts** (Pi + Mint + Ubuntu + Fedora + Alpine's A/B); 0.21.3 now
 field-verified across Alpine, Pi, openSUSE, Mint, Ubuntu and Fedora.*
 
+### 0.22.0 field passes — the five new coverage checks
+
+0.22.0 added five additive checks: **kernel-module blacklist** (INFO, CIS §3.4),
+**privileged `/dev` nodes** (INFO), **module-signature enforcement** (INFO, folded
+into the kexec/lockdown check), **world/group-writable set-id binaries** (ALERT),
+and **root PATH integrity** (WARN, from `login.defs ENV_SUPATH` / sudoers
+`secure_path`). Three are INFO-only; the two deducting ones fire only on the
+forged conditions below. Field-verified on two real hosts (both A/B-clean):
+
+*Ubuntu Server 26.04 field pass (0.22.0, 2026-09-27, real, loaded — Wekan/
+microk8s): JSON A/B 0.21.3 ↔ 0.22.0 (`--profile server`) **identical** — score 6,
+same per-domain scores, same WARN/ALERT finding-key set (the new checks emit only
+INFO/OK on this host, no trigger condition). All four forgeable new checks
+round-tripped: **root_path** — `ENV_SUPATH` pointed at a world-writable dir → WARN
+`root_path.dangerous` (names the source `login.defs ENV_SUPATH`), restored → OK
+(this validates the *configured-source* design: BOB reads the file, not the
+ambient `os.environ`); **module_blacklist** — `blacklist dccp` → candidates 11→10,
+restored → 11; **dev_privileged** — `chmod o+w /dev/sda` → INFO world-accessible,
+restored 660 → OK; **suid_audit.writable_suid** — a `chmod 6777` set-id binary →
+✖ ALERT. Hostile: FIFO `/etc/modprobe.d/*.conf` → no-hang. module-sig reads
+"unsigned modules accepted" (INFO). Two honest observations, neither a bug:
+`--fix --apply` **shows** the `chmod go-w` for a writable SUID but does not
+auto-apply it (no native handler — and it never claims success); and under CPU
+starvation the SUID `find` (15 s) timed out once → honest "scan skipped", not a
+hang (the full audit always completed, ~1:48).*
+
+*Fedora 44 Server field pass (0.22.0, 2026-09-27, real, SELinux enforcing +
+firewalld active + dnf/rpm): JSON A/B 0.21.3 ↔ 0.22.0 (`--profile server`)
+**identical** — score 7, same domains, same WARN/ALERT keys. Same four polarity
+round-trips all green (root_path via `ENV_SUPATH`, module_blacklist `blacklist
+sctp` 11→10, dev_privileged `/dev/sda`, suid-writable → ALERT). **SELinux
+precedence re-confirmed on native SELinux** (the 0.21.3 `mac_policy` fix): enforcing
+→ OK, `setenforce 0` → INFO "SELinux permissive" + WARN "No MAC policy actively
+enforcing" — **not** a false "AppArmor" verdict — `setenforce 1` restored. firewalld
+credited (zone FedoraServer); GRUB `/boot/grub2` 0600; FIFO `modprobe.d` no-hang;
+module-sig "unsigned accepted" (INFO). SUID `find` completed here (less loaded) —
+writable-SUID ALERT confirmed live. Box restored (Enforcing, sleep unmasked).*
+
 **Still open:**
 
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
 | awall front-end not recognised | soft | §4 | The Alpine-native firewall builder is not read as a front-end, but the underlying nft/iptables ruleset it generates *is* inspected — so a host with active awall rules is not read as unprotected. Low urgency. |
+| `suid_audit.writable_suid` fix not auto-applied | soft | §9 | The finding shows `chmod go-w <path>` but `--fix --apply` does not run it (no native apply handler); it never claims success. A native chmod handler is a possible post-0.22.x enhancement. |
 
 ---
 © 2026 Cédric Clauzel
