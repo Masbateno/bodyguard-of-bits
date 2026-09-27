@@ -34,7 +34,6 @@ from __future__ import annotations
 import os
 import stat as _stat
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _identity_t
 from bob.scoring import CheckResult
