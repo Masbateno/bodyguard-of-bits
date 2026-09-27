@@ -6,6 +6,86 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.22.0] — 2026-09-27
+
+**A minor release: five new coverage checks.** After 0.21.3 closed the big
+"BOB does not know the distro's mechanism" gaps, this wave returns to the
+original goal — more security coverage without degrading verdict precision.
+Three of the five are INFO-only (no scoring change on any host); two can deduct
+on an affected host. Check selection followed a coverage review that was pruned
+against BOB's existing ~58 checks — most generic-checklist candidates
+(secure_boot, auditd, time-sync, service-hardening, …) were already shipped, so
+only the genuine gaps were built.
+
+### 1. Kernel-module blacklist (INFO-only, CIS §3.4)
+
+Companion to `kernel_modules`, not a duplicate: `kernel_modules` flags
+rarely-needed modules that are *loaded*; this one asks whether the ones that are
+*not* loaded are kept from loading (a `blacklist <mod>` or `install <mod>
+/bin/true|false` directive under `/etc/`, `/run/` or `/usr/lib/modprobe.d`). One
+aggregated INFO lists the CIS §3.4 modules (`cramfs`, `freevxfs`, `jffs2`, `hfs`,
+`hfsplus`, `udf`, `dccp`, `sctp`, `rds`, `tipc`, `usb_storage`) that are neither
+loaded nor blacklisted — never one finding per module, never a deduction.
+`squashfs` is deliberately excluded (snap mounts it on Ubuntu). A loaded module
+is left to the kernel-module audit. Guard `test_v0220_module_blacklist.py`,
+mutation `module_blacklist/candidate-not-flagged`.
+
+### 2. Privileged `/dev` device nodes (INFO-only)
+
+World access on the nodes that bypass filesystem permissions: `/dev/mem`,
+`/dev/kmem`, `/dev/port` and raw block devices (`/dev/sd*`, `/dev/nvme*`, …).
+`stat`-only — it never opens a node, so a hostile device cannot block the audit,
+and it never walks the filesystem (`find / -type b,c` is too costly for a default
+run). One aggregated INFO; the defaults are tight, so it is silent on a normal
+host. Privileged `/dev` *mounts* in a container stay `container_security`'s job.
+Guard `test_v0220_dev_privileged.py`, mutation
+`dev_privileged/world-access-not-flagged`.
+
+### 3. Module-signature enforcement (INFO-only, folded into kexec/lockdown)
+
+The kexec/lockdown check now also reads `module.sig_enforce`
+(`/sys/module/module/parameters/sig_enforce`) and `kernel.modules_disabled`:
+`modules_disabled=1` (no module loads at all) or signature enforcement on →
+OK; unsigned modules accepted → INFO; interface absent → INFO unknown. Reported,
+not penalised — enforcing breaks unsigned out-of-tree/DKMS modules (NVIDIA,
+VirtualBox), so it is a deliberate choice. Mutation
+`kexec_lockdown/module-sig-enforced-misread`.
+
+### 4. World/group-writable set-id binaries (ALERT −3)
+
+A SUID/SGID binary writable by anyone but its owner is an immediate local root:
+overwrite it, wait for it to run as its owner. Added to `suid_audit` as the most
+severe SUID class, reported even for whitelisted names (a writable
+`/usr/bin/passwd` is not safe because "passwd" is expected), with a `chmod go-w`
+fix. `--explain suid_audit.writable_suid`. Mutation
+`suid_audit/writable-setid-not-flagged`.
+
+### 5. Root PATH integrity (WARN −1)
+
+A world-writable directory in root's PATH, or a `.`/empty/relative component,
+lets a non-root user choose which binary root runs for a bare command name — a
+classic privilege escalation. BOB audits the **configured** root PATH from files
+(`login.defs ENV_SUPATH`, sudoers `secure_path`), not the ambient
+`os.environ["PATH"]`, so the verdict is reproducible and independent of how the
+audit was launched; if neither source exists it says the PATH is unknown rather
+than guess. `--explain root_path.dangerous`. Guard `test_v0220_root_path.py`,
+mutation `root_path/world-writable-component-not-flagged`.
+
+### Counters, field test
+
+The `--explain` set goes 206 → **208 keys / 57 prefixes**, CIS references 206 →
+208, locale keys 2606 → 2640, filterable sections 47 → **50**, check
+modules 56 → 59, mutations 290 → 295. **Field-tested in local VMs** —
+Arch Linux (glibc, pacman, systemd, Python 3.14) and Alpine (musl, apk, Python
+3.12): every check oracle-matched, forge→detect→restore round-trips passed on
+both (blacklist + `install /bin/true`; `/dev/vda` world-write/read; a
+world-writable PATH dir), and a full audit rendered clean in EN and FR with no
+traceback and no i18n sentinel. Alpine additionally exercised the "loaded module
+is excluded" path with real data (`usb_storage` is loaded there). **Tests**
+11119 → **11199**.
+
+---
+
 ## [0.21.3] — 2026-09-26
 
 **A patch release: BOB reads the distribution's *real* configuration, not just

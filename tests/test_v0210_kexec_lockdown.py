@@ -56,6 +56,45 @@ class TestLockdown:
         assert "kexec_lockdown.lockdown_unknown" in _keys(r)
 
 
+class TestModuleTrust:
+    def test_sig_enforced_is_ok(self):
+        """The mutation guard: sig_enforce=Y must read as 'unsigned refused'."""
+        r = check_kexec_lockdown(KexecLockdownSnapshot(sig_enforce="Y"))
+        assert _key_levels(r)["kexec_lockdown.sig_enforced"] == "ok"
+
+    def test_sig_not_enforced_is_info(self):
+        r = check_kexec_lockdown(KexecLockdownSnapshot(sig_enforce="N"))
+        assert _key_levels(r)["kexec_lockdown.sig_not_enforced"] == "info"
+        assert not r.deductions
+
+    def test_modules_disabled_is_ok_and_subsumes_signature(self):
+        r = check_kexec_lockdown(
+            KexecLockdownSnapshot(modules_disabled=1, sig_enforce="N"))
+        levels = _key_levels(r)
+        assert levels["kexec_lockdown.modules_disabled"] == "ok"
+        # the strongest state wins — no separate signature finding
+        assert "kexec_lockdown.sig_not_enforced" not in levels
+
+    def test_signature_interface_absent_is_info_unknown(self):
+        r = check_kexec_lockdown(
+            KexecLockdownSnapshot(sig_enforce=None, modules_disabled=0))
+        assert "kexec_lockdown.sig_unknown" in _keys(r)
+
+    def test_from_system_reads_module_trust(self, monkeypatch):
+        monkeypatch.setattr(kl, "path_exists", lambda p: True)
+        def fake(p, **kw):
+            s = str(p)
+            if s.endswith("sig_enforce"):
+                return "Y\n"
+            if s.endswith("modules_disabled"):
+                return "0\n"
+            raise OSError
+        monkeypatch.setattr(kl, "read_text_capped", fake)
+        snap = KexecLockdownSnapshot.from_system()
+        assert snap.sig_enforce == "Y"
+        assert snap.modules_disabled == 0
+
+
 class TestFromSystem:
     def test_parses_bracketed_lockdown(self, monkeypatch):
         monkeypatch.setattr(kl, "path_exists", lambda p: True)

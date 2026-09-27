@@ -70,6 +70,9 @@ from bob.checks.grub import GrubSnapshot, check_grub
 from bob.checks.mount_hardening import MountHardeningSnapshot, check_mount_hardening
 from bob.checks.core_dumps import CoreDumpsSnapshot, check_core_dumps
 from bob.checks.kexec_lockdown import KexecLockdownSnapshot, check_kexec_lockdown
+from bob.checks.module_blacklist import ModuleBlacklistSnapshot, check_module_blacklist
+from bob.checks.dev_privileged import DevPrivilegedSnapshot, check_dev_privileged
+from bob.checks.root_path import RootPathSnapshot, check_root_path
 from bob.checks.faillock import FaillockSnapshot, check_faillock
 from bob.checks.disk_encryption import DiskEncryptionSnapshot, check_disk_encryption
 from bob.checks.polkit import PolkitSnapshot, check_polkit
@@ -132,6 +135,9 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("docker_hardening",  False),
     _Section("log_rotation",      False),
     _Section("kernel_modules",    False),
+    _Section("module_blacklist",  False),
+    _Section("dev_privileged",    False),
+    _Section("root_path",         False),
     _Section("mac_policy",        False),
     _Section("cron",              False),
     _Section("services_health",   False),
@@ -964,6 +970,15 @@ def run_checks(
 
     # ---- CHECK 14 — Kernel module audit ----
     _sec("kernel_modules", KernelModulesSnapshot.from_system, check_kernel_modules, profile_name=_pname)
+
+    # ---- CHECK — Kernel-module blacklist (defense-in-depth, INFO-only) ----
+    _sec("module_blacklist", ModuleBlacklistSnapshot.from_system, check_module_blacklist)
+
+    # ---- CHECK — Privileged /dev device-node permissions (INFO-only) ----
+    _sec("dev_privileged", DevPrivilegedSnapshot.from_system, check_dev_privileged)
+
+    # ---- CHECK — Root PATH hardening (configured PATH sources) ----
+    _sec("root_path", RootPathSnapshot.from_system, check_root_path)
 
     # ---- CHECK 34 — MAC policy (AppArmor / SELinux) ----
     _sec("mac_policy", MacPolicySnapshot.from_system, check_mac_policy, profile_name=_pname)

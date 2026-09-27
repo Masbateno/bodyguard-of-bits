@@ -117,6 +117,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "file_perms.sudoers_nopasswd_all",
         "file_perms.doas_nopass_all",
         "file_perms.ssh_host_key_perms",
+        "root_path.dangerous",
     ]),
     ("Updates", [
         "updates.security_pending",
@@ -352,6 +353,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("SUID / SGID", [
         "suid_audit.unexpected_suid",
         "suid_audit.unowned_suid",
+        "suid_audit.writable_suid",
         "suid_audit.unexpected_sgid",
     ]),
     ("Risk", [

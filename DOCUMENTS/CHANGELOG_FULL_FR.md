@@ -6,6 +6,87 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.22.0] — 27-09-2026
+
+**Une version mineure : cinq nouveaux checks de couverture.** Après que 0.21.3 a
+fermé les gros angles morts « BOB ne connaît pas le mécanisme de la distro »,
+cette vague revient à l'objectif initial — plus de couverture sécurité sans
+dégrader la précision du verdict. Trois des cinq sont INFO-only (aucun changement
+de score) ; deux peuvent déduire sur un hôte concerné. Le choix des checks a suivi
+une revue de couverture élaguée contre les ~58 checks existants — la plupart des
+candidats de checklist générique (secure_boot, auditd, synchro horaire,
+durcissement de service, …) étaient déjà livrés, donc seuls les vrais manques ont
+été construits.
+
+### 1. Blacklist de modules noyau (INFO-only, CIS §3.4)
+
+Compagnon de `kernel_modules`, pas un doublon : `kernel_modules` signale les
+modules rarement utiles *chargés* ; celui-ci demande si ceux qui ne sont *pas*
+chargés sont empêchés de charger (une directive `blacklist <mod>` ou `install
+<mod> /bin/true|false` sous `/etc/`, `/run/` ou `/usr/lib/modprobe.d`). Un seul
+INFO agrégé liste les modules CIS §3.4 (`cramfs`, `freevxfs`, `jffs2`, `hfs`,
+`hfsplus`, `udf`, `dccp`, `sctp`, `rds`, `tipc`, `usb_storage`) ni chargés ni
+blacklistés — jamais un finding par module, jamais de déduction. `squashfs` est
+exclu à dessein (snap le monte sur Ubuntu). Un module chargé reste l'affaire de
+l'audit des modules. Garde `test_v0220_module_blacklist.py`, mutation
+`module_blacklist/candidate-not-flagged`.
+
+### 2. Nœuds `/dev` privilégiés (INFO-only)
+
+Accès monde sur les nœuds qui contournent les permissions du système de fichiers :
+`/dev/mem`, `/dev/kmem`, `/dev/port` et disques bruts (`/dev/sd*`, `/dev/nvme*`,
+…). `stat`-only — n'ouvre jamais un nœud, donc un périphérique hostile ne peut
+bloquer l'audit, et ne parcourt jamais le système de fichiers (`find / -type b,c`
+est trop coûteux par défaut). Un seul INFO agrégé ; les défauts étant stricts, il
+est silencieux sur un hôte normal. Les *montages* `/dev` privilégiés en conteneur
+restent l'affaire de `container_security`. Garde `test_v0220_dev_privileged.py`,
+mutation `dev_privileged/world-access-not-flagged`.
+
+### 3. Enforcement de signature de module (INFO-only, intégré à kexec/lockdown)
+
+Le check kexec/lockdown lit désormais aussi `module.sig_enforce`
+(`/sys/module/module/parameters/sig_enforce`) et `kernel.modules_disabled` :
+`modules_disabled=1` (aucun module ne charge) ou enforcement de signature actif →
+OK ; modules non signés acceptés → INFO ; interface absente → INFO unknown.
+Signalé, pas pénalisé — l'enforcement casse les modules hors-arbre/DKMS non signés
+(NVIDIA, VirtualBox), donc c'est un choix délibéré. Mutation
+`kexec_lockdown/module-sig-enforced-misread`.
+
+### 4. Binaires set-id modifiables par groupe/autres (ALERT −3)
+
+Un binaire SUID/SGID modifiable par quelqu'un d'autre que son propriétaire est un
+root local immédiat : l'écraser, attendre qu'il s'exécute en tant que son
+propriétaire. Ajouté à `suid_audit` comme la classe SUID la plus grave, signalé
+même pour les noms en whitelist (un `/usr/bin/passwd` modifiable n'est pas sûr
+parce que « passwd » est attendu), avec un fix `chmod go-w`. `--explain
+suid_audit.writable_suid`. Mutation `suid_audit/writable-setid-not-flagged`.
+
+### 5. Intégrité du PATH de root (WARN −1)
+
+Un répertoire world-writable dans le PATH de root, ou un composant `.`/vide/
+relatif, laisse un non-root choisir quel binaire root exécute pour un nom de
+commande nu — une escalade classique. BOB audite le PATH root **configuré** dans
+des fichiers (`ENV_SUPATH` de login.defs, `secure_path` de sudoers), pas l'
+`os.environ["PATH"]` ambiant, donc le verdict est reproductible et indépendant du
+lancement ; si aucune source n'existe, il dit le PATH inconnu plutôt que deviner.
+`--explain root_path.dangerous`. Garde `test_v0220_root_path.py`, mutation
+`root_path/world-writable-component-not-flagged`.
+
+### Compteurs, field test
+
+L'ensemble `--explain` passe de 206 à **208 clés / 57 préfixes**, les références
+CIS de 206 à **208**, les clés locale de 2606 à **2640**, les sections filtrables
+de 47 à **50**, les modules de vérification de 56 à **59**, les mutations de 290 à
+**295**. **Field-testé en VM locale** — Arch Linux (glibc, pacman, systemd, Python
+3.14) et Alpine (musl, apk, Python 3.12) : chaque check conforme aux oracles,
+allers-retours forge→détecte→restaure passés sur les deux (blacklist + `install
+/bin/true` ; `/dev/vda` écriture/lecture monde ; un répertoire de PATH
+world-writable), et un audit complet rendu propre en EN et FR sans traceback ni
+sentinelle i18n. Alpine a en plus exercé le chemin « module chargé exclu » avec
+des données réelles (`usb_storage` y est chargé). **Tests** 11119 → **11199**.
+
+---
+
 ## [0.21.3] — 26-09-2026
 
 **Un correctif : BOB lit la *vraie* configuration de la distribution, pas

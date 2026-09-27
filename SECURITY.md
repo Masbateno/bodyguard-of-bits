@@ -9,7 +9,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.21.x         | ✅ current          |
+| 0.22.x         | ✅ current          |
+| 0.21.x         | ❌ end of life      |
 | 0.20.x         | ❌ end of life      |
 | 0.19.x         | ❌ end of life      |
 | 0.18.x         | ❌ end of life      |
@@ -24,11 +25,11 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.21.x+1`. A breaking change bumps the minor (`0.22.0`).
+Patches release as `0.22.x+1`. A breaking change bumps the minor (`0.23.0`).
 
-**v0.20.x is end-of-life as of the day v0.21.0 ships**, per the "latest minor
-line only" policy above. No security fixes will be backported. Users on v0.20.x
-must `pipx upgrade bodyguard-of-bits` to v0.21.x.
+**v0.21.x is end-of-life as of the day 0.22.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.21.x
+must `pipx upgrade bodyguard-of-bits` to v0.22.x.
 
 The upgrade changes what the score *means* when BOB cannot read part of the
 host. Until v0.16.0 the score was a sum over the checks that ran, and a check

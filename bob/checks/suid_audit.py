@@ -159,6 +159,13 @@ class SuidSnapshot:
     unexpected_sgid:  list[str] = field(default_factory=list)
     whitelisted_suid: list[str] = field(default_factory=list)
     unowned_suid:     list[str] = field(default_factory=list)
+    # A SUID/SGID binary that is writable by group or other is an immediate
+    # privilege escalation — anyone who can write it runs their own code with
+    # its owner's (usually root's) privileges. This is orthogonal to the
+    # whitelist: a *known* SUID binary that has become writable is still
+    # dangerous, so it is collected from every SUID/SGID file, not just the
+    # unexpected ones.
+    writable_suid:    list[str] = field(default_factory=list)
     scan_skipped:     bool      = False
     scan_partial:     bool      = False
 
@@ -172,8 +179,9 @@ class SuidSnapshot:
         One pass finds all files with either bit set; Python classifies each
         result via os.stat() — halving filesystem traversal time vs two passes.
         """
-        suid_paths:  list[str] = []
-        sgid_paths:  list[str] = []
+        suid_paths:    list[str] = []
+        sgid_paths:    list[str] = []
+        writable_suid: list[str] = []
         scan_skipped = False
         scan_partial = False
 
@@ -204,6 +212,11 @@ class SuidSnapshot:
                         suid_paths.append(path)
                     elif has_sgid and not has_suid:
                         sgid_paths.append(path)
+                    # Group/other-writable set-id binary = immediate privesc,
+                    # independent of the whitelist above.
+                    if (has_suid or has_sgid) and (
+                            mode & (stat.S_IWGRP | stat.S_IWOTH)):
+                        writable_suid.append(path)
                 except OSError:
                     pass
             # find exits non-zero when it could not descend somewhere, and
@@ -250,6 +263,7 @@ class SuidSnapshot:
             unexpected_suid=sorted(unexpected_suid),
             unexpected_sgid=sorted(unexpected_sgid),
             whitelisted_suid=sorted(whitelisted_suid),
+            writable_suid=sorted(writable_suid),
             scan_skipped=scan_skipped,
             scan_partial=scan_partial,
         )
@@ -279,6 +293,29 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
             key="suid_audit.scan_skipped",
         )
         return result
+
+    # --- Group/other-writable set-id binaries (most severe) ----------------
+    # A SUID/SGID binary anyone but its owner can write is a direct route to
+    # that owner's privileges: overwrite it, wait for someone (or something) to
+    # run it. This is reported even for whitelisted names — a writable
+    # /usr/bin/passwd is not safe because "passwd" is expected.
+    if snapshot.writable_suid:
+        w_str = ", ".join(snapshot.writable_suid[:10])
+        w_suffix = (f" (+{len(snapshot.writable_suid) - 10} more)"
+                    if len(snapshot.writable_suid) > 10 else "")
+        result.alert_with_deduction(
+            key="suid_audit.writable_suid",
+            message=_t("suid_audit.writable_suid",
+                       count=len(snapshot.writable_suid),
+                       paths=w_str + w_suffix),
+            reason=_t("suid_audit.writable_suid_reason",
+                      count=len(snapshot.writable_suid)),
+            points=3,
+            detail=_t("suid_audit.writable_suid_detail"),
+            cmd=" && ".join(f"chmod go-w {shlex.quote(p)}"
+                            for p in snapshot.writable_suid[:5]),
+            cmd_type="fix",
+        )
 
     # --- Unexpected SUID ---
     if not snapshot.unexpected_suid:

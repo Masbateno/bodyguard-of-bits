@@ -38,7 +38,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | Module | Role |
 |---|---|
 | `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~995 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (47 filterable + 10 always-on sections), `_section_enabled()` (~1115 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (50 filterable + 10 always-on sections), `_section_enabled()` (~1115 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `~/.config/bob/config.conf`, `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,8 +54,8 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 206-key canonical list in 56 prefixes, profile variants (71 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
-| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (206 entries: 111 formal CIS, 88 best-practice, 7 Docker) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 208-key canonical list in 57 prefixes, profile variants (71 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
+| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (208 entries: 112 formal CIS, 89 best-practice, 7 Docker) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 6-domain attribution (`backup` → `health_resilience`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
 | `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 6 built-in compound-risk rules |
@@ -152,7 +152,7 @@ bob/
 ├── csv_output.py        # CSV output formatter (--format csv)
 ├── display.py           # Terminal output helpers (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→health_resilience attribution
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 206 keys in 56 prefixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 208 keys in 57 prefixes
 ├── exposure.py          # Port exposure grouping — interface scope + risk level
 ├── fixes.py             # Fix mode UI (interactive + auto-fix)
 ├── formatter.py         # bob.formatter — locale-independent rendering via Finding.template_vars (v0.4.1)
@@ -171,7 +171,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, HTML email
-├── runner.py            # Audit execution engine — run_checks() with _sec section closure (47 filterable + 10 always-on)
+├── runner.py            # Audit execution engine — run_checks() with _sec section closure (50 filterable + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # --watch=N mode — re-run audit every N seconds
@@ -270,7 +270,7 @@ bob/
 │   └── polkit.py               # PolkitSnapshot + check_polkit() — writable polkit rules (v0.21.0)
 ├── data/
 │   ├── services.json            # Declarative registry of the 38 services
-│   ├── cis_refs.json            # CIS benchmark references — 206 entries {ref, code}
+│   ├── cis_refs.json            # CIS benchmark references — 208 entries {ref, code}
 │   └── bob.bash-completion  # Bash completion script
 └── locales/
     ├── en.json          # English translation keys
@@ -502,8 +502,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Expected output:
 ```
-EN keys: 2606
-FR keys: 2606
+EN keys: 2640
+FR keys: 2640
 Missing in FR: none
 ```
 
@@ -519,7 +519,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2606 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2640 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

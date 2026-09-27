@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.21.3
+Version:        0.22.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,16 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Sep 27 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.22.0-1
+- Minor: five new coverage checks — kernel-module blacklist (INFO, CIS 3.4),
+  privileged /dev nodes (INFO), module-signature enforcement (INFO, folded into
+  the kexec/lockdown check), world/group-writable set-id binaries (ALERT), and
+  root PATH integrity (WARN, from login.defs ENV_SUPATH and sudoers secure_path).
+  Three are INFO-only; two can deduct on an affected host.
+- Field-tested in local VMs (Arch, Alpine). Explain 206->208, CIS refs 206->208,
+  locale 2606->2640, filterable sections 47->50, mutations 290->295,
+  tests 11119->11199.
+
 * Sat Sep 26 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.21.3-1
 - Patch: BOB reads the distribution's real config paths, not just Debian's.
   Four distro-mechanism gaps from the v0.21.2 field campaign (openSUSE Leap 16,

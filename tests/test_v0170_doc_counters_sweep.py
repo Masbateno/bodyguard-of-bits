@@ -121,6 +121,17 @@ _COINCIDENCES = {
     # the next time a prefix is added; neither figure constrains the other.
     "audit",
     "derniers",
+    # SNAPSHOT: "59 outgoing imports" is the out-degree of the busiest module in
+    # the dependency section, which v0.22.0 made equal to the check-module count
+    # (59) when root_path became the 59th module. Unrelated graph metric.
+    "outgoing",
+    # SECURITY: "~58 binaries spanning …" / FR "~58 binaires couvrant …" is the
+    # approximate size of the AppArmor profile's exec allow-list, which v0.22.0
+    # made equal to the check-module count (58) when dev_privileged became the
+    # 58th module. Unrelated counters; the allow-list's canonical source is the
+    # packaged profile, not a figure BOB derives.
+    "binaries",
+    "binaires",
 }
 
 _PATTERN = re.compile(

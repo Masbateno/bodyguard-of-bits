@@ -181,6 +181,8 @@ class TestExplainPrefixDiscipline:
         # v0.21.0 additions
         "grub", "cups", "mount_hardening", "faillock", "disk_encryption",
         "polkit",
+        # v0.22.0 additions — root PATH hardening (suid_audit already known)
+        "root_path",
     })
 
     @pytest.mark.parametrize("key", EXPLAIN_KEYS)
@@ -260,7 +262,9 @@ class TestExplainAuditInvariants:
         # disk_encryption.root_unencrypted, polkit.rule_writable.
         # v0.21.1 → 205: five backfilled --explain entries.
         # v0.21.3 → 206: file_perms.doas_nopass_all (doas audit, Alpine/OpenBSD).
-        assert len(EXPLAIN_KEYS) == 206, (
+        # v0.22.0 → 208: suid_audit.writable_suid (group/other-writable set-id
+        # binary = local root) and root_path.dangerous (unsafe root PATH).
+        assert len(EXPLAIN_KEYS) == 208, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."
@@ -276,7 +280,8 @@ class TestExplainAuditInvariants:
         # v0.17.0 → 50: raspberry_pi.
         # v0.21.0 → 56: grub, cups, mount_hardening, faillock, disk_encryption,
         # polkit.
-        assert len(prefixes) == 56, (
+        # v0.22.0 → 57: root_path (suid_audit.writable_suid reuses an existing prefix).
+        assert len(prefixes) == 57, (
             f"Prefix count drifted from v0.8.0 baseline 45 to "
             f"{len(prefixes)}. Update KNOWN_PREFIXES + audit doc."
         )

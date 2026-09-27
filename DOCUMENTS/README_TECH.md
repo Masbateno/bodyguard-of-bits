@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.21.3-brightgreen)
+![Release](https://img.shields.io/badge/version-0.22.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -16,7 +16,7 @@
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
-BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check sections across 6 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
+BOB is a Linux hardening auditor for sysadmins and power users. It runs 50 check sections across 6 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
 
 ---
 
@@ -30,7 +30,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 - **Contextual scoring** — network context detection (direct public IP vs NAT); penalties are heavier on internet-exposed machines (an uncovered open port goes 1 → 2 points; a high/critical exposed service 2 → 3); firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
-- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 206 entries (111 formal CIS, 88 best-practice, 7 Docker)
+- **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 208 entries (112 formal CIS, 89 best-practice, 7 Docker)
 - **6 thematic group headers** — output organised into: FIREWALL & NETWORK / EXPOSURE & SERVICES / ACCESS CONTROL / SYSTEM HARDENING / HEALTH & RESILIENCE / THREAT DETECTION
 - **`--target N`** — score target (1–10); shown in the summary box; returns exit code 4 when score < target, **and since v0.16.2 whenever anything could not be read** — a score nothing verified cannot satisfy a gate (CI-ready). v0.16.0 said "whenever the score is an upper bound"; that stopped covering the case where blindness removes a whole scoring domain, which is the least trustworthy run of all
 
@@ -96,12 +96,12 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 47 check
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
 - **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail. **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.17.1. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking. Since v0.18.0 the sysctl hardenings are applied **by BOB's own code, not by a shell**: set, persisted with exactly one line per key, then **read back** before BOB claims anything — the one-liner on screen is unchanged for a human to paste. Two unattended applications are refused outright because they can take a remote host away from you — a default-deny firewall policy (`iptables -P INPUT DROP` and its `ip6tables`, `-nft`, `-legacy` and `nft … policy drop` spellings) — and a fix that grants access (`ufw allow`) always runs before one that withdraws it (`ufw enable`)
-- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 206 explainable keys across 56 prefixes; 114 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 91 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
+- **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 208 explainable keys across 57 prefixes; 115 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 93 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
 - **Domain scores** — per-domain 0–10 sub-scores, one per on-screen group (Firewall & Network / Exposure & Services / Access Control / System Hardening / Health & Resilience / Threat Detection); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases. Since v0.18.0 the CSV's last column is `key`, the finding's stable identifier — the same one `--explain`, `--ignore` and the JSON carry; the fifteen columns before it keep their positions
-- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 57 section names — the 47 filterable, plus the 10 always-on ones it also lists
+- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 60 section names — the 50 filterable, plus the 10 always-on ones it also lists
 - **`--output-dir PATH`** — override report save directory for the current run; no persist
 - **Comparative report** — baseline saved after each audit (`~/.config/bob/last_baseline.json`); next run shows score delta, alert/warn changes, new/closed ports, started/stopped services; new and resolved ALERT+WARN finding keys tracked separately. A file that is not a BOB baseline (no `timestamp` and `score`) is refused by name rather than compared against as a baseline of zero
 - **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 1000-entry rotation. A line whose score or timestamp BOB cannot read is skipped, never repaired into a figure it did not measure
@@ -385,7 +385,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.21.3  │  Linux hardening auditor                                     ║
+║  BOB 0.22.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -838,7 +838,7 @@ The `findings[*].key` and `deductions[*].key` are part of the `--explain` key se
 
 ### EXPLAIN_KEYS audit
 
-As of v0.11.x, the `--explain` key set contains **206 keys** across **56 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
+As of v0.11.x, the `--explain` key set contains **208 keys** across **57 prefixes**. The canonical naming convention is enforced by `tests/test_explain_naming_convention.py`:
 
 - **Pattern:** `<prefix>.<finding_id>` (single dot, snake_case)
 - **Exceptions:** `file_perms.<path>.<finding_id>` (path-segment middles) and `services.{exposure,state}.<finding_id>` (two-tier taxonomy), both resolved by `bob.explain.normalize_key`
@@ -847,7 +847,7 @@ As of v0.11.x, the `--explain` key set contains **206 keys** across **56 prefixe
 - **Additions:** new keys may be added in any minor release
 - **Coverage guard:** every WARN/ALERT finding emitted by `bob/checks/*.py` must have an `EXPLAIN_KEYS` entry or be listed in `tests/test_explain_coverage.py::_KNOWN_GAPS` (currently empty — v0.8.0 drift batch backfilled 51 missing entries)
 
-Prefix vocabulary (56 prefixes, alphabetically): `auditd, auth_log, backup, clamav, cloud_context, container_security, cron, cups, ddns, disk, disk_encryption, docker, docker_hardening, fail2ban, faillock, file_integrity, file_perms, firewall, firewall_drivers, firewall_iptables, firewall_rules, firmware, grub, hardening, ipv6, kernel_hardening, kernel_modules, log_rotation, logs, mac_policy, memory, mount_hardening, network_context, ntp, password_policy, plugin, polkit, ports, prerequisites, raspberry_pi, risk, rootkit, samba, secure_boot, services, services_health, smtp, socket_units, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
+Prefix vocabulary (57 prefixes, alphabetically): `auditd, auth_log, backup, clamav, cloud_context, container_security, cron, cups, ddns, disk, disk_encryption, docker, docker_hardening, fail2ban, faillock, file_integrity, file_perms, firewall, firewall_drivers, firewall_iptables, firewall_rules, firmware, grub, hardening, ipv6, kernel_hardening, kernel_modules, log_rotation, logs, mac_policy, memory, mount_hardening, network_context, ntp, password_policy, plugin, polkit, ports, prerequisites, raspberry_pi, risk, root_path, rootkit, samba, secure_boot, services, services_health, smtp, socket_units, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
 
 Adding a new prefix in a future release fails `TestExplainPrefixDiscipline::test_key_prefix_is_known` until the maintainer explicitly updates `KNOWN_PREFIXES` — surfacing the addition as a deliberate decision in code review.
 

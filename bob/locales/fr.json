@@ -48,6 +48,9 @@
     "file_perms": "FICHIERS SENSIBLES & SUDOERS",
     "updates": "MISES À JOUR SYSTÈME",
     "kernel_modules": "AUDIT DES MODULES NOYAU",
+    "module_blacklist": "BLACKLIST DES MODULES NOYAU",
+    "dev_privileged": "NŒUDS /dev PRIVILÉGIÉS",
+    "root_path": "PATH DE ROOT",
     "kernel_hardening": "DURCISSEMENT NOYAU",
     "user_accounts": "AUDIT DES COMPTES UTILISATEURS",
     "password_policy": "AUDIT DE LA POLITIQUE DES MOTS DE PASSE",
@@ -101,6 +104,9 @@
       "ipv6": "Cohérence IPv6 — UFW IPv6 vs état noyau, règles par port",
       "kernel_hardening": "Durcissement noyau — ASLR, ptrace, dumps SUID, kptr_restrict",
       "kernel_modules": "Modules noyau à risque chargés — systèmes de fichiers exotiques, protocoles réseau",
+      "module_blacklist": "Modules rarement utiles empêchés de charger — directives blacklist / install (défense en profondeur)",
+      "dev_privileged": "Nœuds /dev privilégiés — accès monde sur /dev/mem, /dev/port et disques bruts (INFO-only)",
+      "root_path": "Intégrité du PATH de root — PATH configuré (login.defs, sudoers) sans composant world-writable / '.' / relatif",
       "log_rotation": "Rotation des logs — configuration logrotate, stockage persistant journald",
       "mac_policy": "Politique MAC — profils AppArmor / SELinux + statut enforce",
       "memory": "Mémoire + swap — swappiness, taille swap, sensibilité usure SSD",
@@ -1318,6 +1324,9 @@
     "unowned_suid_reason": "{count} binaire(s) SUID qu'aucun gestionnaire de paquets ne revendique",
     "unowned_suid_detail": "Tous les autres binaires SUID de cet hôte y ont été placés par un paquet. Pas ceux-là : le gestionnaire de paquets a été interrogé et a répondu qu'aucun ne les livre. C'est la forme que prend une escalade de privilèges laissée derrière — un binaire appartenant à root, qui s'exécute en root pour n'importe qui, installé par autre chose que la distribution. Cela peut rester légitime : logiciel compilé localement, installeur d'un éditeur, `chmod u+s` délibéré. BOB ne sait pas distinguer ces cas de l'autre, et c'est pourquoi il le rapporte au lieu de le trancher. Vérifiez chacun contre ce que vous savez avoir installé : stat <chemin>",
     "unexpected_suid_reason": "{count} binaire(s) SUID inattendu(s) détecté(s)",
+    "writable_suid": "{count} binaire(s) SUID/SGID modifiable(s) par groupe/autres — quiconque peut les écrire exécute du code en tant que leur propriétaire : {paths}",
+    "writable_suid_reason": "un binaire set-id modifiable par quelqu'un d'autre que son propriétaire est une escalade de privilèges immédiate",
+    "writable_suid_detail": "Un binaire SUID (ou SGID) s'exécute avec les privilèges de son propriétaire — en général root. S'il est aussi modifiable par le groupe ou les autres, quiconque a ce droit d'écriture peut remplacer son contenu et faire exécuter son propre code en root au prochain lancement. Ce n'est pas une subtilité de durcissement, c'est un root local direct : écraser, puis déclencher. C'est signalé pour tout binaire set-id, en whitelist ou non — un /usr/bin/passwd modifiable n'est pas sûr sous prétexte que « passwd » est un nom attendu. Restaurer l'écriture propriétaire seul : chmod go-w <chemin> (et chercher comment le bit d'écriture est arrivé — un binaire normal ne devient pas modifiable par le groupe tout seul).",
     "unexpected_sgid": "{count} binaire(s) SGID inattendu(s) : {paths}",
     "unexpected_sgid_detail": "Les binaires SGID s'exécutent avec les privilèges du groupe du fichier. Moins dangereux que SUID, mais méritent une vérification.",
     "whitelisted": "{count} binaire(s) SUID ignoré(s) par la liste blanche utilisateur : {paths}"
@@ -2977,6 +2986,13 @@
         "how": "1. Désactiver les core dumps SUID :\n   sudo sysctl -w fs.suid_dumpable=0\n   grep -qxF 'fs.suid_dumpable = 0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.suid_dumpable = 0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Vérifier :\n   cat /proc/sys/fs/suid_dumpable  # doit retourner 0"
       }
     },
+    "root_path": {
+      "dangerous": {
+        "title": "Un composant dangereux dans le PATH de root",
+        "why": "Quand root lance un nom de commande nu (`ls`, pas `/bin/ls`), le shell parcourt les répertoires du PATH dans l'ordre et exécute la première correspondance. Si l'un de ces répertoires est modifiable par un utilisateur non-root — un répertoire world-writable, ou `.`/vide/relatif, qui signifient « le répertoire courant » — cet utilisateur peut y planter un binaire portant un nom courant et le faire exécuter en root au prochain appel de cette commande par root. C'est l'une des escalades de privilèges locales les plus anciennes et fiables, et elle ne demande aucun exploit : juste un accès en écriture à un répertoire parcouru trop tôt.\n\nBOB lit le PATH root configuré dans des fichiers (ENV_SUPATH de login.defs, secure_path de sudoers), pas dans son propre environnement, donc le constat porte sur la politique du système, pas sur la façon dont cet audit a été lancé.",
+        "how": "1. Repérer quelle source porte le mauvais composant — le constat la nomme (ENV_SUPATH de login.defs ou secure_path de sudoers).\n2. Mettre le PATH de root à des répertoires absolus, appartenant à root, non world-writable uniquement, dans l'ordre habituel :\n   /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n   - login.defs : éditer la ligne ENV_SUPATH.\n   - sudoers : éditer `Defaults secure_path=...` avec visudo.\n3. Ne jamais mettre `.`, un composant vide (un `:` en tête, en fin ou doublé) ni un chemin relatif dans le PATH de root.\n4. Si un répertoire doit rester dans le PATH, s'assurer qu'il appartient à root et n'est pas modifiable groupe/autres : chown root:root <rep> && chmod go-w <rep>."
+      }
+    },
     "suid_audit": {
       "unexpected_suid": {
         "title": "Binaire SUID inattendu détecté",
@@ -2988,6 +3004,11 @@
               "why": "Tout binaire SUID installé par une distribution est traçable : le gestionnaire de paquets peut nommer ce qui l'a mis là. Ceux-ci ne le sont pas — le gestionnaire a été interrogé et a répondu qu'aucun paquet ne les possède.\n\nC'est la forme que prend une escalade de privilèges laissée derrière. Un binaire appartenant à root avec le bit setuid s'exécute en root pour qui le lance, et celui qui est arrivé hors du système de paquets est arrivé par un autre moyen : un attaquant, un installeur qui contourne l'empaquetage, ou un `chmod u+s` fait à la main.\n\nCe n'est pas une preuve de compromission. Un logiciel compilé localement, l'installeur d'un éditeur ou un choix administratif délibéré produisent tous des binaires qu'aucun paquet ne possède. BOB ne sait pas les distinguer des autres et n'essaie pas : il rapporte le fait et laisse le jugement là où se trouve la connaissance.\n\nUn binaire dont la propriété n'a pas pu être établie n'est pas rapporté ici. Le silence du gestionnaire de paquets n'est pas une preuve sur le fichier.",
               "how": "1. Regardez chacun d'eux, et quand il est arrivé :\n   stat <chemin>\n2. Demandez-vous si c'est vous qui l'avez mis là. Un logiciel que vous avez compilé ou installé hors du gestionnaire de paquets apparaîtra dans cette liste, et c'est sa place.\n3. Si ce n'est pas vous, considérez l'hôte comme suspect avant de toucher au fichier — ses horodatages sont des preuves.\n4. Si c'est le vôtre et que le bit setuid est inutile, retirez-le :\n   sudo chmod u-s <chemin>\n5. S'il est nécessaire, ajoutez le nom de base à votre liste blanche pour que cette liste reste courte et digne d'être lue."
             },
+      "writable_suid": {
+        "title": "Un binaire SUID/SGID modifiable par le groupe ou les autres",
+        "why": "Un binaire set-id s'exécute avec les privilèges de son propriétaire — pour un binaire SUID root, c'est root. Si le fichier lui-même est modifiable par son groupe ou par tous, n'importe quel utilisateur ayant ce droit d'écriture peut écraser le binaire avec son propre code, qui s'exécute alors en root au prochain lancement (par un utilisateur, une tâche cron, un service). C'est un root local direct et inconditionnel : pas d'exploit, juste écraser-puis-déclencher. C'est le finding SUID le plus grave, signalé même pour les noms en whitelist — un binaire attendu devenu modifiable reste une escalade triviale.",
+        "how": "1. Voir qui peut l'écrire et comment c'est arrivé :\n   stat <chemin>\n2. Restaurer l'écriture propriétaire seul :\n   sudo chmod go-w <chemin>\n3. Enquêter : un binaire packagé ne devient pas modifiable par le groupe/les autres tout seul. Vérifier si un mauvais install, un chmod négligent ou une compromission a posé le bit — les timestamps du fichier sont une preuve.\n4. Si un paquet le possède, le réinstaller restaure les permissions d'origine."
+      },
       "unexpected_sgid": {
         "title": "Binaire SGID inattendu détecté",
         "why": "Les binaires SGID (Set Group ID) s'exécutent avec les privilèges du groupe du fichier. Un binaire SGID inattendu peut donner accès aux ressources de groupes privilégiés (shadow, disk, docker, sudo) à tout utilisateur qui l'exécute — permettant une escalade de privilèges au niveau groupe.",
@@ -3440,6 +3461,26 @@
     "to_disk": "Les core dumps sont écrits sur disque (core_pattern : {pattern})",
     "to_disk_detail": "kernel.core_pattern écrit les crashs vers un chemin du système de fichiers plutôt qu'un handler géré. Un dump écrit dans le répertoire de travail d'un processus peut être world-readable et contenir des secrets détenus par le processus. Envisager de router les dumps vers systemd-coredump, mettre Storage=none, ou une limite `hard core 0` si tu n'en as pas besoin. Aucune déduction — signalé pour information."
   },
+  "module_blacklist": {
+    "unreadable": "Répertoires modprobe.d illisibles — état de la blacklist des modules inconnu",
+    "candidates": "Défense en profondeur : {count} module(s) rarement utile(s) ne sont ni chargés ni blacklistés ({modules})",
+    "candidates_detail": "Ces modules ne sont pas chargés actuellement, mais rien ne les empêche de charger plus tard (aucune ligne `blacklist` ou `install ... /bin/true` sous /etc/modprobe.d). Ils sont rarement utiles sur un serveur (systèmes de fichiers exotiques, protocoles réseau anciens, stockage USB). Blacklister ceux que tu n'utilises pas est de la pure défense en profondeur — CIS §3.4. C'est signalé, pas pénalisé : un module non blacklisté est une opportunité de durcissement, pas une vulnérabilité, et certains sont légitimement utilisés (ex. udf pour les médias optiques). Un module actuellement chargé est signalé par l'audit des modules noyau à la place.",
+    "all_handled": "Chaque module rarement utile est soit blacklisté, soit déjà traité par l'audit des modules noyau"
+  },
+  "dev_privileged": {
+    "unreadable": "/dev n'a pas pu être listé — permissions des device nodes inconnues",
+    "world_accessible": "{count} device node(s) sensible(s) sont accessibles à tous : {nodes}",
+    "world_accessible_detail": "Ces device nodes donnent à n'importe quel utilisateur un moyen de contourner les permissions du système de fichiers : /dev/mem, /dev/kmem et /dev/port exposent la mémoire physique et noyau, et un périphérique bloc brut (/dev/sda, /dev/nvme0n1, …) expose tous les systèmes de fichiers qu'il porte — un accès lecture-monde fuit leur contenu, un accès écriture-monde les corrompt ou les backdoore. Les défauts sont stricts (root:kmem / root:disk, aucun bit monde), donc c'est signalé, pas pénalisé : c'est presque toujours une erreur (un chmod égaré, une règle udev trop large), parfois délibéré (un outil VM/monitoring). Restreindre via une règle udev ou chmod o= et vérifier que rien de légitime ne dépendait de cet accès.",
+    "locked_down": "Aucun device node sensible (/dev/mem, /dev/port, disques bruts) n'est accessible à tous"
+  },
+  "root_path": {
+    "unknown": "Le PATH configuré de root n'a pas pu être déterminé (ni ENV_SUPATH dans login.defs, ni secure_path dans sudoers)",
+    "dangerous": "{count} composant(s) dangereux dans le PATH configuré de root : {entries}",
+    "dangerous_reason": "un composant de PATH world-writable, '.', vide ou relatif laisse un utilisateur non-root décider quel binaire root exécute pour un nom de commande nu",
+    "dangerous_detail": "Chacun de ces composants laisse quelqu'un qui n'est pas root contrôler quel binaire root exécute pour un nom de commande nu. Un répertoire world-writable : n'importe qui y dépose son propre `ls`. Un composant '.' ou vide : le binaire est pris dans le répertoire courant, quel qu'il soit au moment où root lance la commande. Un composant relatif : idem, résolu depuis le répertoire courant. Résultat : une escalade de privilèges directe — planter un fichier, attendre que root lance la commande correspondante. Corriger la source (ENV_SUPATH dans login.defs ou secure_path dans sudoers) pour que le PATH de root ne contienne que des répertoires absolus, appartenant à root, non world-writable, dans l'ordre habituel (/usr/sbin:/usr/bin:/sbin:/bin).",
+    "group_writable": "Le PATH configuré de root contient un répertoire modifiable par un groupe non-root : {entries}",
+    "clean": "Le PATH configuré de root est propre — chaque composant est un répertoire absolu, non world-writable"
+  },
   "kexec_lockdown": {
     "kexec_disabled": "kexec est verrouillé (kernel.kexec_load_disabled=1) — aucun nouveau noyau ne peut être chargé jusqu'au reboot",
     "kexec_allowed": "Le chargement kexec est autorisé (kernel.kexec_load_disabled=0)",
@@ -3449,7 +3490,12 @@
     "lockdown_none": "Le lockdown noyau n'est pas actif",
     "lockdown_none_detail": "Le lockdown noyau restreint même root de modifier le noyau en cours (/dev/mem, modules non signés, kexec d'images non signées). Il est désactivé ici — le défaut sur les systèmes qui n'imposent pas Secure Boot. Il est typiquement activé automatiquement quand Secure Boot est actif, ou via le paramètre noyau lockdown=. Aucune déduction : l'activer peut casser des outils légitimes (certains debuggers, modules propriétaires).",
     "lockdown_absent": "Interface de lockdown noyau absente — ce noyau a été compilé sans le LSM lockdown",
-    "lockdown_unknown": "État du lockdown noyau illisible"
+    "lockdown_unknown": "État du lockdown noyau illisible",
+    "modules_disabled": "Le chargement de modules est totalement désactivé (kernel.modules_disabled=1) — aucun module noyau ne peut charger jusqu'au reboot",
+    "sig_enforced": "Les modules noyau non signés sont refusés (enforcement de signature de module activé)",
+    "sig_not_enforced": "Les modules noyau non signés sont acceptés (enforcement de signature de module désactivé)",
+    "sig_not_enforced_detail": "Sans enforcement de signature, le noyau charge des modules non signés ou signés par une clé non fiable. L'activer (module.sig_enforce=1, ou un noyau compilé avec CONFIG_MODULE_SIG_FORCE, ou Secure Boot + lockdown qui l'activent automatiquement) fait que seuls les modules signés par une clé de confiance chargent — fermant le chemin classique du chargement d'un module malveillant en root. C'est signalé, pas pénalisé : l'activer casse les modules hors-arbre/DKMS (NVIDIA, VirtualBox, certains pilotes Wi-Fi) non signés avec une clé enrôlée, donc c'est un choix délibéré, pas un défaut.",
+    "sig_unknown": "État de l'enforcement de signature de module illisible (le noyau n'expose pas /sys/module/module/parameters/sig_enforce)"
   },
   "faillock": {
     "unknown": "Pile d'auth PAM illisible — état du verrouillage de compte inconnu",

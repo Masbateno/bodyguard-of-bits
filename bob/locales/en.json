@@ -48,6 +48,9 @@
     "file_perms": "SENSITIVE FILES & SUDOERS",
     "updates": "SYSTEM UPDATES",
     "kernel_modules": "KERNEL MODULE AUDIT",
+    "module_blacklist": "KERNEL MODULE BLACKLIST",
+    "dev_privileged": "PRIVILEGED /dev NODES",
+    "root_path": "ROOT PATH",
     "kernel_hardening": "KERNEL HARDENING",
     "user_accounts": "USER ACCOUNT AUDIT",
     "password_policy": "PASSWORD POLICY AUDIT",
@@ -101,6 +104,9 @@
       "ipv6": "IPv6 coherence — UFW IPv6 vs kernel state, per-port rules",
       "kernel_hardening": "Kernel-level hardening — ASLR, ptrace, SUID dumps, kptr_restrict",
       "kernel_modules": "Risky kernel modules loaded — exotic filesystems, network protocols",
+      "module_blacklist": "Rarely-needed modules kept from loading — blacklist / install directives (defense-in-depth)",
+      "dev_privileged": "Privileged /dev nodes — world access on /dev/mem, /dev/port and raw disks (INFO-only)",
+      "root_path": "Root PATH integrity — configured PATH (login.defs, sudoers) free of world-writable / '.' / relative components",
       "log_rotation": "Log rotation — logrotate config, journald persistent storage",
       "mac_policy": "MAC policy — AppArmor / SELinux profiles + enforce status",
       "memory": "Memory + swap — swappiness, swap size, SSD wear sensitivity",
@@ -1318,6 +1324,9 @@
     "unowned_suid_reason": "{count} SUID binary/binaries that no package manager claims",
     "unowned_suid_detail": "Every other SUID binary on this host was put there by a package. These were not: the package manager was asked and answered that nothing ships them. That is the shape a left-behind privilege escalation takes — a root-owned binary that runs as root for anyone, installed by something other than the distribution. It may still be legitimate: locally compiled software, a vendor installer, a deliberate `chmod u+s`. BOB cannot tell those apart from the other kind, which is why this is reported rather than resolved. Check each one against what you know you installed: stat <path>",
     "unexpected_suid_reason": "{count} unexpected SUID binary/binaries found",
+    "writable_suid": "{count} group/other-writable SUID/SGID binary/binaries — anyone who can write them runs code as their owner: {paths}",
+    "writable_suid_reason": "a set-id binary writable by anyone but its owner is an immediate privilege escalation",
+    "writable_suid_detail": "A SUID (or SGID) binary runs with its owner's privileges — usually root's. If it is also writable by group or other, then whoever has that write access can replace its contents and have their own code run as root the next time it executes. This is not a hardening nuance, it is a direct local root: overwrite, then trigger. It is reported for every set-id binary, whitelisted or not — a writable /usr/bin/passwd is not safe just because 'passwd' is an expected name. Restore owner-only write: chmod go-w <path> (and investigate how the write bit got there — a regular binary does not become group-writable on its own).",
     "unexpected_sgid": "{count} unexpected SGID binary/binaries: {paths}",
     "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing.",
     "whitelisted": "{count} SUID binary/binaries suppressed by user whitelist: {paths}"
@@ -2977,6 +2986,13 @@
         "how": "1. Disable SUID core dumps:\n   sudo sysctl -w fs.suid_dumpable=0\n   grep -qxF 'fs.suid_dumpable = 0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.suid_dumpable = 0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n2. Verify:\n   cat /proc/sys/fs/suid_dumpable  # should return 0"
       }
     },
+    "root_path": {
+      "dangerous": {
+        "title": "An unsafe component in root's PATH",
+        "why": "When root runs a bare command name (`ls`, not `/bin/ls`), the shell searches the directories in PATH in order and runs the first match. If any of those directories is one a non-root user can write to — a world-writable directory, or `.`/empty/relative, which mean 'the current directory' — that user can plant a binary with a common name and have it run as root the next time root types that command. It is one of the oldest and most reliable local privilege escalations, and it needs no exploit: just write access to a directory that is searched too early.\n\nBOB reads the configured root PATH from files (login.defs ENV_SUPATH, sudoers secure_path), not from its own environment, so the finding is about the system's policy, not about how this audit happened to be launched.",
+        "how": "1. Find which source carries the bad component — the finding names it (login.defs ENV_SUPATH or sudoers secure_path).\n2. Set root's PATH to absolute, root-owned, non-world-writable directories only, in the usual order:\n   /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n   - login.defs: edit the ENV_SUPATH line.\n   - sudoers: edit `Defaults secure_path=...` with visudo.\n3. Never put `.`, an empty component (a leading, trailing or doubled `:`), or a relative path in root's PATH.\n4. If a directory must stay in PATH, make sure it is root-owned and not group/other-writable: chown root:root <dir> && chmod go-w <dir>."
+      }
+    },
     "suid_audit": {
       "unexpected_suid": {
         "title": "Unexpected SUID binary detected",
@@ -2988,6 +3004,11 @@
               "why": "Every SUID binary a distribution installs is accounted for: the package manager can name what put it there. These cannot be accounted for that way — the manager was asked and answered that no package owns them.\n\nThat is the shape a left-behind privilege escalation takes. A binary owned by root with the setuid bit runs as root for whoever executes it, and one that arrived outside the package system arrived by some other means: an attacker, an installer that bypasses packaging, or a hand-made `chmod u+s`.\n\nIt is not proof of compromise. Locally compiled software, vendor installers and deliberate administrative choices all produce binaries no package owns. BOB cannot tell those apart from the other kind, and does not try — it reports the fact and leaves the judgement where the knowledge is.\n\nA binary whose ownership could not be established is not reported here. Silence from the package manager is not evidence about the file.",
               "how": "1. Look at each one, and at when it arrived:\n   stat <path>\n2. Ask whether you put it there. Software you built or installed outside the package manager will show up in this list, and belongs there.\n3. If you did not put it there, treat the host as suspect before touching the file — its timestamps are evidence.\n4. If it is yours and the setuid bit is not needed, remove it:\n   sudo chmod u-s <path>\n5. If it is yours and the bit is needed, add the basename to your whitelist so this stays a short list worth reading."
             },
+      "writable_suid": {
+        "title": "A SUID/SGID binary writable by group or other",
+        "why": "A set-id binary runs with its owner's privileges — for SUID root binaries, that is root. If the file itself is writable by its group or by everyone, then any user with that write access can overwrite the binary with their own code, which then executes as root the next time anyone (a user, a cron job, a service) runs it. That is a direct, unconditional local root: no exploit, just write-then-trigger. It is the most severe SUID finding and is reported even for whitelisted names — an expected binary that has become writable is still a trivial escalation.",
+        "how": "1. See who can write it and how it happened:\n   stat <path>\n2. Restore owner-only write:\n   sudo chmod go-w <path>\n3. Investigate: a packaged binary does not become group/other-writable on its own. Check whether a bad install, a careless chmod, or a compromise put the bit there — the file's timestamps are evidence.\n4. If a package owns it, reinstalling that package restores the shipped permissions."
+      },
       "unexpected_sgid": {
         "title": "Unexpected SGID binary detected",
         "why": "SGID (Set Group ID) binaries execute with the file's group privileges. An unexpected SGID binary can provide access to privileged group resources (shadow, disk, docker, sudo) for any user who runs it — enabling group-level privilege escalation.",
@@ -3440,6 +3461,26 @@
     "to_disk": "Core dumps are written to disk (core_pattern: {pattern})",
     "to_disk_detail": "kernel.core_pattern writes crashes to a filesystem path rather than a managed handler. A dump written into a process's working directory can be world-readable and can contain secrets the process held. Consider routing dumps to systemd-coredump, setting Storage=none, or a `hard core 0` limit if you do not need them. No deduction — reported for awareness."
   },
+  "module_blacklist": {
+    "unreadable": "modprobe.d directories could not be read — module blacklist state unknown",
+    "candidates": "Defense-in-depth: {count} rarely-needed module(s) are neither loaded nor blacklisted ({modules})",
+    "candidates_detail": "These modules are not loaded now, but nothing stops them from loading later (no `blacklist` or `install ... /bin/true` line under /etc/modprobe.d). They are rarely needed on a server (exotic filesystems, legacy network protocols, USB storage). Blacklisting the ones you do not use is pure defense-in-depth — CIS §3.4. This is reported, not penalised: an un-blacklisted module is a hardening opportunity, not a vulnerability, and some of these are legitimately used (e.g. udf for optical media). A module that is currently loaded is reported by the kernel-module audit instead.",
+    "all_handled": "Every rarely-needed module is either blacklisted or already handled by the kernel-module audit"
+  },
+  "dev_privileged": {
+    "unreadable": "/dev could not be listed — device-node permissions unknown",
+    "world_accessible": "{count} sensitive device node(s) are world-accessible: {nodes}",
+    "world_accessible_detail": "These device nodes hand any user a way around filesystem permissions: /dev/mem, /dev/kmem and /dev/port expose physical and kernel memory, and a raw block device (/dev/sda, /dev/nvme0n1, …) exposes every filesystem it carries — world-read leaks their contents, world-write corrupts or backdoors them. The defaults are tight (root:kmem / root:disk, no world bits), so this is reported rather than penalised: it is almost always a mistake (a stray chmod, an over-broad udev rule), occasionally deliberate (a VM/monitoring tool). Restrict with a udev rule or chmod o= and confirm nothing legitimate relied on the access.",
+    "locked_down": "No sensitive device node (/dev/mem, /dev/port, raw disks) is world-accessible"
+  },
+  "root_path": {
+    "unknown": "Root's configured PATH could not be determined (no login.defs ENV_SUPATH and no sudoers secure_path)",
+    "dangerous": "{count} unsafe component(s) in root's configured PATH: {entries}",
+    "dangerous_reason": "a world-writable, '.', empty or relative PATH component lets a non-root user decide which binary root runs for a bare command name",
+    "dangerous_detail": "Each of these components lets someone who is not root control which binary root executes for a bare command name. A world-writable directory: anyone drops their own `ls` there. A '.' or empty component: the binary is taken from the current directory, whatever that happens to be when root runs the command. A relative component: same, resolved against the current directory. The result is a direct privilege escalation — plant a file, wait for root to run the matching command. Fix the source (login.defs ENV_SUPATH or sudoers secure_path) so root's PATH contains only absolute, root-owned, non-world-writable directories, in the usual order (/usr/sbin:/usr/bin:/sbin:/bin).",
+    "group_writable": "Root's configured PATH contains a directory writable by a non-root group: {entries}",
+    "clean": "Root's configured PATH is clean — every component is an absolute, non-world-writable directory"
+  },
   "kexec_lockdown": {
     "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",
     "kexec_allowed": "kexec load is allowed (kernel.kexec_load_disabled=0)",
@@ -3449,7 +3490,12 @@
     "lockdown_none": "Kernel lockdown is not active",
     "lockdown_none_detail": "Kernel lockdown restricts even root from modifying the running kernel (/dev/mem, unsigned modules, kexec of unsigned images). It is off here — the default on systems that do not enforce Secure Boot. It is typically enabled automatically when Secure Boot is on, or via the lockdown= kernel parameter. No deduction: enabling it can break legitimate tooling (some debuggers, proprietary modules).",
     "lockdown_absent": "Kernel lockdown interface not present — this kernel was built without the lockdown LSM",
-    "lockdown_unknown": "Kernel lockdown state could not be read"
+    "lockdown_unknown": "Kernel lockdown state could not be read",
+    "modules_disabled": "Module loading is fully disabled (kernel.modules_disabled=1) — no kernel module can load until reboot",
+    "sig_enforced": "Unsigned kernel modules are refused (module signature enforcement is on)",
+    "sig_not_enforced": "Unsigned kernel modules are accepted (module signature enforcement is off)",
+    "sig_not_enforced_detail": "With module signature enforcement off, the kernel loads modules that are unsigned or signed by an untrusted key. Enforcing it (module.sig_enforce=1, or a kernel built with CONFIG_MODULE_SIG_FORCE, or Secure Boot + lockdown, which turn it on automatically) means only modules signed by a trusted key load — closing the classic path of loading a malicious module as root. It is reported, not penalised: enabling it breaks out-of-tree/DKMS modules (NVIDIA, VirtualBox, some Wi-Fi drivers) that are not signed with an enrolled key, so it is a deliberate choice, not a default.",
+    "sig_unknown": "Module signature enforcement state could not be read (kernel does not expose /sys/module/module/parameters/sig_enforce)"
   },
   "faillock": {
     "unknown": "PAM auth stack could not be read — account-lockout state unknown",

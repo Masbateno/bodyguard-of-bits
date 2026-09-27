@@ -48,6 +48,13 @@ from bob.scoring import CheckResult
 
 _KEXEC_DISABLED = "/proc/sys/kernel/kexec_load_disabled"
 _LOCKDOWN = "/sys/kernel/security/lockdown"
+# Runtime module-loading trust knobs:
+#   - module signature enforcement (module.sig_enforce=1 / CONFIG_MODULE_SIG_FORCE)
+#     makes the kernel refuse to load a module without a valid signature.
+#   - kernel.modules_disabled=1 stops *all* further module loading for the
+#     uptime — the most restrictive state, and one-way until reboot.
+_SIG_ENFORCE = "/sys/module/module/parameters/sig_enforce"
+_MODULES_DISABLED = "/proc/sys/kernel/modules_disabled"
 
 # The active lockdown mode is the bracketed token: "[none] integrity confidentiality".
 _BRACKET = re.compile(r"\[(\w+)\]")
@@ -63,12 +70,14 @@ class KexecLockdownSnapshot:
                         "confidentiality"), "" if the interface is absent, or
                         None if present-but-unreadable.
     """
-    kexec_disabled: "int | None" = None
-    lockdown:       "str | None" = ""
+    kexec_disabled:   "int | None" = None
+    lockdown:         "str | None" = ""
+    sig_enforce:      "str | None" = None   # "Y" / "N", None if interface absent
+    modules_disabled: "int | None" = None   # 0 / 1, None if unreadable
 
     @classmethod
     def from_system(cls) -> "KexecLockdownSnapshot":
-        """Collect kexec/lockdown state. Never raises."""
+        """Collect kexec/lockdown/module-trust state. Never raises."""
         snap = cls()
         try:
             raw = read_text_capped(Path(_KEXEC_DISABLED), encoding="utf-8",
@@ -87,6 +96,23 @@ class KexecLockdownSnapshot:
                 snap.lockdown = m.group(1).lower() if m else None
             except OSError:
                 snap.lockdown = None
+
+        # Module signature enforcement (sysfs "Y"/"N"). Absent interface stays
+        # None — many kernels do not expose it, which is "unknown", not "off".
+        if path_exists(Path(_SIG_ENFORCE)):
+            try:
+                v = read_text_capped(Path(_SIG_ENFORCE), encoding="utf-8",
+                                     errors="replace").strip().upper()
+                snap.sig_enforce = v if v in ("Y", "N") else None
+            except OSError:
+                snap.sig_enforce = None
+
+        try:
+            raw = read_text_capped(Path(_MODULES_DISABLED), encoding="utf-8",
+                                   errors="replace").strip()
+            snap.modules_disabled = int(raw) if raw in ("0", "1") else None
+        except (OSError, ValueError):
+            snap.modules_disabled = None
         return snap
 
 
@@ -127,5 +153,22 @@ def check_kexec_lockdown(snapshot: KexecLockdownSnapshot,
     else:  # None — present but unreadable
         result.info(message=_t("kexec_lockdown.lockdown_unknown"),
                     key="kexec_lockdown.lockdown_unknown")
+
+    # --- module-loading trust ------------------------------------------------
+    # modules_disabled=1 is the strongest state (no module can load at all until
+    # reboot), so it subsumes the signature question.
+    if snapshot.modules_disabled == 1:
+        result.ok(message=_t("kexec_lockdown.modules_disabled"),
+                  key="kexec_lockdown.modules_disabled")
+    elif snapshot.sig_enforce == "Y":
+        result.ok(message=_t("kexec_lockdown.sig_enforced"),
+                  key="kexec_lockdown.sig_enforced")
+    elif snapshot.sig_enforce == "N":
+        result.info(message=_t("kexec_lockdown.sig_not_enforced"),
+                    detail=_t("kexec_lockdown.sig_not_enforced_detail"),
+                    key="kexec_lockdown.sig_not_enforced")
+    else:  # interface absent / unreadable, and modules not fully disabled
+        result.info(message=_t("kexec_lockdown.sig_unknown"),
+                    key="kexec_lockdown.sig_unknown")
 
     return result

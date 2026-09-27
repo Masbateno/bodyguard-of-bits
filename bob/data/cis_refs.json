@@ -280,6 +280,11 @@
     "ref_fr": "Bonne pratique — Exiger un mot de passe pour l'escalade de privilèges via doas : éviter « permit nopass » sans clause « cmd » dans /etc/doas.conf (l'équivalent doas de NOPASSWD:ALL de sudo)",
     "code": null
   },
+  "root_path.dangerous": {
+    "ref": "Best practice — Root PATH integrity: keep root's PATH free of world-writable directories, '.', empty and relative components (login.defs ENV_SUPATH, sudoers secure_path)",
+    "ref_fr": "Bonne pratique — Intégrité du PATH de root : garder le PATH de root sans répertoire world-writable, '.', composant vide ou relatif (ENV_SUPATH de login.defs, secure_path de sudoers)",
+    "code": null
+  },
   "file_perms.too_permissive": {
     "ref": "CIS Ubuntu 22.04 L1 — 6.1 — Ensure appropriate permissions on sensitive files",
     "code": "CIS:6.1"
@@ -1437,6 +1442,10 @@
     "code": "CIS:6.1.13"
   },
   "suid_audit.unowned_suid": {
+    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
+    "code": "CIS:6.1.13"
+  },
+  "suid_audit.writable_suid": {
     "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
     "code": "CIS:6.1.13"
   },

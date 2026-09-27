@@ -1,3 +1,17 @@
+bodyguard-of-bits (0.22.0-1) unstable; urgency=medium
+
+  * Minor: five new coverage checks — kernel-module blacklist (INFO, CIS 3.4),
+    privileged /dev nodes (INFO), module-signature enforcement (INFO, folded
+    into the kexec/lockdown check), world/group-writable set-id binaries
+    (ALERT), and root PATH integrity (WARN, from login.defs ENV_SUPATH and
+    sudoers secure_path). Three are INFO-only; two can deduct on an affected
+    host.
+  * Field-tested in local VMs (Arch, Alpine). Explain 206->208, CIS refs
+    206->208, locale 2606->2640, filterable sections 47->50, mutations
+    290->295, tests 11119->11199.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 27 Sep 2026 13:00:00 +0000
+
 bodyguard-of-bits (0.21.3-1) unstable; urgency=medium
 
   * Patch: BOB reads the distribution's real config paths, not just Debian's.

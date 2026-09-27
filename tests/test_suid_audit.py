@@ -553,3 +553,52 @@ class TestGlobMatching:
         assert "/usr/bin/tool_a" in whitelisted
         assert "/usr/bin/tool_b" in whitelisted
         assert "/usr/bin/other" in unexpected
+
+
+# v0.22.0 — group/other-writable set-id binaries (the "dangerous" class)
+
+class TestWritableSuid:
+    """A SUID/SGID binary writable by group or other is an immediate local
+    root, orthogonal to the whitelist, and the most severe SUID finding."""
+
+    def test_writable_suid_is_alert_with_deduction(self):
+        r = check_suid_audit(SuidSnapshot(
+            suid_paths=["/usr/bin/passwd"],
+            writable_suid=["/usr/bin/passwd"]))
+        keys = {f.key for f in r.findings}
+        assert "suid_audit.writable_suid" in keys
+        assert r.deductions  # it deducts
+        f = next(f for f in r.findings if f.key == "suid_audit.writable_suid")
+        assert f.level.value == "alert"
+
+    def test_clean_host_has_no_writable_finding(self):
+        r = check_suid_audit(SuidSnapshot(suid_paths=["/usr/bin/sudo"]))
+        assert "suid_audit.writable_suid" not in {f.key for f in r.findings}
+
+    def test_from_system_flags_group_or_other_writable(self, monkeypatch):
+        """The mutation guard: a set-id binary with a group/other write bit
+        must land in writable_suid."""
+        import subprocess as _sp
+        import stat as _stat
+
+        monkeypatch.setattr("bob.checks.suid_audit.os.path.isdir",
+                            lambda p: p == "/usr/bin")
+
+        class _P:
+            returncode = 0
+            stdout = "/usr/bin/evil\n/usr/bin/ok\n"
+            stderr = ""
+        monkeypatch.setattr(_sp, "run", lambda *a, **k: _P())
+
+        modes = {
+            "/usr/bin/evil": _stat.S_IFREG | _stat.S_ISUID | 0o4757,  # o+w
+            "/usr/bin/ok":   _stat.S_IFREG | _stat.S_ISUID | 0o4755,  # tight
+        }
+        from types import SimpleNamespace
+        monkeypatch.setattr("bob.checks.suid_audit.os.stat",
+                            lambda p: SimpleNamespace(st_mode=modes[p], st_uid=0))
+        monkeypatch.setattr("bob.checks.suid_audit._is_unowned", lambda p: False)
+
+        snap = SuidSnapshot.from_system()
+        assert "/usr/bin/evil" in snap.writable_suid
+        assert "/usr/bin/ok" not in snap.writable_suid

@@ -312,7 +312,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="206 entries (111 formal CIS",
+        old="208 entries (112 formal CIS",
         new="178 entries (110 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -733,8 +733,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/section-count-stale-again",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="the 47 filterable + 10 always-on section names",
-        new="the 46 filterable + 10 always-on section names",
+        old="the 50 filterable + 10 always-on section names",
+        new="the 49 filterable + 10 always-on section names",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the section count drifted in seven places the moment a section "
                "was added, and nothing was watching",
@@ -742,8 +742,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/module-count-stale-again",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="bob/checks/*.py  ← 56 check modules · Snapshot+check_xxx pattern",
-        new="bob/checks/*.py  ← 55 check modules · Snapshot+check_xxx pattern",
+        old="bob/checks/*.py  ← 59 check modules · Snapshot+check_xxx pattern",
+        new="bob/checks/*.py  ← 58 check modules · Snapshot+check_xxx pattern",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the check-module count said 57 (conflated with the 57 sections) "
                "in four places while the on-disk count and SNAPSHOT's own table "
@@ -875,8 +875,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/domain-count-stale-again",
         file="README.md",
-        old="47 check sections, 6 score domains",
-        new="47 check sections, 7 score domains",
+        old="50 check sections, 6 score domains",
+        new="50 check sections, 7 score domains",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_score_domain_count",),
         reason="v0.20.0 realigned the seven score domains onto the six display "
                "groups, but the intros and headings kept saying 7 for four "
@@ -885,8 +885,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 2606 keys EN/FR",
-        new="locale auto-detect (POSIX), 2605 keys EN/FR",
+        old="locale auto-detect (POSIX), 2640 keys EN/FR",
+        new="locale auto-detect (POSIX), 2639 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
                "because '2014' reads as a year and the sweep's noun set had no "
@@ -895,8 +895,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-breakdown-mis-split",
         file="DOCUMENTS/README_TECH.md",
-        old="206 entries (111 formal CIS, 88 best-practice, 7 Docker)",
-        new="206 entries (110 formal CIS, 89 best-practice, 7 Docker)",
+        old="208 entries (112 formal CIS, 89 best-practice, 7 Docker)",
+        new="208 entries (111 formal CIS, 90 best-practice, 7 Docker)",
         kills=(f"{_LIVECOUNT}::"
                "test_the_readme_tech_cis_breakdown_matches_the_live_categories",),
         reason="v0163 checks only that the parts sum to the total, so a wrong "
@@ -3020,6 +3020,58 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="a world-writable scratch mount missing nodev/nosuid honours device "
                "nodes and set-uid binaries dropped there; inverting the membership "
                "test means BOB credits an unprotected /tmp as hardened",
+    ),
+    Mutation(
+        id="root_path/world-writable-component-not-flagged",
+        file="bob/checks/root_path.py",
+        old="    if st.st_mode & _stat.S_IWOTH:",
+        new="    if st.st_mode & 0:",
+        kills=("tests/test_v0220_root_path.py::TestFromSystem::test_world_writable_component_from_login_defs",),
+        reason="a world-writable directory in root's PATH lets any user plant a "
+               "binary root will run; zeroing the world-write mask means BOB "
+               "treats it as a safe directory and the privesc goes unreported",
+    ),
+    Mutation(
+        id="suid_audit/writable-setid-not-flagged",
+        file="bob/checks/suid_audit.py",
+        old="                    if (has_suid or has_sgid) and (\n                            mode & (stat.S_IWGRP | stat.S_IWOTH)):",
+        new="                    if (has_suid or has_sgid) and (\n                            mode & 0):",
+        kills=("tests/test_suid_audit.py::TestWritableSuid::test_from_system_flags_group_or_other_writable",),
+        reason="a group/other-writable set-id binary is an immediate local root; "
+               "zeroing the write-bit mask means BOB never collects it and the "
+               "most severe SUID finding silently disappears",
+    ),
+    Mutation(
+        id="kexec_lockdown/module-sig-enforced-misread",
+        file="bob/checks/kexec_lockdown.py",
+        old='    elif snapshot.sig_enforce == "Y":',
+        new='    elif snapshot.sig_enforce == "N":',
+        kills=("tests/test_v0210_kexec_lockdown.py::TestModuleTrust::test_sig_enforced_is_ok",),
+        reason="module.sig_enforce=Y means the kernel refuses unsigned modules; "
+               "misreading it as anything but enforced drops the one positive "
+               "signal that unsigned-module loading is closed off",
+    ),
+    Mutation(
+        id="module_blacklist/candidate-not-flagged",
+        file="bob/checks/module_blacklist.py",
+        old="        if m not in snapshot.loaded and m not in snapshot.disabled",
+        new="        if m in snapshot.loaded and m not in snapshot.disabled",
+        kills=("tests/test_v0220_module_blacklist.py::TestCandidates::test_unblacklisted_module_is_flagged",),
+        reason="a rarely-needed module that is neither loaded nor blacklisted is the "
+               "whole point of the check; requiring it to be loaded before it can be "
+               "a candidate means BOB stops reporting the un-blacklisted modules it "
+               "exists to surface",
+    ),
+    Mutation(
+        id="dev_privileged/world-access-not-flagged",
+        file="bob/checks/dev_privileged.py",
+        old="            if how is not None:",
+        new="            if how is None:",
+        kills=("tests/test_v0220_dev_privileged.py::TestFromSystem::test_world_writable_block_device_flagged",),
+        reason="a world-writable raw disk or /dev/mem hands any user a way around "
+               "filesystem permissions; inverting the world-access test makes BOB "
+               "record the locked-down nodes and drop the exposed ones it exists "
+               "to surface",
     ),
     Mutation(
         id="cups/exposed-listen-not-flagged",
