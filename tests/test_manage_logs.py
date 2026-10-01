@@ -1136,3 +1136,32 @@ class TestIsFindingContinuation:
         assert not _is_finding_continuation("    └──────────")
         assert not _is_finding_continuation("    ━━━━━━━━━━")
         assert not _is_finding_continuation("    ╔══════════")
+
+
+# v0.22.1 — fresh install (no log dir): --manage-logs must explain, not exit blank
+
+class TestNoLogDirRoutesToPlain:
+    """On a fresh install the curses path bailed on `if not log_dir: return 0`
+    *inside* curses.wrapper — a blank flash then a silent exit. The dispatcher
+    now routes a missing log_dir to the plain path, which prints the "run an
+    audit first" guidance. Tested by forcing a TTY and asserting curses is never
+    entered and the guidance is printed."""
+
+    def test_no_log_dir_tty_routes_to_plain_not_curses(self, capsys, monkeypatch):
+        import sys
+        import curses
+        from bob.i18n import init
+        from bob.manage_logs import run_manage_logs
+
+        init("en")
+        uc, _ = _make_user_config("")            # fresh install: no log_dir
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        wrapper = MagicMock()
+        monkeypatch.setattr(curses, "wrapper", wrapper)
+
+        rc = run_manage_logs(uc, _make_config(), _t)
+
+        assert rc == 0
+        wrapper.assert_not_called()               # never entered the curses TUI
+        out = capsys.readouterr().out
+        assert "No audit reports yet" in out       # the guidance, not a blank exit

@@ -502,8 +502,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 2640
-FR keys: 2640
+EN keys: 2641
+FR keys: 2641
 Missing in FR: none
 ```
 
@@ -519,7 +519,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2640 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2641 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

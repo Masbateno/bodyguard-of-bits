@@ -257,7 +257,7 @@
     "days_unit": "day(s)",
     "days_available": "day(s) of logs available",
     "total_blocks": "blocked attempt(s) detected",
-    "verdict_ok": "Normal activity — {total} blocked attempt(s) over {days} day(s), no threat detected",
+    "verdict_ok": "Normal activity — {total} blocked attempt(s) over {days} day(s), no recognised attack pattern in the analysed events",
     "verdict_warn": "Suspicious activity — {total} blocked attempt(s) over {days} day(s)",
     "top_ips": "Top source IPs",
     "top_ports": "Top targeted ports",
@@ -360,7 +360,7 @@
     "banner_total": "{total} report(s)",
     "banner_selected": "{count} selected / {total}",
     "title": "REPORT MANAGEMENT",
-    "no_dir": "No log location configured. Run first: {cmd}",
+    "no_dir": "No audit reports yet — your first audit creates the log directory and writes a report there. Run one first, then --manage-logs browses and prunes past reports: {cmd}",
     "no_logs": "No reports found in {path}",
     "stored_in": "Reports in: {path}",
     "size_label": "KB",
@@ -1324,9 +1324,9 @@
     "unowned_suid_reason": "{count} SUID binary/binaries that no package manager claims",
     "unowned_suid_detail": "Every other SUID binary on this host was put there by a package. These were not: the package manager was asked and answered that nothing ships them. That is the shape a left-behind privilege escalation takes — a root-owned binary that runs as root for anyone, installed by something other than the distribution. It may still be legitimate: locally compiled software, a vendor installer, a deliberate `chmod u+s`. BOB cannot tell those apart from the other kind, which is why this is reported rather than resolved. Check each one against what you know you installed: stat <path>",
     "unexpected_suid_reason": "{count} unexpected SUID binary/binaries found",
-    "writable_suid": "{count} group/other-writable SUID/SGID binary/binaries — anyone who can write them runs code as their owner: {paths}",
-    "writable_suid_reason": "a set-id binary writable by anyone but its owner is an immediate privilege escalation",
-    "writable_suid_detail": "A SUID (or SGID) binary runs with its owner's privileges — usually root's. If it is also writable by group or other, then whoever has that write access can replace its contents and have their own code run as root the next time it executes. This is not a hardening nuance, it is a direct local root: overwrite, then trigger. It is reported for every set-id binary, whitelisted or not — a writable /usr/bin/passwd is not safe just because 'passwd' is an expected name. Restore owner-only write: chmod go-w <path> (and investigate how the write bit got there — a regular binary does not become group-writable on its own).",
+    "writable_suid": "{count} group/other-writable SUID/SGID binary/binaries — writing one runs an attacker's code with its owner (SUID) or group (SGID) privileges: {paths}",
+    "writable_suid_reason": "a set-id binary writable by anyone but its owner is a local privilege-escalation path — a direct root escalation for a writable SUID-root binary",
+    "writable_suid_detail": "A set-id binary runs with elevated privileges: a SUID binary as its file owner (for SUID-root, that is root), a SGID binary with its file group. If it is also writable by group or other, anyone with that write access can replace its contents and have their own code run with those privileges the next time it executes — overwrite, then trigger. A writable SUID-root binary is therefore a direct local root; a writable SGID (or non-root SUID) binary escalates to that group/user, whose impact depends on that group's privileges and can, in some configurations, enable further escalation (a group like docker, disk or shadow). It is reported for every set-id binary, whitelisted or not — a writable /usr/bin/passwd is not safe just because 'passwd' is an expected name. Restore owner-only write: chmod go-w <path> (and investigate how the write bit got there — a regular binary does not become group-writable on its own).",
     "unexpected_sgid": "{count} unexpected SGID binary/binaries: {paths}",
     "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing.",
     "whitelisted": "{count} SUID binary/binaries suppressed by user whitelist: {paths}"
@@ -3006,7 +3006,7 @@
             },
       "writable_suid": {
         "title": "A SUID/SGID binary writable by group or other",
-        "why": "A set-id binary runs with its owner's privileges — for SUID root binaries, that is root. If the file itself is writable by its group or by everyone, then any user with that write access can overwrite the binary with their own code, which then executes as root the next time anyone (a user, a cron job, a service) runs it. That is a direct, unconditional local root: no exploit, just write-then-trigger. It is the most severe SUID finding and is reported even for whitelisted names — an expected binary that has become writable is still a trivial escalation.",
+        "why": "A set-id binary runs with elevated privileges — a SUID binary as its file owner (for SUID-root, that is root), a SGID binary with its file group. If the file itself is writable by its group or by everyone, any user with that write access can overwrite the binary with their own code, which then executes with those privileges the next time anyone (a user, a cron job, a service) runs it — no exploit, just write-then-trigger. A writable SUID-root binary is a direct, unconditional local root; a writable SGID (or non-root SUID) binary is a privilege-escalation path to that group/user, whose impact depends on that group's privileges and can, in some configurations, enable further escalation (docker, disk, shadow). It is the most severe SUID finding and is reported even for whitelisted names — an expected binary that has become writable is still a trivial escalation.",
         "how": "1. See who can write it and how it happened:\n   stat <path>\n2. Restore owner-only write:\n   sudo chmod go-w <path>\n3. Investigate: a packaged binary does not become group/other-writable on its own. Check whether a bad install, a careless chmod, or a compromise put the bit there — the file's timestamps are evidence.\n4. If a package owns it, reinstalling that package restores the shipped permissions."
       },
       "unexpected_sgid": {
@@ -3935,6 +3935,7 @@
     "symlink_skipped_no_sudo": "Symlink skipped — run via sudo to detect user binary",
     "reload_title": "Not active in this shell yet — the completion is loaded when a shell starts.",
     "reload_how": "Open a new terminal, or run: source /etc/bash_completion.d/bob",
+    "enable_hint": "Tip — enable tab-completion (run once): {cmd}",
     "needs_root": "--install-completion requires root.",
     "needs_root_sudo_warning": "'sudo bob' will not work — sudo uses a restricted PATH that does not include pipx binaries.",
     "needs_root_how": "Copy and run this exact command:"

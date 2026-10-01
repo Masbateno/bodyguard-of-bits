@@ -885,8 +885,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 2640 keys EN/FR",
-        new="locale auto-detect (POSIX), 2639 keys EN/FR",
+        old="locale auto-detect (POSIX), 2641 keys EN/FR",
+        new="locale auto-detect (POSIX), 2640 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
                "because '2014' reads as a year and the sweep's noun set had no "
@@ -2832,6 +2832,38 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="firewalld's own `table inet firewalld` IS the firewall; without "
                "the exclusion BOB frames a firewalld host as 'nftables running "
                "in parallel with UFW'",
+    ),
+    Mutation(
+        id="manage-logs/no-dir-enters-curses-silently",
+        file="bob/manage_logs.py",
+        old="    if not user_config.get(\"log_dir\"):\n        return _run_manage_logs_plain(user_config, config, t)",
+        new="    if user_config.get(\"log_dir\"):\n        return _run_manage_logs_plain(user_config, config, t)",
+        kills=("tests/test_manage_logs.py::TestNoLogDirRoutesToPlain::test_no_log_dir_tty_routes_to_plain_not_curses",),
+        reason="on a fresh install (no log_dir) the curses path flashes a blank "
+               "screen and exits silently; the dispatcher must route to the plain "
+               "path that explains 'run an audit first' — inverting the guard sends "
+               "it back into curses",
+    ),
+    Mutation(
+        id="completion/hint-shown-when-already-installed",
+        file="bob/completion.py",
+        old="    return is_tty and not quiet and not completion_installed()",
+        new="    return is_tty and not quiet and completion_installed()",
+        kills=("tests/test_v0221_completion_hint.py::TestShouldShowCompletionHint::test_shown_when_not_installed_on_tty",),
+        reason="the 'run --install-completion' hint must show until completion is "
+               "installed, then stop; inverting the test makes BOB nag only after "
+               "it is already set up and stay silent when it is actually needed",
+    ),
+    Mutation(
+        id="ipv6/coverage-claimed-when-ufw-v6-disabled",
+        file="bob/checks/ipv6.py",
+        old="    if snapshot.ufw_ipv6_enabled is True and not found_issue and not firewalld_active and not (",
+        new="    if snapshot.ufw_ipv6_enabled is not None and not found_issue and not firewalld_active and not (",
+        kills=("tests/test_ipv6.py::TestUfwV6CoverageClaimHonesty::test_disabled_ufw_v6_link_local_does_not_claim_coverage",),
+        reason="with UFW IPv6 disabled the listeners are not covered by UFW v6 "
+               "rules (there are none); reverting the guard to `is not None` makes "
+               "BOB claim 'covered by UFW (v6) rules' right after saying UFW IPv6 "
+               "is disabled — the contradiction this fix removes",
     ),
     Mutation(
         id="firewalld/ipv6-gap-warned-though-firewalld-filters-v6",

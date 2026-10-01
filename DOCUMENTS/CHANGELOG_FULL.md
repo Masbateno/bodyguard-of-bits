@@ -6,6 +6,102 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.22.1] — 2026-10-01
+
+**A patch release: SUID wording precision, SUID-scan timeout, audit-output
+honesty, and first-run UX fixes.** No scoring-formula, JSON-schema,
+CSV-column-order or detection-rule change. Two observable outputs *do* change on
+the relevant hosts: the longer SUID-scan timeout can let the audit **complete**
+(instead of "scan skipped") on a heavily loaded host, and the IPv6 fix removes a
+false "covered by UFW (v6)" OK. Surfaced by a full stress-test field pass on real
+Ubuntu + Fedora (0 bug otherwise), by post-release review of the published 0.22.0
+audit, and by first-run use (fixes 5–6).
+
+### 1. `writable_suid` wording: SUID vs SGID precision
+
+The `suid_audit.writable_suid` finding (message, detail and `--explain`, EN + FR)
+said a writable set-id binary "runs code as their owner" / is an "immediate local
+root". That is exact for a **SUID-root** binary, but wrong for **SGID**: a SGID
+binary runs with the file's *group*, not root. The text now distinguishes them —
+a writable SUID-root binary is a direct local root; a writable SGID (or non-root
+SUID) binary is a privilege-escalation path to that group/user, whose impact
+depends on that group's privileges and can, in some configurations, enable
+further escalation (docker, disk, shadow). The detection, level (ALERT) and score
+are unchanged; this is accuracy of the wording only.
+
+### 2. SUID `find` timeout 15 → 30 s
+
+`_FIND_TIMEOUT` in `suid_audit` was 15 s. On a CPU-starved host — measured on a
+loaded real Ubuntu (microk8s, load 6–9 on 4 cores) — the SUID `find` over `/usr`,
+`/opt`, … could not finish in 15 s, so the whole check reported "SUID scan
+skipped" and lost SUID coverage (including `writable_suid`) for that run. Raised
+to 30 s: a normal host finishes in ~2 s (unaffected), a moderately loaded one now
+completes, and a pathologically starved one still skips **honestly** (it never
+reports a false "clean"). This reduces, without eliminating, the skip under load.
+
+### 3. IPv6 coherence: no "covered by UFW (v6) rules" when UFW IPv6 is off
+
+The `ipv6` check could emit its closing OK — "all listeners are covered by UFW
+(v6) rules" — on a host where UFW IPv6 is **disabled**, directly contradicting the
+same run's "UFW IPv6 disabled — link-local only" line. The claim was gated on the
+policy being *readable* (`is not None`), not on UFW actually *managing* IPv6. It
+is only truthful when UFW manages v6; with IPv6 off the listeners are safe (or
+not) for other reasons — link-local scope, the default deny — which the per-branch
+findings already state. The gate is now `is True`, so the coverage OK fires only
+when UFW IPv6 is enabled (this also removes the same false claim when both kernel
+and UFW IPv6 are disabled). Guard `tests/test_ipv6.py::TestUfwV6CoverageClaimHonesty`
+(3 cases: disabled+link-local → no coverage claim, both-disabled → none, enabled+
+covered → still claimed), mutation `ipv6/coverage-claimed-when-ufw-v6-disabled`.
+
+### 4. UFW-log verdict no longer overclaims
+
+`logs.verdict_ok` said "Normal activity — N blocked attempt(s) …, **no threat
+detected**". A firewall blocking packets, with no attack *pattern* in the analysed
+events, does not establish that no threat exists — the honest claim is about the
+events looked at. Reworded (EN + FR) to "**no recognised attack pattern in the
+analysed events**". Wording only.
+
+### 5. `--manage-logs` on a fresh install no longer exits silently
+
+On a box where no audit has run yet, there is no log directory. `sudo bob
+--manage-logs` would enter the curses viewer, which found nothing to show and
+exited immediately — a blank flash then a silent (and confusing) return. The
+dispatcher in `bob/manage_logs.py` now checks for the log directory *before*
+`import curses`: with no `log_dir` configured it routes to the plain text path,
+which prints that there are no audit reports yet and that running an audit first
+creates the log directory and writes the first report. Guard
+`tests/test_manage_logs.py::TestNoLogDirRoutesToPlain` (monkeypatches `isatty →
+True` and asserts `curses.wrapper` is **not** called), mutation
+`manage-logs/no-dir-enters-curses-silently`.
+
+### 6. First-run discoverability of `--install-completion`
+
+pip and pipx cannot print a post-install message, so a freshly installed BOB gave
+no hint that bash tab-completion needs a one-time `--install-completion`. BOB now
+prints a one-line reminder — `Tip — enable tab-completion (run once): sudo bob
+--install-completion` — at the end of every interactive audit, and keeps printing
+it on each subsequent run until completion is installed, then goes quiet. It is
+TTY-only and suppressed under `--quiet`, so it never pollutes piped/JSON output or
+cron. `bob/completion.py` gains `completion_installed()` (checks the
+`/etc/bash_completion.d/bob` marker) and `should_show_completion_hint(*, is_tty,
+quiet)`; `bob/__main__.py` calls it after the config block. The README install
+steps (EN + FR) call out `--install-completion` as the next step too. Guard
+`tests/test_v0221_completion_hint.py`, mutation
+`completion/hint-shown-when-already-installed`.
+
+Not changed: the `writable_suid` `--fix` still **shows** its `chmod go-w` command
+without auto-applying it — deliberately (a world-writable set-id root binary is a
+compromise symptom to investigate before flipping the bit, not a native auto-fix),
+and it never claims success. A separate "latent vs active exposure" idea — deduct
+less for a *dangerous service that is enabled but currently inactive* (the Telnet
+case) than for one actively listening — is sound but a scoring change, and is
+deferred to backlog. **Tests** 11199 → **11220** (the IPv6 fix's 3 coverage-honesty
+guards, the manage-logs and completion-hint guards, plus the per-mutation contract
+test-instances the three new mutations generate; the wording and timeout changes
+add no tests).
+
+---
+
 ## [0.22.0] — 2026-09-27
 
 **A minor release: five new coverage checks.** After 0.21.3 closed the big

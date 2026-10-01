@@ -15,6 +15,32 @@ from pathlib import Path
 
 from bob import i18n
 
+# The marker the install writes; its presence is how BOB knows completion is set
+# up (and when to stop nagging about it on each run).
+_COMPLETION_MARKER = Path("/etc/bash_completion.d/bob")
+
+
+def completion_installed() -> bool:
+    """True if the bash-completion script is installed system-wide.
+
+    Used to decide whether to print the one-line "run --install-completion" hint
+    on each audit: pip/pipx cannot print a post-install message, so BOB surfaces
+    it itself on every run until the marker exists, then goes quiet.
+    """
+    try:
+        return _COMPLETION_MARKER.exists()
+    except OSError:
+        return False
+
+
+def should_show_completion_hint(*, is_tty: bool, quiet: bool) -> bool:
+    """Whether to print the 'run --install-completion' hint on this run.
+
+    Shown on an interactive run (TTY, not --quiet) until completion is installed,
+    so it never pollutes piped/quiet output and stops nagging once set up.
+    """
+    return is_tty and not quiet and not completion_installed()
+
 
 def install_completion() -> int:
     """Install bash completion script and sudo PATH symlink. Returns exit code."""

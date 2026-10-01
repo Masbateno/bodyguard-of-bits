@@ -6,6 +6,104 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.22.1] — 01-10-2026
+
+**Une version corrective : précision du wording SUID, timeout de scan SUID,
+honnêteté de la sortie d'audit, et UX de premier run.** Aucun changement de
+formule de score, schéma JSON, ordre de colonnes CSV ou règle de détection. Deux
+sorties observables *changent* sur les hôtes concernés : le timeout SUID allongé
+peut laisser l'audit **se terminer** (au lieu de « scan skipped ») sur un hôte
+très chargé, et le fix IPv6 retire un faux OK « couvert par UFW (v6) ». Relevés
+par une passe de stress-test terrain sur Ubuntu + Fedora réelles (0 bug sinon),
+par la revue post-publication de l'audit 0.22.0, et par l'usage au premier run
+(fixes 5–6).
+
+### 1. Wording `writable_suid` : précision SUID vs SGID
+
+Le finding `suid_audit.writable_suid` (message, detail et `--explain`, EN + FR)
+disait qu'un set-id modifiable « s'exécute en tant que son propriétaire » / est un
+« root local immédiat ». Exact pour un binaire **SUID-root**, mais faux pour
+**SGID** : un SGID s'exécute avec le *groupe* du fichier, pas root. Le texte
+distingue désormais — un SUID-root modifiable est un root local direct ; un SGID
+(ou SUID non-root) modifiable est un chemin d'escalade vers ce groupe/utilisateur,
+dont l'impact dépend des privilèges de ce groupe et peut, selon la configuration,
+permettre une escalade supplémentaire (docker, disk, shadow). La détection, le
+niveau (ALERT) et le score sont inchangés ; c'est de la justesse de texte.
+
+### 2. Timeout du `find` SUID 15 → 30 s
+
+`_FIND_TIMEOUT` dans `suid_audit` était à 15 s. Sur un hôte affamé en CPU — mesuré
+sur une Ubuntu réelle chargée (microk8s, load 6-9/4 cœurs) — le `find` SUID sur
+`/usr`, `/opt`, … ne finissait pas en 15 s, donc tout le check rapportait « SUID
+scan skipped » et perdait la couverture SUID (dont `writable_suid`) pour ce run.
+Passé à 30 s : un hôte normal finit en ~2 s (inchangé), un hôte moyennement chargé
+passe désormais, et un hôte pathologiquement affamé skippe toujours **honnêtement**
+(jamais un faux « clean »). Réduit, sans l'éliminer, le skip sous charge.
+
+### 3. Cohérence IPv6 : pas de « couvert par des règles UFW (v6) » quand UFW IPv6 est off
+
+Le check `ipv6` pouvait émettre son OK final — « tous les services couverts par des
+règles UFW (v6) » — sur un hôte où UFW IPv6 est **désactivé**, contredisant
+directement la ligne « UFW IPv6 désactivé — link-local uniquement » du même run. La
+condition portait sur la lisibilité de la politique (`is not None`), pas sur le fait
+qu'UFW *gère* réellement l'IPv6. Ce n'est vrai que si UFW gère v6 ; IPv6 off, les
+listeners sont saufs (ou non) pour d'autres raisons — portée link-local, refus par
+défaut — ce que les findings par branche disent déjà. La condition est désormais
+`is True`, donc l'OK de couverture ne se déclenche que si UFW IPv6 est activé (ça
+retire aussi la même fausse affirmation quand noyau et UFW IPv6 sont tous deux
+désactivés). Garde `tests/test_ipv6.py::TestUfwV6CoverageClaimHonesty` (3 cas),
+mutation `ipv6/coverage-claimed-when-ufw-v6-disabled`.
+
+### 4. Le verdict des logs UFW ne sur-affirme plus
+
+`logs.verdict_ok` disait « Activité normale — N tentative(s) bloquée(s) …, **aucune
+menace détectée** ». Un pare-feu qui bloque des paquets, sans *motif* d'attaque dans
+les événements analysés, n'établit pas l'absence de menace — l'affirmation honnête
+porte sur les événements examinés. Reformulé (EN + FR) en « **aucun motif d'attaque
+reconnu dans les événements analysés** ». Wording seul.
+
+### 5. `--manage-logs` sur une install fraîche ne sort plus en silence
+
+Sur une machine où aucun audit n'a encore tourné, il n'y a pas de dossier de logs.
+`sudo bob --manage-logs` entrait dans le viewer curses, qui ne trouvait rien à
+afficher et ressortait aussitôt — un flash vide puis un retour silencieux (et
+déroutant). Le dispatcher de `bob/manage_logs.py` vérifie désormais le dossier de
+logs *avant* `import curses` : sans `log_dir` configuré il route vers le mode
+texte, qui indique qu'il n'y a pas encore de rapport d'audit et que lancer un audit
+d'abord crée le dossier de logs et écrit le premier rapport. Garde
+`tests/test_manage_logs.py::TestNoLogDirRoutesToPlain` (monkeypatch `isatty →
+True`, vérifie que `curses.wrapper` n'est **pas** appelé), mutation
+`manage-logs/no-dir-enters-curses-silently`.
+
+### 6. Découvrabilité de `--install-completion` au premier run
+
+pip et pipx ne peuvent pas afficher de message post-installation, donc un BOB
+fraîchement installé ne donnait aucun indice que l'autocomplétion bash demande un
+`--install-completion` unique. BOB imprime désormais un rappel d'une ligne — `Astuce
+— activer l'autocomplétion (une fois) : sudo bob --install-completion` — à la fin de
+chaque audit interactif, et continue de l'imprimer à chaque run suivant tant que la
+complétion n'est pas installée, puis se tait. C'est TTY-only et supprimé sous
+`--quiet`, donc il ne pollue jamais une sortie pipée/JSON ni un cron.
+`bob/completion.py` gagne `completion_installed()` (vérifie le marqueur
+`/etc/bash_completion.d/bob`) et `should_show_completion_hint(*, is_tty, quiet)` ;
+`bob/__main__.py` l'appelle après le bloc de config. Les étapes d'installation du
+README (EN + FR) signalent aussi `--install-completion` comme étape suivante. Garde
+`tests/test_v0221_completion_hint.py`, mutation
+`completion/hint-shown-when-already-installed`.
+
+Inchangé : le `--fix` de `writable_suid` **affiche** toujours son `chmod go-w` sans
+l'auto-appliquer — délibérément (un binaire set-id root world-writable est un
+symptôme de compromission à enquêter avant de retourner le bit, pas un auto-fix
+natif), et il ne prétend jamais avoir réussi. Une idée séparée « latent vs actif »
+— déduire moins pour un *service dangereux enabled mais actuellement inactif* (le
+cas Telnet) que pour un service réellement en écoute — est fondée mais c'est un
+changement de score, reportée au backlog. **Tests** 11199 → **11220** (les 3 gardes
+de cohérence du fix IPv6, les gardes manage-logs et completion-hint, plus les
+instances de test de contrat paramétrées par les trois nouvelles mutations ;
+wording et timeout n'ajoutent aucun test).
+
+---
+
 ## [0.22.0] — 27-09-2026
 
 **Une version mineure : cinq nouveaux checks de couverture.** Après que 0.21.3 a

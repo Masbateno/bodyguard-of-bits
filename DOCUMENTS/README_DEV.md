@@ -502,8 +502,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Expected output:
 ```
-EN keys: 2640
-FR keys: 2640
+EN keys: 2641
+FR keys: 2641
 Missing in FR: none
 ```
 
@@ -519,7 +519,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2640 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2641 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

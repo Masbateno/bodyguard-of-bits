@@ -257,7 +257,7 @@
     "days_unit": "jour(s)",
     "days_available": "jour(s) de logs disponibles",
     "total_blocks": "tentative(s) bloquée(s) détectée(s)",
-    "verdict_ok": "Activité normale — {total} tentative(s) bloquée(s) sur {days} jour(s), aucune menace détectée",
+    "verdict_ok": "Activité normale — {total} tentative(s) bloquée(s) sur {days} jour(s), aucun motif d'attaque reconnu dans les événements analysés",
     "verdict_warn": "Activité suspecte — {total} tentative(s) bloquée(s) sur {days} jour(s)",
     "top_ips": "Top IPs sources",
     "top_ports": "Top ports ciblés",
@@ -383,7 +383,7 @@
     "banner_total": "{total} rapport(s)",
     "banner_selected": "{count} marqué(s) / {total}",
     "title": "GESTION DES RAPPORTS",
-    "no_dir": "Aucun emplacement configuré. Lancez d'abord : {cmd}",
+    "no_dir": "Aucun rapport d'audit pour l'instant — ton premier audit crée le dossier de logs et y écrit un rapport. Lances-en un d'abord ; ensuite --manage-logs parcourt et purge les rapports passés : {cmd}",
     "no_logs": "Aucun rapport trouvé dans {path}",
     "stored_in": "Rapports dans : {path}",
     "size_label": "Ko",
@@ -1324,9 +1324,9 @@
     "unowned_suid_reason": "{count} binaire(s) SUID qu'aucun gestionnaire de paquets ne revendique",
     "unowned_suid_detail": "Tous les autres binaires SUID de cet hôte y ont été placés par un paquet. Pas ceux-là : le gestionnaire de paquets a été interrogé et a répondu qu'aucun ne les livre. C'est la forme que prend une escalade de privilèges laissée derrière — un binaire appartenant à root, qui s'exécute en root pour n'importe qui, installé par autre chose que la distribution. Cela peut rester légitime : logiciel compilé localement, installeur d'un éditeur, `chmod u+s` délibéré. BOB ne sait pas distinguer ces cas de l'autre, et c'est pourquoi il le rapporte au lieu de le trancher. Vérifiez chacun contre ce que vous savez avoir installé : stat <chemin>",
     "unexpected_suid_reason": "{count} binaire(s) SUID inattendu(s) détecté(s)",
-    "writable_suid": "{count} binaire(s) SUID/SGID modifiable(s) par groupe/autres — quiconque peut les écrire exécute du code en tant que leur propriétaire : {paths}",
-    "writable_suid_reason": "un binaire set-id modifiable par quelqu'un d'autre que son propriétaire est une escalade de privilèges immédiate",
-    "writable_suid_detail": "Un binaire SUID (ou SGID) s'exécute avec les privilèges de son propriétaire — en général root. S'il est aussi modifiable par le groupe ou les autres, quiconque a ce droit d'écriture peut remplacer son contenu et faire exécuter son propre code en root au prochain lancement. Ce n'est pas une subtilité de durcissement, c'est un root local direct : écraser, puis déclencher. C'est signalé pour tout binaire set-id, en whitelist ou non — un /usr/bin/passwd modifiable n'est pas sûr sous prétexte que « passwd » est un nom attendu. Restaurer l'écriture propriétaire seul : chmod go-w <chemin> (et chercher comment le bit d'écriture est arrivé — un binaire normal ne devient pas modifiable par le groupe tout seul).",
+    "writable_suid": "{count} binaire(s) SUID/SGID modifiable(s) par groupe/autres — l'écrire fait tourner le code d'un attaquant avec les privilèges du propriétaire (SUID) ou du groupe (SGID) : {paths}",
+    "writable_suid_reason": "un binaire set-id modifiable par quelqu'un d'autre que son propriétaire est un chemin d'escalade de privilèges — un root direct pour un binaire SUID-root modifiable",
+    "writable_suid_detail": "Un binaire set-id s'exécute avec des privilèges élevés : un binaire SUID en tant que son propriétaire (pour SUID-root, c'est root), un binaire SGID avec son groupe. S'il est aussi modifiable par le groupe ou les autres, quiconque a ce droit d'écriture peut remplacer son contenu et faire exécuter son propre code avec ces privilèges au prochain lancement — écraser, puis déclencher. Un binaire SUID-root modifiable est donc un root local direct ; un binaire SGID (ou SUID non-root) modifiable est un chemin d'escalade vers ce groupe/utilisateur, dont l'impact dépend des privilèges de ce groupe et peut, selon la configuration, permettre une escalade supplémentaire (un groupe comme docker, disk ou shadow). C'est signalé pour tout binaire set-id, en whitelist ou non — un /usr/bin/passwd modifiable n'est pas sûr sous prétexte que « passwd » est un nom attendu. Restaurer l'écriture propriétaire seul : chmod go-w <chemin> (et chercher comment le bit d'écriture est arrivé — un binaire normal ne devient pas modifiable par le groupe tout seul).",
     "unexpected_sgid": "{count} binaire(s) SGID inattendu(s) : {paths}",
     "unexpected_sgid_detail": "Les binaires SGID s'exécutent avec les privilèges du groupe du fichier. Moins dangereux que SUID, mais méritent une vérification.",
     "whitelisted": "{count} binaire(s) SUID ignoré(s) par la liste blanche utilisateur : {paths}"
@@ -3006,7 +3006,7 @@
             },
       "writable_suid": {
         "title": "Un binaire SUID/SGID modifiable par le groupe ou les autres",
-        "why": "Un binaire set-id s'exécute avec les privilèges de son propriétaire — pour un binaire SUID root, c'est root. Si le fichier lui-même est modifiable par son groupe ou par tous, n'importe quel utilisateur ayant ce droit d'écriture peut écraser le binaire avec son propre code, qui s'exécute alors en root au prochain lancement (par un utilisateur, une tâche cron, un service). C'est un root local direct et inconditionnel : pas d'exploit, juste écraser-puis-déclencher. C'est le finding SUID le plus grave, signalé même pour les noms en whitelist — un binaire attendu devenu modifiable reste une escalade triviale.",
+        "why": "Un binaire set-id s'exécute avec des privilèges élevés — un binaire SUID en tant que son propriétaire (pour SUID-root, c'est root), un binaire SGID avec son groupe. Si le fichier lui-même est modifiable par son groupe ou par tous, n'importe quel utilisateur ayant ce droit d'écriture peut écraser le binaire avec son propre code, qui s'exécute alors avec ces privilèges au prochain lancement (utilisateur, cron, service) — pas d'exploit, juste écraser-puis-déclencher. Un binaire SUID-root modifiable est un root local direct et inconditionnel ; un binaire SGID (ou SUID non-root) modifiable est un chemin d'escalade vers ce groupe/utilisateur, dont l'impact dépend des privilèges de ce groupe et peut, selon la configuration, permettre une escalade supplémentaire (docker, disk, shadow). C'est le finding SUID le plus grave, signalé même pour les noms en whitelist — un binaire attendu devenu modifiable reste une escalade triviale.",
         "how": "1. Voir qui peut l'écrire et comment c'est arrivé :\n   stat <chemin>\n2. Restaurer l'écriture propriétaire seul :\n   sudo chmod go-w <chemin>\n3. Enquêter : un binaire packagé ne devient pas modifiable par le groupe/les autres tout seul. Vérifier si un mauvais install, un chmod négligent ou une compromission a posé le bit — les timestamps du fichier sont une preuve.\n4. Si un paquet le possède, le réinstaller restaure les permissions d'origine."
       },
       "unexpected_sgid": {
@@ -3935,6 +3935,7 @@
     "symlink_skipped_no_sudo": "Lien symbolique ignoré — lancez via sudo pour détecter le binaire utilisateur",
     "reload_title": "Pas encore active dans ce shell — la complétion est chargée au démarrage d'un shell.",
     "reload_how": "Ouvrez un nouveau terminal, ou lancez : source /etc/bash_completion.d/bob",
+    "enable_hint": "Astuce — activer l'autocomplétion (une fois) : {cmd}",
     "needs_root": "--install-completion exige les droits root.",
     "needs_root_sudo_warning": "« sudo bob » ne fonctionnera pas — sudo utilise un PATH restreint qui n'inclut pas les binaires pipx.",
     "needs_root_how": "Copiez et lancez exactement cette commande :"

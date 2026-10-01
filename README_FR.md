@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.22.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.22.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -83,6 +83,8 @@ sudo apt install pipx && pipx ensurepath
 pipx install bodyguard-of-bits
 ```
 
+> **Étape suivante requise** — activez `sudo bob` + la complétion en lançant `--install-completion` une fois (voir [ci-dessous](#activer-sudo-bob--complétion-bash)). BOB affiche aussi ce rappel à la fin de chaque audit tant que ce n'est pas fait.
+
 > **Sur un Raspberry Pi ?** Voir le [guide Raspberry Pi](DOCUMENTS/RASPBERRY_PI_FR.md) — spécificités d'installation et d'utilisation, les vérifications d'identifiants sur la partition de boot, et exactement ce qui a été validé sur un vrai Pi Zero W.
 
 ---
@@ -131,7 +133,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.22.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.22.1  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║

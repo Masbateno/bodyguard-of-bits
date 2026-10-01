@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.22.0
+Version:        0.22.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,29 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Oct 01 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.22.1-1
+- Patch: SUID wording precision, SUID-scan timeout, audit-output honesty, and
+  first-run UX fixes. No scoring-formula/schema/CSV-order or detection-rule
+  change; two observable outputs do change (the longer timeout can let the SUID
+  audit complete under load; the IPv6 fix drops a false coverage OK).
+- writable_suid message/detail/--explain (EN+FR) distinguishes SUID-root (direct
+  root) from SGID / non-root SUID (privesc path to that group/user, whose impact
+  depends on that group's privileges); the old "runs as owner / immediate local
+  root" over-generalised SGID.
+- _FIND_TIMEOUT 15->30 s: a CPU-starved host hit the 15 s ceiling ("scan
+  skipped"); 30 s lets a loaded box finish (normal ~2 s; still skips honestly if
+  pathologically starved).
+- IPv6: "covered by UFW (v6) rules" no longer claimed when UFW IPv6 is disabled.
+- UFW-log verdict "no threat detected" -> "no recognised attack pattern in the
+  analysed events".
+- --manage-logs on a fresh install (no log directory yet) routes to the text path
+  explaining an audit creates the log directory, instead of flashing an empty
+  curses screen and exiting silently.
+- First-run discoverability: BOB prints a one-line --install-completion reminder
+  at the end of each interactive audit until completion is installed (TTY-only,
+  suppressed under --quiet). Found by a field pass + post-release review of the
+  0.22.0 audit + first-run use.
+
 * Sun Sep 27 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.22.0-1
 - Minor: five new coverage checks — kernel-module blacklist (INFO, CIS 3.4),
   privileged /dev nodes (INFO), module-signature enforcement (INFO, folded into

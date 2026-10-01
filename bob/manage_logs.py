@@ -1100,6 +1100,13 @@ def run_manage_logs(user_config, config, t) -> int:
     if not sys.stdout.isatty():
         return _run_manage_logs_plain(user_config, config, t)
 
+    # Nothing to manage yet (fresh install — no audit has created a log
+    # directory): the curses path would bail on `if not log_dir: return 0`
+    # *inside* curses.wrapper, flashing a blank screen and exiting silently.
+    # Route to the plain path, which prints the "run an audit first" guidance.
+    if not user_config.get("log_dir"):
+        return _run_manage_logs_plain(user_config, config, t)
+
     import curses
     import os as _os
     _os.environ.setdefault("ESCDELAY", "25")

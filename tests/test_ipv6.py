@@ -545,3 +545,46 @@ class TestUfwInactiveIPv6:
         result = check_ipv6(self._snap(), ufw_active=True, t=_t)
         assert "warn" in _levels(result)
         assert total_deductions(result) == 2
+
+
+# v0.22.1 — "covered by UFW (v6) rules" must not be claimed when UFW IPv6 is off
+
+class TestUfwV6CoverageClaimHonesty:
+    """When UFW IPv6 is disabled, the closing "all listeners covered by UFW (v6)
+    rules" OK is untruthful — the listeners are safe (or not) for other reasons
+    (link-local scope, default deny), not because a v6 rule covers them. It must
+    not fire alongside the "UFW IPv6 disabled" finding (ChatGPT-flagged, judged
+    valid; 0.22.1)."""
+
+    def _keys(self, result):
+        return {f.key for f in result.findings}
+
+    def test_disabled_ufw_v6_link_local_does_not_claim_coverage(self):
+        snap = make_snapshot(
+            kernel_ipv6_enabled=True,
+            ufw_ipv6_enabled=False,
+            ipv6_listeners=["22/tcp"],
+            has_global_ipv6=False,
+        )
+        keys = self._keys(check_ipv6(snap, ufw_active=True, t=_t))
+        assert "ipv6.ufw_disabled_listeners_link_local" in keys
+        assert "ipv6.all_ports_covered" not in keys   # the contradiction
+
+    def test_both_disabled_with_listeners_does_not_claim_coverage(self):
+        snap = make_snapshot(
+            kernel_ipv6_enabled=False,
+            ufw_ipv6_enabled=False,
+            ipv6_listeners=["22/tcp"],
+            has_global_ipv6=False,
+        )
+        assert "ipv6.all_ports_covered" not in self._keys(check_ipv6(snap, t=_t))
+
+    def test_enabled_ufw_v6_all_covered_still_claims_coverage(self):
+        """The honest positive case must still fire: UFW IPv6 on, listener covered."""
+        snap = make_snapshot(
+            kernel_ipv6_enabled=True,
+            ufw_ipv6_enabled=True,
+            ipv6_listeners=["22/tcp"],
+            ufw_v6_covered=["22/tcp"],
+        )
+        assert "ipv6.all_ports_covered" in self._keys(check_ipv6(snap, t=_t))

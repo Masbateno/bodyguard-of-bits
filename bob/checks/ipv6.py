@@ -219,11 +219,15 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                         port_deductions += 1
                     found_issue = True
 
-    # The closing OK is a positive claim — "all listeners are covered" — and it
-    # sits outside the branch chain, so heading that chain with the unknown case
-    # was not enough: an unreadable policy still produced a clean bill of
-    # coverage against rules that were never read.
-    if snapshot.ufw_ipv6_enabled is not None and not found_issue and not firewalld_active and not (
+    # The closing OK is a positive claim — "all listeners are covered by UFW
+    # (v6) rules" — and it sits outside the branch chain. It is only *truthful*
+    # when UFW is actually managing IPv6: with UFW IPv6 disabled the listeners
+    # are safe (or not) for other reasons — link-local scope, or the default
+    # deny — not because a v6 rule covers them, and the per-branch findings
+    # above already say so. Requiring `is True` (not merely `is not None`) stops
+    # the contradictory "UFW IPv6 disabled … but covered by UFW (v6) rules" pair
+    # on a host with IPV6=no (and the same claim when both sides are disabled).
+    if snapshot.ufw_ipv6_enabled is True and not found_issue and not firewalld_active and not (
         not snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled
     ):
         if snapshot.ipv6_listeners:

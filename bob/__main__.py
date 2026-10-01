@@ -532,6 +532,17 @@ def _run(argv=None) -> int:
                 output.print_info(t("config.found", path=str(user_config.path)))
                 output.print_dim(t("config.reconfigure_hint",
                                                    cmd=output.command("bob --reconfigure")))
+            # Bash completion is not yet installed: point the operator to it on
+            # every run until it is. pip/pipx cannot print a post-install
+            # message, so the first audit (run right after install) is BOB's
+            # earliest chance to say so, and later runs keep the reminder until
+            # /etc/bash_completion.d/bob exists — then it goes silent. TTY-only
+            # and suppressed under --quiet so it never pollutes piped output.
+            from bob.completion import should_show_completion_hint
+            if should_show_completion_hint(is_tty=sys.stdout.isatty(), quiet=config.quiet):
+                self_path = Path(sys.argv[0]).resolve()
+                output.print_dim(t("completion.enable_hint",
+                                   cmd=output.command(f"sudo {self_path} --install-completion")))
             if not config.quiet:
                 print()
 

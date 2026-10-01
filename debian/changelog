@@ -1,3 +1,31 @@
+bodyguard-of-bits (0.22.1-1) unstable; urgency=medium
+
+  * Patch: SUID wording precision, SUID-scan timeout, audit-output honesty, and
+    first-run UX fixes. No scoring-formula/schema/CSV-order or detection-rule
+    change; two observable outputs do change (the longer timeout can let the SUID
+    audit complete under load; the IPv6 fix drops a false coverage OK).
+  * writable_suid message/detail/--explain (EN+FR) now distinguishes SUID-root
+    (direct root) from SGID / non-root SUID (a privesc path to that group/user,
+    whose impact depends on that group's privileges); the old "runs as owner /
+    immediate local root" over-generalised SGID.
+  * _FIND_TIMEOUT 15->30 s: a CPU-starved host hit the 15 s ceiling and the SUID
+    check reported "scan skipped"; 30 s lets a loaded box finish (normal ~2 s,
+    unaffected; still skips honestly if pathologically starved).
+  * IPv6: the "covered by UFW (v6) rules" OK is no longer claimed when UFW IPv6
+    is disabled (contradicted the same run's "UFW IPv6 disabled" line).
+  * UFW-log verdict "no threat detected" -> "no recognised attack pattern in the
+    analysed events".
+  * --manage-logs on a fresh install (no log directory yet) now routes to the
+    text path explaining an audit creates the log directory, instead of flashing
+    an empty curses screen and exiting silently.
+  * First-run discoverability: BOB prints a one-line --install-completion
+    reminder at the end of each interactive audit until completion is installed
+    (TTY-only, suppressed under --quiet); README install steps call it out too.
+  * Found by a stress-test field pass (Ubuntu+Fedora), post-release review of the
+    published 0.22.0 audit, and first-run use (last two).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 01 Oct 2026 18:00:00 +0000
+
 bodyguard-of-bits (0.22.0-1) unstable; urgency=medium
 
   * Minor: five new coverage checks — kernel-module blacklist (INFO, CIS 3.4),

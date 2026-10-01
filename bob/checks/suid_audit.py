@@ -105,7 +105,13 @@ _SCAN_ROOTS = (
     "/opt",
 )
 
-_FIND_TIMEOUT = 15  # seconds
+_FIND_TIMEOUT = 30  # seconds — 15 s was hit on a CPU-starved host (Ubuntu
+                    # microk8s, load 6-9/4 cores) where the SUID find over /usr,
+                    # /opt … could not finish, so the whole check reported
+                    # "scan skipped" and lost SUID coverage for that run. A
+                    # normal host finishes in ~2 s, so 30 s only raises the
+                    # ceiling for a loaded box; a pathologically starved one
+                    # still skips honestly (never a false "clean").
 
 
 # ---------------------------------------------------------------------------
