@@ -864,6 +864,7 @@ _PACKAGE_NAMES: "dict[str, dict[str, str | None]]" = {
     "smartmontools": {"apt": "smartmontools", "dnf": "smartmontools", "pacman": "smartmontools", "apk": "smartmontools", "zypper": "smartmontools"},
     "clamav":        {"apt": "clamav",        "dnf": "clamav",    "pacman": "clamav",    "apk": "clamav",    "zypper": "clamav"},
     "ufw":           {"apt": "ufw",           "dnf": "ufw",       "pacman": "ufw",       "apk": "ufw",       "zypper": None},
+    "firewalld":     {"apt": "firewalld",     "dnf": "firewalld", "pacman": "firewalld", "apk": "firewalld", "zypper": "firewalld"},
     "borgmatic":     {"apt": "borgmatic",     "dnf": "borgmatic", "pacman": "borgmatic", "apk": "borgmatic", "zypper": None},
 
     # Measured differences.

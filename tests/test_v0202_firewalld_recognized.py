@@ -53,9 +53,32 @@ class TestFirewallCheck:
         assert "firewall.firewalld_active" in _keys(result)
         assert "alert" not in _levels(result)
 
-    def test_without_firewalld_ufw_missing_still_alerts(self):
-        result = check_firewall(self._status(), firewalld=None, t=_t)
+    def test_no_frontend_no_netfilter_alerts_backend_neutral(self):
+        # No UFW, no firewalld, and the netfilter layer is not filtering: the
+        # only genuinely unprotected case. The alert is backend-neutral, not
+        # "UFW is not installed".
+        result = check_firewall(self._status(), firewalld=None,
+                                netfilter_protective=False, t=_t)
         assert "firewall.firewalld_active" not in _keys(result)
+        assert "prerequisites.firewall_missing" in _keys(result)
+        assert "alert" in _levels(result)
+
+    def test_no_frontend_but_netfilter_filtering_is_credited_not_alerted(self):
+        # The mirror of the old UFW-centric over-claim: a plain nftables
+        # default-deny ruleset IS a firewall, so it is credited as INFO, never
+        # flagged "no firewall".
+        result = check_firewall(self._status(), firewalld=None,
+                                netfilter_protective=True, t=_t)
+        assert "firewall.netfilter_active" in _keys(result)
+        assert "prerequisites.firewall_missing" not in _keys(result)
+        assert "alert" not in _levels(result)
+
+    def test_netfilter_unknown_is_not_read_as_protected(self):
+        # unknown != clean: when the netfilter layer was not probed (None), the
+        # absence of a front-end still alerts rather than assuming protection.
+        result = check_firewall(self._status(), firewalld=None,
+                                netfilter_protective=None, t=_t)
+        assert "prerequisites.firewall_missing" in _keys(result)
         assert "alert" in _levels(result)
 
 

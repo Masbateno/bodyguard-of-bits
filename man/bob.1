@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-10-01" "BOB 0.22.1" "User Commands"
+.TH BOB 1 "2026-10-03" "BOB 0.23.0" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -41,6 +41,13 @@ in normal operation.
 .TP
 .BR \-v ", " \-\-verbose
 Show detailed port exposure per service in the services section.
+.TP
+.B \-\-exhaustive
+Also run the slow, full-coverage checks that are held out of the default fast
+audit \(em currently package-file integrity (\fBrpm \-Va\fR / \fBdebsums \-c\fR),
+which re-hashes every packaged file. INFO-only: it reports files that differ from
+the package manager's recorded digest, never deducts, and excludes configuration
+files. Opt-in because the verification takes tens of seconds.
 .TP
 .BR \-d ", " \-\-detailed
 Write a detailed audit report to the configured log directory

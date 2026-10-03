@@ -6,6 +6,99 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.23.0] — 03-10-2026
+
+**Une version mineure : un check d'intégrité des paquets opt-in `--exhaustive`, et
+un prérequis pare-feu backend-neutre.** Aucun changement de formule de score, schéma
+JSON, ordre de colonnes CSV ou règle de détection, et **aucun score ne bouge sur un
+hôte existant**. Un seul item **BREAKING** : une clé de constat renommée.
+
+### 1. Mode `--exhaustive` + `package_integrity` (INFO-only)
+
+Un nouveau flag opt-in, `--exhaustive`, lance les checks lents de couverture complète
+délibérément exclus de l'audit rapide par défaut. Son premier consommateur est
+`package_integrity` : il compare les fichiers sur disque aux empreintes enregistrées
+par le gestionnaire de paquets à l'installation, via le vérificateur natif de l'hôte
+— `debsums -c` (apt), `rpm -Va` (dnf/zypper), `apk audit --system` (apk),
+`pacman -Qkk` (pacman).
+
+Forme doctrine :
+  - **INFO-only.** Un fichier qui diffère est ambigu — recompilation locale, correctif
+    éditeur, ou altération se ressemblent tous — donc signalé, jamais scoré.
+  - **inconnu ≠ propre.** Un vérificateur absent (`debsums` souvent absent sur Debian),
+    ou un timeout, rapporte *« non vérifié — résultat non établi »*, jamais un « propre »
+    vert.
+  - **Les fichiers de conf sont exclus** — rpm les marque `c` (aussi doc/ghost/licence/
+    readme, tous ignorés) ; pour les autres, BOB écarte les chemins sous `/etc`.
+  - **Une garde anti-hang, pas un cap de lenteur.** Le vérificateur re-hash tous les
+    fichiers de paquets, ce qui prend légitimement des minutes sur un install complet
+    (mesuré : 496 s sur un serveur Fedora, 511 s sur un desktop Mint, 556 s sur un Pi
+    Zero). Il tourne sous un timeout de 1800 s dont le seul rôle est d'arrêter un
+    vérificateur *wedgé* ; son groupe de processus entier est tué au dépassement, et le
+    résultat est honnête.
+
+L'audit rapide par défaut est inchangé — `package_integrity` ne tourne que sous
+`--exhaustive`. Garde `tests/test_v0230_package_integrity.py`, mutations
+`package_integrity/config-files-reported-as-tampered` et
+`package_integrity/tool-missing-read-as-clean`.
+
+### 2. Prérequis pare-feu backend-neutre (BREAKING : renommage de clé)
+
+Le prérequis pare-feu always-on alertait `prerequisites.ufw_missing` — « UFW n'est
+pas installé » — dès qu'UFW était absent, même sur un hôte protégé par un simple
+ruleset nftables. C'est une sur-affirmation (et une mauvaise prescription : il
+exigeait un outil précis). Désormais il :
+
+  - consulte la couche netfilter brute quand aucun front-end géré (UFW/firewalld)
+    n'est actif, et **crédite un ruleset nftables/iptables filtrant** en INFO
+    (`firewall.netfilter_active`) au lieu de crier « aucun pare-feu » ;
+  - **n'alerte que si rien ne protège l'hôte** — ni UFW, ni firewalld, ni ruleset
+    netfilter filtrant — sous la clé backend-neutre `prerequisites.firewall_missing` ;
+  - propose une **remédiation sensible à la distribution** (ufw sur les familles
+    Debian/Arch/Alpine, firewalld sur la famille RPM), pas un `ufw enable` en dur ;
+  - traite *inconnu* comme non-protégé (le signal netfilter n'est sondé que dans cette
+    branche, donc aucun coût sur le chemin courant).
+
+**BREAKING :** la clé de constat `prerequisites.ufw_missing` est renommée
+`prerequisites.firewall_missing` (message, `--explain`, et `cis_refs` déplacés
+ensemble). Toute baseline, ignore-list, ou invocation `--explain` qui nommait
+l'ancienne clé doit utiliser la nouvelle. Le constat n'a jamais porté de déduction,
+donc **aucun score ne change** ; c'est du wording + justesse de clé. Garde
+`tests/test_v0202_firewalld_recognized.py::TestFirewallCheck` (trois polarités),
+mutation `firewall/no-frontend-credits-despite-unprotected-netfilter`.
+
+### 3. Documentation
+
+Le nouveau `DOCUMENTS/DOCTRINE.md` écrit la doctrine du projet — 22 principes en deux
+parties (ce que BOB affirme, et comment il est construit et prouvé) — avec un lien
+bidirectionnel vers `CONVENTIONS.md`, qui gagne un **§9** cataloguant chaque registre
+qu'un nouveau check doit toucher (clés locale, parité EN/FR, `--explain`, `cis_refs`,
+visibilité, mapping de domaine, complétion, compteurs). Une datation Tier 1 périmée
+« cycle v0.20.x » dans les tables de tiers a été corrigée en la vraie plage
+(v0.20.x–v0.22.x).
+
+### Compteurs et validation
+
+Clés locale 2640 → 2652, sections filtrables 50 → **51**, check modules 59 →
+**60**, `_PREFIX_TO_DOMAIN` 60 → **61**, mutations 295 → **301**. L'ensemble
+`--explain` et les références CIS sont inchangés à **208** — les deux nouveaux checks
+sont INFO-only et ne portent pas de clé explain.
+
+**Field-testé sur six machines réelles, 0 régression :** Raspberry Pi Zero W (ARM,
+timeout debsums → « non vérifié » honnête ; prérequis pare-feu exercé dans les deux
+polarités), Mint 22.3 (round-trip debsums, un binaire altéré détecté puis effacé),
+Ubuntu 26.04 sous Python 3.14.4 (garde anti-hang 1800 s validée sous famine CPU — un
+`debsums -c` de 639 s a fini au lieu d'être tué), Fedora 44 sous Python 3.14.3
+(SELinux enforcing, firewalld actif ; round-trip `rpm -Va` avec le filtre flag `c`
+confirmé sur vraie sortie), Kali Rolling sous Python 3.14.7 (prérequis backend-neutre
+déclenché naturellement sur un hôte nft nu), et Debian 13 (le verdict OK propre et un
+round-trip tamper complet). Sur les cinq hôtes avec un front-end ou aucun, le
+prérequis pare-feu s'est comporté correctement dans chaque état ; les deux
+vérificateurs de paquets (debsums et `rpm -Va`) ont été testés end-to-end sur
+matériel. **Tests** 11220 → **11246**.
+
+---
+
 ## [0.22.1] — 01-10-2026
 
 **Une version corrective : précision du wording SUID, timeout de scan SUID,

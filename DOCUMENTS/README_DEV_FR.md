@@ -38,7 +38,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | Module | Rôle |
 |---|---|
 | `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~995 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (50 sections filtrables + 10 always-on), `_section_enabled()` (~1115 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (51 sections filtrables + 10 always-on), `_section_enabled()` (~1115 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig`, `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
@@ -171,7 +171,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, email HTML
-├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (50 sections filtrables + 10 always-on)
+├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (51 sections filtrables + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # Mode --watch=N — relance l'audit toutes les N secondes
@@ -502,8 +502,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 2641
-FR keys: 2641
+EN keys: 2652
+FR keys: 2652
 Missing in FR: none
 ```
 
@@ -519,7 +519,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2641 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2652 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

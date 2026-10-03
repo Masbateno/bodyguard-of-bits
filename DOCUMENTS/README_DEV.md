@@ -38,7 +38,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | Module | Role |
 |---|---|
 | `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~995 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (50 filterable + 10 always-on sections), `_section_enabled()` (~1115 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (51 filterable + 10 always-on sections), `_section_enabled()` (~1115 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `~/.config/bob/config.conf`, `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -171,7 +171,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, HTML email
-├── runner.py            # Audit execution engine — run_checks() with _sec section closure (50 filterable + 10 always-on)
+├── runner.py            # Audit execution engine — run_checks() with _sec section closure (51 filterable + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # --watch=N mode — re-run audit every N seconds
@@ -502,8 +502,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Expected output:
 ```
-EN keys: 2641
-FR keys: 2641
+EN keys: 2652
+FR keys: 2652
 Missing in FR: none
 ```
 
@@ -519,7 +519,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2641 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2652 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

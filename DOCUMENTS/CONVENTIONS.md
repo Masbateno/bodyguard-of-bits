@@ -3,7 +3,8 @@
 # BOB — Conventions
 
 How this project does things, in one place: what a colour means, what a symbol
-means, and the code patterns a check must follow.
+means, and the code patterns a check must follow. For the *why* these serve —
+what BOB asserts and how it is proven — see [`DOCTRINE.md`](DOCTRINE.md).
 
 Everything here was true when it was written, and most of it is now checked.
 That distinction matters: this project has twice found a convention that lived
@@ -334,6 +335,84 @@ bump and a changelog note. A script that parsed `bob --version` and hard-coded t
 machine-stable version should read `--format json` (`schema_version`) rather than
 scrape human output. This is called out so the de-`v` is a one-time, documented
 decision, not an open precedent for churning the version text.
+
+---
+
+## 9. Localisation, explain, and the registries a check touches
+
+The Snapshot/check pattern (§7) is half of a new check. The other half is wiring it
+into every registry that must agree with it. Miss one and a guard fails; miss the
+counter and `test_v0170_doc_counters_sweep` / `test_v0211_live_count_claims` fail.
+
+### Locale keys (`bob/locales/{en,fr}.json`)
+
+Every operator-visible string is a key, and the two files are **strictly equal in
+key set** (`test_i18n.py`) — add a key to one, add it to the other, or the parity
+guard fails. A check named `xxx` typically touches three places in each file:
+
+- the **section header** block (`"xxx": "XXX SECTION TITLE"`),
+- the **section description** block (one line shown under the header),
+- a **messages** block (`"xxx": { "finding_key": "…", … }`), whose keys are the
+  `.key` suffixes the check emits (`xxx.something`).
+
+A WARN/ALERT finding also needs an **explain** entry (below). The total key count is
+documented in SNAPSHOT and pinned live — bump it when you add keys.
+
+Interpolate with `{name}` placeholders, never f-strings in the JSON. Do not put a
+distribution-specific command (`apt install …`) in a *message*: the finding's `cmd`
+field carries the host-specific command, and `test_v0170_distro_paths.py` rejects a
+package manager named in message prose (explain blocks that name the family are
+exempt).
+
+**The 27 service labels stay English by design.** `services.json` prose labels
+(`Samba (Windows file sharing)`, …) are not translated — a deliberate, documented
+exception, not drift.
+
+### `--explain` keys
+
+Every WARN or ALERT finding key must have a matching `--explain` entry
+(`test_explain_coverage.py`), with `title` / `why` / `how` in **both** locales. An
+INFO-only check needs **no** explain (this is why `module_blacklist`, `dev_privileged`
+and `package_integrity` have none). Explain keys follow the `prefix.name` naming
+convention pinned by `test_explain_naming_convention.py` (known prefixes + counts).
+The explain set is wired in `bob/explain.py` (`_EXPLAIN_GROUPS`), the locale explain
+blocks, and `bob/data/bob.bash-completion` (`_EXPLAIN_KEYS`).
+
+### CIS references (`bob/data/cis_refs.json`)
+
+A finding key may carry a CIS/benchmark reference. The numbers are **generated from
+ComplianceAsCode by the rule's name**, never hand-typed (see DOCTRINE principle 21);
+the per-benchmark breakdown is pinned by `test_v0163_readme_tech_claims.py`.
+
+### Visibility keys (`bob/visibility.py`)
+
+A finding that means "this could not be verified" (`xxx.unreadable`, `xxx.unknown`,
+`xxx.tool_missing`, `xxx.timed_out`) belongs in the visibility set, so the
+"N unverified" count is honest (DOCTRINE principle 2). A section that *raises* is
+degraded to `xxx.unavailable` by the fault barrier automatically — that one is not
+listed by name.
+
+### Domain mapping (`bob/domain_scores.py`)
+
+Each section's prefix maps to one of the **6 score domains** via `_PREFIX_TO_DOMAIN`,
+and the mapping must match the section's **display group** (`test_v0200`). A new
+check adds one entry.
+
+### Registration and completion
+
+The section is registered in `runner.py` (`_SECTIONS`, with its `always_on` flag) and
+dispatched through `_sec` (§7). Add its name to `bob/data/bob.bash-completion`
+(`_SECTIONS`). A section held out of the default run (like `package_integrity` under
+`--exhaustive`) is still a registered, filterable section — it is gated at its call
+site, not omitted from the registry.
+
+### Guard + mutation + counters
+
+Finally: a guard (`tests/test_vXXXX_<check>.py`), its mutation in `tests/mutations.py`
+(DOCTRINE principle 13), and the documented counters bumped (sections, check modules,
+`_PREFIX_TO_DOMAIN`, locale total, explain/CIS if touched, test-file count in
+SNAPSHOT). The sweep tells you the exact live values; a coincidental number beside an
+unwatched noun goes in the sweep's `_COINCIDENCES`.
 
 ---
 

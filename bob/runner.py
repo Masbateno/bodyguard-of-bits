@@ -73,6 +73,7 @@ from bob.checks.kexec_lockdown import KexecLockdownSnapshot, check_kexec_lockdow
 from bob.checks.module_blacklist import ModuleBlacklistSnapshot, check_module_blacklist
 from bob.checks.dev_privileged import DevPrivilegedSnapshot, check_dev_privileged
 from bob.checks.root_path import RootPathSnapshot, check_root_path
+from bob.checks.package_integrity import PackageIntegritySnapshot, check_package_integrity
 from bob.checks.faillock import FaillockSnapshot, check_faillock
 from bob.checks.disk_encryption import DiskEncryptionSnapshot, check_disk_encryption
 from bob.checks.polkit import PolkitSnapshot, check_polkit
@@ -138,6 +139,7 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("module_blacklist",  False),
     _Section("dev_privileged",    False),
     _Section("root_path",         False),
+    _Section("package_integrity", False),
     _Section("mac_policy",        False),
     _Section("cron",              False),
     _Section("services_health",   False),
@@ -641,7 +643,21 @@ def run_checks(
 
     fw_status  = FirewallStatus.from_system()
     fwd_status = FirewalldStatus.from_system()
-    fw_result  = check_firewall(fw_status, firewalld=fwd_status, t=t)
+    # When no managed front-end is present (UFW not installed, firewalld not
+    # active), consult the raw netfilter layer so the prerequisite does not
+    # demand UFW on a host an nftables/iptables ruleset already protects. Only
+    # probed in that edge case — a one-off ``nft list ruleset`` on a host that
+    # would otherwise be mis-flagged, not a cost on the common path.
+    _netfilter_protective: bool | None = None
+    if not fw_status.installed and not fwd_status.active:
+        _nf_snap = IptablesNftSnapshot.from_system()
+        _netfilter_protective = (
+            _nf_snap.backend != "none" and _nf_snap.input_policy in ("DROP", "REJECT")
+        )
+    fw_result  = check_firewall(
+        fw_status, firewalld=fwd_status,
+        netfilter_protective=_netfilter_protective, t=t,
+    )
     engine.apply(fw_result, section="firewall")
     display_result(fw_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
@@ -979,6 +995,13 @@ def run_checks(
 
     # ---- CHECK — Root PATH hardening (configured PATH sources) ----
     _sec("root_path", RootPathSnapshot.from_system, check_root_path)
+
+    # ---- CHECK — Package-file integrity (slow; only under --exhaustive) ----
+    # Held out of the default fast audit by design: rpm -Va / debsums -c re-hash
+    # every packaged file. The opt-in flag is the whole point of the section.
+    if config.exhaustive:
+        _sec("package_integrity", PackageIntegritySnapshot.from_system,
+             check_package_integrity)
 
     # ---- CHECK 34 — MAC policy (AppArmor / SELinux) ----
     _sec("mac_policy", MacPolicySnapshot.from_system, check_mac_policy, profile_name=_pname)

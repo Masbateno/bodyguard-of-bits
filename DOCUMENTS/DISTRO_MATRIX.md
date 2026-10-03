@@ -420,12 +420,138 @@ credited (zone FedoraServer); GRUB `/boot/grub2` 0600; FIFO `modprobe.d` no-hang
 module-sig "unsigned accepted" (INFO). SUID `find` completed here (less loaded) —
 writable-SUID ALERT confirmed live. Box restored (Enforcing, sleep unmasked).*
 
+### 0.23.0 field pass — package integrity + the nft-aware firewall prerequisite
+
+*Raspberry Pi OS field pass (0.23.0 WIP, 2026-10-02, Pi Zero W armv6l, Raspbian
+trixie, no ufw / no firewalld / empty nft / no MAC): stress-test-total of the
+0.23.0 WIP (`--exhaustive` + `package_integrity`, and the de-UFW-ised firewall
+prerequisite) in A/B vs published 0.22.1. **0 regression.** A/B (`--profile
+server`, corrected to compare `deductions` + counts, not a nonexistent `findings`
+array): **identical** — score 6, same domain scores, same deduction keys, same
+alert/warning/info counts. The B change is non-scoring; the text diff is exactly
+the intended firewall-prerequisite rewording + the one-time history churn of the
+key rename, and nothing else (the rest — `↩ N×` recurrence counts, live SSH-login
+count, swap, a load-correlated systemd-analyze transient — is drift between two
+sequential runs, not code).*
+
+***Firewall nft-aware (B) — both polarities validated on real ARM:*** a forged
+protective nftables ruleset (policy drop + established/lo/ssh accept) →
+`ℹ [INFO] No managed firewall front-end (UFW/firewalld), but the netfilter layer
+is filtering inbound traffic` (**no** false "no firewall" ALERT); the empty ruleset
+→ `✖ [ALERT] No active firewall — neither UFW nor firewalld is installed, and the
+netfilter layer is not filtering inbound traffic`, explain
+`prerequisites.firewall_missing`. The doctrine-positive fix (do not cry "no
+firewall" when nftables is filtering) holds in both directions. Watchdog +
+self-restoring ruleset; SSH survived the policy-drop.
+
+***package_integrity:*** debsums absent → `ℹ [INFO] Package integrity was not
+verified — debsums is not installed` (honest, unknown ≠ clean). With debsums
+installed, the check **times out every run** on this hardware — see the new "Still
+open" row. The timeout path itself is correct: group-killed, honest "result not
+established", no hang, no crash. CLI: `--explain prerequisites.firewall_missing`
+renders title/why/how EN + FR; the old `prerequisites.ufw_missing` explain key is
+gone (exit 3); `package_integrity.*` has no explain (INFO-only, exit 3); `--exhaustive`
+is in `--help` and bash-completion. Box fully restored (nft flushed, base64 restored
+from backup, debsums removed, `/root/st` cleaned).*
+
+*Linux Mint 22.3 field pass (0.23.0 WIP, 2026-10-02, real so6minttest, x86_64
+4-core, Py 3.12.3, **ufw installed but inactive**, AppArmor enabled, French
+locale): A/B 0.23.0 ↔ 0.22.1 (`--profile server`, comparing `deductions` +
+counts) **identical** — score 6, same domains, same deduction keys, same
+alert/warning/info counts; text diff = only the "previous audit" timestamp. The
+expected non-regression: with ufw **installed**, `check_firewall` never reaches
+the B branch (the netfilter signal is not even probed), so B is a no-op here —
+proving it does not touch the common ufw path. `package_integrity` renders
+correctly in **French** ("INTÉGRITÉ DES PAQUETS" / "Intégrité des paquets non
+vérifiée — debsums n'est pas installé"), 0 sentinels. `debsums -c` = **511 s** on
+this full desktop install (21 genuinely-changed files). Box restored (base64 from
+backup, debsums removed, `/root/st` cleaned).*
+
+*Ubuntu Server 26.04.1 LTS field pass (0.23.0 WIP, 2026-10-02, real
+so6ubuntuservertest, x86_64 4-core, **Python 3.14.4**, ufw installed but
+inactive, AppArmor enabled, freshly booted → load 7–12): A/B 0.23.0 ↔ 0.22.1
+(`deductions` + counts) clean — score 6, same domains, same deduction keys, same
+alert/warning counts; the only diff is `info_count` 62 vs 63, traced to the live
+"established TCP connection(s)" line (53 vs 52) — network drift, not code. Banner
+🟠 Ubuntu, 0 traceback. **B is a no-op here too** (ufw installed → the B branch is
+never reached, the netfilter signal not even probed) — confirmed on a second
+Ubuntu base **and on Python 3.14.4**. Under genuine CPU starvation (load 7–12 from
+the boot storm) the audits still completed in ~5 min — slowness, not a hang
+(the "famine is not a hang" lesson holds). **`package_integrity` under
+famine:** `debsums -c` took **639 s**, and the `--exhaustive` audit **completed
+under the 1800 s hang-guard without false-timing-out** — the decisive validation
+that 1800 s is a hang-guard, not a slowness cap. Two real-world observations, not
+bugs: (1) an earlier `apt-get install debsums` **failed on the dpkg lock held by
+`unattended-upgrades`** during the boot storm, so BOB correctly reported "debsums
+not installed" (honest — it genuinely was not); (2) on stock Ubuntu 26.04,
+**`debsums` reports ~115 `rust-coreutils` files as changed** — uutils ships one
+multicall binary with 115 hardlinks whose recorded digest does not match, so BOB
+surfaces one aggregated INFO "115 packaged file(s) differ" (config-filtered,
+sample-capped). Faithful to `debsums`, INFO-only (reported-not-scored), but
+notably noisy on 26.04 — the operator reads it as the packaging artifact it is.
+The GNU-coreutils tamper round-trip is cleanly shown on Mint instead (a uutils
+multicall binary cannot be individually tampered — every name is the same inode).
+Box restored (`rust-coreutils` reinstalled to undo the test write, debsums
+removed, `/root/st` cleaned).*
+
+*Fedora Server 44 field pass (0.23.0 WIP, 2026-10-02, real, x86_64 4-core,
+**Python 3.14.3**, **SELinux enforcing**, **firewalld active**, GNU coreutils,
+rpm 6.0.1): A/B 0.23.0 ↔ 0.22.1 **identical** — score 7, same domains, same
+deduction keys, same alert/warning/info counts; text diff = only a non-deterministic
+listening-port order (5355/tcp↔udp) and the previous-audit timestamp. Banner 🔵
+Fedora, firewalld credited (zone FedoraServer: cockpit, dhcpv6-client, ssh), 0
+traceback. **B is a no-op here too** — firewalld active, so `check_firewall`
+returns on the firewalld-credit branch before the B netfilter code; third
+mechanism confirmed after ufw ×2, and on **Python 3.14.3**. **`package_integrity`
+via `rpm -Va` — the complementary verifier, full round-trip on real hardware:**
+`rpm -Va` = 496 s / 20 lines; the clean audit reports **2** files
+(`/usr/share/texlive/.../language.dat`, `.def` — regular, digest-changed) and
+correctly **filters** rpm's config (`c` `/etc/texlive/.../updmap.cfg`) and ghost
+(`g` `fmtutil.cnf`) lines — the `c`-flag filtering proven on real rpm output, not
+just podman; tampering `/usr/bin/base64` → **3** (base64 added, first); restoring →
+back to **2**. Completes well under the 1800 s hang-guard. With Mint's debsums
+round-trip, **both package verifiers are now validated end-to-end on real
+hardware.** Box restored (base64 from backup — GNU coreutils is a real file, no
+uutils multicall trap — `/root/st` cleaned).*
+
+*Kali Rolling field pass (0.23.0 WIP, 2026-10-02, real so6kalitest, x86_64,
+**Python 3.14.7**, no ufw, empty nft ruleset, firewalld inactive, AppArmor
+enabled): the B change fires **naturally** here (unlike the Pi, where the
+protective-nft side had to be forged) — a genuine nft-only host with no filtering
+ruleset. A/B 0.23.0 ↔ 0.22.1: JSON **identical** (score 6, same deduction keys /
+counts — `firewall_missing` is a non-deducting ALERT, so the rename does not move
+the score), and the text diff is **exactly** the intended B change and nothing
+else: ALERT `UFW is not installed` → `No active firewall — neither UFW nor
+firewalld is installed, and the netfilter layer is not filtering inbound traffic`,
+remediation `sudo apt install -y ufw` → `… && sudo ufw enable`, explain key
+`ufw_missing` → `firewall_missing`, plus the one-time history churn of the rename.
+Banner 🐉, 0 traceback, `package_integrity` → honest "not verified" (debsums
+absent). Re-confirms B on x86 + the newest Python (3.14.7). Box cleaned.*
+
+*Debian 13 (trixie) field pass (0.23.0 WIP, 2026-10-03, real so6debiantest,
+x86_64, Python 3.13.5, minimal — 369 packages, no ufw, empty nft, firewalld
+inactive, AppArmor enabled, GNU coreutils): A/B 0.23.0 ↔ 0.22.1 **identical**
+(score 7, same deduction keys / counts), text diff = **exactly** the B rename
+(`UFW is not installed` → `No active firewall …`, remediation `… && sudo ufw
+enable`, explain `ufw_missing` → `firewall_missing`, one-time history churn) and
+nothing else. Banner 🔴 Debian, 0 traceback. **B fires naturally** here too
+(third natural-fire host after Pi and Kali). **`package_integrity` — the cleanest
+debsums round-trip of the campaign:** after configuring sources + installing
+debsums, `debsums -c` = 48 s / 0 changed (minimal install, genuinely clean), so
+the audit shows the **OK/clean verdict** — `✔ No packaged file differs from the
+manager's recorded digest (debsums verified)` — the only host where that path is
+seen (Mint had 21 real changes, Fedora 2, Ubuntu 115 uutils); tampering
+`/usr/bin/base64` → exactly **1** file differs (no baseline noise); `truncate -s
+-2` → back to OK. A full **OK → 1 → OK** round-trip. Sixth real machine, 0
+regression.*
+
 **Still open:**
 
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
 | awall front-end not recognised | soft | §4 | The Alpine-native firewall builder is not read as a front-end, but the underlying nft/iptables ruleset it generates *is* inspected — so a host with active awall rules is not read as unprotected. Low urgency. |
-| SUID `find` skips under CPU starvation | soft | §10 | On a pathologically loaded host the 15 s `find` timeout can be hit → honest "SUID scan skipped" (never a false "clean"), but the SUID coverage is lost for that run. **Backlog 0.22.1**: raise `_FIND_TIMEOUT` 15 → 30 s (normal host ~2 s, unaffected; reduces — not eliminates — the skip under load). |
+| `package_integrity` timeout is a hang-guard, not a slowness cap | decision | §10 | `debsums -c` / `rpm -Va` re-hash **every** packaged file — O(installed files) — so a full install legitimately takes minutes: measured **556 s** (Pi Zero W) and **511 s** (Mint 22.3 desktop, x86 4-core). A 60 s then 300 s wall-clock kill destroyed those valid scans (honest "result not established", group-killed, never a false "clean" — but no result). The timeout's real job is to stop a *wedged* process, not to cap a slow-but-progressing one, and the check is opt-in (`--exhaustive`), so it is a generous **hang-guard**: `_VERIFY_TIMEOUT` raised 60 → **1800 s** (30 min) in 0.23.0 — any real scan finishes well under it (Pi 556 s, Mint 511 s), a true hang stays bounded, and an operator can Ctrl-C. Parser validated against real output (podman Debian/Fedora/Arch) **and the full tamper round-trip on real hardware** (Mint, 1800 s: a clean scan completes and lists 21 genuinely-changed non-config files; tampering `/usr/bin/base64` raises it to 22 with base64 first). |
+| ~~SUID `find` skips under CPU starvation~~ | — | §10 | **Resolved in 0.22.1**: `_FIND_TIMEOUT` raised 15 → 30 s. |
 
 ---
 © 2026 Cédric Clauzel

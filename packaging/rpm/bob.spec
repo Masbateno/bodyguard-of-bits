@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.22.1
+Version:        0.23.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,21 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Oct 03 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.23.0-1
+- Minor: an opt-in --exhaustive package-integrity check, and a backend-neutral
+  firewall prerequisite. No scoring/schema/CSV-order or detection change, no score
+  moves on an existing host; one BREAKING item (a renamed finding key).
+- --exhaustive runs the slow full-coverage checks held out of the default audit;
+  package_integrity compares installed files to the package manager's recorded
+  digests (debsums -c / rpm -Va / apk audit / pacman -Qkk). INFO-only, config files
+  excluded, 1800 s hang-guard (process group killed on overrun); tool-missing or
+  timeout reports "not verified", never a false "clean".
+- BREAKING: prerequisites.ufw_missing renamed to prerequisites.firewall_missing,
+  now netfilter-aware (credits a filtering nftables ruleset instead of demanding
+  UFW; alerts only when nothing protects the host; distro-aware remedy). The
+  finding never deducted, so no score changes.
+- Docs: new DOCUMENTS/DOCTRINE.md (22 principles), CONVENTIONS.md section 9, Tier-1
+  dating fix. Field-tested on six real machines, 0 regression.
 * Thu Oct 01 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.22.1-1
 - Patch: SUID wording precision, SUID-scan timeout, audit-output honesty, and
   first-run UX fixes. No scoring-formula/schema/CSV-order or detection-rule

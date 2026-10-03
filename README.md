@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.22.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.23.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -18,7 +18,7 @@
 
 **Linux hardening auditor for sysadmins who read the output.**
 
-BOB is a CLI security audit and hardening tool for Linux systems. It runs 50 check sections across 6 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
+BOB is a CLI security audit and hardening tool for Linux systems. It runs 51 check sections across 6 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.
 
 ---
 
@@ -133,7 +133,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.22.1  │  Linux hardening auditor                                     ║
+║  BOB 0.23.0  │  Linux hardening auditor                                     ║
 ║  System        : Linux Mint 22.3                                             ║
 ║  Kernel        : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -161,7 +161,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 ---
 
-## Security checks — 50 check sections, 6 score domains
+## Security checks — 51 check sections, 6 score domains
 
 | Domain | What it covers |
 |--------|----------------|
@@ -329,7 +329,7 @@ Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
 
 | Tier | Distros | Status |
 |------|---------|--------|
-| **Tier 1** (validated on real hardware) | Linux Mint 22.3, Debian 13, Ubuntu Server 26.04, Fedora 44 Server, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd), Kali Rolling | Full feature set, each stress-tested on a real machine during the v0.20.x cycle — exhaustive multi-angle passes covering firewalld and SELinux (Fedora, openSUSE), AppArmor (Kali), socket-activated services, cross-distro updates, and remediation round-trips. Mint and Debian are daily-driven; the rest are dedicated test machines — Ubuntu 26.04 on Python 3.14, Fedora 44 (SELinux enforcing, firewalld), openSUSE Leap 16 (zypper, SELinux), Kali Rolling (AppArmor, no-security-channel updates; also exercised in CI on every PR) |
+| **Tier 1** (validated on real hardware) | Linux Mint 22.3, Debian 13, Ubuntu Server 26.04, Fedora 44 Server, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd), Kali Rolling | Full feature set, each stress-tested on a real machine across the v0.20.x–v0.22.x cycles — exhaustive multi-angle passes covering firewalld and SELinux (Fedora, openSUSE), AppArmor (Kali), socket-activated services, cross-distro updates, and remediation round-trips. Mint and Debian are daily-driven; the rest are dedicated test machines — Ubuntu 26.04 on Python 3.14, Fedora 44 (SELinux enforcing, firewalld), openSUSE Leap 16 (zypper, SELinux), Kali Rolling (AppArmor, no-security-channel updates; also exercised in CI on every PR) |
 | **Tier 2** (validated in CI on every PR) | Debian 12, Ubuntu 22.04/24.04/25.04, Fedora 41 · **Debian Bookworm arm64** (emulated) | CI runs a smoke + offline audit on every PR; no locale sentinels, no Python tracebacks, and the arm64 job additionally asserts that x86 firmware concepts degrade and that the Raspberry Pi section fires. Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22) — that pass is where the v0.17.1 and v0.18.0 defects were found — but those OS families are now covered by real hardware in Tier 1, so the per-release VM pass has been retired |
 | **Tier 3** (works, not validated on hardware) | Other Debian/RHEL/SUSE/Arch-family Linux · **Raspberry Pi OS** (Bookworm, arm64) | Best-effort; checks degrade gracefully. The Raspberry Pi *section* is covered by the arm64 CI job above; the *board* has been audited once on physical hardware (a Pi Zero W, trixie, v0.18.1) — see below |
 

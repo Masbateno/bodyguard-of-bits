@@ -587,6 +587,17 @@ MUTATIONS: "tuple[Mutation, ...]" = (
                "wizard — the charter says the surfaces agree",
     ),
     Mutation(
+        id="firewall/no-frontend-credits-despite-unprotected-netfilter",
+        file="bob/checks/firewall.py",
+        old="        if netfilter_protective:",
+        new="        if netfilter_protective is not None:",
+        kills=("tests/test_v0202_firewalld_recognized.py::TestFirewallCheck::"
+               "test_no_frontend_no_netfilter_alerts_backend_neutral",),
+        reason="crediting the netfilter layer merely because it was probed (not "
+               "because it filters) would re-create the UFW-centric over-claim "
+               "in mirror — an unprotected host read as firewalled",
+    ),
+    Mutation(
         id="charter/a-check-module-draws-a-box",
         file="bob/checks/firewall.py",
         old="def check_firewall(",
@@ -733,8 +744,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/section-count-stale-again",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="the 50 filterable + 10 always-on section names",
-        new="the 49 filterable + 10 always-on section names",
+        old="the 51 filterable + 10 always-on section names",
+        new="the 50 filterable + 10 always-on section names",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the section count drifted in seven places the moment a section "
                "was added, and nothing was watching",
@@ -742,8 +753,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/module-count-stale-again",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="bob/checks/*.py  ← 59 check modules · Snapshot+check_xxx pattern",
-        new="bob/checks/*.py  ← 58 check modules · Snapshot+check_xxx pattern",
+        old="bob/checks/*.py  ← 60 check modules · Snapshot+check_xxx pattern",
+        new="bob/checks/*.py  ← 59 check modules · Snapshot+check_xxx pattern",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the check-module count said 57 (conflated with the 57 sections) "
                "in four places while the on-disk count and SNAPSHOT's own table "
@@ -875,8 +886,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/domain-count-stale-again",
         file="README.md",
-        old="50 check sections, 6 score domains",
-        new="50 check sections, 7 score domains",
+        old="51 check sections, 6 score domains",
+        new="51 check sections, 7 score domains",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_score_domain_count",),
         reason="v0.20.0 realigned the seven score domains onto the six display "
                "groups, but the intros and headings kept saying 7 for four "
@@ -885,8 +896,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 2641 keys EN/FR",
-        new="locale auto-detect (POSIX), 2640 keys EN/FR",
+        old="locale auto-detect (POSIX), 2652 keys EN/FR",
+        new="locale auto-detect (POSIX), 2651 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
                "because '2014' reads as a year and the sweep's noun set had no "
@@ -1111,8 +1122,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="paths/debian-command-back-in-the-prose",
         file="bob/locales/en.json",
-        old='"ufw_missing": "UFW is not installed"',
-        new='"ufw_missing": "UFW is not installed — install it with: sudo apt install ufw"',
+        old='"firewall_missing": "No active firewall — neither UFW nor firewalld is installed, and the netfilter layer is not filtering inbound traffic"',
+        new='"firewall_missing": "No active firewall — install it with: sudo apt install ufw"',
         kills=(f"{_PATHS}::TestNoDebianCommandHidesInTranslatedProse::"
                "test_the_audits_own_messages_name_no_package_manager",),
         reason="the message said apt while the same finding's cmd said dnf — "
@@ -3082,6 +3093,28 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="module.sig_enforce=Y means the kernel refuses unsigned modules; "
                "misreading it as anything but enforced drops the one positive "
                "signal that unsigned-module loading is closed off",
+    ),
+    Mutation(
+        id="package_integrity/config-files-reported-as-tampered",
+        file="bob/checks/package_integrity.py",
+        old='        if ftype in ("c", "d", "g", "l", "r"):',
+        new='        if ftype in ("d", "g", "l", "r"):',
+        kills=("tests/test_v0230_package_integrity.py::TestRpmParser::"
+               "test_config_marked_c_is_excluded",),
+        reason="config files are expected to be edited; reporting rpm's 'c' lines "
+               "as tampering would bury the real signal under every admin's "
+               "customised /etc under noise",
+    ),
+    Mutation(
+        id="package_integrity/tool-missing-read-as-clean",
+        file="bob/checks/package_integrity.py",
+        old="    if not snapshot.tool_available:",
+        new="    if False:",
+        kills=("tests/test_v0230_package_integrity.py::TestCheckLogic::"
+               "test_tool_missing_is_not_clean",),
+        reason="a missing verifier means integrity was not checked, not that it "
+               "passed; falling through to 'clean' manufactures an all-clear BOB "
+               "never earned (unknown != clean)",
     ),
     Mutation(
         id="module_blacklist/candidate-not-flagged",

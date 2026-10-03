@@ -104,6 +104,10 @@ class AuditConfig:
     offline: bool = False
     """--offline: skip all external HTTP calls (no public IP lookup)."""
 
+    exhaustive: bool = False
+    """--exhaustive: also run the slow, full-coverage checks (e.g. package
+    integrity) held out of the default fast run."""
+
     profile: str = ""
     """-p / --profile=NAME: audit profile to apply (server|desktop|workstation|container or custom)."""
 
@@ -408,6 +412,9 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
 
         elif arg in ("-o", "--offline"):
             config.offline = True
+
+        elif arg == "--exhaustive":
+            config.exhaustive = True
 
         elif arg.startswith("--profile="):
             value = arg.split("=", 1)[1].strip()
@@ -873,6 +880,7 @@ def print_help(t, version: str) -> None:
     opt("",                      "help.opt.diff_path")
     opt("    --watch[=N]",       "help.opt.watch")
     opt("-o, --offline",         "help.opt.offline")
+    opt("    --exhaustive",      "help.opt.exhaustive")
     opt("    --target=N",        "help.opt.target")
     opt("    --check=LIST",      "help.opt.check")
     opt("",                      "help.opt.check_list")

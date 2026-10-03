@@ -51,6 +51,7 @@
     "module_blacklist": "KERNEL MODULE BLACKLIST",
     "dev_privileged": "PRIVILEGED /dev NODES",
     "root_path": "ROOT PATH",
+    "package_integrity": "PACKAGE INTEGRITY",
     "kernel_hardening": "KERNEL HARDENING",
     "user_accounts": "USER ACCOUNT AUDIT",
     "password_policy": "PASSWORD POLICY AUDIT",
@@ -107,6 +108,7 @@
       "module_blacklist": "Rarely-needed modules kept from loading — blacklist / install directives (defense-in-depth)",
       "dev_privileged": "Privileged /dev nodes — world access on /dev/mem, /dev/port and raw disks (INFO-only)",
       "root_path": "Root PATH integrity — configured PATH (login.defs, sudoers) free of world-writable / '.' / relative components",
+      "package_integrity": "Package-file integrity — packaged binaries/libraries that differ from the manager's manifest (--exhaustive, INFO-only)",
       "log_rotation": "Log rotation — logrotate config, journald persistent storage",
       "mac_policy": "MAC policy — AppArmor / SELinux profiles + enforce status",
       "memory": "Memory + swap — swappiness, swap size, SSD wear sensitivity",
@@ -169,10 +171,11 @@
   },
   "prerequisites": {
     "ufw_installed": "UFW is installed",
-    "ufw_missing": "UFW is not installed"
+    "firewall_missing": "No active firewall — neither UFW nor firewalld is installed, and the netfilter layer is not filtering inbound traffic"
   },
   "firewall": {
     "active": "UFW firewall is active",
+    "netfilter_active": "No managed firewall front-end (UFW/firewalld), but the netfilter layer is filtering inbound traffic — audited in the iptables/nftables section",
     "firewalld_active": "firewalld is the active firewall — default zone '{zone}' allows: {services}",
     "inactive": "UFW firewall is disabled. Your machine is currently unprotected.",
     "policy_ok": "Default policy: incoming connections blocked (recommended)",
@@ -945,6 +948,7 @@
       "diff_path": "  =PATH compares against another machine's baseline (cross-machine)",
       "watch": "Re-run audit every N seconds (default: 60) — Ctrl+C to quit",
       "offline": "Skip external IP lookup (no HTTP calls)",
+      "exhaustive": "Also run slow full-coverage checks (e.g. package integrity)",
       "target": "Score target (1–10): gap, success or ceiling; exit 4 if unmet",
       "check": "Run only these checks (comma-separated)",
       "check_list": "  --check=list shows every available name",
@@ -2880,10 +2884,10 @@
       }
     },
     "prerequisites": {
-      "ufw_missing": {
-        "title": "UFW (Uncomplicated Firewall) is not installed",
-        "why": "Without a host firewall, every listening service on the machine is exposed to whatever network it is connected to. There is no per-service allow/deny policy, no inbound default-deny, and no rule audit trail. On an internet-exposed host this is a critical gap; on a LAN-only host it still leaves the system trivially reachable by any compromised peer.",
-        "how": "Package names below are Debian and Ubuntu's and differ elsewhere; the finding itself carries the command built for this host's package manager.\n\n1. Install UFW:\n   sudo apt install ufw\n2. Set the safe default policy:\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (If you use SSH) allow it before enabling:\n   sudo ufw allow 22/tcp\n4. Enable the firewall:\n   sudo ufw enable\n5. Verify:\n   sudo ufw status verbose"
+      "firewall_missing": {
+        "title": "No active firewall (no UFW, no firewalld, no filtering netfilter ruleset)",
+        "why": "Without a host firewall, every listening service on the machine is exposed to whatever network it is connected to. There is no per-service allow/deny policy, no inbound default-deny, and no rule audit trail. On an internet-exposed host this is a critical gap; on a LAN-only host it still leaves the system trivially reachable by any compromised peer. This fires only when BOB found no managed front-end AND the raw netfilter layer was not filtering inbound traffic — a host protected by a plain nftables default-deny ruleset is credited instead, not flagged here.",
+        "how": "BOB audits two front-ends and the raw netfilter layer; pick whichever your distribution ships. The finding itself carries the install command built for this host's package manager (ufw on the Debian/Arch/Alpine families, firewalld on Fedora/RHEL/openSUSE).\n\nUFW (Debian, Ubuntu, Arch, Alpine):\n1. Install it:\n   sudo apt install ufw\n2. Safe default policy:\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (If you use SSH) allow it before enabling:\n   sudo ufw allow 22/tcp\n4. Enable:\n   sudo ufw enable\n\nfirewalld (Fedora, RHEL, openSUSE):\n1. Install and enable:\n   sudo dnf install firewalld   # or: sudo zypper install firewalld\n   sudo systemctl enable --now firewalld\n2. Verify:\n   sudo firewall-cmd --state\n\nOr a plain nftables ruleset with a default-deny inbound policy — BOB credits that layer too (audited in the iptables/nftables section)."
       }
     },
     "firewall": {
@@ -3480,6 +3484,15 @@
     "dangerous_detail": "Each of these components lets someone who is not root control which binary root executes for a bare command name. A world-writable directory: anyone drops their own `ls` there. A '.' or empty component: the binary is taken from the current directory, whatever that happens to be when root runs the command. A relative component: same, resolved against the current directory. The result is a direct privilege escalation — plant a file, wait for root to run the matching command. Fix the source (login.defs ENV_SUPATH or sudoers secure_path) so root's PATH contains only absolute, root-owned, non-world-writable directories, in the usual order (/usr/sbin:/usr/bin:/sbin:/bin).",
     "group_writable": "Root's configured PATH contains a directory writable by a non-root group: {entries}",
     "clean": "Root's configured PATH is clean — every component is an absolute, non-world-writable directory"
+  },
+  "package_integrity": {
+    "unsupported": "Package integrity was not verified — no supported package manager was detected on this host",
+    "tool_missing": "Package integrity was not verified — {tool} is not installed",
+    "tool_missing_detail": "The verifier ({tool}) is not present, so BOB could not compare the installed files against the package manager's recorded digests. This is not a clean result — it is an unanswered question. The debsums package provides the verifier on Debian/Ubuntu; on the RPM family rpm ships with the system.",
+    "timed_out": "Package integrity verification timed out and was stopped — result not established",
+    "changed": "{count} packaged file(s) differ from the manager's recorded digest: {files}",
+    "changed_detail": "These files were installed by a package but their content no longer matches the digest the package manager recorded. That can be benign — a local recompile, a vendor hotfix applied by hand, a file patched by another tool — or it can be the trace of an intruder replacing a system binary or library. BOB cannot tell which, so this is reported, not scored: verify each path against what you expect (reinstall the owning package to compare, e.g. apt reinstall / dnf reinstall, or inspect the file). Configuration files, which are expected to be edited, are already excluded.",
+    "clean": "No packaged file differs from the manager's recorded digest ({tool} verified)"
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",

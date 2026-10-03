@@ -316,7 +316,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "umask.group_writable",
     ]),
     ("Firewall", [
-        "prerequisites.ufw_missing",
+        "prerequisites.firewall_missing",
         "firewall.inactive",
         "firewall.policy_open",
         "firewall.policy_unknown",

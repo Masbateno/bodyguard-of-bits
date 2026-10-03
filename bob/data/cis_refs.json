@@ -970,7 +970,7 @@
     "ref_fr": "Bonne pratique — Restreindre les ports NetBIOS / Samba (137-139, 445) au seul sous-réseau LAN de confiance",
     "code": null
   },
-  "prerequisites.ufw_missing": {
+  "prerequisites.firewall_missing": {
     "ref": "CIS Ubuntu 22.04 L1 — 4.1.1 — Ensure ufw is installed (Automated)",
     "code": "CIS:4.1.1",
     "benchmarks": {

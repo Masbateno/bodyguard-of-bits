@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.22.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.23.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -16,7 +16,7 @@
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
-BOB is a Linux hardening auditor for sysadmins and power users. It runs 50 check sections across 6 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
+BOB is a Linux hardening auditor for sysadmins and power users. It runs 51 check sections across 6 score domains, maps findings to CIS benchmarks when applicable, and provides clear explanations with ready-to-run remediation commands.
 
 ---
 
@@ -101,7 +101,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 50 check
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases. Since v0.18.0 the CSV's last column is `key`, the finding's stable identifier — the same one `--explain`, `--ignore` and the JSON carry; the fifteen columns before it keep their positions
-- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 60 section names — the 50 filterable, plus the 10 always-on ones it also lists
+- **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 61 section names — the 51 filterable, plus the 10 always-on ones it also lists
 - **`--output-dir PATH`** — override report save directory for the current run; no persist
 - **Comparative report** — baseline saved after each audit (`~/.config/bob/last_baseline.json`); next run shows score delta, alert/warn changes, new/closed ports, started/stopped services; new and resolved ALERT+WARN finding keys tracked separately. A file that is not a BOB baseline (no `timestamp` and `score`) is refused by name rather than compared against as a baseline of zero
 - **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 1000-entry rotation. A line whose score or timestamp BOB cannot read is skipped, never repaired into a figure it did not measure
@@ -170,7 +170,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 50 check
 
 - Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
-  - **real hardware** (stress-tested during the v0.20.x cycle): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
+  - **real hardware** (stress-tested across the v0.20.x–v0.22.x cycles): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
   - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - Python 3.10+
@@ -186,7 +186,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 50 check
 
 - Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
-  - **real hardware** (stress-tested during the v0.20.x cycle): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
+  - **real hardware** (stress-tested across the v0.20.x–v0.22.x cycles): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
   - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - pipx *(isolated Python app installer)*:
@@ -385,7 +385,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.22.1  │  Linux hardening auditor                                     ║
+║  BOB 0.23.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -518,6 +518,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--webhook-format=FMT`  | Webhook payload format: `auto` (default), `generic`, or `slack`   |
 | `--log-days=N`          | Analyse logs over N days (default: 7)                              |
 | `-o`, `--offline`       | Skip external IP lookup and webhook call (no HTTP calls)           |
+| `--exhaustive`          | Also run slow full-coverage checks (package integrity) held out of the default run |
 | `--manage-logs`         | Interactive UI to list, preview, and delete saved report files     |
 | `--install-cron`        | Set up an automated nightly audit (cron)                           |
 | `--install-completion`  | Install bash completion and create sudo PATH symlink               |

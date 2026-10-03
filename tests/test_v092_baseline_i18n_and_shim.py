@@ -112,7 +112,7 @@ class TestRemapFindingKey:
 
     @pytest.mark.parametrize("k", [
         "risk.escalated_posture",
-        "prerequisites.ufw_missing",
+        "prerequisites.firewall_missing",
         "no_dot_key",                         # no '.' separator
         "",                                   # empty
     ])

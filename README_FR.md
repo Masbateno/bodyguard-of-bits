@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.22.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.23.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -18,7 +18,7 @@
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 50 sections de vérification sur 6 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
+BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 51 sections de vérification sur 6 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -133,7 +133,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.22.1  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.23.0  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -161,7 +161,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ---
 
-## Vérifications de sécurité — 50 sections de vérification, 6 domaines de score
+## Vérifications de sécurité — 51 sections de vérification, 6 domaines de score
 
 | Domaine | Ce qu'il couvre |
 |---------|----------------|
@@ -329,7 +329,7 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 
 | Niveau | Distros | État |
 |--------|---------|------|
-| **Tier 1** (validé sur matériel réel) | Linux Mint 22.3, Debian 13, Ubuntu Server 26.04, Fedora 44 Server, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd), Kali Rolling | Fonctionnalités complètes, chacune stress-testée sur une machine réelle durant le cycle v0.20.x — passes multi-angles exhaustives couvrant firewalld et SELinux (Fedora, openSUSE), AppArmor (Kali), les services socket-activés, les updates cross-distro et les allers-retours de remédiation. Mint et Debian sont en production quotidienne ; les autres sont des machines de test dédiées — Ubuntu 26.04 (Python 3.14), Fedora 44 (SELinux enforcing, firewalld), openSUSE Leap 16 (zypper, SELinux), Kali Rolling (AppArmor, updates sans canal sécurité ; aussi exercée en CI à chaque PR) |
+| **Tier 1** (validé sur matériel réel) | Linux Mint 22.3, Debian 13, Ubuntu Server 26.04, Fedora 44 Server, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd), Kali Rolling | Fonctionnalités complètes, chacune stress-testée sur une machine réelle au fil des cycles v0.20.x–v0.22.x — passes multi-angles exhaustives couvrant firewalld et SELinux (Fedora, openSUSE), AppArmor (Kali), les services socket-activés, les updates cross-distro et les allers-retours de remédiation. Mint et Debian sont en production quotidienne ; les autres sont des machines de test dédiées — Ubuntu 26.04 (Python 3.14), Fedora 44 (SELinux enforcing, firewalld), openSUSE Leap 16 (zypper, SELinux), Kali Rolling (AppArmor, updates sans canal sécurité ; aussi exercée en CI à chaque PR) |
 | **Tier 2** (validé en CI à chaque PR) | Debian 12, Ubuntu 22.04/24.04/25.04, Fedora 41 · **Debian Bookworm arm64** (émulé) | La CI lance un smoke + un audit hors ligne à chaque PR ; pas de sentinelles locale, pas de traceback Python, et le job arm64 vérifie en plus que les concepts firmware x86 dégradent et que la section Raspberry Pi se déclenche. Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22) — c'est cette passe qui a trouvé les défauts de v0.17.1 et v0.18.0 — mais ces familles d'OS sont désormais couvertes par du matériel réel en Tier 1, donc la passe VM par release a été abandonnée |
 | **Tier 3** (fonctionne, non validé sur matériel) | Autres Debian / RHEL / SUSE / Arch-family · **Raspberry Pi OS** (Bookworm, arm64) | Best-effort ; les vérifications dégradent proprement. La *section* Raspberry Pi est couverte par le job CI arm64 ci-dessus ; la *carte* a été auditée une fois sur du matériel physique (un Pi Zero W, trixie, v0.18.1) — voir ci-dessous |
 

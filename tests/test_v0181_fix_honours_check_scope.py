@@ -34,7 +34,7 @@ def test_apply_stamps_the_section_on_each_finding():
     engine = ScoreEngine()
     result = CheckResult()
     result.add_finding(level=FindingLevel.WARN, message="UFW is not installed",
-                       key="prerequisites.ufw_missing", nature="action",
+                       key="prerequisites.firewall_missing", nature="action",
                        cmd="sudo apt install -y ufw")
     engine.apply(result, section="firewall")
     assert engine.findings[-1].section == "firewall"
@@ -57,7 +57,7 @@ def _engine_with_two_sections():
     engine = ScoreEngine()
     fw = CheckResult()
     fw.add_finding(level=FindingLevel.WARN, message="UFW is not installed",
-                   key="prerequisites.ufw_missing", nature="action",
+                   key="prerequisites.firewall_missing", nature="action",
                    cmd="sudo apt install -y ufw")
     engine.apply(fw, section="firewall")
     pi = CheckResult()

@@ -132,6 +132,14 @@ _COINCIDENCES = {
     # packaged profile, not a figure BOB derives.
     "binaries",
     "binaires",
+    # README / README_TECH / TUTORIAL: "every 60 seconds" (the --watch interval),
+    # "60 s" (a runtime/timeout figure) — time values that v0.23.0 made equal to
+    # the check-module count (60) when package_integrity became the 60th module.
+    # Unrelated: these are durations, not counters. Self-correcting the next time
+    # a check module is added.
+    "seconds",
+    "secondes",
+    "s",
 }
 
 _PATTERN = re.compile(

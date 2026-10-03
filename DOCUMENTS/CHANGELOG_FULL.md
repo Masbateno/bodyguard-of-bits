@@ -6,6 +6,98 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.23.0] — 2026-10-03
+
+**A minor release: an opt-in `--exhaustive` package-integrity check, and a
+backend-neutral firewall prerequisite.** No scoring-formula, JSON-schema,
+CSV-column-order or detection-rule change, and **no score moves on an existing
+host**. One **BREAKING** item: a single finding key is renamed.
+
+### 1. `--exhaustive` mode + `package_integrity` (INFO-only)
+
+A new opt-in flag, `--exhaustive`, runs the slow, full-coverage checks that are
+deliberately held out of the default fast audit. Its first consumer is
+`package_integrity`: it compares the files on disk against the digests the package
+manager recorded at install time, via the native verifier for the host —
+`debsums -c` (apt), `rpm -Va` (dnf/zypper), `apk audit --system` (apk),
+`pacman -Qkk` (pacman).
+
+Doctrine shape:
+  - **INFO-only.** A file that differs is ambiguous — a local recompile, a vendor
+    hotfix, or tampering all look identical — so it is reported, never scored.
+  - **unknown ≠ clean.** A missing verifier (`debsums` is often absent on Debian),
+    or a timeout, reports *"not verified — result not established"*, never a green
+    "clean".
+  - **Config files are excluded** — rpm marks them `c` (also doc/ghost/licence/
+    readme, all skipped); for the others BOB drops paths under `/etc`.
+  - **A hang-guard, not a slowness cap.** The verifier re-hashes every packaged
+    file, which legitimately takes minutes on a full install (measured: 496 s on a
+    Fedora server, 511 s on a Mint desktop, 556 s on a Pi Zero). It runs under a
+    1800 s timeout whose only job is to stop a *wedged* verifier; its whole process
+    group is killed on overrun, and the result is honest.
+
+The default fast audit is unchanged — `package_integrity` runs only under
+`--exhaustive`. Guard `tests/test_v0230_package_integrity.py`, mutations
+`package_integrity/config-files-reported-as-tampered` and
+`package_integrity/tool-missing-read-as-clean`.
+
+### 2. Backend-neutral firewall prerequisite (BREAKING: key rename)
+
+The always-on firewall prerequisite used to alert `prerequisites.ufw_missing` —
+"UFW is not installed" — whenever UFW was absent, even on a host firewalled by a
+plain nftables ruleset. That is an over-claim (and a mis-prescription: it demanded
+one specific tool). It now:
+
+  - consults the raw netfilter layer when no managed front-end (UFW/firewalld) is
+    active, and **credits a filtering nftables/iptables ruleset** as INFO
+    (`firewall.netfilter_active`) instead of crying "no firewall";
+  - **alerts only when nothing is protecting the host** — no UFW, no firewalld,
+    and no filtering netfilter ruleset — under the backend-neutral key
+    `prerequisites.firewall_missing`;
+  - offers a **distribution-aware remediation** (ufw on the Debian/Arch/Alpine
+    families, firewalld on the RPM family), not a hardcoded `ufw enable`;
+  - treats *unknown* as not-protected (the netfilter signal is only probed in this
+    branch, so there is no cost on the common path).
+
+**BREAKING:** the finding key `prerequisites.ufw_missing` is renamed to
+`prerequisites.firewall_missing` (message, `--explain`, and `cis_refs` all moved).
+Any saved baseline, ignore-list, or `--explain` invocation that named the old key
+must use the new one. The finding never carried a deduction, so **no score
+changes**; this is wording + key accuracy. Guard
+`tests/test_v0202_firewalld_recognized.py::TestFirewallCheck` (three polarities),
+mutation `firewall/no-frontend-credits-despite-unprotected-netfilter`.
+
+### 3. Documentation
+
+New `DOCUMENTS/DOCTRINE.md` writes down the project's doctrine — 22 principles in
+two parts (what BOB asserts, and how it is built and proven) — with a bidirectional
+link to `CONVENTIONS.md`, which gains a **§9** cataloguing every registry a new
+check must touch (locale keys, EN/FR parity, `--explain`, `cis_refs`, visibility,
+domain mapping, completion, counters). A stale Tier-1 "v0.20.x cycle" dating in the
+support-tier tables was corrected to the real span (v0.20.x–v0.22.x).
+
+### Counters and validation
+
+Locale keys 2640 → 2652, filterable sections 50 → **51**, check modules 59 →
+**60**, `_PREFIX_TO_DOMAIN` 60 → **61**, mutations 295 → **301**. The `--explain`
+set and CIS references are unchanged at **208** — both new checks are INFO-only and
+carry no explain key.
+
+**Field-tested on six real machines, 0 regression:** Raspberry Pi Zero W (ARM,
+debsums timeout → honest "not verified"; the firewall prerequisite exercised in
+both polarities), Mint 22.3 (debsums round-trip, a tampered binary detected and
+cleared), Ubuntu 26.04 on Python 3.14.4 (the 1800 s hang-guard validated under CPU
+starvation — a 639 s `debsums -c` completed rather than being killed), Fedora 44 on
+Python 3.14.3 (SELinux enforcing, firewalld active; `rpm -Va` round-trip with the
+`c`-flag filtering confirmed on real output), Kali Rolling on Python 3.14.7 (the
+backend-neutral prerequisite firing naturally on a bare nft host), and Debian 13
+(the clean OK verdict and a full tamper round-trip). Across the five hosts with a
+front-end or none, the firewall prerequisite behaved correctly in every state; both
+package verifiers (debsums and `rpm -Va`) were round-tripped end-to-end on
+hardware. **Tests** 11220 → **11246**.
+
+---
+
 ## [0.22.1] — 2026-10-01
 
 **A patch release: SUID wording precision, SUID-scan timeout, audit-output

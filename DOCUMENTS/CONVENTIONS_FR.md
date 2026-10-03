@@ -4,7 +4,8 @@
 
 Comment ce projet fait les choses, en un seul endroit : ce que veut dire une
 couleur, ce que veut dire un symbole, et les motifs de code qu'un check doit
-suivre.
+suivre. Pour le *pourquoi* qu'ils servent — ce que BOB affirme et comment c'est
+prouvé — voir [`DOCTRINE.md`](DOCTRINE_FR.md).
 
 Tout ce qui suit était vrai à l'écriture, et l'essentiel est désormais vérifié.
 La distinction compte : ce projet a deux fois trouvé une convention vivant dans
@@ -352,6 +353,89 @@ d'une version stable machine doit lire `--format json` (`schema_version`) plutô
 que de gratter la sortie humaine. C'est explicité pour que le dé-`v` soit une
 décision ponctuelle et documentée, pas un précédent ouvert pour tripatouiller le
 texte de version.
+
+---
+
+## 9. Localisation, explain, et les registres qu'un check touche
+
+Le pattern Snapshot/check (§7) est la moitié d'un nouveau check. L'autre moitié, c'est
+le câbler dans chaque registre qui doit s'accorder avec lui. En oublier un fait
+échouer une garde ; oublier le compteur fait échouer
+`test_v0170_doc_counters_sweep` / `test_v0211_live_count_claims`.
+
+### Clés locale (`bob/locales/{en,fr}.json`)
+
+Chaque chaîne visible par l'opérateur est une clé, et les deux fichiers ont un
+**ensemble de clés strictement égal** (`test_i18n.py`) — ajouter une clé à l'un,
+l'ajouter à l'autre, ou la garde de parité échoue. Un check nommé `xxx` touche
+typiquement trois endroits dans chaque fichier :
+
+- le bloc **header de section** (`"xxx": "TITRE DE SECTION"`),
+- le bloc **description de section** (une ligne sous le header),
+- un bloc **messages** (`"xxx": { "finding_key": "…", … }`), dont les clés sont les
+  suffixes `.key` que le check émet (`xxx.something`).
+
+Un constat WARN/ALERT demande aussi une entrée **explain** (ci-dessous). Le total de
+clés est documenté dans SNAPSHOT et épinglé au live — le bumper quand on ajoute des
+clés.
+
+Interpoler avec des placeholders `{name}`, jamais des f-strings dans le JSON. Ne pas
+mettre une commande spécifique à une distribution (`apt install …`) dans un
+*message* : le champ `cmd` du constat porte la commande spécifique à l'hôte, et
+`test_v0170_distro_paths.py` rejette un gestionnaire de paquets nommé dans la prose
+d'un message (les blocs explain qui nomment la famille sont exemptés).
+
+**Les 27 libellés de services restent en anglais à dessein.** Les libellés de prose
+de `services.json` (`Samba (Windows file sharing)`, …) ne sont pas traduits — une
+exception délibérée et documentée, pas une dérive.
+
+### Clés `--explain`
+
+Chaque clé de constat WARN ou ALERT doit avoir une entrée `--explain` correspondante
+(`test_explain_coverage.py`), avec `title` / `why` / `how` dans les **deux** locales.
+Un check INFO-only n'a **pas** besoin d'explain (c'est pourquoi `module_blacklist`,
+`dev_privileged` et `package_integrity` n'en ont pas). Les clés explain suivent la
+convention de nommage `prefix.name` épinglée par `test_explain_naming_convention.py`
+(préfixes connus + comptes). L'ensemble explain est câblé dans `bob/explain.py`
+(`_EXPLAIN_GROUPS`), les blocs explain des locales, et `bob/data/bob.bash-completion`
+(`_EXPLAIN_KEYS`).
+
+### Références CIS (`bob/data/cis_refs.json`)
+
+Une clé de constat peut porter une référence CIS/benchmark. Les numéros sont
+**générés depuis ComplianceAsCode par le nom de la règle**, jamais tapés à la main
+(voir DOCTRINE principe 21) ; le breakdown par benchmark est épinglé par
+`test_v0163_readme_tech_claims.py`.
+
+### Clés de visibilité (`bob/visibility.py`)
+
+Un constat qui signifie « ceci n'a pas pu être vérifié » (`xxx.unreadable`,
+`xxx.unknown`, `xxx.tool_missing`, `xxx.timed_out`) appartient à l'ensemble de
+visibilité, pour que le compte « N non vérifiés » soit honnête (DOCTRINE principe 2).
+Une section qui *lève* est dégradée en `xxx.unavailable` par la barrière de faute
+automatiquement — celle-là n'est pas listée par son nom.
+
+### Mapping de domaine (`bob/domain_scores.py`)
+
+Le préfixe de chaque section mappe vers l'un des **6 domaines de score** via
+`_PREFIX_TO_DOMAIN`, et le mapping doit correspondre au **groupe d'affichage** de la
+section (`test_v0200`). Un nouveau check ajoute une entrée.
+
+### Enregistrement et complétion
+
+La section est enregistrée dans `runner.py` (`_SECTIONS`, avec son flag `always_on`)
+et dispatchée via `_sec` (§7). Ajouter son nom à `bob/data/bob.bash-completion`
+(`_SECTIONS`). Une section exclue du run par défaut (comme `package_integrity` sous
+`--exhaustive`) reste une section enregistrée et filtrable — elle est gatée à son site
+d'appel, pas omise du registre.
+
+### Garde + mutation + compteurs
+
+Enfin : une garde (`tests/test_vXXXX_<check>.py`), sa mutation dans
+`tests/mutations.py` (DOCTRINE principe 13), et les compteurs documentés bumpés
+(sections, check modules, `_PREFIX_TO_DOMAIN`, total locale, explain/CIS si touchés,
+compte de fichiers tests dans SNAPSHOT). Le sweep donne les valeurs live exactes ; un
+nombre coïncident à côté d'un nom non surveillé va dans le `_COINCIDENCES` du sweep.
 
 ---
 

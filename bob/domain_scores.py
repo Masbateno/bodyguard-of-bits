@@ -117,6 +117,7 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "module_blacklist":   "system_hardening",
     "dev_privileged":     "system_hardening",
     "root_path":          "system_hardening",
+    "package_integrity":  "system_hardening",
     "mac_policy":         "system_hardening",
     "suid_audit":         "system_hardening",
     "umask":              "system_hardening",

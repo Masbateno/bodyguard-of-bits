@@ -25,7 +25,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, install_fix
+from bob.checks._run import (
+    TranslationFunc,
+    _MANAGER_ALIASES,
+    _command_exists,
+    _identity_t,
+    _run,
+    detect_install_manager,
+    install_fix,
+)
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
@@ -119,7 +127,27 @@ class FirewallStatus:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_firewall(status: FirewallStatus, firewalld=None, t: TranslationFunc | None = None) -> CheckResult:
+def _firewall_install_fix(_t):
+    """``(cmd, detail)`` for "no firewall front-end is active".
+
+    Backend-neutral by distribution rather than UFW-specific: ufw is the
+    front-end BOB advises on the Debian/Arch/Alpine families, firewalld on the
+    RPM family (Fedora/RHEL/openSUSE), each with the enable step that actually
+    turns it on. The package layer (``detect_install_manager``) decides; an
+    unknown manager still lands in the manual bucket via ``install_fix``.
+    """
+    base = _MANAGER_ALIASES.get(detect_install_manager(), detect_install_manager())
+    if base in ("dnf", "yum", "zypper"):
+        return install_fix(_t, None, "firewalld", then="sudo systemctl enable --now firewalld")
+    return install_fix(_t, None, "ufw", then="sudo ufw enable")
+
+
+def check_firewall(
+    status: FirewallStatus,
+    firewalld=None,
+    netfilter_protective: bool | None = None,
+    t: TranslationFunc | None = None,
+) -> CheckResult:
     """
     Evaluate firewall status and return findings and deductions.
 
@@ -151,13 +179,26 @@ def check_firewall(status: FirewallStatus, firewalld=None, t: TranslationFunc | 
                 key="firewall.firewalld_active",
             )
             return result
-        _cmd, _detail = install_fix(_t, None, "ufw")
+        # No managed front-end (UFW/firewalld). Before demanding one, consult
+        # the raw netfilter layer the runner measured: an nftables/iptables
+        # ruleset with a default-deny inbound policy IS a firewall, so alerting
+        # "no firewall" there would be the mirror of the old UFW-centric
+        # over-claim. Credit it as INFO and let the iptables/nftables section
+        # carry the detailed verdict. Only a host with no front-end AND no
+        # filtering netfilter ruleset is genuinely unprotected.
+        if netfilter_protective:
+            result.info(
+                message=_t("firewall.netfilter_active"),
+                key="firewall.netfilter_active",
+            )
+            return result
+        _cmd, _detail = _firewall_install_fix(_t)
         result.alert(
-            message=_t("prerequisites.ufw_missing"),
+            message=_t("prerequisites.firewall_missing"),
             detail=_detail,
             nature="action",
             cmd=_cmd,
-            key="prerequisites.ufw_missing",
+            key="prerequisites.firewall_missing",
         )
         return result  # nothing more to check
 

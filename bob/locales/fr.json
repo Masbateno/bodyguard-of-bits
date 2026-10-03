@@ -51,6 +51,7 @@
     "module_blacklist": "BLACKLIST DES MODULES NOYAU",
     "dev_privileged": "NŒUDS /dev PRIVILÉGIÉS",
     "root_path": "PATH DE ROOT",
+    "package_integrity": "INTÉGRITÉ DES PAQUETS",
     "kernel_hardening": "DURCISSEMENT NOYAU",
     "user_accounts": "AUDIT DES COMPTES UTILISATEURS",
     "password_policy": "AUDIT DE LA POLITIQUE DES MOTS DE PASSE",
@@ -107,6 +108,7 @@
       "module_blacklist": "Modules rarement utiles empêchés de charger — directives blacklist / install (défense en profondeur)",
       "dev_privileged": "Nœuds /dev privilégiés — accès monde sur /dev/mem, /dev/port et disques bruts (INFO-only)",
       "root_path": "Intégrité du PATH de root — PATH configuré (login.defs, sudoers) sans composant world-writable / '.' / relatif",
+      "package_integrity": "Intégrité des fichiers de paquets — binaires/bibliothèques installés qui diffèrent du manifeste du gestionnaire (--exhaustive, INFO-only)",
       "log_rotation": "Rotation des logs — configuration logrotate, stockage persistant journald",
       "mac_policy": "Politique MAC — profils AppArmor / SELinux + statut enforce",
       "memory": "Mémoire + swap — swappiness, taille swap, sensibilité usure SSD",
@@ -169,10 +171,11 @@
   },
   "prerequisites": {
     "ufw_installed": "UFW est installé",
-    "ufw_missing": "UFW n'est pas installé"
+    "firewall_missing": "Aucun pare-feu actif — ni UFW ni firewalld installé, et la couche netfilter ne filtre pas le trafic entrant"
   },
   "firewall": {
     "active": "Le pare-feu UFW est actif",
+    "netfilter_active": "Aucun front-end pare-feu géré (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services}",
     "inactive": "Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas protégée.",
     "policy_ok": "Politique par défaut : connexions entrantes bloquées (recommandé)",
@@ -945,6 +948,7 @@
       "diff_path": "  =CHEMIN compare à la référence d'une autre machine",
       "watch": "Relance l'audit toutes les N s (défaut : 60) — Ctrl+C pour quitter",
       "offline": "Ignore la recherche d'IP externe (aucun appel HTTP)",
+      "exhaustive": "Lance aussi les checks lents (ex. intégrité des paquets)",
       "target": "Score visé (1–10) : écart, réussite ou plafond ; sortie 4 sinon",
       "check": "N'exécute que ces contrôles (séparés par des virgules)",
       "check_list": "  --check=list affiche tous les noms disponibles",
@@ -2880,10 +2884,10 @@
       }
     },
     "prerequisites": {
-      "ufw_missing": {
-        "title": "UFW (pare-feu) n'est pas installé",
-        "why": "Sans pare-feu hôte, chaque service en écoute sur la machine est exposé au réseau auquel elle est connectée. Aucune politique allow/deny par service, aucune politique deny par défaut, aucune trace d'audit des règles. Sur un hôte exposé à internet c'est une faille critique ; sur un hôte LAN-only le système reste trivialement joignable par tout pair compromis.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer UFW :\n   sudo apt install ufw\n2. Définir la politique par défaut sûre :\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (Si vous utilisez SSH) l'autoriser avant d'activer :\n   sudo ufw allow 22/tcp\n4. Activer le pare-feu :\n   sudo ufw enable\n5. Vérifier :\n   sudo ufw status verbose"
+      "firewall_missing": {
+        "title": "Aucun pare-feu actif (ni UFW, ni firewalld, ni ruleset netfilter filtrant)",
+        "why": "Sans pare-feu hôte, chaque service en écoute sur la machine est exposé au réseau auquel elle est connectée. Aucune politique allow/deny par service, aucune politique deny par défaut, aucune trace d'audit des règles. Sur un hôte exposé à internet c'est une faille critique ; sur un hôte LAN-only le système reste trivialement joignable par tout pair compromis. Ce constat ne se déclenche que si BOB n'a trouvé aucun front-end géré ET que la couche netfilter brute ne filtrait pas le trafic entrant — un hôte protégé par un simple ruleset nftables en deny-par-défaut est crédité à la place, pas signalé ici.",
+        "how": "BOB audite deux front-ends et la couche netfilter brute ; choisissez celui que fournit votre distribution. Le finding lui-même porte la commande d'installation construite pour le gestionnaire de paquets de cet hôte (ufw sur les familles Debian/Arch/Alpine, firewalld sur Fedora/RHEL/openSUSE).\n\nUFW (Debian, Ubuntu, Arch, Alpine) :\n1. L'installer :\n   sudo apt install ufw\n2. Politique par défaut sûre :\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (Si vous utilisez SSH) l'autoriser avant d'activer :\n   sudo ufw allow 22/tcp\n4. Activer :\n   sudo ufw enable\n\nfirewalld (Fedora, RHEL, openSUSE) :\n1. Installer et activer :\n   sudo dnf install firewalld   # ou : sudo zypper install firewalld\n   sudo systemctl enable --now firewalld\n2. Vérifier :\n   sudo firewall-cmd --state\n\nOu un simple ruleset nftables avec une politique entrante deny-par-défaut — BOB crédite aussi cette couche (auditée dans la section iptables/nftables)."
       }
     },
     "firewall": {
@@ -3480,6 +3484,15 @@
     "dangerous_detail": "Chacun de ces composants laisse quelqu'un qui n'est pas root contrôler quel binaire root exécute pour un nom de commande nu. Un répertoire world-writable : n'importe qui y dépose son propre `ls`. Un composant '.' ou vide : le binaire est pris dans le répertoire courant, quel qu'il soit au moment où root lance la commande. Un composant relatif : idem, résolu depuis le répertoire courant. Résultat : une escalade de privilèges directe — planter un fichier, attendre que root lance la commande correspondante. Corriger la source (ENV_SUPATH dans login.defs ou secure_path dans sudoers) pour que le PATH de root ne contienne que des répertoires absolus, appartenant à root, non world-writable, dans l'ordre habituel (/usr/sbin:/usr/bin:/sbin:/bin).",
     "group_writable": "Le PATH configuré de root contient un répertoire modifiable par un groupe non-root : {entries}",
     "clean": "Le PATH configuré de root est propre — chaque composant est un répertoire absolu, non world-writable"
+  },
+  "package_integrity": {
+    "unsupported": "Intégrité des paquets non vérifiée — aucun gestionnaire de paquets supporté détecté sur cet hôte",
+    "tool_missing": "Intégrité des paquets non vérifiée — {tool} n'est pas installé",
+    "tool_missing_detail": "Le vérificateur ({tool}) est absent, donc BOB n'a pas pu comparer les fichiers installés aux empreintes enregistrées par le gestionnaire de paquets. Ce n'est pas un résultat « propre » — c'est une question sans réponse. Le paquet debsums fournit le vérificateur sur Debian/Ubuntu ; sur la famille RPM, rpm est fourni avec le système.",
+    "timed_out": "La vérification d'intégrité des paquets a dépassé le délai et a été arrêtée — résultat non établi",
+    "changed": "{count} fichier(s) de paquet diffèrent de l'empreinte enregistrée par le gestionnaire : {files}",
+    "changed_detail": "Ces fichiers ont été installés par un paquet mais leur contenu ne correspond plus à l'empreinte enregistrée par le gestionnaire. Cela peut être bénin — une recompilation locale, un correctif éditeur appliqué à la main, un fichier patché par un autre outil — ou la trace d'un intrus remplaçant un binaire ou une bibliothèque système. BOB ne peut pas trancher, donc c'est signalé, pas scoré : vérifiez chaque chemin par rapport à ce que vous attendez (réinstaller le paquet propriétaire pour comparer, p. ex. apt reinstall / dnf reinstall, ou inspecter le fichier). Les fichiers de configuration, censés être édités, sont déjà exclus.",
+    "clean": "Aucun fichier de paquet ne diffère de l'empreinte enregistrée par le gestionnaire ({tool} vérifié)"
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec est verrouillé (kernel.kexec_load_disabled=1) — aucun nouveau noyau ne peut être chargé jusqu'au reboot",

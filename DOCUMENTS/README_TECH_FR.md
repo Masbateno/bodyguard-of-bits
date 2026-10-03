@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.22.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.23.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -16,7 +16,7 @@
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
-BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 50 sections de vérification sur 6 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
+BOB est un auditeur de durcissement Linux pour les admins système et power users. Il exécute 51 sections de vérification sur 6 domaines de score, mappe les résultats aux benchmarks CIS quand applicable, et fournit des explications claires avec des commandes de correction prêtes à l'emploi.
 
 ---
 
@@ -101,7 +101,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
 - **`--format=FORMAT`** — flag unifié : `json | json-full | csv | markdown | html` ; anciens flags conservés comme aliases. Depuis la v0.18.0, la dernière colonne du CSV est `key`, l'identifiant stable du constat — le même que portent `--explain`, `--ignore` et le JSON ; les quinze colonnes précédentes gardent leur position
-- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 60 noms de sections — les 50 sections filtrables, plus les 10 toujours actives qu'il liste aussi
+- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 61 noms de sections — les 51 sections filtrables, plus les 10 toujours actives qu'il liste aussi
 - **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante ; sans persistance
 - **Rapport comparatif** — baseline enregistrée après chaque audit ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément. Un fichier qui n'est pas une baseline BOB (sans `timestamp` ni `score`) est refusé nommément au lieu d'être comparé comme une baseline à zéro
 - **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 1000 entrées. Une ligne dont BOB ne sait lire ni le score ni l'horodatage est ignorée, jamais réparée en un chiffre qu'il n'a pas mesuré
@@ -170,7 +170,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 - Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
-  - **matériel réel** (stress-testé pendant le cycle v0.20.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
+  - **matériel réel** (stress-testé au fil des cycles v0.20.x–v0.22.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
   - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - Python 3.10+
@@ -186,7 +186,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 - Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
-  - **matériel réel** (stress-testé pendant le cycle v0.20.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
+  - **matériel réel** (stress-testé au fil des cycles v0.20.x–v0.22.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
   - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - pipx *(installateur d'applications Python isolées)* :
@@ -385,7 +385,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.22.1  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.23.0  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -518,6 +518,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `--webhook-format=FMT`  | Format webhook : `auto` (défaut), `generic` ou `slack`            |
 | `--log-days=N`          | Analyser les logs sur N jours (défaut : 7)                         |
 | `-o`, `--offline`       | Désactiver la résolution d'IP publique et l'appel webhook (aucun appel HTTP) |
+| `--exhaustive`          | Lance aussi les checks lents de couverture complète (intégrité des paquets) exclus du run par défaut |
 | `--manage-logs`         | Interface interactive pour lister, prévisualiser et supprimer les rapports |
 | `--install-cron`        | Configurer un audit nocturne automatique (cron)                    |
 | `--install-completion`  | Installer l'autocomplétion bash et créer le lien symbolique sudo PATH |

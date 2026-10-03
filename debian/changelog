@@ -1,3 +1,27 @@
+bodyguard-of-bits (0.23.0-1) unstable; urgency=medium
+
+  * Minor: an opt-in --exhaustive package-integrity check, and a backend-neutral
+    firewall prerequisite. No scoring/schema/CSV-order or detection change, and no
+    score moves on an existing host; one BREAKING item (a renamed finding key).
+  * --exhaustive runs the slow full-coverage checks held out of the default audit;
+    its first consumer, package_integrity, compares installed files to the package
+    manager's recorded digests (debsums -c / rpm -Va / apk audit / pacman -Qkk).
+    INFO-only, config files excluded, a 1800 s hang-guard (process group killed on
+    overrun), and a missing verifier or timeout reports "not verified", never a
+    false "clean".
+  * BREAKING: the always-on firewall prerequisite key prerequisites.ufw_missing is
+    renamed to prerequisites.firewall_missing and is now netfilter-aware — it
+    credits a filtering nftables ruleset (INFO) instead of demanding UFW, alerts
+    only when nothing protects the host, and offers a distribution-aware remedy.
+    The finding never deducted, so no score changes; baselines / ignore-lists /
+    --explain naming the old key must use the new one.
+  * Docs: new DOCUMENTS/DOCTRINE.md (the project's 22 principles), CONVENTIONS.md
+    gains a section 9 on the registries a check touches, and a Tier-1 dating fix.
+  * Field-tested on six real machines (Pi Zero, Mint, Ubuntu 26.04, Fedora 44,
+    Kali, Debian 13), 0 regression.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 03 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.22.1-1) unstable; urgency=medium
 
   * Patch: SUID wording precision, SUID-scan timeout, audit-output honesty, and
