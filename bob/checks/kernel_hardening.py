@@ -7,6 +7,12 @@ Audits kernel security parameters that are commonly misconfigured:
   - SUID dumpable (fs.suid_dumpable)
   - kptr_restrict (kernel.kptr_restrict)
   - dmesg_restrict (kernel.dmesg_restrict)
+  - v0.24.0 kernel attack surface, INFO-only:
+      unprivileged eBPF   (kernel.unprivileged_bpf_disabled)
+      perf events         (kernel.perf_event_paranoid)
+      user namespaces     (user.max_user_namespaces, plus the Debian
+                           kernel.unprivileged_userns_clone and the Ubuntu
+                           kernel.apparmor_restrict_unprivileged_userns)
 
 The check is split into two parts:
   1. KernelHardeningSnapshot.from_system() — reads /proc/sys values.
@@ -65,12 +71,26 @@ class KernelHardeningSnapshot:
         suid_dumpable:  fs.suid_dumpable            (0=no dump, 1=all, 2=root-only)
         kptr_restrict:  kernel.kptr_restrict        (0=off, 1=restricted, 2=full)
         dmesg_restrict: kernel.dmesg_restrict       (0=open, 1=restricted)
+        bpf_unpriv_disabled: kernel.unprivileged_bpf_disabled (0=allowed,
+                        1=disabled until reboot, 2=disabled, admin may re-enable)
+        perf_paranoid:  kernel.perf_event_paranoid  (-1..2 upstream; 3/4 are
+                        Debian/Ubuntu patches that disable perf for users)
+        max_userns:     user.max_user_namespaces    (0 = user namespaces off)
+        userns_clone:   kernel.unprivileged_userns_clone — Debian/Ubuntu patch
+                        only; None elsewhere is normal, not "unreadable"
+        userns_apparmor: kernel.apparmor_restrict_unprivileged_userns — Ubuntu
+                        23.10+ only; None elsewhere is normal
     """
     aslr:           "int | None" = None
     ptrace_scope:   "int | None" = None
     suid_dumpable:  "int | None" = None
     kptr_restrict:  "int | None" = None
     dmesg_restrict: "int | None" = None
+    bpf_unpriv_disabled: "int | None" = None
+    perf_paranoid:  "int | None" = None
+    max_userns:     "int | None" = None
+    userns_clone:   "int | None" = None
+    userns_apparmor: "int | None" = None
 
     @classmethod
     def from_system(cls) -> "KernelHardeningSnapshot":
@@ -81,6 +101,11 @@ class KernelHardeningSnapshot:
             suid_dumpable=_sysctl_int("fs.suid_dumpable"),
             kptr_restrict=_sysctl_int("kernel.kptr_restrict"),
             dmesg_restrict=_sysctl_int("kernel.dmesg_restrict"),
+            bpf_unpriv_disabled=_sysctl_int("kernel.unprivileged_bpf_disabled"),
+            perf_paranoid=_sysctl_int("kernel.perf_event_paranoid"),
+            max_userns=_sysctl_int("user.max_user_namespaces"),
+            userns_clone=_sysctl_int("kernel.unprivileged_userns_clone"),
+            userns_apparmor=_sysctl_int("kernel.apparmor_restrict_unprivileged_userns"),
         )
 
 
@@ -101,6 +126,9 @@ _SYSCTL_NAMES = {
     "suid_dumpable":  "fs.suid_dumpable",
     "kptr_restrict":  "kernel.kptr_restrict",
     "dmesg_restrict": "kernel.dmesg_restrict",
+    "bpf_unpriv_disabled": "kernel.unprivileged_bpf_disabled",
+    "perf_paranoid":  "kernel.perf_event_paranoid",
+    "max_userns":     "user.max_user_namespaces",
 }
 
 
@@ -235,6 +263,69 @@ def check_kernel_hardening(snapshot: KernelHardeningSnapshot, t: TranslationFunc
             detail=_t("kernel_hardening.dmesg_exposed_detail"),
             **_fix("kernel.dmesg_restrict", 1),
             key="kernel_hardening.dmesg_exposed",
+        )
+
+    # --- Kernel attack surface (v0.24.0, INFO only) --------------------------
+    # Each of these opens a large kernel interface to unprivileged users, and
+    # each has been the entry point of real local-root exploits. None is
+    # scored: the right setting depends on what the host runs.
+
+    # Unprivileged eBPF: the verifier is the barrier, and verifier bugs are a
+    # recurring source of LPEs. 1 and 2 both deny it today; 2 is the default
+    # since Linux 5.16 on most distributions.
+    if snapshot.bpf_unpriv_disabled is None:
+        _missing.append(_SYSCTL_NAMES["bpf_unpriv_disabled"])
+    elif snapshot.bpf_unpriv_disabled >= 1:
+        result.ok(message=_t("kernel_hardening.bpf_unpriv_ok",
+                             val=snapshot.bpf_unpriv_disabled),
+                  key="kernel_hardening.bpf_unpriv_ok")
+    else:
+        result.info(
+            message=_t("kernel_hardening.bpf_unpriv_enabled"),
+            detail=_t("kernel_hardening.bpf_unpriv_enabled_detail"),
+            **_fix("kernel.unprivileged_bpf_disabled", 2),
+            key="kernel_hardening.bpf_unpriv_enabled",
+        )
+
+    # perf events: ≤1 lets users profile the kernel (side channels, a large
+    # syscall surface). 2 is the upstream ceiling; Debian/Ubuntu's 3 and 4
+    # (perf off for users) only exist with their patch, so the advice is 2.
+    if snapshot.perf_paranoid is None:
+        _missing.append(_SYSCTL_NAMES["perf_paranoid"])
+    elif snapshot.perf_paranoid >= 2:
+        result.ok(message=_t("kernel_hardening.perf_ok", val=snapshot.perf_paranoid),
+                  key="kernel_hardening.perf_ok")
+    else:
+        result.info(
+            message=_t("kernel_hardening.perf_permissive", val=snapshot.perf_paranoid),
+            detail=_t("kernel_hardening.perf_permissive_detail"),
+            **_fix("kernel.perf_event_paranoid", 2),
+            key="kernel_hardening.perf_permissive",
+        )
+
+    # Unprivileged user namespaces: dual-use. They are how browser sandboxes,
+    # flatpak and rootless containers work, and how many kernel LPEs reach
+    # code that used to need root. Reported as a state, never with a fix to
+    # run — turning them off breaks those tools.
+    if snapshot.max_userns is None:
+        _missing.append(_SYSCTL_NAMES["max_userns"])
+    elif snapshot.max_userns == 0:
+        result.ok(message=_t("kernel_hardening.userns_restricted",
+                             how="user.max_user_namespaces=0"),
+                  key="kernel_hardening.userns_restricted")
+    elif snapshot.userns_clone == 0:
+        result.ok(message=_t("kernel_hardening.userns_restricted",
+                             how="kernel.unprivileged_userns_clone=0"),
+                  key="kernel_hardening.userns_restricted")
+    elif snapshot.userns_apparmor is not None and snapshot.userns_apparmor >= 1:
+        result.ok(message=_t("kernel_hardening.userns_restricted",
+                             how="kernel.apparmor_restrict_unprivileged_userns=1"),
+                  key="kernel_hardening.userns_restricted")
+    else:
+        result.info(
+            message=_t("kernel_hardening.userns_allowed"),
+            detail=_t("kernel_hardening.userns_allowed_detail"),
+            key="kernel_hardening.userns_allowed",
         )
 
     if _missing:

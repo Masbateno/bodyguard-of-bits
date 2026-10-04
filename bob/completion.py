@@ -42,12 +42,18 @@ def should_show_completion_hint(*, is_tty: bool, quiet: bool) -> bool:
     return is_tty and not quiet and not completion_installed()
 
 
+#: Where the completion script and the sudo-PATH symlink go. Module constants
+#: so the install logic can be exercised against a temporary tree.
+_DST_COMP = Path("/etc/bash_completion.d/bob")
+_DST_BIN = Path("/usr/local/bin/bob")
+
+
 def install_completion() -> int:
     """Install bash completion script and sudo PATH symlink. Returns exit code."""
     ok = True
 
     src      = Path(__file__).parent / "data" / "bob.bash-completion"
-    dst_comp = Path("/etc/bash_completion.d/bob")
+    dst_comp = _DST_COMP
     if not src.exists():
         print("✖ " + i18n.t("completion.data_missing", path=str(src)), file=sys.stderr)
         ok = False
@@ -62,7 +68,7 @@ def install_completion() -> int:
             print("✖ " + i18n.t("completion.install_failed", error=str(exc)), file=sys.stderr)
             ok = False
 
-    dst_bin   = Path("/usr/local/bin/bob")
+    dst_bin   = _DST_BIN
     sudo_user = os.environ.get("SUDO_USER")
     bin_src   = None
     # I-2 (v0.7.3): validate SUDO_USER format AND catch pwd.getpwnam
@@ -83,11 +89,19 @@ def install_completion() -> int:
             candidate = None
     else:
         candidate = None
+    already_linked = False
     if candidate is not None:
         # exists() returns False for broken/circular symlinks, so this also
         # guards against those cases.
-        if candidate.exists() and candidate.resolve() != dst_bin.resolve():
-            bin_src = candidate
+        if candidate.exists():
+            if candidate.resolve() != dst_bin.resolve():
+                bin_src = candidate
+            else:
+                # v0.24.0: the symlink is already there and correct. This case
+                # used to fall through to "bob not found in ~/.local/bin" — on
+                # every second run of --install-completion, the binary had been
+                # found and was exactly where the message said it was not.
+                already_linked = True
     if bin_src:
         try:
             if dst_bin.is_symlink() or dst_bin.exists():
@@ -97,6 +111,9 @@ def install_completion() -> int:
         except OSError as exc:
             print("✖ " + i18n.t("completion.symlink_failed", error=str(exc)), file=sys.stderr)
             ok = False
+    elif already_linked:
+        print("✔ " + i18n.t("completion.symlink_up_to_date", dst=str(dst_bin),
+                            src=str(candidate)))
     elif sudo_user:
         print("ℹ  " + i18n.t("completion.symlink_skipped_missing"))
     else:

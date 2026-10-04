@@ -45,6 +45,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "cron.unreadable_files",
     "cups.cfg_unreadable",
     "mount_hardening.unreadable",
+    "mount_hardening.proc_hidepid_unknown",
     "core_dumps.unknown",
     "kexec_lockdown.kexec_unknown",
     "kexec_lockdown.lockdown_unknown",
@@ -55,6 +56,10 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "package_integrity.tool_missing",
     "package_integrity.timed_out",
     "package_integrity.unsupported",
+    "world_writable.unknown",
+    "world_writable.timed_out",
+    "world_writable.partial",
+    "world_writable.unowned_not_assessed",
     "faillock.unknown",
     "disk_encryption.unknown",
     "disk_encryption.volumes_present_root_unknown",
@@ -84,6 +89,8 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "mac_policy.apparmor_profiles_unreadable",
     "memory.swappiness_unknown",
     "password_policy.pam_stack_unknown",
+    "password_policy.hash_unknown",
+    "password_policy.login_defs_unreadable",
     "raspberry_pi.account_unknown",
     # v0.18.1: a cloud-init seed or userconf.txt present on the boot
     # partition but unreadable — the credential finding it might carry
@@ -98,6 +105,13 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "ssh.config_unreadable",
     "ssl_certs.dir_unreadable",
     "suid_audit.ok_partial",
+    "file_capabilities.partial",
+    "file_capabilities.unknown",
+    "cpu_security.unknown",
+    "cpu_security.status_unknown",
+    "package_authenticity.unreadable",
+    "package_authenticity.not_assessed",
+    "crypto_policy.unknown",
     "systemd_timers.unreadable",
     "umask.sources_unreadable",
     # v0.16.1 — neither name matches the ``*_unreadable`` / ``*_unknown``
@@ -110,6 +124,11 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     # nothing had changed but BOB's own eyesight.
     "user_accounts.no_passwd",
     "user_accounts.no_shadow",
+    # v0.24.0 — su's PAM file unread, root's lock state unread (so an
+    # unrestricted su is neither scored nor cleared), homes not probed.
+    "user_accounts.su_unknown",
+    "user_accounts.su_root_unknown",
+    "user_accounts.homes_uninspected",
 })
 
 # Keys that match the naming convention but do not reduce visibility. Kept

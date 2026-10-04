@@ -6,6 +6,117 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.24.0] — 04-10-2026
+
+**Une version mineure de couverture nouvelle — comptes, surface d'attaque du noyau,
+frontières de privilège, chaîne d'approvisionnement et plateforme — stress-testée sur
+huit machines réelles.** Aucun changement de formule de score, de schéma JSON ni
+d'ordre des colonnes CSV. **BREAKING :** le score bouge sur un hôte que les nouveaux
+checks signalent (plusieurs déduisent), les quatre codes CIS SUID sont renumérotés,
+et cinq nouveaux noms de section rejoignent `--check` / `--skip`.
+
+### 1. Nouvelles sections
+
+- **`file_capabilities`** — lit `security.capability` directement (sans dépendre de
+  `getcap`) sur les racines du scan SUID. Une capability que BOB classe comme équivalente à root —
+  `chown`, `dac_override`, `dac_read_search`, `fowner`, `setuid`, `setgid`,
+  `setpcap`, `setfcap`, `sys_module`, `sys_rawio`, `sys_admin`, `sys_ptrace`, `bpf`,
+  `mac_admin`, `mac_override` — sur un binaire qui n'en a pas besoin → WARN −1 ; toute autre capability → INFO ; un parcours partiel n'est jamais
+  « propre ». La liste des attributions de distribution a été mesurée sur huit
+  distributions — `snap-confine` de snapd, les auxiliaires de sssd, `suexec`
+  d'httpd, des auxiliaires KDE — et un nom connu portant plus que son jeu mesuré
+  n'est pas cru.
+- **`cpu_security`** — reprend le verdict du noyau dans
+  `/sys/devices/system/cpu/vulnerabilities` (`Vulnerable` → WARN −1, « SMT
+  vulnerable » → INFO, un statut indéterminé bloque l'OK), signale les options de
+  démarrage qui coupent les mitigations (INFO) et, sur x86, un IOMMU inactif (INFO).
+  Un noyau sans cette interface (ARMv6 du Pi Zero) est « non rapporté », pas une
+  section que BOB n'a pas pu lire.
+- **`package_authenticity`** — uniquement les options écrites : apt `[trusted=yes]` /
+  `Trusted: yes` / `AllowUnauthenticated` / `AllowInsecureRepositories` ; dnf et
+  zypper `gpgcheck`/`pkg_gpgcheck=0` sur les dépôts activés et dans `[main]`
+  (`/etc/zypp/zypp.conf`, sinon `/usr/etc/zypp/zypp.conf`) ; pacman `SigLevel =
+  Never`/`Optional` ; apk 3 `allow-untrusted` dans `/etc/apk/config` (la forme nue —
+  mesuré : apk ignore `--allow-untrusted`) → WARN −1. Les valeurs par défaut ne sont
+  jamais déduites. Libellé propre à chaque gestionnaire : apt authentifie son index
+  Release signé et les sommes de contrôle qu'il liste, pas chaque `.deb`.
+- **`crypto_policy`** — juge la politique crypto-policies *appliquée*
+  (`state/current`) : `LEGACY` → WARN −1 ; modules affaiblissants (`SHA1`,
+  `AD-SUPPORT`, `NO-ENFORCE-EMS`, `NO-PQ`), politique d'une version antérieure ou
+  non reconnue → INFO ; config modifiée sans `update-crypto-policies` → INFO. Un
+  hôte sans crypto-policies reçoit un INFO, jamais un OK.
+- **`world_writable`** (`--exhaustive` uniquement, INFO uniquement) — fichiers
+  modifiables par tous, répertoires modifiables par tous sans sticky bit et fichiers
+  sans propriétaire sur les systèmes de fichiers locaux sur disque (tmpfs/proc/
+  overlay/réseau exclus, stockage des conteneurs écarté), borné et groupe tué. Le
+  `find` GNU cherche les fichiers sans propriétaire ; celui de BusyBox ne le peut pas,
+  et le dit. Un chemin derrière un répertoire que les autres comptes ne peuvent pas
+  traverser est signalé comme *latent*, pas comme modifiable par tous.
+
+### 2. Checks étendus
+
+- `hardening` : `fs.protected_fifos` / `fs.protected_regular` — 0 → WARN −1. Zéro est
+  le défaut du noyau là où systemd ne le relève pas (Alpine, hôtes OpenRC).
+- `mount_hardening` : `/proc` hidepid — INFO uniquement, jamais scoré.
+- `password_policy` : algorithme de hachage des mots de passe — MD5/DES/bigcrypt dans
+  `login.defs` ou dans *n'importe quelle* pile `pam_unix` → WARN −1 (la pile la plus
+  faible l'emporte : `system-auth` et `password-auth` de Fedora sont deux chemins) ;
+  SHA256 → INFO ; un `/etc/login.defs` présent mais illisible est signalé et retient
+  l'OK ; le `passwd` de BusyBox est signalé comme intégré.
+- `user_accounts` : restriction de su — pam_wheel, mode du binaire su, et su de
+  BusyBox (qui ignore PAM : une ligne `pam_wheel` dans son fichier PAM ne restreint
+  rien) ; scorée −1 seulement si root a un mot de passe utilisable. Répertoires
+  personnels interactifs modifiables par tous (`o+w` ; bits de groupe et ACL non
+  évalués) ou appartenant à un autre compte → WARN −1 ; `.netrc` accessible au
+  groupe ou aux autres → WARN −1 ; `.rhosts`/`.shosts`/`.forward`
+  et UID/noms dupliqués → INFO. Rien n'est ouvert (sûr face aux FIFO) ; les
+  répertoires sur systèmes de fichiers réseau ne sont pas sondés.
+- `kernel_hardening` : eBPF non privilégié, `perf_event_paranoid`, espaces de noms
+  utilisateur — INFO uniquement ; les espaces de noms sont rapportés comme un état,
+  sans correctif à lancer.
+
+### 3. Corrections
+
+- Le résumé « surface d'attaque » compte un port lié à une adresse du LAN (Samba sur
+  `192.168.1.10`), et le détail des ports ne dit plus « localhost uniquement » pour un
+  tel port ; son libellé suit le pare-feu (refus par défaut / zone firewalld / aucun).
+  Les clients DHCP (`dhcpcd`, `dhclient`, `udhcpc`) sont des services système.
+- Le résumé des mises à jour nomme sa cause (cache périmé ou état incohérent).
+- Les unités parapluies Debian (`openvpn.service`, `postfix.service`,
+  `ExecStart=/bin/true`) sont jugées par leurs instances `<unité>@` en cours.
+- Les noms des sections non entièrement lues sont imprimés sous le cadre de synthèse
+  et dans le `.log`.
+- Une mise à jour UEFI dbx en attente est un INFO, pas une déduction, quand Secure
+  Boot est mesuré désactivé.
+- Un gestionnaire de paquets qui dépasse son délai une fois n'est plus interrogé dans
+  l'exécution (apk avec une config FIFO : 623 s → 13 s, même verdict).
+- `--check` nommant une section lente sans `--exhaustive` dit qu'elle exige l'option.
+- `--install-completion` signale un lien déjà correct au lieu de « introuvable ».
+- `suid_audit.writable_suid` : explication corrigée — mesuré sur Linux 6.12, une
+  écriture non privilégiée retire le bit set-id ; le risque est le prochain lancement
+  privilégié, pas « écraser et le lancer soi-même ». Gravité inchangée.
+
+### 4. Références CIS
+
+Toujours générées depuis ComplianceAsCode, désormais aussi ancrées sur le titre exact
+d'un contrôle Manual. Les quatre clés `suid_audit` passent du 6.1.13 de CIS Ubuntu
+22.04 v1 au 7.1.13 de la v2.0.0 (BREAKING pour qui filtre sur `code`). Nouveaux
+mappages : su 5.2.7, répertoires personnels 7.2.9, `.netrc` 7.2.10, hachage 5.4.1.4,
+authenticité des paquets 1.2.1.1.
+
+### 5. Terrain
+
+Un stress test complet (baseline, A/B contre 0.23.0, matrice CLI, les deux polarités
+de chaque nouveau check, entrées hostiles sur chaque nouveau chemin, aller-retour
+`--fix`, intégrité) sur huit machines réelles : Mint 22.3, Ubuntu Server 26.04,
+Raspberry Pi Zero W (ARMv6), Kali Rolling, Fedora 44 (SELinux enforcing, firewalld),
+openSUSE Leap 16 (configurations dans `/usr/etc`), Alpine 3.24 (BusyBox, apk 3) et
+Debian 13. Quatorze défauts ont été trouvés et corrigés avant la sortie, chacun avec
+sa garde et sa mutation. Compteurs : locale de 2652 à 2816, `--explain` et CIS de 208
+à 218, sections filtrables de 51 à 56, modules de check de 60 à 65,
+`_PREFIX_TO_DOMAIN` de 61 à 66, mutations de 301 à 350.
+**Tests** 11246 → **11778**.
+
 ## [0.23.0] — 03-10-2026
 
 **Une version mineure : un check d'intégrité des paquets opt-in `--exhaustive`, et

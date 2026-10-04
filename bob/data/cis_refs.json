@@ -528,6 +528,16 @@
     },
     "ref_fr": "Bonne pratique — Activer la protection des liens symboliques (fs.protected_symlinks = 1)"
   },
+  "hardening.protected_fifos_disabled": {
+    "ref": "Best practice — Enable FIFO protection (fs.protected_fifos = 2)",
+    "ref_fr": "Bonne pratique — Activer la protection des FIFO (fs.protected_fifos = 2)",
+    "code": null
+  },
+  "hardening.protected_regular_disabled": {
+    "ref": "Best practice — Enable regular-file protection (fs.protected_regular = 2)",
+    "ref_fr": "Bonne pratique — Activer la protection des fichiers réguliers (fs.protected_regular = 2)",
+    "code": null
+  },
   "hardening.redirects_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.5 — Ensure icmp redirects are not accepted (Automated)",
     "code": "CIS:3.3.5",
@@ -958,6 +968,24 @@
       "CIS Debian 13": {
         "code": "5.3.3.2.2",
         "title": "Ensure password length is configured (Automated)"
+      }
+    }
+  },
+  "password_policy.weak_hash": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.4.1.4 — Ensure strong password hashing algorithm is configured (Automated)",
+    "code": "CIS:5.4.1.4",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "5.4.1.4",
+        "title": "Ensure strong password hashing algorithm is configured (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "5.4.1.4",
+        "title": "Ensure strong password hashing algorithm is configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.4.1.4",
+        "title": "Ensure strong password hashing algorithm is configured (Automated)"
       }
     }
   },
@@ -1434,20 +1462,105 @@
     "code": null
   },
   "suid_audit.unexpected_sgid": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
-    "code": "CIS:6.1.13"
+    "ref": "CIS Ubuntu 22.04 L1 — 7.1.13 — Ensure SUID and SGID files are reviewed (Manual)",
+    "code": "CIS:7.1.13",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      }
+    }
   },
   "suid_audit.unexpected_suid": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
-    "code": "CIS:6.1.13"
+    "ref": "CIS Ubuntu 22.04 L1 — 7.1.13 — Ensure SUID and SGID files are reviewed (Manual)",
+    "code": "CIS:7.1.13",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      }
+    }
   },
   "suid_audit.unowned_suid": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
-    "code": "CIS:6.1.13"
+    "ref": "CIS Ubuntu 22.04 L1 — 7.1.13 — Ensure SUID and SGID files are reviewed (Manual)",
+    "code": "CIS:7.1.13",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      }
+    }
   },
   "suid_audit.writable_suid": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.1.13 — Ensure SUID and SGID files are reviewed",
-    "code": "CIS:6.1.13"
+    "ref": "CIS Ubuntu 22.04 L1 — 7.1.13 — Ensure SUID and SGID files are reviewed (Manual)",
+    "code": "CIS:7.1.13",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "7.1.13",
+        "title": "Ensure SUID and SGID files are reviewed (Manual)"
+      }
+    }
+  },
+  "file_capabilities.root_equivalent": {
+    "ref": "Best practice — Review file capabilities; no root-equivalent capability outside the binaries that need it",
+    "ref_fr": "Bonne pratique — Revoir les capabilities de fichiers ; aucune capability équivalente à root hors des binaires qui en ont besoin",
+    "code": null
+  },
+  "cpu_security.vulnerable": {
+    "ref": "Best practice — Keep CPU vulnerability mitigations enabled and microcode current",
+    "ref_fr": "Bonne pratique — Garder les mitigations des vulnérabilités CPU actives et le microcode à jour",
+    "code": null
+  },
+  "package_authenticity.disabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.1.1 — Ensure GPG keys are configured (Manual)",
+    "code": "CIS:1.2.1.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.1.1",
+        "title": "Ensure GPG keys are configured (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.1.1",
+        "title": "Ensure GPG keys are configured (Manual)"
+      }
+    }
+  },
+  "crypto_policy.legacy": {
+    "ref": "Best practice — Keep the system-wide crypto policy at DEFAULT or stricter (not LEGACY)",
+    "ref_fr": "Bonne pratique — Garder la politique crypto système à DEFAULT ou plus strict (pas LEGACY)",
+    "code": null
   },
   "systemd_timers.pipe_to_shell": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron/timers (script integrity: verify sources before execution)",
@@ -1570,6 +1683,60 @@
       "CIS Debian 13": {
         "code": "5.4.2.1",
         "title": "Ensure root is the only UID 0 account (Automated)"
+      }
+    }
+  },
+  "user_accounts.su_unrestricted": {
+    "ref": "CIS Ubuntu 22.04 L1 — 5.2.7 — Ensure access to the su command is restricted (Automated)",
+    "code": "CIS:5.2.7",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "5.2.7",
+        "title": "Ensure access to the su command is restricted (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "5.2.7",
+        "title": "Ensure access to the su command is restricted (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.2.7",
+        "title": "Ensure access to the su command is restricted (Automated)"
+      }
+    }
+  },
+  "user_accounts.home_unsafe": {
+    "ref": "CIS Ubuntu 22.04 L1 — 7.2.9 — Ensure local interactive user home directories are configured (Automated)",
+    "code": "CIS:7.2.9",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.2.9",
+        "title": "Ensure local interactive user home directories are configured (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "7.2.9",
+        "title": "Ensure local interactive user home directories are configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "7.2.9",
+        "title": "Ensure local interactive user home directories are configured (Automated)"
+      }
+    }
+  },
+  "user_accounts.netrc_exposed": {
+    "ref": "CIS Ubuntu 22.04 L1 — 7.2.10 — Ensure local interactive user dot files access is configured (Automated)",
+    "code": "CIS:7.2.10",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.2.10",
+        "title": "Ensure local interactive user dot files access is configured (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "7.2.10",
+        "title": "Ensure local interactive user dot files access is configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "7.2.10",
+        "title": "Ensure local interactive user dot files access is configured (Automated)"
       }
     }
   },

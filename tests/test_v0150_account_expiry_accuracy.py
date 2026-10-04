@@ -65,9 +65,18 @@ def shadow(tmp_path, monkeypatch):
     def _build(expire_field: str, uid: int = 1001, shell: str = "/bin/bash"):
         passwd = tmp_path / "passwd"
         shadowf = tmp_path / "shadow"
+        # v0.24.0: from_system also reads su's PAM file, the mount table and
+        # the homes — pinned here so the verdict never depends on the host.
+        su = tmp_path / "su"
+        su.write_text("auth sufficient pam_rootok.so\n")
+        mounts = tmp_path / "mounts"
+        mounts.write_text("")
+        monkeypatch.setattr(ua, "_SU_PAM_PATHS", (su,))
+        monkeypatch.setattr(ua, "_SU_BINARIES", ())
+        monkeypatch.setattr(ua, "_MOUNTS_PATH", mounts)
         passwd.write_text(
-            "root:x:0:0:root:/root:/bin/sh\n"
-            f"u1:x:{uid}:{uid}::/home/u1:{shell}\n")
+            f"root:x:0:0:root:{tmp_path / 'absent-root'}:/bin/sh\n"
+            f"u1:x:{uid}:{uid}::{tmp_path / 'absent-u1'}:{shell}\n")
         shadowf.write_text(
             "root:*:19000:0:99999:7:::\n"
             f"u1:$6$x$y:19000:0:99999:7::{expire_field}:\n")
@@ -143,4 +152,6 @@ class TestUnchangedBehaviour:
 
     def test_a_clean_account_still_reports_ok(self, shadow):
         result = check_user_accounts(shadow(""))
-        assert {f.key for f in result.findings} == {"user_accounts.ok"}
+        # root's password is locked ('*'), so an unrestricted su is not a finding.
+        assert {f.key for f in result.findings} == {"user_accounts.ok",
+                                                    "user_accounts.su_root_locked"}

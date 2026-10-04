@@ -71,6 +71,8 @@ class MountHardeningSnapshot:
     """
     readable: bool = True
     mounts:   list[_MountInfo] = field(default_factory=list)
+    # Options of the /proc mount (for hidepid), or None if /proc is not listed.
+    proc_options: "frozenset[str] | None" = None
 
     @classmethod
     def from_system(cls) -> "MountHardeningSnapshot":
@@ -100,7 +102,26 @@ class MountHardeningSnapshot:
                                               options=by_mp[target]))
             else:
                 snap.mounts.append(_MountInfo(path=target, is_mount=False))
+        snap.proc_options = by_mp.get("/proc")
         return snap
+
+
+# hidepid accepts a number or (kernel >= 5.8) a name; normalise to the name.
+_HIDEPID = {
+    "0": "off", "off": "off",
+    "1": "noaccess", "noaccess": "noaccess",
+    "2": "invisible", "invisible": "invisible",
+    "4": "ptraceable", "ptraceable": "ptraceable",
+}
+
+
+def _hidepid_level(options: "frozenset[str]") -> str:
+    """The /proc hidepid level: off (the default when absent), noaccess,
+    invisible, ptraceable — or "unknown" for a value BOB does not recognise."""
+    for opt in options:
+        if opt.startswith("hidepid="):
+            return _HIDEPID.get(opt.split("=", 1)[1], "unknown")
+    return "off"
 
 
 # ---------------------------------------------------------------------------
@@ -160,5 +181,28 @@ def check_mount_hardening(snapshot: MountHardeningSnapshot,
                 message=_t("mount_hardening.hardened", mount=m.path),
                 key="mount_hardening.hardened",
             )
+
+    # --- /proc hidepid: who can see other users' processes. INFO-only: whether
+    # it matters depends on how many people log in, so it is never scored. ---
+    if snapshot.proc_options is None:
+        result.info(message=_t("mount_hardening.proc_hidepid_unknown"),
+                    key="mount_hardening.proc_hidepid_unknown")
+    else:
+        level = _hidepid_level(snapshot.proc_options)
+        if level in ("invisible", "ptraceable"):
+            result.ok(message=_t("mount_hardening.proc_hidepid_restricted", level=level),
+                      key="mount_hardening.proc_hidepid_restricted",
+                      template_vars={"level": level})
+        elif level == "noaccess":
+            result.info(message=_t("mount_hardening.proc_hidepid_partial"),
+                        detail=_t("mount_hardening.proc_hidepid_detail"),
+                        key="mount_hardening.proc_hidepid_partial")
+        elif level == "off":
+            result.info(message=_t("mount_hardening.proc_hidepid_off"),
+                        detail=_t("mount_hardening.proc_hidepid_detail"),
+                        key="mount_hardening.proc_hidepid_off")
+        else:
+            result.info(message=_t("mount_hardening.proc_hidepid_unknown"),
+                        key="mount_hardening.proc_hidepid_unknown")
 
     return result

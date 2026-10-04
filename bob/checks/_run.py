@@ -100,6 +100,9 @@ class CommandResult(NamedTuple):
     ok:     bool
     stderr: str = ""
     code:   "int | None" = None
+    #: v0.24.0 — the command was killed at its timeout (as opposed to absent or
+    #: failing). Lets a caller stop asking a tool that has wedged.
+    timed_out: bool = False
 
 
 def run_result(
@@ -126,7 +129,8 @@ def run_result(
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         logger.debug("Command %r failed: %s (stderr=%r)", args, exc,
                      getattr(exc, "stderr", None))
-        return CommandResult("", False)
+        return CommandResult("", False,
+                             timed_out=isinstance(exc, subprocess.TimeoutExpired))
 
 
 def _run(*args: str, timeout: int = _CMD_TIMEOUT, env: "dict | None" = None) -> str:
@@ -745,6 +749,9 @@ def package_query_possible() -> bool:
 
 _PACKAGE_QUERY_STATE: "bool | None" = None
 
+#: Package managers that timed out once this run — not asked again.
+_WEDGED_MANAGERS: "set[str]" = set()
+
 
 def _package_query_answers(tool: str, args: "tuple[str, ...]", marker: "str | None",
                            by_exit: bool = False) -> bool:
@@ -787,9 +794,18 @@ def package_installed(name: str) -> "str | None":
     with itself.
     """
     for tool, args, marker, by_exit in _PACKAGE_QUERIES:
-        if not _command_exists(tool):
+        if not _command_exists(tool) or tool in _WEDGED_MANAGERS:
             continue
         result = run_result(tool, *(a.replace(_PKG, name) for a in args))
+        if result.timed_out:
+            # v0.24.0 circuit breaker. A manager that blocks once blocks every
+            # time (measured: apk with a FIFO at /etc/apk/config) — and the
+            # services registry asks it ~40 times, 10 s each: 623 s for one
+            # audit. Same answer (a timeout already meant "not reported
+            # installed"), without paying for it again.
+            _WEDGED_MANAGERS.add(tool)
+            logger.warning("package manager %s timed out; not queried again this run", tool)
+            continue
         if by_exit:
             if result.ok:
                 return tool

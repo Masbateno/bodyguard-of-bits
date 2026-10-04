@@ -96,6 +96,8 @@ MAP = {
  # ---- password / accounts ----
  "password_policy.no_quality_module": ["accounts_password_pam_pwquality_enabled"],
  "password_policy.weak_minlen": ["accounts_password_pam_minlen"],
+ "password_policy.weak_hash": ["set_password_hashing_algorithm_logindefs",
+                               "set_password_hashing_algorithm_systemauth"],
  "password_policy.no_expiry": ["accounts_maximum_age_login_defs"],
  "user_accounts.uid_zero": ["accounts_no_uid_except_zero"],
  "user_accounts.expired_account": ["account_disable_post_pw_expiration"],
@@ -106,7 +108,7 @@ MAP = {
  "file_perms.world_writable": ["file_permissions_unauthorized_world_writable"],
  "file_perms.sudoers_nopasswd_all": ["sudo_require_authentication"],
  # ---- firewall / UFW ----
- "prerequisites.ufw_missing": ["package_ufw_installed"],
+ "prerequisites.firewall_missing": ["package_ufw_installed"],
  "firewall.inactive": ["service_ufw_enabled"],
  "firewall.policy_open": ["set_ufw_default_rule"],
  "firewall_iptables.no_loopback": ["set_ufw_loopback_traffic"],
@@ -117,6 +119,18 @@ MAP = {
                              "aide_periodic_checking_systemd_timer"],
  "file_integrity.check_old": ["aide_periodic_cron_checking",
                               "aide_periodic_checking_systemd_timer"],
+ # ---- accounts (v0.24.0) ----
+ "user_accounts.su_unrestricted": ["use_pam_wheel_group_for_su"],
+ "user_accounts.home_unsafe": ["file_permissions_home_directories",
+                               "file_ownership_home_directories"],
+ "user_accounts.netrc_exposed": ["no_netrc_files"],
+ # ---- package signing (v0.24.0) — a Manual control, title-anchored ----
+ "package_authenticity.disabled": ["title:Ensure GPG keys are configured (Manual)"],
+ # ---- SUID/SGID review — a Manual control with no CAC rule: anchored on
+ #      its exact title (see _index) ----
+ **dict.fromkeys(("suid_audit.unexpected_suid", "suid_audit.unexpected_sgid",
+                  "suid_audit.unowned_suid", "suid_audit.writable_suid"),
+                 ["title:Ensure SUID and SGID files are reviewed (Manual)"]),
 }
 
 # Keys whose CAC rule exists only in a non-primary benchmark (CIS Debian 13),
@@ -140,14 +154,29 @@ def _index(text: str) -> dict:
     Regex state machine rather than a YAML dependency (this is a dev-only
     script). A control block is ``- id: <code>`` at four-space indent, then a
     ``title:``, a ``levels:`` list of ``lN_*`` ids, and a ``rules:`` list.
+
+    Every control is also indexed under ``title:<exact title>``. A Manual
+    control ("Ensure SUID and SGID files are reviewed") carries no rule at all,
+    so without this its number could only be typed by hand — which is how the
+    SUID keys kept CIS Ubuntu 22.04 v1's 6.1.13 after v2.0.0 renumbered it 7.1.13.
     """
     out: dict = {}
     cid = ctitle = None
     levels: list = []
     section = None            # "levels" | "rules" | None
+
+    def _level() -> str:
+        return "L1" if any(x.startswith("l1") for x in levels) else (
+               "L2" if any(x.startswith("l2") for x in levels) else "")
+
+    def _flush_title() -> None:
+        if cid is not None and ctitle:
+            out.setdefault(f"title:{ctitle}", (cid, ctitle, _level()))
+
     for line in text.splitlines():
         m = re.match(r"^ {4}-\s*id:\s*(\S+)\s*$", line)
         if m:
+            _flush_title()
             cid, ctitle, levels, section = m.group(1), None, [], None
             continue
         if cid is None:
@@ -172,9 +201,8 @@ def _index(text: str) -> dict:
         if section == "levels":
             levels.append(item)
         elif section == "rules" and ctitle:
-            level = "L1" if any(x.startswith("l1") for x in levels) else (
-                    "L2" if any(x.startswith("l2") for x in levels) else "")
-            out.setdefault(item, (cid, ctitle, level))
+            out.setdefault(item, (cid, ctitle, _level()))
+    _flush_title()
     return out
 
 

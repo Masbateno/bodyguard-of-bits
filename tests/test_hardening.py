@@ -34,6 +34,8 @@ def make_snapshot(**overrides) -> HardeningSnapshot:
         send_redirects=False,
         protected_hardlinks=True,
         protected_symlinks=True,
+        protected_fifos=2,
+        protected_regular=2,
     )
     defaults.update(overrides)
     return HardeningSnapshot(**defaults)

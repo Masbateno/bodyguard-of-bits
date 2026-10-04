@@ -778,6 +778,13 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             print(f"  ℹ {t('summary.implicit_policy')}")
             print(f"    {t('summary.implicit_svcs')} : {', '.join(implicit_svcs)}")
 
+        # v0.24.0: the box keeps the count (a list overflowed its 78 columns on
+        # an unprivileged run with nine unread sections); the names go here, on
+        # a free line, so "2 sections not fully read" can be checked by name.
+        if engine.unverified:
+            print()
+            print(f"  ℹ {t('summary.visibility_sections', sections=', '.join(sorted({section_of(k) for k in engine.unverified})))}")
+
         print()
         print(f"  ℹ {t('summary.scope_line1')}")
         print(f"  ℹ {t('summary.scope_line2')}")
@@ -834,9 +841,10 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             "profile": t("report.field_profile"),
             "visibility": t("scoring.visibility_label"),
             "scope": t("scoring.scope_label"),
-            "visibility_value": t(
+            "visibility_value": (t(
                 "scoring.visibility_value",
                 count=len({section_of(k) for k in engine.unverified}),
+            ) + " (" + ", ".join(sorted({section_of(k) for k in engine.unverified})) + ")"
             ) if engine.unverified else "",
         },
         posture_annotation=_r_annotation,

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.23.0
+Version:        0.24.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,20 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Oct 04 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.0-1
+- Minor, BREAKING: new checks across accounts, kernel, privileges, supply chain
+  and platform; scores move on hosts they flag.
+- New sections: file_capabilities, cpu_security, package_authenticity,
+  crypto_policy, world_writable (--exhaustive, INFO).
+- Extended: fs.protected_fifos/regular, /proc hidepid, password-hashing
+  algorithm, su restriction (pam_wheel, su mode, BusyBox su), interactive homes
+  and .netrc, duplicate UIDs/names, unprivileged eBPF, perf_event_paranoid,
+  user namespaces.
+- Fixes: LAN-bound ports in the attack surface; umbrella units judged by their
+  instances; unread sections named; pending UEFI dbx not scored with Secure Boot
+  off; wedged package manager queried once; SUID CIS refs 6.1.13 -> 7.1.13.
+- Stress-tested on eight real machines; fourteen defects fixed before release.
+
 * Sat Oct 03 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.23.0-1
 - Minor: an opt-in --exhaustive package-integrity check, and a backend-neutral
   firewall prerequisite. No scoring/schema/CSV-order or detection change, no score

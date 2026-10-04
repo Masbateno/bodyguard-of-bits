@@ -719,6 +719,8 @@
       "openvpn"
     ],
     "services": [
+      "openvpn-server@",
+      "openvpn@",
       "openvpn"
     ],
     "ports": [

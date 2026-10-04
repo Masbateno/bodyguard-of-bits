@@ -312,7 +312,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="208 entries (112 formal CIS",
+        old="218 entries (117 formal CIS",
         new="178 entries (110 formal CIS",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
@@ -744,8 +744,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/section-count-stale-again",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="the 51 filterable + 10 always-on section names",
-        new="the 50 filterable + 10 always-on section names",
+        old="the 56 filterable + 10 always-on section names",
+        new="the 55 filterable + 10 always-on section names",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the section count drifted in seven places the moment a section "
                "was added, and nothing was watching",
@@ -753,8 +753,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/module-count-stale-again",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="bob/checks/*.py  ← 60 check modules · Snapshot+check_xxx pattern",
-        new="bob/checks/*.py  ← 59 check modules · Snapshot+check_xxx pattern",
+        old="bob/checks/*.py  ← 65 check modules · Snapshot+check_xxx pattern",
+        new="bob/checks/*.py  ← 64 check modules · Snapshot+check_xxx pattern",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale",),
         reason="the check-module count said 57 (conflated with the 57 sections) "
                "in four places while the on-disk count and SNAPSHOT's own table "
@@ -886,8 +886,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/domain-count-stale-again",
         file="README.md",
-        old="51 check sections, 6 score domains",
-        new="51 check sections, 7 score domains",
+        old="56 check sections, 6 score domains",
+        new="56 check sections, 7 score domains",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_score_domain_count",),
         reason="v0.20.0 realigned the seven score domains onto the six display "
                "groups, but the intros and headings kept saying 7 for four "
@@ -896,8 +896,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 2652 keys EN/FR",
-        new="locale auto-detect (POSIX), 2651 keys EN/FR",
+        old="locale auto-detect (POSIX), 2816 keys EN/FR",
+        new="locale auto-detect (POSIX), 2815 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
                "because '2014' reads as a year and the sweep's noun set had no "
@@ -906,8 +906,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-breakdown-mis-split",
         file="DOCUMENTS/README_TECH.md",
-        old="208 entries (112 formal CIS, 89 best-practice, 7 Docker)",
-        new="208 entries (111 formal CIS, 90 best-practice, 7 Docker)",
+        old="218 entries (117 formal CIS, 94 best-practice, 7 Docker)",
+        new="218 entries (116 formal CIS, 95 best-practice, 7 Docker)",
         kills=(f"{_LIVECOUNT}::"
                "test_the_readme_tech_cis_breakdown_matches_the_live_categories",),
         reason="v0163 checks only that the parts sum to the total, so a wrong "
@@ -3093,6 +3093,487 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason="module.sig_enforce=Y means the kernel refuses unsigned modules; "
                "misreading it as anything but enforced drops the one positive "
                "signal that unsigned-module loading is closed off",
+    ),
+    Mutation(
+        id="password_policy/md5-hash-not-weak",
+        file="bob/checks/password_policy.py",
+        old='_WEAK_HASHES   = frozenset({"MD5", "DES", "BIGCRYPT"})',
+        new='_WEAK_HASHES   = frozenset({"DES", "BIGCRYPT"})',
+        kills=("tests/test_v0240_password_hash.py::"
+               "test_weak_algorithm_on_either_source_deducts[MD5-encrypt_method]",),
+        reason="ENCRYPT_METHOD MD5 makes every account useradd creates crackable "
+               "offline in hours once /etc/shadow leaks; it must not pass unscored",
+    ),
+    Mutation(
+        id="password_policy/pam-unix-hash-hidden-behind-quality-module",
+        file="bob/checks/password_policy.py",
+        old=("        # above stops at the quality module — so look for it on its own.\n"
+             "        if pam_text:"),
+        new=("        # above stops at the quality module — so look for it on its own.\n"
+             "        if pam_text and snap.pam_quality_module is None:"),
+        kills=("tests/test_v0240_password_hash.py::"
+               "test_from_system_reads_pam_unix_hash_after_quality_module",),
+        reason="every stock PAM stack puts pam_pwquality before pam_unix; reading "
+               "the hash only when no quality module came first goes blind to "
+               "passwd's algorithm on exactly the hosts that are configured",
+    ),
+    Mutation(
+        id="file_capabilities/setuid-not-root-equivalent",
+        file="bob/checks/file_capabilities.py",
+        old='    "chown", "dac_override", "dac_read_search", "fowner", "setuid", "setgid",',
+        new='    "chown", "dac_override", "dac_read_search", "fowner", "setgid",',
+        kills=("tests/test_v0240_file_capabilities.py::TestClassify::"
+               "test_setuid_on_an_interpreter_deducts",),
+        reason="cap_setuid+ep on python3 is a root shell for every local user — "
+               "the classic persistence trick the SUID audit cannot see",
+    ),
+    Mutation(
+        id="file_capabilities/known-name-trusted-whatever-it-carries",
+        file="bob/checks/file_capabilities.py",
+        old="        if allowed is not None and caps <= allowed:",
+        new="        if allowed is not None:",
+        kills=("tests/test_v0240_file_capabilities.py::TestClassify::"
+               "test_known_name_with_more_than_its_set_is_not_known",),
+        reason="trusting the basename alone lets anyone hide cap_setuid on a "
+               "file called ping",
+    ),
+    Mutation(
+        id="file_capabilities/partial-walk-claims-clean",
+        file="bob/checks/file_capabilities.py",
+        old="    elif not dangerous and not unexpected:",
+        new="    if not dangerous and not unexpected:",
+        kills=("tests/test_v0240_file_capabilities.py::TestClassify::"
+               "test_partial_walk_never_claims_clean",),
+        reason="'no unexpected capability' quantifies over every file; a walk "
+               "that skipped a directory has not seen every file",
+    ),
+    Mutation(
+        id="user_accounts/pam-wheel-trust-read-as-restriction",
+        file="bob/checks/user_accounts.py",
+        old='            fails = ctl in ("required", "requisite")',
+        new='            fails = ctl in ("required", "requisite", "sufficient")',
+        kills=("tests/test_v0240_account_hygiene.py::test_non_restricting_lines",),
+        reason="'auth sufficient pam_wheel.so trust' lets wheel members su with "
+               "no password at all; reading it as a restriction calls the "
+               "weakest su configuration the hardened one",
+    ),
+    Mutation(
+        id="user_accounts/star-root-read-as-unlocked",
+        file="bob/checks/user_accounts.py",
+        old='                snap.root_locked = pw_hash.startswith(("!", "*"))',
+        new='                snap.root_locked = pw_hash.startswith("!")',
+        kills=("tests/test_v0240_account_hygiene.py::TestSuCollection::test_root_lock_state",),
+        reason="'*' is how Debian-family installers lock root; missing it scores "
+               "an unrestricted su on hosts where su to root is impossible",
+    ),
+    Mutation(
+        id="user_accounts/network-home-statted",
+        file="bob/checks/user_accounts.py",
+        old='_BLOCKING_FS = _NETWORK_FS_TYPES | {"autofs"}',
+        new='_BLOCKING_FS = frozenset()',
+        kills=("tests/test_v0240_account_hygiene.py::TestHomes::test_network_home_is_not_statted",),
+        reason="stat() on a home whose NFS server is gone blocks in the kernel — "
+               "the audit hangs, the FIFO lesson on another file type",
+    ),
+    Mutation(
+        id="user_accounts/netrc-group-read-ignored",
+        file="bob/checks/user_accounts.py",
+        old="                    if _stat.S_ISREG(lst.st_mode) and lst.st_mode & 0o077:",
+        new="                    if _stat.S_ISREG(lst.st_mode) and lst.st_mode & 0o007:",
+        kills=("tests/test_v0240_account_hygiene.py::TestHomes::test_netrc_mode",),
+        reason="a group-readable .netrc hands its clear-text passwords to every "
+               "member of the group",
+    ),
+    Mutation(
+        id="kernel_hardening/absent-userns-clone-read-as-restricted",
+        file="bob/checks/kernel_hardening.py",
+        old="    elif snapshot.userns_clone == 0:",
+        new="    elif not snapshot.userns_clone:",
+        kills=("tests/test_v0240_kernel_attack_surface.py::"
+               "test_distro_specific_userns_knobs_absent_is_not_unavailable",),
+        reason="unprivileged_userns_clone is a Debian patch; on Fedora or Arch it "
+               "does not exist, and reading None as 0 claims a restriction "
+               "nothing on the host enforces",
+    ),
+    Mutation(
+        id="kernel_hardening/perf-paranoid-one-read-as-restricted",
+        file="bob/checks/kernel_hardening.py",
+        old="    elif snapshot.perf_paranoid >= 2:",
+        new="    elif snapshot.perf_paranoid >= 1:",
+        kills=("tests/test_v0240_kernel_attack_surface.py::test_perf_permissive_is_info",),
+        reason="at 1 users can still profile the kernel; calling it restricted "
+               "hides the exposure the finding exists to name",
+    ),
+    Mutation(
+        id="kernel_hardening/unprivileged-bpf-zero-read-as-disabled",
+        file="bob/checks/kernel_hardening.py",
+        old="    elif snapshot.bpf_unpriv_disabled >= 1:",
+        new="    elif snapshot.bpf_unpriv_disabled >= 0:",
+        kills=("tests/test_v0240_kernel_attack_surface.py::test_bpf_allowed_is_info_with_fix",),
+        reason="0 means any user can load eBPF programs — the verifier-bug LPE surface",
+    ),
+    Mutation(
+        id="cpu_security/smt-note-read-as-vulnerable",
+        file="bob/checks/cpu_security.py",
+        old='    if status.startswith("Vulnerable"):',
+        new='    if "vulnerable" in status.lower():',
+        kills=("tests/test_v0240_cpu_security.py::test_smt_exposed_is_mitigated_not_vulnerable",),
+        reason="'Mitigation: …; SMT vulnerable' is a mitigated flaw with an SMT "
+               "caveat; a substring match scores every hyper-threaded Intel host",
+    ),
+    Mutation(
+        id="cpu_security/undetermined-status-counted-clean",
+        file="bob/checks/cpu_security.py",
+        old='        if not vulnerable and not groups.get("unknown"):',
+        new='        if not vulnerable:',
+        kills=("tests/test_v0240_cpu_security.py::test_undetermined_status_blocks_the_ok",),
+        reason="'Unknown: Dependent on hypervisor status' is the kernel declining "
+               "to answer; an OK over it claims what nobody measured",
+    ),
+    Mutation(
+        id="package_authenticity/repo-metadata-check-read-as-package-check",
+        file="bob/checks/package_authenticity.py",
+        old='_INI_KEYS = {"gpgcheck", "pkg_gpgcheck"}',
+        new='_INI_KEYS = {"gpgcheck", "pkg_gpgcheck", "repo_gpgcheck"}',
+        kills=("tests/test_v0240_package_authenticity_crypto_policy.py::"
+               "test_dnf_gpgcheck_off_on_enabled_repo",),
+        reason="repo_gpgcheck=0 is the stock setting on most dnf repos and concerns "
+               "metadata, not packages; flagging it scores every Fedora host",
+    ),
+    Mutation(
+        id="package_authenticity/apt-conf-comment-read-as-setting",
+        file="bob/checks/package_authenticity.py",
+        old='                s = line.split("//", 1)[0].strip()',
+        new='                s = line.strip()',
+        kills=("tests/test_v0240_package_authenticity_crypto_policy.py::"
+               "test_apt_non_switches_stay_clean",),
+        reason="a commented-out AllowUnauthenticated is the fix already applied; "
+               "reporting it accuses the host of the opposite",
+    ),
+    Mutation(
+        id="crypto_policy/edited-config-judged-over-applied-state",
+        file="bob/checks/crypto_policy.py",
+        old='    policy = snapshot.applied or snapshot.configured or ""',
+        new='    policy = snapshot.configured or snapshot.applied or ""',
+        kills=("tests/test_v0240_package_authenticity_crypto_policy.py::"
+               "test_applied_legacy_deducts_even_if_config_says_default",),
+        reason="the libraries use the applied policy; editing config without "
+               "running update-crypto-policies changes nothing they do",
+    ),
+    Mutation(
+        id="package_authenticity/pacman-optional-siglevel-trusted",
+        file="bob/checks/package_authenticity.py",
+        old='                if tok in ("Never", "PackageNever", "Optional", "PackageOptional"):',
+        new='                if tok in ("Never", "PackageNever"):',
+        kills=("tests/test_v0240_package_authenticity_crypto_policy.py::test_pacman_weak_siglevel",),
+        reason="SigLevel = Optional installs an unsigned package without a word — "
+               "against a tampering mirror it is the same as Never",
+    ),
+    Mutation(
+        id="world_writable/sticky-directory-reported",
+        file="bob/checks/world_writable.py",
+        old='''        tail = ["(", "-type", "f", "-perm", "-0002", "-printf", "F %p\\\\0", ")", "-o",
+                "(", "-type", "d", "-perm", "-0002", "!", "-perm", "-1000",''',
+        new='''        tail = ["(", "-type", "f", "-perm", "-0002", "-printf", "F %p\\\\0", ")", "-o",
+                "(", "-type", "d", "-perm", "-0002",''',
+        kills=("tests/test_v0240_world_writable.py::test_sweep_finds_the_right_things",),
+        reason="a sticky world-writable directory is /tmp's shape — reporting it "
+               "lists every /var/tmp and shared spool on every host",
+    ),
+    Mutation(
+        id="world_writable/tmpfs-swept",
+        file="bob/checks/world_writable.py",
+        old='_SKIP_FS = _PSEUDO_FS_TYPES | _NETWORK_FS_TYPES | {"autofs"}',
+        new='_SKIP_FS = _NETWORK_FS_TYPES | {"autofs"}',
+        kills=("tests/test_v0240_world_writable.py::test_only_local_disk_filesystems_are_roots",),
+        reason="sweeping proc, sysfs and tmpfs reports kernel files and /dev/shm "
+               "scratch as host misconfiguration",
+    ),
+    Mutation(
+        id="world_writable/busybox-unowned-read-as-none",
+        file="bob/checks/world_writable.py",
+        old="        snap.unowned_assessed = gnu",
+        new="        snap.unowned_assessed = True",
+        kills=("tests/test_v0240_world_writable.py::test_sweep_finds_the_right_things",),
+        reason="BusyBox find cannot ask -nouser; claiming no unowned files on "
+               "Alpine is an answer to a question that was never asked",
+    ),
+    Mutation(
+        id="completion/already-linked-reported-not-found",
+        file="bob/completion.py",
+        old="                already_linked = True",
+        new="                pass",
+        kills=("tests/test_v0240_install_completion_symlink.py::"
+               "test_already_linked_says_so_and_leaves_it",),
+        reason="the field-reported bug: a correctly linked bob was announced as "
+               "'not found in ~/.local/bin' on every second run",
+    ),
+    Mutation(
+        id="exposure/lan-bound-port-left-out-of-surface",
+        file="bob/exposure.py",
+        old="                or (is_specific_unicast(lp) and not is_system_internal(lp)))",
+        new="                or False)",
+        kills=("tests/test_v0240_critique_fixes.py::test_lan_bound_samba_is_in_the_summary",),
+        reason="Samba bound to 192.168.1.10 is as reachable from the LAN as 0.0.0.0; "
+               "the summary omitted it while the detail called it exposed",
+    ),
+    Mutation(
+        id="exposure/libvirt-dnsmasq-counted-as-surface",
+        file="bob/exposure.py",
+        old="                or (is_specific_unicast(lp) and not is_system_internal(lp)))",
+        new="                or is_specific_unicast(lp))",
+        kills=("tests/test_v0240_critique_fixes.py::test_libvirt_dnsmasq_on_its_bridge_is_not_surface",),
+        reason="libvirt's dnsmasq on its own bridge address is system plumbing "
+               "check_ports already calls internal; listing it inflates the surface",
+    ),
+    Mutation(
+        id="exposure/inconsistent-apt-called-stale",
+        file="bob/exposure.py",
+        old='               else "exposure.updates_inconsistent")',
+        new='               else "exposure.updates_unknown")',
+        kills=("tests/test_v0240_critique_fixes.py::test_updates_line_names_the_measured_cause",),
+        reason="the line said 'stale' beside a cache reported 0 days old",
+    ),
+    Mutation(
+        id="package_authenticity/apt-called-package-signatures",
+        file="bob/checks/package_authenticity.py",
+        old='    "apt": "package_authenticity.mechanism_apt", "apt-get": "package_authenticity.mechanism_apt",',
+        new='    "apt": "package_authenticity.mechanism_rpm", "apt-get": "package_authenticity.mechanism_apt",',
+        kills=("tests/test_v0240_package_authenticity_crypto_policy.py::"
+               "test_the_message_names_what_the_manager_verifies",),
+        reason="apt authenticates a signed index; no .deb carries a signature — "
+               "'package signatures enforced' claimed a check apt never makes",
+    ),
+    Mutation(
+        id="user_accounts/su-group-execute-read-as-mode-restriction",
+        file="bob/checks/user_accounts.py",
+        old="            if _stat.S_ISREG(st.st_mode) and not st.st_mode & _stat.S_IXOTH:",
+        new="            if _stat.S_ISREG(st.st_mode) and not st.st_mode & _stat.S_IXGRP:",
+        kills=("tests/test_v0240_account_hygiene.py::TestSuCollection::"
+               "test_su_binary_not_executable_by_others_is_a_restriction",),
+        reason="4750 root:sugroup restricts su to the group by denying *others*; "
+               "testing the group bit inverts the meaning",
+    ),
+    Mutation(
+        id="world_writable/unknown-parent-claimed-shut",
+        file="bob/checks/world_writable.py",
+        old=("        return bool(os.stat(directory).st_mode & stat.S_IXOTH)\n"
+             "    except OSError:\n"
+             "        return True"),
+        new=("        return bool(os.stat(directory).st_mode & stat.S_IXOTH)\n"
+             "    except OSError:\n"
+             "        return False"),
+        kills=("tests/test_v0240_world_writable.py::test_unknown_parent_is_never_claimed_shut",),
+        reason="a parent BOB could not stat is not proof the path is unreachable; "
+               "calling it latent hides a writable file behind BOB's own blindness",
+    ),
+    Mutation(
+        id="services/umbrella-with-running-instance-read-as-stopped",
+        file="bob/checks/services.py",
+        old="    if is_active and _is_noop_umbrella(svc_name) and not _has_active_instance(svc_name):",
+        new="    if is_active and _is_noop_umbrella(svc_name):",
+        kills=("tests/test_v0240_critique_fixes.py::"
+               "test_umbrella_with_a_running_instance_stays_active",),
+        reason="postfix.service is a /bin/true umbrella too, but postfix@-.service "
+               "runs master on :25 — the first version of this fix reported a "
+               "listening MTA as stopped (caught on the author's own desktop)",
+    ),
+    Mutation(
+        id="services/any-exited-oneshot-read-as-umbrella",
+        file="bob/checks/services.py",
+        old='    return bool(m) and os.path.basename(m.group(1)) == "true"',
+        new='    return bool(m)',
+        kills=("tests/test_v0240_critique_fixes.py::test_real_services_are_unaffected",),
+        reason="iptables-restore-style oneshots do real work and stay active "
+               "(exited); only a `true` umbrella starts nothing",
+    ),
+    Mutation(
+        id="display/unread-sections-not-named",
+        file="bob/display.py",
+        old=("        if engine.unverified:\n"
+             "            print()\n"
+             "            print(f\"  ℹ {t('summary.visibility_sections'"),
+        new=("        if not engine.unverified:\n"
+             "            print()\n"
+             "            print(f\"  ℹ {t('summary.visibility_sections'"),
+        kills=("tests/test_v0240_critique_fixes.py::test_unread_sections_are_named_below_the_box",),
+        reason="'2 sections not fully read' with no names could not be checked "
+               "against the report — a reviewer counted one and called it a bug",
+    ),
+    Mutation(
+        id="firmware/unknown-secure-boot-read-as-off",
+        file="bob/checks/firmware.py",
+        old='        if dbx_only and snapshot.secure_boot_state == "disabled":',
+        new='        if dbx_only and snapshot.secure_boot_state != "enabled":',
+        kills=("tests/test_v0240_critique_fixes.py::test_other_cases_still_deduct",),
+        reason="an unread Secure Boot state is not a disabled one; dropping the "
+               "deduction there trades a measured gap for an assumption",
+    ),
+    Mutation(
+        id="ports/dhcp-client-counted-as-service",
+        file="bob/checks/ports.py",
+        old='    "dhcpcd", "dhclient", "udhcpc",\n',
+        new='    "dhclient", "udhcpc",\n',
+        kills=("tests/test_v0240_critique_fixes.py::test_dhcp_clients_are_system_internal",),
+        reason="dhcpcd binds 68/udp to the leased address; as a 'service' it was "
+               "listed as attack surface on every Debian 13 host",
+    ),
+    Mutation(
+        id="ports/lan-bound-port-called-localhost",
+        file="bob/checks/ports.py",
+        old="            if bound.is_loopback:",
+        new="            if not bound.is_all_interfaces:",
+        kills=("tests/test_v0240_critique_fixes.py::test_lan_bound_port_is_not_called_localhost",),
+        reason="a port bound to 192.168.1.13 on a host with no firewall is reachable "
+               "from the LAN; 'localhost only — no external exposure' was false",
+    ),
+    Mutation(
+        id="ports/first-listed-binding-wins",
+        file="bob/checks/ports.py",
+        old="                          if lp.port_proto == pp and not lp.is_loopback), lport)",
+        new="                          if lp.port_proto == pp and lp is lport), lport)",
+        kills=("tests/test_v0240_critique_fixes.py::test_lan_binding_wins_over_loopback_listed_first",),
+        reason="a port on 127.0.0.1 and a LAN address was described by whichever "
+               "socket ss printed first — the loopback one hid the reachable one",
+    ),
+    Mutation(
+        id="ports/bound-address-called-reachable-behind-default-deny",
+        file="bob/checks/ports.py",
+        old='                if ufw_active and default_incoming_policy in ("deny", "reject"):',
+        new='                if False:',
+        kills=("tests/test_v0240_critique_fixes.py::"
+               "test_lan_bound_port_reachability_follows_the_firewall",),
+        reason="behind an active default-deny UFW a LAN-bound port is blocked; "
+               "'reachable from that network' (the first wording of this fix) was false",
+    ),
+    Mutation(
+        id="runner/slow-section-silently-skipped",
+        file="bob/runner.py",
+        old="                _sec(_slow, lambda: None, _requires_exhaustive, section_name=_slow)",
+        new="                pass",
+        kills=("tests/test_v0240_critique_fixes.py::test_the_hint_is_wired_into_the_runner",),
+        reason="an explicit --check=world_writable without --exhaustive printed "
+               "nothing — a request silently ignored (Mint stress pass)",
+    ),
+    Mutation(
+        id="password_policy/unreadable-login-defs-silent",
+        file="bob/checks/password_policy.py",
+        old=("            except OSError:\n"
+             "                snap.login_defs_unreadable = True"),
+        new=("            except OSError:\n"
+             "                pass"),
+        kills=("tests/test_v0240_password_hash.py::"
+               "test_unreadable_login_defs_withholds_strong_and_says_so",),
+        reason="a FIFO at /etc/login.defs left expiry unchecked without a word and "
+               "the hashing verdict said 'strong' from pam_unix alone (Mint stress pass)",
+    ),
+    Mutation(
+        id="cpu_security/absent-interface-counted-as-blindness",
+        file="bob/checks/cpu_security.py",
+        old=("        except FileNotFoundError:\n"
+             "            snap.not_reported = True\n"),
+        new=("        except FileNotFoundError:\n"
+             "            pass\n"),
+        kills=("tests/test_v0240_cpu_security.py::"
+               "test_from_system_missing_directory_is_not_reported_not_unknown",),
+        reason="the Pi Zero's ARMv6 kernel has no vulnerabilities interface; counting "
+               "that as an unread section capped every Pi audit's score for good",
+    ),
+    Mutation(
+        id="password_policy/last-pam-stack-hides-weak-hash",
+        file="bob/checks/password_policy.py",
+        old=("                    if (snap.pam_unix_hash is None\n"
+             "                            or _hash_rank(algo) < _hash_rank(snap.pam_unix_hash)):\n"),
+        new=("                    if True:\n"),
+        kills=("tests/test_v0240_password_hash.py::test_weakest_pam_unix_wins_across_stacks",),
+        reason="Fedora reads system-auth then password-auth; last-one-read let "
+               "password-auth's yescrypt hide md5 in system-auth (real Fedora 44)",
+    ),
+    Mutation(
+        id="package_authenticity/vendor-zypp-conf-ignored",
+        file="bob/checks/package_authenticity.py",
+        old='_ZYPP_MAIN = (Path("/etc/zypp/zypp.conf"), Path("/usr/etc/zypp/zypp.conf"))',
+        new='_ZYPP_MAIN = (Path("/etc/zypp/zypp.conf"),)',
+        kills=("tests/test_v0240_package_authenticity_crypto_policy.py::"
+               "test_zypper_main_conf_paths_are_etc_then_vendor",),
+        reason="openSUSE Leap 16 keeps zypp.conf in /usr/etc; without an /etc "
+               "override BOB read nothing and called the host clean",
+    ),
+    Mutation(
+        id="password_policy/vendor-login-defs-hides-unread-override",
+        file="bob/checks/password_policy.py",
+        old="    if snapshot.login_defs_unreadable:\n        result.info(message=_t(\"password_policy.login_defs_unreadable\"),",
+        new="    if snapshot.login_defs_unreadable and not snapshot.login_defs_readable:\n        result.info(message=_t(\"password_policy.login_defs_unreadable\"),",
+        kills=("tests/test_v0240_password_hash.py::"
+               "test_unreadable_etc_override_is_reported_even_if_vendor_read",),
+        reason="on openSUSE the vendor /usr/etc/login.defs was read and called strong "
+               "while the admin's /etc override sat unread (the Mint fix's blind spot)",
+    ),
+    Mutation(
+        id="user_accounts/busybox-su-read-through-pam",
+        file="bob/checks/user_accounts.py",
+        old="            self.su_busybox = os.path.basename(os.path.realpath(binary)) in _BUSYBOX_NAMES\n",
+        new="            self.su_busybox = False\n",
+        kills=("tests/test_v0240_account_hygiene.py::test_busybox_su_ignores_a_pam_wheel_line",),
+        reason="BusyBox su ignores PAM; reading Alpine's /usr/lib/pam.d/su turns a "
+               "pam_wheel line nobody enforces into 'su restricted' — a false OK",
+    ),
+    Mutation(
+        id="package_authenticity/apk-not-assessed",
+        file="bob/checks/package_authenticity.py",
+        old="        elif m == \"apk\":\n            snap._apk()\n",
+        new="",
+        kills=("tests/test_v0240_package_authenticity_crypto_policy.py::test_apk_config_allow_untrusted",),
+        reason="apk-tools 3 honours a persistent allow-untrusted in /etc/apk/config; "
+               "'not assessed' capped every Alpine score and missed the switch",
+    ),
+    Mutation(
+        id="password_policy/bbsuid-passwd-not-recognised",
+        file="bob/checks/password_policy.py",
+        old='                                       in ("busybox", "bbsuid"))',
+        new='                                       in ("busybox",))',
+        kills=("tests/test_v0240_password_hash.py::test_busybox_passwd_detected_through_the_symlink",),
+        reason="Alpine's passwd resolves to /bin/bbsuid, not /bin/busybox; matching "
+               "busybox alone left every Alpine with a permanent 'unknown' hash",
+    ),
+    Mutation(
+        id="run/wedged-package-manager-asked-every-time",
+        file="bob/checks/_run.py",
+        old="        if not _command_exists(tool) or tool in _WEDGED_MANAGERS:\n",
+        new="        if not _command_exists(tool):\n",
+        kills=("tests/test_v0240_critique_fixes.py::test_a_wedged_package_manager_is_asked_once",),
+        reason="apk blocked on a FIFO config: ~40 registry lookups × 10 s = 623 s "
+               "for one audit on a real Alpine (stress pass, 2026-10-04)",
+    ),
+    Mutation(
+        id="mount_hardening/hidepid-off-read-as-restricted",
+        file="bob/checks/mount_hardening.py",
+        old='        if level in ("invisible", "ptraceable"):',
+        new='        if level in ("invisible", "ptraceable", "off"):',
+        kills=("tests/test_v0240_proc_hidepid.py::"
+               "test_absent_or_zero_is_off_not_restricted",),
+        reason="a /proc without hidepid lets every user list every process; "
+               "calling that restricted is an OK nothing on the host enforces",
+    ),
+    Mutation(
+        id="hardening/fifos-level-two-read-as-disabled",
+        file="bob/checks/hardening.py",
+        old='protected_fifos             = _read_sysctl_int("fs.protected_fifos")',
+        new='protected_fifos             = _read_sysctl_bool("fs.protected_fifos")',
+        kills=("tests/test_v0240_protected_fifos_regular.py::TestFromSystemReadsTwoAsTwo::"
+               "test_level_two_survives_the_read",),
+        reason="fs.protected_fifos takes 0/1/2; the bool reader treats only '1' as "
+               "set, so the stronger value 2 would be read as disabled and flagged",
+    ),
+    Mutation(
+        id="hardening/regular-disabled-read-as-ok",
+        file="bob/checks/hardening.py",
+        old="    elif snapshot.protected_regular >= 1:",
+        new="    elif snapshot.protected_regular >= 0:",
+        kills=("tests/test_v0240_protected_fifos_regular.py::TestLevels::"
+               "test_zero_is_a_deducting_warning",),
+        reason="protected_regular=0 leaves the /tmp O_CREAT race open; reading 0 "
+               "as protected would hand out an OK the kernel is not enforcing",
     ),
     Mutation(
         id="package_integrity/config-files-reported-as-tampered",

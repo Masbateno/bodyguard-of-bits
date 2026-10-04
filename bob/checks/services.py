@@ -22,6 +22,7 @@ from __future__ import annotations
 import glob as _glob
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -602,6 +603,23 @@ def _enabled_trigger(svc_name: str) -> str:
     return ""
 
 
+def _is_noop_umbrella(unit: str) -> bool:
+    """True for a oneshot unit, exited, whose only command is `true`."""
+    out = _run("systemctl", "show", unit, "-p", "Type", "-p", "SubState", "-p", "ExecStart")
+    props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    if props.get("Type") != "oneshot" or props.get("SubState") != "exited":
+        return False
+    m = re.search(r"path=(\S+)", props.get("ExecStart", ""))
+    return bool(m) and os.path.basename(m.group(1)) == "true"
+
+
+def _has_active_instance(unit: str) -> bool:
+    """True when some <unit>@<instance>.service is active."""
+    out = _run("systemctl", "list-units", "--type=service", "--state=active",
+               "--no-legend", "--plain", f"{unit}@*")
+    return any(line.split()[0].startswith(f"{unit}@") for line in out.splitlines() if line.split())
+
+
 def _detect_single_unit_state(svc_name: str) -> ServiceState:
     """
     Determine the systemd state of a single service unit.
@@ -628,6 +646,16 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
 
     is_active  = active  == "active"
     is_enabled = enabled == "enabled"
+
+    # v0.24.0: an "active (exited)" oneshot whose command is `true` is an
+    # umbrella that starts nothing itself — Debian's openvpn.service and
+    # postfix.service are both ExecStart=/bin/true; the daemons run in their
+    # <name>@<instance> units. Reading the umbrella alone put a VPN-concentrator
+    # threat context on a desktop running no OpenVPN at all. With no instance
+    # running it is no daemon; with one (postfix@-.service runs master), it
+    # keeps its own state — its enablement is what brings the instances back.
+    if is_active and _is_noop_umbrella(svc_name) and not _has_active_instance(svc_name):
+        return ServiceState.INACTIVE_DISABLED
 
     if is_active and is_enabled:
         return ServiceState.ACTIVE_ENABLED

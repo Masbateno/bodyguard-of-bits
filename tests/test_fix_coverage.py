@@ -129,6 +129,9 @@ _MANUAL_BY_DESIGN = frozenset({
     "file_perms.sudoers_nopasswd_all",           # visudo edit, NEVER chmod (locking yourself out)
     "file_perms.doas_nopass_all",                # /etc/doas.conf edit, no safe one-liner (as sudoers)
     "root_path.dangerous",                       # edit login.defs ENV_SUPATH / sudoers secure_path — depends on source + safe PATH, no one-liner
+    "password_policy.weak_hash",
+    "user_accounts.su_unrestricted",
+    "package_authenticity.disabled",                  # import the repo's key the way its publisher documents, then drop the switch — per repo, no generic one-liner             # PAM edit + group choice; a wrong line locks su for everyone (test with a root shell open)                 # login.defs and/or PAM (authselect / pam-auth-update, never sed); yescrypt not universal; old hashes persist until each password change
 
     # Disruptive / interactive operations:
     "ssh.rsa_weak",                              # regenerating host key disconnects all existing clients

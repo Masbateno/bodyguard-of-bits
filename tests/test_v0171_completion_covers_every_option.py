@@ -120,6 +120,7 @@ class TestInstallCompletionSpeaksTheOperatorsLanguage:
         block = data.get("completion", {})
         for key in ("data_missing", "dir_missing", "installed", "install_failed",
                     "symlink_created", "symlink_failed", "symlink_skipped_missing",
+                    "symlink_up_to_date",
                     "symlink_skipped_no_sudo", "reload_title", "reload_how",
                     "needs_root", "needs_root_sudo_warning", "needs_root_how"):
             assert key in block, f"{locale}.json is missing completion.{key}"

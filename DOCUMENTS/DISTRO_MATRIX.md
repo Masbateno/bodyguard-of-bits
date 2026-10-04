@@ -545,6 +545,26 @@ seen (Mint had 21 real changes, Fedora 2, Ubuntu 115 uutils); tampering
 -2` → back to OK. A full **OK → 1 → OK** round-trip. Sixth real machine, 0
 regression.*
 
+### 0.24.0 field pass — the new coverage checks, on eight real machines
+
+*Stress-test-total of the 0.24.0 WIP (2026-10-04) on every real machine: baseline,
+A/B vs published 0.23.0 (`deductions` + counts + text diff), CLI matrix, both
+polarities of every new check, hostile inputs (FIFO / dangling symlink / directory)
+on every new read path, a `--fix` round-trip and an integrity check. Fourteen
+defects were found and fixed before release; the A/B diff on every host is the new
+checks plus, where it applies, `su_unrestricted` (root with a usable password).*
+
+| Host | Defects found → fixed | Distribution facts measured |
+|------|-----------------------|-----------------------------|
+| Mint 22.3 (ufw inactive) | 4 — bound-address wording behind a default-deny firewall; `--check` on a slow section silent; present-but-unreadable `login.defs` silent; lazy-snapshot contract | `openvpn.service` is a `/bin/true` umbrella; `fs.protected_fifos=1`, `regular=2` |
+| Ubuntu Server 26.04 (snaps) | 1 — snapd's `snap-confine` carries 10 permitted capabilities instead of SUID | apparmor restricts unprivileged userns; load 6–9 at boot from snaps (famine, not BOB) |
+| Raspberry Pi Zero W (ARMv6) | 1 — no `/sys/devices/system/cpu/vulnerabilities` on ARMv6: now "not reported", not a visibility limit | no Yama (`kernel.yama.ptrace_scope` absent, as in 0.23.0); 160–357 s per audit |
+| Kali Rolling | 0 | — |
+| Fedora 44 (SELinux enforcing, firewalld) | 2 — sssd helpers / httpd `suexec` / KDE capabilities; `pam_unix` md5 in `system-auth` hidden by `password-auth` | crypto-policies `DEFAULT` (real `LEGACY` / `DEFAULT:SHA1` round-trips); 0 AVC denials; `rpm -Va` 606 s |
+| openSUSE Leap 16 (SELinux, firewalld) | 3 — vendor `/usr/etc/zypp/zypp.conf` unread; unreadable `/etc/login.defs` hidden by the vendor copy; a negated-unreadable branch | `login.defs` and su PAM only under `/usr/etc` / `/usr/lib/pam.d`; `hostname` is BusyBox (no `-I`) |
+| Alpine 3.24 (BusyBox, apk 3) | 3 — BusyBox su ignores PAM (possible false OK); hash/apk "unknown" capped every Alpine score; a wedged apk queried ~40× (623 s → 13 s) | linux-pam installed but su/passwd are `/bin/bbsuid`; apk 3.0.8 reads `/etc/apk/config` (bare `allow-untrusted`; `--allow-untrusted` ignored); `fs.protected_fifos/regular=0` (no systemd); no `ss` |
+| Debian 13 | 0 | `dhcpcd` binds 68/udp to the leased address (now system-internal) |
+
 **Still open:**
 
 | Gap | Sev. | § | Note |

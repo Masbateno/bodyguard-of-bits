@@ -124,6 +124,14 @@ class TestTheSixKeepTheirClassification:
         "disk.smart_failed", "disk.reallocated_sectors", "disk.pending_sectors",
         "disk.uncorrectable_errors", "disk.partition_critical",
         "fail2ban.no_jails",
+        # v0.24.0 — both need acting on, neither has a fix BOB may run: whether
+        # a capability or a home's owner is intended is the operator's call
+        # (setcap -r / chown on a shared home are the wrong default).
+        "file_capabilities.root_equivalent",
+        "user_accounts.home_unsafe",
+        # The kernel's own verdict is the diagnostic; the fix (drop a boot
+        # switch, install microcode, reboot) is not a command BOB may run.
+        "cpu_security.vulnerable",
     }
 
     @staticmethod

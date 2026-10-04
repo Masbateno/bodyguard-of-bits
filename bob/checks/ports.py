@@ -19,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -57,6 +58,10 @@ _SYSTEM_DAEMONS: frozenset[str] = frozenset({
     "", "avahi-daemon", "systemd", "systemd-resolve", "systemd-resolved",
     "systemd-network", "systemd-networkd", "dnsmasq", "named", "unbound",
     "NetworkManager", "dhcpd", "miniupnpd", "upnpd",
+    # v0.24.0 — DHCP *clients*. dhcpcd binds 68/udp to the leased address and
+    # 546/udp to the global IPv6 one (measured, Debian 13); counted as user
+    # services they were listed as attack surface and called "localhost only".
+    "dhcpcd", "dhclient", "udhcpc",
 })
 
 _LOOPBACK = re.compile(r"^(127\.|::1$)")
@@ -114,6 +119,35 @@ class ListeningPort:
     def is_loopback(self) -> bool:
         """True if listening on loopback only."""
         return bool(_LOOPBACK.match(self.address))
+
+
+
+def is_specific_unicast(lport: "ListeningPort") -> bool:
+    """True if bound to one concrete, reachable host address — 192.168.1.10,
+    not 0.0.0.0, loopback, multicast, a /24 broadcast or an interface scope.
+
+    v0.24.0: Samba bound to the LAN address (``interfaces = br0`` →
+    192.168.1.10:445) is as reachable from the LAN as 0.0.0.0:445, but the
+    attack-surface summary only counted all-interface binds and left it out.
+    """
+    if lport.iface:
+        return False
+    try:
+        ip = ipaddress.ip_address(lport.address.strip("[]"))
+    except ValueError:
+        return False
+    if ip.is_multicast or ip.is_unspecified or ip.is_loopback:
+        return False
+    if ip.version == 4 and str(ip).endswith(".255"):
+        return False      # subnet broadcast (nmbd binds it beside its unicast)
+    return True
+
+
+def is_system_internal(lport: "ListeningPort") -> bool:
+    """DNS/DHCP/mDNS-class port owned by a known system daemon — the same rule
+    check_ports uses to call a port 'system internal'."""
+    return any(lport.port == p and lport.proto == pr
+               for p, pr, _ in _SYSTEM_PORTS) and lport.process in _SYSTEM_DAEMONS
 
 
 @dataclass
@@ -338,10 +372,28 @@ def check_ports(
             if pp in reported_local_ports:
                 continue
             reported_local_ports.add(pp)
-            result.info(
-                message=_t("ports.uncovered_local", port=pp),
-                key="ports.uncovered_local",
-            )
+            # The same port may be bound to 127.0.0.1 *and* a LAN address; the
+            # reachable binding is the one to report, whichever ss listed first.
+            bound = next((lp for lp in snapshot.ports
+                          if lp.port_proto == pp and not lp.is_loopback), lport)
+            if bound.is_loopback:
+                result.info(
+                    message=_t("ports.uncovered_local", port=pp),
+                    key="ports.uncovered_local",
+                )
+            else:
+                # v0.24.0: bound to one concrete address (a LAN IP), not to
+                # localhost. "localhost only — no external exposure" was printed
+                # for these too, on a host with no firewall where the address
+                # was reachable from the whole LAN. Whether it is reachable
+                # depends on the firewall, as for an all-interfaces port.
+                if ufw_active and default_incoming_policy in ("deny", "reject"):
+                    key = "ports.uncovered_bound_address_deny"
+                elif firewalld_active:
+                    key = "ports.uncovered_bound_address_firewalld"
+                else:
+                    key = "ports.uncovered_bound_address"
+                result.info(message=_t(key, port=pp, address=bound.address), key=key)
 
     if not has_uncovered_public and ufw_active:
         result.ok(message=_t("ports.all_covered"), key="ports.all_covered")

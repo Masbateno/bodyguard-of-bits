@@ -1,3 +1,24 @@
+bodyguard-of-bits (0.24.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING: new checks across accounts, kernel, privileges, supply
+    chain and platform; scores move on hosts they flag.
+  * New sections: file_capabilities (privilege with no SUID bit),
+    cpu_security (kernel-reported CPU vulnerabilities, mitigation-disabling
+    boot switches, IOMMU), package_authenticity (apt/dnf/zypper/pacman/apk
+    switches that disable signature or repository checks), crypto_policy
+    (crypto-policies LEGACY), world_writable (--exhaustive sweep, INFO).
+  * Extended: fs.protected_fifos/regular, /proc hidepid, password-hashing
+    algorithm, su restriction (pam_wheel, su file mode, BusyBox su),
+    interactive homes and .netrc, duplicate UIDs/names, unprivileged eBPF,
+    perf_event_paranoid, user namespaces.
+  * Fixes: LAN-bound ports counted in the attack surface; Debian umbrella
+    units (openvpn, postfix) judged by their instances; unread sections named;
+    pending UEFI dbx not scored while Secure Boot is off; a wedged package
+    manager is queried once; SUID CIS references renumbered 6.1.13 -> 7.1.13.
+  * Stress-tested on eight real machines; fourteen defects fixed before release.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 04 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.23.0-1) unstable; urgency=medium
 
   * Minor: an opt-in --exhaustive package-integrity check, and a backend-neutral

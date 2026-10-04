@@ -92,14 +92,20 @@ def compute_exposure(
             detail=policy_str,
         ))
 
-    # --- Exposed ports (all-interfaces, stable) ---
+    # --- Exposed ports ---
     # UDP ports above 32767 are kernel-assigned ephemeral sockets (client-side),
     # not server ports — mirror the same filter used in check_ports().
+    # v0.24.0: a bind to one concrete host address (Samba on 192.168.1.10) is as
+    # reachable from that network as 0.0.0.0, so it counts too — except the
+    # DNS/DHCP-class ports check_ports itself calls system-internal (libvirt's
+    # dnsmasq on its own bridge address).
+    from bob.checks.ports import is_specific_unicast, is_system_internal
     exposed = sorted(
         {
             lp.port_proto
             for lp in ports_snapshot.ports
-            if lp.is_all_interfaces
+            if (lp.is_all_interfaces
+                or (is_specific_unicast(lp) and not is_system_internal(lp)))
             and not (lp.proto == "udp" and lp.port > 32767)
         },
         key=lambda s: int(s.split("/")[0]),
@@ -215,10 +221,17 @@ def compute_exposure(
             detail=t("exposure.updates_pending"),
         ))
     elif "updates.apt_cache_stale" in bad_keys or "updates.dist_upgrade_inconsistent" in bad_keys:
+        # v0.24.0: name the cause that was measured. One "stale or inconsistent"
+        # line for both read "stale" beside a cache reported 0 days old.
+        stale = "updates.apt_cache_stale" in bad_keys
+        inconsistent = "updates.dist_upgrade_inconsistent" in bad_keys
+        key = ("exposure.updates_unknown" if stale and inconsistent
+               else "exposure.updates_stale" if stale
+               else "exposure.updates_inconsistent")
         items.append(ExposureItem(
             label=t("exposure.updates"),
             icon="⚠", color="warn",
-            detail=t("exposure.updates_unknown"),
+            detail=t(key),
         ))
     elif "updates.no_security_channel" in all_keys:
         # A rolling distro with no security channel and updates pending: BOB

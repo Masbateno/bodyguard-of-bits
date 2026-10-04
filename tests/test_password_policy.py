@@ -38,6 +38,9 @@ def make_snap(**kwargs) -> PasswordPolicySnapshot:
         pass_min_days=1,
         pam_quality_module="pam_pwquality",
         pam_minlen=None,
+        # v0.24.0: a fully configured host names a strong hash, otherwise the
+        # check reports password_policy.hash_unknown.
+        encrypt_method="YESCRYPT",
     )
     defaults.update(kwargs)
     return PasswordPolicySnapshot(**defaults)

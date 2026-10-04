@@ -49,6 +49,8 @@ _FWUPD_ERROR_RE = re.compile(r"\b(error|failed)\b", re.IGNORECASE)
 
 _MAX_ERROR_LEN  = 200
 _FWUPD_TIMEOUT  = 30  # fwupdmgr can be slow on first run
+#: fwupd names the revocation-list device "UEFI dbx" (measured, Mint 22.3).
+_DBX_RE = re.compile(r"\bdbx\b", re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Snapshot
@@ -77,6 +79,10 @@ class FirmwareSnapshot:
     fwupd_available:          bool       = False
     fwupd_pending_updates:    list[str]  = field(default_factory=list)
     fwupd_error:              str        = ""
+    #: v0.24.0 — "enabled" / "disabled" / "no_uefi" / "unknown", from the
+    #: secure_boot check's own detection. Only consulted to decide whether a
+    #: pending dbx (UEFI revocation list) update protects anything today.
+    secure_boot_state:        str        = "unknown"
     cpu_vendor:               str        = ""
     microcode_installed:      bool       = False
     package_query_possible:   bool       = True
@@ -121,6 +127,9 @@ class FirmwareSnapshot:
 
         # --- fwupd ----------------------------------------------------------
         snap.fwupd_available = _command_exists("fwupdmgr")
+        if snap.fwupd_available:
+            from bob.checks.secure_boot import SecureBootSnapshot
+            snap.secure_boot_state = SecureBootSnapshot.from_system().state
         if snap.fwupd_available:
             # v0.11.1 F3: run under C.UTF-8 (not the default LC_ALL=C) so the
             # device tree connectors ├ └ ─ │ render as Unicode instead of
@@ -175,7 +184,22 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
                 message=_t("firmware.fwupd_error", error=snapshot.fwupd_error),
                 key="firmware.fwupd_error",
             )
-        if snapshot.fwupd_pending_updates:
+        # v0.24.0: dbx is the UEFI list of revoked boot signatures, and only
+        # Secure Boot consults it. With Secure Boot measured *disabled*, a
+        # pending dbx-only update protects nothing until it is turned on — a
+        # readiness gap, reported, not scored. Any other pending firmware, or a
+        # Secure Boot state BOB could not read, keeps the deduction.
+        dbx_only = (snapshot.fwupd_pending_updates
+                    and all(_DBX_RE.search(d) for d in snapshot.fwupd_pending_updates))
+        if dbx_only and snapshot.secure_boot_state == "disabled":
+            result.info(
+                message=_t("firmware.fwupd_dbx_sb_off",
+                           devices=", ".join(snapshot.fwupd_pending_updates)),
+                detail=_t("firmware.fwupd_dbx_sb_off_detail"),
+                cmd="sudo fwupdmgr update",
+                key="firmware.fwupd_dbx_sb_off",
+            )
+        elif snapshot.fwupd_pending_updates:
             count   = len(snapshot.fwupd_pending_updates)
             devices = ", ".join(snapshot.fwupd_pending_updates[:3])
             if count > 3:

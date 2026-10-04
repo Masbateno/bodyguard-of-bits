@@ -6,6 +6,111 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.24.0] — 2026-10-04
+
+**A minor release of new coverage — accounts, kernel attack surface, privilege
+boundaries, supply chain and platform — stress-tested on eight real machines.**
+No scoring-formula, JSON-schema or CSV-column-order change. **BREAKING:** the score
+moves on a host the new checks flag (several of them deduct), the four SUID CIS
+codes are renumbered, and five new section names join `--check` / `--skip`.
+
+### 1. New sections
+
+- **`file_capabilities`** — reads `security.capability` directly (no `getcap`
+  dependency) on the SUID-scan roots. A capability BOB classifies as
+  root-equivalent — `chown`, `dac_override`, `dac_read_search`, `fowner`, `setuid`,
+  `setgid`, `setpcap`, `setfcap`, `sys_module`, `sys_rawio`, `sys_admin`,
+  `sys_ptrace`, `bpf`, `mac_admin`, `mac_override` — on a binary not known to need
+  it → WARN −1;
+  any other capability → INFO; a partial walk never reports "clean". The list of
+  distribution grants was measured on eight distributions — snapd's
+  `snap-confine`, sssd's helpers, httpd's `suexec`, KDE helpers — and a known
+  name carrying more than its measured set is not trusted.
+- **`cpu_security`** — repeats the kernel's own verdict from
+  `/sys/devices/system/cpu/vulnerabilities` (`Vulnerable` → WARN −1, "SMT
+  vulnerable" → INFO, an undetermined status blocks the OK), reports boot switches
+  that disable mitigations (INFO) and, on x86, an inactive IOMMU (INFO). A kernel
+  with no vulnerabilities interface (ARMv6 on the Pi Zero) is "not reported", not
+  a section BOB failed to read.
+- **`package_authenticity`** — only switches written down: apt `[trusted=yes]` /
+  `Trusted: yes` / `AllowUnauthenticated` / `AllowInsecureRepositories`; dnf and
+  zypper `gpgcheck`/`pkg_gpgcheck=0` on enabled repositories and in `[main]`
+  (`/etc/zypp/zypp.conf`, else `/usr/etc/zypp/zypp.conf`); pacman `SigLevel =
+  Never`/`Optional`; apk 3 `allow-untrusted` in `/etc/apk/config` (the bare form —
+  `--allow-untrusted` is measured to be ignored by apk) → WARN −1. Defaults are
+  never inferred. Worded per manager: apt authenticates its signed Release index
+  and the checksums it lists, not each `.deb`.
+- **`crypto_policy`** — judges the *applied* crypto-policies policy
+  (`state/current`): `LEGACY` → WARN −1; weakening modules (`SHA1`,
+  `AD-SUPPORT`, `NO-ENFORCE-EMS`, `NO-PQ`), a previous release's policy or an
+  unrecognised one → INFO; config edited without `update-crypto-policies` →
+  INFO. Hosts without crypto-policies get an INFO, never an OK.
+- **`world_writable`** (`--exhaustive` only, INFO-only) — world-writable files,
+  world-writable directories without the sticky bit and unowned files on local
+  on-disk filesystems (tmpfs/proc/overlay/network excluded, container storage
+  pruned), bounded and group-killed. GNU `find` sweeps unowned files; BusyBox
+  `find` cannot, and says so. A path behind a directory other accounts cannot
+  traverse is reported as *latent*, not as writable by everyone.
+
+### 2. Extended checks
+
+- `hardening`: `fs.protected_fifos` / `fs.protected_regular` — 0 → WARN −1. Zero
+  is the kernel default where systemd does not raise it (Alpine, OpenRC hosts).
+- `mount_hardening`: `/proc` hidepid — INFO only, never scored.
+- `password_policy`: password-hashing algorithm — MD5/DES/bigcrypt in
+  `login.defs` or in *any* `pam_unix` stack → WARN −1 (the weakest stack wins:
+  Fedora's `system-auth` and `password-auth` are separate paths); SHA256 → INFO;
+  a present-but-unreadable `/etc/login.defs` is reported and withholds the OK;
+  BusyBox `passwd` is reported as built-in.
+- `user_accounts`: su restriction — pam_wheel, su's own file mode, and BusyBox su
+  (which ignores PAM, so a `pam_wheel` line in its PAM file restricts nothing);
+  scored −1 only when root has a usable password. Interactive homes writable by
+  every account (`o+w`; group bits and ACLs are not assessed) or owned by another
+  account → WARN −1; `.netrc` accessible to group or others → WARN −1; `.rhosts`/`.shosts`/`.forward` and duplicate UIDs/names → INFO. Nothing
+  is opened (FIFO-safe); homes on network filesystems are not probed.
+- `kernel_hardening`: unprivileged eBPF, `perf_event_paranoid`, user namespaces —
+  INFO only; user namespaces are reported as a state with no fix to run.
+
+### 3. Fixes
+
+- The attack-surface summary counts a port bound to a LAN address (Samba on
+  `192.168.1.10`), and the port detail no longer calls such a port "localhost
+  only"; its wording follows the firewall (default deny / firewalld zone / none).
+  DHCP clients (`dhcpcd`, `dhclient`, `udhcpc`) are system-internal.
+- The updates summary names its cause (stale cache vs inconsistent state).
+- Debian umbrella units (`openvpn.service`, `postfix.service`, `ExecStart=/bin/true`)
+  are judged by their running `<unit>@` instances.
+- The names of sections not fully read are printed below the summary box and in
+  the `.log`.
+- A pending UEFI dbx update is INFO, not a deduction, while Secure Boot is
+  measured disabled.
+- A package manager that times out once is not queried again in the run (apk with
+  a FIFO config: 623 s → 13 s, same verdict).
+- `--check` naming a slow section without `--exhaustive` says it needs the flag.
+- `--install-completion` reports an already-correct symlink instead of "not found".
+- `suid_audit.writable_suid`: explanation corrected — measured on Linux 6.12, an
+  unprivileged write clears the set-id bit, so the risk is the next privileged
+  run, not "overwrite and run it yourself". Severity unchanged.
+
+### 4. CIS references
+
+Still generated from ComplianceAsCode, now also anchored on a Manual control's
+exact title. The four `suid_audit` keys move from CIS Ubuntu 22.04 v1's 6.1.13 to
+v2.0.0's 7.1.13 (BREAKING for consumers matching `code`). New mappings: su 5.2.7,
+homes 7.2.9, `.netrc` 7.2.10, hashing 5.4.1.4, package authenticity 1.2.1.1.
+
+### 5. Field
+
+A full stress test (baseline, A/B against 0.23.0, CLI matrix, both polarities of
+every new check, hostile inputs on every new path, `--fix` round-trip, integrity)
+on eight real machines: Mint 22.3, Ubuntu Server 26.04, Raspberry Pi Zero W
+(ARMv6), Kali Rolling, Fedora 44 (SELinux enforcing, firewalld), openSUSE Leap 16
+(`/usr/etc` layout), Alpine 3.24 (BusyBox, apk 3) and Debian 13. Fourteen defects
+were found and fixed before release, each with a guard and a mutation. Counters:
+locale 2652 to 2816, `--explain` and CIS 208 to 218, filterable sections 51 to 56,
+check modules 60 to 65, `_PREFIX_TO_DOMAIN` 61 to 66, mutations 301 to 350.
+**Tests** 11246 → **11778**.
+
 ## [0.23.0] — 2026-10-03
 
 **A minor release: an opt-in `--exhaustive` package-integrity check, and a

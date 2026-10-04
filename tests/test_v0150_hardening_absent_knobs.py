@@ -40,6 +40,8 @@ _ALL_FIELDS = (
     "icmp_echo_ignore_broadcasts", "tcp_syncookies", "accept_source_route",
     "accept_redirects_v6", "send_redirects", "protected_hardlinks",
     "protected_symlinks",
+    # v0.24.0: the fs.protected_* family completed — same None-means-unread contract.
+    "protected_fifos", "protected_regular",
 )
 
 _HARDENED = dict(
@@ -47,6 +49,7 @@ _HARDENED = dict(
     icmp_echo_ignore_broadcasts=True, tcp_syncookies=1,
     accept_source_route=False, accept_redirects_v6=False,
     send_redirects=False, protected_hardlinks=True, protected_symlinks=True,
+    protected_fifos=2, protected_regular=2,
 )
 
 
@@ -94,7 +97,7 @@ class TestTheOrdinaryPathIsUnchanged:
     def test_a_fully_hardened_host_still_passes_everything(self):
         keys = _keys()
         assert "hardening.params_unavailable" not in keys
-        assert len(keys) == 10
+        assert len(keys) == len(_ALL_FIELDS)
 
     def test_real_weaknesses_are_still_scored(self):
         result = check_hardening(HardeningSnapshot(
@@ -102,7 +105,7 @@ class TestTheOrdinaryPathIsUnchanged:
             icmp_echo_ignore_broadcasts=False, tcp_syncookies=0,
             accept_source_route=True, accept_redirects_v6=True,
             send_redirects=True, protected_hardlinks=False,
-            protected_symlinks=False))
+            protected_symlinks=False, protected_fifos=0, protected_regular=0))
         assert sum(d.points for d in result.deductions) > 0
         assert "hardening.params_unavailable" not in [f.key for f in result.findings]
 

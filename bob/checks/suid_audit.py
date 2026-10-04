@@ -165,9 +165,11 @@ class SuidSnapshot:
     unexpected_sgid:  list[str] = field(default_factory=list)
     whitelisted_suid: list[str] = field(default_factory=list)
     unowned_suid:     list[str] = field(default_factory=list)
-    # A SUID/SGID binary that is writable by group or other is an immediate
-    # privilege escalation — anyone who can write it runs their own code with
-    # its owner's (usually root's) privileges. This is orthogonal to the
+    # A SUID/SGID binary that is writable by group or other is a privilege
+    # escalation waiting for its trigger. Not "write it, run it as root": the
+    # kernel clears the set-id bit on an unprivileged write (measured v0.24.0,
+    # Linux 6.12), so the attacker's code runs with the rights of whoever runs
+    # it *next* — root typing passwd, a cron job. This is orthogonal to the
     # whitelist: a *known* SUID binary that has become writable is still
     # dangerous, so it is collected from every SUID/SGID file, not just the
     # unexpected ones.
@@ -218,8 +220,8 @@ class SuidSnapshot:
                         suid_paths.append(path)
                     elif has_sgid and not has_suid:
                         sgid_paths.append(path)
-                    # Group/other-writable set-id binary = immediate privesc,
-                    # independent of the whitelist above.
+                    # Group/other-writable set-id binary = privesc on the next
+                    # privileged run, independent of the whitelist above.
                     if (has_suid or has_sgid) and (
                             mode & (stat.S_IWGRP | stat.S_IWOTH)):
                         writable_suid.append(path)
@@ -301,9 +303,10 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
         return result
 
     # --- Group/other-writable set-id binaries (most severe) ----------------
-    # A SUID/SGID binary anyone but its owner can write is a direct route to
-    # that owner's privileges: overwrite it, wait for someone (or something) to
-    # run it. This is reported even for whitelisted names — a writable
+    # A SUID/SGID binary anyone but its owner can write is a route to the
+    # privileges of whoever runs it next: overwrite it (which clears the set-id
+    # bit), wait for root or a job to run it. This is reported even for
+    # whitelisted names — a writable
     # /usr/bin/passwd is not safe because "passwd" is expected.
     if snapshot.writable_suid:
         w_str = ", ".join(snapshot.writable_suid[:10])

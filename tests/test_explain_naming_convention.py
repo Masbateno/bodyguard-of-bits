@@ -183,6 +183,11 @@ class TestExplainPrefixDiscipline:
         "polkit",
         # v0.22.0 additions — root PATH hardening (suid_audit already known)
         "root_path",
+        # v0.24.0 — file capabilities (the privilege with no SUID bit)
+        "file_capabilities",
+        "cpu_security",
+        "package_authenticity",
+        "crypto_policy",
     })
 
     @pytest.mark.parametrize("key", EXPLAIN_KEYS)
@@ -264,7 +269,13 @@ class TestExplainAuditInvariants:
         # v0.21.3 → 206: file_perms.doas_nopass_all (doas audit, Alpine/OpenBSD).
         # v0.22.0 → 208: suid_audit.writable_suid (group/other-writable set-id
         # binary = local root) and root_path.dangerous (unsafe root PATH).
-        assert len(EXPLAIN_KEYS) == 208, (
+        # v0.24.0 → 210: hardening.protected_fifos_disabled and
+        # protected_regular_disabled (completes the fs.protected_* family);
+        # → 211: password_policy.weak_hash (MD5/DES/bigcrypt hashing);
+        # → 215: file_capabilities.root_equivalent, user_accounts.su_unrestricted,
+        # home_unsafe, netrc_exposed; → 216: cpu_security.vulnerable;
+        # → 218: package_authenticity.disabled, crypto_policy.legacy.
+        assert len(EXPLAIN_KEYS) == 218, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."
@@ -281,7 +292,9 @@ class TestExplainAuditInvariants:
         # v0.21.0 → 56: grub, cups, mount_hardening, faillock, disk_encryption,
         # polkit.
         # v0.22.0 → 57: root_path (suid_audit.writable_suid reuses an existing prefix).
-        assert len(prefixes) == 57, (
+        # v0.24.0 → 61: file_capabilities, cpu_security, package_authenticity,
+        # crypto_policy.
+        assert len(prefixes) == 61, (
             f"Prefix count drifted from v0.8.0 baseline 45 to "
             f"{len(prefixes)}. Update KNOWN_PREFIXES + audit doc."
         )

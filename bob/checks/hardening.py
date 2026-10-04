@@ -49,6 +49,8 @@ class HardeningSnapshot:
         send_redirects:               True if net.ipv4.conf.all.send_redirects == 1.
         protected_hardlinks:          True if fs.protected_hardlinks == 1.
         protected_symlinks:           True if fs.protected_symlinks == 1.
+        protected_fifos:              fs.protected_fifos as int (0/1/2) or None.
+        protected_regular:            fs.protected_regular as int (0/1/2) or None.
     """
     # None on every field means "this kernel does not expose the knob" — never
     # a stand-in for a value. The JSON output mirrors that as null.
@@ -68,6 +70,8 @@ class HardeningSnapshot:
     send_redirects:              "bool | None" = None
     protected_hardlinks:         "bool | None" = None
     protected_symlinks:          "bool | None" = None
+    protected_fifos:             "int | None" = None
+    protected_regular:           "int | None" = None
 
     @classmethod
     def from_system(cls) -> "HardeningSnapshot":
@@ -89,6 +93,10 @@ class HardeningSnapshot:
         send_redirects              = _read_sysctl_bool("net.ipv4.conf.all.send_redirects")
         protected_hardlinks         = _read_sysctl_bool("fs.protected_hardlinks")
         protected_symlinks          = _read_sysctl_bool("fs.protected_symlinks")
+        # fifos/regular are 0/1/2 (2 strengthens 1), so read them as ints — the
+        # bool reader treats only "1" as set and would misread "2" as disabled.
+        protected_fifos             = _read_sysctl_int("fs.protected_fifos")
+        protected_regular           = _read_sysctl_int("fs.protected_regular")
 
         return cls(
             rp_filter=rp_filter,
@@ -103,6 +111,8 @@ class HardeningSnapshot:
             send_redirects=send_redirects,
             protected_hardlinks=protected_hardlinks,
             protected_symlinks=protected_symlinks,
+            protected_fifos=protected_fifos,
+            protected_regular=protected_regular,
         )
 
 
@@ -290,6 +300,40 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             **sysctl_fix("fs.protected_symlinks=1"),
             nature="action",
         )
+    # --- fs.protected_fifos (0/1/2; >=1 is protective, 2 strengthens 1) ---
+    if snapshot.protected_fifos is None:
+        _missing.append(_SYSCTL_NAMES["protected_fifos"])
+    elif snapshot.protected_fifos >= 1:
+        result.ok(
+            message=_t("hardening.protected_fifos_ok", level=snapshot.protected_fifos),
+            key="hardening.protected_fifos_ok",
+            template_vars={"level": snapshot.protected_fifos},
+        )
+    else:
+        result.warn_with_deduction(
+            key="hardening.protected_fifos_disabled",
+            message=_t("hardening.protected_fifos_disabled"),
+            points=1,
+            **sysctl_fix("fs.protected_fifos=2"),
+            nature="action",
+        )
+    # --- fs.protected_regular (0/1/2; >=1 is protective, 2 strengthens 1) ---
+    if snapshot.protected_regular is None:
+        _missing.append(_SYSCTL_NAMES["protected_regular"])
+    elif snapshot.protected_regular >= 1:
+        result.ok(
+            message=_t("hardening.protected_regular_ok", level=snapshot.protected_regular),
+            key="hardening.protected_regular_ok",
+            template_vars={"level": snapshot.protected_regular},
+        )
+    else:
+        result.warn_with_deduction(
+            key="hardening.protected_regular_disabled",
+            message=_t("hardening.protected_regular_disabled"),
+            points=1,
+            **sysctl_fix("fs.protected_regular=2"),
+            nature="action",
+        )
     if _missing:
         result.info(
             message=_t("hardening.params_unavailable", params=", ".join(_missing)),
@@ -318,6 +362,8 @@ _SYSCTL_NAMES = {
     'send_redirects'              : 'net.ipv4.conf.all.send_redirects',
     'protected_hardlinks'         : 'fs.protected_hardlinks',
     'protected_symlinks'          : 'fs.protected_symlinks',
+    'protected_fifos'             : 'fs.protected_fifos',
+    'protected_regular'           : 'fs.protected_regular',
 }
 
 #: Security ranking of the three rp_filter values: strict (1) is stronger than

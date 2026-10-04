@@ -134,6 +134,8 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "hardening.send_redirects_enabled",
         "hardening.protected_hardlinks_disabled",
         "hardening.protected_symlinks_disabled",
+        "hardening.protected_fifos_disabled",
+        "hardening.protected_regular_disabled",
         "hardening.icmp_broadcast_enabled",
     ]),
     ("iptables / nftables", [
@@ -244,6 +246,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("Password Policy", [
         "password_policy.no_quality_module",
         "password_policy.weak_minlen",
+        "password_policy.weak_hash",
         "password_policy.no_expiry",
     ]),
     ("User Accounts", [
@@ -251,6 +254,9 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "user_accounts.empty_password",
         "user_accounts.expired_account",
         "user_accounts.no_shadow",
+        "user_accounts.su_unrestricted",
+        "user_accounts.home_unsafe",
+        "user_accounts.netrc_exposed",
     ]),
     ("Cron", [
         "cron.pipe_to_shell",
@@ -355,6 +361,18 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "suid_audit.unowned_suid",
         "suid_audit.writable_suid",
         "suid_audit.unexpected_sgid",
+    ]),
+    ("File capabilities", [
+        "file_capabilities.root_equivalent",
+    ]),
+    ("CPU security", [
+        "cpu_security.vulnerable",
+    ]),
+    ("Package signing", [
+        "package_authenticity.disabled",
+    ]),
+    ("Crypto policy", [
+        "crypto_policy.legacy",
     ]),
     ("Risk", [
         "risk.escalated_posture",

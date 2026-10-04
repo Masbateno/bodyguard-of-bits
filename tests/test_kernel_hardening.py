@@ -35,6 +35,10 @@ def _snap(**kwargs) -> KernelHardeningSnapshot:
         suid_dumpable=0,
         kptr_restrict=1,
         dmesg_restrict=1,
+        # v0.24.0 attack-surface knobs, at their restricted values.
+        bpf_unpriv_disabled=2,
+        perf_paranoid=2,
+        max_userns=0,
     )
     defaults.update(kwargs)
     return KernelHardeningSnapshot(**defaults)
@@ -319,11 +323,14 @@ class TestFindingCompleteness:
             "kernel_hardening.suid_dump_ok",
             "kernel_hardening.kptr_ok",
             "kernel_hardening.dmesg_ok",
+            "kernel_hardening.bpf_unpriv_ok",
+            "kernel_hardening.perf_ok",
+            "kernel_hardening.userns_restricted",
         }
 
     def test_no_extra_findings_in_safe_snap(self):
         result = check_kernel_hardening(_snap())
-        assert len(result.findings) == 5
+        assert len(result.findings) == 8
 
 
 # ---------------------------------------------------------------------------

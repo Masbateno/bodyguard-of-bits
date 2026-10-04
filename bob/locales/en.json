@@ -51,6 +51,11 @@
     "module_blacklist": "KERNEL MODULE BLACKLIST",
     "dev_privileged": "PRIVILEGED /dev NODES",
     "root_path": "ROOT PATH",
+    "file_capabilities": "FILE CAPABILITIES",
+    "cpu_security": "CPU SECURITY",
+    "package_authenticity": "PACKAGE AUTHENTICITY",
+    "crypto_policy": "CRYPTO POLICY",
+    "world_writable": "WORLD-WRITABLE & UNOWNED FILES",
     "package_integrity": "PACKAGE INTEGRITY",
     "kernel_hardening": "KERNEL HARDENING",
     "user_accounts": "USER ACCOUNT AUDIT",
@@ -108,6 +113,11 @@
       "module_blacklist": "Rarely-needed modules kept from loading — blacklist / install directives (defense-in-depth)",
       "dev_privileged": "Privileged /dev nodes — world access on /dev/mem, /dev/port and raw disks (INFO-only)",
       "root_path": "Root PATH integrity — configured PATH (login.defs, sudoers) free of world-writable / '.' / relative components",
+      "file_capabilities": "File capabilities — binaries granted root powers through setcap (security.capability), with no SUID bit",
+      "cpu_security": "CPU security — speculative-execution vulnerabilities as the kernel reports them, mitigation-disabling boot switches, IOMMU",
+      "package_authenticity": "Package authenticity — repositories or package-manager options that install packages without verifying where they come from",
+      "crypto_policy": "System crypto policy (crypto-policies) — LEGACY or weakening modules applied system-wide",
+      "world_writable": "World-writable files, world-writable directories without sticky bit, unowned files — sweep of local filesystems (--exhaustive, INFO-only)",
       "package_integrity": "Package-file integrity — packaged binaries/libraries that differ from the manager's manifest (--exhaustive, INFO-only)",
       "log_rotation": "Log rotation — logrotate config, journald persistent storage",
       "mac_policy": "MAC policy — AppArmor / SELinux profiles + enforce status",
@@ -118,7 +128,7 @@
       "samba": "Samba — SMBv1 disabled, server signing, guest access",
       "secure_boot": "Secure Boot status — enabled, setup mode",
       "grub": "GRUB bootloader — grub.cfg permissions, superuser password",
-      "mount_hardening": "Mount options — /tmp, /var/tmp, /dev/shm nodev/nosuid/noexec",
+      "mount_hardening": "Mount options — /tmp, /var/tmp, /dev/shm nodev/nosuid/noexec, /proc hidepid",
       "core_dumps": "Core-dump disposition — core_pattern, systemd-coredump storage, limits",
       "kexec_lockdown": "Boot integrity — kexec_load_disabled + kernel lockdown mode",
       "faillock": "PAM account lockout — pam_faillock/tally2 in the auth stack, deny threshold",
@@ -241,6 +251,9 @@
     "all_covered": "All ports listening on 0.0.0.0 are covered by a UFW rule",
     "uncovered": "Port {port} listening on all interfaces without explicit UFW rule",
     "uncovered_local": "Port {port} — bound to localhost only — no external exposure",
+    "uncovered_bound_address": "Port {port} — bound to {address} only, no firewall rule — reachable from the network that address is on",
+    "uncovered_bound_address_deny": "Port {port} — bound to {address} only, no explicit UFW rule, but covered by default deny policy",
+    "uncovered_bound_address_firewalld": "Port {port} — bound to {address} only — governed by firewalld's default zone, not a UFW rule",
     "system_port": "Internal system port — no risk (legitimate OS service, no UFW rule needed): {port} ({service})",
     "unreadable": "Listening ports could not be determined",
     "unreadable_detail": "`ss -tulnp` could not be run \u2014 the binary is absent (iproute2 is not installed on minimal images and many containers) or it failed. Its stdout is empty either way, which is indistinguishable from a host with nothing listening, so BOB reports the gap instead of claiming zero open ports. Check with: ss -tulnp",
@@ -350,6 +363,7 @@
     "block_improve_disclaimer": "Commands shown are suggestions — verify and adapt to your network before running",
     "implicit_policy": "Service(s) relying on default UFW policy rather than explicit rules. Correct if policy is deny, but an explicit rule is more robust.",
     "implicit_svcs": "Affected service(s)",
+    "visibility_sections": "Sections not fully read (the score is a ceiling until they are): {sections}",
     "scope_line1": "This score covers firewall, services, SSH, access control, updates, system hardening, and detection tools.",
     "scope_line2": "Application security, physical access, and other attack vectors are outside the scope of this audit.",
     "context_disclaimer": "Verdict conditioned by the profile and network context above. BOB is a hardening auditor, not a threat-modeling engine — interpret accordingly."
@@ -834,6 +848,10 @@
     "protected_hardlinks_disabled": "Hard link protection disabled (fs.protected_hardlinks=0) — allows hard link attacks for privilege escalation",
     "protected_symlinks_ok": "Symbolic link protection enabled (fs.protected_symlinks=1)",
     "protected_symlinks_disabled": "Symbolic link protection disabled (fs.protected_symlinks=0) — allows symlink attacks via /tmp race conditions",
+    "protected_fifos_ok": "FIFO protection enabled (fs.protected_fifos={level})",
+    "protected_fifos_disabled": "FIFO protection disabled (fs.protected_fifos=0) — allows unsafe writes to attacker-controlled FIFOs in world-writable/sticky directories",
+    "protected_regular_ok": "Regular-file protection enabled (fs.protected_regular={level})",
+    "protected_regular_disabled": "Regular-file protection disabled (fs.protected_regular=0) — allows unsafe writes to attacker-controlled files in world-writable/sticky directories",
     "params_unavailable": "Kernel parameters not exposed by this kernel: {params}",
     "params_unavailable_detail": "These sysctls do not exist on this system — most often IPv6 compiled out or disabled at boot (ipv6.disable=1 removes /proc/sys/net/ipv6 entirely), a kernel built without the matching option, or a restricted /proc. BOB reports neither a pass nor a failure for them: the parameter is not set to a weak value, it is absent."
   },
@@ -948,7 +966,7 @@
       "diff_path": "  =PATH compares against another machine's baseline (cross-machine)",
       "watch": "Re-run audit every N seconds (default: 60) — Ctrl+C to quit",
       "offline": "Skip external IP lookup (no HTTP calls)",
-      "exhaustive": "Also run slow full-coverage checks (e.g. package integrity)",
+      "exhaustive": "Also run slow checks (package integrity, world-writable sweep)",
       "target": "Score target (1–10): gap, success or ceiling; exit 4 if unmet",
       "check": "Run only these checks (comma-separated)",
       "check_list": "  --check=list shows every available name",
@@ -1313,6 +1331,15 @@
     "kptr_exposed": "Kernel pointers exposed in /proc (kptr_restrict=0) — may leak kernel addresses to unprivileged users",
     "kptr_exposed_detail": "When kptr_restrict=0, kernel symbol addresses appear in /proc files and can be read by unprivileged users, making KASLR bypass much easier.",
     "dmesg_ok": "dmesg access restricted to privileged users (dmesg_restrict=1)",
+    "bpf_unpriv_ok": "Unprivileged eBPF disabled (kernel.unprivileged_bpf_disabled={val})",
+    "bpf_unpriv_enabled": "Unprivileged eBPF allowed (kernel.unprivileged_bpf_disabled=0)",
+    "bpf_unpriv_enabled_detail": "Any local user can load eBPF programs, and the in-kernel verifier is then the only barrier between them and kernel memory — verifier bugs have been a recurring source of local-root exploits. Most distributions disable it by default since Linux 5.16 (value 2). Unless a non-root workload needs eBPF, set kernel.unprivileged_bpf_disabled=2 (1 also locks the setting until reboot).",
+    "perf_ok": "perf events restricted for unprivileged users (kernel.perf_event_paranoid={val})",
+    "perf_permissive": "perf events open to unprivileged users (kernel.perf_event_paranoid={val})",
+    "perf_permissive_detail": "At 1 or below, users can profile the kernel (and at -1 every CPU event), which exposes kernel addresses and timing side channels and a large, bug-prone syscall surface. 2 is the upstream default and restricts users to their own processes in user space. Developers profiling kernels may need a lower value; servers rarely do.",
+    "userns_restricted": "Unprivileged user namespaces restricted ({how})",
+    "userns_allowed": "Unprivileged user namespaces allowed",
+    "userns_allowed_detail": "User namespaces let an unprivileged process become 'root' inside its own namespace, which is how browser sandboxes (Chromium, Firefox), flatpak, bubblewrap and rootless podman work — and how many kernel exploits reach code paths that used to require real root. BOB reports the state, not a fix: restricting them breaks those tools. On a server that runs none of them, consider user.max_user_namespaces=0; on Ubuntu 23.10+, kernel.apparmor_restrict_unprivileged_userns=1 restricts them to AppArmor-profiled programs instead.",
     "dmesg_exposed": "dmesg accessible to all users (dmesg_restrict=0) — kernel messages may reveal exploitable information",
     "dmesg_exposed_detail": "When dmesg_restrict=0, any local user can read kernel log messages, which may reveal memory layout, loaded modules, or hardware details useful for exploitation.",
     "params_unavailable": "Kernel parameters not exposed by this kernel: {params}",
@@ -1328,9 +1355,9 @@
     "unowned_suid_reason": "{count} SUID binary/binaries that no package manager claims",
     "unowned_suid_detail": "Every other SUID binary on this host was put there by a package. These were not: the package manager was asked and answered that nothing ships them. That is the shape a left-behind privilege escalation takes — a root-owned binary that runs as root for anyone, installed by something other than the distribution. It may still be legitimate: locally compiled software, a vendor installer, a deliberate `chmod u+s`. BOB cannot tell those apart from the other kind, which is why this is reported rather than resolved. Check each one against what you know you installed: stat <path>",
     "unexpected_suid_reason": "{count} unexpected SUID binary/binaries found",
-    "writable_suid": "{count} group/other-writable SUID/SGID binary/binaries — writing one runs an attacker's code with its owner (SUID) or group (SGID) privileges: {paths}",
-    "writable_suid_reason": "a set-id binary writable by anyone but its owner is a local privilege-escalation path — a direct root escalation for a writable SUID-root binary",
-    "writable_suid_detail": "A set-id binary runs with elevated privileges: a SUID binary as its file owner (for SUID-root, that is root), a SGID binary with its file group. If it is also writable by group or other, anyone with that write access can replace its contents and have their own code run with those privileges the next time it executes — overwrite, then trigger. A writable SUID-root binary is therefore a direct local root; a writable SGID (or non-root SUID) binary escalates to that group/user, whose impact depends on that group's privileges and can, in some configurations, enable further escalation (a group like docker, disk or shadow). It is reported for every set-id binary, whitelisted or not — a writable /usr/bin/passwd is not safe just because 'passwd' is an expected name. Restore owner-only write: chmod go-w <path> (and investigate how the write bit got there — a regular binary does not become group-writable on its own).",
+    "writable_suid": "{count} group/other-writable SUID/SGID binary/binaries — anyone with that write access can replace the code that runs whenever it is next executed: {paths}",
+    "writable_suid_reason": "a set-id binary writable by anyone but its owner lets them replace code that privileged users and jobs execute — root as soon as root runs it",
+    "writable_suid_detail": "Writing the file makes the kernel drop its SUID/SGID bit (measured: a binary rewritten by an unprivileged user runs with the caller's own UID afterwards), so the escalation is not 'overwrite it, then run it yourself'. It is 'overwrite it, then wait': whoever runs it next — root typing passwd, a cron job, a service — runs the attacker's code with their own privileges. The write bit on a set-id binary is also abnormal in itself: a packaged binary does not become group/other-writable on its own, so treat it as possible tampering. It is reported for every set-id binary, whitelisted or not — a writable /usr/bin/passwd is not safe because 'passwd' is an expected name. Restore owner-only write: chmod go-w <path>, and investigate how the bit got there.",
     "unexpected_sgid": "{count} unexpected SGID binary/binaries: {paths}",
     "unexpected_sgid_detail": "SGID binaries run with the file's group privileges. Less dangerous than SUID but worth reviewing.",
     "whitelisted": "{count} SUID binary/binaries suppressed by user whitelist: {paths}"
@@ -2042,6 +2069,24 @@
           "why": "Host kernel setting — applies to the entire host filesystem, not the container namespace. Apply on the host.",
           "how": "Apply on the host system:\n   sudo sysctl -w fs.protected_symlinks=1\n   grep -qxF 'fs.protected_symlinks=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
+      },
+      "protected_fifos_disabled": {
+        "title": "FIFO protection disabled (fs.protected_fifos = 0)",
+        "why": "In a world-writable sticky directory such as /tmp, an attacker can pre-create a FIFO (named pipe) with the name a privileged process is about to open with O_CREAT. Without protection, the privileged process opens the attacker's FIFO instead of creating its own file, so data it meant to write privately goes to — or is read from — an attacker-controlled pipe. With fs.protected_fifos=1 the kernel refuses that open when the FIFO is owned by neither the opener nor the directory owner (2 extends the rule to group-writable sticky directories).",
+        "how": "1. Enable immediately:\n   sudo sysctl -w fs.protected_fifos=2\n2. Make permanent:\n   grep -qxF 'fs.protected_fifos=2' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_fifos=2' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Apply:\n   sudo sysctl --system",
+        "container": {
+          "why": "Host kernel setting — applies to the entire host, not the container namespace. Apply on the host.",
+          "how": "Apply on the host system:\n   sudo sysctl -w fs.protected_fifos=2\n   sudo sysctl --system"
+        }
+      },
+      "protected_regular_disabled": {
+        "title": "Regular-file protection disabled (fs.protected_regular = 0)",
+        "why": "The same /tmp race as with FIFOs, for ordinary files: an attacker pre-creates a regular file in a world-writable sticky directory under the name a privileged process will open with O_CREAT, and the process writes into the attacker's file instead of a fresh one it owns. With fs.protected_regular=1 the kernel refuses that open when the file belongs to neither the opener nor the directory owner (2 extends it to group-writable sticky directories). Modern distributions set it by default.",
+        "how": "1. Enable immediately:\n   sudo sysctl -w fs.protected_regular=2\n2. Make permanent:\n   grep -qxF 'fs.protected_regular=2' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_regular=2' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Apply:\n   sudo sysctl --system",
+        "container": {
+          "why": "Host kernel setting — applies to the entire host, not the container namespace. Apply on the host.",
+          "how": "Apply on the host system:\n   sudo sysctl -w fs.protected_regular=2\n   sudo sysctl --system"
+        }
       }
     },
     "mac_policy": {
@@ -2500,6 +2545,11 @@
         "why": "Short passwords dramatically reduce the search space for offline brute-force and dictionary attacks. A 6-character password with common character sets can be fully cracked in minutes with modern hardware. NIST SP 800-63B recommends at least 8 characters; CIS recommends 14.",
         "how": "1. Increase minlen in /etc/security/pwquality.conf:\n   sudo nano /etc/security/pwquality.conf  →  minlen = 12\n2. Test the policy interactively:\n   pwscore\n3. Existing passwords are not affected — enforce a reset cycle for active accounts if compliance requires it"
       },
+      "weak_hash": {
+        "title": "Weak password-hashing algorithm (MD5 / DES / bigcrypt)",
+        "why": "The hash algorithm decides how long a stolen /etc/shadow resists an offline cracker. MD5-crypt, DES and bigcrypt are fast to compute on a GPU, so common and medium-strength passwords fall within hours; yescrypt and SHA512-crypt are deliberately slow and memory-hard. The risk is not that someone reads shadow on a healthy host — it is that a copy ends up somewhere it should not (a backup, a dumped container image, a compromised admin account), and the algorithm is then the only thing between that copy and working passwords. Two settings name it: ENCRYPT_METHOD in /etc/login.defs (used by useradd, chpasswd, newusers) and the option on the pam_unix.so password line (used by passwd); a weak value in either produces weak hashes for the accounts that path writes.",
+        "how": "Debian / Ubuntu / Mint / Kali → use the distribution's own defaults:\n1. Set the login.defs method:\n   sudo sed -i 's/^ENCRYPT_METHOD.*/ENCRYPT_METHOD YESCRYPT/' /etc/login.defs\n2. Check the pam_unix option in the password stack (common-password, or system-auth on the RPM family) names yescrypt or sha512, not md5:\n   grep pam_unix.so /etc/pam.d/common-password\n3. Existing hashes are only rewritten when each user changes their password — ask users with old hashes to run passwd."
+      },
       "no_expiry": {
         "title": "No password expiry policy configured",
         "why": "Without password expiry, compromised credentials remain valid indefinitely. If an attacker silently obtains a password (phishing, database leak, keylogger), they retain access until the user voluntarily changes it. Expiry forces periodic rotation and limits the exposure window.",
@@ -2507,6 +2557,21 @@
       }
     },
     "user_accounts": {
+      "su_unrestricted": {
+        "title": "su is not restricted to a group",
+        "why": "su asks for the target account's password — for root, root's password. Without a restriction, any local account that obtains that password (shoulder-surfing, a reused password, a leaked script) becomes root with it, from any session, including a compromised service account with a shell.\n\npam_wheel narrows that: only members of one group may run su at all, so the password alone is no longer enough. CIS goes further and asks for an *empty* dedicated group, which disables su entirely and routes every administrator through sudo, where each action is attributable and logged.\n\nBOB does not score this when root's password is locked ('!' or '*' in /etc/shadow, the Ubuntu default): su to root then needs a credential nobody has.",
+        "how": "1. Create a dedicated group (keep it empty if administrators use sudo):\n   sudo groupadd sugroup\n2. Add, near the top of su's PAM file (/etc/pam.d/su; on openSUSE copy /usr/lib/pam.d/su there first):\n   auth required pam_wheel.so use_uid group=sugroup\n3. Keep a root shell open while testing, then check from another session that su is refused for a non-member:\n   su -\n4. If you need su for specific people, add them to the group: sudo usermod -aG sugroup <user>\n5. Alternative recognised by BOB: restrict the binary itself so other accounts cannot execute it — Debian/Ubuntu: sudo dpkg-statoverride --update --add root sugroup 4750 /usr/bin/su (survives package upgrades)."
+      },
+      "home_unsafe": {
+        "title": "Home directory writable by others or owned by another account",
+        "why": "A home directory is code the user runs: .bashrc, .profile and .bash_logout execute on every shell, and .ssh/authorized_keys decides who logs in. Whoever can write the home (mode o+w) — or owns it — can create or replace those files. The next time the user opens a terminal, the planted code runs with that user's rights; if the user is root, or uses sudo, the attacker follows.\n\nBOB checks interactive accounts only (root and UID ≥ 1000 with a login shell), and does not probe homes on network filesystems (a stat on a dead NFS server would hang the audit) — those are listed as not inspected.",
+        "how": "1. Inspect the home:\n   stat -c '%U %a %n' <home>\n2. Give it back to its user and remove write access for others:\n   sudo chown <user>: <home>\n   sudo chmod 750 <home>\n3. Check its startup files have not been tampered with while it was open:\n   ls -la <home>/.bashrc <home>/.profile <home>/.ssh"
+      },
+      "netrc_exposed": {
+        "title": ".netrc accessible to group or others",
+        "why": "~/.netrc stores machine / login / password triples in plain text so ftp, curl and git can log in unattended. A .netrc any other user can read hands them those credentials outright — often for a remote service that trusts nothing else.\n\nftp itself refuses a .netrc that is readable by others when it contains a password; curl and other tools do not.",
+        "how": "1. Restrict each file to its owner:\n   chmod 600 ~/.netrc\n2. Consider whether the credentials should be on disk at all — a credential helper (git credential-store with a restricted file, or a keyring) is preferable.\n3. If the file was readable for a while, rotate the passwords it contains."
+      },
       "uid_zero": {
         "title": "Non-root account with UID 0 detected",
         "why": "UID 0 is the superuser identifier. Any account with UID 0 has unrestricted root-equivalent access to the entire system — bypassing file permissions, sudo rules, and audit trails. A second UID-0 account is a common backdoor left by attackers or misconfigured systems. Only 'root' itself should ever hold UID 0.",
@@ -2997,6 +3062,34 @@
         "how": "1. Find which source carries the bad component — the finding names it (login.defs ENV_SUPATH or sudoers secure_path).\n2. Set root's PATH to absolute, root-owned, non-world-writable directories only, in the usual order:\n   /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n   - login.defs: edit the ENV_SUPATH line.\n   - sudoers: edit `Defaults secure_path=...` with visudo.\n3. Never put `.`, an empty component (a leading, trailing or doubled `:`), or a relative path in root's PATH.\n4. If a directory must stay in PATH, make sure it is root-owned and not group/other-writable: chown root:root <dir> && chmod go-w <dir>."
       }
     },
+    "file_capabilities": {
+      "root_equivalent": {
+        "title": "Root-equivalent file capability on an unexpected binary",
+        "why": "A file capability (set with `setcap`, stored in the `security.capability` extended attribute) hands part of root's power to every process that executes the file — no SUID bit involved. Several capabilities are root in all but name: `cap_setuid` lets the process become UID 0, `cap_dac_override` / `cap_fowner` / `cap_chown` bypass every file permission, `cap_dac_read_search` reads /etc/shadow, `cap_sys_module` loads kernel code, `cap_sys_admin` and `cap_sys_ptrace` control the kernel and other processes.\n\nPut one of those on an interpreter or a general-purpose tool (`setcap cap_setuid+ep /usr/bin/python3` is a classic persistence trick) and every local user has a root shell. A SUID audit does not see it: the file has mode 0755 and no set-id bit.\n\nBOB knows which binaries distributions ship with a capability (ping, mtr-packet, arping, dumpcap, gst-ptp-helper, newuidmap…) and what each one carries. The finding lists files outside that list holding a root-equivalent capability.",
+        "how": "1. Inspect each file and its capability:\n   getcap <file>\n2. Ask who ships it:\n   dpkg -S <file>   |   rpm -qf <file>   |   pacman -Qo <file>   |   apk info --who-owns <file>\n3. If you did not set it on purpose for a reason you can state, remove the capability:\n   sudo setcap -r <file>\n4. If it was not installed by a package at all, treat the host as possibly compromised: find when the file appeared (stat <file>) and what else changed around that time.\n5. If the grant is intended, prefer the narrowest capability that does the job (cap_net_bind_service rather than cap_sys_admin) and document it."
+      }
+    },
+    "cpu_security": {
+      "vulnerable": {
+        "title": "CPU vulnerability reported unmitigated by the kernel",
+        "why": "Speculative-execution flaws (Spectre, Meltdown, MDS, Retbleed, Downfall, Inception…) let code read memory it should not: another process's secrets, the kernel's, or — across virtual machines — another tenant's. The fixes are a combination of CPU microcode and kernel mitigations, and the kernel reports the result for each flaw in /sys/devices/system/cpu/vulnerabilities.\n\nBOB repeats that verdict; it does not keep its own CPU tables. 'Vulnerable' means the kernel measured, on this CPU with this microcode and these boot options, that the flaw is open. The usual cause is administrative: mitigations=off left on the kernel command line after a benchmark, or a microcode package that is missing or stale. Sometimes it is the hardware: an old CPU the vendor no longer updates.",
+        "how": "1. Read the kernel's verdict:\n   grep -r . /sys/devices/system/cpu/vulnerabilities/\n2. Check the command line for switches that disable mitigations:\n   cat /proc/cmdline   (mitigations=off, nopti, nospectre_v2, … — remove them from GRUB_CMDLINE_LINUX in /etc/default/grub, then update-grub / grub2-mkconfig)\n3. Install or update the CPU microcode and reboot:\n   Debian/Ubuntu: apt install intel-microcode (or amd64-microcode)\n   Fedora/RHEL: dnf install microcode_ctl · Arch: pacman -S intel-ucode (or amd-ucode)\n4. Update the kernel — newer kernels add mitigations for newly found flaws.\n5. If the CPU has no fix, keep untrusted code (VM tenants, CI jobs, browsers on a shared host) off machines that hold sensitive data."
+      }
+    },
+    "package_authenticity": {
+      "disabled": {
+        "title": "Package authenticity checking turned off",
+        "why": "A package manager runs every package's install scripts as root. Its authenticity check is what ties a package to the people who built it — a signature on each package for dnf, zypper and pacman; for apt, a signed Release/InRelease index listing every package's checksum. Without it, whoever serves the repository — a compromised mirror, a hijacked domain, anyone in the network path of a plain-HTTP source — chooses what root runs on the next upgrade.\n\nThe switches are small and easy to forget: `[trusted=yes]` on an apt source or `Trusted: yes` in a .sources file, `APT::Get::AllowUnauthenticated` or `Acquire::AllowInsecureRepositories`, `gpgcheck=0` in a dnf or zypper repository, `SigLevel = Never` or `Optional` in pacman.conf. They are typically added to get a third-party repository working before its key was imported, and left in place.\n\nBOB reports only switches that are written down; a key left at its default is not inferred.",
+        "how": "1. Find each switch — the finding names the file and the line.\n2. Import the repository's signing key the way its publisher documents it:\n   apt:    curl -fsSL <key-url> | sudo gpg --dearmor -o /etc/apt/keyrings/<name>.gpg, then use [signed-by=/etc/apt/keyrings/<name>.gpg] on the source line instead of [trusted=yes]\n   dnf/zypper: sudo rpm --import <key-url> (or gpgkey= in the .repo file)\n   pacman: sudo pacman-key --recv-keys <id> && sudo pacman-key --lsign-key <id>\n3. Remove the switch (trusted=yes, gpgcheck=0, SigLevel = Never, AllowUnauthenticated…).\n4. Refresh and confirm no warning: apt update / dnf makecache / zypper refresh / pacman -Sy.\n5. If the repository has no key at all, consider whether it should be on this host."
+      }
+    },
+    "crypto_policy": {
+      "legacy": {
+        "title": "System crypto policy set to LEGACY",
+        "why": "On Fedora, RHEL and openSUSE, crypto-policies sets in one place what OpenSSL, GnuTLS, NSS, OpenSSH, Kerberos and libreswan accept. The LEGACY policy widens all of them at once: SHA-1 signatures, smaller RSA and Diffie-Hellman keys and older parameters become acceptable again, for every client and server on the host — so a downgrade an attacker could not force under DEFAULT becomes available everywhere.\n\nIt is almost always set to reach one old peer (an appliance, a legacy VPN, an old mail server) and then forgotten.",
+        "how": "1. See what is applied and configured:\n   update-crypto-policies --show\n   cat /etc/crypto-policies/config\n2. Return to the default:\n   sudo update-crypto-policies --set DEFAULT\n3. Restart the services that use TLS/SSH (or reboot) so they load it.\n4. If one connection breaks, make the exception there — the client's own configuration (an ssh_config Host block, a per-service OpenSSL setting) — or use a narrow module such as DEFAULT:SHA1 for a limited time, rather than LEGACY for the whole host."
+      }
+    },
     "suid_audit": {
       "unexpected_suid": {
         "title": "Unexpected SUID binary detected",
@@ -3010,7 +3103,7 @@
             },
       "writable_suid": {
         "title": "A SUID/SGID binary writable by group or other",
-        "why": "A set-id binary runs with elevated privileges — a SUID binary as its file owner (for SUID-root, that is root), a SGID binary with its file group. If the file itself is writable by its group or by everyone, any user with that write access can overwrite the binary with their own code, which then executes with those privileges the next time anyone (a user, a cron job, a service) runs it — no exploit, just write-then-trigger. A writable SUID-root binary is a direct, unconditional local root; a writable SGID (or non-root SUID) binary is a privilege-escalation path to that group/user, whose impact depends on that group's privileges and can, in some configurations, enable further escalation (docker, disk, shadow). It is the most severe SUID finding and is reported even for whitelisted names — an expected binary that has become writable is still a trivial escalation.",
+        "why": "A set-id binary runs with elevated privileges — a SUID binary as its file owner (for SUID-root, that is root), a SGID binary with its file group. If the file is also writable by its group or by everyone, anyone with that write access can replace its contents.\n\nWhat they cannot do is keep the privilege: writing the file makes the kernel clear its SUID/SGID bit (and any file capability), so the attacker running the rewritten binary gets only their own rights — measured on Linux 6.12. The escalation is the next run by someone else: root typing `passwd`, a cron job, a service, an administrator using the tool — each runs the attacker's code with their own privileges. For a SUID-root binary that people and jobs run as root, that is a root compromise waiting for its trigger; for a SGID binary, the same path towards whoever runs it.\n\nThe write bit is also evidence: a packaged binary does not become group/other-writable on its own. It is reported even for whitelisted names — an expected binary that has become writable is not safe because its name is expected.",
         "how": "1. See who can write it and how it happened:\n   stat <path>\n2. Restore owner-only write:\n   sudo chmod go-w <path>\n3. Investigate: a packaged binary does not become group/other-writable on its own. Check whether a bad install, a careless chmod, or a compromise put the bit there — the file's timestamps are evidence.\n4. If a package owns it, reinstalling that package restores the shipped permissions."
       },
       "unexpected_sgid": {
@@ -3248,6 +3341,31 @@
     }
   },
   "user_accounts": {
+    "su_unknown": "su restriction not checked — no su PAM file could be read (/etc/pam.d/su, /usr/lib/pam.d/su)",
+    "su_restricted": "su is restricted to members of group '{group}' (pam_wheel)",
+    "su_restricted_by_mode": "su is restricted to members of group '{group}' by its file mode (not executable by other accounts)",
+    "su_root_locked": "su is not restricted to a group, but root's password is locked — su to root needs a credential nobody has",
+    "su_root_unknown": "su is not restricted to a group, and whether root's password is locked could not be read (/etc/shadow)",
+    "su_unrestricted": "No su restriction recognised (no pam_wheel rule, su executable by every account) — any account that learns root's password can become root",
+    "su_unrestricted_reason": "no recognised su restriction (pam_wheel or su's own file mode) and root has a usable password",
+    "su_unrestricted_detail": "Add pam_wheel to su's PAM file so only members of a dedicated group may use su, and keep that group empty if administrators go through sudo. See: bob --explain user_accounts.su_unrestricted",
+    "su_unrestricted_busybox": "su is BusyBox's applet, which has no group restriction and ignores PAM — any account that learns root's password can become root",
+    "su_unrestricted_busybox_reason": "BusyBox su (no PAM, no group restriction) is executable by every account and root has a usable password",
+    "su_unrestricted_busybox_detail": "BusyBox su does not read /etc/pam.d — a pam_wheel line there restricts nothing. Lock root's password (passwd -l root) and escalate through doas, the Alpine default; restricting /bin/bbsuid by mode would also cut passwd and the other SUID applets it serves.",
+    "home_world_writable": "writable by every user",
+    "home_foreign_owner": "owned by another account",
+    "home_unsafe": "Home directory(ies) another user can control: {homes}",
+    "home_unsafe_reason": "{count} interactive account home(s) writable by others or owned by another account",
+    "home_unsafe_detail": "Whoever can write a home can plant .bashrc, .profile or .ssh/authorized_keys and run code — or log in — as that user the next time they open a shell. Fix the owner and mode: chown <user>: <home> && chmod 750 <home>.",
+    "netrc_exposed": ".netrc file(s) accessible to group or others: {files}",
+    "netrc_exposed_reason": "{count} .netrc file(s) — credentials stored in clear — accessible to group or others",
+    "netrc_exposed_detail": ".netrc stores login names and passwords in plain text for ftp, curl and git. Any user who can read it has those credentials. Restrict it to its owner (chmod 600) and prefer a credential helper.",
+    "legacy_dotfiles": "Legacy trust / forwarding file(s) in interactive homes: {files}",
+    "legacy_dotfiles_detail": ".rhosts and .shosts grant password-less host-based trust (rsh, or ssh with IgnoreRhosts no); .forward redirects mail and can pipe it to a command. Remove them unless you rely on them.",
+    "homes_uninspected": "Home directory(ies) not inspected (permission denied, or on a network filesystem): {users}",
+    "duplicate_ids": "Duplicate account identifiers: {ids}",
+    "duplicate_name": "user name '{user}' listed more than once",
+    "duplicate_ids_detail": "Accounts sharing a UID are one identity under several names: files, processes and audit records cannot tell them apart, and a duplicate is a classic way to hide a second login for an existing user. A user name listed twice makes login resolve to whichever entry comes first. Give each account its own UID and name.",
     "no_passwd": "/etc/passwd could not be read",
     "no_passwd_detail": "The account list never opened, so the scan for a second UID 0 account found nothing for want of looking rather than for want of a finding. BOB withholds its all-clear on user accounts. Check with: awk -F: '$3==0' /etc/passwd",
     "no_shadow": "/etc/shadow not readable — empty-password and expiry checks skipped (run with sudo)",
@@ -3274,6 +3392,15 @@
     "weak_minlen_reason": "Password minimum length too low (minlen = {minlen})",
     "no_expiry": "Password expiry not enforced (PASS_MAX_DAYS = {days})",
     "no_expiry_detail": "Passwords never expire. Consider setting PASS_MAX_DAYS to a reasonable value (e.g. 365) if your policy requires periodic rotation. Note: NIST SP 800-63B no longer mandates expiration unless compromise is suspected.",
+    "login_defs_unreadable": "/etc/login.defs exists but could not be read — password expiry and its default hashing method are unverified",
+    "weak_hash": "Weak password-hashing algorithm configured ({where})",
+    "weak_hash_reason": "weak password-hashing algorithm (crackable offline once /etc/shadow leaks)",
+    "weak_hash_detail": "MD5, DES and bigcrypt hashes fall to an offline cracker within hours once a copy of /etc/shadow leaves the machine (a backup, a compromised account, a misconfigured share). Switch to yescrypt (or SHA512): set ENCRYPT_METHOD YESCRYPT in /etc/login.defs and use the yescrypt (or sha512) option on the pam_unix.so password line. Existing hashes are only rewritten when each user next changes their password.",
+    "hash_acceptable": "Password-hashing algorithm is acceptable but not the recommended one ({where}) — yescrypt or SHA512 preferred",
+    "hash_unrecognised": "Password-hashing algorithm not recognised by BOB ({where}) — no verdict",
+    "hash_strong": "Strong password-hashing algorithm configured ({where})",
+    "hash_unknown": "Password-hashing algorithm not established — neither ENCRYPT_METHOD in login.defs nor a hash option on pam_unix is set",
+    "hash_builtin": "Password hashing is fixed inside BusyBox passwd (it reads neither login.defs nor PAM) — set when BusyBox is built, not configurable here",
     "ok": "Password policy is adequately configured"
   },
   "samba": {
@@ -3452,7 +3579,12 @@
     "options_missing_detail": "A world-writable scratch area should carry nodev (no device nodes) and nosuid (no set-uid bit) so a file an attacker drops there cannot become a device or a privilege-escalation binary. Add the options in /etc/fstab and remount, e.g.: a line `tmpfs /tmp tmpfs defaults,nodev,nosuid,noexec 0 0`, then `sudo mount -o remount /tmp`. Test noexec first — it can break some installers.",
     "noexec_missing": "{mount} is mounted nodev,nosuid but without noexec",
     "noexec_missing_detail": "{mount} has the important protections (nodev, nosuid); noexec would also stop code being executed from it, but it can break legitimate uses (installers, package builds, some runtimes use /tmp). Adding noexec is a hardening choice — reported for awareness, no deduction.",
-    "hardened": "{mount} is mounted nodev, nosuid, noexec"
+    "hardened": "{mount} is mounted nodev, nosuid, noexec",
+    "proc_hidepid_restricted": "/proc hides other users' processes (hidepid={level})",
+    "proc_hidepid_partial": "/proc partially restricts other users' processes (hidepid=noaccess) — their /proc/<pid> is unreadable but still listed",
+    "proc_hidepid_off": "/proc lets every user see every process (hidepid not set)",
+    "proc_hidepid_detail": "Mounting /proc with hidepid=invisible (2) hides other users' /proc/<pid> entirely, so an unprivileged user can no longer list who runs what, read command lines (which sometimes carry passwords or tokens) or watch a privileged job's timing. It matters on hosts several people log into — a shared server or workstation — and little on a single-user desktop, so BOB reports it and never scores it. Set it in /etc/fstab: proc /proc proc defaults,hidepid=invisible,gid=<monitoring-group> 0 0 — the gid= group keeps visibility for monitoring tools, and some desktop components (polkit, systemd-logind) need it.",
+    "proc_hidepid_unknown": "Whether /proc restricts process visibility (hidepid) could not be determined"
   },
   "core_dumps": {
     "unknown": "kernel.core_pattern could not be read — core-dump disposition unknown",
@@ -3485,7 +3617,76 @@
     "group_writable": "Root's configured PATH contains a directory writable by a non-root group: {entries}",
     "clean": "Root's configured PATH is clean — every component is an absolute, non-world-writable directory"
   },
+  "file_capabilities": {
+    "unknown": "File capabilities were not checked — none of the binary directories exists",
+    "root_equivalent": "{count} binary(ies) carry a root-equivalent file capability: {paths}",
+    "root_equivalent_reason": "a root-equivalent capability (setuid, dac_override, sys_admin…) on a binary turns everyone who can run it into root, with no SUID bit for the SUID audit to see",
+    "root_equivalent_detail": "No supported distribution ships these binaries with these capabilities. Check each one with getcap, ask the package manager who owns it, and remove the capability (setcap -r <file>) unless you set it yourself for a reason you can state.",
+    "unexpected": "{count} binary(ies) carry a file capability BOB does not know them for: {paths}",
+    "unexpected_detail": "None of these capabilities is root-equivalent, so nothing is scored. Each one is still a privilege granted to everyone who runs the file — confirm it is intended (getcap <file>).",
+    "partial": "File-capability scan incomplete — {files} file(s) examined, {count} with a capability; a directory could not be read or the time budget ran out, so the rest is unverified",
+    "ok": "No unexpected file capability — {files} file(s) examined, {count} known grant(s)"
+  },
+  "cpu_security": {
+    "unknown": "CPU vulnerability status not checked — /sys/devices/system/cpu/vulnerabilities could not be read",
+    "not_reported": "CPU vulnerability status not reported — this kernel has no /sys/devices/system/cpu/vulnerabilities interface (older kernel or architecture)",
+    "vulnerable": "{count} CPU vulnerability(ies) reported unmitigated by the kernel: {names}",
+    "vulnerable_reason": "the kernel reports {count} CPU vulnerability(ies) as 'Vulnerable' on this processor",
+    "vulnerable_detail": "The kernel measured these on the running CPU with the loaded microcode and boot options. The usual causes: mitigations switched off on the kernel command line (mitigations=off and friends), or microcode too old for the fix (install/update intel-microcode or amd64-microcode and reboot). Some older CPUs never received a fix; then the remaining protection is not running untrusted code beside sensitive workloads. See: bob --explain cpu_security.vulnerable",
+    "smt_exposed": "Mitigated, but still exposed through SMT (hyper-threading): {names}",
+    "smt_exposed_detail": "The mitigation is active, but a process on the sibling hardware thread can still observe this one. Disabling SMT (nosmt, or mitigations=auto,nosmt) closes it at a large performance cost — usually worth it only where untrusted code or VMs share the machine.",
+    "status_unknown": "CPU vulnerability status not determined by the kernel: {names}",
+    "ok": "No unmitigated CPU vulnerability — {mitigated} mitigated, {unaffected} not affected",
+    "cmdline_weakened": "Kernel command line disables or weakens CPU mitigations: {flags}",
+    "cmdline_weakened_detail": "These boot switches turn off protections the kernel would otherwise apply. They are sometimes set for benchmark performance and forgotten. Remove them from GRUB_CMDLINE_LINUX in /etc/default/grub (then update-grub or grub2-mkconfig) unless the trade-off is deliberate.",
+    "iommu_active": "IOMMU active — DMA from devices is remapped",
+    "iommu_inactive": "No active IOMMU — DMA-capable devices can reach all of memory",
+    "iommu_inactive_detail": "Without an IOMMU, a device on PCIe, Thunderbolt or FireWire can read and write physical memory directly — a physical-access attack, relevant on machines with external DMA-capable ports. Enable it in firmware (VT-d / AMD-Vi) and, on Intel, boot with intel_iommu=on. Many VMs and older CPUs have none to enable."
+  },
+  "package_authenticity": {
+    "not_assessed": "Package authenticity checking not assessed for this package manager ({manager})",
+    "disabled": "{count} setting(s) turn off {mechanism}: {where}",
+    "disabled_reason": "{count} repository/option(s) install packages without verifying their authenticity",
+    "disabled_detail": "Packages from these sources are installed as root without proof of who built them: the mirror, or anyone able to tamper with the connection to it, decides what runs on the next upgrade. Import the repository's signing key and remove the switch. See: bob --explain package_authenticity.disabled",
+    "unreadable": "Package authenticity settings could not be read: {files}",
+    "ok": "Checked: {mechanism} — enforced, no repository or option disables it ({manager}, {files} file(s) read)",
+    "mechanism_apt": "repository authentication (signed Release/InRelease files and the checksums they list; individual .deb files are not signed)",
+    "mechanism_rpm": "package signature checking (gpgcheck)",
+    "mechanism_pacman": "package signature checking (SigLevel)",
+    "mechanism_apk": "package signature checking (apk)"
+  },
+  "crypto_policy": {
+    "absent": "No system-wide crypto policy (crypto-policies not used on this host) — each library keeps its own defaults",
+    "unknown": "System crypto policy could not be read (/etc/crypto-policies)",
+    "legacy": "System crypto policy is LEGACY ({policy})",
+    "legacy_reason": "the LEGACY crypto policy re-enables weak algorithms for every TLS, SSH, Kerberos and IPsec library on the host",
+    "legacy_detail": "LEGACY accepts what DEFAULT refuses — SHA-1 signatures, smaller RSA/DH keys, older protocol parameters — in OpenSSL, GnuTLS, NSS, OpenSSH, Kerberos and libreswan at once. It is usually set to reach one old peer. Return to DEFAULT and, if one connection really needs an exception, make it in that client's own configuration. See: bob --explain crypto_policy.legacy",
+    "dated": "System crypto policy pinned to a previous release's defaults ({policy})",
+    "dated_detail": "FEDORAxx / RHELxx policies freeze the defaults of an older release so an upgrade does not change what connects. They miss the tightening applied since. Move to DEFAULT once the dependent peers are updated.",
+    "unrecognised": "System crypto policy not recognised by BOB ({policy}) — custom or new policy, not judged",
+    "weakening_module": "Crypto policy module(s) that re-enable weaker algorithms: {modules} (policy {policy})",
+    "weakening_module_detail": "SHA1 re-allows SHA-1 signatures, AD-SUPPORT / AD-SUPPORT-LEGACY older Kerberos encryption types for Active Directory, NO-ENFORCE-EMS drops a TLS 1.2 protection in FIPS mode, NO-PQ turns post-quantum key exchange off. Keep them only while the peer that needs them exists.",
+    "pending": "Crypto policy configured as {configured} but {applied} is applied — run update-crypto-policies --set {configured} (and reboot) for it to take effect",
+    "ok": "System crypto policy: {policy}"
+  },
+  "world_writable": {
+    "requires_exhaustive": "World-writable sweep not run — this slow check needs --exhaustive (bob --exhaustive --check=world_writable)",
+    "unknown": "World-writable sweep not run — find(1) is not available",
+    "timed_out": "World-writable sweep stopped after {seconds} s — results not verified",
+    "files": "{count} world-writable file(s) other accounts can reach: {paths}",
+    "files_detail": "Any account can change these files. If one is a script, a config or a library that another user, a service or root reads or runs, that is code injection into it. Unless the file is a deliberate shared drop, remove the bit: chmod o-w <file>.",
+    "dirs": "{count} world-writable director(y/ies) without the sticky bit, reachable by other accounts: {paths}",
+    "dirs_detail": "Without the sticky bit (the 't' in drwxrwxrwt, as on /tmp), anyone can delete or rename anyone else's files in the directory — and so replace them. Remove the bit (chmod o-w <dir>) or, for a genuine shared directory, add the sticky bit (chmod +t <dir>).",
+    "unowned": "{count} file(s) whose owner or group no longer exists: {paths}",
+    "unowned_detail": "The UID/GID on these files belongs to no account — typically left behind by a deleted user or an unpacked archive. The next account created with that number inherits them. Assign them (chown <user>:<group> <file>) or remove them.",
+    "latent": "{count} world-writable path(s) behind a directory other accounts cannot traverse — latent, not writable by them today: {paths}",
+    "latent_detail": "The write bit is set, but a parent directory (often a 0750 or 0700 home) denies other accounts the right to traverse it, so they cannot reach these paths now. They become writable by everyone the day that parent is opened up (chmod o+x). Removing the bit costs nothing: chmod o-w <path>.",
+    "unowned_not_assessed": "Unowned files not assessed — this find(1) (BusyBox) has no -nouser / -nogroup",
+    "partial": "World-writable sweep incomplete — some directories could not be read; the rest is unverified",
+    "ok": "No world-writable file, no world-writable directory without sticky bit, no unowned file on local filesystems"
+  },
   "package_integrity": {
+    "requires_exhaustive": "Package integrity not run — this slow check needs --exhaustive (bob --exhaustive --check=package_integrity)",
     "unsupported": "Package integrity was not verified — no supported package manager was detected on this host",
     "tool_missing": "Package integrity was not verified — {tool} is not installed",
     "tool_missing_detail": "The verifier ({tool}) is not present, so BOB could not compare the installed files against the package manager's recorded digests. This is not a clean result — it is an unanswered question. The debsums package provides the verifier on Debian/Ubuntu; on the RPM family rpm ships with the system.",
@@ -3651,6 +3852,8 @@
   "firmware": {
     "fwupd_missing": "fwupd not installed — firmware update status cannot be determined",
     "fwupd_error": "fwupdmgr get-updates returned an error: {error}",
+    "fwupd_dbx_sb_off": "UEFI revocation list update pending ({devices}) — not enforced while Secure Boot is disabled",
+    "fwupd_dbx_sb_off_detail": "dbx is the list of boot signatures UEFI refuses to run, and only Secure Boot consults it. With Secure Boot disabled it protects nothing today, so it is reported without a deduction; apply it (sudo fwupdmgr update) before turning Secure Boot on, so revoked bootloaders are refused from the first boot.",
     "fwupd_updates": "{count} pending firmware update(s): {devices}",
     "fwupd_updates_detail": "Run 'sudo fwupdmgr update' to apply pending BIOS/UEFI/SSD/NIC firmware updates. Outdated firmware may expose known hardware vulnerabilities.",
     "fwupd_updates_reason": "{count} pending firmware update(s) detected by fwupd",
@@ -3783,7 +3986,9 @@
     "brute_force_ok": "fail2ban active",
     "updates": "Security updates",
     "updates_pending": "security updates pending",
-    "updates_unknown": "state unknown — APT cache stale or inconsistent",
+    "updates_unknown": "state unknown — APT cache stale and package state inconsistent",
+    "updates_stale": "state unknown — APT cache stale",
+    "updates_inconsistent": "state unknown — APT package state inconsistent",
     "updates_no_channel": "updates pending — no security channel to classify",
     "updates_ok": "up to date"
   },
@@ -3945,6 +4150,7 @@
     "symlink_created": "Symlink created: {dst} → {src}",
     "symlink_failed": "Failed to create symlink: {error}",
     "symlink_skipped_missing": "Symlink skipped — bob not found in ~/.local/bin (pipx install?)",
+    "symlink_up_to_date": "Symlink already in place: {dst} → {src}",
     "symlink_skipped_no_sudo": "Symlink skipped — run via sudo to detect user binary",
     "reload_title": "Not active in this shell yet — the completion is loaded when a shell starts.",
     "reload_how": "Open a new terminal, or run: source /etc/bash_completion.d/bob",

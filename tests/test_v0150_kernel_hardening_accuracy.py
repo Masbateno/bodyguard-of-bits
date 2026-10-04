@@ -87,12 +87,15 @@ class TestAnAbsentKnobIsNotAPass:
     def test_a_readable_knob_is_unaffected(self):
         """The change must not disturb the ordinary path."""
         snap = KernelHardeningSnapshot(aslr=2, ptrace_scope=1, suid_dumpable=0,
-                                       kptr_restrict=1, dmesg_restrict=1)
+                                       kptr_restrict=1, dmesg_restrict=1,
+                                       bpf_unpriv_disabled=2, perf_paranoid=2,
+                                       max_userns=0)
         keys = _keys(snap)
         assert keys == {
             "kernel_hardening.aslr_full", "kernel_hardening.ptrace_ok",
             "kernel_hardening.suid_dump_ok", "kernel_hardening.kptr_ok",
-            "kernel_hardening.dmesg_ok",
+            "kernel_hardening.dmesg_ok", "kernel_hardening.bpf_unpriv_ok",
+            "kernel_hardening.perf_ok", "kernel_hardening.userns_restricted",
         }
 
     def test_a_real_weakness_is_still_scored(self):

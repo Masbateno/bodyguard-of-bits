@@ -27,7 +27,7 @@ from bob.display import (
 from bob.output import print_group, print_info, print_section, print_service_header
 from bob.registry import ServiceRegistry
 from bob.report import AuditReport, Report
-from bob.scoring import ScoreEngine
+from bob.scoring import CheckResult, ScoreEngine
 from bob.checks import _ufw
 from bob.checks.ddns import DdnsSnapshot, check_ddns, ddns_effective_context
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
@@ -45,6 +45,11 @@ from bob.checks.virtualization import VirtSnapshot, check_virtualization
 from bob.checks.hardening import HardeningSnapshot, check_hardening
 from bob.checks.kernel_hardening import KernelHardeningSnapshot, check_kernel_hardening
 from bob.checks.suid_audit import SuidSnapshot, check_suid_audit
+from bob.checks.file_capabilities import FileCapabilitiesSnapshot, check_file_capabilities
+from bob.checks.cpu_security import CpuSecuritySnapshot, check_cpu_security
+from bob.checks.package_authenticity import PackageAuthenticitySnapshot, check_package_authenticity
+from bob.checks.crypto_policy import CryptoPolicySnapshot, check_crypto_policy
+from bob.checks.world_writable import WorldWritableSnapshot, check_world_writable
 from bob.checks.docker_audit import DockerAuditSnapshot, check_docker_audit
 from bob.checks.log_rotation import LogRotationSnapshot, check_log_rotation
 from bob.checks.ipv6 import IPv6Snapshot, check_ipv6
@@ -133,6 +138,10 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("hardening",         False),
     _Section("kernel_hardening",  False),
     _Section("suid_audit",        False),
+    _Section("file_capabilities", False),
+    _Section("cpu_security",      False),
+    _Section("package_authenticity",   False),
+    _Section("crypto_policy",     False),
     _Section("docker_hardening",  False),
     _Section("log_rotation",      False),
     _Section("kernel_modules",    False),
@@ -140,6 +149,7 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("dev_privileged",    False),
     _Section("root_path",         False),
     _Section("package_integrity", False),
+    _Section("world_writable",    False),
     _Section("mac_policy",        False),
     _Section("cron",              False),
     _Section("services_health",   False),
@@ -205,6 +215,22 @@ _ALWAYS_ON_SECTIONS:  tuple[str, ...] = tuple(s.name for s in _SECTIONS if s.alw
 # legacy name ``_RENAMED_SECTIONS_V090`` for back-compat with any out-of-tree
 # script that happened to reference it.
 from bob._v090_renames import SECTION_RENAMES_V090 as _RENAMED_SECTIONS_V090
+
+
+def _requires_exhaustive(_snapshot, t=None, *, section_name: str) -> "CheckResult":
+    """The one finding of a slow section asked for by name without --exhaustive."""
+    result = CheckResult()
+    _t = t if t is not None else (lambda k, **kw: k)
+    key = _REQUIRES_EXHAUSTIVE[section_name]
+    result.info(message=_t(key), key=key)
+    return result
+
+
+#: Literal keys, so the orphan-key guard can see them.
+_REQUIRES_EXHAUSTIVE = {
+    "package_integrity": "package_integrity.requires_exhaustive",
+    "world_writable":    "world_writable.requires_exhaustive",
+}
 
 
 def _section_enabled(section: str, config: "AuditConfig", profile: "AuditProfile | None") -> bool:
@@ -1002,6 +1028,15 @@ def run_checks(
     if config.exhaustive:
         _sec("package_integrity", PackageIntegritySnapshot.from_system,
              check_package_integrity)
+        # Whole-filesystem sweep (CIS 7.1.11 / 7.1.12) — same reason.
+        _sec("world_writable", WorldWritableSnapshot.from_system, check_world_writable)
+    else:
+        # v0.24.0: `--check=world_writable` without `--exhaustive` printed the
+        # "Active checks" line and then nothing at all — an explicit request
+        # silently ignored. Say why, for the sections that need the flag.
+        for _slow in _REQUIRES_EXHAUSTIVE:
+            if _slow in (config.check_only or ()):
+                _sec(_slow, lambda: None, _requires_exhaustive, section_name=_slow)
 
     # ---- CHECK 34 — MAC policy (AppArmor / SELinux) ----
     _sec("mac_policy", MacPolicySnapshot.from_system, check_mac_policy, profile_name=_pname)
@@ -1012,6 +1047,18 @@ def run_checks(
              user_whitelist=user_config.get_suid_whitelist() if user_config is not None else []
          ),
          check_suid_audit)
+
+    # ---- CHECK — File capabilities (privilege with no SUID bit) ----
+    _sec("file_capabilities", FileCapabilitiesSnapshot.from_system, check_file_capabilities)
+
+    # ---- CHECK — CPU security (kernel-reported vulnerabilities, IOMMU) ----
+    _sec("cpu_security", CpuSecuritySnapshot.from_system, check_cpu_security)
+
+    # ---- CHECK — Package signature enforcement (apt/dnf/zypper/pacman) ----
+    _sec("package_authenticity", PackageAuthenticitySnapshot.from_system, check_package_authenticity)
+
+    # ---- CHECK — System-wide crypto policy (crypto-policies) ----
+    _sec("crypto_policy", CryptoPolicySnapshot.from_system, check_crypto_policy)
 
     # ---- CHECK 41 — System umask ----
     _sec("umask", UmaskSnapshot.from_system, check_umask)

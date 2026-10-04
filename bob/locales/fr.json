@@ -51,6 +51,11 @@
     "module_blacklist": "BLACKLIST DES MODULES NOYAU",
     "dev_privileged": "NŒUDS /dev PRIVILÉGIÉS",
     "root_path": "PATH DE ROOT",
+    "file_capabilities": "CAPABILITIES DE FICHIERS",
+    "cpu_security": "SÉCURITÉ CPU",
+    "package_authenticity": "AUTHENTICITÉ DES PAQUETS",
+    "crypto_policy": "POLITIQUE CRYPTO",
+    "world_writable": "FICHIERS MODIFIABLES PAR TOUS & SANS PROPRIÉTAIRE",
     "package_integrity": "INTÉGRITÉ DES PAQUETS",
     "kernel_hardening": "DURCISSEMENT NOYAU",
     "user_accounts": "AUDIT DES COMPTES UTILISATEURS",
@@ -108,6 +113,11 @@
       "module_blacklist": "Modules rarement utiles empêchés de charger — directives blacklist / install (défense en profondeur)",
       "dev_privileged": "Nœuds /dev privilégiés — accès monde sur /dev/mem, /dev/port et disques bruts (INFO-only)",
       "root_path": "Intégrité du PATH de root — PATH configuré (login.defs, sudoers) sans composant world-writable / '.' / relatif",
+      "file_capabilities": "Capabilities de fichiers — binaires dotés de pouvoirs root par setcap (security.capability), sans bit SUID",
+      "cpu_security": "Sécurité CPU — vulnérabilités d'exécution spéculative telles que le noyau les rapporte, options de démarrage désactivant les mitigations, IOMMU",
+      "package_authenticity": "Authenticité des paquets — dépôts ou options du gestionnaire de paquets qui installent des paquets sans vérifier leur provenance",
+      "crypto_policy": "Politique crypto système (crypto-policies) — LEGACY ou modules affaiblissants appliqués à tout le système",
+      "world_writable": "Fichiers modifiables par tous, répertoires modifiables par tous sans sticky bit, fichiers sans propriétaire — parcours des systèmes de fichiers locaux (--exhaustive, INFO uniquement)",
       "package_integrity": "Intégrité des fichiers de paquets — binaires/bibliothèques installés qui diffèrent du manifeste du gestionnaire (--exhaustive, INFO-only)",
       "log_rotation": "Rotation des logs — configuration logrotate, stockage persistant journald",
       "mac_policy": "Politique MAC — profils AppArmor / SELinux + statut enforce",
@@ -118,7 +128,7 @@
       "samba": "Samba — SMBv1 désactivé, signature serveur, accès invité",
       "secure_boot": "Statut Secure Boot — activé, mode setup",
       "grub": "Bootloader GRUB — permissions grub.cfg, mot de passe superutilisateur",
-      "mount_hardening": "Options de montage — /tmp, /var/tmp, /dev/shm nodev/nosuid/noexec",
+      "mount_hardening": "Options de montage — /tmp, /var/tmp, /dev/shm nodev/nosuid/noexec, /proc hidepid",
       "core_dumps": "Disposition des core dumps — core_pattern, stockage systemd-coredump, limites",
       "kexec_lockdown": "Intégrité du boot — kexec_load_disabled + mode lockdown noyau",
       "faillock": "Verrouillage de compte PAM — pam_faillock/tally2 dans la pile auth, seuil deny",
@@ -241,6 +251,9 @@
     "all_covered": "Tous les ports en écoute sur 0.0.0.0 sont couverts par une règle UFW",
     "uncovered": "Port {port} en écoute sur toutes les interfaces sans règle UFW explicite",
     "uncovered_local": "Port {port} — lié uniquement à localhost — pas d'exposition externe",
+    "uncovered_bound_address": "Port {port} — lié uniquement à {address}, sans règle de pare-feu — joignable depuis le réseau de cette adresse",
+    "uncovered_bound_address_deny": "Port {port} — lié uniquement à {address}, aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
+    "uncovered_bound_address_firewalld": "Port {port} — lié uniquement à {address} — régi par la zone par défaut de firewalld, pas par une règle UFW",
     "system_port": "Port système interne — aucun danger (service OS légitime, pas de règle UFW nécessaire) : {port} ({service})",
     "unreadable": "Les ports en \u00e9coute n'ont pas pu \u00eatre d\u00e9termin\u00e9s",
     "unreadable_detail": "`ss -tulnp` n'a pas pu \u00eatre ex\u00e9cut\u00e9 \u2014 le binaire est absent (iproute2 n'est pas install\u00e9 sur les images minimales ni dans beaucoup de conteneurs) ou il a \u00e9chou\u00e9. Sa sortie est vide dans les deux cas, ce qui est indiscernable d'une machine sans rien en \u00e9coute : BOB signale donc la lacune au lieu d'annoncer z\u00e9ro port ouvert. V\u00e9rifier avec : ss -tulnp",
@@ -350,6 +363,7 @@
     "block_improve_disclaimer": "Les commandes affichées sont des suggestions — vérifiez et adaptez à votre réseau avant d'exécuter",
     "implicit_policy": "Service(s) à risque élevé s'appuient sur la politique par défaut UFW plutôt que des règles explicites. C'est correct si la politique est deny, mais une règle explicite est plus robuste.",
     "implicit_svcs": "Service(s) concerné(s)",
+    "visibility_sections": "Sections non entièrement lues (le score reste un plafond tant qu'elles ne le sont pas) : {sections}",
     "scope_line1": "Ce score couvre le pare-feu, les services, SSH, le contrôle d'accès, les mises à jour, le durcissement système et les outils de détection.",
     "scope_line2": "La sécurité applicative, l'accès physique et les autres vecteurs d'attaque ne sont pas couverts par cet audit.",
     "context_disclaimer": "Verdict conditionné par le profil et le contexte réseau ci-dessus. BOB est un auditeur de configuration hardening, pas un moteur d'analyse de menaces — à interpréter en conséquence."
@@ -834,6 +848,10 @@
     "protected_hardlinks_disabled": "Protection des liens durs désactivée (fs.protected_hardlinks=0) — permet des attaques par lien dur pour l'élévation de privilèges",
     "protected_symlinks_ok": "Protection des liens symboliques activée (fs.protected_symlinks=1)",
     "protected_symlinks_disabled": "Protection des liens symboliques désactivée (fs.protected_symlinks=0) — permet des attaques par lien symbolique via les race conditions /tmp",
+    "protected_fifos_ok": "Protection des FIFO activée (fs.protected_fifos={level})",
+    "protected_fifos_disabled": "Protection des FIFO désactivée (fs.protected_fifos=0) — permet des écritures non sûres vers des FIFO contrôlés par un attaquant dans des répertoires world-writable/sticky",
+    "protected_regular_ok": "Protection des fichiers réguliers activée (fs.protected_regular={level})",
+    "protected_regular_disabled": "Protection des fichiers réguliers désactivée (fs.protected_regular=0) — permet des écritures non sûres vers des fichiers contrôlés par un attaquant dans des répertoires world-writable/sticky",
     "params_unavailable": "Paramètres noyau non exposés par ce noyau : {params}",
     "params_unavailable_detail": "Ces sysctls n'existent pas sur ce système — le plus souvent IPv6 non compilé ou désactivé au démarrage (ipv6.disable=1 supprime entièrement /proc/sys/net/ipv6), un noyau compilé sans l'option correspondante, ou un /proc restreint. BOB n'annonce ni réussite ni échec pour eux : le paramètre n'a pas une valeur faible, il est absent."
   },
@@ -948,7 +966,7 @@
       "diff_path": "  =CHEMIN compare à la référence d'une autre machine",
       "watch": "Relance l'audit toutes les N s (défaut : 60) — Ctrl+C pour quitter",
       "offline": "Ignore la recherche d'IP externe (aucun appel HTTP)",
-      "exhaustive": "Lance aussi les checks lents (ex. intégrité des paquets)",
+      "exhaustive": "Lance aussi les checks lents (intégrité paquets, world-writable)",
       "target": "Score visé (1–10) : écart, réussite ou plafond ; sortie 4 sinon",
       "check": "N'exécute que ces contrôles (séparés par des virgules)",
       "check_list": "  --check=list affiche tous les noms disponibles",
@@ -1313,6 +1331,15 @@
     "kptr_exposed": "Pointeurs noyau exposés dans /proc (kptr_restrict=0) — peut divulguer des adresses noyau aux utilisateurs non privilégiés",
     "kptr_exposed_detail": "Quand kptr_restrict=0, les adresses des symboles noyau sont lisibles dans /proc par des utilisateurs non privilégiés, rendant le contournement de KASLR beaucoup plus facile.",
     "dmesg_ok": "Accès à dmesg restreint aux utilisateurs privilégiés (dmesg_restrict=1)",
+    "bpf_unpriv_ok": "eBPF non privilégié désactivé (kernel.unprivileged_bpf_disabled={val})",
+    "bpf_unpriv_enabled": "eBPF non privilégié autorisé (kernel.unprivileged_bpf_disabled=0)",
+    "bpf_unpriv_enabled_detail": "Tout utilisateur local peut charger des programmes eBPF, et le vérificateur du noyau est alors la seule barrière entre eux et la mémoire noyau — les bugs du vérificateur sont une source récurrente d'exploits root locaux. La plupart des distributions le désactivent par défaut depuis Linux 5.16 (valeur 2). Sauf si une charge non-root a besoin d'eBPF, réglez kernel.unprivileged_bpf_disabled=2 (1 verrouille en plus le réglage jusqu'au redémarrage).",
+    "perf_ok": "Événements perf restreints pour les utilisateurs non privilégiés (kernel.perf_event_paranoid={val})",
+    "perf_permissive": "Événements perf ouverts aux utilisateurs non privilégiés (kernel.perf_event_paranoid={val})",
+    "perf_permissive_detail": "À 1 ou moins, les utilisateurs peuvent profiler le noyau (et à -1 tous les événements CPU), ce qui expose adresses noyau et canaux auxiliaires temporels, ainsi qu'une large surface d'appels système sujette aux bugs. 2 est le défaut upstream et limite les utilisateurs à leurs propres processus en espace utilisateur. Les développeurs qui profilent le noyau peuvent avoir besoin d'une valeur plus basse ; les serveurs, rarement.",
+    "userns_restricted": "Espaces de noms utilisateur non privilégiés restreints ({how})",
+    "userns_allowed": "Espaces de noms utilisateur non privilégiés autorisés",
+    "userns_allowed_detail": "Les espaces de noms utilisateur permettent à un processus non privilégié de devenir « root » dans son propre espace de noms : c'est ainsi que fonctionnent les bacs à sable des navigateurs (Chromium, Firefox), flatpak, bubblewrap et podman rootless — et c'est par là que beaucoup d'exploits noyau atteignent du code qui exigeait jadis un vrai root. BOB rapporte l'état, pas un correctif : les restreindre casse ces outils. Sur un serveur qui n'en utilise aucun, envisagez user.max_user_namespaces=0 ; sur Ubuntu 23.10+, kernel.apparmor_restrict_unprivileged_userns=1 les réserve plutôt aux programmes dotés d'un profil AppArmor.",
     "dmesg_exposed": "dmesg accessible à tous les utilisateurs (dmesg_restrict=0) — les messages noyau peuvent révéler des informations exploitables",
     "dmesg_exposed_detail": "Quand dmesg_restrict=0, tout utilisateur local peut lire les messages du noyau, qui peuvent révéler la disposition mémoire, les modules chargés ou des détails matériels utiles à l'exploitation.",
     "params_unavailable": "Paramètres noyau non exposés par ce noyau : {params}",
@@ -1328,9 +1355,9 @@
     "unowned_suid_reason": "{count} binaire(s) SUID qu'aucun gestionnaire de paquets ne revendique",
     "unowned_suid_detail": "Tous les autres binaires SUID de cet hôte y ont été placés par un paquet. Pas ceux-là : le gestionnaire de paquets a été interrogé et a répondu qu'aucun ne les livre. C'est la forme que prend une escalade de privilèges laissée derrière — un binaire appartenant à root, qui s'exécute en root pour n'importe qui, installé par autre chose que la distribution. Cela peut rester légitime : logiciel compilé localement, installeur d'un éditeur, `chmod u+s` délibéré. BOB ne sait pas distinguer ces cas de l'autre, et c'est pourquoi il le rapporte au lieu de le trancher. Vérifiez chacun contre ce que vous savez avoir installé : stat <chemin>",
     "unexpected_suid_reason": "{count} binaire(s) SUID inattendu(s) détecté(s)",
-    "writable_suid": "{count} binaire(s) SUID/SGID modifiable(s) par groupe/autres — l'écrire fait tourner le code d'un attaquant avec les privilèges du propriétaire (SUID) ou du groupe (SGID) : {paths}",
-    "writable_suid_reason": "un binaire set-id modifiable par quelqu'un d'autre que son propriétaire est un chemin d'escalade de privilèges — un root direct pour un binaire SUID-root modifiable",
-    "writable_suid_detail": "Un binaire set-id s'exécute avec des privilèges élevés : un binaire SUID en tant que son propriétaire (pour SUID-root, c'est root), un binaire SGID avec son groupe. S'il est aussi modifiable par le groupe ou les autres, quiconque a ce droit d'écriture peut remplacer son contenu et faire exécuter son propre code avec ces privilèges au prochain lancement — écraser, puis déclencher. Un binaire SUID-root modifiable est donc un root local direct ; un binaire SGID (ou SUID non-root) modifiable est un chemin d'escalade vers ce groupe/utilisateur, dont l'impact dépend des privilèges de ce groupe et peut, selon la configuration, permettre une escalade supplémentaire (un groupe comme docker, disk ou shadow). C'est signalé pour tout binaire set-id, en whitelist ou non — un /usr/bin/passwd modifiable n'est pas sûr sous prétexte que « passwd » est un nom attendu. Restaurer l'écriture propriétaire seul : chmod go-w <chemin> (et chercher comment le bit d'écriture est arrivé — un binaire normal ne devient pas modifiable par le groupe tout seul).",
+    "writable_suid": "{count} binaire(s) SUID/SGID modifiable(s) par groupe/autres — quiconque a ce droit d'écriture peut remplacer le code exécuté au prochain lancement : {paths}",
+    "writable_suid_reason": "un binaire set-id modifiable par quelqu'un d'autre que son propriétaire lui permet de remplacer du code que des utilisateurs et tâches privilégiés exécutent — root dès que root le lance",
+    "writable_suid_detail": "Écrire dans le fichier fait retirer par le noyau son bit SUID/SGID (mesuré : un binaire réécrit par un utilisateur non privilégié tourne ensuite avec l'UID de l'appelant), donc l'escalade n'est pas « l'écraser, puis le lancer soi-même ». C'est « l'écraser, puis attendre » : quiconque le lance ensuite — root tapant passwd, une tâche cron, un service — exécute le code de l'attaquant avec ses propres privilèges. Le bit d'écriture sur un binaire set-id est en outre anormal en soi : un binaire packagé ne devient pas modifiable par le groupe/les autres tout seul, donc traitez-le comme une altération possible. C'est signalé pour tout binaire set-id, en whitelist ou non — un /usr/bin/passwd modifiable n'est pas sûr sous prétexte que « passwd » est un nom attendu. Restaurer l'écriture propriétaire seul : chmod go-w <chemin>, et chercher comment le bit est arrivé.",
     "unexpected_sgid": "{count} binaire(s) SGID inattendu(s) : {paths}",
     "unexpected_sgid_detail": "Les binaires SGID s'exécutent avec les privilèges du groupe du fichier. Moins dangereux que SUID, mais méritent une vérification.",
     "whitelisted": "{count} binaire(s) SUID ignoré(s) par la liste blanche utilisateur : {paths}"
@@ -2042,6 +2069,24 @@
           "why": "Paramètre du noyau hôte — s'applique au filesystem entier de l'hôte, pas au namespace du container. Appliquer sur l'hôte.",
           "how": "Appliquer sur le système hôte :\n   sudo sysctl -w fs.protected_symlinks=1\n   grep -qxF 'fs.protected_symlinks=1' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_symlinks=1' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   sudo sysctl --system"
         }
+      },
+      "protected_fifos_disabled": {
+        "title": "Protection des FIFO désactivée (fs.protected_fifos = 0)",
+        "why": "Dans un répertoire sticky world-writable comme /tmp, un attaquant peut pré-créer un FIFO (tube nommé) portant le nom qu'un processus privilégié s'apprête à ouvrir avec O_CREAT. Sans protection, le processus privilégié ouvre le FIFO de l'attaquant au lieu de créer son propre fichier : ce qu'il voulait écrire en privé part vers — ou est lu depuis — un tube contrôlé par l'attaquant. Avec fs.protected_fifos=1, le noyau refuse cette ouverture quand le FIFO n'appartient ni à l'appelant ni au propriétaire du répertoire (2 étend la règle aux répertoires sticky group-writable).",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_fifos=2\n2. Rendre permanent :\n   grep -qxF 'fs.protected_fifos=2' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_fifos=2' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "container": {
+          "why": "Réglage du noyau hôte — s'applique à tout l'hôte, pas à l'espace de noms du conteneur. À appliquer sur l'hôte.",
+          "how": "À appliquer sur l'hôte :\n   sudo sysctl -w fs.protected_fifos=2\n   sudo sysctl --system"
+        }
+      },
+      "protected_regular_disabled": {
+        "title": "Protection des fichiers réguliers désactivée (fs.protected_regular = 0)",
+        "why": "La même course /tmp qu'avec les FIFO, pour les fichiers ordinaires : un attaquant pré-crée un fichier régulier dans un répertoire sticky world-writable sous le nom qu'un processus privilégié ouvrira avec O_CREAT, et le processus écrit dans le fichier de l'attaquant au lieu d'un fichier neuf qui lui appartient. Avec fs.protected_regular=1, le noyau refuse cette ouverture quand le fichier n'appartient ni à l'appelant ni au propriétaire du répertoire (2 l'étend aux répertoires sticky group-writable). Les distributions modernes l'activent par défaut.",
+        "how": "1. Activer immédiatement :\n   sudo sysctl -w fs.protected_regular=2\n2. Rendre permanent :\n   grep -qxF 'fs.protected_regular=2' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'fs.protected_regular=2' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system",
+        "container": {
+          "why": "Réglage du noyau hôte — s'applique à tout l'hôte, pas à l'espace de noms du conteneur. À appliquer sur l'hôte.",
+          "how": "À appliquer sur l'hôte :\n   sudo sysctl -w fs.protected_regular=2\n   sudo sysctl --system"
+        }
       }
     },
     "mac_policy": {
@@ -2500,6 +2545,11 @@
         "why": "Les mots de passe courts réduisent drastiquement l'espace de recherche pour les attaques par force brute et dictionnaire. Un mot de passe de 6 caractères avec des jeux de caractères courants peut être entièrement cracké en quelques minutes avec du matériel moderne. NIST SP 800-63B recommande au moins 8 caractères ; CIS recommande 14.",
         "how": "1. Augmentez minlen dans /etc/security/pwquality.conf :\n   sudo nano /etc/security/pwquality.conf  →  minlen = 12\n2. Testez la politique de manière interactive :\n   pwscore\n3. Les mots de passe existants ne sont pas affectés — imposez un cycle de réinitialisation si la conformité l'exige"
       },
+      "weak_hash": {
+        "title": "Algorithme de hachage des mots de passe faible (MD5 / DES / bigcrypt)",
+        "why": "L'algorithme de hachage détermine combien de temps un /etc/shadow volé résiste à un cracker hors ligne. MD5-crypt, DES et bigcrypt se calculent vite sur GPU : les mots de passe courants et moyens tombent en quelques heures ; yescrypt et SHA512-crypt sont volontairement lents et gourmands en mémoire. Le risque n'est pas qu'on lise shadow sur un hôte sain — c'est qu'une copie se retrouve là où elle ne devrait pas (sauvegarde, image de conteneur exportée, compte admin compromis), et l'algorithme est alors la seule chose entre cette copie et des mots de passe utilisables. Deux réglages le nomment : ENCRYPT_METHOD dans /etc/login.defs (useradd, chpasswd, newusers) et l'option sur la ligne password de pam_unix.so (passwd) ; une valeur faible dans l'un ou l'autre produit des hachages faibles pour les comptes que ce chemin écrit.",
+        "how": "Debian / Ubuntu / Mint / Kali → utiliser les défauts de la distribution :\n1. Définir la méthode login.defs :\n   sudo sed -i 's/^ENCRYPT_METHOD.*/ENCRYPT_METHOD YESCRYPT/' /etc/login.defs\n2. Vérifier que l'option pam_unix de la pile password (common-password, ou system-auth sur la famille RPM) nomme yescrypt ou sha512, pas md5 :\n   grep pam_unix.so /etc/pam.d/common-password\n3. Les hachages existants ne sont réécrits qu'au changement de mot de passe — demander aux utilisateurs concernés de lancer passwd."
+      },
       "no_expiry": {
         "title": "Aucune politique d'expiration des mots de passe configurée",
         "why": "Sans expiration, des identifiants compromis restent valides indéfiniment. Si un attaquant obtient silencieusement un mot de passe (hameçonnage, fuite de base de données, keylogger), il conserve l'accès jusqu'à ce que l'utilisateur le change volontairement. L'expiration force une rotation périodique et limite la fenêtre d'exposition.",
@@ -2507,6 +2557,21 @@
       }
     },
     "user_accounts": {
+      "su_unrestricted": {
+        "title": "su n'est pas restreint à un groupe",
+        "why": "su demande le mot de passe du compte cible — pour root, celui de root. Sans restriction, tout compte local qui obtient ce mot de passe (regard par-dessus l'épaule, mot de passe réutilisé, script divulgué) devient root avec, depuis n'importe quelle session, y compris un compte de service compromis disposant d'un shell.\n\npam_wheel resserre cela : seuls les membres d'un groupe peuvent utiliser su, donc le mot de passe seul ne suffit plus. Le CIS va plus loin et demande un groupe dédié *vide*, ce qui désactive su et fait passer chaque administrateur par sudo, où chaque action est attribuable et journalisée.\n\nBOB ne score pas ce point quand le mot de passe de root est verrouillé ('!' ou '*' dans /etc/shadow, le défaut d'Ubuntu) : su vers root exige alors un secret que personne ne détient.",
+        "how": "1. Créer un groupe dédié (le garder vide si les administrateurs utilisent sudo) :\n   sudo groupadd sugroup\n2. Ajouter, en haut du fichier PAM de su (/etc/pam.d/su ; sur openSUSE, y copier d'abord /usr/lib/pam.d/su) :\n   auth required pam_wheel.so use_uid group=sugroup\n3. Garder un shell root ouvert pendant le test, puis vérifier depuis une autre session que su est refusé à un non-membre :\n   su -\n4. Si certaines personnes ont besoin de su, les ajouter au groupe : sudo usermod -aG sugroup <utilisateur>\n5. Alternative reconnue par BOB : restreindre le binaire lui-même pour que les autres comptes ne puissent pas l'exécuter — Debian/Ubuntu : sudo dpkg-statoverride --update --add root sugroup 4750 /usr/bin/su (survit aux mises à jour du paquet)."
+      },
+      "home_unsafe": {
+        "title": "Répertoire personnel modifiable par d'autres ou appartenant à un autre compte",
+        "why": "Un répertoire personnel, c'est du code que l'utilisateur exécute : .bashrc, .profile et .bash_logout s'exécutent à chaque shell, et .ssh/authorized_keys décide qui se connecte. Quiconque peut écrire dans ce répertoire (mode o+w) — ou le possède — peut créer ou remplacer ces fichiers. À la prochaine ouverture de terminal, le code déposé s'exécute avec les droits de l'utilisateur ; s'il est root, ou utilise sudo, l'attaquant suit.\n\nBOB ne vérifie que les comptes interactifs (root et UID ≥ 1000 avec un shell de connexion), et ne sonde pas les répertoires sur systèmes de fichiers réseau (un stat sur un serveur NFS injoignable bloquerait l'audit) — ceux-là sont listés comme non inspectés.",
+        "how": "1. Inspecter le répertoire :\n   stat -c '%U %a %n' <home>\n2. Le rendre à son utilisateur et retirer l'écriture aux autres :\n   sudo chown <utilisateur>: <home>\n   sudo chmod 750 <home>\n3. Vérifier que ses fichiers de démarrage n'ont pas été modifiés pendant qu'il était ouvert :\n   ls -la <home>/.bashrc <home>/.profile <home>/.ssh"
+      },
+      "netrc_exposed": {
+        "title": ".netrc accessible au groupe ou aux autres",
+        "why": "~/.netrc stocke des triplets machine / identifiant / mot de passe en clair pour que ftp, curl et git se connectent sans intervention. Un .netrc lisible par un autre utilisateur lui remet ces identifiants — souvent pour un service distant qui ne fait confiance à rien d'autre.\n\nftp refuse lui-même un .netrc lisible par d'autres s'il contient un mot de passe ; curl et d'autres outils, non.",
+        "how": "1. Restreindre chaque fichier à son propriétaire :\n   chmod 600 ~/.netrc\n2. Se demander si ces identifiants doivent être sur disque — un gestionnaire d'identifiants (git credential-store avec un fichier restreint, ou un trousseau) est préférable.\n3. Si le fichier est resté lisible un moment, changer les mots de passe qu'il contient."
+      },
       "uid_zero": {
         "title": "Compte non-root avec UID 0 détecté",
         "why": "L'UID 0 est l'identifiant du superutilisateur. Tout compte avec l'UID 0 dispose d'un accès root illimité à l'ensemble du système — contournant les permissions de fichiers, les règles sudo et les pistes d'audit. Un second compte UID 0 est une porte dérobée courante laissée par des attaquants ou issue d'une mauvaise configuration. Seul 'root' lui-même doit jamais avoir l'UID 0.",
@@ -2997,6 +3062,34 @@
         "how": "1. Repérer quelle source porte le mauvais composant — le constat la nomme (ENV_SUPATH de login.defs ou secure_path de sudoers).\n2. Mettre le PATH de root à des répertoires absolus, appartenant à root, non world-writable uniquement, dans l'ordre habituel :\n   /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n   - login.defs : éditer la ligne ENV_SUPATH.\n   - sudoers : éditer `Defaults secure_path=...` avec visudo.\n3. Ne jamais mettre `.`, un composant vide (un `:` en tête, en fin ou doublé) ni un chemin relatif dans le PATH de root.\n4. Si un répertoire doit rester dans le PATH, s'assurer qu'il appartient à root et n'est pas modifiable groupe/autres : chown root:root <rep> && chmod go-w <rep>."
       }
     },
+    "file_capabilities": {
+      "root_equivalent": {
+        "title": "Capability de fichier équivalente à root sur un binaire inattendu",
+        "why": "Une capability de fichier (posée par `setcap`, stockée dans l'attribut étendu `security.capability`) confère une partie du pouvoir de root à tout processus qui exécute le fichier — sans aucun bit SUID. Plusieurs capabilities sont root à tous égards sauf le nom : `cap_setuid` permet de devenir UID 0, `cap_dac_override` / `cap_fowner` / `cap_chown` contournent toutes les permissions de fichiers, `cap_dac_read_search` lit /etc/shadow, `cap_sys_module` charge du code noyau, `cap_sys_admin` et `cap_sys_ptrace` contrôlent le noyau et les autres processus.\n\nPosée sur un interpréteur ou un outil généraliste (`setcap cap_setuid+ep /usr/bin/python3` est une technique de persistance classique), l'une d'elles donne un shell root à chaque utilisateur local. Un audit SUID ne la voit pas : le fichier est en mode 0755, sans bit set-id.\n\nBOB connaît les binaires que les distributions livrent avec une capability (ping, mtr-packet, arping, dumpcap, gst-ptp-helper, newuidmap…) et ce que chacun porte. Le constat liste les fichiers hors de cette liste qui détiennent une capability équivalente à root.",
+        "how": "1. Inspecter chaque fichier et sa capability :\n   getcap <fichier>\n2. Demander qui le livre :\n   dpkg -S <fichier>   |   rpm -qf <fichier>   |   pacman -Qo <fichier>   |   apk info --who-owns <fichier>\n3. Si vous ne l'avez pas posée volontairement pour une raison que vous pouvez énoncer, retirez la capability :\n   sudo setcap -r <fichier>\n4. Si aucun paquet n'a installé le fichier, considérez l'hôte comme possiblement compromis : établissez quand le fichier est apparu (stat <fichier>) et ce qui a changé à ce moment-là.\n5. Si l'attribution est voulue, préférez la capability la plus étroite qui suffit (cap_net_bind_service plutôt que cap_sys_admin) et documentez-la."
+      }
+    },
+    "cpu_security": {
+      "vulnerable": {
+        "title": "Vulnérabilité CPU signalée non mitigée par le noyau",
+        "why": "Les failles d'exécution spéculative (Spectre, Meltdown, MDS, Retbleed, Downfall, Inception…) permettent à du code de lire une mémoire qui ne lui est pas destinée : les secrets d'un autre processus, ceux du noyau, ou — entre machines virtuelles — ceux d'un autre locataire. Les correctifs combinent microcode CPU et mitigations noyau, et le noyau rapporte le résultat pour chaque faille dans /sys/devices/system/cpu/vulnerabilities.\n\nBOB reprend ce verdict ; il ne tient pas ses propres tables de CPU. « Vulnerable » signifie que le noyau a mesuré, sur ce CPU avec ce microcode et ces options de démarrage, que la faille est ouverte. La cause est souvent administrative : mitigations=off laissé sur la ligne de commande après un benchmark, ou un paquet microcode absent ou périmé. Parfois c'est le matériel : un CPU ancien que le fabricant ne met plus à jour.",
+        "how": "1. Lire le verdict du noyau :\n   grep -r . /sys/devices/system/cpu/vulnerabilities/\n2. Chercher sur la ligne de commande les options qui désactivent les mitigations :\n   cat /proc/cmdline   (mitigations=off, nopti, nospectre_v2, … — les retirer de GRUB_CMDLINE_LINUX dans /etc/default/grub, puis update-grub / grub2-mkconfig)\n3. Installer ou mettre à jour le microcode CPU et redémarrer :\n   Debian/Ubuntu : apt install intel-microcode (ou amd64-microcode)\n   Fedora/RHEL : dnf install microcode_ctl · Arch : pacman -S intel-ucode (ou amd-ucode)\n4. Mettre à jour le noyau — les noyaux récents ajoutent des mitigations pour les failles nouvellement découvertes.\n5. Si le CPU n'a pas de correctif, tenir le code non fiable (VM de locataires, jobs CI, navigateurs sur un hôte partagé) à l'écart des machines qui portent des données sensibles."
+      }
+    },
+    "package_authenticity": {
+      "disabled": {
+        "title": "Contrôle d'authenticité des paquets désactivé",
+        "why": "Un gestionnaire de paquets exécute en root les scripts d'installation de chaque paquet. Son contrôle d'authenticité est ce qui relie un paquet à ceux qui l'ont construit — une signature sur chaque paquet pour dnf, zypper et pacman ; pour apt, un index Release/InRelease signé qui liste la somme de contrôle de chaque paquet. Sans lui, quiconque sert le dépôt — un miroir compromis, un domaine détourné, n'importe qui sur le chemin réseau d'une source en HTTP — choisit ce que root exécutera à la prochaine mise à jour.\n\nLes options sont discrètes et faciles à oublier : `[trusted=yes]` sur une source apt ou `Trusted: yes` dans un fichier .sources, `APT::Get::AllowUnauthenticated` ou `Acquire::AllowInsecureRepositories`, `gpgcheck=0` dans un dépôt dnf ou zypper, `SigLevel = Never` ou `Optional` dans pacman.conf. On les ajoute en général pour faire fonctionner un dépôt tiers avant d'avoir importé sa clé, puis on les oublie.\n\nBOB ne signale que les options écrites ; une clé laissée à sa valeur par défaut n'est pas déduite.",
+        "how": "1. Trouver chaque option — le constat nomme le fichier et la ligne.\n2. Importer la clé de signature du dépôt comme son éditeur le documente :\n   apt :    curl -fsSL <url-clé> | sudo gpg --dearmor -o /etc/apt/keyrings/<nom>.gpg, puis utiliser [signed-by=/etc/apt/keyrings/<nom>.gpg] sur la ligne de source au lieu de [trusted=yes]\n   dnf/zypper : sudo rpm --import <url-clé> (ou gpgkey= dans le fichier .repo)\n   pacman : sudo pacman-key --recv-keys <id> && sudo pacman-key --lsign-key <id>\n3. Retirer l'option (trusted=yes, gpgcheck=0, SigLevel = Never, AllowUnauthenticated…).\n4. Rafraîchir et vérifier l'absence d'avertissement : apt update / dnf makecache / zypper refresh / pacman -Sy.\n5. Si le dépôt n'a aucune clé, se demander s'il a sa place sur cet hôte."
+      }
+    },
+    "crypto_policy": {
+      "legacy": {
+        "title": "Politique crypto système en LEGACY",
+        "why": "Sur Fedora, RHEL et openSUSE, crypto-policies fixe en un seul endroit ce qu'acceptent OpenSSL, GnuTLS, NSS, OpenSSH, Kerberos et libreswan. La politique LEGACY les élargit tous à la fois : signatures SHA-1, clés RSA et Diffie-Hellman plus petites et paramètres anciens redeviennent acceptables, pour chaque client et serveur de l'hôte — un déclassement qu'un attaquant ne pouvait pas forcer sous DEFAULT devient possible partout.\n\nElle est presque toujours posée pour joindre un vieux pair (un équipement, un ancien VPN, un vieux serveur de messagerie) puis oubliée.",
+        "how": "1. Voir ce qui est appliqué et configuré :\n   update-crypto-policies --show\n   cat /etc/crypto-policies/config\n2. Revenir au défaut :\n   sudo update-crypto-policies --set DEFAULT\n3. Redémarrer les services qui utilisent TLS/SSH (ou la machine) pour qu'ils la chargent.\n4. Si une connexion casse, faire l'exception à cet endroit — la configuration du client lui-même (un bloc Host de ssh_config, un réglage OpenSSL par service) — ou utiliser un module étroit comme DEFAULT:SHA1 pour un temps limité, plutôt que LEGACY pour tout l'hôte."
+      }
+    },
     "suid_audit": {
       "unexpected_suid": {
         "title": "Binaire SUID inattendu détecté",
@@ -3010,7 +3103,7 @@
             },
       "writable_suid": {
         "title": "Un binaire SUID/SGID modifiable par le groupe ou les autres",
-        "why": "Un binaire set-id s'exécute avec des privilèges élevés — un binaire SUID en tant que son propriétaire (pour SUID-root, c'est root), un binaire SGID avec son groupe. Si le fichier lui-même est modifiable par son groupe ou par tous, n'importe quel utilisateur ayant ce droit d'écriture peut écraser le binaire avec son propre code, qui s'exécute alors avec ces privilèges au prochain lancement (utilisateur, cron, service) — pas d'exploit, juste écraser-puis-déclencher. Un binaire SUID-root modifiable est un root local direct et inconditionnel ; un binaire SGID (ou SUID non-root) modifiable est un chemin d'escalade vers ce groupe/utilisateur, dont l'impact dépend des privilèges de ce groupe et peut, selon la configuration, permettre une escalade supplémentaire (docker, disk, shadow). C'est le finding SUID le plus grave, signalé même pour les noms en whitelist — un binaire attendu devenu modifiable reste une escalade triviale.",
+        "why": "Un binaire set-id s'exécute avec des privilèges élevés — un binaire SUID en tant que son propriétaire (pour SUID-root, c'est root), un binaire SGID avec son groupe. Si le fichier est aussi modifiable par son groupe ou par tous, quiconque a ce droit d'écriture peut en remplacer le contenu.\n\nCe qu'il ne peut pas faire, c'est garder le privilège : écrire dans le fichier fait retirer par le noyau son bit SUID/SGID (et toute capability de fichier), donc l'attaquant qui lance le binaire réécrit n'obtient que ses propres droits — mesuré sur Linux 6.12. L'escalade, c'est le prochain lancement par quelqu'un d'autre : root tapant `passwd`, une tâche cron, un service, un administrateur utilisant l'outil — chacun exécute le code de l'attaquant avec ses propres privilèges. Pour un binaire SUID-root que des personnes et des tâches lancent en root, c'est une compromission root qui attend son déclencheur ; pour un binaire SGID, le même chemin vers celui qui le lance.\n\nLe bit d'écriture est aussi une preuve : un binaire packagé ne devient pas modifiable par le groupe/les autres tout seul. C'est signalé même pour les noms en whitelist — un binaire attendu devenu modifiable n'est pas sûr parce que son nom est attendu.",
         "how": "1. Voir qui peut l'écrire et comment c'est arrivé :\n   stat <chemin>\n2. Restaurer l'écriture propriétaire seul :\n   sudo chmod go-w <chemin>\n3. Enquêter : un binaire packagé ne devient pas modifiable par le groupe/les autres tout seul. Vérifier si un mauvais install, un chmod négligent ou une compromission a posé le bit — les timestamps du fichier sont une preuve.\n4. Si un paquet le possède, le réinstaller restaure les permissions d'origine."
       },
       "unexpected_sgid": {
@@ -3248,6 +3341,31 @@
     }
   },
   "user_accounts": {
+    "su_unknown": "Restriction de su non vérifiée — aucun fichier PAM de su n'a pu être lu (/etc/pam.d/su, /usr/lib/pam.d/su)",
+    "su_restricted": "su est restreint aux membres du groupe '{group}' (pam_wheel)",
+    "su_restricted_by_mode": "su est restreint aux membres du groupe '{group}' par le mode de son binaire (non exécutable par les autres comptes)",
+    "su_root_locked": "su n'est pas restreint à un groupe, mais le mot de passe de root est verrouillé — su vers root exige un secret que personne ne détient",
+    "su_root_unknown": "su n'est pas restreint à un groupe, et le verrouillage du mot de passe de root n'a pas pu être lu (/etc/shadow)",
+    "su_unrestricted": "Aucune restriction de su reconnue (pas de règle pam_wheel, su exécutable par tous les comptes) — tout compte qui apprend le mot de passe de root peut devenir root",
+    "su_unrestricted_reason": "aucune restriction de su reconnue (pam_wheel ou mode du binaire su) et root a un mot de passe utilisable",
+    "su_unrestricted_detail": "Ajoutez pam_wheel au fichier PAM de su pour que seuls les membres d'un groupe dédié puissent utiliser su, et gardez ce groupe vide si les administrateurs passent par sudo. Voir : bob --explain user_accounts.su_unrestricted",
+    "su_unrestricted_busybox": "su est l'applet de BusyBox, sans restriction par groupe et qui ignore PAM — tout compte qui apprend le mot de passe de root peut devenir root",
+    "su_unrestricted_busybox_reason": "su de BusyBox (pas de PAM, pas de restriction par groupe) exécutable par tous les comptes et root a un mot de passe utilisable",
+    "su_unrestricted_busybox_detail": "Le su de BusyBox ne lit pas /etc/pam.d — une ligne pam_wheel y est sans effet. Verrouillez le mot de passe de root (passwd -l root) et passez par doas, le défaut d'Alpine ; restreindre /bin/bbsuid par son mode couperait aussi passwd et les autres applets SUID qu'il sert.",
+    "home_world_writable": "modifiable par tous les utilisateurs",
+    "home_foreign_owner": "appartenant à un autre compte",
+    "home_unsafe": "Répertoire(s) personnel(s) qu'un autre utilisateur peut contrôler : {homes}",
+    "home_unsafe_reason": "{count} répertoire(s) personnel(s) de compte interactif modifiable(s) par d'autres ou appartenant à un autre compte",
+    "home_unsafe_detail": "Quiconque peut écrire dans un répertoire personnel peut y déposer .bashrc, .profile ou .ssh/authorized_keys et exécuter du code — ou se connecter — en tant que cet utilisateur à sa prochaine ouverture de shell. Corrigez propriétaire et mode : chown <utilisateur>: <home> && chmod 750 <home>.",
+    "netrc_exposed": "Fichier(s) .netrc accessible(s) au groupe ou aux autres : {files}",
+    "netrc_exposed_reason": "{count} fichier(s) .netrc — identifiants stockés en clair — accessible(s) au groupe ou aux autres",
+    "netrc_exposed_detail": ".netrc stocke identifiants et mots de passe en clair pour ftp, curl et git. Tout utilisateur qui peut le lire détient ces identifiants. Restreignez-le à son propriétaire (chmod 600) et préférez un gestionnaire d'identifiants.",
+    "legacy_dotfiles": "Fichier(s) hérités de confiance / redirection dans des répertoires personnels : {files}",
+    "legacy_dotfiles_detail": ".rhosts et .shosts accordent une confiance par hôte sans mot de passe (rsh, ou ssh avec IgnoreRhosts no) ; .forward redirige le courrier et peut le transmettre à une commande. Supprimez-les sauf si vous en dépendez.",
+    "homes_uninspected": "Répertoire(s) personnel(s) non inspecté(s) (permission refusée, ou système de fichiers réseau) : {users}",
+    "duplicate_ids": "Identifiants de comptes dupliqués : {ids}",
+    "duplicate_name": "nom d'utilisateur '{user}' présent plusieurs fois",
+    "duplicate_ids_detail": "Des comptes partageant un UID sont une seule identité sous plusieurs noms : fichiers, processus et journaux d'audit ne peuvent pas les distinguer, et un doublon est une façon classique de cacher un second accès pour un utilisateur existant. Un nom présent deux fois fait résoudre la connexion vers la première entrée. Donnez à chaque compte son propre UID et son propre nom.",
     "no_passwd": "/etc/passwd n'a pas pu \u00eatre lu",
     "no_passwd_detail": "La liste des comptes ne s'est jamais ouverte : la recherche d'un second compte UID 0 n'a rien trouv\u00e9 faute d'avoir regard\u00e9, non faute de r\u00e9sultat. BOB retient son satisfecit sur les comptes. V\u00e9rifier avec : awk -F: '$3==0' /etc/passwd",
     "no_shadow": "/etc/shadow non lisible — vérifications mot de passe vide et expiration ignorées (lancer avec sudo)",
@@ -3274,6 +3392,15 @@
     "weak_minlen_reason": "Longueur minimale des mots de passe trop courte (minlen = {minlen})",
     "no_expiry": "Expiration des mots de passe non appliquée (PASS_MAX_DAYS = {days})",
     "no_expiry_detail": "Les mots de passe n'expirent jamais. Envisagez de définir PASS_MAX_DAYS à une valeur raisonnable (ex : 365) si votre politique l'exige. Note : NIST SP 800-63B ne recommande plus l'expiration périodique sauf en cas de compromission suspectée.",
+    "login_defs_unreadable": "/etc/login.defs existe mais n'a pas pu être lu — l'expiration des mots de passe et sa méthode de hachage par défaut ne sont pas vérifiées",
+    "weak_hash": "Algorithme de hachage des mots de passe faible configuré ({where})",
+    "weak_hash_reason": "algorithme de hachage des mots de passe faible (cassable hors ligne si /etc/shadow fuit)",
+    "weak_hash_detail": "Les hachages MD5, DES et bigcrypt tombent en quelques heures sous un cracker hors ligne dès qu'une copie de /etc/shadow quitte la machine (sauvegarde, compte compromis, partage mal configuré). Passer à yescrypt (ou SHA512) : ENCRYPT_METHOD YESCRYPT dans /etc/login.defs et l'option yescrypt (ou sha512) sur la ligne password de pam_unix.so. Les hachages existants ne sont réécrits qu'au prochain changement de mot de passe de chaque utilisateur.",
+    "hash_acceptable": "Algorithme de hachage des mots de passe acceptable mais non recommandé ({where}) — yescrypt ou SHA512 préférés",
+    "hash_unrecognised": "Algorithme de hachage des mots de passe non reconnu par BOB ({where}) — pas de verdict",
+    "hash_strong": "Algorithme de hachage des mots de passe robuste configuré ({where})",
+    "hash_unknown": "Algorithme de hachage des mots de passe non établi — ni ENCRYPT_METHOD dans login.defs ni option de hachage sur pam_unix ne sont définis",
+    "hash_builtin": "Le hachage des mots de passe est fixé dans le passwd de BusyBox (qui ne lit ni login.defs ni PAM) — défini à la compilation de BusyBox, non configurable ici",
     "ok": "La politique de mots de passe est correctement configurée"
   },
   "samba": {
@@ -3452,7 +3579,12 @@
     "options_missing_detail": "Une zone scratch world-writable devrait porter nodev (pas de device nodes) et nosuid (pas de bit set-uid) pour qu'un fichier déposé par un attaquant ne devienne ni un device ni un binaire d'élévation. Ajouter les options dans /etc/fstab et remonter, p. ex. : une ligne `tmpfs /tmp tmpfs defaults,nodev,nosuid,noexec 0 0`, puis `sudo mount -o remount /tmp`. Tester noexec d'abord — il peut casser certains installateurs.",
     "noexec_missing": "{mount} est monté nodev,nosuid mais sans noexec",
     "noexec_missing_detail": "{mount} a les protections importantes (nodev, nosuid) ; noexec empêcherait aussi l'exécution de code depuis cette zone, mais peut casser des usages légitimes (installateurs, builds de paquets, certains runtimes utilisent /tmp). Ajouter noexec est un choix de durcissement — signalé pour information, sans déduction.",
-    "hardened": "{mount} est monté nodev, nosuid, noexec"
+    "hardened": "{mount} est monté nodev, nosuid, noexec",
+    "proc_hidepid_restricted": "/proc masque les processus des autres utilisateurs (hidepid={level})",
+    "proc_hidepid_partial": "/proc restreint partiellement les processus des autres utilisateurs (hidepid=noaccess) — leur /proc/<pid> est illisible mais reste listé",
+    "proc_hidepid_off": "/proc laisse chaque utilisateur voir tous les processus (hidepid non défini)",
+    "proc_hidepid_detail": "Monter /proc avec hidepid=invisible (2) masque entièrement les /proc/<pid> des autres utilisateurs : un utilisateur non privilégié ne peut plus lister qui exécute quoi, lire les lignes de commande (qui portent parfois des mots de passe ou des jetons) ni observer le timing d'une tâche privilégiée. Cela compte sur un hôte où plusieurs personnes se connectent — serveur ou poste partagé — et peu sur un desktop mono-utilisateur : BOB le signale donc sans jamais le scorer. À définir dans /etc/fstab : proc /proc proc defaults,hidepid=invisible,gid=<groupe-supervision> 0 0 — le groupe gid= garde la visibilité aux outils de supervision, et certains composants du bureau (polkit, systemd-logind) en ont besoin.",
+    "proc_hidepid_unknown": "Impossible de déterminer si /proc restreint la visibilité des processus (hidepid)"
   },
   "core_dumps": {
     "unknown": "kernel.core_pattern illisible — disposition des core dumps inconnue",
@@ -3485,7 +3617,76 @@
     "group_writable": "Le PATH configuré de root contient un répertoire modifiable par un groupe non-root : {entries}",
     "clean": "Le PATH configuré de root est propre — chaque composant est un répertoire absolu, non world-writable"
   },
+  "file_capabilities": {
+    "unknown": "Capabilities de fichiers non vérifiées — aucun des répertoires de binaires n'existe",
+    "root_equivalent": "{count} binaire(s) portent une capability de fichier équivalente à root : {paths}",
+    "root_equivalent_reason": "une capability équivalente à root (setuid, dac_override, sys_admin…) sur un binaire fait de quiconque peut l'exécuter un root, sans bit SUID que l'audit SUID puisse voir",
+    "root_equivalent_detail": "Aucune distribution supportée ne livre ces binaires avec ces capabilities. Vérifiez chacun avec getcap, demandez au gestionnaire de paquets à qui il appartient, et retirez la capability (setcap -r <fichier>) sauf si vous l'avez posée vous-même pour une raison que vous pouvez énoncer.",
+    "unexpected": "{count} binaire(s) portent une capability de fichier que BOB ne leur connaît pas : {paths}",
+    "unexpected_detail": "Aucune de ces capabilities n'est équivalente à root, donc rien n'est scoré. Chacune reste un privilège accordé à quiconque exécute le fichier — confirmez qu'il est voulu (getcap <fichier>).",
+    "partial": "Scan des capabilities de fichiers incomplet — {files} fichier(s) examiné(s), {count} avec une capability ; un répertoire n'a pas pu être lu ou le budget de temps est épuisé, donc le reste n'est pas vérifié",
+    "ok": "Aucune capability de fichier inattendue — {files} fichier(s) examiné(s), {count} attribution(s) connue(s)"
+  },
+  "cpu_security": {
+    "unknown": "État des vulnérabilités CPU non vérifié — /sys/devices/system/cpu/vulnerabilities n'a pas pu être lu",
+    "not_reported": "État des vulnérabilités CPU non rapporté — ce noyau n'a pas d'interface /sys/devices/system/cpu/vulnerabilities (noyau ou architecture plus ancien)",
+    "vulnerable": "{count} vulnérabilité(s) CPU signalée(s) non mitigée(s) par le noyau : {names}",
+    "vulnerable_reason": "le noyau signale {count} vulnérabilité(s) CPU comme « Vulnerable » sur ce processeur",
+    "vulnerable_detail": "Le noyau les a mesurées sur le CPU en cours, avec le microcode chargé et les options de démarrage. Causes habituelles : mitigations désactivées sur la ligne de commande du noyau (mitigations=off et apparentés), ou microcode trop ancien pour le correctif (installer/mettre à jour intel-microcode ou amd64-microcode et redémarrer). Certains CPU anciens n'ont jamais reçu de correctif ; la protection restante est alors de ne pas exécuter de code non fiable à côté de charges sensibles. Voir : bob --explain cpu_security.vulnerable",
+    "smt_exposed": "Mitigée(s), mais encore exposée(s) via le SMT (hyper-threading) : {names}",
+    "smt_exposed_detail": "La mitigation est active, mais un processus sur le thread matériel jumeau peut encore observer celui-ci. Désactiver le SMT (nosmt, ou mitigations=auto,nosmt) ferme la brèche au prix de performances importantes — utile surtout quand du code non fiable ou des VM partagent la machine.",
+    "status_unknown": "État de vulnérabilité CPU non déterminé par le noyau : {names}",
+    "ok": "Aucune vulnérabilité CPU non mitigée — {mitigated} mitigée(s), {unaffected} non applicable(s)",
+    "cmdline_weakened": "La ligne de commande du noyau désactive ou affaiblit des mitigations CPU : {flags}",
+    "cmdline_weakened_detail": "Ces options de démarrage coupent des protections que le noyau appliquerait sinon. Elles sont parfois posées pour un benchmark puis oubliées. Retirez-les de GRUB_CMDLINE_LINUX dans /etc/default/grub (puis update-grub ou grub2-mkconfig), sauf compromis délibéré.",
+    "iommu_active": "IOMMU actif — les accès DMA des périphériques sont remappés",
+    "iommu_inactive": "Aucun IOMMU actif — les périphériques capables de DMA peuvent atteindre toute la mémoire",
+    "iommu_inactive_detail": "Sans IOMMU, un périphérique PCIe, Thunderbolt ou FireWire peut lire et écrire directement la mémoire physique — une attaque par accès physique, pertinente sur les machines dotées de ports externes capables de DMA. Activez-le dans le firmware (VT-d / AMD-Vi) et, sur Intel, démarrez avec intel_iommu=on. Beaucoup de VM et de CPU anciens n'en ont aucun à activer."
+  },
+  "package_authenticity": {
+    "not_assessed": "Contrôle d'authenticité des paquets non évalué pour ce gestionnaire de paquets ({manager})",
+    "disabled": "{count} réglage(s) désactivent ce contrôle — {mechanism} : {where}",
+    "disabled_reason": "{count} dépôt(s)/option(s) installent des paquets sans vérifier leur authenticité",
+    "disabled_detail": "Les paquets de ces sources s'installent en root sans preuve de qui les a construits : le miroir, ou quiconque peut altérer la connexion vers lui, décide de ce qui s'exécutera à la prochaine mise à jour. Importez la clé de signature du dépôt et retirez l'option. Voir : bob --explain package_authenticity.disabled",
+    "unreadable": "Réglages d'authenticité des paquets illisibles : {files}",
+    "ok": "Contrôlé : {mechanism} — appliquée, aucun dépôt ni option ne la désactive ({manager}, {files} fichier(s) lu(s))",
+    "mechanism_apt": "authentification des dépôts (fichiers Release/InRelease signés et sommes de contrôle qu'ils listent ; les .deb ne sont pas signés un par un)",
+    "mechanism_rpm": "vérification des signatures de paquets (gpgcheck)",
+    "mechanism_pacman": "vérification des signatures de paquets (SigLevel)",
+    "mechanism_apk": "vérification des signatures de paquets (apk)"
+  },
+  "crypto_policy": {
+    "absent": "Pas de politique crypto système (crypto-policies non utilisé sur cet hôte) — chaque bibliothèque garde ses propres défauts",
+    "unknown": "La politique crypto système n'a pas pu être lue (/etc/crypto-policies)",
+    "legacy": "Politique crypto système en LEGACY ({policy})",
+    "legacy_reason": "la politique crypto LEGACY réactive des algorithmes faibles pour toutes les bibliothèques TLS, SSH, Kerberos et IPsec de l'hôte",
+    "legacy_detail": "LEGACY accepte ce que DEFAULT refuse — signatures SHA-1, clés RSA/DH plus petites, paramètres de protocole anciens — dans OpenSSL, GnuTLS, NSS, OpenSSH, Kerberos et libreswan à la fois. On la pose généralement pour joindre un vieux pair. Revenez à DEFAULT et, si une connexion a vraiment besoin d'une exception, faites-la dans la configuration de ce client. Voir : bob --explain crypto_policy.legacy",
+    "dated": "Politique crypto système figée sur les défauts d'une version antérieure ({policy})",
+    "dated_detail": "Les politiques FEDORAxx / RHELxx figent les défauts d'une ancienne version pour qu'une mise à niveau ne change pas ce qui se connecte. Elles manquent les durcissements appliqués depuis. Passez à DEFAULT une fois les pairs dépendants mis à jour.",
+    "unrecognised": "Politique crypto système non reconnue par BOB ({policy}) — politique personnalisée ou nouvelle, non jugée",
+    "weakening_module": "Module(s) de politique crypto réactivant des algorithmes plus faibles : {modules} (politique {policy})",
+    "weakening_module_detail": "SHA1 réautorise les signatures SHA-1, AD-SUPPORT / AD-SUPPORT-LEGACY d'anciens types de chiffrement Kerberos pour Active Directory, NO-ENFORCE-EMS retire une protection TLS 1.2 en mode FIPS, NO-PQ coupe l'échange de clés post-quantique. Ne les gardez que tant que le pair qui en a besoin existe.",
+    "pending": "Politique crypto configurée en {configured} mais {applied} est appliquée — lancer update-crypto-policies --set {configured} (et redémarrer) pour qu'elle prenne effet",
+    "ok": "Politique crypto système : {policy}"
+  },
+  "world_writable": {
+    "requires_exhaustive": "Parcours des fichiers modifiables par tous non lancé — ce check lent nécessite --exhaustive (bob --exhaustive --check=world_writable)",
+    "unknown": "Parcours des fichiers modifiables par tous non exécuté — find(1) indisponible",
+    "timed_out": "Parcours des fichiers modifiables par tous arrêté après {seconds} s — résultats non vérifiés",
+    "files": "{count} fichier(s) modifiable(s) par tous et atteignable(s) par les autres comptes : {paths}",
+    "files_detail": "N'importe quel compte peut modifier ces fichiers. Si l'un d'eux est un script, une configuration ou une bibliothèque qu'un autre utilisateur, un service ou root lit ou exécute, c'est une injection de code. Sauf dépôt partagé délibéré, retirez le bit : chmod o-w <fichier>.",
+    "dirs": "{count} répertoire(s) modifiable(s) par tous sans sticky bit, atteignable(s) par les autres comptes : {paths}",
+    "dirs_detail": "Sans sticky bit (le « t » de drwxrwxrwt, comme sur /tmp), n'importe qui peut supprimer ou renommer les fichiers des autres dans ce répertoire — et donc les remplacer. Retirez le bit (chmod o-w <rép>) ou, pour un vrai répertoire partagé, ajoutez le sticky bit (chmod +t <rép>).",
+    "unowned": "{count} fichier(s) dont le propriétaire ou le groupe n'existe plus : {paths}",
+    "unowned_detail": "L'UID/GID de ces fichiers n'appartient à aucun compte — en général un reste d'utilisateur supprimé ou d'archive décompressée. Le prochain compte créé avec ce numéro en hérite. Attribuez-les (chown <utilisateur>:<groupe> <fichier>) ou supprimez-les.",
+    "latent": "{count} chemin(s) modifiable(s) par tous derrière un répertoire que les autres comptes ne peuvent pas traverser — latent(s), pas modifiable(s) par eux aujourd'hui : {paths}",
+    "latent_detail": "Le bit d'écriture est posé, mais un répertoire parent (souvent un home en 0750 ou 0700) refuse aux autres comptes le droit de le traverser : ils ne peuvent pas atteindre ces chemins aujourd'hui. Ils deviennent modifiables par tous le jour où ce parent est ouvert (chmod o+x). Retirer le bit ne coûte rien : chmod o-w <chemin>.",
+    "unowned_not_assessed": "Fichiers sans propriétaire non évalués — ce find(1) (BusyBox) n'a pas -nouser / -nogroup",
+    "partial": "Parcours des fichiers modifiables par tous incomplet — certains répertoires n'ont pas pu être lus ; le reste n'est pas vérifié",
+    "ok": "Aucun fichier modifiable par tous, aucun répertoire modifiable par tous sans sticky bit, aucun fichier sans propriétaire sur les systèmes de fichiers locaux"
+  },
   "package_integrity": {
+    "requires_exhaustive": "Intégrité des paquets non lancée — ce check lent nécessite --exhaustive (bob --exhaustive --check=package_integrity)",
     "unsupported": "Intégrité des paquets non vérifiée — aucun gestionnaire de paquets supporté détecté sur cet hôte",
     "tool_missing": "Intégrité des paquets non vérifiée — {tool} n'est pas installé",
     "tool_missing_detail": "Le vérificateur ({tool}) est absent, donc BOB n'a pas pu comparer les fichiers installés aux empreintes enregistrées par le gestionnaire de paquets. Ce n'est pas un résultat « propre » — c'est une question sans réponse. Le paquet debsums fournit le vérificateur sur Debian/Ubuntu ; sur la famille RPM, rpm est fourni avec le système.",
@@ -3651,6 +3852,8 @@
   "firmware": {
     "fwupd_missing": "fwupd non installé — impossible de déterminer l'état des mises à jour firmware",
     "fwupd_error": "fwupdmgr get-updates a retourné une erreur : {error}",
+    "fwupd_dbx_sb_off": "Mise à jour de la liste de révocation UEFI en attente ({devices}) — non appliquée tant que Secure Boot est désactivé",
+    "fwupd_dbx_sb_off_detail": "dbx est la liste des signatures de démarrage que l'UEFI refuse d'exécuter, et seul Secure Boot la consulte. Secure Boot désactivé, elle ne protège rien aujourd'hui : c'est donc signalé sans déduction ; appliquez-la (sudo fwupdmgr update) avant d'activer Secure Boot, pour que les chargeurs révoqués soient refusés dès le premier démarrage.",
     "fwupd_updates": "{count} mise(s) à jour firmware en attente : {devices}",
     "fwupd_updates_detail": "Exécutez 'sudo fwupdmgr update' pour appliquer les mises à jour firmware BIOS/UEFI/SSD/NIC en attente. Un firmware obsolète peut exposer des vulnérabilités matérielles connues.",
     "fwupd_updates_reason": "{count} mise(s) à jour firmware détectées par fwupd",
@@ -3783,7 +3986,9 @@
     "brute_force_ok": "fail2ban actif",
     "updates": "Mises à jour sécurité",
     "updates_pending": "mises à jour de sécurité en attente",
-    "updates_unknown": "état inconnu — cache APT obsolète ou incohérent",
+    "updates_unknown": "état inconnu — cache APT obsolète et état des paquets incohérent",
+    "updates_stale": "état inconnu — cache APT obsolète",
+    "updates_inconsistent": "état inconnu — état des paquets APT incohérent",
     "updates_no_channel": "mises à jour en attente — pas de canal sécurité pour classer",
     "updates_ok": "à jour"
   },
@@ -3945,6 +4150,7 @@
     "symlink_created": "Lien symbolique créé : {dst} → {src}",
     "symlink_failed": "Échec de la création du lien symbolique : {error}",
     "symlink_skipped_missing": "Lien symbolique ignoré — bob introuvable dans ~/.local/bin (installation pipx ?)",
+    "symlink_up_to_date": "Lien symbolique déjà en place : {dst} → {src}",
     "symlink_skipped_no_sudo": "Lien symbolique ignoré — lancez via sudo pour détecter le binaire utilisateur",
     "reload_title": "Pas encore active dans ce shell — la complétion est chargée au démarrage d'un shell.",
     "reload_how": "Ouvrez un nouveau terminal, ou lancez : source /etc/bash_completion.d/bob",

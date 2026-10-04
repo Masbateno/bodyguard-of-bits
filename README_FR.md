@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.23.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.24.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -18,7 +18,7 @@
 
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
-BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 51 sections de vérification sur 6 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
+BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 56 sections de vérification sur 6 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.
 
 ---
 
@@ -133,7 +133,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.23.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.24.0  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -161,18 +161,18 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ---
 
-## Vérifications de sécurité — 51 sections de vérification, 6 domaines de score
+## Vérifications de sécurité — 56 sections de vérification, 6 domaines de score
 
 | Domaine | Ce qu'il couvre |
 |---------|----------------|
 | **Pare-feu** | Règles UFW, iptables/nftables (quand UFW inactif), cohérence IPv6, exposition des ports |
 | **SSH** | Durcissement sshd_config — PermitRootLogin, qualité des clés, timeouts, forwarding |
-| **Durcissement noyau** | Paramètres sysctl, modules noyau, Secure Boot, firmware/microcode |
-| **Boot & stockage** | Mot de passe/permissions de config GRUB, options de montage (nodev/nosuid/noexec), chiffrement disque LUKS, politique de core dumps, kexec/lockdown noyau |
+| **Durcissement noyau** | Paramètres sysctl (dont `fs.protected_*`), surface d'attaque du noyau (eBPF non privilégié, événements perf, espaces de noms utilisateur), vulnérabilités CPU rapportées par le noyau et IOMMU, modules noyau, Secure Boot, firmware/microcode |
+| **Boot & stockage** | Mot de passe/permissions de config GRUB, options de montage (nodev/nosuid/noexec), chiffrement disque LUKS, politique de core dumps, kexec/lockdown noyau, hidepid de `/proc` |
 | **Services** | 38 services connus avec classification du risque ; détection du contournement pare-feu Docker ; exposition réseau du service d'impression CUPS |
-| **Permissions fichiers** | Audit SUID/SGID, fichiers sensibles, sudoers, permissions des règles polkit |
-| **Comptes utilisateurs** | Comptes expirés, politique de mots de passe, login.defs, PAM, verrouillage de compte (pam_faillock) |
-| **Mises à jour & détection** | Mises à jour apt, règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
+| **Permissions fichiers** | Audit SUID/SGID, capabilities de fichiers, fichiers sensibles, sudoers, permissions des règles polkit ; fichiers modifiables par tous et sans propriétaire (`--exhaustive`) |
+| **Comptes utilisateurs** | Comptes expirés, politique et algorithme de hachage des mots de passe, login.defs, PAM, verrouillage de compte (pam_faillock), restriction de su (pam_wheel / mode du binaire / su de BusyBox), permissions des répertoires personnels et de `.netrc`, UID dupliqués |
+| **Mises à jour & détection** | Mises à jour apt, authenticité des paquets (vérification des signatures / dépôts), politique crypto système, intégrité des fichiers de paquets (`--exhaustive`), règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
 | **Opérations** | Rotation des logs, analyse auth.log, synchro NTP, expiration certificats TLS, timers systemd, Samba, tâches cron |
 | **Réseau** | Contexte IP publique, détection du type de réseau (serveur/LAN/VPN), GeoIP optionnel |
 | **Docker** | Durcissement du daemon, conteneurs privilégiés, montages sensibles |
@@ -181,7 +181,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ## Mapping des benchmarks CIS
 
-208 entrées : **111 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 89 bonnes pratiques**, plus **163 citations inter-benchmarks** sur 58 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+218 entrées : **116 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 94 bonnes pratiques**, plus **189 citations inter-benchmarks** sur 67 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
